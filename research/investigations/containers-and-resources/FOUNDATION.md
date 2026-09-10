@@ -1092,10 +1092,37 @@ sources for the payload helper. Nested dynamic indices and a FixedVector
 control use the same query. Weak updates retain the existing prefix bound;
 no wildcard query becomes an exact destination or a loan permission.
 An unrepresented suffix keeps the old unlocated bound rather than reusing the
-prefix value's field layout for a different selected type. Cross-call
-instantiation of an arbitrary bounded owned result still forgets mapped
-internal layout; distinguishing a complete typed choice from a general
-supplier bound remains a separate correspondence question.
+prefix value's field layout for a different selected type. At `c6cd99e2`,
+cross-call instantiation flattened every bounded owned result. The later
+correspondence experiment below distinguishes a complete typed choice from
+that arbitrary unlocated supplier bound.
+
+A direct/helper comparison isolates that correspondence loss at `19771851`.
+A slot holds a resource owner and a separately constructed empty scratch run.
+After a dynamic replacement, its caller returns the resource and releases only
+the scratch field. The direct form retains the fields' separate origins; an
+owned result crossing a helper is flattened into an unlocated bound, and the
+resource's source is then attributed to the unrelated scratch release. Both
+forms return normally and perform no I/O. This is a compiler composition
+counterexample, not evidence for a new empty-container API or usage frequency.
+
+The next comparison distinguishes a complete typed selection from arbitrary
+unlocated contents. Only a choice whose source and selected value retain their
+internal type correspondence may preserve mapped field layout across a call.
+It still supplies a bound, not an exact selected supplier, complete coverage,
+or a loan location. Selecting from already rearranged contents must not regain
+that correspondence. The criterion is equivalent direct/helper behavior with
+two possible source elements, retained omitted/spurious effect rejections,
+and algebra controls showing that whole, partial and unknown actuals cannot
+acquire precise layout or complete coverage merely by passing through a helper.
+Caller length facts remain independent and are not forwarded by this relation.
+
+The implemented typed choice passes the two-element direct, helper and relay
+controls with the same declared effects. Omitting the second supplier's write
+or declaring an unobserved incoming-field read still rejects at EFF-2. The
+scratch field retains its separate source image; no empty-length fact is
+invented for it. Algebra controls keep selected suppliers below exact identity
+and complete coverage, and keep rearranged or unknown actuals conservative.
 
 The boxed migration witness also needed an ordinary source correction:
 `replacement` is read after installation and later exchanged out, requiring

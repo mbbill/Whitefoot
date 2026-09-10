@@ -305,6 +305,70 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn typed_selected_results_keep_unrelated_fields_separate_across_helpers() {
+    let source = r#"struct Slot {
+  file: ReadFile;
+  scratch: FixedVector<ReadFile, 1>;
+}
+
+fn exchange(slots: own array<Slot, 2>, replacement: own Slot, index: own u64) -> (updated: own array<Slot, 2>, previous: own Slot) reads(slots), writes(slots) contract {
+  requires index < 2_u64;
+} {
+  let previous = replace slots[index] = move replacement;
+  return move slots, move previous;
+}
+
+fn relay(slots: own array<Slot, 2>, replacement: own Slot, index: own u64) -> (updated: own array<Slot, 2>, previous: own Slot) reads(slots), writes(slots) contract {
+  requires index < 2_u64;
+} {
+  let (updated, previous) = exchange(slots: move slots, replacement: move replacement, index: index);
+  return move updated, move previous;
+}
+
+fn consume(first: own ReadFile, second: own ReadFile, incoming: own Slot, index: own u64) -> (updated: own array<Slot, 2>, previous_file: own ReadFile) reads(first, second), writes(first, second) contract {
+  requires index < 2_u64;
+} {
+  let first_empty = fixed_vector::<ReadFile, 1>();
+  let second_empty = fixed_vector::<ReadFile, 1>();
+  let first_slot = Slot(file: move first, scratch: move first_empty);
+  let second_slot = Slot(file: move second, scratch: move second_empty);
+  let values = fixed_vector::<Slot, 2>();
+  set values = place_back(vector: move values, value: move first_slot);
+  set values = place_back(vector: move values, value: move second_slot);
+  let slots = array_from_fixed(vector: move values);
+  EXCHANGE
+  let Slot(file: previous_file, scratch: unused) = move previous;
+  return move updated, move previous_file;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for operation in [
+        "let previous = replace slots[index] = move incoming;\n  let updated = move slots;",
+        "let (updated, previous) = exchange(slots: move slots, replacement: move incoming, index: index);",
+        "let (updated, previous) = relay(slots: move slots, replacement: move incoming, index: index);",
+    ] {
+        let source = source.replace("EXCHANGE", operation);
+        assert_complete(source.as_bytes());
+        let omitted = source.replace("writes(first, second)", "writes(first)");
+        assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                if missing == &["writes(second)"])
+        });
+        let spurious = source.replace(
+            "reads(first, second)",
+            "reads(first, second, incoming.file)",
+        );
+        assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+                if extra == &["reads(incoming.file)"])
+        });
+    }
+}
+
+#[test]
 fn whole_effect_union_requires_independently_established_possible_sources() {
     let source = r#"fn read(value: &box<u64>) -> result: own u64 reads(value) {
   return deref(deref(value));

@@ -409,8 +409,10 @@ second aggregate. Each release group captures the content its actions need
 before its first release; a no-op owner node needs no load. Incoming phi values
 are captured before cleanup and destination writes follow it. Required value
 snapshots, including proper-part consumes with residual releases, remain intact.
-Exclusive views over legacy arrays remain explicitly unsupported
-(`ExclusiveViewOverArray`); the inline `FixedVector` view path is implemented.
+Runtime arrays with supported flat elements and inline fixed runs form views
+over their original typed storage. Array fields use the same place path.
+Direct view formation through a borrowed array holder and general affine-element
+views remain separate implementation gaps.
 
 Rebinding a legacy `buffer` descriptor through a borrowed root is explicitly
 unsupported (`BorrowedBufferDescriptorMutation`). The legacy borrowed-parameter
@@ -488,8 +490,10 @@ record's fresh key therefore does not observe its imported Box payload.
 Dynamic selections keep known field layout inside the selected value while
 its source correspondence remains bounded. Ordinary checking and callable
 replay share that query; borrowed helper effects retain the selected fields.
-An unrepresented suffix still uses the conservative prefix bound. Instantiating
-an arbitrary bounded owned result does not preserve a complete field layout.
+An unrepresented suffix still uses the conservative prefix bound. A complete
+typed choice retains internal field correspondence through owned helper results,
+without locating its chosen supplier or establishing complete source coverage.
+Instantiating an arbitrary unlocated result still cannot recover that layout.
 These queries neither locate an exact writeback address nor narrow a loan.
 Known logical run lengths now locate back insertion and extraction precisely,
 preserving earlier slots and removing a taken slot from the remaining image.
@@ -571,10 +575,12 @@ measured. **Inline runs use stable owner storage.** Their views and element
 borrows point into that storage, so a write through an exclusive view is visible
 through the owner after the loan ends. Typed field/index paths reach that same
 storage; reading an owned old value still creates an independent snapshot.
-The legacy exclusive-array view path remains an explicit unsupported capability
-`ExclusiveViewOverArray`; implementing addressable array mutation targets does
-not yet wire that separate view formation to its owner. Exclusivity is not
-a clause of its own: the formation takes the borrow
+Runtime arrays with supported flat elements now use that same typed storage
+path, including array fields. Writes through their exclusive views are visible
+after the loan ends; immutable constant arrays keep their shared constant path.
+Direct formation through a borrowed array holder still stops at
+`RegionsAndBorrows`, and general affine-element views remain incomplete.
+Exclusivity is not a clause of its own: the formation takes the borrow
 its strength names, so a second `mut_slice_of` over one place meets the first
 view's loan and is refused there as an ordinary [OWN-5] conflict, while two
 `slice_of` views of one place are admitted.

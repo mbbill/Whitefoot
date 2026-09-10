@@ -172,7 +172,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    fn emit_slice_descriptor(
+    pub(super) fn emit_slice_descriptor(
         &mut self,
         result: IrValueId,
         ty: IrType,

@@ -154,6 +154,18 @@ The maintained WF tests separately check compiler-derived cleanup and failure
 paths in all three lowering modes. No elapsed-time result or overall parity with
 a C container is inferred from this bounded layout and instruction comparison.
 
+The flat-element array-view control in
+[`backend/tests/slices.rs`](../../../../compiler/src/backend/tests/slices.rs)
+now forms views over the original typed array storage, including arrays inside
+records. It checks direct writes and writes through a retained view helper,
+unchanged neighboring fields/elements and prior scalar observations, a later
+shared read, and a zero-length descriptor. Default, overlap-off and completion
+lowering each execute ordinary and retained-call modules. The same source
+stops at the earlier compiler's explicit exclusive-array-view capability.
+This reuses the existing typed storage path; general affine-element views and
+direct view formation through a borrowed array holder remain separate limits.
+The new checks add behavior evidence, not a new timing comparison.
+
 ### Encoding the remaining snapshots
 
 An exploratory rewrite of the retained owning-record LLVM module showed that

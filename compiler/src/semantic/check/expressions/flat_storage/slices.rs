@@ -154,9 +154,11 @@ inside the `region` block whose region it takes",
         };
         self.check_direct_slice_borrow_lifetime(function, region, owner, borrow, loop_depth)?;
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
-        let indexed = self.check_indexed_place(
-            place_node, bindings, &suffixes, place_node, function, loop_depth,
-        )?;
+        let indexed = self
+            .check_indexed_place(
+                place_node, bindings, &suffixes, place_node, function, loop_depth,
+            )?
+            .into_element_storage()?;
         // [OP-2] derives the element from the viewed place. Full arrays and
         // runs admit owning elements; general element views remain a
         // capability gap, not a source-language rejection.
@@ -178,19 +180,9 @@ inside the `region` block whose region it takes",
             _ => super::CarriedOperands::default(),
         };
         let (source, resolved) = match indexed {
-            // TEMPORARY capability stop, judged after every source rejection
-            // above: an array is a value with no stable address in this
-            // lowering, so the descriptor a view of one carries points at a
-            // snapshot of it. A shared view is unaffected — a live shared
-            // loan refuses every write to its origin, so the snapshot and the
-            // array agree at every point the view is readable — while a write
-            // through an exclusive view would reach the snapshot and not the
-            // array. It stops here rather than lowering a write nobody can
-            // observe.
-            CheckedIndexedPlace::Array(_) if strength == LoanStrength::Exclusive => {
-                return self
-                    .unsupported(UnsupportedSemanticFeature::ExclusiveViewOverArray, atoms[0]);
-            }
+            // Immutable globals retain their direct constant-array source.
+            // Mutable owners were converted to typed storage above, so both
+            // strengths view the owner's slots rather than an array snapshot.
             CheckedIndexedPlace::Array(array) => {
                 let resolved = array
                     .resolved_place()
@@ -206,12 +198,9 @@ inside the `region` block whose region it takes",
             CheckedIndexedPlace::Buffer(buffer) => {
                 (CheckedSliceSource::Buffer(buffer.root), buffer.resolved)
             }
-            // [VIEW-2] a run is viewable: the row's operand class is the
-            // storage a view may be formed over, and the two runs [BLK-1]
-            // joined it when the row's own non-wrap requirement was stated.
-            // The requirement is submitted at this formation and is what
-            // makes the viewed window one contiguous range.
-            //
+            // [VIEW-2] typed storage shares the non-wrap requirement. Runs
+            // discharge it from their current window; full arrays discharge
+            // it from their type's zero head and room [MSR-1].
             CheckedIndexedPlace::Container(container) => {
                 let Some(measured) = container.root.measured() else {
                     return self.issue_node(
@@ -220,7 +209,10 @@ inside the `region` block whose region it takes",
                         SemanticIssueKind::InvalidOperation,
                     );
                 };
-                if !matches!(measured, MeasuredKind::FixedVector | MeasuredKind::Vector) {
+                if !matches!(
+                    measured,
+                    MeasuredKind::FixedVector | MeasuredKind::Vector | MeasuredKind::Array
+                ) {
                     return self.issue_node(
                         SemanticRule::Op1,
                         node,

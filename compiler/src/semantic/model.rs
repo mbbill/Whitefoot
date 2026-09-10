@@ -1561,12 +1561,13 @@ pub(crate) enum CheckedSliceSource {
         binding: BindingId,
         element: CheckedFlatElement,
     },
-    /// One run [BLK-1], viewed over its initialized window.
+    /// Typed owner storage: a run [BLK-1] or a complete array [TYPE-2].
     ///
     /// The window is `len_of` slots beginning at `head_of`, and the row's own
     /// requirement is what makes that one contiguous range: `head_of(vector)
     /// <= room_of(vector)` [VIEW-2], so the view is the slots from `head_of`
-    /// onward and never wraps.
+    /// onward and never wraps. A complete array has its type's length and a
+    /// zero head, and the view addresses its original storage in both modes.
     Run(CheckedContainerRoot),
 }
 

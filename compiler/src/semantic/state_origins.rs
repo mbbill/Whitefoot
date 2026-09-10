@@ -370,6 +370,9 @@ pub(crate) trait StateRoute: Clone {
 pub(crate) enum StateOriginPrecision {
     /// Destination selectors also select the corresponding source subvalue.
     Exact,
+    /// A complete typed choice retains internal selector correspondence, but
+    /// not an exact chosen supplier or coverage of every possible supplier.
+    Selected,
     /// All source state is retained, but its positions within the value differ.
     Whole,
     /// Some source state may be retained; this is only a supplier upper bound.
@@ -382,7 +385,10 @@ pub(crate) enum StateOriginPrecision {
 pub(crate) fn unlocated_routes<R: StateRoute + Ord>(routes: &mut Vec<R>, whole: bool) {
     for route in routes.iter_mut() {
         let precision = if whole
-            && route.precision() != StateOriginPrecision::Bound
+            && matches!(
+                route.precision(),
+                StateOriginPrecision::Exact | StateOriginPrecision::Whole
+            )
             && route.exclusions().is_empty()
         {
             StateOriginPrecision::Whole
@@ -403,7 +409,14 @@ pub(crate) fn unlocated_routes<R: StateRoute + Ord>(routes: &mut Vec<R>, whole: 
 /// make a later key projection include an unrelated payload supplier.
 pub(crate) fn bound_selected_routes<R: StateRoute + Ord>(routes: &mut Vec<R>) {
     for route in routes.iter_mut() {
-        *route.precision_mut() = StateOriginPrecision::Bound;
+        *route.precision_mut() = match route.precision() {
+            StateOriginPrecision::Exact | StateOriginPrecision::Selected => {
+                StateOriginPrecision::Selected
+            }
+            StateOriginPrecision::Whole | StateOriginPrecision::Bound => {
+                StateOriginPrecision::Bound
+            }
+        };
     }
     let mut canonical = Vec::new();
     union_routes(&mut canonical, routes);
@@ -593,7 +606,10 @@ impl StateRoute for CheckedStateOrigin {
             && self.source_value_fields == other.source_value_fields
     }
     fn project_source(&mut self, suffix: &[CheckedStateStep]) {
-        if self.precision != StateOriginPrecision::Exact {
+        if !matches!(
+            self.precision,
+            StateOriginPrecision::Exact | StateOriginPrecision::Selected
+        ) {
             if !suffix.is_empty() {
                 self.precision = StateOriginPrecision::Bound;
             }
@@ -691,10 +707,12 @@ impl CheckedStateOrigins {
     #[cfg(test)]
     pub(crate) fn lacks_whole_origins(&self) -> bool {
         self.unknown
-            || self
-                .formals
-                .iter()
-                .any(|origin| origin.precision == StateOriginPrecision::Bound)
+            || self.formals.iter().any(|origin| {
+                matches!(
+                    origin.precision,
+                    StateOriginPrecision::Selected | StateOriginPrecision::Bound
+                )
+            })
     }
     pub(crate) fn projected(self, fields: &[u32]) -> Self {
         self.projected_value(&CheckedStateStep::fields(fields))
@@ -758,6 +776,7 @@ impl CheckedStateOrigins {
                 .projected_value(&formal.parameter_fields);
             mapped = match formal.precision {
                 StateOriginPrecision::Exact => mapped,
+                StateOriginPrecision::Selected => mapped.selected_bound(),
                 StateOriginPrecision::Whole => mapped.whole_transfer(),
                 StateOriginPrecision::Bound => mapped.unlocated(),
             };
@@ -812,7 +831,10 @@ impl StateRoute for CheckedResultStatePath {
             && self.parameter_fields == other.parameter_fields
     }
     fn project_source(&mut self, suffix: &[CheckedStateStep]) {
-        if self.precision == StateOriginPrecision::Exact {
+        if matches!(
+            self.precision,
+            StateOriginPrecision::Exact | StateOriginPrecision::Selected
+        ) {
             self.parameter_fields.extend_from_slice(suffix);
         } else if !suffix.is_empty() {
             self.precision = StateOriginPrecision::Bound;
@@ -1048,6 +1070,67 @@ mod tests {
         let taken = kernel_state_image(crate::KernelRow::TakeBack, false, &[complete]);
         assert!(taken.clone().projected(&[0]).lacks_exact_origins());
         assert!(taken.projected(&[1]).lacks_exact_origins());
+    }
+
+    #[test]
+    fn typed_choice_substitution_preserves_fields_without_complete_coverage() {
+        let first = DeclarationId::from_index(0).unwrap();
+        let second = DeclarationId::from_index(1).unwrap();
+        let supplied = |source, index| {
+            CheckedStateOrigins::formal_leaves(source, vec![Vec::new()])
+                .prefixed(&[CheckedStateStep::Element(index), CheckedStateStep::Field(0)])
+        };
+        let actual = supplied(first, 0).merged(supplied(second, 1));
+        let summary = CheckedResultStateOrigin::Finite {
+            run_lengths: Default::default(),
+            formals: vec![CheckedResultStatePath {
+                precision: StateOriginPrecision::Selected,
+                result_fields: Vec::new(),
+                parameter: 0,
+                parameter_fields: vec![CheckedStateStep::AnyElement],
+                exclusions: Vec::new(),
+            }],
+        };
+        let result = CheckedStateOrigins::instantiate(&summary, &[Some(actual)]);
+        assert_eq!(result.clone().projected(&[1]), CheckedStateOrigins::fresh());
+        let file = result.projected(&[0]);
+        assert_eq!(
+            file.formals
+                .iter()
+                .map(|route| route.source.root)
+                .collect::<Vec<_>>(),
+            vec![first, second]
+        );
+        assert!(file.lacks_exact_origins());
+        assert!(file.clone().whole_transfer().lacks_whole_origins());
+        assert!(file.unlocated().selected_bound().lacks_exact_origins());
+    }
+
+    #[test]
+    fn a_typed_choice_cannot_restore_rearranged_or_unknown_actual_layout() {
+        let source = DeclarationId::from_index(0).unwrap();
+        let supplied = CheckedStateOrigins::formal_leaves(source, vec![Vec::new()]);
+        let summary = CheckedResultStateOrigin::Finite {
+            run_lengths: Default::default(),
+            formals: vec![CheckedResultStatePath {
+                precision: StateOriginPrecision::Selected,
+                result_fields: Vec::new(),
+                parameter: 0,
+                parameter_fields: vec![CheckedStateStep::AnyElement],
+                exclusions: Vec::new(),
+            }],
+        };
+        for actual in [supplied.clone().whole_transfer(), supplied.unlocated()] {
+            let result = CheckedStateOrigins::instantiate(&summary, &[Some(actual)]);
+            let field = result.projected(&[1]);
+            assert!(field.lacks_whole_origins());
+            assert_eq!(field.formals.len(), 1);
+            assert_eq!(field.formals[0].source.root, source);
+            assert!(field.formals[0].source_value_fields.is_empty());
+        }
+        let unknown =
+            CheckedStateOrigins::instantiate(&summary, &[Some(CheckedStateOrigins::unknown())]);
+        assert!(unknown.unknown);
     }
 
     #[test]

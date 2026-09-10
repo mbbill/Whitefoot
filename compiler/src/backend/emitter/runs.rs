@@ -544,7 +544,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// [VIEW-2] one view formed over a run's initialized window.
+    /// [VIEW-2] one view formed over typed owner storage.
     ///
     /// The window is `len` slots beginning at `head`, and the row's own
     /// requirement `head_of(vector) <= room_of(vector)` is discharged before
@@ -552,6 +552,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     /// is one contiguous range: the descriptor is the address of slot `head`
     /// together with `len`, and no modulus is emitted.
     ///
+    /// A complete array instead contributes its type's length and the address
+    /// of its first slot, without descriptor metadata in the owner.
     /// Both view modes point into the checked owner's stable storage. A
     /// descriptor copy does not create storage or prolong its lifetime.
     pub(super) fn emit_slice_from_run(
@@ -564,6 +566,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         };
         let run_type = self.run_value_type(run)?;
+        if let IrType::Array {
+            element: actual,
+            length,
+        } = run_type
+        {
+            if self.program.element(actual) != Some(element.ty())
+                || !matches!(self.value_type(run), Some(IrType::Address(_)))
+            {
+                return Err(BackendFailure::InvalidIr);
+            }
+            let pointer = self.value_name(run);
+            return self.emit_slice_descriptor(result, ty, &pointer, length);
+        }
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };

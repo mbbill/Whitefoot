@@ -47,7 +47,8 @@ impl IrBuilder<'_> {
                 }
                 return Ok(parent);
             }
-            // [VIEW-2] a run's window: its own slots, from `head` onward.
+            // [VIEW-2] original typed storage: the run's initialized window
+            // or all slots of a complete array.
             CheckedSliceSource::Run(root) => {
                 let run = self.lower_place_address(root)?;
                 IrOperation::SliceFromRun { run }

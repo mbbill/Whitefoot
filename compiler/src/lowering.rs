@@ -1274,7 +1274,8 @@ pub enum IrOperation {
     SliceFromBuffer {
         buffer: IrValueId,
     },
-    /// [VIEW-2] one view over a run's initialized window [BLK-1].
+    /// [VIEW-2] one view over typed owner storage: a run's initialized window
+    /// [BLK-1] or a complete array with its type's length and zero head.
     ///
     /// The window is `len` slots beginning at `head`, and the row's own
     /// requirement `head_of(vector) <= room_of(vector)` was discharged before

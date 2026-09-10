@@ -49,6 +49,60 @@ fn invariant_brands_require_exact_view_types_in_either_parameter_order() {
 }
 
 #[test]
+fn array_views_preserve_exclusivity_and_element_domains() {
+    let source = r#"command fn main() -> status: own ExitStatus pure {
+  let values = array_new::<u8, 2>(0_u8);
+  region {
+    let view = mut_slice_of(&uniq values);
+    set view[0_u64] = 1_u8;
+    let seen = view[0_u64];
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    for (source, rule) in [
+        (
+            source.replace("mut_slice_of(&uniq values)", "slice_of(&values)"),
+            SemanticRule::Set1,
+        ),
+        (
+            source.replace("set view[0_u64]", "set view[2_u64]"),
+            SemanticRule::Op4,
+        ),
+        (
+            source.replace("set view[0_u64]", "set values[0_u64]"),
+            SemanticRule::Own5,
+        ),
+        (
+            source.replace(
+                "set view[0_u64] = 1_u8;",
+                "let other = mut_slice_of(&uniq values);",
+            ),
+            SemanticRule::Own5,
+        ),
+        (
+            source.replace("mut_slice_of(&uniq values)", "mut_slice_of(&values)"),
+            SemanticRule::Type5,
+        ),
+    ] {
+        assert_rule_kind(source.as_bytes(), rule, |_| true);
+    }
+    let constant = source
+        .replace("  let values = array_new::<u8, 2>(0_u8);\n", "")
+        .replace(
+            "command fn",
+            "const values: array<u8, 2> =[0_u8, 0_u8];\n\ncommand fn",
+        );
+    assert_rule_kind(constant.as_bytes(), SemanticRule::Const2, |_| true);
+}
+
+#[test]
 fn borrowed_array_view_probe_stops_before_the_reborrow_judgment() {
     let source = br#"struct Mark['s] {
   value: u64;

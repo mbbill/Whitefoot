@@ -1,6 +1,108 @@
 use super::*;
 
 #[test]
+fn exclusive_array_views_write_original_local_and_field_storage() {
+    let source = br#"struct Packet {
+  before: u64;
+  bytes: array<u64, 4>;
+  after: u64;
+}
+
+fn overwrite(view: &uniq MutSlice<u64>, index: own u64, value: own u64) -> result: own unit writes(view) contract {
+  requires index < len_of(deref(view));
+} {
+  set deref(view)[index] = value;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = array_new::<u64, 4>(7_u64);
+  let before0 = values[0_u64];
+  let before2 = values[2_u64];
+  region {
+    let view = mut_slice_of(&uniq values);
+    set view[0_u64] = 19_u64;
+    region {
+      let done = overwrite(view: &uniq view, index: 2_u64, value: 31_u64);
+    }
+  }
+  if values[0_u64] != 19_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if values[1_u64] != 7_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if values[2_u64] != 31_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if values[3_u64] != 7_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if before0 != 7_u64 {
+    return exit_status(code: 5_u8);
+  }
+  if before2 != 7_u64 {
+    return exit_status(code: 6_u8);
+  }
+  let bytes = array_new::<u64, 4>(13_u64);
+  let packet = Packet(before: 53_u64, bytes: move bytes, after: 59_u64);
+  region {
+    let view = mut_slice_of(&uniq packet.bytes);
+    region {
+      let done = overwrite(view: &uniq view, index: 1_u64, value: 41_u64);
+    }
+  }
+  if packet.before != 53_u64 {
+    return exit_status(code: 7_u8);
+  }
+  if packet.after != 59_u64 {
+    return exit_status(code: 8_u8);
+  }
+  if packet.bytes[0_u64] != 13_u64 {
+    return exit_status(code: 9_u8);
+  }
+  if packet.bytes[1_u64] != 41_u64 {
+    return exit_status(code: 10_u8);
+  }
+  if packet.bytes[2_u64] != 13_u64 {
+    return exit_status(code: 11_u8);
+  }
+  if packet.bytes[3_u64] != 13_u64 {
+    return exit_status(code: 12_u8);
+  }
+  region {
+    let shared = slice_of(&packet.bytes);
+    if shared[1_u64] != 41_u64 {
+      return exit_status(code: 13_u8);
+    }
+  }
+  let empty = array_new::<u64, 0>(0_u64);
+  region {
+    let view = mut_slice_of(&uniq empty);
+    let length = len_of(view);
+    if length != 0_u64 {
+      return exit_status(code: 14_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        OverlapLowering::Off,
+        OverlapLowering::On,
+        OverlapLowering::Completion,
+    ] {
+        let module = emit_lowered(source, overlap);
+        for module in [&module, &super::owned_places::retain_calls(&module)] {
+            let output = compile_and_run(module);
+            assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+            assert!(output.stdout.is_empty(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}
+
+#[test]
 fn formal_view_child_last_use_restores_parent_writes_across_retained_calls() {
     let source = r#"fn child['r](view: &uniq MutSlice<'r, u8>) -> result: own Slice<'r, u8> pure contract {
   requires len_of(deref(view)) == 1_u64;
