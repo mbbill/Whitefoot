@@ -1063,22 +1063,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         && state_origins.get(index).and_then(Option::as_ref).is_none()
                 })
             {
-                paths.push(self.state_path(place, bindings)?);
+                paths.push(self.state_path(place, bindings)?.into());
             }
             if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
-                if origins.lacks_whole_origins() && !self.deriving_result_state_origin.get() {
-                    return self
-                        .unsupported(crate::UnsupportedSemanticFeature::OwnerStateRouting, node);
-                }
-                for origin in &origins.formals {
-                    paths.push(origin.source.clone());
-                }
+                paths.extend(self.effect_paths_for_origins(node, origins, bindings, true)?);
             }
             for path in paths {
                 if !caller
                     .parameters
                     .iter()
-                    .any(|parameter| parameter.declaration == path.root)
+                    .any(|parameter| parameter.declaration == path.path.root)
                 {
                     continue;
                 }

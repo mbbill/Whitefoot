@@ -1431,26 +1431,19 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                 {
                     let mut path = self.state_path(place, bindings)?;
                     path.fields.extend_from_slice(&formal.fields);
-                    actual_paths.push(path);
+                    actual_paths.push(path.into());
                 }
                 if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
                     let origins = origins.clone().projected(&formal.fields);
-                    if origins.lacks_whole_origins() && !self.deriving_result_state_origin.get() {
-                        return self.unsupported(
-                            crate::UnsupportedSemanticFeature::OwnerStateRouting,
-                            node,
-                        );
-                    }
-                    for origin in origins.formals {
-                        actual_paths.push(origin.source);
-                    }
+                    actual_paths
+                        .extend(self.effect_paths_for_origins(node, &origins, bindings, true)?);
                 }
 
                 for path in actual_paths {
                     if !caller
                         .parameters
                         .iter()
-                        .any(|parameter| parameter.declaration == path.root)
+                        .any(|parameter| parameter.declaration == path.path.root)
                     {
                         continue;
                     }

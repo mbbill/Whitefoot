@@ -854,9 +854,10 @@ case with its original source and executable assertions. The typed-path
 extension restores the boxed enum child's original retained native consumer
 and exact allocation/release trace. Finite source bounds now restore the heap
 full-array and wide-owned-result consumers when their suppliers resolve to fresh
-local state. The imported-owner generic array helper and boxed-run read-out still
-need more precise insertion and extraction images. All original executable
-assertions remain intact; these are distinct remaining capability gaps.
+local state. Complete call coverage and the whole-effect experiment below also
+restore the imported-owner generic array helper and boxed-run read-out without
+claiming precise extracted-element images. All original executable assertions
+remain intact; finer content selection remains a separate capability gap.
 
 The `f586e04c` CI run exposed two further implementation defects in loops. The
 preliminary body check compared unresolved call-result origin images at the
@@ -916,7 +917,8 @@ transfer. A finite supplier bound now preserves both outputs without asserting
 that every supplier actually remains in each one. An imported bound used as an
 exact origin still exposes `OwnerStateRouting`; this is a missing implementation
 capability, not a new source rejection. The retained boxed-run read-out case
-still exposes that missing image, while the wide-result native case and
+can instead establish its complete boundary-effect union without an exact
+extracted image, as the experiment below shows. The wide-result native case and
 `block_pool.wf` resolve their actual suppliers and execute again. Their
 executable success assertions remain unchanged. Ignoring a loop's changed
 origins, treating an unknown summary as fresh, or counting duplicated bounds as
@@ -979,8 +981,9 @@ Implicit run-boundary placement and extraction of owning elements still lack
 an exact slot/content transfer and cannot use a root-level argument union as one.
 Front insertion also shifts existing logical indices: leaving a route at slot
 zero can misattribute a later extraction from slot one. The corresponding
-normal-return witness retains a capability stop until that transfer is supplied;
-an unchanged child union is not a conservative upper bound.
+normal-return witness keeps the transferred supplier as an unlocated bound;
+its established effects can close the whole row without selecting that slot.
+An unchanged child union is not a conservative upper bound.
 
 The remaining candidate keeps an owning Box or run's storage anchor separate
 from its current contained owners. Use exact product fields, sparse literal-slot
@@ -1072,8 +1075,10 @@ value transfer may construct the latter: moving run elements cannot introduce
 an owner other than one supplied by its operands. An unlocated route denotes a
 bound, never an exact structural correspondence. Selecting below it retains
 the complete source subtree; instantiation must not append that destination
-selector to the source. A nonempty surviving bound cannot justify an EFF-2
-effect row. Unknown remains unknown even for apparently fresh actuals.
+selector to the source. A nonempty surviving bound establishes no effect by
+itself; the whole-effect experiment below compares independently established
+contributions with all possible contributions. Unknown remains unknown even
+for apparently fresh actuals.
 
 The experiment's criterion is whether this distinction restores
 ordinary fresh-state construction and helper composition while preserving the
@@ -1090,8 +1095,10 @@ source. Kernel expressions capture the already checked argument images; storage
 read-out captures its resolved value image, independently of the access list
 used to calculate its address. Callable replay uses the same kernel transfer and
 preserves side effects while evaluating index and loop-endpoint expressions.
-The ordinary helper control constructs, relays and extracts a fresh Box, while
-the normally returning imported-owner control retains the capability stop.
+The ordinary helper control constructs, relays and extracts a fresh Box. The
+normally returning imported-owner control now establishes its full read/write
+row, so its original `pure` declaration rejects at EFF-2 rather than stopping
+at the earlier routing capability boundary.
 The route-algebra control checks fresh overrides, sibling bounds and source
 selection during substitution. A literal-element LIV-2 read-out retains its
 formal element route across a helper. The attempted dynamic-index read-out is
@@ -1147,6 +1154,44 @@ Likewise, two equal supplier bounds are not an exact subvalue identity:
 replacement's no-change shortcut requires exact selected routes in both body
 checking and callable replay. These controls narrow the complete-coverage
 claim to its actual call-boundary evidence.
+
+The whole-effect experiment separates exact whole-function effects from exact placement
+at every contributing operation. For each written effect category, retain a
+lower set of established body-syntactic contributions and an upper set including
+every possible contribution of a finitely bounded query. EFF-2's exact union is
+known when these sets agree; the declaration is compared only afterwards and
+never supplies either set. For example, the first removal from an incoming run
+already establishes its read and write, so a later removal bounded by that same
+effect atom need not change the union. This does not determine which element
+either removal returns.
+
+The discriminator is the unchanged native boxed-run read-out plus ordinary
+direct/helper and loop controls. Require omitted and extra effects to reject
+after the exact union is established, while an uncovered possible supplier,
+an unknown source, or an uncertainty in a different effect category retains
+the capability stop. Source paths are discrete atoms: a struct root does not
+cover its field paths. The bounded initial experiment therefore stops when an
+uncertain source itself has nameable struct fields rather than guessing their
+contribution. Do not enumerate capacity, unfold recursive contents, consult the
+declared row to settle uncertainty, or promote an owner route to exact or whole.
+The bounds exist only during boundary-effect checking; source locations, loans,
+kill information, parallel footprints and runtime code remain independently
+derived. Descriptor-only selection and type-directed release remain separate
+requirements. This candidate is selected provisionally if it restores the
+discriminating operation without losing those negative controls; it is not a
+replacement for a precise container-content image.
+
+The unchanged boxed-run native witness now executes both consecutive removals
+and checks the original element values. Direct and helper-mediated controls
+establish a possible supplier by a separate read, then check the exact row;
+omitting that read from the declaration or adding an unrelated source rejects.
+Removing the establishing operation leaves an explicit capability gap even when
+the declaration lists every possible source; establishing only a write does not
+close the possible read. Product-field controls reject substituting a struct
+root for its fields. The former extraction and shifted-slot capability sentinels
+now inspect the retained bounded result summaries, and the imported `pure`
+helper checks its actual missing read and write. These changes refine compiler
+effect knowledge without changing source rules or any native success expectation.
 
 ### Sparse experiment contract and decision boundary
 

@@ -14,7 +14,8 @@ use super::super::model::{
 use super::super::places::{PlaceProjection, PlaceStep, paths_diverge};
 use super::linearity::LinearityClass;
 use super::{
-    CheckStop, Checker, FunctionSignature, LocalBinding, ParameterSignature, TypedExpression,
+    CheckStop, Checker, EffectPath, FunctionSignature, LocalBinding, ParameterSignature,
+    TypedExpression,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -416,14 +417,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// formal identities. Fresh local owners yield no enclosing effect;
     /// moved affine owners retain their structural formal sources; a scalar
     /// borrow parameter falls back to its direct parameter place.
-    /// An unresolved owner image reports the capability gap at the operation
-    /// that needs its effect paths, without rejecting mere value transport.
+    /// A finite unresolved selection can contribute possible effect atoms;
+    /// only an exact whole-function union can discharge those possibilities.
     pub(super) fn effect_paths_for_place(
         &self,
         node: NodeId,
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<Vec<CheckedStatePath>, CheckStop> {
+    ) -> Result<Vec<EffectPath>, CheckStop> {
         self.state_effect_paths_for_place(node, place, bindings, false)
     }
 
@@ -434,7 +435,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<Vec<CheckedStatePath>, CheckStop> {
+    ) -> Result<Vec<EffectPath>, CheckStop> {
         self.state_effect_paths_for_place(node, place, bindings, true)
     }
 
@@ -444,7 +445,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         whole: bool,
-    ) -> Result<Vec<CheckedStatePath>, CheckStop> {
+    ) -> Result<Vec<EffectPath>, CheckStop> {
         if self.constants.contains_key(&place.root) {
             return Ok(Vec::new());
         }
@@ -469,22 +470,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 selected
             };
-            let incomplete = if whole {
-                selected.lacks_whole_origins()
-            } else {
-                selected.lacks_exact_origins()
-            };
-            if incomplete && !self.deriving_result_state_origin.get() {
-                return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
-            }
-            let mut paths = selected
-                .formals
-                .into_iter()
-                .map(|origin| origin.source)
-                .collect::<Vec<_>>();
-            paths.sort();
-            paths.dedup();
-            return Ok(paths);
+            return self.effect_paths_for_origins(node, &selected, bindings, whole);
         }
         let parameter = self.resolved.declarations().iter().any(|declaration| {
             declaration.id() == place.root && declaration.role() == DeclarationRole::Parameter
@@ -492,10 +478,69 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if parameter
             && (binding.mode != CheckedMode::Own || matches!(binding.ty, CheckedType::Slice { .. }))
         {
-            Ok(vec![canonical])
+            Ok(vec![canonical.into()])
         } else {
             Ok(Vec::new())
         }
+    }
+
+    pub(super) fn effect_paths_for_origins(
+        &self,
+        node: NodeId,
+        origins: &super::super::model::CheckedStateOrigins,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        whole: bool,
+    ) -> Result<Vec<EffectPath>, CheckStop> {
+        use super::super::state_origins::StateOriginPrecision;
+
+        if origins.unknown && !self.deriving_result_state_origin.get() {
+            return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
+        }
+        let mut paths = Vec::new();
+        for origin in &origins.formals {
+            let certain = origin.precision == StateOriginPrecision::Exact
+                || (whole && origin.precision == StateOriginPrecision::Whole);
+            if !certain
+                && !self.deriving_result_state_origin.get()
+                && !self.effect_source_is_atomic(&origin.source, bindings)?
+            {
+                // An unknown selection below a struct can name a field rather
+                // than this root. EFF-2 compares discrete paths, not a prefix
+                // closure; the root alone would not be a sound upper bound.
+                return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
+            }
+            paths.push(EffectPath {
+                path: origin.source.clone(),
+                certain,
+            });
+        }
+        Ok(paths)
+    }
+
+    fn effect_source_is_atomic(
+        &self,
+        path: &CheckedStatePath,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<bool, CheckStop> {
+        let mut ty = bindings
+            .get(&path.root)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .ty;
+        for field in &path.fields {
+            let CheckedType::Nominal(nominal) = ty else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            ty = fields
+                .get(*field as usize)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .ty;
+        }
+        Ok(!matches!(ty, CheckedType::Nominal(nominal)
+            if matches!(&self.nominal(nominal)?.kind,
+                CheckedNominalKind::Struct { fields } if !fields.is_empty())))
     }
 
     pub(super) fn parse_region_parameters(

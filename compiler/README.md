@@ -454,8 +454,14 @@ it to a bound; substitution never upgrades an already incomplete actual.
 Local descriptor reads and type-directed releases still require selected
 sources; complete content coverage alone supplies neither selection.
 A bound can resolve to fresh state when helper substitution proves every
-selected supplier fresh; a surviving imported bound or wholly unknown source
-still reports `OwnerStateRouting` when exact effects are required. Kernel
+selected supplier fresh. For a surviving imported bound, local accesses and
+call effects can retain possible formal-path contributions separately from
+established contributions. The whole body has an exact effect row only when
+established contributions cover every possible atom in the same category;
+the written declaration never supplies that evidence. Unknown sources,
+uncertain sources with nameable struct fields, and uncovered possibilities
+still report `OwnerStateRouting`. This does not improve returned-owner,
+borrowed-location or parallel-access precision. Kernel
 effects use the selected operand image without adding enclosing address-access
 roots. Kernel transfers use captured operand images, and storage
 read-out captures the selected value rather than reconstructing it from address
@@ -479,11 +485,10 @@ stale exact contents. These boundaries apply to memory and resource objects alik
 Boxed enum-child replacement retains its native execution and release-observer
 behavior. Fresh-state full-array construction and replacement, wide results
 containing owners, the block-pool program and the optional-slot program execute
-again. Imported-owner
-array construction through generic helpers also executes; complete nested-run
-transport checks. Boxed-run read-out, descriptor reads on reconstructed imported
-contents, and helpers needing extracted, residual or type-selected release
-contents remain blocked by incomplete content placement. All executable
+again. Imported-owner array construction through generic helpers and boxed-run
+read-out also execute; complete nested-run transport checks. Descriptor reads on
+reconstructed imported contents and helpers whose exact effects or type-selected
+release require a finer extracted/residual image remain capability gaps. All executable
 assertions remain enabled. An empty current origin list alone does not recover
 a wholly unknown summary.
 Loop headers carry the stable union of entry and backedge owner origins. The

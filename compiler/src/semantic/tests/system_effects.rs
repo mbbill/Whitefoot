@@ -15,6 +15,102 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
 
 #[test]
+fn whole_effect_union_requires_independently_established_possible_sources() {
+    let source = r#"fn read(value: &box<u64>) -> result: own u64 reads(value) {
+  return deref(deref(value));
+}
+
+fn observe(values: own array<box<u64>, 2>, incoming: own box<u64>, spare: own box<u64>, index: own u64) -> result: own u64 reads(values, incoming), writes(values) contract {
+  requires index < 2_u64;
+} {
+  ESTABLISH
+  let previous = replace values[index] = move incoming;
+  region {
+    return read(value: &values[0_u64]);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let established = source.replace("ESTABLISH", "let observed = deref(incoming);");
+    assert_complete(established.as_bytes());
+    let omitted = established.replace("reads(values, incoming)", "reads(values)");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing.iter().any(|effect| effect == "reads(incoming)"))
+    });
+    let spurious = established.replace("reads(values, incoming)", "reads(values, incoming, spare)");
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+            if extra.iter().any(|effect| effect == "reads(spare)"))
+    });
+    for uncovered in [
+        source.replace("  ESTABLISH\n", ""),
+        source
+            .replace("ESTABLISH", "set deref(incoming) = 9_u64;")
+            .replace("writes(values)", "writes(values, incoming)"),
+    ] {
+        // The written row covers the upper bound, but does not prove that
+        // incoming is read. A known write cannot establish a possible read.
+        with_semantics(uncovered.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
+                    if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
+                "uncovered effect possibilities remain a capability gap: {outcome:?}"
+            );
+        });
+    }
+}
+
+#[test]
+fn whole_effect_union_keeps_struct_fields_distinct_from_their_root() {
+    let source = br#"struct Pair {
+  left: box<u64>;
+  right: box<u64>;
+}
+
+fn read(value: &Pair) -> result: own u64 reads(value.left) {
+  return deref(deref(value).left);
+}
+
+fn observe(values: own array<Pair, 2>, incoming: own Pair, replacement: own Pair, index: own u64) -> result: own u64 reads(values, incoming), writes(values, incoming) contract {
+  requires index < 2_u64;
+} {
+  let supplied = replace incoming = move replacement;
+  let previous = replace values[index] = move supplied;
+  region {
+    return read(value: &values[0_u64]);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    // The initial product image already retains both field sources. A root
+    // declaration cannot stand in for those discrete established atoms.
+    assert_rule_kind(source, SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, extra, .. }
+            if missing.iter().any(|effect| effect == "reads(incoming.left)")
+                && missing.iter().any(|effect| effect == "reads(incoming.right)")
+                && extra.iter().any(|effect| effect == "reads(incoming)"))
+    });
+    let precise = std::str::from_utf8(source)
+        .unwrap()
+        .replace(
+            "reads(values, incoming)",
+            "reads(values, incoming.left, incoming.right)",
+        )
+        .replace(
+            "writes(values, incoming)",
+            "writes(values, incoming.left, incoming.right)",
+        );
+    assert_complete(precise.as_bytes());
+}
+
+#[test]
 fn dynamic_slot_mutation_frames_siblings_through_owner_and_borrowed_helpers() {
     let source = r#"struct Slots {
   values: array<box<u64>, 2>;
@@ -441,17 +537,23 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     // The returned owner is incoming, which moved from logical slot zero to
-    // one. An unchanged operand union would instead route the old slot one
-    // of slots. Until insertion has its own transfer, retain the capability
-    // gap rather than publishing that incorrect normal-exit summary.
+    // one. The complete effect union is now known, but the returned image
+    // must retain an incoming bound instead of selecting the old slot one.
     with_semantics(source, |outcome| {
-        let SemanticOutcome::Unsupported { unsupported } = outcome else {
-            panic!("owning insertion needs a logical slot transfer: {outcome:?}");
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("established effects allow the bounded result: {outcome:?}");
         };
-        assert_eq!(
-            unsupported.feature(),
-            crate::UnsupportedSemanticFeature::OwnerStateRouting
-        );
+        let CheckedResultStateOrigin::Finite { formals } =
+            &program.data.functions[0].result_state_origin
+        else {
+            panic!("the transferred suppliers are finite");
+        };
+        assert!(formals.iter().any(|route| route.parameter == 1));
+        assert!(formals.iter().all(|route| {
+            route.precision == StateOriginPrecision::Bound
+                && route.parameter < 2
+                && route.result_fields.is_empty()
+        }));
     });
 }
 
@@ -501,12 +603,11 @@ command fn main() -> status: own ExitStatus pure {{
 }}
 "#
     );
-    with_semantics(imported.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
-            if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
-            "a finite source bound must not become fresh across calls: {outcome:?}"
-        );
+    // Removal establishes the imported source's complete read/write row;
+    // the bounded later read cannot wash it away at the helper boundary.
+    assert_rule_kind(imported.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing == &["reads(value)", "writes(value)"])
     });
 }
 
@@ -1770,7 +1871,14 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn affine_run_take_does_not_use_the_copy_result_shortcut() {
     for operation in ["take_front", "take_back"] {
-        let source = r#"fn observe(vector: own FixedVector<box<u64>, 1>) -> result: own u64 reads(vector), writes(vector) contract {
+        let source = r#"fn take(vector: own FixedVector<box<u64>, 1>) -> (rest: own FixedVector<box<u64>, 1>, value: own box<u64>) reads(vector), writes(vector) contract {
+  requires len_of(vector) >= 1_u64;
+} {
+  let (rest, value) = TAKE(vector: move vector);
+  return move rest, move value;
+}
+
+fn observe(vector: own FixedVector<box<u64>, 1>) -> result: own u64 reads(vector), writes(vector) contract {
   requires len_of(vector) >= 1_u64;
 } {
   let (rest, taken) = TAKE(vector: move vector);
@@ -1783,10 +1891,20 @@ command fn main() -> status: own ExitStatus pure {
 "#
         .replace("TAKE", operation);
         with_semantics(source.as_bytes(), |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
-                    if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
-                "affine removal needs its contained-owner image: {outcome:?}"
+            let SemanticOutcome::Complete(program) = outcome else {
+                panic!("the first take establishes all later possible effects: {outcome:?}");
+            };
+            let mut rest = root(0);
+            rest.precision = StateOriginPrecision::Bound;
+            rest.result_fields = vec![CheckedStateStep::Field(0)];
+            let mut value = root(0);
+            value.precision = StateOriginPrecision::Bound;
+            value.result_fields = vec![CheckedStateStep::Field(1)];
+            assert_eq!(
+                program.data.functions[0].result_state_origin,
+                CheckedResultStateOrigin::Finite {
+                    formals: vec![rest, value],
+                }
             );
         });
     }

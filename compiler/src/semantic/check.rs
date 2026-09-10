@@ -583,6 +583,23 @@ impl TypedExpression {
 /// [EFF-2]'s only repair: the declaration must equal the exhibited row.
 const EFF2_ROW_FIX: &str = "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions";
 
+/// One contribution to the enclosing function's effect row. A possible path
+/// bounds an unresolved selection; it is not an exact source or a permission.
+#[derive(Clone, Debug)]
+struct EffectPath {
+    path: super::model::CheckedStatePath,
+    certain: bool,
+}
+
+impl From<super::model::CheckedStatePath> for EffectPath {
+    fn from(path: super::model::CheckedStatePath) -> Self {
+        Self {
+            path,
+            certain: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct EffectSet {
     reads: Vec<super::model::CheckedStatePath>,
@@ -590,6 +607,12 @@ struct EffectSet {
     /// [S23] the declared and exhibited `allocates` paths: one formal-rooted
     /// path per store whose provider is a value.
     allocates: Vec<super::model::CheckedStatePath>,
+    /// Upper-bound atoms not yet established by another contribution. The
+    /// ordinary category lists are the lower bound. Only their union across
+    /// the complete body can discharge these possibilities [EFF-2].
+    possible_reads: Vec<super::model::CheckedStatePath>,
+    possible_writes: Vec<super::model::CheckedStatePath>,
+    possible_allocates: Vec<super::model::CheckedStatePath>,
     /// The ambient heap of `box<T>` and `buffer<T>` [STOR-1]. Its store has no
     /// provider value, so [EFF-1] gives it no `effect_path` and no written
     /// entry; the flag is derived, never declared, and never compared, and it
@@ -603,6 +626,9 @@ impl EffectSet {
         reads: Vec::new(),
         writes: Vec::new(),
         allocates: Vec::new(),
+        possible_reads: Vec::new(),
+        possible_writes: Vec::new(),
+        possible_allocates: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
     };
@@ -610,6 +636,9 @@ impl EffectSet {
         reads: Vec::new(),
         writes: Vec::new(),
         allocates: Vec::new(),
+        possible_reads: Vec::new(),
+        possible_writes: Vec::new(),
+        possible_allocates: Vec::new(),
         allocates_heap: true,
         allocates_arenas: Vec::new(),
     };
@@ -623,6 +652,24 @@ impl EffectSet {
         for path in other.allocates {
             self.add_allocation(path);
         }
+        for path in other.possible_reads {
+            self.add_read(EffectPath {
+                path,
+                certain: false,
+            });
+        }
+        for path in other.possible_writes {
+            self.add_write(EffectPath {
+                path,
+                certain: false,
+            });
+        }
+        for path in other.possible_allocates {
+            self.add_allocation(EffectPath {
+                path,
+                certain: false,
+            });
+        }
         self.allocates_heap |= other.allocates_heap;
         for region in other.allocates_arenas {
             self.add_arena_allocation(region);
@@ -630,18 +677,39 @@ impl EffectSet {
         self
     }
 
-    fn add_read(&mut self, path: super::model::CheckedStatePath) {
-        if !self.reads.contains(&path) {
-            self.reads.push(path);
-            self.reads.sort_unstable();
+    fn add_read(&mut self, path: impl Into<EffectPath>) {
+        Self::add_path(&mut self.reads, &mut self.possible_reads, path.into());
+    }
+
+    fn add_write(&mut self, path: impl Into<EffectPath>) {
+        Self::add_path(&mut self.writes, &mut self.possible_writes, path.into());
+    }
+
+    fn add_path(
+        certain: &mut Vec<super::model::CheckedStatePath>,
+        possible: &mut Vec<super::model::CheckedStatePath>,
+        contribution: EffectPath,
+    ) {
+        let EffectPath {
+            path,
+            certain: established,
+        } = contribution;
+        if established {
+            possible.retain(|candidate| candidate != &path);
+            if !certain.contains(&path) {
+                certain.push(path);
+                certain.sort_unstable();
+            }
+        } else if !certain.contains(&path) && !possible.contains(&path) {
+            possible.push(path);
+            possible.sort_unstable();
         }
     }
 
-    fn add_write(&mut self, path: super::model::CheckedStatePath) {
-        if !self.writes.contains(&path) {
-            self.writes.push(path);
-            self.writes.sort_unstable();
-        }
+    fn is_exact(&self) -> bool {
+        self.possible_reads.is_empty()
+            && self.possible_writes.is_empty()
+            && self.possible_allocates.is_empty()
     }
 
     /// The row a writer declares. The ambient heap [STOR-1] has no
@@ -654,11 +722,12 @@ impl EffectSet {
         }
     }
 
-    fn add_allocation(&mut self, path: super::model::CheckedStatePath) {
-        if !self.allocates.contains(&path) {
-            self.allocates.push(path);
-            self.allocates.sort_unstable();
-        }
+    fn add_allocation(&mut self, path: impl Into<EffectPath>) {
+        Self::add_path(
+            &mut self.allocates,
+            &mut self.possible_allocates,
+            path.into(),
+        );
     }
 
     fn add_arena_allocation(&mut self, region: DeclarationId) {
@@ -2100,6 +2169,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             release = release.union(site.effects.clone());
         }
         let exhibited = syntactic.clone().union(release.clone());
+        if !self.deriving_result_state_origin.get() && !exhibited.is_exact() {
+            return self.unsupported(
+                UnsupportedSemanticFeature::OwnerStateRouting,
+                signature.effects_node,
+            );
+        }
         if !self.deriving_result_state_origin.get()
             && exhibited.written_row() != signature.declared_effects.written_row()
         {

@@ -399,6 +399,7 @@ impl CheckedStateOrigins {
     }
     /// A declared effect on the complete actual value needs all of its
     /// sources, but does not select one stored component or release action.
+    #[cfg(test)]
     pub(crate) fn lacks_whole_origins(&self) -> bool {
         self.unknown
             || self
