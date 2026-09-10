@@ -11,14 +11,16 @@
 - Normalize coincident projected routes and treat reinstalling exactly the
   selected current subvalue as identity. Scalar-only recursive changes retain
   their existing owner image.
-- Keep unrepresented dynamic updates, owning run-boundary transfers and selectors
-  revisiting recursive types explicitly unknown. This finite path representation
-  supplies no general recursive-content image, runtime metadata or loan authority.
+- Keep finite transfers with unresolved placement distinct from wholly unknown
+  sources through [[source-bounds]]. Selectors revisiting recursive types remain
+  unknown. This finite path representation supplies no general recursive-content
+  image, runtime metadata or loan authority.
 
 ## Facts
 
 - 2026-09-09 (4bcb9961) pitfall: Expanding an unchanged recursive subvalue into ancestor and child routes grows the image despite no owner changing. Exact self-writeback and canonical projection preserve the existing recursive scalar-fold controls. (code)
 - 2026-09-09 (4bcb9961) pitfall: Typed projections require matching producer and consumer selectors. Cell destructuring through a product-field selector discards referent origins; retaining old logical indices across front insertion can discard the shifted owner's origin. The latter remains a capability gap until its transfer is represented. (code)
+- 2026-09-09 (e298ca67) pitfall: A loop's ownership permissions can agree while its current owner comes from different inputs on later iterations. Checking only the entry image misses those reads; stable entry/backedge origin headers and counted exhaustion expose the second supplier without relaxing liveness or loan equality. (code)
 
 ## Moves
 
