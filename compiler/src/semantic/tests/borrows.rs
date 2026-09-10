@@ -649,7 +649,9 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
 
-    assert_rule(
+    // v0.55 removes only the region-block length condition. Keep the
+    // previous rejection source unchanged as the direct acceptance witness.
+    with_semantics(
         br#"fn take(out: &uniq buffer<u8>) -> result: own unit pure {
   return unit;
 }
@@ -666,9 +668,11 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Own6,
-        SemanticIssueKind::InvalidChildReborrow {
-            mechanical_fix: OWN6_STATEMENT_SCOPE,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "sequential children resume their parent: {outcome:?}"
+            );
         },
     );
 
@@ -1408,7 +1412,6 @@ fn extension_writes_through_result_holders_kill_source_facts() {
 ///
 /// Spelled out here rather than imported, like the [FN-1] fix above, so a
 /// change to the text a writer reads has to be made twice on purpose.
-const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_handle::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f HandleFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
 
 const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
      value or unit, or in the one argument position a borrow-returning call takes its result \
@@ -1564,6 +1567,373 @@ fn declaration_provenance_makes_the_binding_side_ambiguity_unreachable() {
         SemanticRule::Fn1,
         SemanticIssueKind::AmbiguousResultProvenance {
             mechanical_fix: AMBIGUOUS_PROVENANCE_FIX,
+        },
+    );
+}
+
+#[test]
+fn call_arguments_suspend_the_whole_unique_parent() {
+    // same call parent disjoint
+    assert_rule_kind(
+        br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn assign(value: &uniq u64, prior: own u64) -> result: own u64 writes(value) {
+  set deref(value) = prior;
+  return prior;
+}
+
+fn bad(pair: &uniq Pair) -> result: own u64 reads(pair.right), writes(pair.left) {
+  region {
+    return assign(value: &uniq deref(pair).left, prior: deref(pair).right);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own5,
+        |_| true,
+    );
+    // parent shared child
+    assert_rule_kind(
+        br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn use_pair(part: &u64, value: own u64) -> result: own unit pure {
+  return unit;
+}
+
+fn bad(pair: &uniq Pair) -> result: own unit reads(pair.right) {
+  region {
+    use_pair(part: &deref(pair).left, value: deref(pair).right);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own5,
+        |_| true,
+    );
+    // parent transfer
+    assert_rule_kind(
+        br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn use_pair(part: &u64, whole: &uniq Pair) -> result: own unit pure {
+  return unit;
+}
+
+fn bad(pair: &uniq Pair) -> result: own unit pure {
+  region {
+    use_pair(part: &deref(pair).left, whole: move pair);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own5,
+        |_| true,
+    );
+    // same call argument
+    assert_rule_kind(
+        br#"fn assign(value: &uniq u64, prior: own u64) -> result: own u64 writes(value) {
+  set deref(value) = prior;
+  return prior;
+}
+
+fn bad(value: &uniq u64) -> result: own u64 reads(value), writes(value) {
+  region {
+    let marker = 0_u64;
+    return assign(value: &uniq deref(value), prior: deref(value));
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own5,
+        |_| true,
+    );
+}
+
+#[test]
+fn long_child_regions_keep_surviving_loans() {
+    // same statement return
+    assert_rule_kind(
+        br#"fn change(value: &uniq u64) -> result: own u64 writes(value) {
+  set deref(value) = 9_u64;
+  return 7_u64;
+}
+
+fn bad(value: &uniq u64) -> (first: own u64, second: own u64) reads(value), writes(value) {
+  region {
+    let marker = 0_u64;
+    return change(value: &uniq deref(value)), deref(value);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own5,
+        |_| true,
+    );
+    // borrow result survives
+    assert_rule_kind(
+        br#"fn identity['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {
+  return move value;
+}
+
+fn bad(value: &uniq u64) -> result: own u64 reads(value) {
+  region {
+    let returned = identity(value: &uniq deref(value));
+    return deref(value);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own5,
+        |_| true,
+    );
+    // view survives
+    assert_rule_kind(
+        br#"fn pause(view: &uniq MutSlice<u8>) -> result: own unit pure {
+  return unit;
+}
+
+fn bad(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) contract {
+  requires len_of(deref(view)) == 1_u64;
+} {
+  region {
+    pause(view: &uniq deref(view));
+    let shared = slice_of(&deref(view));
+    set deref(view)[0_u64] = 9_u8;
+    return shared[0_u64];
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own5,
+        |_| true,
+    );
+}
+
+#[test]
+fn child_regions_keep_formation_bounds() {
+    // local region required
+    assert_rule_kind(
+        br#"fn observe(value: &u64) -> result: own unit pure {
+  return unit;
+}
+
+fn bad['r](value: &uniq 'r u64, other: &'r u64) -> result: own unit pure {
+  observe(value: &'r deref(value));
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own6,
+        |_| true,
+    );
+    // child loop outer region
+    assert_rule_kind(
+        br#"fn observe(value: &u64) -> result: own unit pure {
+  return unit;
+}
+
+fn bad(value: &uniq u64) -> result: own unit pure {
+  region 'outer {
+    loop @once {
+      observe(value: &'outer deref(value));
+      break @once;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own11,
+        |_| true,
+    );
+}
+
+#[test]
+fn statement_children_resume_without_last_use_inference() {
+    // loop parent resumes
+    with_semantics(
+        br#"fn change(value: &uniq u64) -> result: own u64 writes(value) {
+  set deref(value) = 9_u64;
+  return 7_u64;
+}
+
+fn repeat(value: &uniq u64) -> result: own u64 reads(value), writes(value) {
+  let index = 0_u64;
+  loop @again {
+    if index == 2_u64 {
+      break @again;
+    }
+    let old = change(value: &uniq deref(value));
+    let current = deref(value);
+    set index = index +wrap 1_u64;
+  }
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "loop_parent_resumes: {outcome:?}"
+            );
+        },
+    );
+    // siblings disjoint
+    with_semantics(br#"fn change(value: &uniq u64) -> result: own u64 writes(value) {
+  set deref(value) = 9_u64;
+  return 7_u64;
+}
+
+struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn apply(pair: &uniq Pair) -> result: own unit writes(pair.left, pair.right) {
+  let left = 0_u64;
+  let right = 0_u64;
+  region {
+    let marker = 0_u64;
+    set (left, right) = change(value: &uniq deref(pair).left), change(value: &uniq deref(pair).right);
+    set deref(pair).left = 11_u64;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#, |outcome| {
+        assert!(matches!(outcome, SemanticOutcome::Complete(_)), "siblings_disjoint: {outcome:?}");
+    });
+    // view inner region ends
+    with_semantics(
+        br#"fn pause(view: &uniq MutSlice<u8>) -> result: own unit pure {
+  return unit;
+}
+
+fn good(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) contract {
+  requires len_of(deref(view)) == 1_u64;
+} {
+  region {
+    pause(view: &uniq deref(view));
+    let previous = 0_u8;
+    region {
+      let shared = slice_of(&deref(view));
+      set previous = shared[0_u64];
+    }
+    set deref(view)[0_u64] = 9_u8;
+    return previous;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "view_inner_region_ends: {outcome:?}"
+            );
+        },
+    );
+    // earlier read ok
+    with_semantics(
+        br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn use_pair(value: own u64, part: &uniq u64) -> result: own unit pure {
+  return unit;
+}
+
+fn good(pair: &uniq Pair) -> result: own unit reads(pair.right) {
+  region {
+    use_pair(value: deref(pair).right, part: &uniq deref(pair).left);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "earlier_read_ok: {outcome:?}"
+            );
+        },
+    );
+    // shared parent ok
+    with_semantics(
+        br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn use_pair(part: &u64, value: own u64) -> result: own unit pure {
+  return unit;
+}
+
+fn good(pair: &Pair) -> result: own unit reads(pair.right) {
+  region {
+    use_pair(part: &deref(pair).left, value: deref(pair).right);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "shared_parent_ok: {outcome:?}"
+            );
         },
     );
 }

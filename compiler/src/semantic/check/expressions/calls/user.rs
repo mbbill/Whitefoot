@@ -219,26 +219,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 signature.result_mode == CheckedMode::Own,
                 result_candidate == Some(ordinal),
             )?;
-            for access in &argument.accesses {
-                for temporary in &call_scoped_borrows {
-                    let borrow = &temporary.borrow;
-                    if places_overlap(&access.place, &borrow.place)
-                        && match access.kind {
-                            AccessKind::Read => borrow.kind == BorrowKind::Unique,
-                            AccessKind::Write
-                            | AccessKind::Move
-                            | AccessKind::SharedBorrow
-                            | AccessKind::UniqueBorrow => true,
-                        }
-                    {
-                        return self.issue_node(
-                            SemanticRule::Own12,
-                            atom,
-                            SemanticIssueKind::BorrowConflict,
-                        );
-                    }
-                }
-            }
+            self.check_call_argument_loans(
+                bindings,
+                &argument,
+                explicit_borrow,
+                &call_scoped_borrows,
+                atom,
+            )?;
             let expectation = self.substitute_mode(parameter.mode, signature, &region_bindings)?;
             let type_regions =
                 self.match_type_regions(&parameter.region_shape, argument.expression.ty())?;

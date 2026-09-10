@@ -1,0 +1,19 @@
+struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn assign(value: &uniq u64, prior: own u64) -> result: own u64 writes(value) {
+  set deref(value) = prior;
+  return prior;
+}
+
+fn bad(pair: &uniq Pair) -> result: own u64 reads(pair.right), writes(pair.left) {
+  region {
+    return assign(value: &uniq deref(pair).left, prior: deref(pair).right);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

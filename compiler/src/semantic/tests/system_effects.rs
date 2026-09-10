@@ -69,14 +69,22 @@ command fn main() -> status: own ExitStatus pure {
                 }
             );
         });
-        // Keep the original two-statement child region as a rejection case:
-        // its second statement extends the child region past the call.
-        let oversized_region = source.replace(
+        // v0.55 permits the original direct form: only the temporary loan
+        // ends at the call statement; the region and displaced owner remain.
+        let direct_region = source.replace(
             "let old = observe_previous(target: &uniq deref(holder), incoming: move incoming);",
             "let previous = exchange(target: &uniq deref(holder), incoming: move incoming);\n      let old = deref(previous);",
         );
-        assert_rule_kind(oversized_region.as_bytes(), SemanticRule::Own6, |kind| {
-            matches!(kind, SemanticIssueKind::InvalidChildReborrow { .. })
+        with_semantics(direct_region.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "the direct displaced-owner read must check: {outcome:?}"
+            );
+        });
+        let omitted_direct = direct_region.replace("reads(owner, incoming)", "reads(owner)");
+        assert_rule_kind(omitted_direct.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                if missing.iter().any(|effect| effect == "reads(incoming)"))
         });
         let omitted = source.replace("reads(owner, incoming)", "reads(owner)");
         assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {

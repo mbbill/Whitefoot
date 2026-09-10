@@ -673,9 +673,8 @@ shorten the brand. Complete parameter types are checked after the final
 substitution, so a direct view requires the exact resulting view type rather
 than implicit lifetime conversion. VIEW-2's shared child through a borrowed
 `Slice` or `MutSlice` is supported. A separate `&array` probe reaches
-`Unsupported(RegionsAndBorrows)` before the ordinary OWN-6 reborrow judgment:
-its multi-statement child region is not admitted by the view-holder exception.
-The brand repair does not change that boundary. Empty variant
+`Unsupported(RegionsAndBorrows)` before the ordinary OWN-6 reborrow judgment.
+The brand repair does not change that capability boundary. Empty variant
 construction still requires any brand its operands do not supply.
 
 Where the axis leaves the program is the lowering: a region names a store for
@@ -688,12 +687,16 @@ region is also invariant at a call now: the first parameter position that names
 a formal fixes it, so two runs of two extents no longer satisfy one `'s` by
 taking the least region.
 
-Two source-shape bounds the pool met are worth naming. A loop that allocates
-from a `&uniq` store parameter writes the acquiring row as the direct scrutinee
-of a `match`: [OWN-6] ends the header-created child before its arm, while the
-child's local region remains confined to that match statement. This permits
-later arm statements to reuse the store; splitting the call into a preceding
-`let` does not let one child region span both statements. And every clause naming
+An OWN-6 child may use a local region containing several statements, including
+the implicit region of a loop body. Its unbound temporary loan ends at the
+complete statement, or at the existing non-escaping control-header boundary.
+A provider allocation can therefore be bound by `let` and inspected by a later
+`match`, with the provider usable again after that `let`. A displaced owned
+Box likewise remains available for a later read in the same region. Borrowed
+results and surviving view loans retain their independent lifetimes. The
+region change adds no last-use analysis or runtime lifetime mechanism.
+
+The pool retains a separate contract boundary: every clause naming
 a measure over a *result*'s field — `ensures head_of(rest.free) == ...` — is
 [CALL-4]'s own first DEFERRED admission, so the pool states none and its caller
 reads `room_of(rest.free)` and branches; a `requires` over a **parameter**'s

@@ -99,22 +99,8 @@ pub(super) const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-s
 /// judgments.
 const OWN10_LOCAL_STORAGE: &str = "a borrow of local storage names a region introduced inside that binding's own scope: write `region 'r { ... }` after the binding and take the borrow inside it. A caller-supplied region parameter is never admitted here, because it outlives the storage.";
 
-/// OWN-6's statement-scoped-region condition, in the terms a writer has.
-///
-/// The rule reads "a locally-introduced region whose block does not extend
-/// beyond the enclosing statement". A writer meets that as two facts at once:
-/// the region holds one statement, and anything that statement binds is gone
-/// at the closing brace — so `region 'r { let permit = reserve(...); match
-/// open(permit: move permit, ...) { ... } }`, which is the shape every
-/// recursive walker wants, is rejected and cannot be repaired by shortening
-/// the region.
-///
-/// The 0099 text named two routes and neither reached a working walker: the
-/// `replace` route cannot commit where the call consumed the target's root,
-/// which is exactly what `move permit` does, and the helper route is only the
-/// first third of the working idiom. `tests/programs/dir_walk.wf` pairs the
-/// helper with two more parts, and all three are named here.
-const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_handle::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f HandleFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
+/// OWN-6's local formation ceiling for a non-candidate argument child.
+const OWN6_LOCAL_REGION: &str = "introduce the child region locally inside the holder's region; a caller-supplied region is admitted only in a borrow-result provenance-candidate position";
 
 /// OWN-6's receiver condition: which calls admit a reborrow argument at all.
 const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
@@ -1547,21 +1533,22 @@ inside the `region` block whose region it takes",
         {
             // In the provenance-candidate position of a borrow-returning
             // call, the child's loan survives in the bound result, so the
-            // statement-scoped-region condition is replaced by the parent's
+            // local-region condition is replaced by the parent's
             // permanent suspension [OWN-6]; a caller-supplied region is
             // admitted there because the claim is carried by the result
             // holder, never by a resumed parent. Every other argument child
             // stays statement-scoped.
             if !result_candidate {
                 let region_declaration = self.region_declaration(region)?;
-                if region_declaration.role() != DeclarationRole::LocalRegion
-                    || !self.child_region_is_statement_scoped(region_declaration, node)?
-                {
+                // [OWN-6] the local region
+                // bounds formation and types; the existing statement-loan
+                // stack independently determines the temporary's endpoint.
+                if region_declaration.role() != DeclarationRole::LocalRegion {
                     return self.issue_node(
                         SemanticRule::Own6,
                         node,
                         SemanticIssueKind::InvalidChildReborrow {
-                            mechanical_fix: OWN6_STATEMENT_SCOPE,
+                            mechanical_fix: OWN6_LOCAL_REGION,
                         },
                     );
                 }
@@ -1757,37 +1744,6 @@ and name it on the returned reborrow"
                 },
             },
         )
-    }
-
-    fn child_region_is_statement_scoped(
-        &self,
-        region: &crate::DeclarationRecord,
-        child: NodeId,
-    ) -> Result<bool, CheckStop> {
-        let Some(region_node) = self.tree.node_with_path(region.origin().node()) else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        };
-        // [OWN-3] a `region_stmt` body and a loop body are both blocks a local
-        // region is introduced over, so both answer whether that block extends
-        // beyond the enclosing statement [OWN-6, OWN-11].
-        if !matches!(
-            self.tree.production(region_node)?,
-            Production::RegionStmt | Production::LoopStmt | Production::ForStmt
-        ) {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        }
-        let region_statements = self.tree.children_with(region_node, Production::Stmt)?;
-        let [region_statement] = region_statements.as_slice() else {
-            return Ok(false);
-        };
-        let mut cursor = Some(child);
-        while let Some(node) = cursor {
-            if self.tree.production(node)? == Production::Stmt {
-                return Ok(node == *region_statement);
-            }
-            cursor = self.tree.parent(node)?;
-        }
-        Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
     }
 
     pub(in crate::semantic::check) fn borrow_region_is_inside_current_loops(
@@ -2058,6 +2014,70 @@ and name it on the returned reborrow"
             self.declaration_scope(declaration)?,
             self.region_declaration(region)?.scope(),
         )
+    }
+
+    /// [OWN-5, OWN-6, OWN-12] Earlier arguments already suspend their
+    /// unique parents while later argument atoms are evaluated. Keep these
+    /// local until call effects have been checked, then publish them into the
+    /// enclosing statement's loan set. A sibling's formation alone is exempt;
+    /// reads used to compute that sibling's place are ordinary accesses.
+    pub(super) fn check_call_argument_loans(
+        &self,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        argument: &TypedExpression,
+        explicit_borrow: bool,
+        loans: &[TemporaryLoan],
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        // At this same argument atom, parent suspension precedes OWN-12's
+        // pairwise call overlap judgment [DIAG-1]. A bare holder transfer has
+        // no PlaceAccess entries, so it must be checked explicitly.
+        for loan in loans {
+            let Some(parent) = loan
+                .parent
+                .and_then(|holder| bindings.get(&holder))
+                .and_then(|local| local.borrow.as_ref())
+                .filter(|borrow| borrow.kind == BorrowKind::Unique)
+            else {
+                continue;
+            };
+            let transfers_parent = !explicit_borrow && argument.holder == loan.parent;
+            let accesses_parent = argument.accesses.iter().any(|access| {
+                let sibling = explicit_borrow
+                    && matches!(
+                        access.kind,
+                        AccessKind::SharedBorrow | AccessKind::UniqueBorrow
+                    );
+                !sibling && places_overlap(&access.place, &parent.place)
+            });
+            if transfers_parent || accesses_parent {
+                return self.issue_node(
+                    SemanticRule::Own5,
+                    node,
+                    SemanticIssueKind::BorrowConflict,
+                );
+            }
+        }
+        for access in &argument.accesses {
+            for loan in loans {
+                if places_overlap(&access.place, &loan.borrow.place)
+                    && match access.kind {
+                        AccessKind::Read => loan.borrow.kind == BorrowKind::Unique,
+                        AccessKind::Write
+                        | AccessKind::Move
+                        | AccessKind::SharedBorrow
+                        | AccessKind::UniqueBorrow => true,
+                    }
+                {
+                    return self.issue_node(
+                        SemanticRule::Own12,
+                        node,
+                        SemanticIssueKind::BorrowConflict,
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn check_temporary_loan_access(

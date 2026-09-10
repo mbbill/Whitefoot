@@ -388,7 +388,11 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // entry-dead binding effect exception change compiler semantic metadata only.
 // No system operation ID, resource representation, target ABI, entry form,
 // release contract, or suspension milestone changes; retain the same table.
-const REVIEWED_FOR: &str = "v0.54";
+// v0.55 qualification review: local child-region blocks may extend past
+// their receiving statement; temporary endpoints and surviving loans remain
+// source checks. No target row, representation, ABI, completion milestone,
+// release action, or execution-overlap permission changes.
+const REVIEWED_FOR: &str = "v0.55";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

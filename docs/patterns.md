@@ -121,6 +121,12 @@ match header or exact `own Bool` condition, it ends after the header completes
 and before the selected arm or branch begins. Bound holders, surviving views,
 borrowed-result candidates, and borrowed matches keep their own longer loans, so
 the token never silently forks or escapes.
+The child's local region need not end with its receiving statement. For an
+owned result, this permits `let previous = exchange(target: &uniq deref(holder),
+incoming: move incoming);` followed by `let old = deref(previous);` in the same
+region. The first statement ends the argument loan; the region keeps the owned
+result in scope. The parent can be used again on the next statement unless a
+borrowed result or another surviving loan still excludes that use.
 Current value: borrow-holder singleton provenance keeps the checker simple; a
 suspended parent yields no usable alias under the checked relation.
 Direct slices are the separate v0.17 case: they carry a finite static origin
@@ -1083,9 +1089,7 @@ now costs nothing to write.
 for @concat (at in 0_u64..count) {
   match bs_byte(s: &deref(source), index: at) {
     Some(value: byte) => {
-      region {
-        bs_push(s: &uniq deref(destination), value: byte);
-      }
+      bs_push(s: &uniq deref(destination), value: byte);
     }
     None() => {
     }
@@ -1093,28 +1097,24 @@ for @concat (at in 0_u64..count) {
 }
 ```
 
-The inner block stays: it is not the loop body's only statement, it is the
-statement scope [OWN-6] needs for the `&uniq deref(destination)` child
-reborrow, and only the outer wrapper the body no longer needs is gone.
+The loop body's region suffices for both child reborrows. The `bs_byte` header
+ends its temporary loan before the arm; `bs_push` ends its temporary loan at
+its own statement. Neither requires an extra one-statement region.
 
 Because that region exists, a `region` block that is the loop body's only
 statement is now a hard error citing [FORM-8]: its block is the body, so it is a
 second spelling of one region. Delete it and keep its statements as the body.
 
 A block the body writes another statement beside is a different region — it ends
-strictly earlier than the iteration — and stays legal, and there are two reasons
-to write one. The first is [OWN-6]: a statement-scoped child reborrow needs a
-region whose block does not extend beyond the enclosing statement, which a
-one-statement block inside a longer body gives and the body's own region does
-not. The second is a borrow that must be dead before a later statement of the
-same iteration writes the place it borrowed.
+strictly earlier than the iteration — and stays legal. It remains useful for a
+bound borrow that must end before a later statement of the same iteration
+writes the borrowed place [OWN-4]. An unbound argument child already has its
+statement endpoint [OWN-6] and needs no such block.
 
 ```whitefoot
 for @append (i in 0_u64..count) {
   let byte = deref(src)[i];
-  region {
-    let pushed = propagate vec_push(v: &uniq deref(dst), x: byte);
-  }
+  let pushed = propagate vec_push(v: &uniq deref(dst), x: byte);
 }
 ```
 

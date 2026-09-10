@@ -22,7 +22,7 @@ use super::super::super::super::model::{
     LoanStrength,
 };
 use super::super::super::borrows::{
-    AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, TemporaryLoan, places_overlap,
+    AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, TemporaryLoan,
 };
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, TypedExpression,
@@ -94,26 +94,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // admitted exactly as for an own-result user callee.
             let argument =
                 self.check_call_argument_atom(function, atom, bindings, loop_depth, true, false)?;
-            for access in &argument.accesses {
-                for temporary in &call_scoped_borrows {
-                    let borrow = &temporary.borrow;
-                    if places_overlap(&access.place, &borrow.place)
-                        && match access.kind {
-                            AccessKind::Read => borrow.kind == BorrowKind::Unique,
-                            AccessKind::Write
-                            | AccessKind::Move
-                            | AccessKind::SharedBorrow
-                            | AccessKind::UniqueBorrow => true,
-                        }
-                    {
-                        return self.issue_node(
-                            SemanticRule::Own12,
-                            atom,
-                            SemanticIssueKind::BorrowConflict,
-                        );
-                    }
-                }
-            }
+            self.check_call_argument_loans(
+                bindings,
+                &argument,
+                explicit_borrow,
+                &call_scoped_borrows,
+                atom,
+            )?;
             let expectation = match parameter.mode {
                 SystemParameterMode::Own => ModeExpectation::Own,
                 SystemParameterMode::Borrow(region) => ModeExpectation::Borrow {

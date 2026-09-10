@@ -797,23 +797,10 @@ The proposed `deref(deref(owner)).next` return is not a legal OWN-14 form:
 the rule admits `deref(h)` followed by suffixes, and the extra dereference is
 not a suffix. It therefore tests the OWN-14 rejection, not returned-location
 routing. A separate terminating identity helper over a recursive type tests
-the conservative declaration predicate. The new Box witness's initial
-two-statement child region likewise violated OWN-6; its valid helper form
-retains the displaced-owner read, and the original structure remains an
-OWN-6 rejection control. Neither observation selects a language amendment.
-
-The two-statement witness also reopens a separate design question: must a
-non-escaping argument child's written region be confined to its receiving
-statement, or is a statement-end loan endpoint sufficient under a larger
-region ceiling? The original [bounded-reborrow study](../reborrow-investigation/DOSSIER.md#4-option-b--relax-to-bounded-non-escaping-statement-scoped-reborrows)
-selected syntactic suspension/resumption to keep the checker small. Its
-single-usable-mutable-path argument requires the parent to remain suspended
-while a conflicting child survives; it does not alone require the surrounding
-block to contain one statement. A candidate must admit the direct displaced-Box
-read without a helper while still excluding surviving result/view loans,
-overlapping siblings, parent access during argument evaluation, and premature
-resumption across suspension. No performance benefit or amended rule is
-established by the current test refactoring.
+the conservative declaration predicate. At `5aaef50a`, the new Box witness's
+two-statement child region violated OWN-6; its helper retained the displaced
+owner read. The region restriction was then reconsidered separately under
+[the experiment below](#temporary-child-regions-and-statement-endpoints).
 
 The related LIV-2 amendment distinguishes a complete binding already dead at
 statement entry from a same-statement read-out. Reinitializing the former
@@ -846,9 +833,9 @@ passed at `d53ffe95` but stopped with `OwnerStateRouting` in the published
 `f586e04c` and `6f29022c` prototypes.
 The first two need a displaced value to cross a helper after indexed or enum
 payload replacement; the third needs precise writeback through a returned
-borrow. The local whole-location repair's canonical unit run passes the third
-case with its original source and executable assertions; the published
-`6f29022c` CI still fails it. The first two remain blocked locally as well.
+borrow. The published `5aaef50a` canonical and both-host CI unit runs pass the third
+case with its original source and executable assertions. The first two remain
+blocked, together with the boxed-run read-out and wide-owned-result cases.
 All original executable assertions remain intact. The prototype is
 therefore not ready to replace the existing implementation, and focused
 whole-Box success does not discharge these regressions.
@@ -1075,3 +1062,97 @@ They are not silently counted as solved or prerequisites to fixing the observed
 compiler defects. Reopen the selected route when one supplies a concrete
 contract/cost counterexample; do not infer either universal coverage or universal
 failure from the bounded map alone.
+
+### Temporary child regions and statement endpoints
+
+The question is whether a non-candidate argument child needs its local region
+block confined to the receiving statement. The prior
+[bounded-reborrow study](../reborrow-investigation/DOSSIER.md#4-option-b--relax-to-bounded-non-escaping-statement-scoped-reborrows)
+chose that syntactic restriction to keep suspension simple. OWN-4 and the
+later completed-header rule already separate a temporary loan's endpoint from
+its region's formation and type-validity ceiling.
+
+The criterion recorded before the experiment was to admit the direct displaced
+Box read without a helper while retaining surviving result/view loans,
+overlapping-sibling rejection, parent suspension throughout argument and
+statement evaluation, and the existing parallel retirement obligations.
+Choosing an endpoint at each individual call return would fail the same-
+statement controls. General last-use inference was not needed for this question.
+
+The selected v0.55 change removes only the one-statement region-block condition.
+The child still needs a local region, the parent must outlive that region,
+and OWN-11 still excludes a region outside an enclosing loop. Its temporary
+ends at the complete statement or the existing non-escaping header boundary.
+A borrow-result candidate and a surviving view retain their own loans. Storage
+brands in returned Box/Vector values are type identities, not loans keeping a
+provider borrowed. No borrowed storage becomes movable or reusable merely
+because an internal task flag says DONE; PAR-1/PAR-3 permissions and join,
+result access, and retirement requirements remain unchanged.
+
+The discriminating executable is
+[the longer-region case](../../../tests/conformance/cases/own6-pos-statement-children-use-a-longer-local-region.wf).
+It exchanges a Box through a child, reads both the displaced and installed
+values on later statements, allocates twice through one retained provider, and
+reuses a parent after child calls in a loop body. The native test executes it
+in all three lowering modes, both normally and with helper calls retained.
+These executions pass; the original v0.54 compiler rejects the direct Box
+form at OWN-6. This is evidence of expressibility and preserved behavior on
+these cases, not a throughput measurement or a proof of complete soundness.
+
+Implementation needs no new lifetime analysis: the existing statement-loan
+stack already retires each statement's entries. Removing the block-containment
+check removes a syntax-tree scan. The experiment also exposed a separate old
+implementation defect: later arguments checked only overlap with a previous
+child, overlooking suspension of its complete unique parent. A shared helper
+now checks parent suspension before the existing call-overlap judgment in all
+three call families. It covers a direct parent read and a bare holder transfer
+whose expression has no ordinary access entries; explicit sibling formation
+remains allowed. The
+[parent-argument negative](../../../tests/conformance/cases/own5-neg-later-argument-uses-suspended-parent.wf)
+rejects OWN-5. Shared parents, earlier reads and disjoint sibling children remain
+positive controls; overlapping ordinary own-root actuals retain OWN-12.
+
+The view controls require care. A live shared child view must still forbid a
+parent write. A shared child's *last use* should instead restore permission
+under VIEW-2. The probe below is legal, but the current compiler rejects its
+write at OWN-5 even without a preceding ordinary child call:
+
+```whitefoot
+fn reuse(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) contract {
+  requires len_of(deref(view)) == 1_u64;
+} {
+  region {
+    let shared = slice_of(&deref(view));
+    let previous = shared[0_u64];
+    set deref(view)[0_u64] = 9_u8;
+    return previous;
+  }
+}
+```
+
+This is an existing implementation gap, not another required rejection and
+not a reason to retain the old region restriction. The formed loan has no
+registered descriptor when its origin is a formal slice; local descriptor
+holders also need association with the formed child rather than merely its
+ultimate storage origin. A repair must preserve last-use behavior through
+copies and keep a still-used copy conflicting. The experiment does not encode
+the incorrect rejection as a regression expectation. The genuine surviving-
+view negative and the inner-region-ending positive are retained. General view
+association remains part of the unfinished container-foundation work.
+
+Selection grounds are conditional deduction (parent suspension and independent
+surviving loans preserve the one-usable-mutable-path invariant), empirical
+(the executable and rejection controls), and provisional (the retained lexical
+ceiling and statement endpoints, without a global optimality claim). They serve
+ordinary systems code without a new runtime check, pointer escape or callee-body
+inspection. Reopen if a legal result form can carry an untracked loan past the
+endpoint, or a staged access can outlive its permission/retirement boundary.
+
+The affected normative set is OWN-6 and FORM-8's explanation of narrower loop
+regions: rules +0/-0, grammar productions +0/-0, tokens/spellings +0/-0, no new
+exception. OWN-4/5/10/11, FN-1, STOR-5, VIEW-2/6 and PAR-1/3 were checked as
+premises and retain their judgments. The rule index, writer forms, capability
+map and ownership decision memory follow this change. Qualification rows and
+runtime layouts are unchanged. The earlier owning-array/contained-state gate
+failures remain separate blockers; this result does not complete the broader
+container goal.

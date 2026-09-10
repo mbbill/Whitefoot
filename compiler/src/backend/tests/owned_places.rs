@@ -1666,3 +1666,19 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
         }
     }
 }
+
+#[test]
+fn statement_children_keep_displaced_owners_and_provider_results_alive() {
+    let source = include_bytes!(
+        "../../../../tests/conformance/cases/own6-pos-statement-children-use-a-longer-local-region.wf"
+    );
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        assert_success(&module);
+        assert_success(&retain_calls(&module));
+    }
+}

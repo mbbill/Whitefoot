@@ -29,9 +29,7 @@ use super::super::super::super::model::{
     CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedKernelInstance,
     CheckedMeasure, CheckedType, CheckedValue, IntegerType, MeasuredKind,
 };
-use super::super::super::borrows::{
-    AccessKind, BorrowInfo, BorrowKind, TemporaryLoan, places_overlap,
-};
+use super::super::super::borrows::{AccessKind, BorrowInfo, BorrowKind, TemporaryLoan};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, TypedExpression,
 };
@@ -129,26 +127,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .is_some();
             let argument =
                 self.check_call_argument_atom(function, atom, bindings, loop_depth, true, false)?;
-            for access in &argument.accesses {
-                for temporary in &call_scoped_borrows {
-                    let borrow = &temporary.borrow;
-                    if places_overlap(&access.place, &borrow.place)
-                        && match access.kind {
-                            AccessKind::Read => borrow.kind == BorrowKind::Unique,
-                            AccessKind::Write
-                            | AccessKind::Move
-                            | AccessKind::SharedBorrow
-                            | AccessKind::UniqueBorrow => true,
-                        }
-                    {
-                        return self.issue_node(
-                            SemanticRule::Own12,
-                            atom,
-                            SemanticIssueKind::BorrowConflict,
-                        );
-                    }
-                }
-            }
+            self.check_call_argument_loans(
+                bindings,
+                &argument,
+                explicit_borrow,
+                &call_scoped_borrows,
+                atom,
+            )?;
             // A parameter whose shape supplies the row's own parameters reads
             // them off the actual; every other position is checked against
             // the shape the instance already fixed [BLK-0].
