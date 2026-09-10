@@ -800,6 +800,59 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
 }
 
 #[test]
+fn loop_carried_box_calls_wait_for_their_origin_summary() {
+    for body in [
+        "for (index in 0_u64..2_u64) {\n    set value = relay(value: move value);\n  }",
+        "let index = 0_u64;\n  loop {\n    let done = index == 2_u64;\n    if done {\n      break;\n    }\n    set value = relay(value: move value);\n    set index = index +wrap 1_u64;\n  }",
+    ] {
+        let source = r#"fn relay(value: own box<u64>) -> result: own box<u64> pure {
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let value = box_new(17_u64);
+  BODY
+  let observed = deref(value);
+  let wrong = observed != 17_u64;
+  if wrong {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#
+        .replace("BODY", body);
+        assert_complete(source.as_bytes());
+    }
+}
+
+#[test]
+fn changing_loop_origins_do_not_hide_a_later_iterations_read() {
+    let source =
+        br#"fn cycle(first: own box<u64>, second: own box<u64>) -> result: own unit reads(first) {
+  for (iteration in 0_u64..2_u64) {
+    let observed = deref(first);
+    set (first, second) = move second, move first;
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        // Iteration two reads the original second owner. The preliminary pass
+        // may defer origin comparison, but the final pass cannot accept this
+        // row merely because iteration one reads only the original first.
+        assert!(
+            matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
+                if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnershipJoin),
+            "a changing header image still needs the missing loop-origin capability: {outcome:?}"
+        );
+    });
+}
+
+#[test]
 fn a_loop_break_join_retains_the_two_origins_an_update_can_select() {
     let source = br#"fn loop_choice(selected: own Result<ReadFile, IoError>, factory: own HandleFactory, root: own DirectoryRead, path: &RelativePath, refresh: own Bool) -> result: own Result<ReadFile, IoError> reads(selected, factory, root, path), writes(selected, factory, root) {
   loop @once {

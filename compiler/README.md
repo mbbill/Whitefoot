@@ -451,6 +451,13 @@ heap full-array replacement, boxed enum-child replacement, and replacement
 through a returned resource borrow. They remain enabled and must pass before
 this prototype is considered complete. The investigation records why an empty
 current origin list alone cannot safely recover an unknown summary.
+Loop-origin comparison is deferred only in the preliminary pass that builds
+callable summaries; the final pass retains its full backedge comparison.
+Indexed mutation targets no longer overwrite the containing owner's image
+merely because their effect access names that storage root. Kernel run-take
+result lists still lack separate origin images for the remainder and removed
+element, which blocks existing byte-string and fixed-run programs; general
+changing-origin loop headers remain a separate capability gap.
 An owning Box's run or extent referent supports measures and indexed access
 through the same typed place path. Replacing its owner invalidates referent
 facts. Box content also supports copy assignment, affine replacement and

@@ -29,6 +29,29 @@ pub(in crate::semantic::check) struct BreakState {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn loop_binding_agrees(
+        &self,
+        entry: Option<&LocalBinding>,
+        backedge: Option<&LocalBinding>,
+    ) -> bool {
+        if !self.deriving_result_state_origin.get() {
+            return entry == backedge;
+        }
+        // The preliminary pass builds the typed body from which callable
+        // origin summaries are derived. Its call images are not resolved yet.
+        // Only that metadata is deferred: liveness, loans and every other
+        // binding property still agree, and the final check compares it all.
+        let mut entry = entry.cloned();
+        let mut backedge = backedge.cloned();
+        if let Some(binding) = &mut entry {
+            binding.state_origins = None;
+        }
+        if let Some(binding) = &mut backedge {
+            binding.state_origins = None;
+        }
+        entry == backedge
+    }
+
     fn form_loop_invariants(
         &self,
         nodes: Vec<NodeId>,
@@ -169,9 +192,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.judge_backedge_liveness(node, &header_keys, &header_bindings, &body_bindings)?;
         if checked.can_continue
-            && header_keys
-                .iter()
-                .any(|key| body_bindings.get(key) != header_bindings.get(key))
+            && header_keys.iter().any(|key| {
+                !self.loop_binding_agrees(header_bindings.get(key), body_bindings.get(key))
+            })
         {
             return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
         }
@@ -520,9 +543,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.judge_backedge_liveness(node, &base_keys, &base_bindings, &body_bindings)?;
         if checked.can_continue
-            && base_keys
-                .iter()
-                .any(|key| body_bindings.get(key) != base_bindings.get(key))
+            && base_keys.iter().any(|key| {
+                !self.loop_binding_agrees(base_bindings.get(key), body_bindings.get(key))
+            })
         {
             return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
         }

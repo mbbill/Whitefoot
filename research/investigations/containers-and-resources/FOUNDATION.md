@@ -795,6 +795,41 @@ borrow. Their original executable assertions remain intact. The prototype is
 therefore not ready to replace the existing implementation, and focused
 whole-Box success does not discharge these regressions.
 
+The `f586e04c` CI run exposed two further implementation defects in loops. The
+preliminary body check compared unresolved call-result origin images at the
+backedge before those bodies could supply callable summaries. Deferring only
+that metadata comparison in the preliminary pass restores the existing
+[valid loop-invariant snapshot](../../../tests/snapshot/cases/contracts/contracts__adversary-r2__p06_loop_invariant_requires_valid.wf)
+and [off-by-one rejection snapshot](../../../tests/snapshot/cases/contracts/contracts__adversary-r2__p07_loop_invariant_offbyone_attempt.wf);
+all liveness, loan and other binding fields still agree, and final checking
+still compares the complete state. The ordinary
+Box relay loop checks both loop forms. A two-iteration Box swap with only the
+first input's read declared remains unadmitted: accepting its first iteration
+alone would hide the second input read on the next iteration.
+The existing FixedVector identity-helper loop also now succeeds. Its former
+`OwnershipJoin` expectation recorded the same preliminary-checking limitation,
+not a source-language rejection. The exact program remains in the capability
+test with a success assertion; the other unsupported controls remain unchanged.
+
+The same run's three recursive Buffer cleanup cases exposed a different
+mistake. A legacy indexed mutation's effect access names the containing Buffer,
+but its `CheckedSetTarget::BufferIndex` still names one element. Treating the
+access projection as a whole-owner target overwrote the Buffer's origin image
+with the element's. Both `set` and `replace` now consult the typed target before
+selecting a strong update; the existing cleanup cases execute again. This does
+not implement an indexed-content image or authorize ignoring an interior update.
+
+The remaining byte-string and fixed-run failures have a concrete additional
+cause: the generic kernel-expression fallback unions argument origins at the
+result root, although `take_back` and `take_front` deliver an ordered result
+list. Projecting ordinal zero at a commit can therefore discard the run's
+formal origin. A complete repair needs separate remainder/element images and
+their contained-state transfer; relaxing final loop equality or duplicating all
+old origins into every output is not such a repair. These are compiler defects
+under existing ordinary-object operations, not evidence for a new container API
+or an I/O-specific source rule. Neither bounded loop repair changes a language
+rule or a normative conformance verdict.
+
 One tempting recovery is to instantiate an unknown summary as formal-free
 when every actual currently has an explicitly empty origin set. That would be
 valid if those sets were sound upper bounds on all currently reachable state.

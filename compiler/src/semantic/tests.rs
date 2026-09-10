@@ -913,12 +913,11 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
         b"enum Flag {\n  A();\n  B();\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::DuplicateMatchArm,
     );
-    // [LIV-1] a liveness disagreement at a join is a source rejection now, so
-    // the capability limit this control pins is the state a join still cannot
-    // merge: the loop's entering value carries a fresh owner's attribution and
-    // its committed value carries the callee's, which no rule of this version
-    // joins.
-    assert_unsupported(
+    // This identity helper returns the same owner on every iteration. It used
+    // to stop at OwnershipJoin because preliminary checking compared unresolved
+    // call images before deriving summaries. Keep the program as a success
+    // control now that final checking uses its resolved, unchanged origin.
+    with_semantics(
         br#"fn consume(cell: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
   return move cell;
 }
@@ -931,7 +930,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        UnsupportedSemanticFeature::OwnershipJoin,
+        |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
 }
 

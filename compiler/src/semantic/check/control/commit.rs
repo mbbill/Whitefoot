@@ -614,7 +614,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .flatten()
                     .map(|image| image.projected(&[field]))
             };
-            let Some(fields) = self.state_fields_of_place(&target.mutation.place, bindings)? else {
+            let Some(fields) = self.state_fields_of_target(
+                &target.mutation.target,
+                &target.mutation.place,
+                bindings,
+            )?
+            else {
                 // Owning indirection and indexed contents need separate
                 // allocation/element identities; this slice changes neither.
                 continue;

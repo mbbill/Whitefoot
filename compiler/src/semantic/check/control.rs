@@ -794,7 +794,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let previous_whole_origins = bindings
             .get(&place.root)
             .and_then(|binding| binding.state_origins.clone());
-        let target_fields = self.state_fields_of_place(&place, bindings)?;
+        let target_fields = self.state_fields_of_target(&target, &place, bindings)?;
         let previous_origins = match (previous_whole_origins.clone(), target_fields.as_deref()) {
             (Some(origins), Some(fields)) => Some(origins.projected(fields)),
             (origins, None) => origins,

@@ -10,9 +10,9 @@ use crate::{
 
 use super::super::model::{
     CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
-    CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedStateOrigins,
-    CheckedStatePath, CheckedStatement, CheckedType, CheckedValue, ConstOperation, FloatType,
-    IntegerType, LoanStrength, evaluate_const_operation,
+    CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedSetTarget,
+    CheckedStateOrigins, CheckedStatePath, CheckedStatement, CheckedType, CheckedValue,
+    ConstOperation, FloatType, IntegerType, LoanStrength, evaluate_const_operation,
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
@@ -1129,6 +1129,25 @@ extent's region is one the caller must choose, so it is written at every positio
 
     pub(super) fn type_carries_identity(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(!self.type_state_leaf_paths(ty)?.is_empty())
+    }
+
+    /// An access may name its containing storage for effects without naming
+    /// the value being replaced. In particular, legacy indexed targets retain
+    /// a root-level access projection; it never authorizes a whole-owner update.
+    pub(super) fn state_fields_of_target(
+        &self,
+        target: &CheckedSetTarget,
+        place: &super::borrows::ResolvedPlace,
+        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
+    ) -> Result<Option<Vec<u32>>, CheckStop> {
+        match target {
+            CheckedSetTarget::ArrayIndex(_)
+            | CheckedSetTarget::BufferIndex(_)
+            | CheckedSetTarget::SliceIndex(_) => Ok(None),
+            CheckedSetTarget::Place(_) | CheckedSetTarget::Storage(_) => {
+                self.state_fields_of_place(place, bindings)
+            }
+        }
     }
 
     /// The current finite owner image has ordinary roots and static product
