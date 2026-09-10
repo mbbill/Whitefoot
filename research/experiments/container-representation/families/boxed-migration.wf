@@ -64,7 +64,7 @@ fn view_box_entry['s](entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>) -> re
   }
 }
 
-fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box<'s, u64>, replacement: own Box<'s, u64>, inserted: own Box<'s, u64>) -> code: own u8 reads(first, second, inserted), writes(store, first, second, inserted) {
+fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box<'s, u64>, replacement: own Box<'s, u64>, inserted: own Box<'s, u64>) -> code: own u8 reads(first, second, replacement, inserted), writes(store, first, second, replacement, inserted) {
   let empty0 = None<Entry<'s>>();
   let first_entry = Entry(key: 1_u64, payload: move first);
   let first_slot = Some<Entry<'s>>(value: move first_entry);

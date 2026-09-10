@@ -15,6 +15,77 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
 
 #[test]
+fn dynamic_element_queries_keep_field_effects_separate() {
+    let source = r#"struct Slot {
+  key: u64;
+  payload: box<u64>;
+}
+
+fn read_key(slot: &Slot) -> result: own u64 reads(slot.key) {
+  return deref(slot).key;
+}
+
+fn read_payload(slot: &Slot) -> result: own u64 reads(slot.payload) {
+  return deref(deref(slot).payload);
+}
+
+fn observe(values: own array<Slot, 2>, first: own box<u64>, second: own box<u64>, index: own u64) -> result: own u64 reads(values), writes(values) contract {
+  requires index < 2_u64;
+} {
+  let first_slot = Slot(key: 7_u64, payload: move first);
+  let second_slot = Slot(key: 9_u64, payload: move second);
+  let old_first = replace values[0_u64] = move first_slot;
+  let old_second = replace values[1_u64] = move second_slot;
+  OBSERVE
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for observation in [
+        "return values[index].key;",
+        "region {\n    return read_key(slot: &values[index]);\n  }",
+    ] {
+        let key = source.replace("OBSERVE", observation);
+        assert_complete(key.as_bytes());
+        let spurious = key.replace("reads(values)", "reads(values, first, second)");
+        assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+                if extra == &["reads(first)", "reads(second)"])
+        });
+    }
+    let payload = source
+        .replace(
+            "OBSERVE",
+            "region {\n    return read_payload(slot: &values[index]);\n  }",
+        )
+        .replace("reads(values)", "reads(values, first, second)");
+    assert_complete(payload.as_bytes());
+    for incomplete in ["reads(values, first)", "reads(values, second)"] {
+        let missing = payload.replace("reads(values, first, second)", incomplete);
+        assert_rule_kind(missing.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                if missing.len() == 1 && matches!(missing[0].as_str(), "reads(first)" | "reads(second)"))
+        });
+    }
+    let nested_key = source
+        .replace("array<Slot, 2>", "array<array<Slot, 2>, 2>")
+        .replace("values[0_u64]", "values[0_u64][0_u64]")
+        .replace("values[1_u64]", "values[0_u64][1_u64]")
+        .replace("OBSERVE", "return values[index][index].key;");
+    assert_complete(nested_key.as_bytes());
+    let fixed_key = source
+        .replace("array<Slot, 2>", "FixedVector<Slot, 2>")
+        .replace(
+            "requires index < 2_u64;",
+            "requires index < 2_u64;\n  requires len_of(values) == 2_u64;",
+        )
+        .replace("OBSERVE", "return values[index].key;");
+    assert_complete(fixed_key.as_bytes());
+}
+
+#[test]
 fn whole_effect_union_requires_independently_established_possible_sources() {
     let source = r#"fn read(value: &box<u64>) -> result: own u64 reads(value) {
   return deref(deref(value));

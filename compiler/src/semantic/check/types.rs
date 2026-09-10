@@ -1170,7 +1170,9 @@ extent's region is one the caller must choose, so it is written at every positio
             }
             CheckedSetTarget::SliceIndex(_) => Ok(super::super::state_origins::StateSelection {
                 path: Vec::new(),
+                query: Vec::new(),
                 exact: false,
+                complete: false,
             }),
             CheckedSetTarget::Place(_) | CheckedSetTarget::Storage(_) => {
                 self.state_selection_of_place(place, bindings)
@@ -1186,7 +1188,7 @@ extent's region is one the caller must choose, so it is written at every positio
     ) -> Result<super::super::state_origins::StateSelection, CheckStop> {
         let Some(offset) = Self::place_offset_of(offset) else {
             let mut selection = self.state_selection_of_place(base, bindings)?;
-            selection.exact = false;
+            selection.push(CheckedStateStep::AnyElement);
             return Ok(selection);
         };
         let mut place = base.clone();
@@ -1220,30 +1222,37 @@ extent's region is one the caller must choose, so it is written at every positio
                     .map(|constant| constant.ty)
             })
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let mut selection = super::super::state_origins::StateSelection {
-            path: Vec::new(),
-            exact: false,
-        };
+        let mut selection = super::super::state_origins::StateSelection::exact(Vec::new());
         for (depth, step) in place.storage_path.iter().enumerate() {
-            if let PlaceProjection::Subscript(super::super::places::PlaceOffset::Literal(index)) =
-                step
-            {
+            if let PlaceProjection::Subscript(offset) = step {
+                let selector = match offset {
+                    super::super::places::PlaceOffset::Literal(index) => {
+                        CheckedStateStep::Element(*index)
+                    }
+                    _ => CheckedStateStep::AnyElement,
+                };
                 if let CheckedType::Buffer { element } = ty {
                     ty = element.ty();
-                    selection.path.push(CheckedStateStep::Element(*index));
+                    selection.push(selector);
                     continue;
                 }
                 let element = match ty {
                     CheckedType::Array { element, .. }
                     | CheckedType::FixedVector { element, .. }
                     | CheckedType::Vector { element, .. } => element,
-                    _ => return Ok(selection),
+                    _ => {
+                        selection.exact = false;
+                        selection.complete = false;
+                        return Ok(selection);
+                    }
                 };
                 ty = self.element_type(element)?;
-                selection.path.push(CheckedStateStep::Element(*index));
+                selection.push(selector);
                 continue;
             }
             let CheckedType::Nominal(id) = ty else {
+                selection.exact = false;
+                selection.complete = false;
                 return Ok(selection);
             };
             match (step, &self.nominal(id)?.kind) {
@@ -1252,15 +1261,15 @@ extent's region is one the caller must choose, so it is written at every positio
                         .get(*field as usize)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?
                         .ty;
-                    selection.path.push(CheckedStateStep::Field(*field));
+                    selection.push(CheckedStateStep::Field(*field));
                 }
                 (PlaceProjection::Deref, CheckedNominalKind::Box { referent, .. }) => {
                     ty = *referent;
-                    selection.path.push(CheckedStateStep::Referent);
+                    selection.push(CheckedStateStep::Referent);
                 }
                 (PlaceProjection::Deref, CheckedNominalKind::Arena { content, .. }) => {
                     ty = *content;
-                    selection.path.push(CheckedStateStep::Referent);
+                    selection.push(CheckedStateStep::Referent);
                 }
                 (PlaceProjection::Field(field), CheckedNominalKind::Enum { variants }) => {
                     let Some((_, tag)) = place
@@ -1268,6 +1277,8 @@ extent's region is one the caller must choose, so it is written at every positio
                         .iter()
                         .find(|(index, _)| *index == depth)
                     else {
+                        selection.exact = false;
+                        selection.complete = false;
                         return Ok(selection);
                     };
                     let selected = variants
@@ -1276,15 +1287,18 @@ extent's region is one the caller must choose, so it is written at every positio
                         .and_then(|variant| variant.fields.get(*field as usize))
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     ty = selected.ty;
-                    selection.path.push(CheckedStateStep::VariantField {
+                    selection.push(CheckedStateStep::VariantField {
                         variant: *tag,
                         field: *field,
                     });
                 }
-                _ => return Ok(selection),
+                _ => {
+                    selection.exact = false;
+                    selection.complete = false;
+                    return Ok(selection);
+                }
             }
         }
-        selection.exact = true;
         Ok(selection)
     }
 
@@ -1551,7 +1565,10 @@ extent's region is one the caller must choose, so it is written at every positio
             if !visited.insert(ty) {
                 return Ok(false);
             }
-            if let CheckedStateStep::Element(_) = step {
+            if matches!(
+                step,
+                CheckedStateStep::Element(_) | CheckedStateStep::AnyElement
+            ) {
                 if let CheckedType::Buffer { element } = ty {
                     ty = element.ty();
                     continue;

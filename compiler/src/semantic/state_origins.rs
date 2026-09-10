@@ -18,23 +18,54 @@ pub(crate) trait StateImage: Clone {
     fn prefixed(self, path: &[CheckedStateStep]) -> Self;
     fn projected_value(self, path: &[CheckedStateStep]) -> Self;
     fn replaced_value(self, path: &[CheckedStateStep], replacement: Self) -> Self;
+    fn selected_bound(self) -> Self;
     fn unlocated(self) -> Self;
     fn whole_transfer(self) -> Self;
 }
 
-/// The longest represented value path. An inexact selection lies somewhere
-/// within that subtree; uncertainty there does not change independent fields.
+/// The exact prefix bounds a weak update. The complete query also retains
+/// selectors after a dynamic element, so reading one field does not observe
+/// every sibling in the prefix. The query alone grants no exact writeback location.
 #[derive(Clone, Debug)]
 pub(crate) struct StateSelection {
     pub(crate) path: Vec<CheckedStateStep>,
+    pub(crate) query: Vec<CheckedStateStep>,
     pub(crate) exact: bool,
+    /// An unrepresented suffix has only the prefix's layout, not the final
+    /// selected type's layout. Only complete queries may preserve the latter.
+    pub(crate) complete: bool,
 }
 
 impl StateSelection {
+    pub(crate) fn exact(path: Vec<CheckedStateStep>) -> Self {
+        Self {
+            query: path.clone(),
+            path,
+            exact: true,
+            complete: true,
+        }
+    }
+
+    pub(crate) fn push(&mut self, step: CheckedStateStep) {
+        self.query.push(step);
+        if step == CheckedStateStep::AnyElement {
+            self.exact = false;
+        }
+        if self.exact {
+            self.path.push(step);
+        }
+    }
+
     pub(crate) fn read<I: StateImage>(&self, image: I) -> I {
-        let selected = image.projected_value(&self.path);
+        let selected = image.projected_value(if self.complete {
+            &self.query
+        } else {
+            &self.path
+        });
         if self.exact {
             selected
+        } else if self.complete {
+            selected.selected_bound()
         } else {
             selected.unlocated()
         }
@@ -114,7 +145,13 @@ pub(crate) enum CheckedStateStep {
     Field(u32),
     Referent,
     Element(u64),
-    VariantField { variant: u32, field: u32 },
+    /// A typed element query, not a particular runtime address. This step
+    /// can occur in a source projection; exact destination paths exclude it.
+    AnyElement,
+    VariantField {
+        variant: u32,
+        field: u32,
+    },
 }
 
 impl CheckedStateStep {
@@ -166,6 +203,18 @@ pub(crate) fn unlocated_routes<R: StateRoute + Ord>(routes: &mut Vec<R>, whole: 
     *routes = canonical;
 }
 
+/// A dynamic choice does not locate the selected input, but retains the
+/// selected value's known internal field layout. Forgetting that layout would
+/// make a later key projection include an unrelated payload supplier.
+pub(crate) fn bound_selected_routes<R: StateRoute + Ord>(routes: &mut Vec<R>) {
+    for route in routes.iter_mut() {
+        *route.precision_mut() = StateOriginPrecision::Bound;
+    }
+    let mut canonical = Vec::new();
+    union_routes(&mut canonical, routes);
+    *routes = canonical;
+}
+
 pub(crate) fn project_routes<R: StateRoute + Ord>(
     routes: &[R],
     path: &[CheckedStateStep],
@@ -173,9 +222,12 @@ pub(crate) fn project_routes<R: StateRoute + Ord>(
     let mut selected = Vec::new();
     for route in routes {
         let mut route = route.clone();
-        if route.value_path().starts_with(path) {
+        if query_matches_prefix(path, route.value_path()) {
             route.value_path_mut().drain(..path.len());
-        } else if let Some(suffix) = path.strip_prefix(route.value_path()) {
+        } else if route.value_path().len() <= path.len()
+            && query_matches_prefix(&path[..route.value_path().len()], route.value_path())
+        {
+            let suffix = &path[route.value_path().len()..];
             if route
                 .exclusions()
                 .iter()
@@ -201,6 +253,17 @@ pub(crate) fn project_routes<R: StateRoute + Ord>(
     let mut canonical = Vec::new();
     union_routes(&mut canonical, &selected);
     canonical
+}
+
+fn query_matches_prefix(query: &[CheckedStateStep], path: &[CheckedStateStep]) -> bool {
+    query.len() <= path.len()
+        && query.iter().zip(path).all(|(query, step)| {
+            query == step
+                || matches!(
+                    (query, step),
+                    (CheckedStateStep::AnyElement, CheckedStateStep::Element(_))
+                )
+        })
 }
 
 pub(crate) fn exclude_routes<R: StateRoute>(routes: &mut Vec<R>, path: &[CheckedStateStep]) {
@@ -294,6 +357,10 @@ impl StateImage for CheckedStateOrigins {
     fn replaced_value(self, path: &[CheckedStateStep], replacement: Self) -> Self {
         self.replace_value_path(path, Some(replacement))
     }
+    fn selected_bound(mut self) -> Self {
+        bound_selected_routes(&mut self.formals);
+        self
+    }
     fn unlocated(self) -> Self {
         self.unlocated()
     }
@@ -335,6 +402,7 @@ impl StateRoute for CheckedStateOrigin {
                 CheckedStateStep::Field(field) => Some(*field),
                 CheckedStateStep::Referent
                 | CheckedStateStep::Element(_)
+                | CheckedStateStep::AnyElement
                 | CheckedStateStep::VariantField { .. } => None,
             })
             .collect();
@@ -537,6 +605,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_unrepresented_suffix_cannot_reuse_the_prefix_values_field_layout() {
+        let payload = DeclarationId::from_index(0).unwrap();
+        let image = CheckedStateOrigins::formal_leaves(payload, vec![Vec::new()])
+            .prefixed(&[CheckedStateStep::Field(0), CheckedStateStep::Field(1)]);
+        let selection = StateSelection {
+            path: vec![CheckedStateStep::Field(0)],
+            query: vec![CheckedStateStep::Field(0)],
+            exact: false,
+            complete: false,
+        };
+        let selected = selection.read(image);
+        // The unknown remaining selection could reach this payload. A
+        // subsequent field zero is not proven disjoint by its old position
+        // at field one in the prefix value.
+        let possible = selected.projected(&[0]);
+        assert_eq!(possible.formals.len(), 1);
+        assert_eq!(possible.formals[0].source.root, payload);
+        assert_eq!(possible.formals[0].precision, StateOriginPrecision::Bound);
+    }
+
+    #[test]
     fn an_uncertain_slot_keeps_both_suppliers_but_does_not_contaminate_siblings() {
         let slots = DeclarationId::from_index(0).unwrap();
         let sibling = DeclarationId::from_index(1).unwrap();
@@ -547,7 +636,9 @@ mod tests {
             .merged(supplied(sibling).prefixed(&[CheckedStateStep::Field(1)]));
         let selection = StateSelection {
             path: vec![CheckedStateStep::Field(0)],
+            query: vec![CheckedStateStep::Field(0), CheckedStateStep::AnyElement],
             exact: false,
+            complete: true,
         };
         let changed = selection.replace(state, supplied(incoming));
         assert_eq!(

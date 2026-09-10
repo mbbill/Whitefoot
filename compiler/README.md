@@ -482,6 +482,16 @@ displaced value is discarded. Independent fields retain their precise origins
 through direct operations, returned owners and exclusive borrowed writeback.
 A wholly unresolved location remains unknown. Neither case silently preserves
 stale exact contents. These boundaries apply to memory and resource objects alike.
+Reads retain their complete typed query after a dynamic element selector;
+the longest exact prefix is used separately for weak updates. Selecting a
+record's fresh key therefore does not observe its imported Box payload.
+Dynamic selections keep known field layout inside the selected value while
+its source correspondence remains bounded. Ordinary checking and callable
+replay share that query; borrowed helper effects retain the selected fields.
+An unrepresented suffix still uses the conservative prefix bound. Instantiating
+an arbitrary bounded owned result does not preserve a complete field layout.
+These queries neither locate an exact writeback address nor narrow a loan.
+Append positions and exact residual membership remain separate limitations.
 Boxed enum-child replacement retains its native execution and release-observer
 behavior. Fresh-state full-array construction and replacement, wide results
 containing owners, the block-pool program and the optional-slot program execute

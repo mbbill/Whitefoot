@@ -42,6 +42,12 @@ impl super::super::state_origins::StateImage for OriginSet {
     fn replaced_value(self, path: &[CheckedStateStep], replacement: Self) -> Self {
         self.replace_path(path, replacement)
     }
+    fn selected_bound(mut self) -> Self {
+        if let Self::Finite { formals } = &mut self {
+            super::super::state_origins::bound_selected_routes(formals);
+        }
+        self
+    }
     fn unlocated(self) -> Self {
         self.unlocated()
     }
@@ -643,15 +649,16 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
         target: &CheckedSetTarget,
         environment: &OriginEnvironment,
     ) -> Option<(BindingId, StateSelection)> {
-        let exact = |(root, path)| (root, StateSelection { path, exact: true });
-        let indexed = |(root, mut path): (BindingId, Vec<CheckedStateStep>), offset| {
-            let exact = if let Some(super::super::places::PlaceOffset::Literal(index)) = offset {
-                path.push(CheckedStateStep::Element(index));
-                true
-            } else {
-                false
-            };
-            (root, StateSelection { path, exact })
+        let exact = |(root, path)| (root, StateSelection::exact(path));
+        let indexed = |(root, path): (BindingId, Vec<CheckedStateStep>), offset| {
+            let mut selection = StateSelection::exact(path);
+            selection.push(match offset {
+                Some(super::super::places::PlaceOffset::Literal(index)) => {
+                    CheckedStateStep::Element(index)
+                }
+                _ => CheckedStateStep::AnyElement,
+            });
+            (root, selection)
         };
         match target {
             CheckedSetTarget::Place(place) => {
@@ -660,11 +667,19 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
             CheckedSetTarget::Storage(root) => {
                 let selection = storage_selection(&root.path);
                 let (root, path) = environment.value_place(root.binding()?, &selection.path)?;
+                let prefix_len = path.len() - selection.path.len();
+                let query = path[..prefix_len]
+                    .iter()
+                    .chain(&selection.query)
+                    .copied()
+                    .collect();
                 Some((
                     root,
                     StateSelection {
                         path,
+                        query,
                         exact: selection.exact,
+                        complete: selection.complete,
                     },
                 ))
             }
@@ -1203,27 +1218,20 @@ fn static_fields(path: &[CheckedPlaceStep]) -> Option<Vec<CheckedStateStep>> {
 }
 
 fn storage_selection(path: &[CheckedPlaceStep]) -> StateSelection {
-    let mut selection = StateSelection {
-        path: Vec::new(),
-        exact: false,
-    };
+    let mut selection = StateSelection::exact(Vec::new());
     for step in path {
         let step = match step {
-            CheckedPlaceStep::Field(field) => Some(CheckedStateStep::Field(*field)),
-            CheckedPlaceStep::BoxReferent(_) => Some(CheckedStateStep::Referent),
+            CheckedPlaceStep::Field(field) => CheckedStateStep::Field(*field),
+            CheckedPlaceStep::BoxReferent(_) => CheckedStateStep::Referent,
             CheckedPlaceStep::Subscript(index) => match index.place_offset {
                 super::super::places::PlaceOffset::Literal(index) => {
-                    Some(CheckedStateStep::Element(index))
+                    CheckedStateStep::Element(index)
                 }
-                _ => None,
+                _ => CheckedStateStep::AnyElement,
             },
         };
-        let Some(step) = step else {
-            return selection;
-        };
-        selection.path.push(step);
+        selection.push(step);
     }
-    selection.exact = true;
     selection
 }
 

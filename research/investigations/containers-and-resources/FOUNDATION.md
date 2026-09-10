@@ -1070,6 +1070,42 @@ recursive contained-state summaries, finer source contracts and proof-informed e
 remain explicit questions. A fix limited to own-input/result helpers, a green
 Box ABI test, or one straight-line graph cannot close this gap.
 
+The next typed-selection control distinguishes the complete read query from
+the exact prefix available to a weak update. After literal slots receive
+records with fresh scalar keys and imported Box payloads, `rows[index].key`
+must not acquire the payload owners' read effects. The corresponding payload
+read must retain every selectable supplier, and omitted or spurious effects
+must still fail. The prefix-only query stopped at the dynamic index and lost
+the field suffix, incorrectly charging a key read to those payloads. Preserve
+dynamic element queries followed by fields, variants and referents through
+ordinary checking and callable replay; do not turn such a query into an exact
+writeback location or narrow its loans. This experiment does not establish
+literal positions after append, exact residual membership or loop migration.
+
+The implemented query matches dynamic element selectors against represented
+literal elements before applying the remaining typed suffix. A selected
+value's source routes remain bounded but retain their relative field layout;
+later borrowed-helper projection therefore still separates key and payload. The paired
+source controls in `semantic/tests/system_effects.rs` accept direct and helper
+key reads, reject spurious payload effects, and require both selectable payload
+sources for the payload helper. Nested dynamic indices and a FixedVector
+control use the same query. Weak updates retain the existing prefix bound;
+no wildcard query becomes an exact destination or a loan permission.
+An unrepresented suffix keeps the old unlocated bound rather than reusing the
+prefix value's field layout for a different selected type. Cross-call
+instantiation of an arbitrary bounded owned result still forgets mapped
+internal layout; distinguishing a complete typed choice from a general
+supplier bound remains a separate correspondence question.
+
+The boxed migration witness also needed an ordinary source correction:
+`replacement` is read after installation and later exchanged out, requiring
+both categories in its declaration. The remaining incomplete union concerns
+`inserted`, the last append's payload. Earlier append calls already establish
+the first and second owners' effects, while literal replacement establishes
+the replacement owner's effects; the last appended owner's position is lost
+before its later selection. Widening its row or the meaning of a supplier
+bound cannot supply that missing placement evidence.
+
 A recovery experiment distinguishes an unresolved source from a finite source
 bound whose destination placement is unresolved. Only a completely described
 value transfer may construct the latter: moving run elements cannot introduce

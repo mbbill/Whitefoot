@@ -455,10 +455,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if let Some(origins) = &binding.state_origins {
             let selection = self.state_selection_of_place(place, bindings)?;
-            let selected = if selection.exact {
-                origins.clone().projected_value(&selection.path)
+            let selected = if !selection.complete {
+                selection.read(origins.clone())
+            } else if selection.exact {
+                origins.clone().projected_value(&selection.query)
             } else {
-                let mut selected = origins.clone().projected_value(&selection.path);
+                let mut selected = origins.clone().projected_value(&selection.query);
                 // A dynamic selector cannot inherit intact coverage of
                 // a rearranged aggregate. Exact incoming-place routes
                 // retain their ordinary enclosing formal attribution.
