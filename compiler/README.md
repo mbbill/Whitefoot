@@ -243,11 +243,10 @@ original calls remain, and a partially retained group keeps its original
 source-last join site. This narrows actualization after checking; permission,
 acceptance and ordinary function ABI are unchanged. Compilation without `--par`
 still leaves compute outlining off. The count is a provisional cost heuristic,
-not a target instruction or time estimate. The default selects the consistently
-beneficial leaf filter from the measured quadrature inputs on M1 and Linux;
-it does not select a recursive grain or establish a gain on every workload or
-on the normal shared runtime. The research runtime remains separately linked.
-Its qualification and measurements live in the
+not a target instruction or time estimate. The default was selected from the
+beneficial leaf-filter measurements on the quadrature inputs on M1 and Linux.
+Those selection measurements used the research runtime; they do not establish
+a gain on every workload or select a recursive grain. See the
 [quadrature experiment](../research/experiments/compute-runtime/README.md#scalar-leaf-offer-control).
 
 The additional experiment `--par --par-sequential-refusal` selects an existing
@@ -325,10 +324,11 @@ the host boundary. Native probes require zero eligible fallback. Synchronous-suc
 after the runtime has disabled their completion packets; pending operations
 publish through the IOCP worker.
 
-Every emitted Windows `--par` module requires the compiler-owned compute pool
-through hard external ABI obligations. A missing runtime fails to link, and an
-invalid worker configuration fails before user code. Partial worker startup\nretains the available pool; complete refusal uses ordinary calls. The native gate requires a
-non-owner worker to execute and steal source work while preserving the
+Every Windows module that emits compute offers requires the compiler-owned
+compute pool through hard external ABI obligations. A missing runtime fails to
+link, and an invalid worker configuration fails before user code. Partial worker
+startup retains the available pool; complete refusal uses ordinary calls. The native gate
+requires a non-owner worker to execute and steal source work while preserving the
 sequential build's exact bytes. A fixed-host paired gate qualifies compute,
 warm IOCP, and mixed compute-plus-IOCP execution against matched controls on
 the same revision.

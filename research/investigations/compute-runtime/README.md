@@ -1756,6 +1756,84 @@ the mask path; the four ARM text images equal their previous controls, and
 all eight lane/slot layout pairs are unchanged. Linux/Windows native codegen
 and all-platform timing remain to be verified by CI.
 
+The x86-wide candidate `c8820e9868fdb07d76ea711922437a0a456d1d2d`
+completed [compute run 34485715742](https://github.com/mbbill/Whitefoot/actions/runs/34485715742).
+All five formal artifacts pass hash, captured-source, repaired-control,
+oracle, actual-width and original-reducer replay: 2,940 processes and
+6,776,700 checked calls. The performance screens remain failed:
+
+| Native target | Artifact | ZIP SHA256 | Widths | Long / first64 investigate |
+| --- | --- | --- | --- | --- |
+| Linux x86-64 | 10156097379 | `e41ef86ea558e582d74f0b44c9d3b7708eb096b1cf18bc9dd3a457d24a6c2962` | 1/2/3/4 | 3/120; 20/120 |
+| Linux ARM | 10155824224 | `5dca06b3a7dfdb53934ef9a396de5ace2cfb4b4661efe1903011b837e9c9bd8a` | 1/2/3/4 | 1/96; 5/96 |
+| Mac Intel | 10156228062 | `3ce18a99fdbdfc5c67980bf36c14bd108afb194f8ff0a1d652fd0baaa2c11a96` | 1/2/3/4 | 35/120; 22/120 |
+| Mac ARM | 10156203348 | `47c7de256c36360f8b3b06438955d5ed6219f4c02bfa57d9510e73febeec879e` | 1/2/3 | 16/72; 19/72 |
+| Windows x86-64 | 10155883887 | `57de3bb180a3c73e88dc8b80da0acf49f1bda0fa3c8dd83e60d39a8cdf65f67e` | 2/3/4 | 3/72; 5/72 |
+
+The native Linux, Mac Intel and Windows join/worker paths skip `DIVL` for
+power-of-two counts and retain it otherwise. Their loop addressing also
+changes, so an observed benefit cannot be isolated to division latency. Linux
+ARM's executable sections and Mac ARM's complete section contents/addresses
+equal previous; the ARM results do not measure a runtime code change.
+
+On Linux's EPYC 7763 guest, W4/N4096/tile64 current/previous full-call is
+0.9664 [0.9558, 0.9860] and process CPU 0.9683 [0.9614, 0.9882]. The
+identical replica gives 0.9682 [0.9599, 0.9798] and 0.9716 [0.9557, 1.0052].
+Ratios are medians of five process pairs [minimum, maximum]; full-call uses
+warm-call means. Full-call A/A is [0.9882, 1.0112], CPU
+A/A [0.9831, 1.0118]. Core is effectively unchanged (current median 1.0003),
+and first64 full-call is inconclusive (1.0132 [0.9778, 1.2828]). Peak RSS is
+1.0371 [0.9816, 1.0487], replica 1.0487 [1.0247, 1.0584]; storage layout
+is unchanged, but that does not erase the process-memory observation.
+Current/research full-call is still 1.0472 and CPU 1.0553.
+
+The retained CPU profile verifies 249 hashes, 80 processes and 26,278 samples
+with no reported lost samples. It has no previous control. Current/research
+helper samples are 4,016/3,859, including worker-loop 3,178/3,001;
+getter samples are 891/849. Remaining consumption and worker activity are
+visible, but those sample counts neither independently confirm this revision's
+benefit nor distinguish extra searching from workers kept busy by later reads.
+
+The Mac Intel W3/N4096/tile64 fallback cell prevents x86-wide selection:
+current/previous CPU is 1.1391 [1.0604, 1.2998], replica 1.1694
+[0.9758, 1.2922], with CPU A/A [0.9647, 1.0867]. Full-call is noisy,
+1.0208 [0.8891, 1.9134], and does not establish a latency regression.
+Nevertheless the repeated CPU increase does not satisfy the retention rule.
+Windows W4/N4096/tile64 gives full-call 0.9888 [0.9405, 1.0134] and CPU
+1.0130 [0.9500, 1.0519]; it establishes no joint benefit. Windows has no
+research execution control. Neither ARM target has a five-pair full/core/CPU/RSS
+loss above 5% versus previous; their original failed screens remain visible.
+
+Restrict the follow-up fast path to Linux x86-64. Restore the general remainder
+on Mac Intel and Windows; retain the new partial-three lifetime test and W3
+matrix on every applicable target. This preserves Linux's measured code path
+without selecting the unqualified x86-wide expansion. Another native cohort
+must confirm that scope and the Linux benefit; no threshold or reference changes.
+The ordinary-command losses and all-platform qualification remain open.
+
+All five ordinary-command artifacts replay 7,620 process results and their
+original failed reducers; no matched default candidate/previous cell has
+five-pair wall/CPU/RSS loss above 5%. Six Windows default cells have zero CPU
+readings and remain unavailable for CPU comparison. This is not parity with native controls.
+For shape4/N4096/W4, default/static full-command wall is 3.363 on Linux
+x86-64, 3.702 on Linux ARM and 3.087 on Windows; the default diagnostic starts
+zero helpers. On Linux x86-64, default/previous wall is 0.9991 and CPU 0.9995.
+The existing work60000 form starts three helpers and reduces wall/static to
+1.442, but has no previous-work60000 process pairs, so that result cannot
+select this runtime change. Mac ARM's panel covers only W1/2; its
+shape0/N4096/W2 default/static wall is 1.534 [1.308, 1.763], with
+default/previous 1.019 [0.894, 1.036]. These remain compiler-policy and
+end-to-end losses, separate from the measured runtime revision.
+
+Local follow-up inspection reproduces previous macOS `__text` at O2/O3 with
+statistics on/off for both architectures. Preprocessing the Linux-selected
+core yields the same tokens as c882; this is a scope check on the Mac SDK,
+not a replacement for native Linux compilation and timing.
+
+Exact c882 passed canonical `make check`, all 12 gate jobs and both I/O-host
+jobs. Three I/O-bench jobs passed; Windows compute timing remained unstable
+after its two cohorts and failed. Correctness is not performance qualification.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

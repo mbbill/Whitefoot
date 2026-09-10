@@ -1429,14 +1429,13 @@ fn the_bootstrap_selects_one_world_once() {
     );
 }
 
-/// A Windows `--par` module carries unresolved lane-protocol obligations
-/// instead of the sequential weak definitions used by the POSIX
+/// A Windows module with compute offers carries unresolved lane-protocol
+/// obligations instead of the sequential weak definitions used by the POSIX
 /// optional-runtime path.  Consequently, omitting the scheduler core is a link
 /// error and can never turn a requested Windows backend into the sequential
-/// world.  The runtime that resolves them is now `sched/entry.c` over
-/// `sched/core.c`, the same one every other target links; what this fail-closed
-/// choice selects is a staging predicate rather than a second implementation
-/// (design section 7).
+/// world. The shared `sched/core.c` protocol, `sched/entry.c` configuration and
+/// platform primitives resolve them. Runtime resource exhaustion may still
+/// refuse an offer and execute its ordinary-call fallback.
 #[test]
 fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
     let windows = SystemTarget::for_triple("x86_64-pc-windows-msvc")

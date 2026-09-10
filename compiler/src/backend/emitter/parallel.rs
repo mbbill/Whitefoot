@@ -86,10 +86,10 @@ pub(super) struct LoopSplitSite<'ir> {
 /// COFF modules do not carry the sequential weak definitions below.  A
 /// Windows module that hands out work therefore cannot link unless the
 /// runtime supplies the strong protocol; this is the compile-time half of the
-/// fail-closed backend contract.  That runtime is now the same
-/// `sched/entry.c` every other target links -- Windows is done as shared code
-/// (design section 7) -- so what this fail-closed choice selects is a staging
-/// predicate rather than a second implementation.
+/// fail-closed backend contract. All maintained targets use the protocol in
+/// `sched/core.c`, configuration in `sched/entry.c`, and platform primitives.
+/// Windows requires those external definitions at link time; pool resource
+/// exhaustion still uses the ordinary-call fallback.
 pub(crate) const PARALLEL_RUNTIME_DECLARATIONS: &str = "declare ptr @wf__par_acquire_lane(i64)\ndeclare void @wf__par_publish(ptr, ptr)\ndeclare void @wf__par_join(ptr)\ndeclare void @wf__par_release(ptr)\n";
 
 /// The fail-closed Windows declaration of the once-per-process backend query.
@@ -193,10 +193,12 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// **Why the selection is safe.** The default policy selects once per process,
 /// from whether the run asked for a pool. Without one every acquisition is refused for
 /// the whole process, so the two worlds compute on exactly the same schedule and
-/// the choice between them is a choice of machine code, not of semantics. On
-/// the optional-runtime path, a run that asks for a pool and cannot start one
-/// has every acquisition refused; Windows instead terminates when the native pool is
-/// first required. A *per-task* demand signal would be a different thing
+/// the choice between them is a choice of machine code, not of semantics.
+/// On every maintained target, partial startup retains the available workers;
+/// complete startup refusal makes every acquisition return null. The query
+/// still reflects the requested pool, so startup refusal does not reselect
+/// the process-level clone: the parallel body's ordinary-call fallback runs.
+/// A *per-task* demand signal would be a different thing
 /// entirely, and was measured killing the scheduler it was meant to help: the
 /// shared word it needs costs two contended read-modify-writes per task, which
 /// took the fine-grain oracle cell from 0.4905 s to 0.9254 s. Nothing here reads
@@ -206,10 +208,7 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// private layer. Neither adds a runtime demand signal. Declining descendant compute permissions
 /// preserves [PAR-1] operations, arguments and the same-ABI result; the call
 /// still executes at the original join. May-suspend callees retain their
-/// ordinary fallback. The optional
-/// runtime path may answer that no pool started; a Windows parallel binary is
-/// instead required to initialize its linked native pool or terminate at its
-/// first pool operation.
+/// ordinary fallback.
 ///
 /// **Why this set and not another.** A function outside it has the same body
 /// in both worlds — no hand-out is reachable from it, so nothing about its

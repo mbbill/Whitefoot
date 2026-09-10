@@ -164,7 +164,7 @@ repairs; Windows historical thief reads use its existing SC load primitive.
 POSIX controls have their original global steal counter; production counts per
 lane. Historical Windows has its default counters off, read-only started-worker
 observation added; no unqualified research port is used. Its historical worker
-configuration admits only 2..64, so the paired Windows panel uses widths 2/4;
+configuration admits only 2..64, so the paired Windows panel uses widths 2/3/4;
 ordinary-command CI separately covers width 1. Replica is byte-identical to
 production. Raw logs retain every core/cycle duration, batch wall and CPU,
 peak memory and context switches (unavailable on Windows). Five process pairs
@@ -214,7 +214,7 @@ mkdir "$out/previous-sched"
 for header in core.h entry.h prim.h; do
     git show "$previous:compiler/src/backend/sched/$header" > "$out/previous-sched/$header"
 done
-printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The x86-64 candidate adds a power-of-two remainder fast path with the same victim sequence; previous and ARM retain the general remainder. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
+printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The Linux x86-64 candidate adds a power-of-two remainder fast path with the same victim sequence; previous and other targets retain the general remainder. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
