@@ -1550,38 +1550,39 @@ complete cohorts. No new runtime change, default policy, ABI or performance
 threshold is selected by this consolidation. Five-target qualification and
 the ordinary-workload losses remain open.
 
-### Group the per-lane counter with the same writer's metadata
+### Per-lane counter grouping at 9a353fc5 (rejected)
 
-The repeated EPYC 7763 W4/N4096/tile64 loss warrants a bounded layout
+The repeated EPYC 7763 W4/N4096/tile64 loss motivated a bounded layout
 candidate in the maintained core. The existing 2ae images' DWARF records
 show current lane size `0x5000` (20,480 bytes), versus research `0x4f80`
 (20,352). The separately aligned per-lane counter adds 128 bytes: current
 `steals` is at `0x380` and slots at `0x400`, while research slots start at
 `0x380`. Corresponding top indices across current lanes, and likewise bottom
 indices, repeat their respective offsets modulo 4 KiB. This is an address
-fact, not measured cache-conflict
-attribution. Record guest cache geometry with the existing Linux host report;
-neither geometry nor the CPU model proves that conflicts explain the loss.
+fact, not measured cache-conflict attribution. The existing Linux host report
+now captures guest cache geometry; neither geometry nor the CPU model proves
+that conflicts explain the loss.
 
-Move `steals` next to `seed` in existing metadata padding. Preserve its single
-writer and atomic observers, the separate wait alignment, frame capacity,
-slot count, atomic ordering, victim sequence and waiting limits. This removes
+The candidate moved `steals` next to `seed` in existing metadata padding,
+preserving its single writer and atomic observers, the separate wait alignment,
+frame capacity, slot count, atomic ordering, victim sequence and waiting limits.
+This removed
 the counter's separate aligned region without a new pointer or counter scheme.
-It also increases sharing: the final ring cell, allocation/random metadata
+It also increased sharing: the final ring cell, allocation/random metadata
 and statistics occupy the same cache line. Thieves can read the ring cell,
 and a live observer can read the counter. This is not an owner-private line.
 
-Check native layouts and generated address arithmetic, including lane-pointer
-differences and startup/reporting scans, at O2/O3 with statistics on/off.
-A smaller structure does not guarantee fewer instructions or better timing.
-Run the existing startup, reuse and live-observer deque tests, then compare
-the maintained compiler against exact 4fab and the repaired frozen controls
-in the unchanged five-target formal and ordinary matrices. Retention requires
+Qualification covered native layouts and generated address
+arithmetic, including lane-pointer differences and startup/reporting scans,
+at O2/O3 with statistics on/off; startup, reuse and live-observer deque tests;
+and the unchanged five-target formal and ordinary matrices against exact 4fab
+and the repaired frozen controls. A smaller structure does not guarantee fewer
+instructions or better timing. The recorded retention criterion required
 a repeatable full-call/CPU benefit at the existing loss, without a repeated
 regression elsewhere; core, first64, RSS and default-policy losses remain
 visible. A host that does not reproduce the original difference cannot
 establish that this candidate resolves it. No public ABI, I/O behavior,
-publication setting or benchmark threshold changes.
+publication setting or benchmark threshold changed.
 
 Local Clang 22.1.8 builds verify all sixteen native ARM/cross-compiled macOS
 x86-64 objects at O2/O3 with statistics on/off. Lane size changes from 20,480
@@ -1594,6 +1595,74 @@ latency. Existing startup/reuse smoke checks and both 200,000-task deque
 probes pass, including both statistics settings under ThreadSanitizer with
 live counter observation. These are local correctness/layout checks, not
 native five-target performance qualification.
+
+The [9a353fc5 cohort](https://github.com/mbbill/Whitefoot/actions/runs/34480592253)
+does not meet that retention criterion. Review verifies all five formal
+artifacts' source identities, previous core/headers, historical repairs,
+manifests, raw matrices, actual widths, oracles, metadata, means and unchanged
+reducers. Candidate and replica are byte-identical within each artifact.
+The long/first64 core screens retain these investigate counts:
+
+| Target | Long | First64 |
+| --- | ---: | ---: |
+| Linux x86-64 | 1/90 | 21/90 |
+| Linux ARM | 0/72 | 3/72 |
+| Mac Intel | 30/90 | 33/90 |
+| Mac ARM | 11/48 | 17/48 |
+| Windows | 2/48 | 9/48 |
+
+Linux x86-64 again reports EPYC 7763, two cores/four SMT threads. At
+W4/N4096/tile64, previous/research reproduces the original loss: full-call
+1.0880 [1.0459, 1.1017] and CPU 1.0963 [1.0520, 1.1056]. Five paired
+process ratios for the candidate are:
+
+| Comparison | Full call | Process CPU |
+| --- | ---: | ---: |
+| Candidate / previous | 0.9916 [0.9406, 1.0218] | 0.9958 [0.9462, 1.0195] |
+| Replica / previous | 0.9717 [0.9417, 0.9968] | 0.9684 [0.9049, 0.9928] |
+| Candidate / research | 1.0687 [1.0363, 1.0825] | 1.0725 [1.0422, 1.0917] |
+| Replica / research | 1.0535 [0.9848, 1.0845] | 1.0449 [0.9519, 1.0884] |
+
+Candidate/previous core is 1.0010 and RSS 1.0000. Full-call A/A ranges
+from 0.9890 to 1.0851, CPU from 0.9751 to 1.1268. The candidate's benefit
+is not jointly confirmed by both identical images. Actual DWARF verifies the
+smaller lane; the guest reports 32 KiB, eight-way, 64-set L1d caches. This
+rejects the measured candidate under the stated criterion, without proving
+that data layout never matters or attributing a cache-miss cost.
+
+The other platforms do not settle selection. Linux ARM's eighteen
+candidate/previous full-call medians range from 0.9830 to 1.0164. Mac Intel
+has no jointly confirmed full-call/CPU benefit across its eighteen cells;
+W4/N65536/tile64 still loses against old, with candidate full-call 1.1976
+[1.0400, 1.2880] and CPU 1.2793 [1.0349, 1.3665]. Mac ARM retains a
+large/coarse regression risk: W2/N65536/tile1024 full-call/previous medians
+are 1.1441 and 1.1599 for candidate/replica, with full-call A/A
+[0.8269, 1.0283] and both paired ranges crossing one. Windows has a
+W2/N4096/tile1024 full-call benefit signal: candidate/previous 0.9111
+[0.8265, 0.9667], replica 0.8956 [0.8682, 0.9973], with A/A
+[0.9300, 1.0794] limiting its estimated magnitude. Its W4 full-call/previous
+medians at that input are 1.0193 and 1.0182; better full-call/old medians,
+0.8889 and 0.9287, do not establish a benefit of this revision. This signal
+does not resolve the original Linux loss. No noisy or failed result is
+promoted to a pass.
+
+The independently replayed Linux x86-64 ordinary-command artifact also
+retains 39 `gap` and 302 `noisy-open` rows. For shape4/N4096/W4,
+default/previous full-command wall and CPU are 1.0004 and 1.0004;
+replica/previous is 0.9993 and 0.9999. Default/static wall remains 3.3426
+with zero helpers. Work60000 starts three helpers and reaches 1.3328
+[1.2973, 1.3467] wall/static, CPU/static 1.0185 [1.0136, 1.0229]. These
+are policy comparisons; the artifact contains no previous-work60000 or
+replica-work60000 process samples to measure that policy's revision effect.
+
+Restore the maintained core byte-for-byte to 4fab, including its separately
+aligned counter. Keep the cache report, frozen controls, artifacts and
+unchanged thresholds. Exact 9a passed local canonical `make check`, all twelve
+[gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34480592271), both
+[I/O host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34480592472)
+and all four [I/O benchmark jobs](https://github.com/mbbill/Whitefoot/actions/runs/34480592366).
+These correctness results do not select the performance candidate.
+All-platform qualification and the ordinary-workload losses remain open.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
