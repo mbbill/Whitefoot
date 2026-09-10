@@ -35,6 +35,10 @@ splitting a scalar scan into two calls.
   executable checks of the mathematical postcondition.
 - `search.proposed.wf` shows the same search implementation with explicitly
   unsupported model and proof syntax. It is evidence, not conformance input.
+- [Contracts for Generalized Test Intent](CONTRACT-LANGUAGE.md) examines the
+  broader specification language: content and state models, histories,
+  relational properties, existing verification systems, and proposed decoder
+  experiments. Its recommendations remain exploratory.
 - This document owns the candidate rule meanings, actual results, and gaps.
 
 These files serve the semantic-contract experiment. Update them together while
