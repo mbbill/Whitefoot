@@ -21,6 +21,8 @@ runner_flags=
 case "$(uname -s)" in
     MINGW*|MSYS*) exe=.exe; thread_flags=; runner_flags='-municode -lpsapi';;
 esac
+previous=0
+if test -f "$out/previous-revision.txt"; then previous=1; fi
 scalar_flags='-O2 -g -Wall -Wextra -Werror -Wpedantic -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto'
 if test "$(uname -m)" = x86_64; then scalar_flags="$scalar_flags -falign-loops=32"; fi
 placement_available() {
@@ -58,6 +60,14 @@ verify_report() {
 if test "$mode" = build; then
     "$WFC" --par --no-vectorize mandelbrot.wf mandelbrot_command.wf -o "$out/par$exe"
     "$WFC" --no-overlap --no-vectorize mandelbrot.wf mandelbrot_command.wf -o "$out/seq$exe"
+    if test -n "${BASE_WFC:-}"; then
+        : "${BASE_REV:?identify the previous compiler revision}"
+        "$BASE_WFC" --par --no-vectorize mandelbrot.wf mandelbrot_command.wf -o "$out/previous$exe"
+        cp "$BASE_WFC" "$out/previous-whitefootc$exe"
+        printf '%s\n' "$BASE_REV" > "$out/previous-revision.txt"
+    else
+        rm -f "$out/previous$exe" "$out/previous-whitefootc$exe" "$out/previous-revision.txt"
+    fi
     cp "$out/par$exe" "$out/replica$exe"
     cmp "$out/par$exe" "$out/replica$exe"
     # Word splitting is intentional for these fixed compiler argument lists.
@@ -85,6 +95,10 @@ if test "$mode" = build; then
             'oracle mode checks the native point kernel against an independent volatile binary64 recurrence and known orbits; timed commands check an ordered 64-bit digest' \
             'command runner: process wall, child CPU and peak memory; POSIX context switches, unavailable on Windows'
     } > "$out/flags.txt"
+    if test -f "$out/previous-revision.txt"; then
+        printf 'previous compiler: %s; same-host build, ordinary --par --no-vectorize\n' \
+            "$(cat "$out/previous-revision.txt")" >> "$out/flags.txt"
+    fi
     exit 0
 fi
 if test "$mode" = profile; then
@@ -321,7 +335,7 @@ if test "$mode" = diagnose; then
     exit 0
 fi
 if test "$mode" = summarize; then
-    awk -v expected_workers="$(cat "$out/screen/planned-workers.txt")" \
+    awk -v expected_workers="$(cat "$out/screen/planned-workers.txt")" -v expected_previous="$previous" \
         -f mandelbrot-command.awk "$out/screen/processes.tsv" > "$out/screen/summary.tsv"
     cat "$out/screen/summary.tsv"
     exit 0
@@ -362,8 +376,10 @@ if test "$mode" = screen; then
                 pass=0
                 while test "$pass" -lt 5; do
                     order='par replica work60000 work240000 nosplit static'
+                    if test "$previous" = 1; then order="$order previous"; fi
                     if test "$shape/$count/$workers" = 4/4096/4; then
                         order="$order work120000"
+                        if test "$previous" = 1; then order="$order previous-work120000 replica-work120000"; fi
                     fi
                     if test "$workers" = 1; then order="seq serial $order"; fi
                     if test "$((pass%2))" = 1; then
@@ -375,6 +391,8 @@ if test "$mode" = screen; then
                         case "$form" in
                             serial|static) set -- "$out/native$exe" "$form";;
                             work60000|work120000|work240000|nosplit) set -- "$out/par$exe";;
+                            previous-work120000) set -- "$out/previous$exe";;
+                            replica-work120000) set -- "$out/replica$exe";;
                             *) set -- "$out/$form$exe";;
                         esac
                         set -- "$@" "$shape" "$count" "$limit" "$repetitions" 92821 "$expected"
@@ -383,7 +401,7 @@ if test "$mode" = screen; then
                             unset WF_SPLIT_WORK
                             case "$form" in
                                 work60000) export WF_SPLIT_WORK=60000;;
-                                work120000) export WF_SPLIT_WORK=120000;;
+                                work120000|previous-work120000|replica-work120000) export WF_SPLIT_WORK=120000;;
                                 work240000) export WF_SPLIT_WORK=240000;;
                                 nosplit) export WF_SPLIT_WORK=0;;
                             esac
@@ -403,6 +421,30 @@ if test "$mode" = screen; then
     else
         shasum -a 256 "$WFC" "$out/par" "$out/seq" "$out/replica" "$out/native" "$out/runner" "$out/screen/source/"* > "$out/screen/manifest.sha256"
     fi
+    if test "$previous" = 1; then
+        cp "$out/previous-revision.txt" "$out/screen/previous-revision.txt"
+        # Missing baseline observations must not silently weaken the matrix.
+        negative_forms=previous
+        if test "$planned_workers" = 4; then negative_forms="$negative_forms previous-work120000 replica-work120000"; fi
+        for form in $negative_forms; do
+            bad="$out/screen/missing-$form.tsv"
+            awk -F '\t' -v form="$form" 'NR>1 && $6==form && !dropped {dropped=1; next} {print}' \
+                "$out/screen/processes.tsv" > "$bad"
+            validator_status=0
+            awk -v expected_workers="$planned_workers" -v expected_previous=1 -f mandelbrot-command.awk \
+                "$bad" > "$bad.log" 2>&1 || validator_status=$?
+            test "$validator_status" = 2
+            reason='missing previous compiler sample'
+            if test "$form" = previous-work120000; then reason='missing previous four-leaf sample'; fi
+            if test "$form" = replica-work120000; then reason='missing four-leaf replica sample'; fi
+            grep -Fx "invalid command screen: $reason" "$bad.log"
+        done
+        if test -n "$exe"; then
+            sha256sum "$out/previous-revision.txt" >> "$out/screen/manifest.sha256"
+        else
+            shasum -a 256 "$out/previous$exe" "$out/previous-whitefootc$exe" "$out/previous-revision.txt" >> "$out/screen/manifest.sha256"
+        fi
+    fi
     printf 'Mandelbrot ordinary-command screen complete: %s\n' "$out/screen/processes.tsv"
     exec sh mandelbrot-command.sh summarize
 fi
@@ -417,6 +459,7 @@ expect_status() {
     test ! -s "$out/check/stderr.txt"
 }
 for image in par seq native; do expect_status 0 "$out/$image$exe"; done
+if test "$previous" = 1; then expect_status 0 "$out/previous$exe"; fi
 printf 'shape\tcount\tlimit\trepetitions\tseed\texpected\n' > "$out/check/oracles.tsv"
 verify_case() {
     shape=$1 count=$2 limit=$3 repetitions=$4 seed=$5
@@ -427,6 +470,9 @@ verify_case() {
     for workers in 1 2 4; do
         for split_work in 0 60000 240000 1200000; do
             WF_WORKERS=$workers WF_SPLIT_WORK=$split_work expect_status 0 "$out/par$exe" "$shape" "$count" "$limit" "$repetitions" "$seed" "$expected"
+            if test "$previous" = 1; then
+                WF_WORKERS=$workers WF_SPLIT_WORK=$split_work expect_status 0 "$out/previous$exe" "$shape" "$count" "$limit" "$repetitions" "$seed" "$expected"
+            fi
         done
         WF_WORKERS=$workers expect_status 0 "$out/native$exe" static "$shape" "$count" "$limit" "$repetitions" "$seed" "$expected"
     done
@@ -506,3 +552,4 @@ awk -F '\t' '{sub(/\r$/, "")} NF!=7 || $1<=0 || $2<0 || $3<0 || $4<=0 || $7!=0 {
 if "$out/runner$exe" "$out/par$exe" 0 0 0 0 0 0 > "$out/check/runner-wrong.tsv"; then exit 1; fi
 awk -F '\t' '{sub(/\r$/, "")} NF!=7 || $7!=1 {bad=1} END {exit bad || NR!=1}' "$out/check/runner-wrong.tsv"
 printf 'Mandelbrot ordinary-command qualification PASS: 48 input cases, scalar WF/serial/static, workers 1/2/4, split work 0/60000/240000/1200000; %s\n' "$out/check"
+if test "$previous" = 1; then printf 'Previous official compiler passed the same input/policy matrix.\n'; fi

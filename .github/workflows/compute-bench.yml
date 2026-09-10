@@ -93,6 +93,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Build native compiler and qualify ordinary commands
         run: |
           rustup default stable
@@ -109,6 +111,15 @@ jobs:
           fi
           cargo build --locked --profile gate --bin whitefootc \
             --manifest-path compiler/Cargo.toml --target-dir "$scratch/compiler"
+          # Rebuild the last official compiler before loop alignment on this
+          # same host. Retire this bounded baseline once that setting is decided.
+          baseline=b00bf2406d234a585d84c1c9206e07419d237c5f
+          mkdir -p "$scratch/previous-source"
+          git archive "$baseline" compiler spec | tar -x -C "$scratch/previous-source"
+          cargo build --locked --profile gate --bin whitefootc \
+            --manifest-path "$scratch/previous-source/compiler/Cargo.toml" \
+            --target-dir "$scratch/previous-compiler"
+          export BASE_REV="$baseline" BASE_WFC="$scratch/previous-compiler/gate/whitefootc$suffix"
           export OUT="$scratch" WFC="$scratch/compiler/gate/whitefootc$suffix" CC="$cc" CXX="$cxx"
           sh research/experiments/compute-runtime/mandelbrot-command.sh build
           sh research/experiments/compute-runtime/mandelbrot-command.sh check
@@ -130,7 +141,8 @@ jobs:
             echo '## ${{ matrix.target }}: scalar Mandelbrot ordinary CLI'
             echo 'Whole-process wall, CPU and peak memory; five paired processes per cell. Ratios above one favor the reference.'
             echo 'A gap means all five ratios exceed 1.05 with all wall A/A ratios inside [0.95, 1.05]. Noisy cells remain open; a clean screen is not full goal qualification.'
-            echo 'WF_SPLIT_WORK controls share the exact par image. Their ratios are diagnostic; default WF/native and original WF A/A gaps fail this screen.'
+            echo 'WF_SPLIT_WORK controls share the exact par image. Tuning against native controls is diagnostic; default WF/native and same-policy current/previous compiler gaps fail this screen.'
+            echo 'The work120000 comparison has its own byte-identical, same-policy A/A pair; default comparisons use par/replica.'
             echo 'Static partitions are a regular-work control, not a skew scheduling ceiling. CPU includes native spinning; memory is descriptive.'
             echo '```text'
             cat "$RUNNER_TEMP/mandelbrot-command/mandelbrot-command/screen/summary.tsv"

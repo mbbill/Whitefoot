@@ -203,6 +203,98 @@ sources remain at the linked revision. Select the candidate only after normal
 compiler and all-platform workload checks establish its effects, including
 regressions and code-size cost. No wait threshold, ABI or source rule changes.
 
+### Normal compiler alignment candidate b993edb4
+
+The [b993edb4 cohort](https://github.com/mbbill/Whitefoot/actions/runs/34428128502)
+completed all five native targets. Exact revision
+`b993edb444445339f9e19147b66934e2c0e4aaec` passed local canonical `make check`,
+all twelve [gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34428128494),
+both [completion jobs](https://github.com/mbbill/Whitefoot/actions/runs/34428128506)
+and all four [I/O jobs](https://github.com/mbbill/Whitefoot/actions/runs/34428128500).
+Performance acceptance remains open. The formal FIR reducer reports the
+following unresolved core-time comparisons, including failed replica checks:
+
+| Native target | Full-window investigate / comparisons | First64 investigate / comparisons | Ordinary CLI screen |
+| --- | ---: | ---: | --- |
+| Linux x86-64 | 0 / 72 | 14 / 72 | failed |
+| Linux AArch64 | 1 / 54 | 6 / 54 | failed |
+| macOS x86-64 | 13 / 72 | 26 / 72 | failed |
+| macOS AArch64 | 10 / 36 | 15 / 36 | passed |
+| Windows x86-64 | 1 / 48 | 9 / 48 | failed |
+
+First64 is a prefix of the same raw calls, not an independent replication.
+These counts preserve the existing screen; later exploratory noise analysis
+does not turn a failed job into a pass. The full-call and CPU analysis below
+also covers costs outside the core-only reducer.
+
+On Linux x86-64 (EPYC 9V74, two reported cores/four SMT CPUs, Clang 18.1.3),
+the 450-process formal artifact `10133511311` contains 1,037,250 checked calls.
+For W4/4,096 outputs/tile16, current/unaligned paired core time is
+0.9507 [0.9386, 0.9796], and full-call time is 0.8843 [0.8760, 0.9051].
+Current/historical and current/recovered full-call ratios are respectively
+0.9910 [0.9678, 1.0090] and 0.9816 [0.9555, 1.0008]. Across all eighteen
+configurations, no paired median full-call, whole-batch CPU or RSS ratio
+against unaligned/historical/recovered exceeds 1.05. Some pairs remain noisy;
+the fourteen first64 failures are retained. This is the scalar O3 attribution
+panel, not an ordinary O2 CLI speedup claim.
+
+Windows artifact `10133568391` (EPYC 7763, two cores/four SMT CPUs) contains
+300 processes and 691,500 checked calls. In the same small cell, current/
+unaligned core is 1.0089 [0.9599, 1.0259], whereas full call is
+0.9190 [0.9159, 0.9322]. Current/historical full call remains
+1.0536 [1.0473, 1.0781]. At W4/65,536/tile1024 it is
+1.0774 [1.0542, 1.0982], with full-call A/A 1.0170 [0.9944, 1.0302].
+The latter core ratio is only 1.0242; most of the remaining measured difference
+lies outside that interval. The batch CPU A/A is noisy, and no Windows
+context-switch observation exists, so this does not identify a wait primitive
+or justify changing one. Peak memory does not show a matching stable increase.
+
+Independent macOS Intel review of artifact `10133625128` verified all 519
+manifest hashes, 450 raw reports and both 450-row mean tables. The two current
+images are byte-identical. Their full-window core paired medians range from
+0.9006 to 1.1106 across cells. W4/4,096/tile64's apparent current/unaligned
+1.1018 loss accompanies current/replica 1.1040; replica/unaligned is 1.0311.
+This does not establish an alignment regression. A weaker W1/4,096/tile64
+lead remains: both aligned images lose about 8–10% in long core/full-call/CPU
+medians, four of five pairs, but the current image's first64 direction differs.
+The host reports `Macmini6,2`, four logical CPUs and Apple Clang 17.0.0;
+physical topology was not captured. No scheduler change follows from this
+inconclusive platform screen.
+
+Ordinary Linux x86-64 artifact `10133538103` instead ran on an EPYC 7763.
+Independent replay reproduces the summary and failing status from its 1,405
+process rows. For
+shape4/4,096/W4, current/native-static wall ratios are 3.3534 with the default
+policy, 1.4603 with work60000, and 1.6131 with work120000. Corresponding CPU
+ratios are 0.8719, 1.0246 and 1.0260. The default diagnostic starts no helpers;
+lower work thresholds expose parallelism but do not remove the whole gap.
+At 65,536/shape1/W4, all three helpers start and the wall median still reaches
+1.3420, with noisy A/A. Native static remains a regular-work reference, not
+a dynamic-runtime ceiling. The differing CPUs and optimization levels prohibit
+combining the formal and ordinary panels into one alignment speedup.
+
+The quadrature formal/recovered screen in artifact `10133668763` reports
+17 investigate cells out of 80, retaining all 2,400 process rows and native
+reference observations. Smooth/frontier4/W1 wall is 1.0893 [1.0541, 1.2165]
+and process CPU 1.0830 [1.0516, 1.2120]. A one-participant loss is a concrete
+reason to inspect generated-code/layout costs before adding scheduling
+machinery. Several other failures are tiny or highly variable; none is erased
+on that basis. This panel still does not cover Windows quadrature performance.
+
+The next bounded comparison rebuilds the prior official compiler `b00bf240`
+on each native CI host and runs ordinary `--par --no-vectorize` commands with
+both versions. It changes neither source nor runtime to obtain the baseline.
+All default-policy cells and the existing four-leaf cell are interleaved;
+the latter has a byte-identical current replica under the same work policy.
+Preserve default/native losses and treat noisy current/previous comparisons
+as unresolved. Select the x86 alignment setting only with normal-path benefit
+and explained regressions, rather than inheriting the O3 panel's conclusion.
+Local M1 validation completed all 1,625 commands and all three missing-sample
+negative checks; the reducer retained performance failures. Synthetic reducer
+checks distinguish quiet/noisy four-leaf A/A from default-policy A/A and cover
+one/two/four participants plus operation without the optional baseline. These
+are harness checks, not native CI qualification or additional performance data.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

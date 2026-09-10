@@ -1191,6 +1191,23 @@ are diagnostic controls, not selected defaults. A four-worker-capable host
 produces 1,405 processes, including five work120000 samples for the
 shape4/count4096/W4 four-leaf diagnostic; the initial panel before these
 controls had 770.
+
+The loop-alignment qualification additionally rebuilds official compiler
+`b00bf2406d234a585d84c1c9206e07419d237c5f` from its unchanged `compiler/` and
+`spec/` sources on the same CI host. `BASE_WFC` and `BASE_REV` supply that
+compiler to the existing build step. It compiles the same WF sources through
+ordinary `--par --no-vectorize`, with no private linking override. Its
+`previous` command is interleaved across the whole matrix, and the four-leaf
+cell also compares `work120000` with `previous-work120000` under the identical
+policy. A `replica-work120000` observation runs the byte-identical current
+replica under that same policy, so the four-leaf comparison has its own A/A
+noise check. This adds 220 processes on a four-participant host, for 1,625 total.
+Both compilers' programs pass the independent input/policy oracle checks.
+The reducer requires all planned baseline observations; retained negative
+reports prove missing default/four-leaf/replica samples reject. The baseline executable,
+compiler hash and exact source revision accompany the artifact. Retire this
+bounded baseline when the normal-codegen alignment decision is settled; it is
+a prior official compiler, not a separate research implementation.
 Raw process samples, oracle inputs/digests, tool flags, source copies, host
 metadata and executable/compiler hashes are artifacts. Requested counts do not
 prove every worker executed a task; runtime attribution needs separate evidence.
@@ -1255,9 +1272,11 @@ priority or justify removing slower ordinary-user samples.
 
 The initial screen reports per-cell paired median/min/max wall, CPU and RSS
 ratios. A wall/CPU **gap** requires all five ratios above 1.05 and all five WF
-wall A/A ratios inside [0.95, 1.05]. Gaps in the default WF/native comparisons
-and the original WF A/A comparison fail the screen after all measurements;
-tuning comparisons remain diagnostic.
+wall A/A ratios inside [0.95, 1.05]. With a previous-compiler baseline, four-leaf
+comparisons use `work120000/replica-work120000`; other comparisons use the
+default `par/replica` pair. Gaps in the default WF/native comparisons and
+same-policy current/previous compiler comparisons fail the screen after all
+measurements; tuning against native controls remains diagnostic.
 Noisy cells and CPU ratios with a zero accounting sample on either side remain
 open. RSS is descriptive. This
 5% rule is an initial diagnostic criterion selected after the first local

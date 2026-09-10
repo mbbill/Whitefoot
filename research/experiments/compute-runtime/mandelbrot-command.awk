@@ -2,6 +2,8 @@
 # Called by mandelbrot-command.sh. Retire with the command workload.
 BEGIN {
     FS=OFS="\t"
+    if(expected_previous=="")expected_previous=0
+    if(expected_previous!=0 && expected_previous!=1)invalid("expected previous compiler")
     if(expected_workers!=1 && expected_workers!=2 && expected_workers!=4) invalid("expected worker count required")
 }
 function invalid(message) {
@@ -18,8 +20,10 @@ NR==1 {
         $4!=($2==4096?32:2) || $5!~/^[0-4]$/ ||
         ($7!=1 && $7!=2 && $7!=4) || $14!=0) invalid("cell or status at line " NR)
     if ($6!="par" && $6!="replica" && $6!="static" && $6!="seq" && $6!="serial" &&
+        $6!="previous" && $6!="previous-work120000" && $6!="replica-work120000" &&
         $6!="work60000" && $6!="work120000" && $6!="work240000" && $6!="nosplit") invalid("form")
-    if ($6=="work120000" && !($1==4 && $2==4096 && $7==4)) invalid("four-leaf diagnostic cell")
+    if (($6~/^previous/ || $6=="replica-work120000") && !expected_previous)invalid("unexpected previous compiler")
+    if (($6=="work120000" || $6=="previous-work120000" || $6=="replica-work120000") && !($1==4 && $2==4096 && $7==4)) invalid("four-leaf diagnostic cell")
     if (($6=="seq" || $6=="serial") && $7!=1) invalid("serial width")
     for (i=8;i<=11;i++) if ($i!~/^[0-9]+$/) invalid("metric")
     if (!(($12~/^[0-9]+$/ && $13~/^[0-9]+$/) || ($12=="NA" && $13=="NA"))) invalid("context switches")
@@ -33,11 +37,15 @@ function median(a,    i,j,t) {
     for(i=0;i<5;i++) for(j=i+1;j<5;j++) if(a[i]>a[j]) {t=a[i];a[i]=a[j];a[j]=t}
     return a[2]
 }
-function compare(shape,count,w,left,right,    p,k,l,r,aa,quiet,available,m,low,high,state,metric) {
+function compare(shape,count,w,left,right,    p,k,l,r,aa,quiet,available,m,low,high,state,metric,noise_left,noise_right) {
     quiet=1
+    noise_left="par"; noise_right="replica"
+    if(expected_previous && left=="work120000") {
+        noise_left="work120000"; noise_right="replica-work120000"
+    }
     for(p=0;p<5;p++) {
         k=shape SUBSEP count SUBSEP w SUBSEP p
-        aa=wall[k SUBSEP "par"]/wall[k SUBSEP "replica"]
+        aa=wall[k SUBSEP noise_left]/wall[k SUBSEP noise_right]
         if(aa<0.95 || aa>1.05) quiet=0
     }
     for(metric=1;metric<=3;metric++) {
@@ -57,8 +65,9 @@ function compare(shape,count,w,left,right,    p,k,l,r,aa,quiet,available,m,low,h
             state=quiet?"no-observed-gap":"noisy-open"
             if(quiet && low>1.05) {
                 state="gap"
-                # Tuning controls are diagnostic, not the selected default.
-                if(left=="par" || left=="seq") gaps++
+                # Tuning controls are diagnostic. A same-policy comparison
+                # against the previous compiler still checks a delivered change.
+                if(left=="par" || left=="seq" || right~/^previous/) gaps++
             }
         }
         if(!available) state="unavailable-open"
@@ -76,9 +85,19 @@ END {
             if(!((s SUBSEP n SUBSEP w SUBSEP p SUBSEP forms[f]) in wall)) invalid("missing sample")
     if(width==4) for(p=0;p<5;p++)
         if(!((4 SUBSEP 4096 SUBSEP 4 SUBSEP p SUBSEP "work120000") in wall)) invalid("missing four-leaf sample")
+    if(expected_previous) {
+        for(s=0;s<7;s++) for(n=4096;n<=65536;n*=16) for(w=1;w<=width;w*=2)
+            for(p=0;p<5;p++)
+                if(!((s SUBSEP n SUBSEP w SUBSEP p SUBSEP "previous") in wall)) invalid("missing previous compiler sample")
+        if(width==4) for(p=0;p<5;p++) {
+            if(!((4 SUBSEP 4096 SUBSEP 4 SUBSEP p SUBSEP "previous-work120000") in wall)) invalid("missing previous four-leaf sample")
+            if(!((4 SUBSEP 4096 SUBSEP 4 SUBSEP p SUBSEP "replica-work120000") in wall)) invalid("missing four-leaf replica sample")
+        }
+    }
     print "shape","count","workers","comparison","metric","median_ratio","min_ratio","max_ratio","screen"
     for(s=0;s<7;s++) for(n=4096;n<=65536;n*=16) for(w=1;w<=width;w*=2) {
         compare(s,n,w,"par","static")
+        if(expected_previous)compare(s,n,w,"par","previous")
         compare(s,n,w,"par","replica")
         compare(s,n,w,"work60000","par")
         compare(s,n,w,"work240000","par")
@@ -88,6 +107,10 @@ END {
         if(w==1) compare(s,n,w,"seq","serial")
     }
     if(width==4) {
+        if(expected_previous) {
+            compare(4,4096,4,"work120000","previous-work120000")
+            compare(4,4096,4,"work120000","replica-work120000")
+        }
         compare(4,4096,4,"work120000","par")
         compare(4,4096,4,"work120000","static")
     }
