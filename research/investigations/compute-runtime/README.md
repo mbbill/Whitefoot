@@ -824,21 +824,77 @@ production sources, not evidence that the host selector optimized the runtime.
 The Linux x64 full-call loss and the noisy Mac comparisons still require
 qualification; the Windows result neither explains nor removes them.
 
-The next Linux x64 diagnostic uses the already-built old/research/current/replica
-images and their existing `wf-seq` entry at N4096/tile64. This retains the
-64-leaf tree of the measured loss, with five interleaved processes per image.
-If the difference persists without task execution, executing the scheduler
-cannot explain that sequential difference. If it disappears, activity in the
-parallel path remains a candidate; this does not by itself identify background
-worker interference, allocation history or a particular runtime operation.
-The original parallel matrix and resource measurements remain required.
-This changes only the diagnostic invocation, with no new host instrumentation,
-generated function, link setting or runtime change. Native results are pending.
-Local macOS ARM execution of the selected blocks verifies twenty Linux-control
-processes/81,940 calls and fifteen Windows-control processes/61,455 calls,
-including raw means, output checks, actual lanes and alternating image order.
-The shell selection also leaves the Mac path inactive. These are functional
-checks of the script using Mac images, not native Linux or Windows timings.
+### Same-tree Linux attribution at bc646d58
+
+At exact `bc646d580e5f5185096344577a0ada82c0fdc323`, all twelve
+[gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34442812576)
+and both [native completion jobs](https://github.com/mbbill/Whitefoot/actions/runs/34442812604)
+pass. The [compute cohort](https://github.com/mbbill/Whitefoot/actions/runs/34442812625)
+finishes with nine successes and ten failures: all five formal jobs, four
+ordinary-command jobs and quadrature still fail. These results do not complete
+performance qualification.
+
+All five formal artifacts independently reproduce their raw means and original
+reducers; captured sources, historical repairs and identical-image replicas
+match. Counts below are the original core-time screens, not full-call verdicts.
+The first64 samples overlap the long batches.
+
+| Target | Artifact | Long investigate | First64 investigate |
+| --- | ---: | ---: | ---: |
+| Linux x86-64 | 10138666596 | 0 / 90 | 15 / 90 |
+| Linux AArch64 | 10138668831 | 0 / 72 | 4 / 72 |
+| macOS AArch64 | 10138630633 | 13 / 48 | 20 / 48 |
+| macOS x86-64 | 10138759566 | 16 / 90 | 34 / 90 |
+| Windows x86-64 | 10138676640 | 7 / 48 | 3 / 48 |
+
+The Linux x64 diagnostic invokes the existing `wf-seq` entry with the same
+N4096/tile64 tree, using five interleaved processes for each of
+old/research/current/replica. All twenty sequential processes request four
+participants and observe one actual lane. The pre-recorded discriminator is
+whether the difference persists without task execution; disappearance leaves
+parallel activity as a candidate without identifying its particular cost.
+On this EPYC 7763/Clang 18.1.3 host, paired current/research ratios are:
+
+| Same 64-leaf tree | Core | Full call | Batch CPU |
+| --- | --- | --- | --- |
+| Sequential entry | 0.9793 [0.9711, 1.0311] | 0.9835 [0.9753, 1.0464] | 0.9835 [0.9752, 1.0464] |
+| Four participants | 0.9902 [0.9669, 1.0025] | 1.0596 [1.0358, 1.0847] | 1.0696 [1.0366, 1.0908] |
+
+Full-call A/A is respectively 1.0051 [0.9853, 1.0186] and 0.9828
+[0.9612, 0.9992]. Parallel replica/research also loses: full call 1.0776
+[1.0473, 1.1077], CPU 1.0740 [1.0580, 1.1056]. The difference remains
+principally outside the core interval. That interval boundary excludes prefix
+preparation, accessor-based result materialization, next-history extraction
+and destruction; aggregate CPU includes workers searching between calls.
+This is not a measurement of scheduler cost alone. Sequential parity does not
+isolate background-worker interference, allocation history or code placement.
+
+The retained Linux WF/host/native objects and all five aligned runtime images
+are byte-identical to 7db, including executable-section addresses. The changed
+ratios therefore are not a compiler or runtime improvement. This FIR entry
+does not call `split_budget`; the current and research result-accessor loops
+have equal instructions and both fit within a 32-byte boundary. Neither fact
+identifies the remaining loss or supports another grain or layout change.
+
+Linux ARM has no full-call or CPU median above 1.0124 relative to
+historical/research/previous, and no full-call/CPU/RSS cell exceeds 1.02 in
+every pair. Its noisy short-window failures and RSS variation remain open.
+Neither Mac qualifies: ARM W2/N4096/tile1024 full-call/previous is 1.1946
+[0.9656, 1.7407], with A/A 1.0797 [0.9056, 1.2431]; replica/previous is
+1.1017 [1.0662, 1.4003], so the entire cell cannot be dismissed as noise.
+Intel W2/N4096/tile16 full-call/historical is 1.1559 [1.0267, 1.1734],
+but replica/historical crosses one. Intel W4/N4096/tile16 full-call A/A
+itself is 1.0710 [1.0521, 1.4346], preventing a resolved ranking.
+
+Windows has no full-call/CPU/RSS cell more than five percent above
+historical/previous in every pair. W4/N4096/tile1024 full-call/historical
+is 0.9200 [0.9017, 0.9214]. Its sequential four-leaf control is unstable:
+current/historical 0.9640 [0.8874, 1.0550], replica/historical 1.0789
+[0.9170, 1.0987], and A/A 0.9678 [0.8591, 0.9866]. The host changed from
+Xeon 8573C to EPYC 9V74; all executable-section addresses and bytes in the
+checked WF/host/native objects and four aligned images match 7db, although
+the complete object/EXE files differ. No runtime improvement follows from
+this cohort's changed ratios, and sequential equivalence is not established.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
