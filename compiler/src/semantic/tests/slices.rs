@@ -77,9 +77,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 1_u8);
 }
 "#;
-    // This array-holder probe is not VIEW-2's Slice/MutSlice-holder exception:
-    // its multi-statement child region violates OWN-6. The current compiler
-    // stops before that judgment; Unsupported is not evidence of admission.
+    // This array-holder probe stops before the ordinary reborrow judgment;
+    // it is not VIEW-2's implemented Slice/MutSlice-holder path. A longer
+    // local child region is admitted by v0.55, but does not fill this gap.
     assert_unsupported(source, UnsupportedSemanticFeature::RegionsAndBorrows);
     let direct = std::str::from_utf8(source)
         .unwrap()

@@ -866,17 +866,16 @@ command fn main() -> return_value: own ExitStatus pure {
             r#"InvalidBorrowLifetime { region: "'r0", binder: "x", mechanical_fix: "the value's borrow is live for 's, and 'r0 is not inside it; store or pass it under a region 's outlives, or introduce 'r0 inside 's's block" }"#,
         ],
     },
+    // The former two-statement source is now an acceptance witness in the
+    // semantic borrow tests. Pin the retained local-region condition here.
     Probe {
-        name: "two-statements-in-a-child-region.wf",
-        source: br#"fn take(out: &uniq buffer<u8>) -> result: own unit pure {
+        name: "caller-region-for-an-argument-child.wf",
+        source: br#"fn observe(value: &u64) -> result: own unit pure {
   return unit;
 }
 
-fn invalid(out: &uniq buffer<u8>) -> result: own unit pure {
-  region {
-    take(out: &uniq deref(out));
-    take(out: &uniq deref(out));
-  }
+fn bad['r](value: &uniq 'r u64, other: &'r u64) -> result: own unit pure {
+  observe(value: &'r deref(value));
   return unit;
 }
 
@@ -886,7 +885,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "OWN-6",
         sentences: &[
-            "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_handle::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f HandleFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.",
+            "introduce the child region locally inside the holder's region; a caller-supplied region is admitted only in a borrow-result provenance-candidate position",
         ],
     },
     Probe {

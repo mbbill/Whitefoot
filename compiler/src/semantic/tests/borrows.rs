@@ -1408,11 +1408,10 @@ fn extension_writes_through_result_holders_kill_source_facts() {
 // has no reachable source and no longer exists.
 // ---------------------------------------------------------------------------
 
-/// The three exact [OWN-6] restructurings, one per condition the rule carries.
+/// The exact [OWN-6] restructurings asserted by the position/holder controls.
 ///
 /// Spelled out here rather than imported, like the [FN-1] fix above, so a
 /// change to the text a writer reads has to be made twice on purpose.
-
 const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
      value or unit, or in the one argument position a borrow-returning call takes its result \
      from; pass the holder itself, or bind the result from that position";

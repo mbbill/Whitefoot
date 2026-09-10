@@ -595,10 +595,10 @@ only in non-brand positions retain their previous region judgment. Complete type
 equality is checked after the final substitution: outlives alone does not convert
 one direct view type into another. VIEW-2's explicit shared child through a
 borrowed `Slice` or `MutSlice` is supported. The separate probe whose `parent`
-borrows an array stops at `RegionsAndBorrows` before the OWN-6 judgment. Its
-multi-statement child region fails ordinary reborrow admission; an Unsupported
-observation does not make it a language-legal instance of the view-holder
-exception. This amendment changes neither boundary. Stored-content
+borrows an array stops at `RegionsAndBorrows` before the OWN-6 judgment. That
+capability stop does not determine source legality; v0.55 no longer rejects a
+child merely because its local region contains several statements. The brand
+correspondence change does not implement borrowed-array access. Stored-content
 restrictions and provider-release bounds remain intact.
 The old single-region extractor is insufficient even after fixing spelling:
 `Pair<'a, 'b>` and `Vector<'a, Vector<'b, u8>>` require both positions.
@@ -1098,6 +1098,10 @@ in all three lowering modes, both normally and with helper calls retained.
 These executions pass; the original v0.54 compiler rejects the direct Box
 form at OWN-6. This is evidence of expressibility and preserved behavior on
 these cases, not a throughput measurement or a proof of complete soundness.
+For the unchanged `x-child-reborrow-run.wf` witness, the v0.54 and v0.55
+compilers emit identical LLVM after excluding the qualification-version
+comment. This supports the absence of a runtime change for that accepted
+source; it does not measure compilation cost or general performance.
 
 Implementation needs no new lifetime analysis: the existing statement-loan
 stack already retires each statement's entries. Removing the block-containment

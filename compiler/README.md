@@ -695,6 +695,11 @@ A provider allocation can therefore be bound by `let` and inspected by a later
 Box likewise remains available for a later read in the same region. Borrowed
 results and surviving view loans retain their independent lifetimes. The
 region change adds no last-use analysis or runtime lifetime mechanism.
+A separate VIEW-2 limitation remains: a shared child formed through a view
+holder can remain incorrectly conflicting after its last use because its
+descriptor was not associated with the loan. The
+[view witness](../research/investigations/containers-and-resources/FOUNDATION.md#temporary-child-regions-and-statement-endpoints)
+records this valid source and the copy/holder cases a repair must cover.
 
 The pool retains a separate contract boundary: every clause naming
 a measure over a *result*'s field — `ensures head_of(rest.free) == ...` — is

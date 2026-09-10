@@ -906,18 +906,11 @@ mod tests {
         assert!(detail.contains("/absolute/path/report.wf:3:"), "{detail}");
     }
 
-    /// The one rule the blind writer could not apply from the specification
-    /// text now says what it means and states the whole working idiom.
-    ///
-    /// This is the writer's own shape: reserve a permit from a borrowed
-    /// factory and open through it, which is what every recursive directory
-    /// walker wants and what a one-statement region cannot hold. Batch 0099
-    /// gave the rejection two routes and the verification writer took neither
-    /// to a working walker — `replace` cannot commit where the call consumed
-    /// the target's root, which `move permit` does, and the helper alone is
-    /// one third of the idiom `tests/programs/dir_walk.wf` uses.
+    /// A long child region keeps the permit available for the next statement.
+    /// Removing the old scope rejection must not hide a later missing range
+    /// proof; the same source with that requirement supplied compiles.
     #[test]
-    fn a_child_reborrow_rejection_states_the_scope_rule_and_the_whole_idiom() {
+    fn child_reborrow_regions_keep_values_and_later_requirements() {
         let source = br#"fn walk['c](factory: &uniq HandleFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
   region {
     let permit = reserve_handle(factory: &uniq deref(factory));
@@ -950,49 +943,22 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
             &[SourceInput::new("walk.wf", source)],
             CompilerLimits::default(),
         )
-        .expect_err("a two-statement region cannot carry a child reborrow");
-        assert_eq!(failure.rule_id(), Some("OWN-6"));
-        let detail = failure.detail();
-        // What the rule means, in the two facts a writer meets at once.
+        .expect_err("the unchanged source still lacks the file-name range proof");
+        assert_eq!(failure.rule_id(), Some("SYS-8"));
         assert!(
-            detail.contains(
-                "a child reborrow's region admits exactly one statement, and a value that \
-                 statement binds dies at the region's end"
-            ),
-            "{detail}"
+            failure.detail().contains("1_u64 <= len_of(deref(name))"),
+            "{}",
+            failure.detail()
         );
-        // All three parts of the idiom, in the vocabulary `docs/patterns.md`
-        // uses, and the exact limit of the `replace` route.
-        assert!(
-            detail.contains(
-                "move the reserve and the open into one helper that takes the holder as \
-                 `&uniq 'f` and returns the opened value"
-            ),
-            "{detail}"
+        let bounded = std::str::from_utf8(source).unwrap().replace(
+            "writes(factory) {",
+            "writes(factory) contract {\n  requires 1_u64 <= len_of(deref(name));\n} {",
         );
-        assert!(
-            detail.contains(
-                "make the single statement of the region the `match` on that helper's call"
-            ),
-            "{detail}"
-        );
-        assert!(
-            detail.contains(
-                "write every statement that uses the opened value inside that `match` arm"
-            ),
-            "{detail}"
-        );
-        assert!(
-            detail.contains("P4 linear threading, P15 recursive walker"),
-            "{detail}"
-        );
-        assert!(
-            detail.contains(
-                "applies only where the call leaves the target's root alive: a call that \
-                 consumes the target root — one taking `move permit` — rejects OWN-1 instead"
-            ),
-            "{detail}"
-        );
+        compile(
+            &[SourceInput::new("bounded_walk.wf", bounded.as_bytes())],
+            CompilerLimits::default(),
+        )
+        .expect("the required range, not an extra scope helper, completes the valid program");
     }
 
     /// A post-syntax rejection names the file it is talking about and quotes
