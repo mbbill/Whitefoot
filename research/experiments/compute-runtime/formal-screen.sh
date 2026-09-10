@@ -201,10 +201,14 @@ C
     cp "$root/compiler/src/backend/windows_runtime.c" "$root/compiler/src/backend/windows_runtime.h" "$out/source/"
     cp -R "$root/compiler/src/backend/completion" "$out/source/"
 fi
-# Compare the actual maintained core before passing the existing search owner
-# to its successful-steal counter. Earlier slot/Windows ablations stay in git.
+# Freeze the maintained core and inline primitives to isolate the spin hint.
+# Earlier slot/counter/Windows ablations stay in git.
 git show "$previous:compiler/src/backend/sched/core.c" > "$out/previous.c"
-printf '\nPrevious maintained core=%s; same WF/host objects, flags and platform sources. The candidate restores this core after rejecting the explicit-owner counter change. Previous and candidate therefore contain identical core source; both use the internal candidate label. Filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
+mkdir "$out/previous-sched"
+for header in core.h entry.h prim.h; do
+    git show "$previous:compiler/src/backend/sched/$header" > "$out/previous-sched/$header"
+done
+printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. Core source remains identical, but the candidate adds PAUSE to the existing POSIX x86-64 empty-scan hint; previous uses its original header. ARM and Windows hint bodies are unchanged. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
@@ -236,7 +240,7 @@ for mode in $modes; do
     case "$mode" in
         old) set -- "$@" "$out/old.c" "$out/control-observer.c";;
         recovered) set -- "$@" -I"$out/source" "$out/research.c" "$out/control-observer.c";;
-        previous) set -- "$@" -I"$out/source/sched" "$out/previous.c" "$out/candidate-observer.c";;
+        previous) set -- "$@" -I"$out/previous-sched" "$out/previous.c" "$out/candidate-observer.c";;
         candidate|unaligned) set -- "$@" "$out/source/sched/core.c" "$out/candidate-observer.c";;
     esac
     if test -n "$exe"; then

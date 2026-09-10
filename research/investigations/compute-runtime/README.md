@@ -1010,6 +1010,84 @@ of the unchanged formal executables to locate complete-call CPU in result
 access, allocation/destruction, computation or worker search. It preserves the
 original timing matrix and does not add another runtime implementation.
 
+### Restored core and external CPU observations at 849183a0
+
+The [849183a0 cohort](https://github.com/mbbill/Whitefoot/actions/runs/34448631457)
+uses the restored 4fab core. Exact local canonical `make check`, all twelve
+gate jobs, both I/O host jobs and all four I/O benchmark jobs pass. All five
+formal and ordinary-command performance screens still fail; this is not goal
+completion. Formal long/first64 investigate counts are Linux x86-64 3/90 and
+17/90, Linux ARM 0/72 and 1/72, Mac ARM 18/48 and 12/48, Mac Intel 16/90 and
+20/90, and Windows 5/48 and 4/48.
+
+Linux ARM N65536/tile1024 full-call/previous is now 0.9996
+[0.9981, 1.0023], 1.0034 [0.9947, 1.0161] and 0.9977 [0.9936, 1.0152]
+at widths 1/2/4. Windows W4/N4096/tile1024 full-call/old is 0.9107
+[0.8198, 0.9411], with replica/old 0.8611 [0.7711, 0.9103] and wide
+A/A 1.0338 [0.9617, 1.1227]. Previous/candidate executable text matches on
+these platforms and both Macs, although debug information differs. Mac ARM
+still has W2/N65536/tile64 replica/research full-call 1.0751
+[1.0618, 1.2209]. Mac Intel's RSS and timing replicas remain unstable.
+
+Both Linux external CPU observers run successfully on the original hashed
+images. Each verifies its 249-entry profile manifest and all eighty plain/
+sampled processes. x86-64 retains 327,760 calls and 28,991 samples; ARM retains
+41,040 calls and 20,863 samples. All forty reports per target record zero lost
+samples. Neither paired plain observation reproduces the earlier large loss:
+W4 full-call/research is 1.0087 [1.0006, 1.0221] on x86-64 and 1.0069
+[0.9972, 1.0172] on ARM. The x86-64 host is Xeon 8370C, not the earlier EPYC.
+
+For the x86-64 N4096/tile64/W4 sample sets, worker-loop samples are
+55.5%/56.4%/55.9% for historical/research/current, FIR tile samples
+18.0%/17.6%/17.3%, and result-getter samples 14.5%/14.4%/14.8%.
+Current worker hotspots map to the victim-search loop's index calculation,
+top/bottom reads and scan branches. This is a common cost, not a measured
+cause of the missing EPYC-specific gap. ARM's different, larger input spends
+about 44–55% of samples in the tile and 28–37% in the getter; W4 worker-loop
+shares are about 13.2–13.4%. Sampling percentages are not off-CPU delays or
+hardware-stall measurements, and the two workloads cannot rank architectures.
+
+The ordinary x86-64 CLI artifact in this cohort independently confirms that
+current/previous compiler binaries and par/previous/replica programs are
+byte-identical. Seven quiet default/static wall gaps remain. At small shape4,
+N4096/W4, the default starts no helpers and takes 3.3023 [3.2705, 3.3921]
+times static. The existing work60000 setting starts three helpers and takes
+1.3965 [1.2051, 1.4565], with CPU/static 1.0078 [0.9860, 1.0301].
+Large shape1/N65536/W2 already starts one helper but still takes 1.0725
+[1.0598, 1.1377]. These separate insufficient publication from remaining
+parallel execution costs; the current experiment does not change that policy.
+
+### Test the existing spin-hint primitive on POSIX x86-64
+
+The CPU observations give a concrete reason to test the platform primitive,
+without changing victim selection, the 4096-scan/16-yield limits or native
+waiting. Windows already emits its historical `YieldProcessor` hint; POSIX
+currently leaves `wf_prim_spin_hint` empty. Add `_mm_pause()` only for POSIX
+x86-64. It emits PAUSE, not a system call or SIMD computation; Clang's intrinsic
+header and the [Intel optimization manual](https://cdrdv2-public.intel.com/821612/248966-Optimization-Reference-Manual-V1-050.pdf)
+identify its spin-wait purpose. Processor-specific delay and execution costs
+still require measurement; the unchanged scan count does not imply an unchanged
+wall-clock spin duration. Busy-loop samples alone do not establish benefit.
+
+The hypothesis is reduced interference from empty searches on shared physical
+cores without losing small-task responsiveness. The candidate must improve
+complete-call wall/CPU behavior against the unhinted maintained baseline and
+retain correctness, first64 responsiveness and the wider workload comparisons.
+Retention also requires no reproducible core, full-call or CPU regression
+against that baseline across the retained matrix.
+No all-platform improvement is assumed. The formal previous control freezes
+the old primitive header as well as the core; otherwise a shared new header
+would silently give the supposed baseline the new hint too. ARM and Windows
+retain their existing primitive bodies. No counter, slot layout, public ABI,
+I/O behavior or default publication policy changes in this experiment.
+
+Local Clang 22.1.8 O2/O3 builds, with counters both on and off, emit exactly two
+PAUSE sites in x86-64 runtime objects and none in the previous objects. ARM
+before/after objects are byte-identical for those same settings. Native M1
+smoke/deque checks and the ordinary compiler's 48-input Mandelbrot oracle panel
+pass. These are code-generation and correctness checks, not native x86-64
+performance qualification.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

@@ -111,8 +111,8 @@ jobs:
           fi
           cargo build --locked --profile gate --bin whitefootc \
             --manifest-path compiler/Cargo.toml --target-dir "$scratch/compiler"
-          # Keep the maintained pre-change compiler as the ordinary-path
-          # reference after reverting the unsuccessful counter adjustment.
+          # Keep the unhinted maintained compiler as the ordinary-path
+          # reference for the POSIX x86-64 processor spin hint.
           baseline=4fabd26448eddc9316499f5c58e66c556d9ca7cb
           mkdir -p "$scratch/previous-source"
           git archive "$baseline" compiler spec | tar -x -C "$scratch/previous-source"
