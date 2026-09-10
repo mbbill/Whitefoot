@@ -3,6 +3,8 @@
 - Keep these bounds on the ordinary typed route paths. Projection below a bound
   retains the selected source subtree without appending a destination selector
   to its source; exact fresh overrides retain their exclusions.
+- Separate complete typed element queries from weak-update prefixes through
+  [[typed-element-queries]].
 - Instantiate bounds compositionally through selected actual subvalues. A bound
   whose selected suppliers all resolve to fresh state becomes fresh; an unknown
   summary remains unknown independently of its current actuals.
