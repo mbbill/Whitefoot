@@ -154,13 +154,23 @@ static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
 
 static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
     int count = __atomic_load_n(&wf__par_lane_count, __ATOMIC_RELAXED);
+    unsigned long long random;
     int offset;
     int step;
     if (count < 2) {
         return NULL;
     }
     lane->seed = lane->seed * 6364136223846793005ull + 1442695040888963407ull;
-    offset = (int)((lane->seed >> 33) % (unsigned long long)count);
+    random = lane->seed >> 33;
+#if defined(__x86_64__) || defined(_M_X64)
+    /* Preserve the remainder and victim sequence, including partial pools. */
+    if ((count & (count - 1)) == 0) {
+        offset = (int)(random & (unsigned long long)(count - 1));
+    } else
+#endif
+    {
+        offset = (int)(random % (unsigned long long)count);
+    }
     for (step = 0; step < count; step += 1) {
         int index = offset + step;
         struct wf__par_lane *victim;

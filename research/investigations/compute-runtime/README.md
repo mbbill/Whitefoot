@@ -1664,6 +1664,98 @@ and all four [I/O benchmark jobs](https://github.com/mbbill/Whitefoot/actions/ru
 These correctness results do not select the performance candidate.
 All-platform qualification and the ordinary-workload losses remain open.
 
+### Quadrature evidence constrains runtime attribution
+
+The same 9a compute run's quadrature failure is its formal/recovered parity
+screen, with 21/80 investigate rows. Replay verifies 103 manifest entries,
+31 captured sources, 2,400 processes and 614,400 timed calls, including every
+oracle, actual-width check and original reducer. The panel has no previous-4fab
+or byte-identical replica control, so it cannot select the counter revision.
+Timing includes result checks and excludes eight warmup calls and process
+startup. It links the maintained runtime to the ordinary compiler's generated
+compute object; the separate ordinary CLI invocation checks correctness.
+Ratios below are medians of five process pairs [minimum, maximum]; CPU means
+process CPU unless explicitly labeled caller CPU. WF/C++ and Rust/Rayon all
+target x86-64-v3 with loop/SLP vectorization and LTO disabled. WF/C++ uses
+strict FP without contraction; the Rust kernel uses no explicit SIMD or
+`mul_add`. Toolchain versions differ: Clang LLVM 18.1.3 and Rust LLVM 22.1.8.
+The guest reports EPYC 7763 with two cores/four SMT threads.
+
+Within the same formal image at W4, default recursive WF/Cpp-seq on
+center-peak is 1.118 [1.053, 1.173] for batch wall and 3.158 for CPU;
+WF/Rayon-d4 is 1.364 [1.251, 1.480] wall, 1.331 CPU. On depth-cap,
+WF/Rayon-d4 is 1.543 [1.459, 1.604] wall, 1.566 CPU. The existing
+frontier8 control on center-peak instead reaches 0.852 [0.788, 0.904]
+wall/Rayon-d4, CPU 0.877. Sequential WF/Cpp-seq wall is 0.997 on
+center-peak and 0.938 on depth-cap. Each nonterminal recursive node attempts
+an 88-byte acquisition; success publishes, joins and releases, while refusal
+still enters the parallel recursive body. These controls expose
+publication/recursion costs without
+establishing that one frontier setting is best for all inputs or selecting
+a new compiler default.
+
+Cross-image losses have a different scope. The stable left-peak/wf-leaf-seq/W4
+formal/recovered wall ratio is 1.1186 [1.0607, 1.2912], CPU 1.1185
+[1.0607, 1.2939], but that clone executes no scheduler calls and reports
+zero lanes. At W1 its wall ratio reverses to 0.9327 [0.7999, 0.9588].
+The shared native Rust-seq branch also loses 1.2523 [1.0218, 1.3037]
+across these images at W4. Source/object sharing does not remove image and
+execution variability or attribute these losses to the runtime.
+
+Outside-peak/frontier4/W4 has formal/recovered batch wall 1.0007,
+caller CPU 1.0006, but process CPU 1.4071 [1.0515, 2.7311]. Extra CPU
+belongs mainly to other threads; existing records cannot split it into
+computation, searching and waiting. The existing worker profile observes
+a sanitized research image, so it cannot fill that formal-runtime gap.
+Any follow-up attribution needs thread/symbol observations at the same batch
+boundary. This limitation and the publication costs remain open alongside FIR.
+
+### Preserve the x86-64 victim sequence with a remainder fast path
+
+The restored worker's actual Linux x86-64 code performs `DIVL` once per
+victim sweep to compute `(seed >> 33) % count`. Mapping the existing 2ae
+W4/N4096/tile64 CPU samples to their original ELF instructions gives
+583/3,341 worker samples at that instruction for current, 594/3,327 for its
+identical replica, and 440/2,979 for research. Sampling positions are not
+isolated instruction costs or a predicted speedup, but this is a concrete
+repeated operation in the observed busy path.
+
+For a positive power-of-two count, masking with `count - 1` computes the
+same remainder. Add that x86-64 fast path to the maintained `wf__par_find`,
+preserving the count snapshot, seed update, exact victim order, general remainder
+fallback, atomic operations, storage layout, waiting limits and ordinary ABI.
+The count may be non-power-of-two after partial startup; a stale larger count
+still has the existing initialized-empty-deque interpretation. No cached mask,
+new shared field, publication policy or I/O change is needed.
+
+Local Clang 22.1.8 O2/O3 inspection rejects the initially portable conditional:
+on ARM it computes the general remainder unconditionally and then selects
+between that and the mask. A branch-likelihood hint does not remove that
+division. Retain ARM's original calculation and apply the fast path only to
+x86-64, where generated control flow skips the division for power-of-two
+counts. No instruction-latency claim or new compilation flag selects this
+platform scope; check the actual native images again after CI.
+
+Before selection, verify generated O2/O3 paths, ordinary native execution and
+the existing lifetime/deque probes. Add an actual three-participant partial
+startup case to the maintained smoke test and its existing callers. Add W3 to
+the existing formal matrix where the host has at least three CPUs, to measure
+the fallback path's added branch cost alongside the retained W1/2/4 cells.
+Keep exact 4fab as previous, repaired historical/research and identical-image
+controls, and all existing thresholds. Retention requires a repeated full-call
+and CPU benefit at the established loss, with no repeated regression in the
+other measured workloads or native targets. Core, first64 and memory results
+remain visible. A code-size or instruction-count reduction is not qualification.
+
+Local validation of the x86-64-only candidate passes all eight smoke scenarios,
+including three participants, and both 200,000-task deque probes with live
+counters. The two deque probes also pass under ThreadSanitizer.
+Independent inspection confirms that
+all four macOS-target x86-64 O2/O3/statistics combinations skip division on
+the mask path; the four ARM text images equal their previous controls, and
+all eight lane/slot layout pairs are unchanged. Linux/Windows native codegen
+and all-platform timing remain to be verified by CI.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

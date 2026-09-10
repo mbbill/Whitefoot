@@ -214,7 +214,7 @@ mkdir "$out/previous-sched"
 for header in core.h entry.h prim.h; do
     git show "$previous:compiler/src/backend/sched/$header" > "$out/previous-sched/$header"
 done
-printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The maintained core restores the previous control\047s separately aligned per-lane counter after rejecting the metadata-grouping candidate. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
+printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The x86-64 candidate adds a power-of-two remainder fast path with the same victim sequence; previous and ARM retain the general remainder. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
@@ -270,6 +270,7 @@ done
 if test -n "$exe"; then cpus=$NUMBER_OF_PROCESSORS; else cpus=$(getconf _NPROCESSORS_ONLN); fi
 widths=1; test -z "$exe" || widths=2
 if test "$cpus" -ge 2 && test -z "$exe"; then widths="$widths 2"; fi
+if test "$cpus" -ge 3; then widths="$widths 3"; fi
 if test "$cpus" -ge 4; then widths="$widths 4"; fi
 printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/means.tsv"
 cp "$out/means.tsv" "$out/short-means.tsv"

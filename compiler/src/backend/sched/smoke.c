@@ -188,6 +188,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "owner-fail") == 0) owner_allowed = 0;
     if (argc > 1 && strcmp(argv[1], "worker-fail") == 0) worker_limit = 1;
     if (argc > 1 && strcmp(argv[1], "partial") == 0) worker_limit = 2;
+    if (argc > 1 && strcmp(argv[1], "partial-three") == 0) worker_limit = 3;
     if (argc > 1 && strcmp(argv[1], "startup-delayed") == 0) hold_startup = 1;
     if (argc > 1 && strcmp(argv[1], "startup-partial") == 0) {
         hold_startup = 1;
@@ -213,7 +214,8 @@ int main(int argc, char **argv) {
         puts("compute smoke: PASS sequential/refused startup");
         return 0;
     }
-    check(workers == (worker_limit == 2 ? 1u : 3u), "unexpected actual pool width");
+    unsigned expected_workers = worker_limit < 4 ? worker_limit - 1 : 3;
+    check(workers == expected_workers, "unexpected actual pool width");
     check(wf__par_acquire_lane(UINT64_MAX) == NULL, "oversized frame was truncated");
     check(wf__par_split_budget(UINT64_MAX, UINT64_MAX) <= 10, "u64 split ABI failed");
     void *frames[WF_SCHED_LANE_SLOTS];
