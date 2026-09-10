@@ -1052,13 +1052,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     access,
                     node,
                 )?;
-                paths.extend(self.effect_paths_for_place(node, &borrow.place, bindings)?);
+                paths.extend(self.effect_paths_for_whole_place(node, &borrow.place, bindings)?);
             }
-            for place in argument_places.get(index).into_iter().flatten() {
+            for place in argument_places
+                .get(index)
+                .into_iter()
+                .flatten()
+                .filter(|_| {
+                    parameter.mode == KernelMode::Own
+                        && state_origins.get(index).and_then(Option::as_ref).is_none()
+                })
+            {
                 paths.push(self.state_path(place, bindings)?);
             }
             if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
-                if origins.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
+                if origins.lacks_whole_origins() && !self.deriving_result_state_origin.get() {
                     return self
                         .unsupported(crate::UnsupportedSemanticFeature::OwnerStateRouting, node);
                 }

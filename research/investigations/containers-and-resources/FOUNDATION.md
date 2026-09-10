@@ -1076,14 +1076,55 @@ formal element route across a helper. The attempted dynamic-index read-out is
 rejected by LIV-2's current literal identity rule; it is a negative control, not
 evidence of an accepted dynamic read-out defect.
 
-The focused effect, algebra and native-loop controls pass. The canonical unit
-stage restores 26 of the preceding 29 failures with the original successful
-execution expectations. Three remaining failures separate the next questions:
-complete run-to-array transport needs whole-source coverage, nested helpers
-need that coverage at call projection, and repeated owning extraction needs
-the run's storage and residual contents distinguished. The bound alone selects
-none of those precise images. Broader family readiness and performance remain
-the experiment's original completion requirement.
+The source-bound recovery restores 26 of the preceding 29 unit failures with
+their original successful execution expectations. The three then remaining
+failures separate complete run-to-array transport, coverage at a nested helper
+projection, and the storage/residual distinction after owning extraction.
+The bound alone selects none of those precise images. Broader family readiness
+and performance remain the experiment's original completion requirement.
+
+The next recovery experiment retains complete source coverage when an operation
+transfers every supplied value but loses their positions within the result.
+This is stronger than a supplier bound and weaker than a structural slot map.
+Declared whole-value call effects may use this coverage; selecting an unknown subvalue or
+replacing part of it must reduce it to a bound. A call can preserve coverage
+when projecting the complete returned component, but cannot upgrade a bound
+supplied by its actual. Owning insertion conserves all of its operands;
+extraction partitions its operand and cannot give either result complete
+coverage without additional evidence.
+
+Accept this refinement only if it restores full-array/helper transport with
+the existing effect rows, rejects omitted and spurious suppliers, and refuses
+to infer exact selected-element sources after replacement, extraction, or a
+helper wrapping an already incomplete image. Test the route algebra as well
+as ordinary WF composition. No runtime token, capacity enumeration, recursive
+call history or additional acceptance budget is part of the experiment.
+
+The complete-coverage refinement restores the imported-owner array's retained
+native Heap/Arena helper control and the nested run's generic-region control.
+A two-supplier run, returned in a result list and then repacked into one static
+field, reaches an ordinary conversion helper with exactly those suppliers.
+Omitting either read or adding the unrelated sibling's read rejects by EFF-2.
+This control also exposes an independent kernel projection defect: after the
+selected value image was available, address-evaluation access roots were added
+again, attributing a field operation to its entire containing struct. Kernel
+calls now use the same owned-actual fallback as user calls; argument evaluation
+and borrowed-place effects retain their separate contributions. Algebra controls
+keep selected elements, overwritten contents, both extraction outputs, and
+incomplete helper actuals below complete coverage. Repeated owning extraction
+still requires the storage/content distinction and is not restored by this
+refinement.
+
+Local descriptor reads and type-directed release are separate queries. A fresh
+run holding an imported Box does not read that Box merely to observe its length;
+releasing a run whose element contains a state-writing resource and an ordinary
+memory Box does not write the latter. Both ordinary source controls retain
+their specified rows and the current explicit descriptor/release selection gap.
+Complete coverage may not turn either into a demand for a spurious effect.
+Likewise, two equal supplier bounds are not an exact subvalue identity:
+replacement's no-change shortcut requires exact selected routes in both body
+checking and callable replay. These controls narrow the complete-coverage
+claim to its actual call-boundary evidence.
 
 ### Sparse experiment contract and decision boundary
 

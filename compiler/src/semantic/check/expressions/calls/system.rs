@@ -290,7 +290,11 @@ occurs at one parameter position, so this call's own arguments determine it",
                         access,
                         node,
                     )?;
-                    paths.extend(self.effect_paths_for_place(node, &borrow.place, bindings)?);
+                    paths.extend(self.effect_paths_for_whole_place(
+                        node,
+                        &borrow.place,
+                        bindings,
+                    )?);
                 }
                 for place in actuals
                     .argument_places
@@ -309,7 +313,7 @@ occurs at one parameter position, so this call's own arguments determine it",
                     paths.push(self.state_path(place, bindings)?);
                 }
                 if let Some(origins) = actuals.state_origins.get(index).and_then(Option::as_ref) {
-                    if origins.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
+                    if origins.lacks_whole_origins() && !self.deriving_result_state_origin.get() {
                         return self.unsupported(
                             crate::UnsupportedSemanticFeature::OwnerStateRouting,
                             node,

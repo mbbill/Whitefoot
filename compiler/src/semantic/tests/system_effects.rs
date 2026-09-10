@@ -6,12 +6,109 @@
 //! system resource families whose [SYS-5] contract fixes a nonempty row.
 
 use crate::semantic::model::CheckedStateStep;
+use crate::semantic::state_origins::StateOriginPrecision;
 use crate::{SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule};
 
 use super::super::model::{CheckedResultStateOrigin, CheckedResultStatePath};
 use super::{assert_rule, assert_rule_kind, with_semantics};
 
 const RELEASE_FIX: &str = "declare the release effects of every resource this function may release, or move the owner out";
+
+#[test]
+fn complete_content_coverage_does_not_select_descriptor_or_release_effects() {
+    for source in [
+        br#"fn length(value: own box<u64>) -> result: own u64 pure {
+  let empty = fixed_vector::<box<u64>, 1>();
+  let one = place_back(vector: move empty, value: move value);
+  return len_of(one);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+        br#"struct Entry {
+  file: ReadFile;
+  spare: box<u64>;
+}
+
+fn release(file: own ReadFile, spare: own box<u64>) -> result: own unit writes(file) {
+  let entry = Entry(file: move file, spare: move spare);
+  let empty = fixed_vector::<Entry, 1>();
+  let one = place_back(vector: move empty, value: move entry);
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .as_slice(),
+    ] {
+        // These ordinary sources require descriptor/content selection or a
+        // type-directed release image. Complete call-effect coverage alone
+        // cannot select those sources, nor justify changing their written rows.
+        with_semantics(source, |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Unsupported { ref unsupported }
+                    if unsupported.feature() == crate::UnsupportedSemanticFeature::OwnerStateRouting),
+                "an incomplete component image is a capability gap: {outcome:?}"
+            );
+        });
+    }
+}
+
+#[test]
+fn whole_run_transport_projects_all_suppliers_and_only_the_selected_component() {
+    let source = br#"struct Packet {
+  values: FixedVector<box<u64>, 2>;
+  spare: box<u64>;
+}
+
+fn pack(first: own box<u64>, second: own box<u64>, spare: own box<u64>) -> (values: own FixedVector<box<u64>, 2>, returned: own box<u64>) reads(first), writes(first) contract {
+  ensures len_of(values) == 2_u64;
+} {
+  let empty = fixed_vector::<box<u64>, 2>();
+  let one = place_back(vector: move empty, value: move first);
+  let two = place_front(vector: move one, value: move second);
+  return move two, move spare;
+}
+
+fn convert(packet: own Packet) -> result: own array<box<u64>, 2> reads(packet.values) contract {
+  requires len_of(packet.values) == 2_u64;
+} {
+  return array_from_fixed(vector: move packet.values);
+}
+
+fn relay(first: own box<u64>, second: own box<u64>, spare: own box<u64>) -> result: own array<box<u64>, 2> reads(first, second), writes(first) {
+  let (values, returned) = pack(first: move first, second: move second, spare: move spare);
+  let packet = Packet(values: move values, spare: move returned);
+  return convert(packet: move packet);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+    let source = std::str::from_utf8(source).unwrap();
+    let omitted = source.replace("reads(first, second)", "reads(first)");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing.iter().any(|effect| effect == "reads(second)"))
+    });
+    let omitted = source.replace("reads(first, second)", "reads(second)");
+    assert_rule_kind(omitted.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+            if missing.iter().any(|effect| effect == "reads(first)"))
+    });
+    let spurious = source.replace("reads(first, second)", "reads(first, second, spare)");
+    assert_rule_kind(spurious.as_bytes(), SemanticRule::Eff2, |kind| {
+        matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+            if extra.iter().any(|effect| effect == "reads(spare)"))
+    });
+}
 
 #[test]
 fn replacing_one_literal_element_preserves_its_siblings_owner() {
@@ -372,8 +469,11 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert!(!image.lacks_exact_origins());
         assert!(
-            image.formals.iter().any(|origin| !origin.unlocated
-                && origin.source.root == function.parameters[0].declaration)
+            image
+                .formals
+                .iter()
+                .any(|origin| origin.precision == StateOriginPrecision::Exact
+                    && origin.source.root == function.parameters[0].declaration)
         );
         assert_eq!(
             image.formals[0].source_value_fields,
@@ -709,7 +809,7 @@ command fn main() -> status: own ExitStatus pure {
 
 fn root(parameter: u32) -> CheckedResultStatePath {
     CheckedResultStatePath {
-        unlocated: false,
+        precision: StateOriginPrecision::Exact,
         result_fields: Vec::new(),
         exclusions: Vec::new(),
         parameter,
@@ -1252,14 +1352,14 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![
                     CheckedResultStatePath {
-                        unlocated: false,
+                        precision: StateOriginPrecision::Exact,
                         result_fields: vec![CheckedStateStep::Field(0)],
                         exclusions: Vec::new(),
                         parameter: 0,
                         parameter_fields: vec![CheckedStateStep::Field(0)],
                     },
                     CheckedResultStatePath {
-                        unlocated: false,
+                        precision: StateOriginPrecision::Exact,
                         result_fields: vec![CheckedStateStep::Field(1)],
                         exclusions: Vec::new(),
                         parameter: 0,
@@ -1332,14 +1432,14 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![
                     CheckedResultStatePath {
-                        unlocated: false,
+                        precision: StateOriginPrecision::Exact,
                         result_fields: vec![CheckedStateStep::Field(0)],
                         exclusions: Vec::new(),
                         parameter: 0,
                         parameter_fields: vec![CheckedStateStep::Field(0)],
                     },
                     CheckedResultStatePath {
-                        unlocated: false,
+                        precision: StateOriginPrecision::Exact,
                         result_fields: vec![CheckedStateStep::Field(1)],
                         exclusions: Vec::new(),
                         parameter: 0,
@@ -1376,7 +1476,7 @@ command fn main() -> status: own ExitStatus pure {
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
                 formals: vec![CheckedResultStatePath {
-                    unlocated: false,
+                    precision: StateOriginPrecision::Exact,
                     result_fields: Vec::new(),
                     exclusions: Vec::new(),
                     parameter: 0,
@@ -1768,7 +1868,7 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
             program.data.functions[0].result_state_origin,
             CheckedResultStateOrigin::Finite {
                 formals: vec![CheckedResultStatePath {
-                    unlocated: false,
+                    precision: StateOriginPrecision::Exact,
                     result_fields: vec![CheckedStateStep::VariantField {
                         variant: 0,
                         field: 0
@@ -1950,7 +2050,7 @@ fn resource_field_borrow_projects_the_returned_displaced_owner_summary() {
             program.data.functions[1].result_state_origin,
             CheckedResultStateOrigin::Finite {
                 formals: vec![CheckedResultStatePath {
-                    unlocated: false,
+                    precision: StateOriginPrecision::Exact,
                     result_fields: Vec::new(),
                     exclusions: Vec::new(),
                     parameter: 0,
@@ -2207,7 +2307,7 @@ command fn main() -> status: own ExitStatus pure {
         let expected = vec![0, 1]
             .into_iter()
             .map(|field| CheckedResultStatePath {
-                unlocated: false,
+                precision: StateOriginPrecision::Exact,
                 result_fields: vec![CheckedStateStep::Field(field)],
                 exclusions: Vec::new(),
                 parameter: 0,
@@ -2296,14 +2396,14 @@ command fn main() -> status: own ExitStatus pure {
             CheckedResultStateOrigin::Finite {
                 formals: vec![
                     CheckedResultStatePath {
-                        unlocated: false,
+                        precision: StateOriginPrecision::Exact,
                         result_fields: vec![CheckedStateStep::Field(0)],
                         exclusions: Vec::new(),
                         parameter: 1,
                         parameter_fields: Vec::new()
                     },
                     CheckedResultStatePath {
-                        unlocated: false,
+                        precision: StateOriginPrecision::Exact,
                         result_fields: vec![CheckedStateStep::Field(1)],
                         exclusions: Vec::new(),
                         parameter: 0,

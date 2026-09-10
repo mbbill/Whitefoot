@@ -1382,7 +1382,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                         access,
                         node,
                     )?;
-                    for path in self.effect_paths_for_place(node, &place, bindings)? {
+                    for path in self.effect_paths_for_whole_place(node, &place, bindings)? {
                         actual_paths.push(path);
                     }
                 } else if let CheckedType::Slice { strength, .. } = parameter.ty {
@@ -1415,7 +1415,8 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     }
                     for mut place in slice.effect_places() {
                         place.extend_fields(&formal.fields);
-                        actual_paths.extend(self.effect_paths_for_place(node, &place, bindings)?);
+                        actual_paths
+                            .extend(self.effect_paths_for_whole_place(node, &place, bindings)?);
                     }
                 }
 
@@ -1434,7 +1435,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                 }
                 if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
                     let origins = origins.clone().projected(&formal.fields);
-                    if origins.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
+                    if origins.lacks_whole_origins() && !self.deriving_result_state_origin.get() {
                         return self.unsupported(
                             crate::UnsupportedSemanticFeature::OwnerStateRouting,
                             node,

@@ -424,6 +424,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<Vec<CheckedStatePath>, CheckStop> {
+        self.state_effect_paths_for_place(node, place, bindings, false)
+    }
+
+    /// A callee's declared formal effect covers the complete selected actual.
+    /// It is not a local descriptor read or a type-selected release action.
+    pub(super) fn effect_paths_for_whole_place(
+        &self,
+        node: NodeId,
+        place: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<Vec<CheckedStatePath>, CheckStop> {
+        self.state_effect_paths_for_place(node, place, bindings, true)
+    }
+
+    fn state_effect_paths_for_place(
+        &self,
+        node: NodeId,
+        place: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        whole: bool,
+    ) -> Result<Vec<CheckedStatePath>, CheckStop> {
         if self.constants.contains_key(&place.root) {
             return Ok(Vec::new());
         }
@@ -434,9 +455,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let Some(origins) = &binding.state_origins {
             let selected = match self.state_fields_of_place(place, bindings)? {
                 Some(path) => origins.clone().projected_value(&path),
-                None => origins.clone().projected(&canonical.fields),
+                None => {
+                    let mut selected = origins.clone().projected(&canonical.fields);
+                    // A dynamic selector cannot inherit intact coverage of
+                    // a rearranged aggregate. Exact incoming-place routes
+                    // retain their ordinary enclosing formal attribution.
+                    for origin in &mut selected.formals {
+                        if origin.precision
+                            == super::super::state_origins::StateOriginPrecision::Whole
+                        {
+                            origin.precision =
+                                super::super::state_origins::StateOriginPrecision::Bound;
+                        }
+                    }
+                    selected
+                }
             };
-            if selected.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
+            let incomplete = if whole {
+                selected.lacks_whole_origins()
+            } else {
+                selected.lacks_exact_origins()
+            };
+            if incomplete && !self.deriving_result_state_origin.get() {
                 return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
             }
             let mut paths = selected

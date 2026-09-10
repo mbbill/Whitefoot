@@ -444,12 +444,20 @@ Whole-value routes retain exclusions for replaced subtrees, keeping an owning
 allocation distinct from its current contents. Reading an exact sibling does
 not inherit the replaced sibling's new origin. Consuming a cell projects the
 same referent used by its constructor, including through helper results.
-Dynamic updates and owning run-boundary transfers retain finite source bounds
-when all suppliers are described, even when their destination slots are not.
-Such a bound is not an exact effect origin. It can resolve to fresh state when
-helper substitution proves every selected supplier fresh; a surviving imported
-bound or wholly unknown source still reports `OwnerStateRouting` when an exact
-state use is required. Kernel transfers use captured operand images, and storage
+Dynamic updates and owning extraction retain finite source bounds when all
+suppliers are described, even when their destination slots are not. Owning
+insertion additionally preserves complete source coverage when it transfers
+all supplied contents. That coverage supports declared whole-value call effects through
+ordinary helper and aggregate-component boundaries, without claiming which
+source occupies an element. Selecting below it or removing part of it reduces
+it to a bound; substitution never upgrades an already incomplete actual.
+Local descriptor reads and type-directed releases still require selected
+sources; complete content coverage alone supplies neither selection.
+A bound can resolve to fresh state when helper substitution proves every
+selected supplier fresh; a surviving imported bound or wholly unknown source
+still reports `OwnerStateRouting` when exact effects are required. Kernel
+effects use the selected operand image without adding enclosing address-access
+roots. Kernel transfers use captured operand images, and storage
 read-out captures the selected value rather than reconstructing it from address
 expressions. Ordinary checking and callable replay share the transfer rules.
 A returned borrow's candidate ceiling alone is not
@@ -469,8 +477,10 @@ stale exact contents. These boundaries apply to memory and resource objects alik
 Boxed enum-child replacement retains its native execution and release-observer
 behavior. Fresh-state full-array construction and replacement, wide results
 containing owners and the block-pool program execute again. Imported-owner
-array construction through generic helpers, boxed-run read-out and some nested
-helper calls remain blocked by incomplete content placement. All executable
+array construction through generic helpers also executes; complete nested-run
+transport checks. Boxed-run read-out, descriptor reads on reconstructed imported
+contents, and helpers needing extracted, residual or type-selected release
+contents remain blocked by incomplete content placement. All executable
 assertions remain enabled. An empty current origin list alone does not recover
 a wholly unknown summary.
 Loop headers carry the stable union of entry and backedge owner origins. The

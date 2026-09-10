@@ -7,7 +7,9 @@ use super::super::model::{
     CheckedResultStatePath, CheckedSetTarget, CheckedStateOrigin, CheckedStateOrigins,
     CheckedStatePath, CheckedStateStep, CheckedStatement,
 };
-use super::super::state_origins::{exclude_routes, project_routes, union_routes, unlocated_routes};
+use super::super::state_origins::{
+    StateOriginPrecision, exclude_routes, project_routes, union_routes, unlocated_routes,
+};
 use super::{CheckStop, Checker};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -36,6 +38,9 @@ impl super::super::state_origins::StateImage for OriginSet {
     fn unlocated(self) -> Self {
         self.unlocated()
     }
+    fn whole_transfer(self) -> Self {
+        self.whole_transfer()
+    }
 }
 
 impl OriginSet {
@@ -50,7 +55,7 @@ impl OriginSet {
             formals: leaves
                 .into_iter()
                 .map(|fields| CheckedResultStatePath {
-                    unlocated: false,
+                    precision: StateOriginPrecision::Exact,
                     result_fields: CheckedStateStep::fields(&fields),
                     parameter: formal,
                     parameter_fields: CheckedStateStep::fields(&fields),
@@ -78,7 +83,14 @@ impl OriginSet {
 
     fn unlocated(mut self) -> Self {
         if let Self::Finite { formals } = &mut self {
-            unlocated_routes(formals);
+            unlocated_routes(formals, false);
+        }
+        self
+    }
+
+    fn whole_transfer(mut self) -> Self {
+        if let Self::Finite { formals } = &mut self {
+            unlocated_routes(formals, true);
         }
         self
     }
@@ -112,7 +124,11 @@ impl OriginSet {
         // Reinstalling exactly the current subvalue changes no owner. In
         // particular, recursive scalar-only mutations must not expand an
         // unchanged aggregate into an ever deeper list of identity routes.
-        if self.clone().projected_value(path) == replacement {
+        let selected = self.clone().projected_value(path);
+        if matches!(&selected, Self::Finite { formals }
+            if formals.iter().all(|route| route.precision == StateOriginPrecision::Exact))
+            && selected == replacement
+        {
             return self;
         }
         match (self, replacement) {
@@ -831,7 +847,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 return OriginSet::Unknown;
             };
             formals.push(CheckedResultStatePath {
-                unlocated: origin.unlocated,
+                precision: origin.precision,
                 result_fields: origin.value_fields,
                 parameter,
                 parameter_fields: origin.source_value_fields,
@@ -853,7 +869,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 return CheckedStateOrigins::unknown();
             };
             origins.formals.push(CheckedStateOrigin {
-                unlocated: route.unlocated,
+                precision: route.precision,
                 value_fields: route.result_fields.clone(),
                 exclusions: route.exclusions.clone(),
                 source_value_fields: route.parameter_fields.clone(),
