@@ -1470,6 +1470,86 @@ local canonical `make check`, both I/O host jobs and all four I/O benchmark
 jobs; correctness does not override the performance rejection. The overall
 compute-first runtime's cross-platform performance qualification remains open.
 
+### Repeated measurements of the restored core
+
+After the traversal rollback at `31f47b75`, consolidate existing measurements
+before selecting another production change. This is a descriptive comparison
+of compatible cohorts, not a new performance gate. Keep each cell's five
+paired process observations, original reducers and failed/noisy results. Do
+not pool absolute times across hosts or treat calls within one process as
+independent repetitions.
+
+The reviewed set contains six Linux ARM, seven Linux x86-64, seven Windows
+and seven per Mac architecture artifacts: 14,460 original-matrix processes
+and 33,330,300 checked calls. Every included current runtime matches the
+restored production sources. On Linux, FIR/caller/control sources and flags
+also match exactly. The ARM set is 7db/bc/849/2ae/dbbe/fa77; the x86-64 set
+adds 4fab. Exclude the changed a130/c85 callers and rejected f950
+primitive from that strict set. Windows and Mac a130/9253 use an older caller;
+keep them separate from 7db/bc/849/2ae/fa77, whose pre-timing selector differs.
+The actual `previous` revision is a822 in Linux ARM 7db/bc, Linux x86-64
+4fab/7db/bc, and Windows/Mac a130/9253/7db/bc; it is 4fab in the other
+included cohorts. A common label does not make these previous controls equal.
+
+Source and frozen-control repairs, manifests, complete raw matrices, metadata,
+oracles, means and unchanged reducers were replayed. The Linux review also
+checks every allocated ELF section: within a target, each matching current,
+old or research image has identical section addresses, sizes, alignments and
+file-backed bytes across the strict cohorts. Mac executable text and Windows
+executable sections likewise match within each architecture/caller group.
+Current and research remain different images. These checks exclude a changed
+Linux allocated section or Mac/Windows executable code within the compared
+groups; they do not exclude ASLR,
+dynamic libraries, allocation history or different host interference.
+
+Linux ARM's 108 cohort-by-cell current/research full-call medians range from
+0.9714 to 1.0308, and CPU medians from 0.9733 to 1.0165. Its earlier large
+reported gaps do not describe a repeated loss of this restored code. The
+Linux x86-64 W4/N4096/tile64 difference is more specific. Each entry below
+is a median of five within-host process pairs against repaired research:
+
+| Host / cohort | Current full / CPU | Replica full / CPU | Full-call current/replica range |
+| --- | --- | --- | --- |
+| EPYC 7763 / 7db | 1.1139 / 1.1080 | 1.0913 / 1.0909 | [0.9957, 1.0287] |
+| EPYC 7763 / bc | 1.0596 / 1.0696 | 1.0776 / 1.0740 | [0.9612, 0.9992] |
+| EPYC 7763 / 2ae | 1.0856 / 1.0881 | 1.1058 / 1.1046 | [0.9587, 1.0015] |
+| EPYC 9V74 / dbbe | 1.0428 / 1.0392 | 1.0402 / 1.0355 | [0.9868, 1.0335] |
+| EPYC 9V74 / fa77 | 1.0399 / 1.0458 | 1.0388 / 1.0467 | [0.9944, 1.0123] |
+| Xeon 8370C / 849 | 1.0078 / 1.0118 | 1.0102 / 1.0137 | [0.9774, 1.0186] |
+| Xeon 6973P-C / 4fab | 1.0019 / 0.9918 | 0.9864 / 0.9795 | [0.9894, 1.0232] |
+
+On 7763, all fifteen current/research pairs and all fifteen replica/research
+pairs lose both full-call time and CPU. Current core medians are 1.0169,
+0.9902 and 0.9910; there is no corresponding repeated core loss of that size.
+The [existing external sampling](#restored-core-at-2ae2b37e-reproduced-linux-full-call-gap)
+also retains the gap, but does not distinguish slower result consumption from
+more costly helper searches. The full interval cannot be called scheduler
+time, and changing CPUs is not an optimization result.
+
+The other repeated comparisons constrain further work:
+
+- Mac ARM W2/N65536/tile16 has a weaker CPU/old signal: current medians
+  1.0444–1.1021 and replica medians 1.0458–1.0852 across the five newer-caller
+  cohorts. All medians exceed one, but paired ranges and A/A remain unstable;
+  this does not identify a fixed cost.
+- Mac Intel's large differences often reverse or fail replication. At
+  2ae W4/N65536/tile1024, full/research is 1.3424 for current but 0.9743 for
+  its identical replica. This cannot select a production optimization.
+- Windows's older-caller W4/N4096/tile1024 full/old losses, 1.1857 and 1.0767,
+  do not persist in the five compatible newer-caller cohorts, whose medians
+  are 0.9027–0.9496. All sixty newer-caller cohort-by-cell full/old medians
+  range from 0.8992 to 1.0303. This neither proves the selector caused the
+  change nor turns the retained failed screens into passes.
+
+The [restored 31f47b75 gate](https://github.com/mbbill/Whitefoot/actions/runs/34474873189)
+passes all twelve jobs, and both
+[I/O host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34474873265)
+pass. All five formal performance screens remain failed. Three I/O benchmark
+jobs pass; the Windows protocol reports compute timings unstable after two
+complete cohorts. No new runtime change, default policy, ABI or performance
+threshold is selected by this consolidation. Five-target qualification and
+the ordinary-workload losses remain open.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o
