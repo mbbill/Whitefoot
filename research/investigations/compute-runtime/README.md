@@ -824,6 +824,22 @@ production sources, not evidence that the host selector optimized the runtime.
 The Linux x64 full-call loss and the noisy Mac comparisons still require
 qualification; the Windows result neither explains nor removes them.
 
+The next Linux x64 diagnostic uses the already-built old/research/current/replica
+images and their existing `wf-seq` entry at N4096/tile64. This retains the
+64-leaf tree of the measured loss, with five interleaved processes per image.
+If the difference persists without task execution, executing the scheduler
+cannot explain that sequential difference. If it disappears, activity in the
+parallel path remains a candidate; this does not by itself identify background
+worker interference, allocation history or a particular runtime operation.
+The original parallel matrix and resource measurements remain required.
+This changes only the diagnostic invocation, with no new host instrumentation,
+generated function, link setting or runtime change. Native results are pending.
+Local macOS ARM execution of the selected blocks verifies twenty Linux-control
+processes/81,940 calls and fifteen Windows-control processes/61,455 calls,
+including raw means, output checks, actual lanes and alternating image order.
+The shell selection also leaves the Mac path inactive. These are functional
+checks of the script using Mac images, not native Linux or Windows timings.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

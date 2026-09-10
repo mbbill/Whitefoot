@@ -241,21 +241,31 @@ summarize "$out/means.tsv" "$out/summary.tsv" && result=0 || result=$?
 summarize "$out/short-means.tsv" "$out/short-summary.tsv" || result=$?
 cat "$out/summary.tsv"
 cat "$out/short-summary.tsv"
+serial_tile=
+serial_modes=
 if test -n "$exe"; then
-    # The unresolved Windows full-call loss includes result access/release.
-    # Reuse the same images and four-leaf tree with the existing sequential
-    # WF entry. No task is offered; the ordinary parallel matrix stays intact.
-    # Both controls must actually run one lane despite WF_WORKERS=4. This is
-    # a diagnostic, not a replacement for the parallel acceptance matrix.
+    serial_tile=1024
+    serial_modes='old candidate replica'
+elif test "$(uname -s)-$(uname -m)" = Linux-x86_64; then
+    serial_tile=64
+    serial_modes='old recovered candidate replica'
+fi
+if test -n "$serial_tile"; then
+    # Reuse the existing sequential WF entry with the same result tree as
+    # the platform's measured full-call gap. Every image must run one lane
+    # despite WF_WORKERS=4. Keep the parallel acceptance matrix authoritative.
     mkdir "$out/serial-control"
     printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\n' > "$out/serial-control/means.tsv"
     pass=0
     while test "$pass" -lt 5; do
-        order='old candidate replica'
-        if test "$((pass % 2))" = 1; then order='replica candidate old'; fi
+        order=$serial_modes
+        if test "$((pass % 2))" = 1; then
+            order=
+            for mode in $serial_modes; do order="$mode $order"; done
+        fi
         for mode in $order; do
             log="$out/serial-control/$mode-p$pass.tsv"
-            WF_WORKERS=4 "$out/$mode$exe" wf-seq 16 4096 1024 4096 92821 "$pass" > "$log"
+            WF_WORKERS=4 "$out/$mode$exe" wf-seq 16 4096 "$serial_tile" 4096 92821 "$pass" > "$log"
             awk '
                 /^# runtime=/ {
                     headers++
@@ -263,11 +273,11 @@ if test -n "$exe"; then
                 }
                 /^# actual_lanes=/ {split($2,a,"="); seen++; if(a[2]!=1)exit 1}
                 END {if(headers!=1 || seen!=1)exit 1}' "$log"
-            awk -F '\t' -v mode="$mode" -v p="$pass" '
+            awk -F '\t' -v mode="$mode" -v p="$pass" -v tile="$serial_tile" '
                 $10=="warm" {core+=$11;cycle+=$12;calls++}
                 END {
                     if(calls!=4096)exit 1
-                    printf "%s\t1\t4096\t1024\t%s\t%.3f\t%.3f\n",mode,p,core/calls,cycle/calls
+                    printf "%s\t1\t4096\t%s\t%s\t%.3f\t%.3f\n",mode,tile,p,core/calls,cycle/calls
                 }' "$log" >> "$out/serial-control/means.tsv"
         done
         pass=$((pass + 1))

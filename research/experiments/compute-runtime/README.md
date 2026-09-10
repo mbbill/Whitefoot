@@ -37,18 +37,20 @@ An identical production image is the noise control. Raw artifacts retain core
 and allocation-inclusive durations, process CPU and memory; wall-time summaries
 are an initial screen, not whole-workload or all-platform acceptance.
 
-The Windows `serial-control/` diagnostic reuses the same old/candidate/replica
-binaries, 4,096 outputs and tile1024, five interleaved processes per image.
+The `serial-control/` diagnostic reuses the same built images and 4,096 outputs,
+with five interleaved processes per image. Windows compares old/candidate/replica
+at tile1024 (four leaves). Linux x86-64 compares old/recovered/candidate/replica
+at tile64 (64 leaves), matching its unresolved full-call/research loss.
 The formal host's `wf-seq` selector chooses the compiler's existing sequential
-entry before timing starts. This preserves the four-leaf result structure
+entry before timing starts. This preserves each selected result structure
 without offering tasks; the observer must report one actual lane for every
 image, although configuration still requests four. Its raw core/full-call
 durations and process usage test whether the unresolved difference persists
 without executing task scheduling. It does not isolate code placement, heap
 history or a particular consumer operation. The parallel matrix, inputs,
-flags and acceptance thresholds are unchanged. The former one-leaf diagnostic
-and its measured result remain at `9253ceb3`; replacing it removes tree depth
-as a difference between the serial control and the parallel case.
+flags and acceptance thresholds are unchanged. The former Windows one-leaf
+diagnostic and its measured result remain at `9253ceb3`; replacing it removes
+tree depth as a difference between the serial control and the parallel case.
 
 On x86-64, the formal matrix gives every scheduler reference the maintained
 compiler's `-falign-loops=32` setting. An additional `unaligned` image recompiles
