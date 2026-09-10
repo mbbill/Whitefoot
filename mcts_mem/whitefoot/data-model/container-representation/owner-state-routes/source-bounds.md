@@ -7,8 +7,8 @@
   whose selected suppliers all resolve to fresh state becomes fresh; an unknown
   summary remains unknown independently of its current actuals.
 - Distinguish complete call coverage through [[whole-call-coverage]] from exact
-  selected routes. A surviving imported bound is an explicit capability limit,
-  not an exhibited exact effect set or a claim about a particular slot.
+  selected routes. A surviving imported bound participates in [[effect-union]]
+  without becoming an established effect or a claim about a particular slot.
 - Use shared kernel transfer rules over captured operand value images. Owning
   insertion retains complete supplied contents where established; extraction
   and unresolved replacement retain bounds without exact residual membership.
