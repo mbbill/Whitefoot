@@ -1475,6 +1475,11 @@ regions: rules +0/-0, grammar productions +0/-0, tokens/spellings +0/-0, no new
 exception. OWN-4/5/10/11, FN-1, STOR-5, VIEW-2/6 and PAR-1/3 were checked as
 premises and retain their judgments. The rule index, writer forms, capability
 map and ownership decision memory follow this change. Qualification rows and
-runtime layouts are unchanged. The earlier owning-array/contained-state gate
-failures remain separate blockers; this result does not complete the broader
-container goal.
+runtime layouts are unchanged. At `87a1462d`, this investigation recorded the
+owning-array and contained-state gate failures as separate blockers. The later
+owner-routing experiments above restore the owning-array witnesses and bounded
+container operations; general contained-state routing remains incomplete.
+The complete gate is still not green: the current endpoint checkpoint's new
+loop fixture is rejected for an invalid invariant equality before its intended
+assertions execute. Neither this loan-endpoint result nor those later repairs
+complete the broader container scenario and performance requirements.

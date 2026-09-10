@@ -12,13 +12,15 @@
   selected routes. A surviving imported bound participates in [[effect-union]]
   without becoming an established effect or a claim about a particular slot.
 - Use shared kernel transfer rules over captured operand value images. Owning
-  insertion retains complete supplied contents where established; extraction
-  and unresolved replacement retain bounds without exact residual membership.
+  back insertion and extraction use [[known-run-endpoints]] when their logical
+  position is known. Other insertion retains complete supplied contents where
+  established; unresolved extraction and replacement retain supplier bounds.
 
 ## Facts
 
 - 2026-09-09 (e298ca67) pitfall: An addressed read's expression children describe address calculation, not the consumed stored value. Capturing that value image and the kernel's checked operand images preserves supplier composition through legal read-out/helper boundaries. (code)
 - 2026-09-09 (a577b7cb) pitfall: Complete content coverage does not select descriptor-only reads or a type-directed release subset. Treating it as an exact local place demands effects from unobserved element owners. (code)
+- 2026-09-10 (19771851) pitfall: A run holding a resource-writing field and a memory-only sibling carries both suppliers, but cleanup writes only the former. Type-directed release projection preserves that distinction through optional payloads and owning arrays; a zero-extent array has no element release contribution. Descriptor observation separately selects the run root rather than every imported element. (code)
 
 ## Moves
 
