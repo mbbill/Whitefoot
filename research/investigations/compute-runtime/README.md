@@ -1217,7 +1217,7 @@ transitions only bound migrations from below; guest topology does not reveal
 physical-host contention. Runtime source, waiting limits, workload, plain
 controls and performance acceptance remain unchanged.
 
-### Startup readiness wait candidate
+### Startup readiness wait at 7f56548d (rejected)
 
 The [dbbe0d1b observation](https://github.com/mbbill/Whitefoot/actions/runs/34461041448)
 records CPU fields successfully but does not select affinity: all fifteen
@@ -1264,6 +1264,41 @@ This is not a resolved startup benefit. Source-level startup tests pass with
 all helpers and partial creation; the same tests abort against the old yield
 loop and against a one-wake-only barrier for their respective intended reasons.
 Native CI and full qualification remain required.
+
+The [7f56548d native cohort](https://github.com/mbbill/Whitefoot/actions/runs/34464897987)
+rejects this candidate. Its exact local canonical `make check` and both I/O
+host jobs pass, but Linux ARM has a quiet warm full-call regression at
+W2/N65536/tile1024: current/previous 1.0534 [1.0529, 1.0580], versus
+current/replica 0.9998 [0.9938, 1.0024]. Batch CPU/previous is 1.0367
+[1.0341, 1.0399]. W1 does not start helpers yet also loses 4.15% full-call
+time and 4.05% CPU, so the executed readiness wait is not an established
+cause of these image-level effects. The candidate still fails the stated
+no-regression condition; a possible layout explanation does not waive it.
+
+Windows W4/N4096/tile1024 independently loses full-call time against previous:
+1.0998 [1.0524, 1.1635], with full-call A/A 1.0015 [0.9725, 1.0158].
+Quantized process CPU/previous is 1.1765 [1.0571, 1.2500]; CPU A/A spans
+[0.9744, 1.1143]. These are whole-batch CPU readings, not first-call CPU or
+an isolated startup cost. Windows core/previous is 0.9615 with a wide
+[0.8917, 1.1191] range, so looking only at core medians would miss the loss.
+
+Linux x86-64 W4/N4096/tile64 improves: full-call/previous is 0.9405
+[0.9120, 0.9737] and batch CPU/previous is 0.9342 [0.9094, 0.9831].
+The byte-identical replica also improves against previous, with medians
+0.9252 and 0.9238. This is a supported same-host warm-call benefit for
+that cell, not proof of a startup cause or a portable improvement. Neither
+Linux x86-64 nor macOS ARM has a cell where both current and replica beat
+previous first full-call time by 5% in every pair. All five formal screens
+remain unqualified; only macOS ARM passes the ordinary-command screen.
+The twelve gate jobs, two I/O host jobs and four I/O benchmark jobs pass.
+
+Restore the exact `4fabd264` core and inline primitives. Retain the new
+delayed-floor/full-readiness tests, including partial creation, against the
+restored polling protocol. The test-specific ban on startup yielding is
+retired with the rejected condition-wait policy; it is not a safety rule.
+The retained test releases helpers gradually when the creator polls and
+still rejects a one-check-only readiness barrier. No production waiting
+threshold, default publication policy, I/O path or ABI change survives.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 

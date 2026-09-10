@@ -57,7 +57,7 @@ fn current_stack_nested_join_refusal_and_completion_lifetimes() {
         ("4", "owner-fail"),
         ("4", "worker-fail"),
         ("4", "partial"),
-        ("4", "startup-wait"),
+        ("4", "startup-delayed"),
         ("4", "startup-partial"),
     ] {
         let output = Command::new(&executable)

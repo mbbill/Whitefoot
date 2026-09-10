@@ -31,27 +31,21 @@ static _Thread_local int delayed_thief;
 static int hold_startup;
 static unsigned startup_arrivals;
 static unsigned startup_released;
-static unsigned startup_waits;
+static unsigned startup_checks;
 static _Thread_local int starting_owner;
 
-/* Release one helper per real startup wait. The creator's lock prevents
- * readiness publication before sleep; one wake cannot satisfy the barrier. */
+/* Release helpers gradually as the creator checks readiness. Delaying floor
+ * attachment makes an early return observable even on an otherwise idle host. */
 void wf__floor_attach_thread(void) {
     if (hold_startup) {
         unsigned arrival = __atomic_add_fetch(&startup_arrivals, 1u, __ATOMIC_RELAXED);
         while (__atomic_load_n(&startup_released, __ATOMIC_ACQUIRE) < arrival) wf_prim_yield();
     }
 }
-static void wf_sched_test_before_start_wait(void) {
-    if (hold_startup) {
-        startup_waits += 1;
-        __atomic_store_n(&startup_released, startup_waits, __ATOMIC_RELEASE);
-    }
-}
 static void core_yield(void) {
     if (starting_owner) {
-        fputs("compute smoke: startup polled the OS yield primitive\n", stderr);
-        abort();
+        startup_checks += 1;
+        __atomic_store_n(&startup_released, startup_checks, __ATOMIC_RELEASE);
     }
     wf_prim_yield();
 }
@@ -194,7 +188,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "owner-fail") == 0) owner_allowed = 0;
     if (argc > 1 && strcmp(argv[1], "worker-fail") == 0) worker_limit = 1;
     if (argc > 1 && strcmp(argv[1], "partial") == 0) worker_limit = 2;
-    if (argc > 1 && strcmp(argv[1], "startup-wait") == 0) hold_startup = 1;
+    if (argc > 1 && strcmp(argv[1], "startup-delayed") == 0) hold_startup = 1;
     if (argc > 1 && strcmp(argv[1], "startup-partial") == 0) {
         hold_startup = 1;
         worker_limit = 2;
@@ -205,7 +199,7 @@ int main(int argc, char **argv) {
         void *frame = wf__par_acquire_lane(8);
         starting_owner = 0;
         check(frame != NULL, "delayed startup refused the owner");
-        check(startup_waits >= wf__sched_pool_running(), "startup did not await every helper");
+        check(startup_checks >= wf__sched_pool_running(), "startup did not await every helper");
         check(__atomic_load_n(&wf__par_ready, __ATOMIC_ACQUIRE)
                   == wf__sched_pool_running(), "startup returned before helpers were ready");
         wf__par_release(frame);

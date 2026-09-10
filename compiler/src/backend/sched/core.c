@@ -254,12 +254,7 @@ static void wf__par_worker_main(void *opaque) {
     wf__par_attached = 1;
     wf_prim_floor_attach();
 
-    /* Startup owns lane zero's wait until every created worker is ready.
-     * Publish readiness only after this thread has its exhaustion handler. */
-    wf_prim_wait_lock(&wf__par_lanes[0].wait);
     __atomic_add_fetch(&wf__par_ready, 1u, __ATOMIC_RELEASE);
-    wf_prim_wait_signal(&wf__par_lanes[0].wait);
-    wf_prim_wait_unlock(&wf__par_lanes[0].wait);
 
     for (;;) {
         struct wf__par_slot *slot;
@@ -354,17 +349,8 @@ static void wf__par_start(void) {
         wf_prim_wait_destroy(&wf__par_lanes[0].wait);
         return;
     }
-    /* No caller can publish work before this once-initializer returns, so
-     * the owner's existing wait has no task waiter yet. Check under the
-     * same lock as readiness publication; early and spurious wakes are safe. */
-    wf_prim_wait_lock(&wf__par_lanes[0].wait);
-    while (__atomic_load_n(&wf__par_ready, __ATOMIC_ACQUIRE) < (unsigned)started) {
-#if defined(WF_SCHED_TEST)
-        wf_sched_test_before_start_wait();
-#endif
-        wf_prim_wait_sleep(&wf__par_lanes[0].wait);
-    }
-    wf_prim_wait_unlock(&wf__par_lanes[0].wait);
+    while (__atomic_load_n(&wf__par_ready, __ATOMIC_ACQUIRE) < (unsigned)started)
+        wf_prim_yield();
 }
 
 static struct wf__par_lane *wf__par_attach(void) {
