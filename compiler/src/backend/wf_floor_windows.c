@@ -168,12 +168,9 @@ static BOOL CALLBACK wf__floor_install_handler(
     return wf__floor_handler != NULL;
 }
 
-/* The handler is process-wide. The guarantee is per stack -- Windows keeps it
- * for the calling thread or fiber, and a fiber takes it only when it is set
- * from inside that fiber -- so every runtime thread calls this function on its
- * host stack at its start, and every pool fiber calls it at its first frame
- * before any frame of the program is on it (`sched/prim_windows.c`). The
- * install is once per process and the guarantee is what each call is for. */
+/* The handler is process-wide; the emergency stack guarantee is per thread.
+ * Each ordinary command or worker thread attaches on its own stack before
+ * executing WF code. Nested helping keeps the calling thread's guarantee. */
 void wf__floor_attach_thread(void) {
     ULONG stack_guarantee = WF_FLOOR_EXCEPTION_STACK_BYTES;
     if (InitOnceExecuteOnce(

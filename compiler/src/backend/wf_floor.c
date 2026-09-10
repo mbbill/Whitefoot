@@ -153,9 +153,8 @@ static _Thread_local int wf__floor_stack_known;
  * lands.
  *
  * The stride is the host's page size, read once outside signal context because
- * `sysconf` is not async-signal-safe. Zero means it was never read, which
- * leaves the discrimination exact rather than absent: the fault must then be
- * inside the stack itself. */
+ * `sysconf` is not async-signal-safe. Setup must establish it before any WF
+ * code runs; an unavailable page size cannot silently narrow the floor. */
 #define WF_FLOOR_RED_ZONE_BYTES ((unsigned long)128u)
 static volatile unsigned long wf__floor_guard_band;
 
@@ -200,6 +199,15 @@ static void wf__floor_emit(const char *bytes, size_t length) {
         bytes += (size_t)written;
         length -= (size_t)written;
     }
+}
+
+/* A failed prerequisite is a runtime-start failure, not a classified stack
+ * overflow. Stop before executing a program without its exhaustion floor. */
+static _Noreturn void wf__floor_setup_failed(void) {
+    static const char record[] =
+        "whitefoot floor: stack exhaustion protection could not be installed\n";
+    wf__floor_emit(record, sizeof(record) - 1);
+    abort();
 }
 
 /* ------------------------------------------------------------ the handler */
@@ -256,11 +264,14 @@ static void wf__floor_handler(int signo, siginfo_t *info, void *context) {
 
 /* Captures the calling thread's stack bounds. Called on the thread itself and
  * outside any signal context, so the ordinary pthread queries are available. */
-static void wf__floor_capture_bounds(void) {
+static int wf__floor_capture_bounds(void) {
 #if defined(__APPLE__)
     /* Darwin reports the high address — one past the top — and the size. */
     void *top = pthread_get_stackaddr_np(pthread_self());
     size_t size = pthread_get_stacksize_np(pthread_self());
+    if (top == NULL || size == 0 || size > (uintptr_t)top) {
+        return 0;
+    }
     wf__floor_stack_high = (unsigned long)(uintptr_t)top;
     wf__floor_stack_low = wf__floor_stack_high - (unsigned long)size;
     wf__floor_stack_known = 1;
@@ -268,18 +279,22 @@ static void wf__floor_capture_bounds(void) {
     pthread_attr_t attributes;
     void *base = NULL;
     size_t size = 0;
+    int error;
     if (pthread_getattr_np(pthread_self(), &attributes) != 0) {
-        return;
+        return 0;
     }
-    if (pthread_attr_getstack(&attributes, &base, &size) == 0) {
-        wf__floor_stack_low = (unsigned long)(uintptr_t)base;
-        wf__floor_stack_high = wf__floor_stack_low + (unsigned long)size;
-        wf__floor_stack_known = 1;
-    }
+    error = pthread_attr_getstack(&attributes, &base, &size);
     /* Unconditional: the query can succeed and the read still fail, and the
      * attribute object is owned either way. */
     pthread_attr_destroy(&attributes);
+    if (error != 0 || base == NULL || size == 0 || size > UINTPTR_MAX - (uintptr_t)base) {
+        return 0;
+    }
+    wf__floor_stack_low = (unsigned long)(uintptr_t)base;
+    wf__floor_stack_high = wf__floor_stack_low + (unsigned long)size;
+    wf__floor_stack_known = 1;
 #endif
+    return 1;
 }
 
 /* Every WF thread attaches once: capture its stack bounds and reserve the
@@ -287,16 +302,21 @@ static void wf__floor_capture_bounds(void) {
 void wf__floor_attach_thread(void) {
     stack_t alternate;
     void *memory;
-    wf__floor_capture_bounds();
+    if (!wf__floor_capture_bounds()) {
+        wf__floor_setup_failed();
+    }
     memory = mmap(NULL, WF_FLOOR_ALTSTACK_BYTES, PROT_READ | PROT_WRITE,
                   MAP_PRIVATE | MAP_ANON, -1, 0);
     if (memory == MAP_FAILED) {
-        return;
+        wf__floor_setup_failed();
     }
     alternate.ss_sp = memory;
     alternate.ss_size = WF_FLOOR_ALTSTACK_BYTES;
     alternate.ss_flags = 0;
-    sigaltstack(&alternate, NULL);
+    if (sigaltstack(&alternate, NULL) != 0) {
+        munmap(memory, WF_FLOOR_ALTSTACK_BYTES);
+        wf__floor_setup_failed();
+    }
 }
 
 /* The process-wide half: one disposition for the two fault signals.
@@ -310,24 +330,24 @@ void wf__floor_attach_thread(void) {
  * of the handler, the restore-and-return path above is what re-raises it, and
  * a fault inside the handler cannot re-enter the handler.
  *
- * A failure here is not a reason to refuse to start. Failing to install
- * changes only the quality of the diagnosis, not the meaning of the program,
- * so the program runs with the behaviour it had before this file existed. */
+ * Installation is required before running the command or starting workers.
+ * Setup refusal stops at the host boundary without a source outcome. */
 static void wf__floor_install(void) {
     struct sigaction action;
     long page = sysconf(_SC_PAGESIZE);
-    if (page > 0) {
-        wf__floor_guard_band = (unsigned long)page + WF_FLOOR_RED_ZONE_BYTES;
+    if (page <= 0) {
+        wf__floor_setup_failed();
     }
+    wf__floor_guard_band = (unsigned long)page + WF_FLOOR_RED_ZONE_BYTES;
     memset(&action, 0, sizeof(action));
     action.sa_sigaction = wf__floor_handler;
     action.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&action.sa_mask);
     if (sigaction(SIGSEGV, &action, NULL) != 0) {
-        return;
+        wf__floor_setup_failed();
     }
     if (sigaction(SIGBUS, &action, NULL) != 0) {
-        return;
+        wf__floor_setup_failed();
     }
     wf__floor_attach_thread();
 }

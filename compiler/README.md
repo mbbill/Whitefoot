@@ -215,6 +215,10 @@ under its wait lock, so a late notification cannot complete the new task.
 Workers start lazily, with the same stack reservation and exhaustion handling
 as the command entry. Partial startup keeps the workers that actually started;
 complete failure declines offers and executes ordinary calls.
+Failure to install the exhaustion floor itself stops execution at the host
+boundary before an unprotected command or worker can run. POSIX setup checks
+stack bounds, page size, alternate-stack allocation and signal installation;
+its setup diagnostic is distinct from an actual stack-exhaustion record.
 
 Compute callbacks must not suspend for I/O. Such WF functions retain their
 ordinary calls and ABI. Direct independent I/O operations still submit to the

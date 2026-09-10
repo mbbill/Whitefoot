@@ -1834,6 +1834,99 @@ Exact c882 passed canonical `make check`, all 12 gate jobs and both I/O-host
 jobs. Three I/O-bench jobs passed; Windows compute timing remained unstable
 after its two cohorts and failed. Correctness is not performance qualification.
 
+The Linux-only revision `a7150751a4460e4cd51c03ffd84767013d6f98e3`
+completed [confirmation run 34488895756](https://github.com/mbbill/Whitefoot/actions/runs/34488895756).
+All five formal artifacts again replay 2,940 processes, 6,776,700 checked
+calls, captured sources, repaired controls and original reducers. The failed
+screens remain failed:
+
+| Native target | Artifact | ZIP SHA256 | Widths | Long / first64 investigate |
+| --- | --- | --- | --- | --- |
+| Linux x86-64 | 10157276740 | `33a676f67061d79ad70e5e8dd77f50513fb219bc4318f7805f4d058727c90975` | 1/2/3/4 | 10/120; 24/120 |
+| Linux ARM | 10157138828 | `17bb73f60161ae2dca3fa18da236376d051e1de01d6a8301a622d66f43bbef21` | 1/2/3/4 | 0/96; 8/96 |
+| Mac Intel | 10157784914 | `661ac9de3c039e4b03ce976af023386a13dbff70c244531556a30e3645c75b23` | 1/2/3/4 | 14/120; 22/120 |
+| Mac ARM | 10157364610 | `908d0c7dd79377779d7d1a3c28ecc768799f23b4c045a445144e7b75f165fb44` | 1/2/3 | 20/72; 28/72 |
+| Windows x86-64 | 10157184792 | `d52ac1b0f247f4a81d4ca4e7ee3e479ed07e9ec342f988cefacd5cca4c2b8f50` | 2/3/4 | 4/72; 11/72 |
+
+Linux x86-64's native executable sections equal c882's, confirming the
+retained code path. On the same EPYC 7763 guest class, W4/N4096/tile64
+current/previous full-call is 0.9681 [0.9438, 0.9928], CPU 0.9606
+[0.9535, 0.9934]; replica gives 0.9643 [0.9477, 0.9991] and 0.9685
+[0.9505, 0.9782]. Both images improve both measures in all five pairs.
+Full-call A/A is [0.9902, 1.0039], CPU A/A [0.9864, 1.0156]. Core is
+1.0021 [0.9701, 1.0119], RSS 1.0000 [0.9515, 1.0080]. First64 full-call
+remains inconclusive at 1.0152 [0.9287, 1.0759]. Current/research still
+costs 1.0524 full-call and 1.0520 CPU; the local benefit is not parity.
+
+There is also a repeated phase-specific cost at Linux W4/N4096/tile16.
+Current/previous core is 1.0654 [1.0299, 1.1432], replica 1.0765
+[1.0063, 1.1222]. The preceding c882 cohort also has all five core pairs
+above previous for both images, with medians 1.0469 and 1.0377.
+Current full-call/CPU are 0.9959/0.9971 and replica 1.0044/0.9934 in
+the confirmation cohort. Core A/A is broad [0.9178, 1.0840], but repeated
+direction across two cohorts and images cannot be discarded because each
+individual pair is not more than 5% slower. No corresponding full-call or
+process-CPU increase is established; a shift between measured phases is
+unexplained. This remains a qualification issue for the Linux candidate.
+
+Linux ARM's executable sections, both Macs' complete section contents and
+addresses, and Windows's complete `.text` match previous. The restored Mac
+Intel W3/N4096/tile64 cell gives current/previous full-call 0.9948
+[0.9656, 1.0534], CPU 1.0021 [0.9662, 1.0493]; replica gives 1.0247
+[0.9600, 1.0463] and 1.0212 [0.9691, 1.0504]. The prior CPU risk is
+not reproduced here. This is restoration evidence, not a cross-cohort speedup.
+Mac Intel still has large identical-image drift: W3/N65536/tile64
+replica/research full-call/CPU medians are 1.1778/1.1692, current
+1.0184/1.0191, with full-call A/A [0.8310, 0.9632].
+
+Mac ARM retains a clearer historical loss at W2/N65536/tile16:
+current/old full-call 1.1124 [1.0784, 1.4059], CPU 1.1010
+[1.0678, 1.1595]; replica 1.1259 [1.0773, 1.1968] and 1.0872
+[1.0628, 1.1805]. Both images lose both measures by more than 5% in
+every pair. Its unchanged candidate/previous code cannot attribute that
+existing loss to this revision. Windows has no five-pair full/core/CPU/RSS
+loss above 5% versus previous or old; this does not erase its failed screens.
+
+The five ordinary-command artifacts independently replay 7,620 processes.
+Linux x86-64, Linux ARM and Windows keep their failed reducers. Both Macs'
+reducers exit zero while leaving extensive noisy-open rows: green exit alone
+does not qualify them. Shape4/N4096 default/static full-command ratios are
+3.3529 on Linux x86-64 W4, 3.6971 on Linux ARM W4, 3.0190 on Windows W4,
+3.3092 on Mac Intel W4 and 1.7374 on Mac ARM W2. Default diagnostics start
+zero helpers. Linux x86-64 default/previous wall is 0.9982
+[0.9973, 1.0020], so its large static-reference loss remains a compiler-policy
+gap, not a measured new runtime regression. Seven Windows default cells
+contain zero CPU readings and remain unavailable for CPU comparison.
+Mac Intel shape5/N65536/W2 also retains replica/previous wall/CPU medians
+1.2261/1.2064, while current has 1.0978/1.1045 and wide A/A ranges;
+the larger loss is not consistently reproduced by the identical current image.
+All-platform performance qualification remains open.
+
+Exact a715 passed local canonical `make check`, all 12
+[gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34488895793), both
+[I/O-host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34488895858)
+and all four [I/O-bench jobs](https://github.com/mbbill/Whitefoot/actions/runs/34488895728).
+
+### Refuse execution when the exhaustion floor cannot be installed
+
+The delivery review found inherited POSIX paths that continued after stack
+bound queries, alternate-stack allocation, `sigaltstack`, `sigaction` or
+page-size discovery failed. Native fault injection confirmed that failed
+allocation and either signal facility still reached the command body.
+This is a runtime-start limitation under SCOPE-3, not a source-proof defect.
+The maintained floor now diagnoses setup failure and aborts before an
+unprotected command or worker can execute. Failed alternate-stack installation
+releases its new mapping; successful stack-attribute queries are always
+destroyed. Normal scheduling, ABI and I/O paths are unchanged.
+
+The maintained exhaustion test links the actual floor with substituted native
+facilities, covering 13 command/worker cases: two normal controls and eleven
+refusals. It requires the setup diagnostic, SIGABRT and no body output for
+each refusal. All 23 exhaustion tests pass locally. The deep-recursion test
+description is also corrected: nested helping uses an existing stack, so
+equal stack reservations do not prove universally equal available depth.
+Native Linux execution and the exact new revision's full gate remain required.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o
