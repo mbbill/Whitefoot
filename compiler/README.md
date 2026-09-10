@@ -405,9 +405,9 @@ field of a complete result allocation. The parent must be read only by distinct
 consuming field projections after the call in the same block; all participating
 storage groups retain the complete CFG conflict and exposed-address checks.
 Real field types determine offsets and padding. Returning a child keeps the
-ordinary return transfer because a child-sized caller result cannot hold the
-complete parent. Ambiguous inputs, whole-parent or cross-block uses, nested
-field placements, and overlap/completion schedules retain separate storage;
+ordinary return transfer; the caller promises only the child's extent, which
+is not selected as the complete parent's backing. Ambiguous inputs, whole-parent
+or cross-block uses, nested field placements, and overlap/completion schedules retain separate storage;
 general alias-directed placement remains incomplete.
 
 Checked cleanup names either a saved value or content at a typed place. Scope

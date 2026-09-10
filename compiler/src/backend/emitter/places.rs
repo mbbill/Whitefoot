@@ -22,8 +22,8 @@ pub(in crate::backend) fn returned_storage_slot(
         }
     }
     let returned = returned?;
-    // A caller supplies only the returned type's extent. A child-sized result
-    // cannot replace the complete struct allocation that backs that child.
+    // Keep the complete parent allocation when returning one of its fields;
+    // the caller's result contract supplies only the returned child's extent.
     if storage.allocation_root(returned) != returned {
         return None;
     }

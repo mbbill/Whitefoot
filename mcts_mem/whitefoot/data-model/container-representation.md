@@ -104,12 +104,10 @@
   binding directly in an acyclic activation or a selected pipeline's retired
   per-slot storage. Other cases retain separate storage; source consume modes
   grant no input/result aliasing permission.
-- An ordinary synchronous call's whole owned result may reuse one consumed,
-  same-typed aggregate binding when the callee snapshots inputs before body writes,
-  complete CFG liveness kills the old contents, and the backing is not exposed.
-  Ambiguous inputs, ordered multi-results and overlap/completion schedules retain
-  separate storage. This bounded ABI argument supplements checked ownership;
-  it does not follow from an `own` mode alone.
+- Synchronous consumed-input reuse covers complete results and selected fields
+  within complete struct results under [[consumed-result-destinations]]. Checked
+  source modes, input snapshots, full CFG interference and exposed-address
+  exclusions remain independent placement obligations.
 - One eligible owned entry group may share the caller's result destination after
   every other indirect input reaches private storage. Its entry transfer remains
   valid for equal or different input/result addresses. Exposed groups and deferred

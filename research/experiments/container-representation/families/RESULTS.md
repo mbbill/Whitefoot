@@ -384,23 +384,26 @@ coalesced groups undergo complete CFG interference checking, with only the
 particular call's input read and selected consuming projection admitting the
 overlap. Exposed storage and deferred calls remain excluded. Field offsets come
 from the actual struct type, and a returned child keeps its normal copy into
-the smaller caller-provided result. The choice does not require a new source
+the caller-provided result. The choice does not require a new source
 rule, an input/result value-equality proof, or a runtime alias test.
 
-On 2026-09-10, the developing v0.56 working tree based on `8bc22df5` used the
-ordinary build targets above to regenerate both priority executables from
-unchanged `priority.wf`; both independent 320-input checks
+On 2026-09-10, an isolated tree matching `e3924d7f` used the ordinary build
+targets above to regenerate both priority executables from unchanged
+`priority.wf`; both independent 320-input checks
 passed. The emitted round owns one 152-byte tuple allocation, with its heap in
 field zero. The original 144-byte transfer instruction remains between equal
 field addresses. Apple Clang 21.0.0 at `-O2` removes the same 15 post-pop copies
 identified by the earlier control and retains all 16 pop calls. The optimized
 trace's explicit stack adjustment is 272 bytes, versus the baseline's 416.
 The exported LLVM SHA-256 is
-`d8802dc87cad0c0d15be77f5d08ebcc7b6cb988362420ead11dfb839f40e93c9`;
+`d4456a94e333ee2c9fb258062bcb0f0bc21a865767b10168d8302ba14b05f720`;
 the preserved baseline is
 `99acd8a67620facad1da6dbd3dcfcebf23b22dcfd7279ba813b73abd9a875211`.
 These are compiler-selected placement and static code results, not new timing
 samples. The callee's entry snapshot and internal movement remain.
+This isolated build carries the published v0.55 source rules. Its LLVM differs
+from the earlier developing v0.56 build only in the qualification-version
+comment, and the native assembly is byte-identical.
 
 The native owned-place controls also execute a three-result tuple with an
 aggregate between a byte and a 16-bit scalar, preserve both siblings, return
