@@ -6,16 +6,17 @@
 - Instantiate bounds compositionally through selected actual subvalues. A bound
   whose selected suppliers all resolve to fresh state becomes fresh; an unknown
   summary remains unknown independently of its current actuals.
-- Require exact selected routes at effect consumers. A surviving imported bound
-  is an explicit capability limit, not an exhibited exact effect set or a claim
-  about which owner occupies a particular slot.
+- Distinguish complete call coverage through [[whole-call-coverage]] from exact
+  selected routes. A surviving imported bound is an explicit capability limit,
+  not an exhibited exact effect set or a claim about a particular slot.
 - Use shared kernel transfer rules over captured operand value images. Owning
-  insertion, extraction and unresolved replacement retain their possible
-  suppliers without claiming exact placement or residual membership.
+  insertion retains complete supplied contents where established; extraction
+  and unresolved replacement retain bounds without exact residual membership.
 
 ## Facts
 
 - 2026-09-09 (e298ca67) pitfall: An addressed read's expression children describe address calculation, not the consumed stored value. Capturing that value image and the kernel's checked operand images preserves supplier composition through legal read-out/helper boundaries. (code)
+- 2026-09-09 (a577b7cb) pitfall: Complete content coverage does not select descriptor-only reads or a type-directed release subset. Treating it as an exact local place demands effects from unobserved element owners. (code)
 
 ## Moves
 
