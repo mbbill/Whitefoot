@@ -418,8 +418,9 @@ the actual notification under the wait lock, so an earlier spurious return
 cannot satisfy it. Local ordinary, TSan and ASan/UBSan smoke checks and the
 embedded compiler scheduler tests pass. The existing 200,000-operation deque
 stress also passes with statistics enabled and disabled. Independent source
-and test review closed two test-handshake findings; native Windows execution
-and all-platform performance are still required.
+and test review closed two test-handshake findings. The subsequent native
+Windows run passes this reuse case and both deque-statistics configurations;
+all-platform performance remains unqualified below.
 
 Local ordinary compilation with both the candidate and prior `7776c3cd`
 passes the same 48-input oracle matrix at widths 1/2/4 and split-work settings
@@ -427,7 +428,7 @@ passes the same 48-input oracle matrix at widths 1/2/4 and split-work settings
 and retained its noisy performance failures. These establish execution and
 harness coverage on M1, not native CI performance qualification.
 
-The next formal matrix compares the candidate with exact prior core
+The a8227af4 formal matrix compares the candidate with exact prior core
 `7776c3cd` using the same WF/host objects, flags and platform leaves. The
 ordinary matrix rebuilds that same prior official compiler and uses normal
 CLI commands with matched default and four-leaf policies. Retain the historical,
@@ -436,6 +437,98 @@ correctness and no unexplained repeatable performance loss on any native
 target; retain failed/noisy cells as open. Smaller storage alone is not a
 speedup claim. The earlier alignment decision and existing workload losses
 remain unresolved obligations, not benefits inherited by this candidate.
+
+### Native qualification at a8227af4
+
+Exact `a8227af4ed382a881b6c85f53e9553056f634a60` passes local canonical
+`make check`. Its [compute cohort](https://github.com/mbbill/Whitefoot/actions/runs/34432805054)
+completes all nineteen jobs, retaining the performance failures. The
+[repository gate](https://github.com/mbbill/Whitefoot/actions/runs/34432805042)
+has eleven successes and one cancelled macOS research job; both
+[native I/O jobs](https://github.com/mbbill/Whitefoot/actions/runs/34432805064)
+and all four [I/O benchmark jobs](https://github.com/mbbill/Whitefoot/actions/runs/34432805117)
+pass. This is not an all-platform acceptance result.
+
+| Native target | Full-window investigate / comparisons | First64 investigate / comparisons | Ordinary CLI reducer |
+| --- | ---: | ---: | --- |
+| Linux x86-64 | 0 / 90 | 11 / 90 | failed |
+| Linux AArch64 | 2 / 72 | 9 / 72 | failed |
+| macOS x86-64 | 22 / 90 | 22 / 90 | failed |
+| macOS AArch64 | 11 / 48 | 15 / 48 | passed, with unresolved noisy cells |
+| Windows x86-64 | 2 / 48 | 18 / 48 | failed |
+
+These are core-time screen counts, including identical-image comparisons;
+first64 overlaps the full window. Independent replay verifies the five formal
+artifacts' manifests, source identities, call sequences and both mean tables.
+The five ordinary artifacts now retain both compilers and verify all fifteen
+manifest entries each; their raw rows and existing reducers also reproduce.
+Neither reducer success nor same-version parity qualifies a noisy cell or
+closes a loss against a stronger reference.
+
+Linux x86-64 formal artifact `10135204595` verifies 540 processes and
+1,244,700 calls. At W4/4,096/tile16, current/recovered full call is
+0.9761 [0.9669, 1.0054], current/previous is 0.9716 [0.9582, 1.0037],
+and current/replica is 0.9935 [0.9802, 1.0163]. No core or full-call median
+against previous exceeds 1.05 across its eighteen configurations.
+
+Linux AArch64 artifact `10135227185` verifies 450 processes and 1,037,250
+calls. At 65,536/tile1024, current/previous full-call ratios are 1.0520
+[1.0491, 1.0536], 1.0688 [1.0668, 1.0787] and 1.0896 [1.0800, 1.1137]
+at W1/2/4; corresponding A/A medians are about 1.0005/1.0000/1.0012.
+The W1 path executes the sequential WF entry, with no scheduler acquire,
+publish, join, release or slot access. Shared WF/native/host instruction differences occur
+only at relocations, while WF accessors move by 216 bytes. This rules out
+execution of the waiting flag as the W1 cause, but does not establish a
+layout explanation or excuse the measured full-call loss.
+
+Windows artifact `10135217004` verifies 388 manifest entries, 300 processes
+and 691,200 warm calls. At W4/4,096/tile1024, current/historical core is
+0.9913, full call 1.1745 [1.1616, 1.1797], and batch CPU 1.2000
+[1.1190, 1.3000]. Current/previous full call is 0.9864 [0.9623, 1.0388].
+The per-process full-minus-core means have medians 32.791 microseconds for
+current and 25.909 for historical; their paired ratio is 1.2681
+[1.2488, 1.2870]. That interval includes preparation, result access and
+release, with possible interference from workers; it is not a measurement
+of a wait primitive. Current and previous shared functions occupy identical
+addresses and differ only in relocation bytes. Historical shared code has
+a different placement, so neither waiting policy nor layout is isolated.
+
+macOS artifacts `10135293030` (ARM) and `10135354909` (Intel) verify 300 and
+540 processes. ARM W1/4,096/tile64 current/recovered full call is 1.1084
+[1.0465, 1.2652], with A/A 1.0756 [1.0419, 1.2681]; the replica/recovered
+ratio is only 1.0200. Intel W4/65,536/tile1024 current/recovered is 1.0978
+[1.0177, 1.2806], with A/A 1.0441 [0.9114, 1.0888]. Neither result can
+be discarded as a pass or attributed to the waiting flag. Ordinary ARM's
+successful reducer still contains a noisy shape0/4,096/W2 current/previous
+wall ratio of 1.0876 [1.0510, 1.1090], with A/A 1.0687
+[0.9803, 1.1294]. Ordinary Intel has a noisy shape1/65,536/W4 ratio
+of 1.2452 [1.1553, 1.4307], with A/A 1.3100 [0.8754, 1.4723].
+
+The ordinary Linux x86-64 four-leaf shape4/4,096/W4 control is near previous
+at 0.9865 [0.9403, 1.1439], but still loses to native static by 1.4217
+[1.3615, 1.6460]. Matching a prior compiler does not erase that application
+gap. The quadrature artifact `10135238972` verifies all 2,400 processes and
+reproduces 23 investigate WF cells out of 80. It has no WF cell with both a
+wall median above 1.05 and all five pairs slower, but broad ranges and
+native-only cross-image variation prevent acceptance. Those native controls
+are not byte-identical A/A and cannot quantify sampling noise alone.
+
+Native debug layouts confirm slot size 304 to 288 bytes; ordinary Linux ARM
+BSS falls by 65,536 bytes. The ordinary Windows/ARM four-leaf paired RSS
+medians are both 1.0. No stable speed or peak-resident-memory improvement is
+established. Keep the runtime and publication policy fixed while reconciling
+these existing losses; the smaller slot is not a reason to add more tuning.
+
+The cancelled macOS research job rebuilds the compiler in two target
+directories: the compute experiment first uses its private target, then the
+container tests rebuild the same compiler under `compiler/target`. The second
+build is interrupted at the workflow's eight-minute limit. The root research
+target now builds the ordinary compiler once and supplies that executable to
+the compute tests, allowing container tests to reuse the same Cargo output.
+All research test targets and the CI time limit remain unchanged. A native
+CI result for this build-reuse fix is still required. The unchanged local
+`make research-tests` passes with the supplied ordinary compiler; the container
+stage's Cargo invocation reuses the same output and finishes in 0.00 seconds.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 

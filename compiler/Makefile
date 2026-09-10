@@ -58,14 +58,11 @@ COMPILER_STAGES := format lint test-partition test-unit test-sampling test-corpu
 	docs spec completion-test
 
 COMPLETION_DIR := src/backend/completion
-# The scheduler core is linked into every completion build: the completion
-# record begins with a `wf_sched_record` and every publication goes through
-# `wf_sched_complete` (design §7).
+# Completion builds use the same compute pool and process configuration as
+# ordinary compute programs; typed completion records own their own progress.
 SCHED_DIR := src/backend/sched
-# `entry.c` is the platform layer over the core: the one core instance every
-# unit that publishes or joins a record names, the startup policy, and the
-# emitted module's `wf__par_*` ABI. It is part of the core's own group, so a
-# link that carries `core.c` carries it (design §7's platform layer).
+# The core owns current-stack join/help/steal, entry.c owns configuration and
+# startup policy, and the native leaf supplies threads and per-lane waiting.
 SCHED_SOURCES := $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c $(SCHED_DIR)/entry.c
 COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
 COMPLETION_DEFINES := \

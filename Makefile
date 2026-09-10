@@ -122,7 +122,10 @@ compiler:
 # not current tests; their directory README states that boundary explicitly.
 research-tests:
 	@mkdir -p "$(RESEARCH_TEST_TMP)/frequency" "$(RESEARCH_TEST_TMP)/ripgrep" "$(RESEARCH_CARGO_TARGET)"
-	$(MAKE) -C research/experiments/compute-runtime check OUT="$(RESEARCH_TEST_TMP)/compute-runtime"
+	# Share this revision's ordinary compiler with the later container tests.
+	# A second target directory rebuilt the same compiler and exhausted CI time.
+	cargo build --manifest-path compiler/Cargo.toml --profile gate --bin whitefootc --locked --offline
+	$(MAKE) -C research/experiments/compute-runtime check OUT="$(RESEARCH_TEST_TMP)/compute-runtime" WFC="$(CURDIR)/compiler/target/gate/whitefootc"
 	$(MAKE) -C research/experiments/container-representation check
 	TMPDIR="$(RESEARCH_TEST_TMP)/frequency" $(MAKE) -C research/experiments/frequency-study check PYTHON=python3 CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/frequency"
 	$(MAKE) -C research/experiments/ripgrep test PYTHON=python3 SCRATCH_ROOT="$(RESEARCH_TEST_TMP)/ripgrep"
