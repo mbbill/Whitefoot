@@ -83,6 +83,30 @@ not change production affinity, waiting policy or the default split budget.
 Artifacts retain raw samples, source, binaries, host details and decoded perf
 events; observer envelopes are not added to unobserved performance samples.
 
+The [7e9c8ca9 placement cohort](https://github.com/mbbill/Whitefoot/actions/runs/34423914331)
+completed binding/unbound correctness, all 120 observations per Linux target
+and raw scheduling traces. Binding does not resolve the gap: work60000's
+32-repetition median bound/unbound wall ratios are 1.107 on AArch64 and 1.057
+on x86-64, with substantial replica variability. At 256 repetitions they are
+1.025 and 1.018. This provides no basis for default production affinity.
+
+External competition invalidates placement alone as an explanation. In the
+AArch64 bound work60000 trace, external PID 1919 occupies CPU 1 for 18.640 ms
+of the 36.900-ms workload window. Its execution overlaps 18.470 ms of the
+bound worker's 18.581-ms observed runnable delay. The separate bound static
+trace spans 23.767 ms with at most 0.549 ms from any single external task/CPU
+pair. These traces did not receive equivalent background load; neither can
+be used to subtract interference from the untraced timing samples. The next
+control fixes affinity and varies both programs' compute-thread priorities
+equally, testing interference sensitivity without changing unrelated CI
+processes or the maintained runtime's waiting policy.
+
+The repeated x86-64 FIR comparison still requires investigation: candidate/
+research core ratio 1.613, five-pair range 1.566–1.697, while candidate/replica
+ranges 0.965–1.043. Candidate/historical is 0.984. This independent cohort
+confirms the comparison gap; the short-command interference traces do not
+explain or excuse this different workload's loss.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

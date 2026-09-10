@@ -1212,6 +1212,22 @@ justify production affinity or prove a universally better waiting policy.
 The original unwrapped screen remains the performance qualification path;
 remove this control when the placement question is settled.
 
+The companion `priority/` panel keeps all four participants bound and varies
+only their requested nice value: condition 0 uses 0, condition 1 uses -10.
+Both conditions use the same root measurement runner, started through `sudo`
+before its timer. The shim sets and reads back priority on each compute
+thread; the WF launcher and perf recorder retain their inherited priority.
+Permission failure is recorded as unavailable. This is a controlled
+background-competition experiment, not ordinary-user performance acceptance.
+It retains 120 process samples per panel, separate thread/UID/cgroup/autogroup
+reports and post-timing traces. The `condition` column has panel-specific
+meaning recorded in `conditions.txt`; old placement artifacts called it `bound`.
+Evidence for background interference requires reduced overlap with external
+tasks, reduced runnable delay and a smaller paired wall gap together. Trace
+order is reversed between the two panels, but traces cannot correct the
+separate unobserved samples. A benefit would not select higher production
+priority or justify removing slower ordinary-user samples.
+
 The initial screen reports per-cell paired median/min/max wall, CPU and RSS
 ratios. A wall/CPU **gap** requires all five ratios above 1.05 and all five WF
 wall A/A ratios inside [0.95, 1.05]. Gaps in the default WF/native comparisons

@@ -49,7 +49,9 @@ flags="-std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic $platform_flags -fno-fas
 cat > "$out/flags.txt" <<'TEXT'
 Same scalar O3 WF object and native oracle in every attribution image; ordinary
 CLI also compiled at its normal optimization level and checked at each width.
-Current floor/configuration/platform thread leaves are common to the images.
+All images link the current floor/configuration/platform thread leaves.
+POSIX old/recovered cores call pthread directly; candidate calls wf_prim
+wrappers. Linking the same leaves does not imply the same executed call path.
 The old/recovered cores preserve their own compute startup and algorithms.
 Historical POSIX and recovered ring accesses receive the recorded correctness
 repairs; Windows historical thief reads use its existing SC load primitive.

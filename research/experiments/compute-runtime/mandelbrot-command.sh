@@ -10,7 +10,7 @@ CXX=${CXX:-/usr/bin/clang++}
 mode=${1:-check}
 case "$mode" in build|check|screen|summarize|diagnose|profile) ;; *) exit 2;; esac
 # This panel owns the policy matrix; inherited tuning must not alter a cell.
-unset WF_SPLIT_WORK
+unset WF_SPLIT_WORK PLACEMENT_NICE PLACEMENT_REPORT
 WF_SCHED_REPORT=0
 export WF_SCHED_REPORT
 mkdir -p "$OUT/mandelbrot-command"
@@ -169,80 +169,121 @@ if test "$mode" = profile; then
     # The original unwrapped observations above remain separate. On/off and
     # A/A runs below use the same wrapper within each program; the native
     # main participates directly, whereas WF creates a command thread.
-    placement=$profile/placement
-    mkdir -p "$placement"
-    if ! placement_available; then
-        printf '%s\n' 'four allowed CPUs unavailable; placement control skipped' > "$placement/availability.txt"
-        exit 0
-    fi
-    taskset -pc $$ > "$placement/availability.txt"
-    env_command=$(command -v env)
-    cp thread-placement.c "$placement/"
-    sha256sum "$out/thread-placement.so" >> "$profile/inputs.txt"
-    printf 'repetitions\tpass\tform\tbound\treplica\twall_ns\tuser_ns\tsystem_ns\trss_bytes\tvoluntary\tinvoluntary\tstatus\n' > "$placement/processes.tsv"
-    for repetitions in 32 256; do
-        expected=$("$out/native" oracle 4 4096 256 "$repetitions" 92821)
-        for pass in 0 1 2 3 4; do
-            forms='work60000 work120000 static'; bindings='0 1'
-            if test "$((pass%2))" = 1; then forms='static work120000 work60000'; bindings='1 0'; fi
-            for form in $forms; do
-                work=1200000; role=launcher
-                case "$form" in
-                    work60000) work=60000; set -- "$out/par";;
-                    work120000) work=120000; set -- "$out/par";;
-                    static) role=caller; set -- "$out/native" static;;
-                esac
-                set -- "$@" 4 4096 256 "$repetitions" 92821 "$expected"
-                for bound in $bindings; do
-                    for replica in 0 1; do
-                        stem=$placement/$form-r$repetitions-p$pass-b$bound-a$replica
-                        "$out/runner" "$env_command" WF_WORKERS=4 WF_SPLIT_WORK=$work \
-                            WF_SCHED_REPORT=0 LD_PRELOAD="$out/thread-placement.so" \
-                            PLACEMENT_BIND=$bound PLACEMENT_MAIN=$role PLACEMENT_REPORT=0 \
-                            "$@" > "$stem.tsv" 2> "$stem.stderr"
-                        test ! -s "$stem.stderr"
-                        printf '%s\t%s\t%s\t%s\t%s\t' "$repetitions" "$pass" "$form" "$bound" "$replica" >> "$placement/processes.tsv"
-                        cat "$stem.tsv" >> "$placement/processes.tsv"
+    placement_condition() {
+        bound=$condition; nice=keep
+        if test "$panel" = priority; then
+            bound=1; nice=0
+            if test "$condition" = 1; then nice=-10; fi
+        fi
+    }
+    placement_command() {
+        if test "$panel" = priority; then "$sudo" -n "$@"; else "$@"; fi
+    }
+    placement_panel() {
+        placement=$profile/$panel
+        mkdir -p "$placement"
+        if ! placement_available; then
+            printf '%s\n' 'four allowed CPUs unavailable; placement control skipped' > "$placement/availability.txt"
+            return
+        fi
+        taskset -pc $$ > "$placement/availability.txt"
+        env_command=$(command -v env)
+        cp thread-placement.c "$placement/"
+        sha256sum "$out/thread-placement.so" >> "$profile/inputs.txt"
+        if test "$panel" = priority; then
+            if test -z "$sudo" || ! "$sudo" -n true > "$placement/permission.stdout" 2> "$placement/permission.stderr"; then
+                printf '%s\n' 'sudo unavailable; priority control skipped' >> "$placement/availability.txt"
+                return
+            fi
+            probe_expected=$("$out/native" oracle 4 257 128 3 92821)
+            if "$sudo" -n "$env_command" WF_WORKERS=4 \
+                LD_PRELOAD="$out/thread-placement.so" PLACEMENT_BIND=1 PLACEMENT_MAIN=caller \
+                PLACEMENT_REPORT=1 PLACEMENT_NICE=-10 "$out/native" static 4 257 128 3 92821 "$probe_expected" \
+                > "$placement/probe.stdout" 2> "$placement/probe.stderr"; then
+                test ! -s "$placement/probe.stdout"
+            else
+                printf 'thread placement: cannot establish requested priority\n' > "$placement/permission.expected"
+                if cmp -s "$placement/probe.stderr" "$placement/permission.expected"; then
+                    printf '%s\n' 'requested nice=-10 unavailable; priority control skipped' >> "$placement/availability.txt"
+                    return
+                fi
+                cat "$placement/probe.stderr" >&2
+                return 1
+            fi
+        fi
+        printf '%s\n' 'condition: placement 0/1 means unbound/bound with inherited priority; priority 0/1 means bound nice=0/-10' \
+            'priority panel: both conditions execute the measurement runner as root via sudo before its timer; placement panel runs as the invoking user' \
+            'all scheduling traces run as root; perf itself retains its inherited priority' > "$placement/conditions.txt"
+        printf 'repetitions\tpass\tform\tcondition\treplica\twall_ns\tuser_ns\tsystem_ns\trss_bytes\tvoluntary\tinvoluntary\tstatus\n' > "$placement/processes.tsv"
+        for repetitions in 32 256; do
+            expected=$("$out/native" oracle 4 4096 256 "$repetitions" 92821)
+            for pass in 0 1 2 3 4; do
+                forms='work60000 work120000 static'; conditions='0 1'
+                if test "$((pass%2))" = 1; then forms='static work120000 work60000'; conditions='1 0'; fi
+                for form in $forms; do
+                    work=1200000; role=launcher
+                    case "$form" in
+                        work60000) work=60000; set -- "$out/par";;
+                        work120000) work=120000; set -- "$out/par";;
+                        static) role=caller; set -- "$out/native" static;;
+                    esac
+                    set -- "$@" 4 4096 256 "$repetitions" 92821 "$expected"
+                    for condition in $conditions; do
+                        placement_condition
+                        for replica in 0 1; do
+                            stem=$placement/$form-r$repetitions-p$pass-c$condition-a$replica
+                            placement_command "$out/runner" "$env_command" WF_WORKERS=4 WF_SPLIT_WORK=$work \
+                                WF_SCHED_REPORT=0 LD_PRELOAD="$out/thread-placement.so" \
+                                PLACEMENT_BIND=$bound PLACEMENT_MAIN=$role PLACEMENT_NICE=$nice PLACEMENT_REPORT=0 \
+                                "$@" > "$stem.tsv" 2> "$stem.stderr"
+                            test ! -s "$stem.stderr"
+                            printf '%s\t%s\t%s\t%s\t%s\t' "$repetitions" "$pass" "$form" "$condition" "$replica" >> "$placement/processes.tsv"
+                            cat "$stem.tsv" >> "$placement/processes.tsv"
+                        done
                     done
                 done
             done
         done
-    done
-    # Observe after all timed pairs so perf cannot perturb their ordering.
-    expected=$("$out/native" oracle 4 4096 256 32 92821)
-    for form in work60000 work120000 static; do
-        work=1200000; role=launcher
-        case "$form" in
-            work60000) work=60000; set -- "$out/par";;
-            work120000) work=120000; set -- "$out/par";;
-            static) role=caller; set -- "$out/native" static;;
-        esac
-        set -- "$@" 4 4096 256 32 92821 "$expected"
-        for bound in 0 1; do
-            stem=$placement/$form-b$bound
-            "$env_command" WF_WORKERS=4 WF_SPLIT_WORK=$work WF_SCHED_REPORT=0 \
-                LD_PRELOAD="$out/thread-placement.so" PLACEMENT_BIND=$bound \
-                PLACEMENT_MAIN=$role PLACEMENT_REPORT=1 "$@" \
-                > "$stem.stdout" 2> "$stem.assignment.txt"
-            test ! -s "$stem.stdout"
-            test "$(wc -l < "$stem.assignment.txt")" -eq 4
-            if test "$sched_available" = 1; then
-                "$sudo" -n "$perf" record -a -e sched:sched_switch \
-                    -e sched:sched_wakeup -e sched:sched_wakeup_new \
-                    -o "$profile/placement-$form-b$bound.data" -- "$env_command" \
-                    WF_WORKERS=4 WF_SPLIT_WORK=$work WF_SCHED_REPORT=0 \
+        # Observe after all timed pairs so perf cannot perturb their ordering.
+        expected=$("$out/native" oracle 4 4096 256 32 92821)
+        forms='work60000 work120000 static'; conditions='0 1'
+        if test "$panel" = priority; then forms='static work120000 work60000'; conditions='1 0'; fi
+        for form in $forms; do
+            work=1200000; role=launcher
+            case "$form" in
+                work60000) work=60000; set -- "$out/par";;
+                work120000) work=120000; set -- "$out/par";;
+                static) role=caller; set -- "$out/native" static;;
+            esac
+            set -- "$@" 4 4096 256 32 92821 "$expected"
+            for condition in $conditions; do
+                placement_condition
+                stem=$placement/$form-c$condition
+                placement_command "$env_command" WF_WORKERS=4 WF_SPLIT_WORK=$work WF_SCHED_REPORT=0 \
                     LD_PRELOAD="$out/thread-placement.so" PLACEMENT_BIND=$bound \
-                    PLACEMENT_MAIN=$role PLACEMENT_REPORT=1 "$@" \
-                    > "$stem.traced.stdout" 2> "$stem.traced.log"
-                "$sudo" -n "$perf" script -i "$profile/placement-$form-b$bound.data" \
-                    > "$stem.sched.txt"
-            fi
+                    PLACEMENT_MAIN=$role PLACEMENT_NICE=$nice PLACEMENT_REPORT=1 "$@" \
+                    > "$stem.stdout" 2> "$stem.assignment.txt"
+                test ! -s "$stem.stdout"
+                awk '/^placement: / {n++} END {exit n!=4}' "$stem.assignment.txt"
+                if test "$sched_available" = 1; then
+                    "$sudo" -n "$perf" record -a -e sched:sched_switch \
+                        -e sched:sched_wakeup -e sched:sched_wakeup_new \
+                        -o "$profile/$panel-$form-c$condition.data" -- "$env_command" \
+                        WF_WORKERS=4 WF_SPLIT_WORK=$work WF_SCHED_REPORT=0 \
+                        LD_PRELOAD="$out/thread-placement.so" PLACEMENT_BIND=$bound \
+                        PLACEMENT_MAIN=$role PLACEMENT_NICE=$nice PLACEMENT_REPORT=1 "$@" \
+                        > "$stem.traced.stdout" 2> "$stem.traced.log"
+                    "$sudo" -n "$perf" script -i "$profile/$panel-$form-c$condition.data" \
+                        > "$stem.sched.txt"
+                fi
+            done
         done
-    done
-    awk -F '\t' '{for(i=1;i<=NF;i++) if($i!~/^[0-9]+$/) bad=1}
-        FNR!=1 || NF!=7 || $1<=0 || $4<=0 || $7!=0 {bad=1} END {exit bad || NR!=120}' \
-        "$placement"/*-a[01].tsv
-    verify_placement "$placement/processes.tsv"
+        awk -F '\t' '{for(i=1;i<=NF;i++) if($i!~/^[0-9]+$/) bad=1}
+            FNR!=1 || NF!=7 || $1<=0 || $4<=0 || $7!=0 {bad=1} END {exit bad || NR!=120}' \
+            "$placement"/*-a[01].tsv
+        verify_placement "$placement/processes.tsv"
+    }
+    for panel in placement priority; do placement_panel; done
     exit 0
 fi
 if test "$mode" = diagnose; then
