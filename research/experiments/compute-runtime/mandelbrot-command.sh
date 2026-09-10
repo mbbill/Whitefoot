@@ -52,6 +52,7 @@ if test "$mode" = build; then
         printf '%s\n' "native=$scalar_flags $thread_flags" \
             'WF: ordinary --par or --no-overlap with --no-vectorize at default -O2; no private ABI or runtime override' \
             'policy controls use the identical par image with WF_SPLIT_WORK=60000,240000,0; baseline and replica use the unset default' \
+            'shape4/count4096/workers4 additionally uses work120000: exactly four leaves at measured weight219, isolating decomposition before runtime changes' \
             'native serial: kernel/command reference; native static: persistent equal contiguous partitions, caller participates, pause/yield idle policy, startup and shutdown charged' \
             'static partitions are a strong regular-work reference, not a dynamic scheduling ceiling for skewed work' \
             'oracle mode checks the native point kernel against an independent volatile binary64 recurrence and known orbits; timed commands check an ordered 64-bit digest' \
@@ -72,7 +73,11 @@ if test "$mode" = diagnose; then
             if test "$count" = 65536; then repetitions=2; fi
             expected=$("$out/native$exe" oracle "$shape" "$count" 256 "$repetitions" 92821)
             for workers in $widths; do
-                for work in 0 60000 240000 1200000; do
+                work_values='0 60000 240000 1200000'
+                if test "$shape/$count/$workers" = 4/4096/4; then
+                    work_values="$work_values 120000"
+                fi
+                for work in $work_values; do
                     log="$out/diagnostics/s$shape-n$count-w$workers-work$work"
                     WF_WORKERS=$workers WF_SPLIT_WORK=$work WF_SCHED_REPORT=2 \
                         "$out/par$exe" "$shape" "$count" 256 "$repetitions" 92821 "$expected" \
@@ -130,6 +135,9 @@ if test "$mode" = screen; then
                 pass=0
                 while test "$pass" -lt 5; do
                     order='par replica work60000 work240000 nosplit static'
+                    if test "$shape/$count/$workers" = 4/4096/4; then
+                        order="$order work120000"
+                    fi
                     if test "$workers" = 1; then order="seq serial $order"; fi
                     if test "$((pass%2))" = 1; then
                         reversed=
@@ -139,7 +147,7 @@ if test "$mode" = screen; then
                     for form in $order; do
                         case "$form" in
                             serial|static) set -- "$out/native$exe" "$form";;
-                            work60000|work240000|nosplit) set -- "$out/par$exe";;
+                            work60000|work120000|work240000|nosplit) set -- "$out/par$exe";;
                             *) set -- "$out/$form$exe";;
                         esac
                         set -- "$@" "$shape" "$count" "$limit" "$repetitions" 92821 "$expected"
@@ -148,6 +156,7 @@ if test "$mode" = screen; then
                             unset WF_SPLIT_WORK
                             case "$form" in
                                 work60000) export WF_SPLIT_WORK=60000;;
+                                work120000) export WF_SPLIT_WORK=120000;;
                                 work240000) export WF_SPLIT_WORK=240000;;
                                 nosplit) export WF_SPLIT_WORK=0;;
                             esac

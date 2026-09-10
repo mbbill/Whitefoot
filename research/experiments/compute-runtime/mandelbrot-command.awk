@@ -18,7 +18,8 @@ NR==1 {
         $4!=($2==4096?32:2) || $5!~/^[0-4]$/ ||
         ($7!=1 && $7!=2 && $7!=4) || $14!=0) invalid("cell or status at line " NR)
     if ($6!="par" && $6!="replica" && $6!="static" && $6!="seq" && $6!="serial" &&
-        $6!="work60000" && $6!="work240000" && $6!="nosplit") invalid("form")
+        $6!="work60000" && $6!="work120000" && $6!="work240000" && $6!="nosplit") invalid("form")
+    if ($6=="work120000" && !($1==4 && $2==4096 && $7==4)) invalid("four-leaf diagnostic cell")
     if (($6=="seq" || $6=="serial") && $7!=1) invalid("serial width")
     for (i=8;i<=11;i++) if ($i!~/^[0-9]+$/) invalid("metric")
     if (!(($12~/^[0-9]+$/ && $13~/^[0-9]+$/) || ($12=="NA" && $13=="NA"))) invalid("context switches")
@@ -73,6 +74,8 @@ END {
     for(s=0;s<7;s++) for(n=4096;n<=65536;n*=16) for(w=1;w<=width;w*=2)
         for(p=0;p<5;p++) for(f=1;f<=(w==1?8:6);f++)
             if(!((s SUBSEP n SUBSEP w SUBSEP p SUBSEP forms[f]) in wall)) invalid("missing sample")
+    if(width==4) for(p=0;p<5;p++)
+        if(!((4 SUBSEP 4096 SUBSEP 4 SUBSEP p SUBSEP "work120000") in wall)) invalid("missing four-leaf sample")
     print "shape","count","workers","comparison","metric","median_ratio","min_ratio","max_ratio","screen"
     for(s=0;s<7;s++) for(n=4096;n<=65536;n*=16) for(w=1;w<=width;w*=2) {
         compare(s,n,w,"par","static")
@@ -83,6 +86,10 @@ END {
         compare(s,n,w,"work60000","static")
         compare(s,n,w,"work240000","static")
         if(w==1) compare(s,n,w,"seq","serial")
+    }
+    if(width==4) {
+        compare(4,4096,4,"work120000","par")
+        compare(4,4096,4,"work120000","static")
     }
     # This is an initial regression screen, not full performance qualification.
     # Noisy cells remain unresolved; five observations are not population tails.

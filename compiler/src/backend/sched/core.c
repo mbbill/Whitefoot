@@ -20,6 +20,7 @@
 struct wf__par_lane;
 
 struct wf__par_slot {
+    /* First member: the emitted ABI carries only this opaque frame address. */
     _Alignas(16) unsigned char frame[WF_PAR_FRAME_BYTES];
     void (*run)(void *);
     int state;
@@ -29,12 +30,15 @@ struct wf__par_slot {
 };
 
 struct wf__par_lane {
+    /* Thieves advance top; only this lane's owner writes bottom/free_head.
+     * Ring cells are atomic because a losing thief may read across reuse. */
     _Alignas(WF_PAR_CACHE_LINE) unsigned long long top;
     _Alignas(WF_PAR_CACHE_LINE) unsigned long long bottom;
     struct wf__par_slot *buffer[WF_PAR_LANE_SLOTS];
     int free_head;
     unsigned long long seed;
     _Alignas(WF_PAR_CACHE_LINE) wf_prim_wait wait;
+    /* Protected by wait.lock; closes notification-before-sleep races. */
     int posted;
     _Alignas(WF_PAR_CACHE_LINE) uint64_t steals;
     _Alignas(WF_PAR_CACHE_LINE) struct wf__par_slot slots[WF_PAR_LANE_SLOTS];
@@ -42,6 +46,8 @@ struct wf__par_lane {
 
 static struct wf__par_lane wf__par_lanes[WF_PAR_MAX_LANES];
 
+/* Relaxed scan bound, reduced after partial startup. Even a stale larger
+ * value names initialized empty deques; it never grants an unstarted lane. */
 static int wf__par_lane_count;
 static unsigned wf__par_started;
 

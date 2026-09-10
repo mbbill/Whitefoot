@@ -347,11 +347,9 @@ typedef struct wf_completion_record {
 /* The ABI constants, and the two assertions that keep them true.  A record
  * that outgrew the reservation is a build failure instead of a kernel write
  * past it. */
-/* 160 is the smallest multiple of sixteen that holds this record on every
- * platform: 128 bytes of it are the same everywhere, and the ring state adds
- * 32 more on Windows, where an `OVERLAPPED` and its handle live in the record
- * rather than in the entry pool this design deleted (design §7, §12's
- * per-frame record growth). */
+/* Preserve the emitted record reservation across the scheduler change.
+ * Windows stores OVERLAPPED and its handle in the record; the assertions
+ * below check every target's actual layout against this ABI capacity. */
 #define WF_COMPLETION_RECORD_BYTES 160u
 #define WF_COMPLETION_RECORD_ALIGN 8u
 
