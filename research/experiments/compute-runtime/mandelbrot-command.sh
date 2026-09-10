@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 CC=${CC:-/usr/bin/clang}
 CXX=${CXX:-/usr/bin/clang++}
 mode=${1:-check}
-case "$mode" in build|check|screen|summarize|diagnose) ;; *) exit 2;; esac
+case "$mode" in build|check|screen|summarize|diagnose|profile) ;; *) exit 2;; esac
 # This panel owns the policy matrix; inherited tuning must not alter a cell.
 unset WF_SPLIT_WORK
 WF_SCHED_REPORT=0
@@ -58,6 +58,74 @@ if test "$mode" = build; then
             'oracle mode checks the native point kernel against an independent volatile binary64 recurrence and known orbits; timed commands check an ordered 64-bit digest' \
             'command runner: process wall, child CPU and peak memory; POSIX context switches, unavailable on Windows'
     } > "$out/flags.txt"
+    exit 0
+fi
+if test "$mode" = profile; then
+    # External observation of the unchanged ordinary CLI image. These runs
+    # are attribution, never replacements for the unobserved screen above.
+    test "$(uname -s)" = Linux
+    mkdir -p "$out/profile"
+    profile=$out/profile
+    perf=${PERF:-perf}
+    {
+        printf '%s\n' 'shape=4 count=4096 limit=256 seed=92821 workers=4' \
+            'cpu samples: 256 repetitions; scheduling trace: original 32 repetitions' \
+            'plain runner envelopes accompany each observer; observer perturbation is not subtracted' \
+            'sched trace is system-wide on this isolated CI runner; use workload PIDs when interpreting other tasks'
+        uname -a
+        for path in /proc/sys/kernel/perf_event_paranoid /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cpuset.cpus.effective; do
+            if test -r "$path"; then printf '%s: ' "$path"; cat "$path"; fi
+        done
+        sha256sum "$out/par" "$out/native" "$out/runner"
+    } > "$profile/inputs.txt"
+    if ! "$perf" version > "$profile/perf-version.txt" 2>&1; then
+        printf '%s\n' 'perf unavailable' > "$profile/availability.txt"
+        exit 0
+    fi
+    perf=$(command -v "$perf")
+    sudo=$(command -v sudo || true)
+    if test "$(getconf _NPROCESSORS_ONLN)" -lt 4; then
+        printf '%s\n' 'four native CPUs unavailable' > "$profile/availability.txt"
+        exit 0
+    fi
+    cpu_available=0; sched_available=0
+    if "$perf" record -e cpu-clock -F 997 -o "$profile/cpu-probe.data" -- true \
+        > "$profile/cpu-probe.log" 2>&1; then cpu_available=1; fi
+    if test -n "$sudo" && "$sudo" -n "$perf" record -a -e sched:sched_switch -e sched:sched_wakeup \
+        -o "$profile/sched-probe.data" -- true > "$profile/sched-probe.log" 2>&1; then sched_available=1; fi
+    printf 'cpu_samples=%s\nscheduling_trace=%s\n' "$cpu_available" "$sched_available" > "$profile/availability.txt"
+    for repetitions in 32 256; do
+        expected=$("$out/native" oracle 4 4096 256 "$repetitions" 92821)
+        for form in work60000 work120000 static; do
+            work=1200000
+            case "$form" in
+                work60000) work=60000; set -- "$out/par";;
+                work120000) work=120000; set -- "$out/par";;
+                static) set -- "$out/native" static;;
+            esac
+            set -- "$@" 4 4096 256 "$repetitions" 92821 "$expected"
+            stem=$profile/$form-r$repetitions
+            WF_WORKERS=4 WF_SPLIT_WORK=$work "$out/runner" "$@" > "$stem.plain.tsv"
+            if test "$repetitions" = 256 && test "$cpu_available" = 1; then
+                WF_WORKERS=4 WF_SPLIT_WORK=$work "$out/runner" "$perf" record \
+                    -e cpu-clock -F 997 -o "$stem.cpu.data" -- "$@" \
+                    > "$stem.sampled.tsv" 2> "$stem.cpu.log"
+                "$perf" report --stdio --no-children -i "$stem.cpu.data" > "$stem.cpu.txt"
+                "$perf" script -i "$stem.cpu.data" > "$stem.cpu-events.txt"
+            fi
+            if test "$repetitions" = 32 && test "$sched_available" = 1; then
+                "$out/runner" "$sudo" -n "$perf" record -a \
+                    -e sched:sched_switch -e sched:sched_wakeup -o "$stem.sched.data" \
+                    -- env WF_WORKERS=4 WF_SPLIT_WORK=$work WF_SCHED_REPORT=0 "$@" \
+                    > "$stem.traced.tsv" 2> "$stem.sched.log"
+                "$sudo" -n "$perf" script -i "$stem.sched.data" > "$stem.sched.txt"
+            fi
+        done
+    done
+    # Also verify the stored rows: no profile may conceal a failed command
+    # or replace the expected single runner observation with extra output.
+    awk -F '\t' -v rows="$((6+3*cpu_available+3*sched_available))" \
+        'FNR!=1 || NF!=7 || $1<=0 || $7!=0 {bad=1} END {exit bad || NR!=rows}' "$profile"/*.tsv
     exit 0
 fi
 if test "$mode" = diagnose; then

@@ -2,14 +2,15 @@
 #define _DARWIN_C_SOURCE
 /* Adaptive Lorentz-profile integration: correctness and initial generated-code
  * attribution. Retire with the owning quadrature experiment. No SIMD or FMA. */
-#include "runtime.h"
-#include "runtime_events.h"
 #ifdef WF_FORMAL_RUNTIME
 #include "../../../compiler/src/backend/sched/entry.h"
 #if WF_COMPUTE_STATS || defined(WF_COMPUTE_EVENTS)
 #error "formal runtime attribution uses its own diagnostics, not recovered runtime counters"
 #endif
+#else
+#include "runtime.h"
 #endif
+#include "runtime_events.h"
 #include "quadrature_native.h"
 #include <errno.h>
 #include <inttypes.h>
@@ -238,8 +239,8 @@ static void run_batch(const char *form) {
     perf_command(control,acknowledgement,"enable\n");
     require(!getrusage(RUSAGE_SELF,&before),"batch resources before");
     uint64_t process_start=cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID);
-    /* Keep identical clock-observer work in both images. The volatile stores
-     * retain conversion work even when the migrating image discards values. */
+    /* Both runtimes retain this activation on one physical thread. Keep the
+     * same clock-observer work and interval boundaries in both images. */
     volatile uint64_t caller_start=cpu_clock_ns(CLOCK_THREAD_CPUTIME_ID);
     uint64_t start=now();
     for(unsigned i=0;i<repeats;++i)mismatch|=bits(execute(p,form))^expected;
@@ -249,20 +250,13 @@ static void run_batch(const char *form) {
     require(!getrusage(RUSAGE_SELF,&after),"batch resources after");
     perf_command(control,acknowledgement,"disable\n");
     require(!mismatch,"batch binary64 result");
-    /* A maintained scheduler stack can resume on another host thread. Only
-     * whole-process CPU is comparable across that interval. */
-#ifdef WF_FORMAL_RUNTIME
-    (void)caller_start;(void)caller_end;
-    const char *caller_cpu_text="unavailable";
-#else
     char caller_cpu_text[32];
     snprintf(caller_cpu_text,sizeof(caller_cpu_text),"%" PRIu64,caller_end-caller_start);
-#endif
     unsigned lanes=pool_lanes();
     bool offers=(parallel_form && (!leaf_form || r.nodes>1)) || (native_wf && r.forks);
     require(lanes==((offers && requested==4)?4:0),"batch WF pool width");
 #ifdef WF_FORMAL_RUNTIME
-    const char *version="formal-v1";
+    const char *version="formal-v2";
 #else
     const char *version="v2";
 #endif

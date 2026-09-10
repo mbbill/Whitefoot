@@ -1157,7 +1157,9 @@ Inherited split tuning is removed from the baseline and native commands.
 These values distinguish a zero-level default and budgets for up to two or eight chunks
 at 4,096 points/W4, while also exposing over-splitting on cheap exits. They
 are diagnostic controls, not selected defaults. A four-worker-capable host
-produces 1,400 processes; the initial panel before these controls had 770.
+produces 1,405 processes, including five work120000 samples for the
+shape4/count4096/W4 four-leaf diagnostic; the initial panel before these
+controls had 770.
 Raw process samples, oracle inputs/digests, tool flags, source copies, host
 metadata and executable/compiler hashes are artifacts. Requested counts do not
 prove every worker executed a task; runtime attribution needs separate evidence.
@@ -1165,13 +1167,24 @@ prove every worker executed a task; runtime attribution needs separate evidence.
 `make mandelbrot-command-diagnose OUT=<fresh-absolute-directory>` runs the same
 inputs separately with the normal executable's `WF_SCHED_REPORT=2`. It records
 one live scheduler report per process at widths 1/2/4 where available and work
-settings 0/60,000/240,000/1,200,000: 168 reports on a four-participant host, 112
+settings 0/60,000/240,000/1,200,000, plus work120000 for
+shape4/count4096/W4: 169 reports on a four-participant host, 112
 on a two-participant host. The reports and oracle inputs are retained under
 `diagnostics/` in each CI artifact. The correctness check requires the normal
 CLI to report configured/started workers without a custom observer link.
 Timing runs explicitly disable automatic reports. Diagnostic counts are not
 timing samples or a simultaneous shutdown snapshot; a started worker need not
 have executed a task, and counts alone do not identify time lost waiting.
+
+After the unobserved screen, Linux CI runs the `profile` mode on the unchanged
+ordinary executables for shape4/count4096/W4, comparing work60000, work120000
+and native static partitions. Software CPU samples use 256 repetitions;
+system-wide scheduling traces retain the screen's 32 repetitions. Plain
+process envelopes accompany the observed runs. `profile/` retains commands,
+availability probes, raw perf data and decoded events. Tool or kernel
+restrictions are reported as unavailable. These are attribution observations,
+with their own perturbation and duration, not extra performance samples;
+system-wide scheduling events must be filtered to the workload's PIDs.
 
 The initial screen reports per-cell paired median/min/max wall, CPU and RSS
 ratios. A wall/CPU **gap** requires all five ratios above 1.05 and all five WF
@@ -1835,11 +1848,12 @@ measured by this panel.
 Canonical `check-quadrature` includes 160 maintained/recovered batch processes:
 ten inputs, widths one/four, and sequential/default/depth4/depth8 generated
 forms. Every call is checked against the oracle. The numerical schema is
-shared, but `formal-v1` identifies the maintained runtime separately from the
-recovered `v2` report. Caller-thread CPU is explicitly `unavailable` in formal
-reports because the scheduler may resume a stack on another host thread;
-whole-process CPU and wall time remain measured. Negative reports reject a
-false runtime identity or invented caller-thread CPU.
+shared, but `formal-v2` identifies the maintained ordinary-stack runtime
+separately from the recovered `v2` report. Both now measure caller-thread CPU
+on the same physical thread across the batch, alongside process CPU and wall
+time. Negative reports reject a false runtime identity or a nonnumeric caller
+CPU value. Historical `formal-v1` artifacts retained `unavailable` for the
+managed-stack implementation; their archived parser remains their reader.
 
 Formal calibration retains 2,400 processes: five forward/reverse passes over
 the same ten inputs and widths, four WF forms and eight C++/Rust/native-runtime

@@ -402,12 +402,10 @@ fn runtime_units(core: bool, completion: bool) -> (Vec<RuntimeUnit>, Vec<&'stati
 ///
 /// One staging for every platform, and the lists above are the only thing that
 /// differs. The floor joins unconditionally, because every program can exhaust
-/// its stack. The scheduler core joins on the union of the two predicates
-/// (`research/investigations/io-model/PARK-ON-MISS.md` section 7, "Where the
-/// core is linked"): it is one scheduler for compute hand-outs and I/O
-/// completions, so a module that hands work out needs it and so does a module
-/// that submits an operation, and a completion-only program parks its stack at
-/// every join. The completion units join on the second predicate alone.
+/// its stack. The shared core and process settings join when either compute
+/// tasks or I/O completions are used. Compute joins help on the current stack;
+/// completion joins wait through their native backend. The completion units
+/// join on the second predicate alone.
 ///
 /// Every one of those bytes travels inside this executable, so no installed
 /// path, no build directory, and no environment decides which runtime a

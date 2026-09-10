@@ -71,7 +71,7 @@ formal-check|formal-calibrate)
             'no SIMD/FMA/LTO; default scalar-leaf limit16; frontier depths are explicit policy controls' \
             'batch interval includes bitwise checks; eight warmups; no first-call or process-start timing' \
             'formal parity screen: each matched WF cell requires median wall and process-CPU ratios <=1.05; small/noisy cells remain investigate' \
-            'formal caller_cpu_ns unavailable: scheduler stacks may migrate between host threads; process CPU remains measured' \
+            'formal-v2 caller_cpu_ns measures the same ordinary thread across the batch; process CPU includes all workers' \
             'normal CLI is separately executed for correctness only; Windows coverage remains open'
         if test "$(uname -s)" = Linux; then lscpu;cat /proc/self/status
         else sysctl hw.model hw.ncpu hw.physicalcpu;fi
@@ -108,10 +108,10 @@ formal-check|formal-calibrate)
         if validate > "$results/wrong-runtime.log" 2>&1;then exit 1;fi
         grep -Fx 'quadrature batch report: columns' "$results/wrong-runtime.log"
         runtime=formal
-        awk 'NR==2 {$19=0} {print}' "$log" > "$results/false-caller-cpu.tsv"
+        awk 'NR==2 {$19="unavailable"} {print}' "$log" > "$results/false-caller-cpu.tsv"
         log=$results/false-caller-cpu.tsv
         if validate > "$results/false-caller-cpu.log" 2>&1;then exit 1;fi
-        grep -Fx 'quadrature batch report: migrating caller clock' "$results/false-caller-cpu.log"
+        grep -Fx 'quadrature batch report: noninteger observation' "$results/false-caller-cpu.log"
     fi
     result=0
     if test "$mode" = formal-calibrate; then

@@ -135,6 +135,29 @@ jobs:
             cat "$RUNNER_TEMP/mandelbrot-command/mandelbrot-command/screen/summary.tsv"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Attribute Linux command CPU and scheduling gaps
+        if: always() && runner.os == 'Linux'
+        run: |
+          export OUT="$RUNNER_TEMP/mandelbrot-command"
+          export WFC="$OUT/compiler/gate/whitefootc"
+          profile="$OUT/mandelbrot-command/profile"
+          mkdir -p "$profile"
+          # Optional observations follow the unmodified timing panel. A
+          # missing tool/trace facility is recorded, never a zero cost.
+          if test ! -x "$OUT/mandelbrot-command/par"; then
+            echo 'ordinary command was not built' > "$profile/availability.txt"
+            exit 0
+          fi
+          {
+            sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
+              -o Dir::Etc::sourceparts=- install -y --no-install-recommends linux-tools-generic || true
+            sysctl kernel.perf_event_paranoid
+            sudo sysctl -w kernel.perf_event_paranoid=-1 || true
+          } > "$profile/setup.txt" 2>&1
+          if test -d /usr/lib/linux-tools; then
+            export PERF="$(find -L /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)"
+          fi
+          sh research/experiments/compute-runtime/mandelbrot-command.sh profile
       - uses: actions/upload-artifact@v4
         if: always()
         with:
