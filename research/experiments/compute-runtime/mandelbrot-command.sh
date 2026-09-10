@@ -22,6 +22,28 @@ case "$(uname -s)" in
     MINGW*|MSYS*) exe=.exe; thread_flags=; runner_flags='-municode -lpsapi';;
 esac
 scalar_flags='-O2 -g -Wall -Wextra -Werror -Wpedantic -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto'
+placement_available() {
+    # Online CPUs can exceed a container's actual permitted affinity mask.
+    taskset -pc $$ | awk '
+        {n=split($NF, ranges, ","); total=0
+         for(i=1;i<=n;i++) {
+             if(ranges[i]!~/^[0-9]+(-[0-9]+)?$/) {bad=1; exit}
+             m=split(ranges[i], ends, "-")
+             total += m==1 ? 1 : ends[2]-ends[1]+1
+         }}
+        END {exit bad || total<4}'
+}
+verify_placement() {
+    awk -F '\t' '
+        NR==1 {next}
+        {if(NF!=12 || $1!~/^(32|256)$/ || $2!~/^[0-4]$/ ||
+            $3!~/^(work60000|work120000|static)$/ || $4!~/^[01]$/ || $5!~/^[01]$/) bad=1
+         key=$1 SUBSEP $2 SUBSEP $3 SUBSEP $4 SUBSEP $5
+         if(seen[key]++) bad=1
+         for(i=6;i<=12;i++) if($i!~/^[0-9]+$/) bad=1
+         if($6<=0 || $9<=0 || $12!=0) bad=1}
+        END {exit bad || NR!=121}' "$1"
+}
 verify_report() {
     awk -v threads="$2" -v started="$3" '
         BEGIN {split("threads workers_started steals slots_per_lane", keys, " ")}
@@ -40,6 +62,10 @@ if test "$mode" = build; then
     # Word splitting is intentional for these fixed compiler argument lists.
     "$CXX" -std=c++17 $scalar_flags $thread_flags mandelbrot_command.cpp -o "$out/native$exe"
     "$CC" -std=c11 $scalar_flags command_runner.c $runner_flags -o "$out/runner$exe"
+    if test "$(uname -s)" = Linux; then
+        "$CC" -std=c11 $scalar_flags -fPIC -shared -pthread thread-placement.c \
+            -ldl -o "$out/thread-placement.so"
+    fi
     if test -z "$exe"; then
         "$CXX" -std=c++17 $scalar_flags $thread_flags -fsanitize=address,undefined \
             -fno-sanitize-recover=all mandelbrot_command.cpp -o "$out/native-asan"
@@ -139,6 +165,84 @@ if test "$mode" = profile; then
     # or replace the expected single runner observation with extra output.
     awk -F '\t' -v rows="$((6+3*cpu_available+3*sched_available))" \
         'FNR!=1 || NF!=7 || $1<=0 || $7!=0 {bad=1} END {exit bad || NR!=rows}' "$profile"/*.tsv
+    # Test CPU placement without replacing or relinking the actual programs.
+    # The original unwrapped observations above remain separate. On/off and
+    # A/A runs below use the same wrapper within each program; the native
+    # main participates directly, whereas WF creates a command thread.
+    placement=$profile/placement
+    mkdir -p "$placement"
+    if ! placement_available; then
+        printf '%s\n' 'four allowed CPUs unavailable; placement control skipped' > "$placement/availability.txt"
+        exit 0
+    fi
+    taskset -pc $$ > "$placement/availability.txt"
+    env_command=$(command -v env)
+    cp thread-placement.c "$placement/"
+    sha256sum "$out/thread-placement.so" >> "$profile/inputs.txt"
+    printf 'repetitions\tpass\tform\tbound\treplica\twall_ns\tuser_ns\tsystem_ns\trss_bytes\tvoluntary\tinvoluntary\tstatus\n' > "$placement/processes.tsv"
+    for repetitions in 32 256; do
+        expected=$("$out/native" oracle 4 4096 256 "$repetitions" 92821)
+        for pass in 0 1 2 3 4; do
+            forms='work60000 work120000 static'; bindings='0 1'
+            if test "$((pass%2))" = 1; then forms='static work120000 work60000'; bindings='1 0'; fi
+            for form in $forms; do
+                work=1200000; role=launcher
+                case "$form" in
+                    work60000) work=60000; set -- "$out/par";;
+                    work120000) work=120000; set -- "$out/par";;
+                    static) role=caller; set -- "$out/native" static;;
+                esac
+                set -- "$@" 4 4096 256 "$repetitions" 92821 "$expected"
+                for bound in $bindings; do
+                    for replica in 0 1; do
+                        stem=$placement/$form-r$repetitions-p$pass-b$bound-a$replica
+                        "$out/runner" "$env_command" WF_WORKERS=4 WF_SPLIT_WORK=$work \
+                            WF_SCHED_REPORT=0 LD_PRELOAD="$out/thread-placement.so" \
+                            PLACEMENT_BIND=$bound PLACEMENT_MAIN=$role PLACEMENT_REPORT=0 \
+                            "$@" > "$stem.tsv" 2> "$stem.stderr"
+                        test ! -s "$stem.stderr"
+                        printf '%s\t%s\t%s\t%s\t%s\t' "$repetitions" "$pass" "$form" "$bound" "$replica" >> "$placement/processes.tsv"
+                        cat "$stem.tsv" >> "$placement/processes.tsv"
+                    done
+                done
+            done
+        done
+    done
+    # Observe after all timed pairs so perf cannot perturb their ordering.
+    expected=$("$out/native" oracle 4 4096 256 32 92821)
+    for form in work60000 work120000 static; do
+        work=1200000; role=launcher
+        case "$form" in
+            work60000) work=60000; set -- "$out/par";;
+            work120000) work=120000; set -- "$out/par";;
+            static) role=caller; set -- "$out/native" static;;
+        esac
+        set -- "$@" 4 4096 256 32 92821 "$expected"
+        for bound in 0 1; do
+            stem=$placement/$form-b$bound
+            "$env_command" WF_WORKERS=4 WF_SPLIT_WORK=$work WF_SCHED_REPORT=0 \
+                LD_PRELOAD="$out/thread-placement.so" PLACEMENT_BIND=$bound \
+                PLACEMENT_MAIN=$role PLACEMENT_REPORT=1 "$@" \
+                > "$stem.stdout" 2> "$stem.assignment.txt"
+            test ! -s "$stem.stdout"
+            test "$(wc -l < "$stem.assignment.txt")" -eq 4
+            if test "$sched_available" = 1; then
+                "$sudo" -n "$perf" record -a -e sched:sched_switch \
+                    -e sched:sched_wakeup -e sched:sched_wakeup_new \
+                    -o "$profile/placement-$form-b$bound.data" -- "$env_command" \
+                    WF_WORKERS=4 WF_SPLIT_WORK=$work WF_SCHED_REPORT=0 \
+                    LD_PRELOAD="$out/thread-placement.so" PLACEMENT_BIND=$bound \
+                    PLACEMENT_MAIN=$role PLACEMENT_REPORT=1 "$@" \
+                    > "$stem.traced.stdout" 2> "$stem.traced.log"
+                "$sudo" -n "$perf" script -i "$profile/placement-$form-b$bound.data" \
+                    > "$stem.sched.txt"
+            fi
+        done
+    done
+    awk -F '\t' '{for(i=1;i<=NF;i++) if($i!~/^[0-9]+$/) bad=1}
+        FNR!=1 || NF!=7 || $1<=0 || $4<=0 || $7!=0 {bad=1} END {exit bad || NR!=120}' \
+        "$placement"/*-a[01].tsv
+    verify_placement "$placement/processes.tsv"
     exit 0
 fi
 if test "$mode" = diagnose; then
@@ -325,6 +429,27 @@ for workers in 1 4; do
     test ! -s "$log.stdout"
     verify_report "$log.stderr" "$workers" "$((workers-1))"
 done
+if test "$(uname -s)" = Linux && placement_available; then
+    printf '%s\n' 'four allowed CPUs available' > "$out/check/placement-availability.txt"
+    # The measurement shim must preserve real program results and reject a
+    # process without the promised four participants, rather than fake width.
+    for bound in 0 1; do
+        WF_WORKERS=4 WF_SPLIT_WORK=1 LD_PRELOAD="$out/thread-placement.so" \
+            PLACEMENT_BIND=$bound PLACEMENT_MAIN=launcher \
+            "$out/par" 4 257 128 3 92821 "$expected"
+        WF_WORKERS=4 LD_PRELOAD="$out/thread-placement.so" \
+            PLACEMENT_BIND=$bound PLACEMENT_MAIN=caller \
+            "$out/native" static 4 257 128 3 92821 "$expected"
+        actual_status=0
+        LD_PRELOAD="$out/thread-placement.so" PLACEMENT_BIND=$bound PLACEMENT_MAIN=caller \
+            /usr/bin/true > "$out/check/placement.stdout" 2> "$out/check/placement.stderr" || actual_status=$?
+        test "$actual_status" = 2
+        printf 'thread placement: expected exactly four participants\n' > "$out/check/placement.expected"
+        cmp "$out/check/placement.expected" "$out/check/placement.stderr"
+    done
+elif test "$(uname -s)" = Linux; then
+    printf '%s\n' 'four allowed CPUs unavailable; placement control skipped' > "$out/check/placement-availability.txt"
+fi
 if test -z "$exe"; then
     for sanitizer in asan tsan; do
         for shape in 0 1 6; do

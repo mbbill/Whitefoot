@@ -1192,6 +1192,26 @@ restrictions are reported as unavailable. These are attribution observations,
 with their own perturbation and duration, not extra performance samples;
 system-wide scheduling events must be filtered to the workload's PIDs.
 
+The Linux placement control asks whether runnable delay and uneven CPU
+placement explain the short-command gap. It uses `thread-placement.c` through
+`LD_PRELOAD` on these same executables, wrapping thread entry without changing
+the scheduler. Bound and unbound runs both use the wrapper. Four compute
+participants receive distinct CPUs from the original allowed mask when bound;
+the WF launcher is excluded, while the native main thread participates.
+The wrapper verifies participant count and requested affinity; separate reports
+record thread IDs. Five paired passes at 32/256 repetitions retain identical
+replicas, wall/CPU/memory/switch counts, and alternate form/binding order.
+Each program's bound/unbound pair uses the same wrapper; WF creates four
+threads, while native creates three and places its main in initialization.
+Binding also changes startup placement and includes affinity-setting costs;
+the net change cannot be attributed solely to steady-state scheduling.
+Scheduling traces follow the timed pairs and also record new-thread wakeups.
+Evidence for placement as a cause requires both reduced runnable delay and a
+smaller wall gap, with stable replica measurements. A bound win alone does not
+justify production affinity or prove a universally better waiting policy.
+The original unwrapped screen remains the performance qualification path;
+remove this control when the placement question is settled.
+
 The initial screen reports per-cell paired median/min/max wall, CPU and RSS
 ratios. A wall/CPU **gap** requires all five ratios above 1.05 and all five WF
 wall A/A ratios inside [0.95, 1.05]. Gaps in the default WF/native comparisons

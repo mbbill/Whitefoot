@@ -28,6 +28,61 @@ panels for five-target native CI qualification below; do not build another
 benchmark framework or tune I/O. Historical safety evidence has the limited
 scope stated in the comparison, not a claim that every earlier audit was wrong.
 
+## Compute-first measurements at b87e7548 (2026-09-09)
+
+The [five-target cohort](https://github.com/mbbill/Whitefoot/actions/runs/34422006371)
+uses the maintained compute-first runtime through the compiler. All twelve
+[gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34422006323) and both
+[native completion jobs](https://github.com/mbbill/Whitefoot/actions/runs/34422006315)
+passed. Exact revision `b87e75481c0791d0ba190a283e7024c15d34591a` also passed
+local canonical `make check`. Performance qualification remains incomplete;
+all five formal FIR screens failed their full matrix, including unresolved
+noise, and only macOS AArch64 passed the ordinary-command screen. A screen
+pass alone does not meet the broader acceptance criteria.
+
+For one small FIR cell (4,096 outputs, tile 16), median paired ratios below
+are candidate/reference; smaller is faster. Each cell uses five process pairs.
+These are selected diagnostic cells, not a summary of every workload:
+
+| Target | Participants | Core / historical | Full call / historical | Core / research | Core candidate/replica range |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Linux x86-64 | 4 | 0.966 | 0.982 | 1.658 | 0.923–1.066 |
+| Linux AArch64 | 4 | 0.995 | 1.004 | 0.981 | 0.982–1.030 |
+| Windows x86-64 | 4 | 0.981 | 1.107 | unavailable | 0.961–1.038 |
+| macOS x86-64 | 4 | 1.115 | 1.160 | 1.087 | 0.894–1.243 |
+| macOS AArch64 | 2 | 0.888 | 0.825 | 0.927 | 0.718–1.646 |
+
+The macOS replica variability prevents a resolved ranking. Linux x86-64
+candidate/research core ratios are 1.589–1.724 across all five pairs; matching
+historical main is therefore insufficient. The original research control is
+POSIX-only. Full-call timing includes allocation, reading/checking results and
+cleanup outside the measured core; it must not be relabeled scheduler time.
+
+On Windows, restoring the historical `YieldProcessor` hint in the maintained
+core's two existing empty-scan spin branches reduces core time by 33.3% and
+full-call time by 13.0% against a frozen unhinted maintained core at `d39b4836`
+in this same cell. Whole-batch CPU ratio is 1.007. These two images share the
+candidate host object and all other sources; only the two hints differ in the
+core. Compared with historical main, full-call and batch CPU ratios remain
+1.107 and 1.128, so core parity does not qualify the whole call. POSIX generated
+core assembly is unchanged by the Windows-only hint. Spin-duration and SMT
+effects are not separated by this comparison.
+
+Linux ordinary-command scheduling traces identify a placement hypothesis.
+In the AArch64 work60000/32-repetition Mandelbrot observation, one worker runs
+7.100 ms but spends 25.363 ms runnable; 6.228 ms of its execution shares CPU 2
+with the 26.633-ms caller. Another CPU is mostly unused by the workload.
+The native static observation places four participants on distinct CPUs and
+has 0.494 ms total observed runnable delay. These are different traced
+processes, not causal proof. Initial new-thread wakeups were not recorded;
+the launcher is excluded from the compute participant count. Long-run CPU
+samples also use a different duration and cannot explain the short run's
+off-CPU time. The existing ordinary panel's matched per-thread placement
+control tests whether runnable delay and the wall gap fall together. It does
+not change production affinity, waiting policy or the default split budget.
+Artifacts retain raw samples, source, binaries, host details and decoded perf
+events; observer envelopes are not added to unobserved performance samples.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

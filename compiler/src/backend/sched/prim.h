@@ -1,6 +1,6 @@
 #ifndef WHITEFOOT_SCHED_PRIM_H
 #define WHITEFOOT_SCHED_PRIM_H
-/* Only blocking paths reach these platform leaves. Deque atomics remain
+/* Native thread, wait, yield and spin primitives. Deque atomics remain
  * inline in the shared core, with the same ordering on every target. */
 #include <stddef.h>
 #include <stdint.h>
