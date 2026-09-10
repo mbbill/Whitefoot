@@ -40,7 +40,13 @@ native oracle and host-consumer text at the same ELF-relative address across
 old/recovered/candidate images and verifies equal symbol addresses and sizes.
 It retains an identical candidate replica and measures just the unresolved
 W4/4,096-output/tile16 cell with five process pairs. The original matrix stays
-unchanged. Runtime, PLT and data layout still differ, so this is a bounded
+unchanged; its exact images also rerun interleaved with fixed-layout images,
+alternating forward/reverse order within passes. A third candidate recompiles
+only the WF object with `-falign-loops=32`, retaining the original host/native
+objects and normal linker placement. It has its own identical replica and
+retained disassembly. This checks whether general WF loop alignment can
+reproduce the benefit without fixed linking; it does not select a production
+default or isolate the effect of one loop. Runtime, PLT and data layout still differ, so this is a bounded
 test of common-code placement, not complete layout normalization. Convergence
 would weaken an algorithmic explanation for the old/recovered gap; persistence
 would leave other layout, scheduling and host-interference causes open.

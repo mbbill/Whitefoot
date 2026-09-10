@@ -207,7 +207,7 @@ awk -F '\t' -v references="${4:-$references}" -v subject="${3:-candidate}" '
             for(i=0;i<5;i++)for(j=i+1;j<5;j++)if(ratio[j]<ratio[i]) {
                 tmp=ratio[i];ratio[i]=ratio[j];ratio[j]=tmp
             }
-            identical=(ref=="replica" || ref=="layout-replica")
+            identical=(ref ~ /(^|-)replica$/)
             within=ratio[2]<=1.05 && (!identical || ratio[2]>=1/1.05)
             verdict=within?"within-band":"investigate"
             if(verdict=="investigate")failed=1
@@ -268,23 +268,55 @@ if test "$host" = Linux && test "$(uname -m)" = x86_64 && test "$cpus" -ge 4; th
         test -s "$layout/$mode.symbols"
         if test "$mode" != old; then cmp "$layout/old.symbols" "$layout/$mode.symbols"; fi
     done
+    # Test a general code-generation alternative without fixing any linked
+    # address. Only WF loop alignment changes; all other input objects and
+    # production runtime sources match the original candidate.
+    "$CC" $flags -Wno-override-module -falign-loops=32 -c "$out/host.ll" -o "$layout/loop32-wf.o"
+    "$CC" $flags "$out/candidate-host.o" "$out/source/$floor" \
+        "$out/source/sched/entry.c" "$out/source/sched/$leaf" \
+        "$out/source/sched/core.c" "$out/candidate-observer.c" \
+        "$layout/loop32-wf.o" "$out/native.o" $libraries -o "$layout/loop32-candidate"
+    cp "$layout/loop32-candidate" "$layout/loop32-replica"
+    cmp "$layout/loop32-candidate" "$layout/loop32-replica"
+    for mode in candidate loop32-candidate; do
+        objdump -d "$layout/$mode" > "$layout/$mode.disassembly"
+    done
+    objdump -d "$out/candidate" > "$layout/original-candidate.disassembly"
     cat > "$layout/conditions.txt" <<'TEXT'
-Diagnostic only: Linux x86-64, W4, n4096, tile16, 4096 warm calls, five pairs.
+Diagnostic only: Linux x86-64, W4, n4096, tile16, 4096 warm calls, five passes.
 The identical combined candidate host/WF/native object places its entire text
 at ELF-relative address 0x200000 in each image; symbol addresses and sizes are
-checked equal. Every image uses the internal candidate label; filenames and
-means.tsv identify its scheduler. The original unmodified panel remains above.
+checked equal. Fixed-layout and loop32 images use the internal candidate label;
+filenames and means.tsv identify the condition. The original matrix remains
+above. Its exact images are rerun interleaved with the layout images here,
+alternating forward/reverse order. Each condition retains a byte-identical
+replica. This avoids using separate original/layout time windows as paired data.
 Runtime/PLT/data layout and relocation bytes still differ; this does not prove
 that every instruction address or cache influence has been made identical.
 No fixed text address is added to production linking. Common text includes the
 serial result consumer: a change may alter inter-call idle time as well as core.
+loop32-candidate recompiles only the WF object with -falign-loops=32 and uses
+the original candidate host/native objects, runtime sources and normal linker
+placement. This tests general WF loop alignment, not a function-name rule.
+Its disassembly is retained to inspect the actual target compiler output.
+Loop padding can change other text addresses too; this does not isolate one
+loop or establish a CPU frontend mechanism. No production default is selected.
 TEXT
     for pass in 0 1 2 3 4; do
-        order='old recovered candidate replica'
-        if test "$((pass%2))" = 1; then order='replica candidate recovered old'; fi
+        order='original-old layout-old original-recovered layout-recovered original-candidate layout-candidate loop32-candidate original-replica layout-replica loop32-replica'
+        if test "$((pass%2))" = 1; then
+            reverse=
+            for mode in $order; do reverse="$mode $reverse"; done
+            order=$reverse
+        fi
         for mode in $order; do
+            case "$mode" in
+                original-*) binary=$out/${mode#original-};;
+                layout-*) binary=$layout/${mode#layout-};;
+                loop32-*) binary=$layout/$mode;;
+            esac
             log=$layout/$mode-p$pass.tsv
-            WF_WORKERS=4 "$layout/$mode" wf 16 4096 16 4096 92821 "$pass" > "$log"
+            WF_WORKERS=4 "$binary" wf 16 4096 16 4096 92821 "$pass" > "$log"
             awk '/^# actual_lanes=/ {seen++; if($2!="actual_lanes=4")bad=1} END {exit bad || seen!=1}' "$log"
             awk -F '\t' -v mode="$mode" -v pass="$pass" \
                 '$10=="warm" {core+=$11;cycle+=$12;calls++}
@@ -293,9 +325,16 @@ TEXT
         done
     done
     # Diagnostic failure does not replace or weaken the original screen.
-    if summarize "$layout/means.tsv" "$layout/summary.tsv"; then :
-    else case "$?" in 1) :;; *) exit 2;; esac; fi
-    cat "$layout/summary.tsv"
+    for condition in original layout loop32; do
+        case "$condition" in
+            original) controls='original-old original-recovered original-replica';;
+            layout) controls='layout-old layout-recovered layout-replica original-candidate';;
+            loop32) controls='original-candidate layout-candidate loop32-replica';;
+        esac
+        if summarize "$layout/means.tsv" "$layout/$condition-summary.tsv" "$condition-candidate" "$controls"; then :
+        else case "$?" in 1) :;; *) exit 2;; esac; fi
+        cat "$layout/$condition-summary.tsv"
+    done
 fi
 # Binaries, copied sources, actual flags and every raw sample are reproducible
 # evidence even when the performance band fails.

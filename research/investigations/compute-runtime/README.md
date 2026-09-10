@@ -131,10 +131,44 @@ address-normalized instructions in historical/recovered worker, join,
 publish, release, acquire and sampled WF compute/accessor functions. This
 FIR program recursively publishes by tile and does not call `split_budget`.
 The unresolved gap therefore does not establish a missing grain-policy or
-idle-algorithm optimization. The next bounded formal-panel control fixes
-shared WF/host-consumer text addresses, retaining the original images and
-their failures. It tests one layout influence, not all possible cache or
-scheduling effects, and leaves production linking unchanged.
+idle-algorithm optimization. The bounded formal-panel control fixes shared
+WF/host-consumer text addresses, retaining the original images and their
+failures. It tests one layout influence, not all possible cache or scheduling
+effects, and leaves production linking unchanged.
+
+The [f220e288 layout cohort](https://github.com/mbbill/Whitefoot/actions/runs/34425771609)
+on Linux x86-64 (AMD EPYC 7763, four logical CPUs/two cores, Clang 18.1.3)
+completed all twenty fixed-layout observations with correct results and four
+participants. Nineteen common non-weak functions have equal linked addresses
+and sizes across the three cores; replicas are byte-identical. For the same
+W4/4,096-output/tile16 cell, process medians are:
+
+| Metric | Original candidate | Fixed-layout candidate | Original recovered | Fixed-layout recovered |
+| --- | ---: | ---: | ---: | ---: |
+| Core time, microseconds | 37.079 | 21.987 | 22.069 | 21.997 |
+| Full call, microseconds | 141.495 | 107.124 | 102.880 | 105.757 |
+| Voluntary context switches, whole batch | 11,308 | 402 | 303 | 501 |
+| System CPU, whole batch milliseconds | 472.903 | 37.076 | 31.111 | 60.998 |
+
+Candidate/recovered paired core ratios change from median 1.7041
+[1.5896, 1.7963] in the original panel to 0.9905 [0.9791, 1.0170] in the layout
+panel. Layout candidate/replica remains noisy at 1.0061 [0.9255, 1.0443].
+Original and layout panels ran in separate windows: their absolute difference
+is not an interleaved production speedup. The result weakens a fixed scheduler
+algorithm explanation but does not separate code execution, inter-call idle
+duration, and host interference. Exact `f220e288` passed local `make check`;
+its full performance matrix is still unqualified.
+
+Assembly inspection gives a more specific, exploratory hypothesis. The same
+32-byte hot loop in the result accessor starts at `0x5bf0` in the original
+candidate, `0x5ba0` in recovered, and `0x201f40` in fixed-layout candidate. Only
+the first crosses a 32-byte boundary. This is not proof of a frontend stall or
+of causation; code alignment elsewhere also changes. The next control
+interleaves original, fixed-layout and general `-falign-loops=32` WF-object
+images, keeping runtime sources unchanged and checking every result. If the
+general option reproduces convergence, qualify it through normal compiler
+output and the full workload/platform matrix before selecting it. If it does
+not, do not tune runtime waits on the assumption that this loop explains them.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
