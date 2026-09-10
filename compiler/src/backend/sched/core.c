@@ -124,14 +124,10 @@ static struct wf__par_slot *wf__par_pop(struct wf__par_lane *lane) {
     return slot;
 }
 
-static struct wf__par_slot *wf__par_steal(
-    struct wf__par_lane *lane,
-    struct wf__par_lane *victim
-) {
+static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
     unsigned long long top = __atomic_load_n(&victim->top, __ATOMIC_SEQ_CST);
     unsigned long long bottom = __atomic_load_n(&victim->bottom, __ATOMIC_SEQ_CST);
     struct wf__par_slot *slot;
-    (void)lane; /* The search owner is used only by optional statistics. */
     if ((long long)(bottom - top) <= 0) {
         return NULL;
     }
@@ -150,8 +146,8 @@ static struct wf__par_slot *wf__par_steal(
     wf_sched_test_after_steal(1);
 #endif
 #if WF_SCHED_STATS
-    uint64_t n = __atomic_load_n(&lane->steals, __ATOMIC_RELAXED);
-    __atomic_store_n(&lane->steals, n + 1, __ATOMIC_RELAXED);
+    uint64_t n = __atomic_load_n(&wf__par_self->steals, __ATOMIC_RELAXED);
+    __atomic_store_n(&wf__par_self->steals, n + 1, __ATOMIC_RELAXED);
 #endif
     return slot;
 }
@@ -176,7 +172,7 @@ static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
         if (victim == lane) {
             continue;
         }
-        slot = wf__par_steal(lane, victim);
+        slot = wf__par_steal(victim);
         if (slot != NULL) {
             return slot;
         }

@@ -25,14 +25,13 @@ runtime; remove it when the production replacement has passed the comparison.
 `make formal-screen OUT=<fresh-absolute-path>` compares one scalar WF object
 against repaired historical and recovered cores on POSIX, and the repaired
 historical native core on Windows. It also checks the ordinary CLI executable.
-All targets also compare the maintained core at `4fabd264`, before the
-successful-steal counter receives the searching lane already held by its caller
-instead of rereading thread-local storage. Slot layout, deque ordering and
-waiting policy are unchanged. This control shares the WF/host objects,
-compiler options and platform sources with the candidate. Both raw logs use
-the same internal runtime label; filenames and summary rows distinguish them.
-The earlier compact-slot comparison remains in the recorded `4fabd264` cohort;
-it is replaced here by the actual before-change core for this optimization.
+All targets also compare the maintained core at `4fabd264`. The explicit-owner
+steal-counter adjustment at `bca257bb` failed its no-regression condition and is
+reverted: current and previous core sources are now identical. This control
+shares the WF/host objects, compiler options and platform sources with the
+candidate. Both raw logs use the same internal runtime label; filenames and
+summary rows distinguish their process samples. The earlier compact-slot
+comparison remains in the recorded `4fabd264` cohort.
 The completed Windows `d39b4836` spin-hint ablation is retired from the active
 matrix: it would no longer isolate the current source change. Its measurements,
 checked source delta and original commands remain in the `7776c3cd` artifact
@@ -66,6 +65,28 @@ must start four participants and pass the result oracle. These observations
 test whether cross-worker task claims differ consistently; they do not count
 failed steals, identify which allocations ran on each thread or establish a
 constant cost per steal. They remain separate from the original timing matrix.
+
+After the formal screen, Linux CI runs `formal-screen.sh profile` on its exact
+old/recovered/current/replica executables. This external `perf record -e
+cpu-clock -F 997` observer samples CPU execution without rebuilding the images.
+It uses N4096/tile64 on x86-64 and N65536/tile1024 on AArch64, at widths 1/4,
+with five passes in alternating image order. Each sampled process has a plain
+process immediately before it, with identical inputs and existing call counts.
+Every process must pass the oracle and report the requested actual lane count.
+`profile/` retains commands, image hashes, raw calls, CPU samples, symbol reports
+and its own manifest; it is produced after the original screen manifest.
+The sampled images must match that original manifest, and an existing profile
+attempt cannot be reused; start a fresh formal screen for another observation.
+Missing tools or kernel support are recorded as unavailable, never zero cost.
+
+The question is whether the complete-call gap corresponds to more CPU in the
+result accessor, allocation/destruction, compute callbacks or worker search.
+Compare sample locations with each image's plain CPU/full-call measurements;
+percentages alone are not absolute costs. Sampling changes scheduling and may
+miss short intervals, and `cpu-clock` does not measure off-CPU waits or hardware
+stalls. These observations do not replace the original performance screen or
+justify another runtime change without a localized cause. Remove this bounded
+observer when that attribution question is resolved.
 
 On x86-64, the formal matrix gives every scheduler reference the maintained
 compiler's `-falign-loops=32` setting. An additional `unaligned` image recompiles

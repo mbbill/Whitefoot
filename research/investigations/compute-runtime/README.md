@@ -926,14 +926,14 @@ discriminator was a consistent claim difference accompanying the full-call
 loss; its absence here cannot explain the earlier EPYC result. Counts also do
 not identify allocation placement, failed steals or background-worker costs.
 
-### Pass the known search owner to steal statistics
+### Rejected known-owner steal-counter adjustment
 
-The maintained `wf__par_find` already holds the current lane, but the successful
-claim counter reread `wf__par_self` through TLS inside `wf__par_steal`. Pass the
-known lane to this private helper. Every caller follows the existing current-
-stack owner invariant; the same relaxed counter load/store stays immediately
-after a successful claim. This removes redundant context lookup without
-changing queue operations, memory ordering, slot layout, worker policy or ABI.
+At `bca257bb`, `wf__par_find` passed its existing current lane to the private
+`wf__par_steal` helper instead of rereading `wf__par_self` through TLS for the
+successful-claim counter. The same relaxed counter load/store remained
+immediately after a successful claim. Queue operations, memory ordering, slot
+layout, worker policy and ABI did not change. The experiment is rejected below;
+the maintained core is restored exactly to `4fabd264`.
 
 Local Clang 22.1.8 builds remove the successful-claim TLS access on Mac ARM
 and Intel at O2/O3, with the normal 32-byte loop alignment on Intel. Static
@@ -946,13 +946,69 @@ The rebuilt ordinary compiler also passes the maintained 48-input scalar
 Mandelbrot oracle panel at widths 1/2/4 and all four existing split settings.
 The private-helper change also passes scoped independent ownership review.
 
-The formal and ordinary-command comparisons use actual pre-change production
+The formal and ordinary-command comparisons used actual pre-change production
 `4fabd264` as `previous`, replacing the completed compact-slot ablation; repaired
-historical/research and replica controls remain. The Linux observation includes
-that previous image. Retaining the change requires native correctness and no
-reproducible core/full-call/CPU regression against this baseline. The existing
-historical/research qualification remains required; neither the Xeon result nor
-shorter local assembly establishes that the earlier EPYC loss is fixed.
+historical/research and replica controls remained. The Linux observation included
+that previous image. Retention required native correctness and no reproducible
+core/full-call/CPU regression against this baseline, in addition to the existing
+historical/research qualification. Shorter local assembly was not a speedup.
+
+The [five-target bca257bb run](https://github.com/mbbill/Whitefoot/actions/runs/34446440267)
+completed with all formal and ordinary-command performance screens failing.
+The exact local canonical `make check` passed, as did the Linux/Windows I/O
+host checks and all four automatically triggered I/O benchmark jobs. Source,
+manifest, oracle and reducer checks for the formal artifacts passed; performance
+did not. The long and first64 core-only readers report:
+
+| Target | Artifact | Long investigate | First64 investigate |
+| --- | --- | --- | --- |
+| Linux x86-64 | 10139970794 | 1 / 90 | 20 / 90 |
+| Linux AArch64 | 10139947060 | 0 / 72 | 7 / 72 |
+| macOS AArch64 | 10139938020 | 16 / 48 | 19 / 48 |
+| macOS x86-64 | 10140237270 | 24 / 90 | 20 / 90 |
+| Windows x86-64 | 10139951855 | 3 / 48 | 4 / 48 |
+
+Full-call evidence independently rejects the adjustment. Linux AArch64 at
+N65536/tile1024 gives current/previous ratios of 1.0533 [1.0494, 1.0555],
+1.0732 [1.0709, 1.0744] and 1.0814 [1.0553, 1.1035] at widths 1/2/4.
+Replica/previous medians are 1.0539, 1.0729 and 1.0861, while current/replica
+medians are within 0.05% of one. Corresponding process CPU medians are
+1.0520, 1.0486 and 1.0437. These losses cannot be dismissed because the long
+core reader has no flagged cells.
+
+Windows at W4/N4096/tile1024 gives full-call/previous 1.0889
+[1.0610, 1.1086], replica/previous 1.0967 [1.0624, 1.1278], and A/A 0.9929
+[0.9752, 1.0060]. Its outside-core interval is 1.1479 [1.1406, 1.1567];
+core/previous is 0.9970 [0.9137, 1.0438]. CPU/previous is 1.1471
+[0.9722, 1.2121], so a consistent CPU regression is not separately established.
+
+The Linux x86-64 host is again EPYC 7763, two cores/four SMT CPUs. At
+W4/N4096/tile64, full-call/research is 1.0885 [1.0541, 1.1177] and
+CPU/research 1.0959 [1.0604, 1.1234]. Full-call/previous is 1.0092
+[0.9771, 1.0265]; the adjustment did not resolve the existing loss.
+The separate existing-counter observation also retains full-call/research
+1.0718 [1.0474, 1.1293] while its successful-steal count ratio is 0.9698
+[0.9363, 1.0467], without a consistent increase. Its same-tree sequential
+control is 0.9964 [0.9792, 1.0100] for full calls. This does not support
+more successful steals as the explanation, and still does not identify the
+responsible consumer or worker operation.
+
+Both Macs remain noisy. On ARM at W2/N4096/tile1024, full-call/previous is
+1.1464 [0.9588, 1.4456] and replica/previous 1.3475 [1.0637, 1.8114].
+On Intel at W2/N65536/tile64, the corresponding ratios are 1.0723
+[0.8456, 1.6402] and 1.1986 [1.0523, 1.4630]. Broad A/A ranges prevent a
+resolved magnitude or cause; the consistently slower replica pairs must still
+be retained. Neither platform supports an improvement claim.
+
+The Linux ARM single-participant loss is especially useful: that execution
+does not update the successful-steal counter. Its common result-accessor
+instructions are unchanged but move from address 0x4aa4 to 0x4a78 because the
+runtime precedes the common WF object at link time. This identifies a code-
+placement confound, not proof of its timing effect or justification for another
+alignment search. The next bounded observation uses external Linux CPU samples
+of the unchanged formal executables to locate complete-call CPU in result
+access, allocation/destruction, computation or worker search. It preserves the
+original timing matrix and does not add another runtime implementation.
 
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 

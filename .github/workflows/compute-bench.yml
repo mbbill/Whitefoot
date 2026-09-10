@@ -111,8 +111,8 @@ jobs:
           fi
           cargo build --locked --profile gate --bin whitefootc \
             --manifest-path compiler/Cargo.toml --target-dir "$scratch/compiler"
-          # Compare the explicit owner context for steal statistics with its
-          # prior maintained core through unchanged ordinary entry points.
+          # Keep the maintained pre-change compiler as the ordinary-path
+          # reference after reverting the unsuccessful counter adjustment.
           baseline=4fabd26448eddc9316499f5c58e66c556d9ca7cb
           mkdir -p "$scratch/previous-source"
           git archive "$baseline" compiler spec | tar -x -C "$scratch/previous-source"
@@ -211,6 +211,26 @@ jobs:
         env:
           OUT: ${{ runner.temp }}/formal-runtime
         run: make -C research/experiments/compute-runtime formal-screen OUT="$OUT"
+      - name: Attribute Linux full-call CPU on the measured images
+        if: always() && runner.os == 'Linux'
+        run: |
+          export OUT="$RUNNER_TEMP/formal-runtime"
+          profile="$OUT/formal-screen/profile"
+          mkdir -p "$profile"
+          if test ! -s "$OUT/formal-screen/manifest.sha256"; then
+            echo 'formal screen did not finish; no CPU profile' > "$profile/availability.txt"
+            exit 0
+          fi
+          {
+            sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
+              -o Dir::Etc::sourceparts=- install -y --no-install-recommends linux-tools-generic || true
+            sysctl kernel.perf_event_paranoid
+            sudo sysctl -w kernel.perf_event_paranoid=-1 || true
+          } > "$profile/setup.txt" 2>&1
+          if test -d /usr/lib/linux-tools; then
+            export PERF="$(find -L /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)"
+          fi
+          sh research/experiments/compute-runtime/formal-screen.sh profile
       - name: Publish per-cell wall-time screen
         if: always()
         run: |

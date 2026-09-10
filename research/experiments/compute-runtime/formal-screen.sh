@@ -4,11 +4,101 @@
 set -eu
 cd "$(dirname "$0")"
 : "${OUT:?set OUT}"
-: "${WFC:?set WFC to the current compiler}"
 CC=${CC:-/usr/bin/clang}
 unset WF_SPLIT_WORK WF_STACKS
 WF_SCHED_REPORT=0
 export WF_SCHED_REPORT
+# Observe the already measured images externally; never relink them for this
+# diagnostic or substitute sampled runs for the ordinary timing matrix.
+if test "${1:-screen}" = profile; then
+    test "$(uname -s)" = Linux
+    out=$(cd "$OUT/formal-screen" && pwd)
+    test -s "$out/manifest.sha256"
+    profile=$out/profile
+    mkdir -p "$profile"
+    if test -e "$profile/inputs.txt" || test -e "$profile/commands.txt"; then
+        echo 'profile already contains an attempt; use a fresh formal screen' >&2
+        exit 2
+    fi
+    profile_manifest() {
+        find "$profile" -type f ! -name manifest.sha256 -exec sha256sum {} + > "$profile/manifest.sha256"
+    }
+    trap profile_manifest 0
+    : > "$profile/images.sha256"
+    for image in old recovered candidate replica; do
+        awk -v path="$out/$image" '
+            substr($0,67)==path {print; found++}
+            END {if(found!=1)exit 1}' "$out/manifest.sha256" >> "$profile/images.sha256"
+    done
+    sha256sum -c "$profile/images.sha256" > "$profile/images-check.txt"
+    perf=${PERF:-perf}
+    case "$(uname -m)" in
+        x86_64) n=4096; tile=64; calls=4096;;
+        aarch64) n=65536; tile=1024; calls=512;;
+        *) printf '%s\n' 'unsupported profiling host' > "$profile/availability.txt"; exit 0;;
+    esac
+    {
+        printf 'kernel=wf k=16 n=%s tile=%s calls=%s seed=92821 workers=1,4 passes=5\n' "$n" "$tile" "$calls"
+        printf '%s\n' 'unchanged images; every CPU-sampled process has a preceding plain process' \
+            'cpu-clock samples attribute user/kernel CPU, not off-CPU wait duration or hardware stalls' \
+            'sampled timings are descriptive; no observer cost is subtracted from the original screen'
+        uname -a
+        for path in /proc/sys/kernel/perf_event_paranoid /sys/fs/cgroup/cpu.max /sys/fs/cgroup/cpuset.cpus.effective; do
+            if test -r "$path"; then printf '%s: ' "$path"; cat "$path"; fi
+        done
+        sha256sum "$out/old" "$out/recovered" "$out/candidate" "$out/replica"
+    } > "$profile/inputs.txt"
+    if ! "$perf" version > "$profile/perf-version.txt" 2>&1; then
+        printf '%s\n' 'perf unavailable' > "$profile/availability.txt"
+        exit 0
+    fi
+    if test "$(getconf _NPROCESSORS_ONLN)" -lt 4; then
+        printf '%s\n' 'four native CPUs unavailable' > "$profile/availability.txt"
+        exit 0
+    fi
+    if ! "$perf" record -e cpu-clock -F 997 -o "$profile/probe.data" -- true \
+        > "$profile/probe.log" 2>&1; then
+        printf '%s\n' 'cpu-clock sampling unavailable; see probe.log' > "$profile/availability.txt"
+        exit 0
+    fi
+    printf '%s\n' 'cpu-clock sampling available' > "$profile/availability.txt"
+    : > "$profile/commands.txt"
+    for width in 1 4; do
+        pass=0
+        while test "$pass" -lt 5; do
+            order='old recovered candidate replica'
+            if test "$((pass % 2))" = 1; then order='replica candidate recovered old'; fi
+            for image in $order; do
+                stem=$profile/$image-w$width-p$pass
+                printf 'WF_WORKERS=%s WF_SCHED_REPORT=0 %s wf 16 %s %s %s 92821 %s\n' \
+                    "$width" "$out/$image" "$n" "$tile" "$calls" "$pass" >> "$profile/commands.txt"
+                WF_WORKERS="$width" "$out/$image" wf 16 "$n" "$tile" "$calls" 92821 "$pass" > "$stem.plain.tsv"
+                WF_WORKERS="$width" "$perf" record -e cpu-clock -F 997 -o "$stem.cpu.data" \
+                    -- "$out/$image" wf 16 "$n" "$tile" "$calls" 92821 "$pass" \
+                    > "$stem.sampled.tsv" 2> "$stem.cpu.log"
+                for log in "$stem.plain.tsv" "$stem.sampled.tsv"; do
+                    awk -F '\t' -v width="$width" -v n="$n" -v tile="$tile" -v calls="$calls" -v pass="$pass" '
+                        /^# actual_lanes=/ {if($0!="# actual_lanes="width)bad=1; lanes++}
+                        /^# FIR bench PASS:/ {if(index($0,"calls="(calls+1)" ")==0)bad=1; passed++}
+                        $1!~/^#/ && $1!="runtime" {
+                            if(NF!=12 || $2!="wf" || $3!=width || $4!=16 || $5!=n ||
+                                $6!=tile || $7!=92821 || $8!=pass || $9!=rows ||
+                                $10!=(rows==0?"first":"warm") || $11!~/^[0-9]+$/ ||
+                                $12!~/^[0-9]+$/ || $12<$11)bad=1
+                            rows++
+                        }
+                        END {exit bad || lanes!=1 || passed!=1 || rows!=calls+1}' "$log"
+                done
+                "$perf" report --stdio --no-children -i "$stem.cpu.data" > "$stem.cpu.txt"
+                "$perf" script -i "$stem.cpu.data" > "$stem.cpu-events.txt"
+            done
+            pass=$((pass + 1))
+        done
+    done
+    exit 0
+fi
+test "${1:-screen}" = screen
+: "${WFC:?set WFC to the current compiler}"
 root=$(git rev-parse --show-toplevel)
 old=9051576f6a4d723b4eb072850f49859853decae7
 recovered=d858008f560b25da896af2a17f8b1d07ac49fd6e
@@ -114,7 +204,7 @@ fi
 # Compare the actual maintained core before passing the existing search owner
 # to its successful-steal counter. Earlier slot/Windows ablations stay in git.
 git show "$previous:compiler/src/backend/sched/core.c" > "$out/previous.c"
-printf '\nPrevious maintained core=%s; same WF/host objects, flags and platform sources. The candidate passes the known search owner to its successful-steal counter instead of rereading TLS. Slot layout, queue ordering and waiting policy are unchanged. Both use the internal candidate label; filenames and means.tsv distinguish the cores.\n' "$previous" >> "$out/flags.txt"
+printf '\nPrevious maintained core=%s; same WF/host objects, flags and platform sources. The candidate restores this core after rejecting the explicit-owner counter change. Previous and candidate therefore contain identical core source; both use the internal candidate label. Filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
