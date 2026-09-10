@@ -1,0 +1,587 @@
+enum Slot['s] {
+  Vacant();
+  Deleted();
+  Occupied(key: u64, payload: Box<'s, u64>);
+}
+
+enum Probe {
+  Stop();
+  Skip();
+  Miss();
+  Match();
+}
+
+enum PutOutcome['s] {
+  Inserted();
+  Replaced(previous: Box<'s, u64>);
+  Full(offered: Box<'s, u64>);
+  AllocationRefused();
+}
+
+enum SearchStep {
+  SearchStop();
+  SearchContinue();
+  Found(value: u64);
+}
+
+fn probe['s](slot: &Slot<'s>, key: own u64) -> result: own Probe reads(slot) {
+  match deref(slot) {
+    Vacant() => {
+      return Stop();
+    }
+    Deleted() => {
+      return Skip();
+    }
+    Occupied(key: present_key, payload: present_payload) => {
+      if deref(present_key) == key {
+        return Match();
+      }
+      return Miss();
+    }
+  }
+}
+
+fn search_step['s](slot: &Slot<'s>, key: own u64) -> result: own SearchStep reads(slot) {
+  match deref(slot) {
+    Vacant() => {
+      return SearchStop();
+    }
+    Deleted() => {
+      return SearchContinue();
+    }
+    Occupied(key: present_key, payload: present_payload) => {
+      if deref(present_key) == key {
+        return Found(value: deref(deref(present_payload)));
+      }
+      return SearchContinue();
+    }
+  }
+}
+
+fn empty_slots['s]() -> result: own array<Slot<'s>, 8> pure {
+  let slots = fixed_vector::<Slot<'s>, 8>();
+  let empty0 = Vacant<'s>();
+  set slots = place_back(vector: move slots, value: move empty0);
+  let empty1 = Vacant<'s>();
+  set slots = place_back(vector: move slots, value: move empty1);
+  let empty2 = Vacant<'s>();
+  set slots = place_back(vector: move slots, value: move empty2);
+  let empty3 = Vacant<'s>();
+  set slots = place_back(vector: move slots, value: move empty3);
+  let empty4 = Vacant<'s>();
+  set slots = place_back(vector: move slots, value: move empty4);
+  let empty5 = Vacant<'s>();
+  set slots = place_back(vector: move slots, value: move empty5);
+  let empty6 = Vacant<'s>();
+  set slots = place_back(vector: move slots, value: move empty6);
+  let empty7 = Vacant<'s>();
+  set slots = place_back(vector: move slots, value: move empty7);
+  let complete = array_from_fixed(vector: move slots);
+  return move complete;
+}
+
+fn put['s](slots: own array<Slot<'s>, 8>, key: own u64, payload: own Box<'s, u64>) -> (updated: own array<Slot<'s>, 8>, outcome: own PutOutcome<'s>) reads(slots), writes(slots) {
+  let home = key % 8_u64;
+  let first_deleted = 8_u64;
+  for (step in 0_u64..8_u64) {
+    let advanced = home +wrap step;
+    let index = advanced % 8_u64;
+    region {
+      let action = probe(slot: &slots[index], key: key);
+      match action {
+        Match() => {
+          let replacement = Occupied(key: key, payload: move payload);
+          let previous = replace slots[index] = move replacement;
+          match move previous {
+            Occupied(key: old_key, payload: old_payload) => {
+              return move slots, Replaced(previous: move old_payload);
+            }
+            Vacant() => {
+              return move slots, Inserted<'s>();
+            }
+            Deleted() => {
+              return move slots, Inserted<'s>();
+            }
+          }
+        }
+        Skip() => {
+          if first_deleted == 8_u64 {
+            set first_deleted = index;
+          }
+        }
+        Stop() => {
+          let destination = index;
+          if first_deleted < 8_u64 {
+            set destination = first_deleted;
+          }
+          let replacement = Occupied(key: key, payload: move payload);
+          let previous = replace slots[destination] = move replacement;
+          match move previous {
+            Vacant() => {
+              return move slots, Inserted<'s>();
+            }
+            Deleted() => {
+              return move slots, Inserted<'s>();
+            }
+            Occupied(key: old_key, payload: old_payload) => {
+              return move slots, Replaced(previous: move old_payload);
+            }
+          }
+        }
+        Miss() => {
+        }
+      }
+    }
+  }
+  if first_deleted < 8_u64 {
+    let replacement = Occupied(key: key, payload: move payload);
+    let previous = replace slots[first_deleted] = move replacement;
+    match move previous {
+      Vacant() => {
+        return move slots, Inserted<'s>();
+      }
+      Deleted() => {
+        return move slots, Inserted<'s>();
+      }
+      Occupied(key: old_key, payload: old_payload) => {
+        return move slots, Replaced(previous: move old_payload);
+      }
+    }
+  }
+  return move slots, Full(offered: move payload);
+}
+
+fn find['s](slots: &array<Slot<'s>, 8>, key: own u64) -> result: own Option<u64> reads(slots) {
+  let home = key % 8_u64;
+  for (step in 0_u64..8_u64) {
+    let advanced = home +wrap step;
+    let index = advanced % 8_u64;
+    region {
+      let action = search_step(slot: &deref(slots)[index], key: key);
+      match move action {
+        SearchStop() => {
+          return None<u64>();
+        }
+        SearchContinue() => {
+        }
+        Found(value: present) => {
+          return Some<u64>(value: present);
+        }
+      }
+    }
+  }
+  return None<u64>();
+}
+
+fn remove['s](slots: own array<Slot<'s>, 8>, key: own u64) -> (updated: own array<Slot<'s>, 8>, removed: own Option<Box<'s, u64>>) reads(slots), writes(slots) {
+  let home = key % 8_u64;
+  for (step in 0_u64..8_u64) {
+    let advanced = home +wrap step;
+    let index = advanced % 8_u64;
+    region {
+      let action = probe(slot: &slots[index], key: key);
+      match action {
+        Stop() => {
+          return move slots, None<Box<'s, u64>>();
+        }
+        Skip() => {
+        }
+        Miss() => {
+        }
+        Match() => {
+          let deleted = Deleted<'s>();
+          let previous = replace slots[index] = move deleted;
+          match move previous {
+            Vacant() => {
+              return move slots, None<Box<'s, u64>>();
+            }
+            Deleted() => {
+              return move slots, None<Box<'s, u64>>();
+            }
+            Occupied(key: old_key, payload: old_payload) => {
+              return move slots, Some<Box<'s, u64>>(value: move old_payload);
+            }
+          }
+        }
+      }
+    }
+  }
+  return move slots, None<Box<'s, u64>>();
+}
+
+fn allocate_put['s](store: &uniq Heap<'s>, slots: own array<Slot<'s>, 8>, key: own u64, value: own u64) -> (updated: own array<Slot<'s>, 8>, outcome: own PutOutcome<'s>) reads(store, slots), writes(store, slots), allocates(store) {
+  region {
+    match heap_box(store: &uniq deref(store), value: value) {
+      Err(error: back) => {
+        return move slots, AllocationRefused<'s>();
+      }
+      Ok(value: offered) => {
+        let (updated, outcome) = put(slots: move slots, key: key, payload: move offered);
+        return move updated, move outcome;
+      }
+    }
+  }
+}
+
+fn check_put['s](store: &uniq Heap<'s>, outcome: own PutOutcome<'s>, kind: own u64, expected: own u64) -> code: own u8 reads(outcome), writes(store) {
+  match move outcome {
+    Inserted() => {
+      if kind != 1_u64 {
+        return 1_u8;
+      }
+      return 0_u8;
+    }
+    Replaced(previous: old) => {
+      if kind != 2_u64 {
+        return 2_u8;
+      }
+      if deref(old) != expected {
+        return 3_u8;
+      }
+      return 0_u8;
+    }
+    Full(offered: back) => {
+      if kind != 3_u64 {
+        return 4_u8;
+      }
+      if deref(back) != expected {
+        return 5_u8;
+      }
+      return 0_u8;
+    }
+    AllocationRefused() => {
+      return 70_u8;
+    }
+  }
+}
+
+fn check_removed['s](store: &uniq Heap<'s>, removed: own Option<Box<'s, u64>>, present: own Bool, expected: own u64) -> code: own u8 reads(removed), writes(store) {
+  match move removed {
+    None() => {
+      if present {
+        return 6_u8;
+      }
+      return 0_u8;
+    }
+    Some(value: old) => {
+      if bnot(present) {
+        return 7_u8;
+      }
+      if deref(old) != expected {
+        return 8_u8;
+      }
+      return 0_u8;
+    }
+  }
+}
+
+fn check_found(found: own Option<u64>, present: own Bool, expected: own u64) -> code: own u8 pure {
+  match move found {
+    None() => {
+      if present {
+        return 9_u8;
+      }
+      return 0_u8;
+    }
+    Some(value: observed) => {
+      if bnot(present) {
+        return 10_u8;
+      }
+      if observed != expected {
+        return 11_u8;
+      }
+      return 0_u8;
+    }
+  }
+}
+
+fn exercise['s](store: &uniq Heap<'s>, seed: own u64) -> code: own u8 reads(store), writes(store), allocates(store) {
+  let slots0 = empty_slots::<'s>();
+  let yes = True();
+  let no = False();
+  let key1 = seed +wrap 0_u64;
+  region {
+    let (slots1, outcome1) = allocate_put(store: &uniq deref(store), slots: move slots0, key: key1, value: 11_u64);
+    region {
+      let checked1 = check_put(store: &uniq deref(store), outcome: move outcome1, kind: 1_u64, expected: 0_u64);
+      if checked1 != 0_u8 {
+        return checked1;
+      }
+    }
+    let key2 = seed +wrap 8_u64;
+    region {
+      let (slots2, outcome2) = allocate_put(store: &uniq deref(store), slots: move slots1, key: key2, value: 22_u64);
+      region {
+        let checked2 = check_put(store: &uniq deref(store), outcome: move outcome2, kind: 1_u64, expected: 0_u64);
+        if checked2 != 0_u8 {
+          return checked2;
+        }
+      }
+      let key3 = seed +wrap 16_u64;
+      region {
+        let (slots3, outcome3) = allocate_put(store: &uniq deref(store), slots: move slots2, key: key3, value: 33_u64);
+        region {
+          let checked3 = check_put(store: &uniq deref(store), outcome: move outcome3, kind: 1_u64, expected: 0_u64);
+          if checked3 != 0_u8 {
+            return checked3;
+          }
+        }
+        let key4 = seed +wrap 0_u64;
+        let (slots4, removed4) = remove(slots: move slots3, key: key4);
+        region {
+          let checked4 = check_removed(store: &uniq deref(store), removed: move removed4, present: yes, expected: 11_u64);
+          if checked4 != 0_u8 {
+            return checked4;
+          }
+        }
+        let key5 = seed +wrap 16_u64;
+        region {
+          let (slots5, outcome5) = allocate_put(store: &uniq deref(store), slots: move slots4, key: key5, value: 44_u64);
+          region {
+            let checked5 = check_put(store: &uniq deref(store), outcome: move outcome5, kind: 2_u64, expected: 33_u64);
+            if checked5 != 0_u8 {
+              return checked5;
+            }
+          }
+          let query1 = seed +wrap 8_u64;
+          region {
+            let found1 = find(slots: &slots5, key: query1);
+            let checked_query1 = check_found(found: move found1, present: yes, expected: 22_u64);
+            if checked_query1 != 0_u8 {
+              return checked_query1;
+            }
+          }
+          let query2 = seed +wrap 16_u64;
+          region {
+            let found2 = find(slots: &slots5, key: query2);
+            let checked_query2 = check_found(found: move found2, present: yes, expected: 44_u64);
+            if checked_query2 != 0_u8 {
+              return checked_query2;
+            }
+          }
+          let query3 = seed +wrap 24_u64;
+          region {
+            let found3 = find(slots: &slots5, key: query3);
+            let checked_query3 = check_found(found: move found3, present: no, expected: 0_u64);
+            if checked_query3 != 0_u8 {
+              return checked_query3;
+            }
+          }
+          let key6 = seed +wrap 24_u64;
+          region {
+            let (slots6, outcome6) = allocate_put(store: &uniq deref(store), slots: move slots5, key: key6, value: 55_u64);
+            region {
+              let checked6 = check_put(store: &uniq deref(store), outcome: move outcome6, kind: 1_u64, expected: 0_u64);
+              if checked6 != 0_u8 {
+                return checked6;
+              }
+            }
+            let key7 = seed +wrap 8_u64;
+            let (slots7, removed7) = remove(slots: move slots6, key: key7);
+            region {
+              let checked7 = check_removed(store: &uniq deref(store), removed: move removed7, present: yes, expected: 22_u64);
+              if checked7 != 0_u8 {
+                return checked7;
+              }
+            }
+            let key8 = seed +wrap 32_u64;
+            region {
+              let (slots8, outcome8) = allocate_put(store: &uniq deref(store), slots: move slots7, key: key8, value: 66_u64);
+              region {
+                let checked8 = check_put(store: &uniq deref(store), outcome: move outcome8, kind: 1_u64, expected: 0_u64);
+                if checked8 != 0_u8 {
+                  return checked8;
+                }
+              }
+              let key9 = seed +wrap 40_u64;
+              region {
+                let (slots9, outcome9) = allocate_put(store: &uniq deref(store), slots: move slots8, key: key9, value: 100_u64);
+                region {
+                  let checked9 = check_put(store: &uniq deref(store), outcome: move outcome9, kind: 1_u64, expected: 0_u64);
+                  if checked9 != 0_u8 {
+                    return checked9;
+                  }
+                }
+                let key10 = seed +wrap 48_u64;
+                region {
+                  let (slots10, outcome10) = allocate_put(store: &uniq deref(store), slots: move slots9, key: key10, value: 101_u64);
+                  region {
+                    let checked10 = check_put(store: &uniq deref(store), outcome: move outcome10, kind: 1_u64, expected: 0_u64);
+                    if checked10 != 0_u8 {
+                      return checked10;
+                    }
+                  }
+                  let key11 = seed +wrap 56_u64;
+                  region {
+                    let (slots11, outcome11) = allocate_put(store: &uniq deref(store), slots: move slots10, key: key11, value: 102_u64);
+                    region {
+                      let checked11 = check_put(store: &uniq deref(store), outcome: move outcome11, kind: 1_u64, expected: 0_u64);
+                      if checked11 != 0_u8 {
+                        return checked11;
+                      }
+                    }
+                    let key12 = seed +wrap 64_u64;
+                    region {
+                      let (slots12, outcome12) = allocate_put(store: &uniq deref(store), slots: move slots11, key: key12, value: 103_u64);
+                      region {
+                        let checked12 = check_put(store: &uniq deref(store), outcome: move outcome12, kind: 1_u64, expected: 0_u64);
+                        if checked12 != 0_u8 {
+                          return checked12;
+                        }
+                      }
+                      let key13 = seed +wrap 72_u64;
+                      region {
+                        let (slots13, outcome13) = allocate_put(store: &uniq deref(store), slots: move slots12, key: key13, value: 104_u64);
+                        region {
+                          let checked13 = check_put(store: &uniq deref(store), outcome: move outcome13, kind: 1_u64, expected: 0_u64);
+                          if checked13 != 0_u8 {
+                            return checked13;
+                          }
+                        }
+                        let key14 = seed +wrap 80_u64;
+                        region {
+                          let (slots14, outcome14) = allocate_put(store: &uniq deref(store), slots: move slots13, key: key14, value: 999_u64);
+                          region {
+                            let checked14 = check_put(store: &uniq deref(store), outcome: move outcome14, kind: 3_u64, expected: 999_u64);
+                            if checked14 != 0_u8 {
+                              return checked14;
+                            }
+                          }
+                          let query4 = seed +wrap 16_u64;
+                          region {
+                            let found4 = find(slots: &slots14, key: query4);
+                            let checked_query4 = check_found(found: move found4, present: yes, expected: 44_u64);
+                            if checked_query4 != 0_u8 {
+                              return checked_query4;
+                            }
+                          }
+                          let query5 = seed +wrap 24_u64;
+                          region {
+                            let found5 = find(slots: &slots14, key: query5);
+                            let checked_query5 = check_found(found: move found5, present: yes, expected: 55_u64);
+                            if checked_query5 != 0_u8 {
+                              return checked_query5;
+                            }
+                          }
+                          let query6 = seed +wrap 32_u64;
+                          region {
+                            let found6 = find(slots: &slots14, key: query6);
+                            let checked_query6 = check_found(found: move found6, present: yes, expected: 66_u64);
+                            if checked_query6 != 0_u8 {
+                              return checked_query6;
+                            }
+                          }
+                          let query7 = seed +wrap 40_u64;
+                          region {
+                            let found7 = find(slots: &slots14, key: query7);
+                            let checked_query7 = check_found(found: move found7, present: yes, expected: 100_u64);
+                            if checked_query7 != 0_u8 {
+                              return checked_query7;
+                            }
+                          }
+                          let query8 = seed +wrap 48_u64;
+                          region {
+                            let found8 = find(slots: &slots14, key: query8);
+                            let checked_query8 = check_found(found: move found8, present: yes, expected: 101_u64);
+                            if checked_query8 != 0_u8 {
+                              return checked_query8;
+                            }
+                          }
+                          let query9 = seed +wrap 56_u64;
+                          region {
+                            let found9 = find(slots: &slots14, key: query9);
+                            let checked_query9 = check_found(found: move found9, present: yes, expected: 102_u64);
+                            if checked_query9 != 0_u8 {
+                              return checked_query9;
+                            }
+                          }
+                          let query10 = seed +wrap 64_u64;
+                          region {
+                            let found10 = find(slots: &slots14, key: query10);
+                            let checked_query10 = check_found(found: move found10, present: yes, expected: 103_u64);
+                            if checked_query10 != 0_u8 {
+                              return checked_query10;
+                            }
+                          }
+                          let query11 = seed +wrap 72_u64;
+                          region {
+                            let found11 = find(slots: &slots14, key: query11);
+                            let checked_query11 = check_found(found: move found11, present: yes, expected: 104_u64);
+                            if checked_query11 != 0_u8 {
+                              return checked_query11;
+                            }
+                          }
+                          let query12 = seed +wrap 80_u64;
+                          region {
+                            let found12 = find(slots: &slots14, key: query12);
+                            let checked_query12 = check_found(found: move found12, present: no, expected: 0_u64);
+                            if checked_query12 != 0_u8 {
+                              return checked_query12;
+                            }
+                          }
+                          let key15 = seed +wrap 88_u64;
+                          let (slots15, removed15) = remove(slots: move slots14, key: key15);
+                          region {
+                            let checked15 = check_removed(store: &uniq deref(store), removed: move removed15, present: no, expected: 0_u64);
+                            if checked15 != 0_u8 {
+                              return checked15;
+                            }
+                          }
+                          let key16 = seed +wrap 24_u64;
+                          let (slots16, removed16) = remove(slots: move slots15, key: key16);
+                          match move removed16 {
+                            None() => {
+                              return 12_u8;
+                            }
+                            Some(value: recycled) => {
+                              if deref(recycled) != 55_u64 {
+                                return 13_u8;
+                              }
+                              let key17 = seed +wrap 88_u64;
+                              let (slots17, outcome17) = put(slots: move slots16, key: key17, payload: move recycled);
+                              region {
+                                let checked17 = check_put(store: &uniq deref(store), outcome: move outcome17, kind: 1_u64, expected: 0_u64);
+                                if checked17 != 0_u8 {
+                                  return checked17;
+                                }
+                              }
+                              region {
+                                let found13 = find(slots: &slots17, key: key17);
+                                let checked_query13 = check_found(found: move found13, present: yes, expected: 55_u64);
+                                if checked_query13 != 0_u8 {
+                                  return checked_query13;
+                                }
+                              }
+                              region {
+                                let found14 = find(slots: &slots17, key: key16);
+                                let checked_query14 = check_found(found: move found14, present: no, expected: 0_u64);
+                                if checked_query14 != 0_u8 {
+                                  return checked_query14;
+                                }
+                              }
+                              return 0_u8;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  for (seed in 0_u64..16_u64) {
+    let code = exercise(store: &uniq heap, seed: seed);
+    if code != 0_u8 {
+      return exit_status(code: code);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -410,6 +410,13 @@ is not selected as the complete parent's backing. Ambiguous inputs, whole-parent
 or cross-block uses, nested field placements, and overlap/completion schedules retain separate storage;
 general alias-directed placement remains incomplete.
 
+The [borrowed full-array heap](../research/experiments/container-representation/families/priority-borrowed.wf)
+is an executable alternative for scalar fixed-capacity operations: ordinary
+array borrows retain the backing while scalar count contracts carry loop facts.
+Its [matched comparison](../research/experiments/container-representation/families/RESULTS.md#borrowed-full-array-heap)
+includes retained mutation calls. It does not establish general payload
+construction or generic comparison behavior.
+
 Checked cleanup names either a saved value or content at a typed place. Scope
 exit and whole-binding `dispose` project addressed owners without loading a
 second aggregate. Each release group captures the content its actions need

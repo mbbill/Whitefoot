@@ -154,6 +154,60 @@ The maintained WF tests separately check compiler-derived cleanup and failure
 paths in all three lowering modes. No elapsed-time result or overall parity with
 a C container is inferred from this bounded layout and instruction comparison.
 
+The head-zero conversion comparison holds the ordinary helper ABI and complete
+element representation fixed: consume an array, convert it to a full fixed
+run, then convert it back, versus returning the original array directly. The
+forward operation establishes head zero independently of optional proof facts.
+Retain the helper boundary and compare optimized native transfers and frame
+storage before selecting a compiler change. Equal native code rejects added
+placement machinery for this case; a remaining difference must be attributed
+to a specific intermediate representation or transfer. Any overlapping-address
+control must preserve the existing input-snapshot contract. An arbitrary-head
+run is a separate control: its two sequential split copies cannot generally
+share the destination with the source. Complete allocation size, alignment,
+padding, zero extents, element order and owning-cell identity remain obligations.
+
+On 2026-09-10, the published v0.55 compiler code at `e3924d7f` already produces
+equal optimized helpers for this comparison. With the same arm64 Clang 21
+`-O2` and exported `noinline` helper boundaries, the 408-byte record array
+becomes one tail call to `memmove` in both cases, without a private frame.
+The three-byte pair reads all three bytes before writing them; the zero-extent
+pair returns without a memory access. No new placement mechanism is selected
+for this round trip. This result does not remove the arbitrary-head conversion
+cost measured above or the transfers between separately retained helpers.
+
+The ordinary record helpers used for the comparison are:
+
+```wf
+struct Record['s] {
+  payload: array<u64, 16>;
+  owner: Box<'s, u64>;
+}
+
+fn roundtrip['s](values: own array<Record<'s>, 3>) -> result: own array<Record<'s>, 3> reads(values) {
+  let full = fixed_from_array(values: move values);
+  let result = array_from_fixed(vector: move full);
+  return move result;
+}
+
+fn direct['s](values: own array<Record<'s>, 3>) -> result: own array<Record<'s>, 3> pure {
+  return move values;
+}
+```
+
+Place these helpers in a unit with an empty successful command entry, compile
+with `--no-overlap --emit-llvm`, export both helpers and mark them `noinline`
+before the Clang command above. Repeat the pair with `array<u8, 3>` and
+`array<Record<'s>, 0>`. A separate C translation unit checks eight input
+seeds for each helper at disjoint, equal and both directions of partially
+overlapping addresses (8-byte offsets for records, 1-byte offsets for bytes).
+All 64 record and 64 byte observations preserve every word and pointer; the
+observer allocates and finally releases 192 owner cells. Six zero-extent calls
+cover distinct, equal and null addresses without changing the canaries. These
+are emitted-ABI observations, not additional source alias permissions or new
+evidence of compiler-derived cleanup. The same record layout with a legacy cell
+also yields identical assembly. No timing result is claimed.
+
 The flat-element array-view control in
 [`backend/tests/slices.rs`](../../../../compiler/src/backend/tests/slices.rs)
 now forms views over the original typed array storage, including arrays inside

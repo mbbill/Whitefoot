@@ -96,7 +96,7 @@ a matched executable comparison before it can support a performance conclusion.
 | Full arrays and fixed sequences | Construct non-copy elements, index, replace, consume, clean up | General-element fixed runs and complete owning arrays, with two consuming conversions | Native dense-layout and ownership evidence exists; residual transfers and final-place construction remain separate |
 | Growable vector and strings | Reserve, append, refuse without losing input, relocate, drain | Store-backed run with source-written allocation and movement | No current realloc row; initialization/copy costs; general helper contracts |
 | Deque and ring | Both ends, wrap, two-span processing, grow/rebase | Existing circular window | Two-span views and helper provenance; extra work when a consumer needs contiguous data |
-| HashMap and HashSet | Collisions, duplicate insertion, lookup, delete, reuse, rehash | Initialized optional entries; initialized byte/control and copy-payload alternatives | Ordinary complete trace and generic payload/behavior coverage; sparse layout cost |
+| HashMap and HashSet | Collisions, duplicate insertion, lookup, delete, reuse, rehash | Initialized optional entries; initialized byte/control and copy-payload alternatives | Fixed-capacity owning-value operations and allocation refusal execute; owning growth/rehash, generic behavior and sparse layout cost remain |
 | Ordered maps/sets and priority queues | Search, range, insert/delete; sift/split/merge/rotate | Dense heap; recursive owning boxes; fixed-capacity node arrays | Dynamic disjoint access, mutable traversal, non-copy movement and full operation evidence |
 | SmallVector and short strings | Inline use, spill, refuse, retain or shrink | Enum of inline and store-backed owners | Tag/layout, store-region and ABI cost; no completed matched spill implementation |
 | Lists, sparse sets and stable slots | Remove by identity, reuse, preserve other identities | Indexed owners or recursive boxes | Index validation/generation costs; multi-membership; retained borrowing |
@@ -460,6 +460,12 @@ snapshots, CFG conflicts and exposed loans remain explicit obligations; a
 child-sized external result never supplies the parent's backing. This changes
 physical placement without changing source ownership or acceptance. It does
 not supply arbitrary destination aliases or deferred-call retirement.
+The [borrowed full-array heap](../../experiments/container-representation/families/RESULTS.md#borrowed-full-array-heap)
+uses the same scalar operation with an ordinary array borrow and count
+contracts. It removes whole-heap transfers and measures close to the same C
+algorithm with both ordinary optimization and retained mutation calls. This
+supplies an efficient current-language competitor for that bounded scalar heap;
+general payload construction and comparison behavior remain separate requirements.
 The separate [alternative-return result](../../experiments/container-representation/foundation/RESULTS.md#alternative-return-destinations)
 reduces the measured producer's frame and removes two whole-result transfers;
 element-to-record transfers and general construction destinations remain open.
@@ -1386,6 +1392,16 @@ this run. The narrow timing does not establish general hash-table throughput.
 These are physical and protocol targets for the next WF experiment, not evidence
 that either proposed WF authority is already admitted.
 
+The ordinary [owning-map witness](../../experiments/container-representation/families/owning-map.wf)
+now executes runtime probing, replacement, deletion, lookup past tombstones,
+full-table refusal returning its input owner, and reuse after a full scan.
+The source uses a complete eight-element array of ordinary enum slots and
+modern owning boxes. Its [native allocation observation](../../experiments/container-representation/families/RESULTS.md#operation-contracts-and-recorded-runs)
+checks all 192 allocation-refusal positions and the successful execution,
+including exact owner cleanup. This closes the fixed-capacity owning-value
+operation chain; it does not close the following growth, returned-progress,
+generic behavior, construction, or sparse-layout comparison.
+
 Use one concrete map payload containing an owning resource. Execute collision
 insertion, duplicate replacement, removal, lookup past a tombstone, reuse, growth
 rehash and final cleanup. Specify allocation refusal and an intended stop during
@@ -1436,9 +1452,9 @@ The available evidence supports different next actions for different families:
 
 | Area | Current disposition | Evidence that would change it |
 | --- | --- | --- |
-| Dense/fixed sequences and priority queues | Use ordinary valid values; correct and improve general storage transfer first | Matched operations still force material initialization, descriptor or movement cost after that repair |
+| Dense/fixed sequences and priority queues | Ordinary valid values admit a scalar heap with borrowed full-array storage and matched native costs; improve remaining owning-run transfer independently | Resource-owning or growing operations still force material initialization, descriptor or movement cost; generic comparison behavior cannot retain the operation contract |
 | Full arrays of general elements | The selected two-conversion experiment executes build/failure/freeze/use/replace/thaw/drain; general views, construction transfers and explicit linear-empty termination remain separate gaps | Matched final-place construction and transfer cost, and ordinary checked views of owning elements |
-| Hash and ordered containers | The scalar map, nested boxed helper and runtime-indexed boxed migration execute; the ordered split component checks. The projected sparse-layout comparison and complete generic operations remain open | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; a complete ordered mutation trace |
+| Hash and ordered containers | The ordinary owning-value map executes fixed-capacity probing, replacement, deletion, full/refused input return, reuse and exact cleanup; the runtime-indexed migration and ordered split components also execute. Owning growth/returned progress, projected sparse layout and generic behavior remain open | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; a complete ordered mutation trace |
 | Deques and rings | A wrapped logical-index trace works; a wrapped run is correctly refused as one contiguous view | A two-span consumer/growth trace that prices any required copying and admits the actual loans |
 | Growable runs, strings and inline/spill forms | Source-written byte growth/refusal executes and has loop/bulk/realloc controls; no WF realloc or finished spill result | General owner-return helper, repeated reserve/spill and copy-heavy resize controls including peak storage and address validity |
 | Packed byte records | Current initialized byte storage executes variable records and overlapping movement | Measured bulk/initialization/compact-handle cost, or an actually required typed layout that byte codecs cannot preserve |

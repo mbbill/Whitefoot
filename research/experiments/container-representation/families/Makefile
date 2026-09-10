@@ -27,6 +27,33 @@ $(BUILD)/priority-costs$(EXE): priority-costs.c $(BUILD)/priority.ll
 $(BUILD)/priority-boundary-costs$(EXE): priority-costs.c $(BUILD)/priority.ll
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
 
+$(BUILD)/priority-borrowed.raw.ll: priority-borrowed.wf $(WHITEFOOTC) | $(BUILD)
+	$(WHITEFOOTC) --no-overlap --emit-llvm $< -o $@
+
+$(BUILD)/priority-borrowed.ll: $(BUILD)/priority-borrowed.raw.ll $(BUILD)/abi$(EXE)
+	$(BUILD)/abi$(EXE) $< $@ wf_priority_trace
+
+$(BUILD)/priority-borrowed-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed.ll
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
+
+$(BUILD)/priority-borrowed-boundary-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed.ll
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+
+$(BUILD)/priority-borrowed-retained.ll: $(BUILD)/priority-borrowed.ll
+	awk '/^define internal (void|i64) @wf_(push|pop)\(/ { if (sub(/ #0 [{]$$/, " noinline #0 {") != 1) exit 1; retained++ } { print } END { if (retained != 2) exit 1 }' $< > $@
+
+$(BUILD)/priority-borrowed-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed-retained.ll
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+
+$(BUILD)/owning-map.raw.ll: owning-map.wf $(WHITEFOOTC) | $(BUILD)
+	$(WHITEFOOTC) --no-overlap --emit-llvm $< -o $@
+
+$(BUILD)/owning-map.observed.ll: $(BUILD)/owning-map.raw.ll $(BUILD)/abi$(EXE)
+	$(BUILD)/abi$(EXE) --observe-allocations $< $@
+
+$(BUILD)/owning-map-observer$(EXE): owning-map-observer.c $(BUILD)/owning-map.observed.ll
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
+
 $(BUILD)/growth-abi$(EXE): growth-abi.rs | $(BUILD)
 	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
 
@@ -43,10 +70,13 @@ $(BUILD)/growth.opt.ll: $(BUILD)/growth.instrumented.ll $(BUILD)/growth-abi$(EXE
 $(BUILD)/growth-costs$(EXE): growth-costs.c $(BUILD)/growth.opt.ll
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
 
-check: $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) $(BUILD)/growth-costs$(EXE)
+check: $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
+       $(BUILD)/priority-borrowed-costs$(EXE) $(BUILD)/priority-borrowed-boundary-costs$(EXE) \
+       $(BUILD)/priority-borrowed-retained-costs$(EXE) \
+       $(BUILD)/owning-map-observer$(EXE) $(BUILD)/growth-costs$(EXE)
 	rustfmt --edition 2024 --check abi.rs growth-abi.rs
 	@set -eu; \
-	  for source in hashmap ordered priority packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view; do \
+	  for source in hashmap owning-map ordered priority priority-borrowed packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view; do \
 	    for mode in default par no-overlap; do \
 	      case "$$mode" in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; esac; \
 	      "$(WHITEFOOTC)" $$flags "$$source.wf" -o "$(BUILD)/$$source-$$mode$(EXE)"; \
@@ -64,11 +94,18 @@ check: $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) $(BU
 	  done
 	$(BUILD)/priority-costs$(EXE) check
 	$(BUILD)/priority-boundary-costs$(EXE) check
+	$(BUILD)/priority-borrowed-costs$(EXE) check
+	$(BUILD)/priority-borrowed-boundary-costs$(EXE) check
+	$(BUILD)/priority-borrowed-retained-costs$(EXE) check
+	$(BUILD)/owning-map-observer$(EXE)
 	$(BUILD)/growth-costs$(EXE) check
 
 measure: check
 	$(BUILD)/priority-costs$(EXE) measure > $(BUILD)/priority-measurements.csv
 	$(BUILD)/priority-boundary-costs$(EXE) measure > $(BUILD)/priority-boundary-measurements.csv
+	$(BUILD)/priority-borrowed-costs$(EXE) measure > $(BUILD)/priority-borrowed-measurements.csv
+	$(BUILD)/priority-borrowed-boundary-costs$(EXE) measure > $(BUILD)/priority-borrowed-boundary-measurements.csv
+	$(BUILD)/priority-borrowed-retained-costs$(EXE) measure > $(BUILD)/priority-borrowed-retained-measurements.csv
 	$(BUILD)/growth-costs$(EXE) measure > $(BUILD)/growth-measurements.csv
 
 reproduce-runtime-gap: check

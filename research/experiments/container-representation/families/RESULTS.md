@@ -4,8 +4,8 @@ These probes ask whether current Whitefoot can execute representative container
 operations. They are capability examples, not prevalence evidence or complete
 container implementations. `make check` compiles and runs each supported
 Whitefoot source in the default, `--par`, and `--no-overlap` modes, checks the
-intentional source rejection, and checks the matched priority-queue and
-byte-growth C controls. The original measurements used compiler revision
+intentional source rejection, the owning-map allocation observer, and the
+matched priority-queue and byte-growth C controls. The original measurements used compiler revision
 `3cd7a8ebbc459b52989806442eff73538f131b96`; the added sources and retained samples
 are in this directory. Checks and measurements were run on 2026-09-08, arm64
 macOS 26.6.2, using Apple Clang 21.0.0 and Rust 1.98.1.
@@ -15,8 +15,8 @@ The whole-effect refinement at `ebc6d059` restores `hashmap.wf` and
 execution modes. The known-endpoint candidate additionally restores
 `boxed-migration.wf`: back insertion retains the last appended owner's logical
 slot through the later literal replacements. The maintained `make check`
-runner executes all nine sources in all three modes, the rejection control,
-and the priority/growth correctness controls; the growth control reports
+runner now executes all eleven sources in all three modes, the rejection control,
+the owning-map allocation observer, and the priority/growth correctness controls; the growth control reports
 4,608 variant/input checks. These recovery runs add behavior
 evidence, not new timing samples to the recorded cost comparisons below.
 
@@ -41,6 +41,40 @@ The map reads an affine option through a small borrowed helper. The measured
 then-required one-statement child region. The current rule admits the separate
 shared-option witness below. The map source retains its measured shape rather
 than using that old restriction as a claim that shared lookup is inexpressible.
+
+`owning-map.wf` adds an eight-slot table whose ordinary slot enum holds either
+vacancy, a tombstone, or a key and modern `Box<u64>` owner. Its helpers perform
+runtime linear probing through a complete array. Lookup borrows the array;
+insertion and removal consume and return it. Sixteen seeds cover all eight
+home positions twice, with collisions, duplicate replacement after a tombstone,
+lookup past deletion, reuse, absent lookup/removal, and all eight slots full.
+A full insertion returns the original offered owner. Deleting from that full
+table and reinserting the returned owner under another key exercises the final
+tombstone path after a complete scan with no vacant slot. Both the new value and
+the removed key's absence are checked. These are ordinary source operations,
+not fixed-position migration or a special compiler container path.
+
+The 2026-09-10 runs use the published v0.55 compiler from `e3924d7f`, whose
+source is unchanged at `ad624ab7`. All three ordinary compilation modes exit
+zero. `owning-map-observer.c` additionally executes the no-overlap output once
+normally and once for refusal at each of its 192 allocation requests. The
+normal run allocates and releases 192 owners. Each refused run exits 70,
+makes no later allocation request, and releases exactly the preceding owners.
+Across all 193 executions the observer checks 18,528 allocations and releases,
+1,456 returns of the original full-table input owner, and no live owner at exit.
+It checks each pointer's original payload, detects duplicate/foreign releases,
+and quarantines released cells until the execution ends so address reuse cannot
+mask a stale owner.
+
+The existing native Rust adapter's `--observe-allocations` mode only redirects
+the LLVM allocator, release, and command-entry symbols after checking their
+declarations. The observer supplies allocation refusal; the algorithm, failure
+branches, and cleanup remain emitted Whitefoot code. This observation changes
+allocator address reuse and supplies no throughput result. The source still
+has fixed capacity, concrete scalar keys, one owning payload type, and the
+ordinary enum layout. Growth/rehash, generic hash/equality invocation, sparse
+layout cost, and fallible construction directly into a vacant entry remain
+separate requirements.
 
 `priority.wf` is a fixed-capacity indexed min-heap trace with scalar push and
 pop behavior checked against both an independent sorting oracle and a matched
@@ -417,6 +451,104 @@ controls check the full parent extent and preserve unrelated conflicts and
 exposed values. Cross-block parent uses, repeated field reads, whole-parent
 uses, and nested or conflicting placement components remain unresolved by this
 selection and retain their independent backing.
+
+The timing follow-up uses the unchanged two heap controls and their existing
+seven-sample protocol against both preserved pre-field-placement LLVM and the
+published v0.55 compiler output. Alternate baseline/current executable order
+across complete cohorts. Every invocation retains the independent sorting checks.
+Compare each Whitefoot trace with its same-run C control, and retain every
+sample rather than selecting a stable-looking subset. The native copy difference
+is the causal evidence for placement; timings can bound the remaining gap but
+cannot assign it wholly to copying or establish small changes under host noise.
+
+The 2026-09-10 follow-up retains all 224 samples in
+[`priority-result-field-measurements.csv`](priority-result-field-measurements.csv).
+Two complete cohorts reverse baseline/current order; each executable still
+alternates its seven Whitefoot/C sample pairs at one and sixteen rounds.
+The baseline LLVM is the preserved `99acd8a6...` module above, and current is
+the published v0.55 `d4456a94...` module. Both are linked with the unchanged
+`priority-costs.c` and the same Clang flags; every invocation passes its sorting
+oracle. Fourteen samples contribute to each median and range below.
+Nanoseconds per sixteen-round trace:
+
+| Compiler placement | C helper mode | Whitefoot median (range) | C median (range) |
+| --- | --- | ---: | ---: |
+| Before result fields | Ordinary | 13,582.40 (13,164.06–24,351.32) | 4,487.43 (4,357.91–8,604.74) |
+| Complete result fields | Ordinary | 12,961.55 (12,651.86–13,352.54) | 4,545.41 (4,414.06–4,739.75) |
+| Before result fields | Retained | 14,529.05 (13,574.95–29,800.29) | 4,669.56 (4,496.83–11,422.61) |
+| Complete result fields | Retained | 13,162.60 (12,717.29–22,355.22) | 4,560.55 (4,381.10–6,911.87) |
+
+Current Whitefoot medians remain about 2.85 and 2.89 times their same-run C
+medians. The ranges expose substantial host noise, including simultaneous
+baseline/C slow samples; retain these observations rather than interpreting a
+small before/after difference as a reliable causal speedup. Removing the caller
+copies is established by the native code comparison, while the remaining
+same-algorithm cost still needs a representation and lowering explanation.
+
+### Borrowed full-array heap
+
+The scalar-heap comparison also permits a source representation
+competitor: a full array borrowed by each mutation helper, with its logical
+count passed and returned as an ordinary scalar. Keep the random recurrence,
+all sift operations, duplicate handling, empty/reuse behavior and final checksum
+unchanged. Checked count contracts must admit every partial operation without
+impossible-case control flow. Count full-array initialization and all retained
+helper costs rather than assuming a borrow is free. This tests a scalar dense
+representation and source API; it cannot establish spare-storage construction
+or a reusable heap for resource-owning elements.
+
+An additional symmetric call-boundary control marks only the Whitefoot push
+and pop helpers `noinline` and uses the existing retained C helper build. Its
+sorting oracle and operations remain unchanged. Check whether aggregate
+transfers reappear when the helper boundary cannot disappear; this separates
+the borrowed storage contract from a win relying entirely on helper inlining.
+
+The ordinary source competitor is
+[`priority-borrowed.wf`](priority-borrowed.wf). On 2026-09-10 it executes the
+command's duplicate/sorted/reuse checks with default, `--par` and `--no-overlap`
+lowering on the published v0.55 compiler. All three matched control executables
+pass the same independent 320-input sorting oracle. No compiler or source rule
+change is needed. The local invariants after let-bound calls preserve the
+returned count relationships before the mutable count binding is overwritten;
+they add no executable checks.
+
+The LLVM linkage adapter remains unchanged for the scalar trace. The symmetric
+retained target additionally checks and marks exactly the two Whitefoot mutation
+helpers `noinline`. Both forms have no whole-array transfer in the heap operation.
+Ordinary optimization inlines the Whitefoot helpers; the symmetric control keeps
+their calls and still has no aggregate copy. The ordinary trace reserves 176
+stack bytes including saved registers, and the symmetric trace reserves 272.
+The compiler still emits 128 bytes of array zero-initialization each round and
+scalar result stores. Both WF's array constructor and C's partially written
+aggregate initializer semantically initialize all array elements; optimization
+of that initialization and count/result storage can differ. The WF count is a
+scalar passed and returned across calls, whereas the C count is a heap field.
+The comparison is of usable source representations, not identical ABIs.
+
+Two cohorts for each control retain 168 timing samples in
+[`priority-borrowed-measurements.csv`](priority-borrowed-measurements.csv), using
+the same warmup, seed range, seven alternating sample pairs, Clang flags and host
+conditions as the previous heap comparison. Each median/range contains fourteen
+samples. Nanoseconds per complete trace:
+
+| Helper boundary | Rounds | Whitefoot median (range) | C median (range) |
+| --- | ---: | ---: | ---: |
+| Ordinary optimization | 1 | 263.67 (258.54–285.64) | 266.97 (261.96–293.46) |
+| Ordinary optimization | 16 | 4,216.43 (4,196.53–4,352.78) | 4,285.64 (4,260.50–4,434.08) |
+| C helpers retained | 1 | 265.01 (257.08–272.95) | 272.46 (265.14–284.91) |
+| C helpers retained | 16 | 4,196.53 (4,182.86–4,321.04) | 4,279.17 (4,267.09–4,415.77) |
+| WF and C mutation helpers retained | 1 | 266.85 (262.45–270.51) | 269.17 (265.14–270.51) |
+| WF and C mutation helpers retained | 16 | 4,348.27 (4,237.79–4,491.70) | 4,377.44 (4,273.93–4,586.67) |
+
+This scalar, sixteen-element fixed heap has close matched native costs even
+with the mutation calls retained. The sample ranges do not establish a small
+advantage over C. The earlier roughly threefold gap therefore does not establish
+that this operation needs a new storage primitive: the existing array and borrow
+model can express an efficient competitor. It also does not excuse unnecessary
+transfers in the owning-run API. General element construction, generic comparison
+behavior, growing heaps and resource-owning payloads remain untested by this
+competitor. The maintained family `check` and `measure` targets include all three
+new controls while retaining the original owning-run tests and comparisons.
 
 ## Explicit byte-run growth and refusal
 

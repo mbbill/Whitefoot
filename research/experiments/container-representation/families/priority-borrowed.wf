@@ -1,0 +1,158 @@
+fn push(heap: &uniq array<u64, 16>, count: own u64, value: own u64) -> updated: own u64 reads(heap), writes(heap) contract {
+  requires count < 16_u64;
+  ensures updated == count + 1_u64;
+} {
+  set deref(heap)[count] = value;
+  let updated = count + 1_u64;
+  let at = count;
+  loop @rise (
+    invariant live: at < updated
+  ) {
+    if at == 0_u64 {
+      break @rise;
+    }
+    let before = at - 1_u64;
+    let parent = before / 2_u64;
+    let lower = deref(heap)[at];
+    let upper = deref(heap)[parent];
+    if upper <= lower {
+      break @rise;
+    }
+    set deref(heap)[parent] = lower;
+    set deref(heap)[at] = upper;
+    set at = parent;
+  }
+  return updated;
+}
+
+fn pop(heap: &uniq array<u64, 16>, count: own u64) -> (updated: own u64, minimum: own u64) reads(heap), writes(heap) contract {
+  requires count >= 1_u64;
+  requires count <= 16_u64;
+  ensures updated == count - 1_u64;
+} {
+  let minimum = deref(heap)[0_u64];
+  let updated = count - 1_u64;
+  let last = deref(heap)[updated];
+  if updated == 0_u64 {
+    return updated, minimum;
+  }
+  set deref(heap)[0_u64] = last;
+  let at = 0_u64;
+  loop @sink (
+    invariant live: at < updated
+  ) {
+    let doubled = at * 2_u64;
+    let left = doubled + 1_u64;
+    if left >= updated {
+      break @sink;
+    }
+    let best = left;
+    let right = left + 1_u64;
+    if right < updated {
+      let left_value = deref(heap)[left];
+      let right_value = deref(heap)[right];
+      if right_value < left_value {
+        set best = right;
+      }
+    }
+    let lower = deref(heap)[best];
+    let upper = deref(heap)[at];
+    if upper <= lower {
+      break @sink;
+    }
+    set deref(heap)[at] = lower;
+    set deref(heap)[best] = upper;
+    set at = best;
+  }
+  return updated, minimum;
+}
+
+fn priority_round(seed: own u64, entering: own u64) -> (checksum: own u64, next_state: own u64) pure {
+  let checksum = entering;
+  let state = seed;
+  let heap = array_new::<u64, 16>(0_u64);
+  let count = 0_u64;
+  for (
+    index in 0_u64..16_u64,
+    invariant grown: count >= index,
+    invariant spare: count <= index
+  ) {
+    let product = state *wrap 6364136223846793005_u64;
+    set state = product +wrap 1442695040888963407_u64;
+    let value = state % 97_u64;
+    let next_count = push(heap: &uniq heap, count: count, value: value);
+    invariant advanced: next_count >= index + 1_u64;
+    invariant capped: next_count <= index + 1_u64;
+    set count = next_count;
+  }
+  for (
+    index in 0_u64..16_u64,
+    invariant remaining: count + index >= 16_u64,
+    invariant bounded: count <= 16_u64
+  ) {
+    let (next_count, value) = pop(heap: &uniq heap, count: count);
+    invariant reduced: next_count + index >= 15_u64;
+    invariant capped_result: next_count <= 16_u64;
+    set count = next_count;
+    let product = checksum *wrap 1099511628211_u64;
+    set checksum = product +wrap value;
+  }
+  return checksum, state;
+}
+
+fn priority_trace(seed: own u64, rounds: own u64) -> checksum: own u64 pure {
+  let checksum = 0_u64;
+  let state = seed;
+  for (round in 0_u64..rounds) {
+    set (checksum, state) = priority_round(seed: state, entering: checksum);
+  }
+  return checksum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let heap = array_new::<u64, 16>(0_u64);
+  let count = 0_u64;
+  region {
+    set count = push(heap: &uniq heap, count: count, value: 9_u64);
+    set count = push(heap: &uniq heap, count: count, value: 2_u64);
+    set count = push(heap: &uniq heap, count: count, value: 7_u64);
+    set count = push(heap: &uniq heap, count: count, value: 2_u64);
+    set count = push(heap: &uniq heap, count: count, value: 0_u64);
+    set count = push(heap: &uniq heap, count: count, value: 8_u64);
+    set count = push(heap: &uniq heap, count: count, value: 1_u64);
+    let (a, v0) = pop(heap: &uniq heap, count: count);
+    let (b, v1) = pop(heap: &uniq heap, count: a);
+    let (c, v2) = pop(heap: &uniq heap, count: b);
+    let (d, v3) = pop(heap: &uniq heap, count: c);
+    let (e, v4) = pop(heap: &uniq heap, count: d);
+    let (f, v5) = pop(heap: &uniq heap, count: e);
+    let (g, v6) = pop(heap: &uniq heap, count: f);
+    if v0 != 0_u64 {
+      return exit_status(code: 1_u8);
+    }
+    if v1 != 1_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if v2 != 2_u64 {
+      return exit_status(code: 3_u8);
+    }
+    if v3 != 2_u64 {
+      return exit_status(code: 4_u8);
+    }
+    if v4 != 7_u64 {
+      return exit_status(code: 5_u8);
+    }
+    if v5 != 8_u64 {
+      return exit_status(code: 6_u8);
+    }
+    if v6 != 9_u64 {
+      return exit_status(code: 7_u8);
+    }
+    set g = push(heap: &uniq heap, count: g, value: 5_u64);
+    let (empty, value) = pop(heap: &uniq heap, count: g);
+    if value != 5_u64 {
+      return exit_status(code: 8_u8);
+    }
+    return exit_status(code: 0_u8);
+  }
+}
