@@ -1,0 +1,187 @@
+proof {
+  doc "DESIGN SKETCH ONLY. Every proof block is unsupported syntax. Erasing the blocks yields the three search functions in search.wf.";
+
+  predicate Clear(s: Seq<u8>, needle: u8, lo: Int, hi: Int)
+    requires 0 <= lo <= hi <= length(s)
+  {
+    forall k in lo..hi: s[k] != needle
+  }
+
+  predicate First(s: Seq<u8>, needle: u8, lo: Int, hi: Int, r: Int)
+    requires 0 <= lo <= hi <= length(s)
+  {
+    lower: lo <= r;
+    upper: r <= hi;
+    clear: Clear(s, needle, lo, r);
+    hit: r < hi implies s[r] == needle;
+  }
+
+  lemma clear_empty(s: Seq<u8>, needle: u8, lo: Int)
+    requires 0 <= lo <= length(s)
+    proves Clear(s, needle, lo, lo)
+  {
+    unfold Clear;
+    intro k with bounds;
+    let impossible = arith(bounds) proves False;
+    exact false_elim(impossible);
+  }
+
+  lemma clear_step(s: Seq<u8>, needle: u8, lo: Int, i: Int,
+                  prefix: Clear(s, needle, lo, i), different: s[i] != needle)
+    requires 0 <= lo <= i < length(s)
+    proves Clear(s, needle, lo, i + 1)
+  {
+    unfold Clear;
+    intro k with bounds;
+    cases k < i {
+      yes less => {
+        let within = arith(bounds, less) proves lo <= k < i;
+        exact instantiate(prefix, k, within);
+      }
+      no not_less => {
+        let same = arith(bounds, not_less) proves k == i;
+        exact rewrite(different, same, at: index);
+      }
+    }
+  }
+
+  lemma clear_join(s: Seq<u8>, needle: u8, lo: Int, mid: Int, hi: Int,
+                  left: Clear(s, needle, lo, mid),
+                  right: Clear(s, needle, mid, hi))
+    requires 0 <= lo <= mid <= hi <= length(s)
+    proves Clear(s, needle, lo, hi)
+  {
+    unfold Clear;
+    intro k with bounds;
+    cases k < mid {
+      yes less => {
+        let within = arith(bounds, less) proves lo <= k < mid;
+        exact instantiate(left, k, within);
+      }
+      no not_less => {
+        let within = arith(bounds, not_less) proves mid <= k < hi;
+        exact instantiate(right, k, within);
+      }
+    }
+  }
+}
+
+fn scan_range(input: own Slice<u8>, needle: own u8, lo: own u64, hi: own u64) -> result: own u64 reads(input) contract {
+  requires lo <= hi;
+  requires hi <= len_of(input);
+  ensures result >= lo;
+  ensures result <= hi;
+}
+proof {
+  model s = entry_contents(input);
+  ensures First(s, needle, lo, hi, result);
+  terminates structural;
+}
+{
+  for (i in lo..hi)
+  proof {
+    invariant scanned: Clear(s, needle, lo, i);
+    base scanned = clear_empty(s, needle, lo);
+  }
+  {
+    let byte = input[i];
+    proof {
+      let read = load_image(input, i, byte) proves byte == s[i];
+    }
+    if byte == needle {
+      proof {
+        let equal = rewrite(edge, read, at: byte) proves s[i] == needle;
+        close return First(s, needle, lo, hi, i) {
+          lower = arith(header) proves lo <= i;
+          upper = arith(header) proves i <= hi;
+          clear = scanned;
+          hit = introduce i < hi { exact equal; };
+        }
+      }
+      return i;
+    }
+    proof {
+      let different = rewrite(edge, read, at: byte) proves s[i] != needle;
+      next scanned = clear_step(s, needle, lo, i, scanned, different);
+    }
+  }
+  proof {
+    let all = exhausted(scanned) proves Clear(s, needle, lo, hi);
+    close return First(s, needle, lo, hi, hi) {
+      lower = arith(requires) proves lo <= hi;
+      upper = arith(types) proves hi <= hi;
+      clear = all;
+      hit = introduce hi < hi {
+        let impossible = arith(assumption) proves False;
+        exact false_elim(impossible);
+      };
+    }
+  }
+  return hi;
+}
+
+fn find_split(input: own Slice<u8>, needle: own u8, split: own u64) -> result: own u64 reads(input) contract {
+  requires split <= len_of(input);
+  ensures result <= len_of(input);
+}
+proof {
+  model s = entry_contents(input);
+  ensures First(s, needle, 0, length(s), result);
+  terminates structural;
+}
+{
+  let size = len_of(input);
+  let left = scan_range(input: input, needle: needle, lo: 0_u64, hi: split);
+  proof {
+    let first_left = call_summary(left) proves First(s, needle, 0, split, left);
+  }
+  if left < split {
+    proof {
+      let equal = apply(first_left.hit, edge) proves s[left] == needle;
+      close return First(s, needle, 0, length(s), left) {
+        lower = first_left.lower;
+        upper = arith(first_left.upper, requires) proves left <= length(s);
+        clear = first_left.clear;
+        hit = introduce left < length(s) { exact equal; };
+      }
+    }
+    return left;
+  }
+  proof {
+    let absent = arith(first_left.upper, edge) proves left == split;
+    let prefix = rewrite(first_left.clear, absent, at: hi)
+      proves Clear(s, needle, 0, split);
+  }
+  let right = scan_range(input: input, needle: needle, lo: split, hi: size);
+  proof {
+    let first_right = call_summary(right)
+      proves First(s, needle, split, length(s), right);
+    let combined = clear_join(s, needle, 0, split, right, prefix, first_right.clear);
+    close return First(s, needle, 0, length(s), right) {
+      lower = arith(first_right.lower, types) proves 0 <= right;
+      upper = first_right.upper;
+      clear = combined;
+      hit = first_right.hit;
+    }
+  }
+  return right;
+}
+
+fn find_first(input: own Slice<u8>, needle: own u8) -> result: own u64 reads(input) contract {
+  ensures result <= len_of(input);
+}
+proof {
+  model s = entry_contents(input);
+  ensures First(s, needle, 0, length(s), result);
+  terminates structural;
+}
+{
+  let size = len_of(input);
+  let split = size / 2_u64;
+  let found = find_split(input: input, needle: needle, split: split);
+  proof {
+    close return = call_summary(found)
+      proves First(s, needle, 0, length(s), found);
+  }
+  return found;
+}
