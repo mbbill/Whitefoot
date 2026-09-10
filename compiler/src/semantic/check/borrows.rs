@@ -231,9 +231,10 @@ pub(super) struct SliceInfo {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SliceLoan {
-    /// The named data region, which—not a descriptor binding—owns this claim.
+    /// The named data region bounds this claim; shared descriptors may end
+    /// it earlier at their last use.
     pub(super) region: DeclarationId,
-    /// The exact source place protected for the complete named region.
+    /// The exact source place protected while the loan is live.
     pub(super) place: ResolvedPlace,
     /// [VIEW-1] the strength of the loan the view value holds.
     ///

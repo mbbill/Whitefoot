@@ -429,8 +429,8 @@ struct LocalBinding {
     compiler_updated: bool,
     borrow: Option<BorrowInfo>,
     slice: Option<SliceInfo>,
-    // Region-scoped loans outlive any one slice descriptor and end only with
-    // their named data region.
+    // A view loan is bounded by its named data region. Shared descriptors
+    // can end it earlier through their last-use judgment.
     slice_loans: Vec<SliceLoan>,
     // A `uniq` holder whose arm-scoped child reborrows a match created
     // [OWN-13]: its own allowance is withdrawn, and because binder borrows
@@ -1110,8 +1110,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// The origins are the value's own [PROV-3] set, so this covers the four
     /// events the rule enumerates — formation, copy, pass and return — with
-    /// one judgment over the set rather than one per event. `immutable-const`
-    /// and a formal origin name no loan of this function and match nothing.
+    /// one judgment over the set rather than one per event. A formal view can
+    /// have a local shared-child loan just like a source place; the child's
+    /// descriptors must register on it for VIEW-2's last-use endpoint.
+    /// `immutable-const` names no mutable backing and matches nothing.
     pub(in crate::semantic::check) fn hold_slice_loans_of(
         holder: DeclarationId,
         slice: Option<&borrows::SliceInfo>,
@@ -1121,15 +1123,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return;
         };
         let mut wanted: HashMap<DeclarationId, Vec<ResolvedPlace>> = HashMap::new();
-        for origin in &slice.origins {
-            if let crate::semantic::model::CheckedSliceOrigin::SourcePlace { root, path, .. } =
-                origin
-            {
-                wanted
-                    .entry(*root)
-                    .or_default()
-                    .push(ResolvedPlace::from_path(*root, path.clone()));
-            }
+        for place in slice.effect_places() {
+            wanted.entry(place.root).or_default().push(place);
         }
         for (root, places) in wanted {
             if let Some(local) = bindings.get_mut(&root) {
@@ -1148,9 +1143,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// parent may not write the elements it views while the returned child
     /// lives. No new formation happened at this caller, so the loan is
     /// registered from the result's own origin set, and only where an
-    /// exclusive loan on that place is what the child is a child *of* — a
-    /// shared result over storage no exclusive loan covers already carries
-    /// its own shared loan from its formation.
+    /// exclusive loan on that place is what the child is a child *of*. An
+    /// incoming exclusive view supplies that parent permission directly;
+    /// there need not be a local exclusive-formation loan on its formal place.
     pub(in crate::semantic::check) fn hold_published_child_loan(
         holder: DeclarationId,
         ty: CheckedType,
@@ -1170,6 +1165,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let places = slice.effect_places();
         let mut added: Vec<(DeclarationId, SliceLoan)> = Vec::new();
         for (root, local) in bindings.iter() {
+            let formal_place = ResolvedPlace::fields(*root, Vec::new());
+            if matches!(
+                local.ty,
+                CheckedType::Slice {
+                    strength: LoanStrength::Exclusive,
+                    ..
+                }
+            ) && local.slice.is_some()
+                && places.contains(&formal_place)
+            {
+                added.push((
+                    *root,
+                    SliceLoan {
+                        region: slice.region,
+                        place: formal_place,
+                        strength: LoanStrength::Shared,
+                        descriptors: vec![holder],
+                    },
+                ));
+            }
             for loan in &local.slice_loans {
                 if loan.strength == LoanStrength::Exclusive && places.contains(&loan.place) {
                     added.push((

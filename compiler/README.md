@@ -695,11 +695,16 @@ A provider allocation can therefore be bound by `let` and inspected by a later
 Box likewise remains available for a later read in the same region. Borrowed
 results and surviving view loans retain their independent lifetimes. The
 region change adds no last-use analysis or runtime lifetime mechanism.
-A separate VIEW-2 limitation remains: a shared child formed through a view
-holder can remain incorrectly conflicting after its last use because its
-descriptor was not associated with the loan. The
-[view witness](../research/investigations/containers-and-resources/FOUNDATION.md#temporary-child-regions-and-statement-endpoints)
-records this valid source and the copy/holder cases a repair must cover.
+Shared children of formal views now register their descriptors on the same
+origin loans as local-storage children. VIEW-2 restores the parent's writes
+after every copy's last use. A helper-returned shared child also freezes an
+incoming exclusive view even when that parent has no local formation loan;
+a surviving child or copy still forbids the parent write. Semantic controls
+cover direct formation, returned children and local holders. Native controls
+observe the old and updated elements with helper calls retained in all three
+lowering modes. The
+[view investigation](../research/investigations/containers-and-resources/FOUNDATION.md#temporary-child-regions-and-statement-endpoints)
+records the two former descriptor-registration defects.
 
 The pool retains a separate contract boundary: every clause naming
 a measure over a *result*'s field — `ensures head_of(rest.free) == ...` — is

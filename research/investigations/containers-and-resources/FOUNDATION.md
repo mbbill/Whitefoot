@@ -1119,7 +1119,7 @@ positive controls; overlapping ordinary own-root actuals retain OWN-12.
 
 The view controls require care. A live shared child view must still forbid a
 parent write. A shared child's *last use* should instead restore permission
-under VIEW-2. The probe below is legal, but the current compiler rejects its
+under VIEW-2. The probe below is legal, but the pre-fix compiler rejected its
 write at OWN-5 even without a preceding ordinary child call:
 
 ```whitefoot
@@ -1135,15 +1135,31 @@ fn reuse(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) c
 }
 ```
 
-This is an existing implementation gap, not another required rejection and
-not a reason to retain the old region restriction. The formed loan has no
-registered descriptor when its origin is a formal slice; local descriptor
-holders also need association with the formed child rather than merely its
-ultimate storage origin. A repair must preserve last-use behavior through
-copies and keep a still-used copy conflicting. The experiment does not encode
-the incorrect rejection as a regression expectation. The genuine surviving-
-view negative and the inner-region-ending positive are retained. General view
-association remains part of the unfinished container-foundation work.
+This was an implementation gap, not another required rejection or a reason to
+retain the old region restriction. The formed loan had no registered descriptor
+when its origin was a formal slice. Descriptor registration now uses the same
+origin-to-place projection for formal views and local storage. The existing
+last-use judgment can therefore end the child's freeze at its specified point.
+
+The helper-return control exposed the opposite defect. A returned shared child
+was registered only where the caller had a local exclusive-formation loan.
+An incoming `MutSlice` supplies its permission without such a formation record,
+so a parent write followed by a read of the returned child was incorrectly
+accepted. Publication now registers the child on that formal view as well.
+Its copies register on the same loan; every remaining use keeps the freeze.
+Neither repair changes regions, source rules, the existing liveness algorithm,
+nor emitted runtime mechanisms.
+
+The semantic
+[`formal_view_children_release_at_the_last_use_of_all_descriptors`](../../../compiler/src/semantic/tests/slices.rs)
+controls pair direct and helper-returned formation with dead and surviving
+copies. Local holders of an incoming view have corresponding controls. The
+native
+[`formal_view_child_last_use_restores_parent_writes_across_retained_calls`](../../../compiler/src/backend/tests/slices.rs)
+observes the former element and the subsequent parent write in all three
+lowering modes, both normally and with helper calls retained. The genuine
+surviving-view and inner-region-ending controls remain unchanged. These cases
+establish the repaired formal-view boundary, not general container readiness.
 
 The change is evidence-selected under META-5. Its more precise selection
 grounds are conditional deduction (parent suspension and independent

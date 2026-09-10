@@ -263,6 +263,127 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     );
 }
 
+/// VIEW-2 applies to children of formal views as well as local storage.
+#[test]
+fn formal_view_children_release_at_the_last_use_of_all_descriptors() {
+    let source = r#"fn child['r](view: &uniq MutSlice<'r, u8>) -> result: own Slice<'r, u8> pure contract {
+  requires len_of(deref(view)) == 1_u64;
+  ensures len_of(result) == 1_u64;
+} {
+  let result = slice_of(&'r deref(view));
+  return result;
+}
+
+fn reuse(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) contract {
+  requires len_of(deref(view)) == 1_u64;
+} {
+  region {
+    let shared = FORM;
+    COPY
+    let previous = shared[0_u64];
+    BEFORE
+    set deref(view)[0_u64] = 9_u8;
+    AFTER
+    return previous;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for formation in ["slice_of(&deref(view))", "child(view: &uniq deref(view))"] {
+        for (copy, before, after, live) in [
+            ("", "", "", false),
+            (
+                "let copied = shared;",
+                "let last = copied[0_u64];",
+                "",
+                false,
+            ),
+            ("", "", "let last = shared[0_u64];", true),
+            (
+                "let copied = shared;",
+                "",
+                "let last = copied[0_u64];",
+                true,
+            ),
+        ] {
+            let source = source
+                .replace("FORM", formation)
+                .replace("    COPY\n", &optional_statement(copy))
+                .replace("    BEFORE\n", &optional_statement(before))
+                .replace("    AFTER\n", &optional_statement(after));
+            if live {
+                assert_rule(
+                    source.as_bytes(),
+                    SemanticRule::Own5,
+                    SemanticIssueKind::BorrowConflict,
+                );
+            } else {
+                with_semantics(source.as_bytes(), |outcome| {
+                    assert!(
+                        matches!(outcome, SemanticOutcome::Complete(_)),
+                        "all shared descriptors ended before the write: {formation}: {outcome:?}"
+                    );
+                });
+            }
+        }
+    }
+
+    fn optional_statement(statement: &str) -> String {
+        if statement.is_empty() {
+            String::new()
+        } else {
+            format!("    {statement}\n")
+        }
+    }
+}
+
+#[test]
+fn local_holders_of_formal_views_keep_every_live_child_copy_frozen() {
+    for (before, after, live) in [
+        ("      let last = copied[0_u64];\n", "", false),
+        ("", "      let last = copied[0_u64];\n", true),
+    ] {
+        let source = r#"fn reuse(view: own MutSlice<u8>) -> result: own u8 reads(view), writes(view) contract {
+  requires len_of(view) == 1_u64;
+} {
+  region {
+    let holder = &uniq view;
+    region {
+      let shared = slice_of(&deref(holder));
+      let copied = shared;
+      let previous = shared[0_u64];
+BEFORE      set deref(holder)[0_u64] = 9_u8;
+AFTER      return previous;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .replace("BEFORE", before)
+        .replace("AFTER", after);
+        if live {
+            assert_rule(
+                source.as_bytes(),
+                SemanticRule::Own5,
+                SemanticIssueKind::BorrowConflict,
+            );
+        } else {
+            with_semantics(source.as_bytes(), |outcome| {
+                assert!(
+                    matches!(outcome, SemanticOutcome::Complete(_)),
+                    "a local holder must use the child's formal backing origin: {outcome:?}"
+                );
+            });
+        }
+    }
+}
+
 /// [PROV-3, OWN-5] a copy view's loan ends at its last use, and the region
 /// that named it is the ceiling rather than the extent.
 ///

@@ -1,6 +1,69 @@
 use super::*;
 
 #[test]
+fn formal_view_child_last_use_restores_parent_writes_across_retained_calls() {
+    let source = r#"fn child['r](view: &uniq MutSlice<'r, u8>) -> result: own Slice<'r, u8> pure contract {
+  requires len_of(deref(view)) == 1_u64;
+  ensures len_of(result) == 1_u64;
+} {
+  let result = slice_of(&'r deref(view));
+  return result;
+}
+
+fn reuse(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) contract {
+  requires len_of(deref(view)) == 1_u64;
+} {
+  region {
+    let shared = FORM;
+    let copied = shared;
+    let previous = shared[0_u64];
+    let confirmed = copied[0_u64];
+    set deref(view)[0_u64] = 9_u8;
+    return previous;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let empty = fixed_vector::<u8, 1>();
+  let bytes = place_back(vector: move empty, value: 3_u8);
+  region {
+    let writer = mut_slice_of(&uniq bytes);
+    region {
+      let previous = reuse(view: &uniq writer);
+      if previous != 3_u8 {
+        return exit_status(code: 1_u8);
+      }
+      if writer[0_u64] != 9_u8 {
+        return exit_status(code: 2_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for formation in ["slice_of(&deref(view))", "child(view: &uniq deref(view))"] {
+        let source = source.replace("FORM", formation);
+        for overlap in [
+            OverlapLowering::Off,
+            OverlapLowering::On,
+            OverlapLowering::Completion,
+        ] {
+            let module = emit_lowered(source.as_bytes(), overlap);
+            for module in [&module, &super::owned_places::retain_calls(&module)] {
+                let output = compile_and_run(module);
+                assert_eq!(
+                    output.status.code(),
+                    Some(0),
+                    "{formation}: {overlap:?}: {output:?}"
+                );
+                assert!(output.stdout.is_empty(), "{output:?}");
+                assert!(output.stderr.is_empty(), "{output:?}");
+            }
+        }
+    }
+}
+
+#[test]
 fn const_local_and_store_run_slices_share_one_read_only_descriptor_path() {
     // The three view origins are now the three run storages [STOR-1]: the
     // const run's read-only static rodata, a frame-resident `FixedVector`,
