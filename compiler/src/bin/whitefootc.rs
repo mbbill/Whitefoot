@@ -1006,13 +1006,18 @@ mod tests {
             assert!(!scalar.lowering().vectorize);
             assert_eq!(scalar.overlap(), default.overlap());
         }
+        let mut expected = vec!["-O2"];
+        if cfg!(target_arch = "x86_64") {
+            expected.push("-falign-loops=32");
+        }
         assert_eq!(
             whitefoot::host_optimization_arguments(true).collect::<Vec<_>>(),
-            ["-O2"]
+            expected
         );
+        expected.extend(["-fno-vectorize", "-fno-slp-vectorize"]);
         assert_eq!(
             whitefoot::host_optimization_arguments(false).collect::<Vec<_>>(),
-            ["-O2", "-fno-vectorize", "-fno-slp-vectorize"]
+            expected
         );
     }
 

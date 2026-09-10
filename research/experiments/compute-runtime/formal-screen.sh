@@ -36,6 +36,12 @@ cp -R "$root/compiler/src/backend/sched" "$out/source/"
 cp "$root/compiler/src/backend/$floor" "$out/source/"
 cp "$WFC" "$out/whitefootc$exe"
 flags="-std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic $platform_flags -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto"
+unaligned_flags=$flags
+if test "$(uname -m)" = x86_64; then
+    flags="$flags -falign-loops=32"
+    modes="unaligned $modes"
+    references="unaligned $references"
+fi
 {
     git rev-parse HEAD
     printf 'historical=%s\nrecovered=%s\nflags=%s\nmodes=%s\n' "$old" "$recovered" "$flags" "$modes"
@@ -47,8 +53,12 @@ flags="-std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic $platform_flags -fno-fas
     else powershell.exe -NoProfile -Command 'Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List'; fi
 } > "$out/host.txt"
 cat > "$out/flags.txt" <<'TEXT'
-Same scalar O3 WF object and native oracle in every attribution image; ordinary
+Same scalar O3 WF object and native oracle in each scheduler comparison; ordinary
 CLI also compiled at its normal optimization level and checked at each width.
+On x86-64, all scheduler references share the maintained compiler's 32-byte loop
+alignment. The separate unaligned image uses the current candidate sources but
+recompiles WF, runtime C, host and oracle without that option. It tests the
+whole host-setting change, not only the WF-object change in the prior diagnostic.
 All images link the current floor/configuration/platform thread leaves.
 POSIX old/recovered cores call pthread directly; candidate calls wf_prim
 wrappers. Linking the same leaves does not imply the same executed call path.
@@ -122,6 +132,12 @@ cat fir_host.ll >> "$out/host.ll"
 "$CC" $flags -DWF_FILTER_NATIVE fir_check.c "$out/native.o" $libraries -o "$out/oracle$exe"
 "$out/oracle$exe" > "$out/oracle.txt"
 "$CC" $flags -DWF_RUNTIME_CONTROL '-DFIR_RUNTIME="candidate"' -c fir_bench.c -o "$out/candidate-host.o"
+if test "$flags" != "$unaligned_flags"; then
+    "$CC" $unaligned_flags -Wno-override-module -c "$out/host.ll" -o "$out/unaligned-wf.o"
+    "$CC" $unaligned_flags -c fir_native.c -o "$out/unaligned-native.o"
+    "$CC" $unaligned_flags -DWF_RUNTIME_CONTROL '-DFIR_RUNTIME="candidate"' -c fir_bench.c -o "$out/unaligned-host.o"
+    printf 'unaligned_flags=%s\n' "$unaligned_flags" >> "$out/flags.txt"
+fi
 for mode in $modes; do
     if test "$mode" = replica; then
         cp "$out/candidate$exe" "$out/replica$exe"
@@ -133,7 +149,7 @@ for mode in $modes; do
         old) set -- "$@" "$out/old.c" "$out/control-observer.c";;
         recovered) set -- "$@" -I"$out/source" "$out/research.c" "$out/control-observer.c";;
         unhinted) set -- "$@" -I"$out/source/sched" "$out/unhinted.c" "$out/candidate-observer.c";;
-        candidate) set -- "$@" "$out/source/sched/core.c" "$out/candidate-observer.c";;
+        candidate|unaligned) set -- "$@" "$out/source/sched/core.c" "$out/candidate-observer.c";;
     esac
     if test -n "$exe"; then
         for unit in windows_runtime.c completion/runtime.c completion/wait_windows.c \
@@ -143,8 +159,15 @@ for mode in $modes; do
     fi
     host_input=fir_bench.c
     case "$mode" in candidate|unhinted) host_input=$out/candidate-host.o;; esac
-    "$CC" $flags -DWF_RUNTIME_CONTROL "-DFIR_RUNTIME=\"$mode\"" "$host_input" \
-        "$@" "$out/wf.o" "$out/native.o" $libraries -o "$out/$mode$exe"
+    link_flags=$flags; wf_input=$out/wf.o; native_input=$out/native.o
+    runtime_label=$mode
+    if test "$mode" = unaligned; then
+        link_flags=$unaligned_flags; wf_input=$out/unaligned-wf.o
+        native_input=$out/unaligned-native.o; host_input=$out/unaligned-host.o
+        runtime_label=candidate
+    fi
+    "$CC" $link_flags -DWF_RUNTIME_CONTROL "-DFIR_RUNTIME=\"$runtime_label\"" "$host_input" \
+        "$@" "$wf_input" "$native_input" $libraries -o "$out/$mode$exe"
 done
 if test -n "$exe"; then cpus=$NUMBER_OF_PROCESSORS; else cpus=$(getconf _NPROCESSORS_ONLN); fi
 widths=1; test -z "$exe" || widths=2
@@ -220,122 +243,6 @@ summarize "$out/means.tsv" "$out/summary.tsv" && result=0 || result=$?
 summarize "$out/short-means.tsv" "$out/short-summary.tsv" || result=$?
 cat "$out/summary.tsv"
 cat "$out/short-summary.tsv"
-if test "$host" = Linux && test "$(uname -m)" = x86_64 && test "$cpus" -ge 4; then
-    # Old/recovered steady-state instructions match after removing relocation
-    # addresses, yet this small cell differs. Hold common WF/consumer text
-    # offsets fixed before attributing that difference to scheduler algorithms.
-    layout=$out/layout
-    mkdir "$layout"
-    ld -r "$out/candidate-host.o" "$out/wf.o" "$out/native.o" -o "$layout/common.o"
-    objcopy --rename-section .text=.wf_common "$layout/common.o"
-    objdump -t "$layout/common.o" > "$layout/common.symbol-table"
-    awk '$3=="F" && $4!="*UND*" {
-        n++; if($4!=".wf_common")bad=1
-        if($2!="w")print $5,$6
-    } END {exit bad || !n}' "$layout/common.symbol-table" > "$layout/required.unsorted"
-    sort "$layout/required.unsorted" > "$layout/required.symbols"
-    test -s "$layout/required.symbols"
-    head -n 1 "$out/means.tsv" > "$layout/means.tsv"
-    for mode in old recovered candidate replica; do
-        if test "$mode" = replica; then
-            cp "$layout/candidate" "$layout/replica"
-            cmp "$layout/candidate" "$layout/replica"
-            continue
-        fi
-        case "$mode" in
-            old) set -- "$out/old.c" "$out/control-observer.c";;
-            recovered) set -- -I"$out/source" "$out/research.c" "$out/control-observer.c";;
-            candidate) set -- "$out/source/sched/core.c" "$out/candidate-observer.c";;
-        esac
-        "$CC" $flags "$layout/common.o" "$out/source/$floor" \
-            "$out/source/sched/entry.c" "$out/source/sched/$leaf" "$@" \
-            -Wl,--section-start=.wf_common=0x200000 $libraries -o "$layout/$mode"
-        objdump -t "$layout/$mode" > "$layout/$mode.symbol-table"
-        objdump -h "$layout/$mode" > "$layout/$mode.sections"
-        awk '$2==".wf_common" {
-            n++; if($4!="0000000000200000")bad=1
-            if(!getline || $0!~/ALLOC/ || $0!~/CODE/)bad=1
-        } END {exit bad || n!=1}' "$layout/$mode.sections"
-        awk 'NR==FNR {required[$2]=$1; next}
-            $3=="F" && ($6 in required) {
-                if($4!=".wf_common" || $5!=required[$6])bad=1
-                seen[$6]++
-            }
-            END {for(name in required)if(seen[name]!=1)bad=1; exit bad}' \
-            "$layout/required.symbols" "$layout/$mode.symbol-table"
-        awk '$4==".wf_common" {print $1,$5,$6; n++} END {if(!n)exit 1}' "$layout/$mode.symbol-table" \
-            | sort > "$layout/$mode.symbols"
-        test -s "$layout/$mode.symbols"
-        if test "$mode" != old; then cmp "$layout/old.symbols" "$layout/$mode.symbols"; fi
-    done
-    # Test a general code-generation alternative without fixing any linked
-    # address. Only WF loop alignment changes; all other input objects and
-    # production runtime sources match the original candidate.
-    "$CC" $flags -Wno-override-module -falign-loops=32 -c "$out/host.ll" -o "$layout/loop32-wf.o"
-    "$CC" $flags "$out/candidate-host.o" "$out/source/$floor" \
-        "$out/source/sched/entry.c" "$out/source/sched/$leaf" \
-        "$out/source/sched/core.c" "$out/candidate-observer.c" \
-        "$layout/loop32-wf.o" "$out/native.o" $libraries -o "$layout/loop32-candidate"
-    cp "$layout/loop32-candidate" "$layout/loop32-replica"
-    cmp "$layout/loop32-candidate" "$layout/loop32-replica"
-    for mode in candidate loop32-candidate; do
-        objdump -d "$layout/$mode" > "$layout/$mode.disassembly"
-    done
-    objdump -d "$out/candidate" > "$layout/original-candidate.disassembly"
-    cat > "$layout/conditions.txt" <<'TEXT'
-Diagnostic only: Linux x86-64, W4, n4096, tile16, 4096 warm calls, five passes.
-The identical combined candidate host/WF/native object places its entire text
-at ELF-relative address 0x200000 in each image; symbol addresses and sizes are
-checked equal. Fixed-layout and loop32 images use the internal candidate label;
-filenames and means.tsv identify the condition. The original matrix remains
-above. Its exact images are rerun interleaved with the layout images here,
-alternating forward/reverse order. Each condition retains a byte-identical
-replica. This avoids using separate original/layout time windows as paired data.
-Runtime/PLT/data layout and relocation bytes still differ; this does not prove
-that every instruction address or cache influence has been made identical.
-No fixed text address is added to production linking. Common text includes the
-serial result consumer: a change may alter inter-call idle time as well as core.
-loop32-candidate recompiles only the WF object with -falign-loops=32 and uses
-the original candidate host/native objects, runtime sources and normal linker
-placement. This tests general WF loop alignment, not a function-name rule.
-Its disassembly is retained to inspect the actual target compiler output.
-Loop padding can change other text addresses too; this does not isolate one
-loop or establish a CPU frontend mechanism. No production default is selected.
-TEXT
-    for pass in 0 1 2 3 4; do
-        order='original-old layout-old original-recovered layout-recovered original-candidate layout-candidate loop32-candidate original-replica layout-replica loop32-replica'
-        if test "$((pass%2))" = 1; then
-            reverse=
-            for mode in $order; do reverse="$mode $reverse"; done
-            order=$reverse
-        fi
-        for mode in $order; do
-            case "$mode" in
-                original-*) binary=$out/${mode#original-};;
-                layout-*) binary=$layout/${mode#layout-};;
-                loop32-*) binary=$layout/$mode;;
-            esac
-            log=$layout/$mode-p$pass.tsv
-            WF_WORKERS=4 "$binary" wf 16 4096 16 4096 92821 "$pass" > "$log"
-            awk '/^# actual_lanes=/ {seen++; if($2!="actual_lanes=4")bad=1} END {exit bad || seen!=1}' "$log"
-            awk -F '\t' -v mode="$mode" -v pass="$pass" \
-                '$10=="warm" {core+=$11;cycle+=$12;calls++}
-                 END {if(calls!=4096)exit 1; printf "%s\t4\t4096\t16\t%s\t%.3f\t%.3f\n",mode,pass,core/calls,cycle/calls}' \
-                "$log" >> "$layout/means.tsv"
-        done
-    done
-    # Diagnostic failure does not replace or weaken the original screen.
-    for condition in original layout loop32; do
-        case "$condition" in
-            original) controls='original-old original-recovered original-replica';;
-            layout) controls='layout-old layout-recovered layout-replica original-candidate';;
-            loop32) controls='original-candidate layout-candidate loop32-replica';;
-        esac
-        if summarize "$layout/means.tsv" "$layout/$condition-summary.tsv" "$condition-candidate" "$controls"; then :
-        else case "$?" in 1) :;; *) exit 2;; esac; fi
-        cat "$layout/$condition-summary.tsv"
-    done
-fi
 # Binaries, copied sources, actual flags and every raw sample are reproducible
 # evidence even when the performance band fails.
 find "$out" -type f ! -name manifest.sha256 -exec shasum -a 256 {} + > "$out/manifest.sha256"

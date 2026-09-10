@@ -35,23 +35,30 @@ An identical production image is the noise control. Raw artifacts retain core
 and allocation-inclusive durations, process CPU and memory; wall-time summaries
 are an initial screen, not whole-workload or all-platform acceptance.
 
-On Linux x86-64, the additional `layout/` diagnostic fixes the shared WF,
-native oracle and host-consumer text at the same ELF-relative address across
-old/recovered/candidate images and verifies equal symbol addresses and sizes.
-It retains an identical candidate replica and measures just the unresolved
-W4/4,096-output/tile16 cell with five process pairs. The original matrix stays
-unchanged; its exact images also rerun interleaved with fixed-layout images,
-alternating forward/reverse order within passes. A third candidate recompiles
-only the WF object with `-falign-loops=32`, retaining the original host/native
-objects and normal linker placement. It has its own identical replica and
-retained disassembly. This checks whether general WF loop alignment can
-reproduce the benefit without fixed linking; it does not select a production
-default or isolate the effect of one loop. Runtime, PLT and data layout still differ, so this is a bounded
-test of common-code placement, not complete layout normalization. Convergence
-would weaken an algorithmic explanation for the old/recovered gap; persistence
-would leave other layout, scheduling and host-interference causes open.
-No fixed address is used in production, and the diagnostic cannot replace
-ordinary executable performance qualification.
+On x86-64, the formal matrix gives every scheduler reference the maintained
+compiler's `-falign-loops=32` setting. An additional `unaligned` image recompiles
+the current candidate's WF, host, oracle and runtime C with the previous host
+flags. It uses the same internal candidate label; filenames identify it. This
+ablation is paired throughout the full matrix and can fail the screen, just
+like the historical/recovered comparisons. The normal CLI also uses the setting
+at its ordinary O2 level; the attribution images retain the recorded scalar O3
+level. AArch64 retains default host alignment. The experiment-owned C/C++
+kernels and adapters use the same host loop setting as WF. The separately
+built oneTBB library and Rust controls retain their recorded build options;
+their internal code placement is not normalized. This is code-placement
+qualification, not a SIMD change. The separate I/O benchmarks retain their
+existing native controls and are not evidence of matched loop placement.
+
+The fixed-address `layout/` diagnostic completed at
+[`78a84e37`](https://github.com/mbbill/Whitefoot/actions/runs/34426819037).
+Its original, fixed-layout and WF-only loop-alignment images remain in that
+artifact and git. It established a bounded reason to test general loop
+alignment in the maintained compiler; it did not establish a universal optimum
+or justify fixed-address production linking. The current full-matrix ablation
+also changes runtime C, so its effect must be measured again. See the
+[investigation](../../investigations/compute-runtime/README.md) for results and
+host differences. Normal executable performance and all-platform acceptance
+remain required.
 
 ## Historical versus recovered pure-compute comparison
 

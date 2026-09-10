@@ -13,6 +13,7 @@ on:
       - 'compiler/src/backend/windows_runtime.*'
       - 'compiler/src/backend/wf_floor*'
       - 'compiler/src/bin/whitefootc.rs'
+      - 'compiler/src/driver.rs'
       - '.github/workflows/compute-bench.yml'
 
 concurrency:

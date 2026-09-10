@@ -14,6 +14,7 @@ root=$(git rev-parse --show-toplevel)
 mkdir -p "$OUT/pure-compare"
 out=$(cd "$OUT/pure-compare" && pwd)
 flags='-O3 -g -Wall -Wextra -Werror -Wpedantic -pthread -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto'
+if test "$(uname -m)" = x86_64; then flags="$flags -falign-loops=32"; fi
 old=9051576f6a4d723b4eb072850f49859853decae7
 recovered=d858008f560b25da896af2a17f8b1d07ac49fd6e
 if test "$mode" = build; then

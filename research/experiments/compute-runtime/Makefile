@@ -7,15 +7,16 @@ CXX := /usr/bin/clang++
 SANITIZER ?= address,undefined
 ASAN_OPTIONS ?= detect_stack_use_after_return=1
 export ASAN_OPTIONS
-CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread
+HOST_LOOP_FLAGS := $(if $(filter x86_64,$(shell uname -m)),-falign-loops=32,)
+CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread $(HOST_LOOP_FLAGS)
 FLOOR := $(ROOT)/compiler/src/backend/wf_floor.c
 WFC ?= $(OUT)/compiler/gate/whitefootc
 SHARED := $(ROOT)/compiler/src/backend/sched
 BENCH_ARCH ?=
-BENCH_CFLAGS := -std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic -pthread \
+BENCH_CFLAGS := -std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic -pthread $(HOST_LOOP_FLAGS) \
 	-fno-fast-math -ffp-contract=off $(BENCH_ARCH)
 RECORD_FLAGS := $(BENCH_CFLAGS) -fno-vectorize -fno-slp-vectorize -fno-lto
-SCHEDULER_FLAGS := -O3 -g -DNDEBUG -Wall -Wextra -Werror -Wpedantic -pthread \
+SCHEDULER_FLAGS := -O3 -g -DNDEBUG -Wall -Wextra -Werror -Wpedantic -pthread $(HOST_LOOP_FLAGS) \
 	$(BENCH_ARCH) -fno-vectorize -fno-slp-vectorize -fno-lto
 SCHEDULER_COMMON := $(OUT)/scheduler-host.o $(OUT)/scheduler-native.o \
 	$(OUT)/scheduler-oracle.o $(OUT)/scheduler-work.o $(OUT)/scheduler-floor.o

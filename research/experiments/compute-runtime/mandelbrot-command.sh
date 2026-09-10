@@ -22,6 +22,7 @@ case "$(uname -s)" in
     MINGW*|MSYS*) exe=.exe; thread_flags=; runner_flags='-municode -lpsapi';;
 esac
 scalar_flags='-O2 -g -Wall -Wextra -Werror -Wpedantic -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto'
+if test "$(uname -m)" = x86_64; then scalar_flags="$scalar_flags -falign-loops=32"; fi
 placement_available() {
     # Online CPUs can exceed a container's actual permitted affinity mask.
     taskset -pc $$ | awk '

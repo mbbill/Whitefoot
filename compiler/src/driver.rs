@@ -30,7 +30,14 @@ use crate::{
 /// independent vectorization control selects a scalar comparison build.
 /// Neither choice changes acceptance, discharges a static source obligation,
 /// or inserts a runtime proof fallback.
-pub const HOST_OPTIMIZATION_ARGUMENTS: &[&str] = &["-O2"];
+// Small x86 loops can straddle a fetch boundary when only their surrounding
+// function is aligned. Use the same loop placement for WF, runtime C, tests
+// and the stack ledger; this changes code padding, not the calling convention.
+pub const HOST_OPTIMIZATION_ARGUMENTS: &[&str] = if cfg!(target_arch = "x86_64") {
+    &["-O2", "-falign-loops=32"]
+} else {
+    &["-O2"]
+};
 
 /// Matching host settings for executable linking and stack-ledger assembly.
 pub fn host_optimization_arguments(vectorize: bool) -> impl Iterator<Item = &'static str> {

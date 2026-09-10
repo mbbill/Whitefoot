@@ -170,6 +170,39 @@ general option reproduces convergence, qualify it through normal compiler
 output and the full workload/platform matrix before selecting it. If it does
 not, do not tune runtime waits on the assumption that this loop explains them.
 
+The [78a84e37 interleaved cohort](https://github.com/mbbill/Whitefoot/actions/runs/34426819037)
+completed all fifty observations on an EPYC 9V74 host, not the previous 7763.
+Clang 18.1.3 actually moved the accessor loop from `0x5bf0` to the 32-byte
+boundary `0x5ca0`. All result/call/participant checks and three byte-identical
+replicas passed. Process medians for the same W4/4,096/tile16 cell are:
+
+| Image | Core, microseconds | Full call, microseconds | Voluntary switches per batch | System CPU per batch, milliseconds |
+| --- | ---: | ---: | ---: | ---: |
+| Original candidate | 23.341 | 118.481 | 146 | 84.788 |
+| Fixed-layout candidate | 22.379 | 108.178 | 53 | 21.089 |
+| WF-only loop32 candidate | 22.603 | 104.263 | 36 | 7.021 |
+| Original recovered | 22.550 | 102.813 | 39 | 5.052 |
+
+Loop32/original candidate paired ratios are 0.9684 [0.9558, 0.9969] for core
+and 0.8810 [0.8698, 0.9277] for the full call. Loop32/original recovered ratios
+are 0.9950 [0.9773, 1.0109] and 1.0082 [1.0024, 1.0300], respectively. The
+original candidate core was already near recovered here; this does not
+reproduce or resolve the 7763's large core loss. The WF object's reported
+text size grows from 4,183 to 4,327 bytes; whole-image text grows from 27,913
+to 28,073 bytes. This is a measured padding cost, not a free optimization.
+
+The next maintained candidate sets 32-byte loop alignment through the shared
+host-optimization arguments on x86-64. That existing compiler command compiles
+both WF IR and runtime C, so it is deliberately broader than the WF-only
+diagnostic and does not inherit its speedup claim. Stack-ledger assembly and
+ordinary executable compilation use the same setting. AArch64 is unchanged.
+The formal full matrix compares against the current candidate rebuilt with
+the previous flags, alongside historical/recovered cores with matched flags.
+The fixed-address diagnostic is retired from the active script; its data and
+sources remain at the linked revision. Select the candidate only after normal
+compiler and all-platform workload checks establish its effects, including
+regressions and code-size cost. No wait threshold, ABI or source rule changes.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

@@ -196,6 +196,12 @@ comparison build at the ordinary `-O2` level. It does not promise that platform
 libraries or memory operations contain no SIMD instructions. Vectorization
 remains enabled by default.
 
+On x86-64, normal native compilation and the stack ledger use
+`-falign-loops=32` for WF and runtime C. This general code-placement setting
+does not change function signatures or the calling convention. AArch64 keeps
+the host compiler's default alignment. Downstream `--emit-llvm` consumers
+must supply the matching host setting when comparing native performance.
+
 Normal compilation uses the maintained compute runtime in
 `src/backend/sched/`. Each worker has an ordinary stack and a fixed local
 deque of 64 task slots. A join first runs its newest owned task directly,
