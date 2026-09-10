@@ -155,9 +155,6 @@ static uint64_t timeval_us(struct timeval t) {
 
 typedef struct {
     uint64_t core, cycle;
-#ifdef FIR_READOUT_TIMING
-    uint64_t readout;
-#endif
 } Reading;
 
 /* One complete invocation with a fresh prefix and result. Native output is
@@ -202,15 +199,9 @@ static Reading invoke(FilterEntry wf, FirNativeKernel native,
     } else
         tree = wf(prefix, h + n, taps, k, h, h + n, h, tile);
     uint64_t core_end = now();
-#ifdef FIR_READOUT_TIMING
-    uint64_t readout_end;
-#endif
     if (native) {
         memcpy(output, flat, n * sizeof(double));
         memcpy(state, prefix + n, h * sizeof(double));
-#ifdef FIR_READOUT_TIMING
-        readout_end = now();
-#endif
         free(flat);
     } else {
         require(tree != NULL && wf_research_fir_count(tree) == n, "wrong result count");
@@ -219,20 +210,11 @@ static Reading invoke(FilterEntry wf, FirNativeKernel native,
         for (size_t i = 0; i < h; ++i)
             require(wf_research_fir_history(prefix, h + n, h, i, state + i) == 1,
                     "missing next history");
-#ifdef FIR_READOUT_TIMING
-        /* One extra clock read in diagnostic images only. This interval
-         * includes result validation/access and history, before destruction. */
-        readout_end = now();
-#endif
         require(wf_research_fir_release(tree) == 0, "release failed");
     }
     free(prefix);
     uint64_t end = now();
-    return (Reading){core_end - core_start, end - start
-#ifdef FIR_READOUT_TIMING
-                     , readout_end - core_end
-#endif
-    };
+    return (Reading){core_end - core_start, end - start};
 }
 
 int wf__main_body(int argc, char **argv) {
@@ -406,23 +388,11 @@ int wf__main_body(int argc, char **argv) {
            " scope=batch_including_checks snapshot=non_simultaneous\n",
            wait_announcements, wait_signals);
 #endif
-    puts("runtime\tkernel\tworkers\tk\tn\ttile\tseed\tpass\tcall\tphase\tcore_ns\tcycle_ns"
-#ifdef FIR_READOUT_TIMING
-         "\treadout_ns"
-#endif
-    );
+    puts("runtime\tkernel\tworkers\tk\tn\ttile\tseed\tpass\tcall\tphase\tcore_ns\tcycle_ns");
     for (size_t i = 0; i <= reps; ++i)
         printf("%s\t%s\t%s\t%zu\t%zu\t%zu\t%" PRIu32 "\t%zu\t%zu\t%s\t%" PRIu64
-               "\t%" PRIu64
-#ifdef FIR_READOUT_TIMING
-               "\t%" PRIu64
-#endif
-               "\n", FIR_RUNTIME, argv[1], workers, k, n, tile, seed, pass,
-               i, i == 0 ? "first" : "warm", readings[i].core, readings[i].cycle
-#ifdef FIR_READOUT_TIMING
-               , readings[i].readout
-#endif
-        );
+               "\t%" PRIu64 "\n", FIR_RUNTIME, argv[1], workers, k, n, tile, seed, pass,
+               i, i == 0 ? "first" : "warm", readings[i].core, readings[i].cycle);
     printf("# FIR bench PASS: calls=%zu samples=%zu history=%zu\n",
            reps + 1, (reps + 1) * n, (reps + 1) * h);
 #ifdef WF_FILTER_STATIC

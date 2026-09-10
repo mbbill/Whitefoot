@@ -1349,6 +1349,57 @@ rejects eight malformed-log variants, including missing/invalid CPU metadata,
 a changed header, an empty call index and readout outside the full interval.
 This validates observation plumbing, not the Linux performance hypothesis.
 
+The [c85e69af artifact](https://github.com/mbbill/Whitefoot/actions/runs/34469937880/artifacts/10149269507)
+does not support a runtime change. On EPYC 9V74, four logical CPUs/two cores,
+the five paired current/research ratios are median [minimum, maximum]:
+
+| Image group | Full call | Core | Whole-batch CPU |
+| --- | --- | --- | --- |
+| Original matrix | 1.0404 [1.0283, 1.0630] | 0.9893 [0.9823, 0.9988] | 1.0371 [1.0186, 1.0583] |
+| Observation panel, original images | 1.0312 [1.0247, 1.0501] | 0.9761 [0.9617, 0.9875] | 1.0324 [1.0240, 1.0493] |
+| Observation panel, instrumented images | 0.9643 [0.9508, 0.9675] | 0.9752 [0.9743, 0.9899] | 0.9718 [0.9486, 0.9738] |
+
+Instrumented/original full-call ratios are 1.0531 [1.0437, 1.0616] for research
+and 0.9844 [0.9617, 0.9917] for current. This reverses the ranking; the observer
+does not add a common cost that can be subtracted. Its readout current/research
+ratio, 0.9488 [0.9350, 0.9571], cannot explain the original images' difference.
+Full-call A/A ranges are [0.9732, 1.0222] in the original observation images
+and [0.9589, 1.0090] when instrumented; instrumented CPU A/A extends to 1.1030
+and core A/A down to 0.8616. These uncertainties remain.
+
+Independent replay verifies all forty observation processes, 163,880 checked
+calls, actual participants, metadata, timing boundaries, original reducer means,
+source/object provenance and both byte-identical replicas. The original matrix
+also retains all 540 processes, 1,244,700 checked calls and 718 manifest hashes;
+its long/first64 screens still report 4/90 and 11/90 investigate comparisons.
+Retire this observer because its perturbation prevents the intended attribution,
+not because the original performance failure disappeared. Restore the original
+caller and driver; no production source, threshold or baseline check changes.
+
+Exact `c85e69afc7f00a25560bc1de4225fbae876f7260` passes local canonical
+`make check` with the existing pinned oneTBB/Parlay source paths supplied.
+All twelve [gate jobs](https://github.com/mbbill/Whitefoot/actions/runs/34469937814)
+and both [I/O host jobs](https://github.com/mbbill/Whitefoot/actions/runs/34469937866)
+pass. All five formal and all five ordinary-command performance screens, plus
+quadrature, still fail; the other eight compute jobs pass. This result does
+not qualify the whole runtime or locate the next optimization.
+
+Independent replay of the fa77a029
+[ordinary Linux x86-64 artifact](https://github.com/mbbill/Whitefoot/actions/runs/34468351790/artifacts/10148613837)
+also preserves a larger, separate default-policy gap. All 1,625 processes and
+1,062 summary rows replay exactly; current/previous compilers and their
+par/previous/replica executables are byte-identical. Shape4/N4096/W4 default/
+static wall is 3.3681 [2.7814, 3.4349], CPU 0.8694 [0.7513, 0.8857]. The emitted
+weight is 219: the default threshold needs 5,480 iterations per chunk, so this
+4,096-point call receives no split budget and starts no helpers. At work60000,
+three helpers start and wall/default is 0.4582 [0.4268, 0.4713], with CPU/default
+1.1964 [1.1887, 1.2176]. Its remaining wall/static ratio is 1.4967
+[1.2822, 1.5841], not an isolated runtime cost. Conversely, shape5's quick exits
+at the same size/width give work60000/default wall 1.4367 [1.4077, 1.4942], with
+noisy default A/A. A global threshold reduction cannot be called a general win
+from this evidence. Preserve the existing knob and original failed screen;
+this does not select a new cost model or make default-policy performance pass.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

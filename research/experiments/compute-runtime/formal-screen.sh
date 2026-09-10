@@ -230,13 +230,6 @@ cat fir_host.ll >> "$out/host.ll"
 "$CC" $flags -DWF_FILTER_NATIVE fir_check.c "$out/native.o" $libraries -o "$out/oracle$exe"
 "$out/oracle$exe" > "$out/oracle.txt"
 "$CC" $flags -DWF_RUNTIME_CONTROL '-DFIR_RUNTIME="candidate"' -c fir_bench.c -o "$out/candidate-host.o"
-readout=
-if test "$host-$(uname -m)" = Linux-x86_64; then
-    readout=$out/readout-observation
-    mkdir "$readout"
-    "$CC" $flags -DWF_RUNTIME_CONTROL -DFIR_READOUT_TIMING '-DFIR_RUNTIME="candidate"' \
-        -c fir_bench.c -o "$readout/host.o"
-fi
 if test "$flags" != "$unaligned_flags"; then
     "$CC" $unaligned_flags -Wno-override-module -c "$out/host.ll" -o "$out/unaligned-wf.o"
     "$CC" $unaligned_flags -c fir_native.c -o "$out/unaligned-native.o"
@@ -247,10 +240,6 @@ for mode in $modes; do
     if test "$mode" = replica; then
         cp "$out/candidate$exe" "$out/replica$exe"
         cmp "$out/candidate$exe" "$out/replica$exe"
-        if test -n "$readout"; then
-            cp "$readout/candidate" "$readout/replica"
-            cmp "$readout/candidate" "$readout/replica"
-        fi
         continue
     fi
     set -- "$out/source/$floor" "$out/source/sched/entry.c" "$out/source/sched/$leaf"
@@ -277,12 +266,6 @@ for mode in $modes; do
     fi
     "$CC" $link_flags -DWF_RUNTIME_CONTROL "-DFIR_RUNTIME=\"$runtime_label\"" "$host_input" \
         "$@" "$wf_input" "$native_input" $libraries -o "$out/$mode$exe"
-    case "$mode" in old|recovered|candidate)
-        if test -n "$readout"; then
-            "$CC" $flags "$readout/host.o" "$@" "$out/wf.o" "$out/native.o" \
-                $libraries -o "$readout/$mode"
-        fi;;
-    esac
 done
 if test -n "$exe"; then cpus=$NUMBER_OF_PROCESSORS; else cpus=$(getconf _NPROCESSORS_ONLN); fi
 widths=1; test -z "$exe" || widths=2
@@ -427,86 +410,6 @@ if test "$(uname -s)-$(uname -m)" = Linux-x86_64; then
                     if(reports!=1 || steals>4097*63)exit 1
                     printf "%s\t%s\t4097\t%s\n",mode,pass,steals
                 }' "$log.stderr" >> "$out/scheduler-observation/counts.tsv"
-        done
-        pass=$((pass + 1))
-    done
-fi
-# One extra clock boundary separates result/history readout from the rest of
-# the existing full-call interval. Original images precede each diagnostic;
-# their timings and acceptance matrix are not replaced by observed timings.
-if test -n "$readout" && test "$cpus" -ge 4; then
-    cat > "$readout/inputs.txt" <<'TEXT'
-kernel=wf k=16 n=4096 tile=64 calls=4096 seed=92821 workers=4 passes=5
-Same WF/native objects and runtime sources; one common diagnostic host object.
-Diagnostic images add one clock read after result/history access, before free.
-All labels inside diagnostic logs are candidate; filenames identify the core.
-Each diagnostic follows its original image; replica images are byte-identical.
-Readout includes result count/access/history checks, not result destruction.
-Batch CPU includes all threads and between-call oracles, not just readout.
-Observed timings do not replace the original matrix or justify subtraction
-of a presumed instrumentation cost. A missing gap or unstable replica is open.
-TEXT
-    printf 'mode\tworkers\tn\ttile\tpass\tcore_mean_ns\tcycle_mean_ns\treadout_mean_ns\n' > "$readout/means.tsv"
-    pass=0
-    while test "$pass" -lt 5; do
-        order='old recovered candidate replica'
-        if test "$((pass % 2))" = 1; then order='replica candidate recovered old'; fi
-        for mode in $order; do
-            for kind in plain readout; do
-                image=$out/$mode; fields=12; label=$mode
-                if test "$mode" = replica; then label=candidate; fi
-                if test "$kind" = readout; then image=$readout/$mode; fields=13; label=candidate; fi
-                log=$readout/$mode-p$pass.$kind.tsv
-                WF_WORKERS=4 "$image" wf 16 4096 64 4096 92821 "$pass" > "$log"
-                awk -F '\t' -v fields="$fields" -v label="$label" -v mode="$mode-$kind" -v pass="$pass" '
-                    /^# runtime=/ {
-                        prefix="# runtime="label" kernel=wf workers_requested=4 world=parallel "
-                        if(index($0,prefix)!=1 || substr($0,length(prefix)+1)!~/^entry_ns=[0-9]+ select_ns=[0-9]+ clock_pair_min_ns=[0-9]+$/)bad=1
-                        runtimes++; next
-                    }
-                    /^# clock=/ {
-                        if($0!~/^# clock=CLOCK_MONOTONIC_RAW reported_resolution_ns=[0-9]+ clock_pair_positive_min_ns=[0-9]+$/)bad=1
-                        clocks++; next
-                    }
-                    /^# batch_includes_checks=/ {
-                        count=split($0,part," ")
-                        split("batch_ns user_us system_us maxrss_bytes voluntary_switches involuntary_switches",key," ")
-                        if(count!=8 || part[2]!="batch_includes_checks=1")bad=1
-                        for(i=1;i<=6;i++) {
-                            if(split(part[i+2],value,"=")!=2 || value[1]!=key[i] || value[2]!~/^[0-9]+$/)bad=1
-                            if((i==1 || i==4) && value[2]<=0)bad=1
-                        }
-                        batches++; next
-                    }
-                    /^# actual_lanes=/ {if($0!="# actual_lanes=4")bad=1; lanes++; next}
-                    /^# FIR bench PASS:/ {
-                        if($0!="# FIR bench PASS: calls=4097 samples=16781312 history=61455")bad=1
-                        passed++; next
-                    }
-                    /^#/ {bad=1; next}
-                    $1=="runtime" {
-                        header="runtime\tkernel\tworkers\tk\tn\ttile\tseed\tpass\tcall\tphase\tcore_ns\tcycle_ns"
-                        if(fields==13)header=header"\treadout_ns"
-                        if($0!=header)bad=1
-                        headers++
-                    }
-                    $1!~/^#/ && $1!="runtime" {
-                        for(i=3;i<=9;i++)if($i!~/^[0-9]+$/)bad=1
-                        if(NF!=fields || $1!=label || $2!="wf" || $3!=4 || $4!=16 || $5!=4096 ||
-                            $6!=64 || $7!=92821 || $8!=pass || $9!=rows ||
-                            $10!=(rows==0?"first":"warm") || $11!~/^[0-9]+$/ ||
-                            $12!~/^[0-9]+$/ || $12<$11 ||
-                            (fields==13 && ($13!~/^[0-9]+$/ || $11+$13>$12)))bad=1
-                        if(rows>0){core+=$11; cycle+=$12; readout+=$13}
-                        rows++
-                    }
-                    END {
-                        if(bad || runtimes!=1 || clocks!=1 || batches!=1 || lanes!=1 ||
-                            passed!=1 || headers!=1 || rows!=4097)exit 1
-                        printf "%s\t4\t4096\t64\t%s\t%.3f\t%.3f\t%s\n",mode,pass,
-                            core/4096,cycle/4096,(fields==13?sprintf("%.3f",readout/4096):"unavailable")
-                    }' "$log" >> "$readout/means.tsv"
-            done
         done
         pass=$((pass + 1))
     done
