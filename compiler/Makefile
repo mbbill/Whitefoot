@@ -312,7 +312,7 @@ sched-smoke:
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_TEST $(SCHED_DIR)/smoke.c \
 		$(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c -o "$(COMPLETION_TMP)/sched-smoke"
-	@set -e; for mode in normal owner-fail worker-fail partial; do \
+	@set -e; for mode in normal owner-fail worker-fail partial startup-wait startup-partial; do \
 		WF_WORKERS=4 "$(COMPLETION_TMP)/sched-smoke" $$mode; \
 	done
 	WF_WORKERS=1 "$(COMPLETION_TMP)/sched-smoke"

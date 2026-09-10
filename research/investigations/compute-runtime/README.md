@@ -1217,6 +1217,54 @@ transitions only bound migrations from below; guest topology does not reveal
 physical-host contention. Runtime source, waiting limits, workload, plain
 controls and performance acceptance remain unchanged.
 
+### Startup readiness wait candidate
+
+The [dbbe0d1b observation](https://github.com/mbbill/Whitefoot/actions/runs/34461041448)
+records CPU fields successfully but does not select affinity: all fifteen
+four-worker current/research/replica processes cover the four guest CPUs with
+their threads' dominant placements. Adjacent samples show 12/7/12 observed
+CPU changes respectively, without a consistent paired relationship to time.
+On this EPYC 9V74 host, plain full-call/research is 1.0363
+[1.0207, 1.0544], sampled 1.0259 [1.0176, 1.0446]. The runtime is unchanged;
+the smaller gap than on EPYC 7763 is not an optimization result. Neither
+sampling success nor these selected cells qualifies the five-target matrix.
+
+The next maintained candidate addresses a separate, bounded startup cost.
+The formal core repeatedly calls the OS yield primitive until created workers
+finish attaching their exhaustion handlers; recovered research waits on a
+condition variable. Reuse the already initialized owner lane's wait during
+startup, with readiness publication and the creator's predicate check under
+that same lock. No task has been granted before the once-initializer returns,
+so this requires no new wait object or task protocol. Preserve partial startup,
+the all-created-workers-ready barrier, floor attachment, ordinary ABI, default
+split allowance, and both existing compute/join idle limits.
+
+This removes explicit startup busy yielding by construction; it does not
+establish that startup explains the warm FIR gap or the ordinary-command
+losses. The added delayed-startup smoke cases must reject busy yielding
+and early return, including partial worker creation. The existing formal
+panel retains the previous core, first-call rows, warm matrix and byte-identical
+replica; the ordinary command panel retains its previous compiler and complete
+wall/CPU envelope. Evaluate cold-call and whole-command cost on all five native
+targets, retaining this candidate only with evidence of benefit and without
+stable warm wall/CPU regressions. Do not substitute startup success for the
+remaining performance qualification.
+
+Local pre-CI evidence uses ordinary scalar compiler output on an unpinned
+Apple M1 Pro (eight logical CPUs, macOS Darwin 25.6.0). All 120 timed processes
+pass their independent expected digests; separate diagnostics confirm zero
+helpers at W1 and three at W4. Five alternating process pairs compare current,
+previous `dbbe0d1b`, a byte-identical current replica and native static, using
+the existing work60000 setting, 4,096 points and limit256. Selected W4 ratios
+against previous are wall/CPU 1.0299/1.0050 for the one-batch cheap-escape case,
+0.9849/0.9922 for 32 uniform-heavy batches, and 1.0038/1.0013 for 256 batches.
+The 32-batch wall range is [0.9840, 0.9964], but its A/A range is
+[0.9809, 1.0057] and W1 also falls to 0.9920 without entering startup.
+This is not a resolved startup benefit. Source-level startup tests pass with
+all helpers and partial creation; the same tests abort against the old yield
+loop and against a one-wake-only barrier for their respective intended reasons.
+Native CI and full qualification remain required.
+
 ## Prior unified-runtime delivery scope (paused on 2026-09-09)
 
 The owner requires delivery through ordinary `whitefootc --par source.wf -o

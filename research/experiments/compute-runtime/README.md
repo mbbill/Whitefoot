@@ -28,8 +28,10 @@ historical native core on Windows. It also checks the ordinary CLI executable.
 All targets also compare the maintained core and its headers at `4fabd264`.
 The explicit-owner steal-counter adjustment at `bca257bb` and POSIX x86-64
 spin hint at `f950af4d` both failed their no-regression conditions and are
-reverted. Current and previous core sources and inline primitives are again
-identical. The previous control keeps its own headers so a future primitive
+reverted. The current candidate replaces startup's OS-yield polling with the
+owner lane's condition wait, preserving the all-created-workers-ready barrier.
+The previous core retains polling; inline primitives and compute/join idle
+limits remain identical. The previous control keeps its own headers so a future primitive
 change cannot silently enter both sides. WF/host objects, compiler options and
 out-of-line platform source implementations are shared. Both raw logs use the
 same internal runtime label; filenames and summary rows distinguish their

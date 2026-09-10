@@ -214,7 +214,7 @@ mkdir "$out/previous-sched"
 for header in core.h entry.h prim.h; do
     git show "$previous:compiler/src/backend/sched/$header" > "$out/previous-sched/$header"
 done
-printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The candidate restores this core and its inline primitives after rejecting the counter and POSIX x86-64 spin-hint changes. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
+printf '\nPrevious maintained core/headers=%s; same WF/host objects, flags and platform source implementations. The candidate replaces only the startup readiness yield loop with the owner lane condition wait; compute/join idle limits and inline primitives remain unchanged. Both use the internal candidate label; filenames and means.tsv distinguish their process samples.\n' "$previous" >> "$out/flags.txt"
 cat > "$out/candidate-observer.c" <<'C'
 extern unsigned wf__sched_pool_running(void);
 unsigned wf_bench_worker_count(void) { return wf__sched_pool_running() + 1; }
