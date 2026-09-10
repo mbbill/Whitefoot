@@ -550,6 +550,171 @@ behavior, growing heaps and resource-owning payloads remain untested by this
 competitor. The maintained family `check` and `measure` targets include all three
 new controls while retaining the original owning-run tests and comparisons.
 
+### Run-helper transfer attribution: comparison criterion
+
+The next comparison uses the current `priority.wf` output and the unchanged
+`priority-costs.c` harness, with both mutation helper boundaries retained.
+An experimental LLVM adapter will give the callee's working run the consumed
+input/result storage directly. It must change only storage placement and
+whole-value transfers, preserve sift operations and scalar results, retain
+inline stack storage, and pass the existing independent sorting oracle. The
+adapter is an experiment, not compiler lowering or source-language admission.
+Its fail-closed shape checks must reject a changed input rather than silently
+transform a different program.
+
+Before timing, read the remaining transfer byte counts from optimized IR.
+Compare baseline and adapted output with the same seeds, rounds, warmups and
+alternating samples as the retained C control; reverse executable order in a
+second cohort. Retain all samples. Their difference estimates the cost of this
+storage/transfer intervention, including its optimizer interactions, rather
+than the isolated latency of a memcpy. The adapted-to-C difference is the
+remaining cost under this placement contract. The existing retained borrowed
+full-array witness is a separate usable representation control. A successful
+intervention near C would make a checked placement contract worth proposing;
+otherwise the remaining non-transfer instructions need to explain the gap.
+Neither outcome establishes a universal floor or selects a language amendment.
+
+#### Measured transfer intervention
+
+On 2026-09-10, compiler `8482c0cb` (unmodified compiler sources), Rust 1.98.1,
+Apple Clang 21.0.0 at `-O2`, and arm64 macOS 26.6.2 produced the following
+observations. No affinity, frequency lock or exclusive host isolation was used.
+[`priority-placement.rs`](priority-placement.rs) checks the complete emitted
+push, pop and round bodies against the reviewed witness, including guards which
+reject changed tuple extent and changed heap arithmetic. It emits two modules:
+the current code with push/pop explicitly `noinline`, and a copy whose timed
+round calls two cloned helpers with a guaranteed shared input/result address.
+The original helpers and command fixture remain unchanged in the latter.
+
+The clones redirect ten local storage addresses to the result place, retain
+every sift instruction and transfer instruction, and remove three tuple clears
+already absent from the baseline optimized IR. Each cleared tuple was completely
+overwritten by its run field and scalar field before any read. Retaining those
+clears after co-location would erase live input. Push saves the entering length
+before incrementing it; pop saves the minimum and last value before replacing
+their storage. Pop receives the caller's **complete 152-byte result allocation**,
+not a 144-byte run masquerading as a larger object. Its run lives in field zero;
+the scalar at offset 144 is consumed before the next call. No allocation,
+pinning, suspension or new source-language admission is added by this model.
+Ordinary LLVM optimization removes the resulting self-transfers; the adapter
+does not delete memcpy/memmove instructions or rewrite the heap algorithm.
+
+Optimized-IR transfer counts per executed mutation call:
+
+| Contract | Push | Pop | Caller post-call run transfer |
+| --- | ---: | ---: | ---: |
+| Current owning run, retained helpers | 4 x 144-byte memcpy + 128-byte vector loads/stores + 16-byte metadata stores = **720 B** | 6 x 144-byte memcpy = **864 B** | 0 B |
+| Guaranteed same-place run model | **0 B** | **0 B** | 0 B |
+| Existing borrowed full array, retained helpers | **0 B** | **0 B** | 0 B |
+
+The push vector pairs copy all sixteen elements; two scalar stores copy the
+length and head into the next local run. The separate element insertion and
+sift writes are not transfer bytes. Each round executes sixteen pushes and
+sixteen pops, so the baseline accounts for 25,344 transferred bytes per round,
+or 405,504 per sixteen-round trace. These count explicit IR transfers, not
+cache misses, bus traffic or twice-counted read-plus-write bytes. The native
+code retains the copies. Baseline push/pop explicitly reserve 448/1024 stack
+bytes; placed helpers reserve none. The timed caller still reserves 272 bytes
+in all three retained variants. These are observed frame adjustments, not a
+general stack-envelope proof. Construction and ordinary element writes remain.
+
+[`priority-interface-measurements.csv`](priority-interface-measurements.csv)
+retains all 224 samples from two reversed-order cohorts. The unchanged harness
+warms 256 calls, times 4096 seeds (19 through 4114), and alternates seven WF/C
+pairs at one and sixteen rounds. Each executable first passes the independent
+320-input sorting oracle. Each table cell below has fourteen samples; units are
+nanoseconds per complete sixteen-round trace, and parentheses are min/max,
+not confidence intervals.
+
+| Contract | WF median (range) | Same-run C median (range) |
+| --- | ---: | ---: |
+| Original priority.wf / ordinary C control | 12,840.45 (12,623.05–12,972.66) | 4,509.77 (4,382.08–4,641.85) |
+| Current owning run, both helper boundaries retained | 12,813.72 (12,713.87–12,982.91) | 4,484.86 (4,384.52–4,572.51) |
+| Guaranteed same-place run model, boundaries retained | 5,504.64 (5,460.94–5,918.46) | 4,473.51 (4,380.37–4,650.63) |
+| Existing borrowed full array, boundaries retained | 4,450.32 (4,355.71–4,523.68) | 4,501.83 (4,401.37–4,604.74) |
+
+The retained baseline gap is 8,328.86 ns. Placement reduces WF time by
+7,309.08 ns; adjusting for the same-run C medians gives 7,297.73 ns, or
+**87.6% of the gap**, leaving **1,031.13 ns** (placed WF is 1.23 times C).
+The two cohorts separately attribute 87.7% and 87.5%. This is a measured
+storage/transfer intervention: it includes smaller callee frames, one fewer
+pointer argument and optimization consequences. It is not an isolated memcpy
+latency measurement. Original and explicitly retained WF medians differ by
+about 0.2%, below the sample ranges; forcing the boundary is not the large loss.
+
+The 5.50 microsecond result is an attainable zero-transfer cost for this run
+contract under the measured lowering, not a proof that its global optimum is
+5.50 microseconds. All run descriptors, window addressing, scalar result stores
+and construction remain. The placed IR still reloads the head and forms wrapped
+indices; the C control uses direct array indices. Those are concrete remaining
+differences, but this experiment does not causally divide the residual between
+addressing, alias analysis, scalar ABI and instruction selection. The borrowed
+array reaches 4.45 microseconds while keeping storage inline and boundaries
+retained; it changes the representation contract and cannot isolate transfer
+cost or establish a solution for uninitialized owning elements.
+
+Reproduce with `make check-interface` and `make measure-interface` here. The
+former belongs to `make check`, whose ordinary WF loop retains all three
+lowering modes. The counterfactual and timings use `--no-overlap` output.
+Only `measure-interface` writes fresh CSVs, under `.build`; neither target
+regenerates the retained observations. `priority-placement --inspect` reports
+copy intrinsic and vector-load counts from the generated `.opt.ll` files and
+requires the placed helpers to have retained calls, no aggregate transfers,
+no tuple clears and no local allocations. The scalar metadata stores above
+were read separately from the optimized push body.
+The exported baseline/placed LLVM SHA-256 values are respectively
+`c6df0cd442b291eee9650b931b477f13f75273effeedd5c6fd6400e732a2cd88` and
+`74c1ebd68ebe29b3fc08640d4d3f2e1c5bace6a0231695b9cda66483a1054ad6`.
+
+#### Interface recommendation — proposal for owner decision
+
+**Propose a checked same-place contract for consumed run input/output.** Keep
+the source value and proof interface of `set x = f(move x, ...)`: the callee
+owns the entering value, and its returned run denotes the new value. Permit an
+explicit, statically checked contract to require that this input and one
+selected output occupy the same storage throughout the call. At an admitted
+call, a whole-run transfer at that boundary or along the declared update chain
+must not be a hidden fallback. Calls that cannot meet the guarantee need a
+different explicitly permitted interface. This is a proposed guarantee and
+checking obligation, not syntax or semantics this branch implements.
+
+The checker/lowering must establish one eligible consumed input, the selected
+return correspondence, no live overlapping loan, and no later use of an old
+value after its storage is reused. Scalar entry images may be saved before
+mutation. For multi-results, the allocation must cover the complete result,
+with each live sibling preserved; a 152-byte result cannot inhabit a 144-byte
+object. If two independently live versions are required, they cannot share
+this place. Entry snapshots, intermediate construction and return lowering
+must all respect this obligation; caller destination coalescing alone is
+insufficient. The witness is synchronous and does not establish address
+stability across a staged call or retained I/O loan.
+
+**BLK-4 and MSR-3 need no change for the measured own/return shape.** Existing
+`requires`/`ensures` retain the entering measure datum and publish the returned
+run's length. A guaranteed-place feature would need its own placement and call
+rules, including how failure is diagnosed; it must not redefine `own` as
+universally immovable or universally free to copy. Which return relationships
+are expressible and cheaply checkable beyond this witness remains open.
+
+Do not select merely lifting BLK-4's `&uniq` run refusal as the solution.
+A conservative kill can prevent stale length/head facts, but MSR-3 still forbids
+an `ensures` measure over that exclusive formal. Returning a scalar count alone
+does not establish that count equals the run's post-call length. Repeated
+push/pop proofs therefore need a post-state contract design or intentional
+runtime-domain handling, not impossible error branches added for the checker.
+The borrowed full array avoids this problem because its extent is type-fixed;
+it is a useful current option for initialized scalar storage, not evidence
+that variable initialized windows are unnecessary.
+
+The grounds are the 87.6% attributed gap and the attainable 5.50 microsecond
+run cost without heap allocation. Remaining evidence: larger runs and varied
+capacities, affine/linear elements and cleanup, alternative/fallible results,
+aliasing and independent old-value controls, generic helpers, and other native
+targets. No language amendment, general placement implementation or growing
+container result follows from these timings. The owner can choose whether this
+bounded contract or an explicit mutable post-state design is the next proposal
+to develop; this experiment does not make that language decision.
+
 ## Explicit byte-run growth and refusal
 
 `growth.wf` allocates and fills an initial byte run, then either keeps it, refuses

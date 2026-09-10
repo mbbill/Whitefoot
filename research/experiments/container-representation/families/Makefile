@@ -7,7 +7,7 @@ EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 BUILD := .build
 .DELETE_ON_ERROR:
 
-.PHONY: check measure reproduce-runtime-gap reproduce-region-gap clean
+.PHONY: check check-interface measure measure-interface reproduce-runtime-gap reproduce-region-gap clean
 
 $(BUILD):
 	mkdir -p $@
@@ -45,6 +45,50 @@ $(BUILD)/priority-borrowed-retained.ll: $(BUILD)/priority-borrowed.ll
 $(BUILD)/priority-borrowed-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed-retained.ll
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
 
+$(BUILD)/priority-placement$(EXE): priority-placement.rs | $(BUILD)
+	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
+
+$(BUILD)/priority-placement.stamp: $(BUILD)/priority.ll $(BUILD)/priority-placement$(EXE)
+	$(BUILD)/priority-placement$(EXE) $< $(BUILD)/priority-retained.ll $(BUILD)/priority-placed.ll
+	touch $@
+
+$(BUILD)/priority-retained.ll $(BUILD)/priority-placed.ll: $(BUILD)/priority-placement.stamp
+	@test -f $@
+
+$(BUILD)/priority-retained.opt.ll: $(BUILD)/priority-retained.ll
+	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
+
+$(BUILD)/priority-placed.opt.ll: $(BUILD)/priority-placed.ll
+	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
+
+$(BUILD)/priority-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-retained.ll
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+
+$(BUILD)/priority-placed-costs$(EXE): priority-costs.c $(BUILD)/priority-placed.ll
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+
+check-interface: $(BUILD)/priority-retained-costs$(EXE) $(BUILD)/priority-placed-costs$(EXE) \
+                 $(BUILD)/priority-borrowed-retained-costs$(EXE) \
+                 $(BUILD)/priority-retained.opt.ll $(BUILD)/priority-placed.opt.ll
+	$(BUILD)/priority-placement$(EXE) --inspect $(BUILD)/priority-retained.opt.ll $(BUILD)/priority-placed.opt.ll
+	$(BUILD)/priority-retained-costs$(EXE) check
+	$(BUILD)/priority-placed-costs$(EXE) check
+	$(BUILD)/priority-borrowed-retained-costs$(EXE) check
+
+# Fresh observations stay in .build; check never overwrites retained CSVs.
+measure-interface: check-interface $(BUILD)/priority-costs$(EXE)
+	@set -eu; \
+	  output=$(BUILD)/priority-interface-measurements.csv; \
+	  echo 'cohort,contract,variant,rounds,sample,calls,elapsed_ns,checksum' > "$$output"; \
+	  for cohort in 0 1; do \
+	    if test "$$cohort" = 0; then variants='original retained placed borrowed'; else variants='borrowed placed retained original'; fi; \
+	    for variant in $$variants; do \
+	      case "$$variant" in original) binary=priority-costs ;; retained) binary=priority-retained-costs ;; placed) binary=priority-placed-costs ;; borrowed) binary=priority-borrowed-retained-costs ;; esac; \
+	      $(BUILD)/$$binary$(EXE) measure > $(BUILD)/priority-interface-sample.csv; \
+	      awk -v cohort="$$cohort" -v contract="$$variant" 'NR > 1 { print cohort "," contract "," $$0 }' $(BUILD)/priority-interface-sample.csv >> "$$output"; \
+	    done; \
+	  done
+
 $(BUILD)/owning-map.raw.ll: owning-map.wf $(WHITEFOOTC) | $(BUILD)
 	$(WHITEFOOTC) --no-overlap --emit-llvm $< -o $@
 
@@ -70,11 +114,11 @@ $(BUILD)/growth.opt.ll: $(BUILD)/growth.instrumented.ll $(BUILD)/growth-abi$(EXE
 $(BUILD)/growth-costs$(EXE): growth-costs.c $(BUILD)/growth.opt.ll
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
 
-check: $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
+check: check-interface $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-costs$(EXE) $(BUILD)/priority-borrowed-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-retained-costs$(EXE) \
        $(BUILD)/owning-map-observer$(EXE) $(BUILD)/growth-costs$(EXE)
-	rustfmt --edition 2024 --check abi.rs growth-abi.rs
+	rustfmt --edition 2024 --check abi.rs growth-abi.rs priority-placement.rs
 	@set -eu; \
 	  for source in hashmap owning-map ordered priority priority-borrowed packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view; do \
 	    for mode in default par no-overlap; do \
