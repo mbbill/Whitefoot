@@ -34,12 +34,6 @@ jobs:
   gate:
     name: ${{ matrix.stage }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Everything the gate writes outside the checkout goes under one scratch
-    # root. Naming it here rather than leaving the Makefile default makes the
-    # cached research target directory below and the directory `make` writes
-    # the same path on both runner images.
-    env:
-      WHITEFOOT_SCRATCH_ROOT: ${{ runner.temp }}/whitefoot
     # The budget, enforced where it cannot flake. Eight minutes is the ceiling,
     # not the target: the target is five, and a job that reaches eight has a
     # defect worth failing over rather than waiting out. No test asserts a wall
@@ -81,6 +75,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Everything the gate writes outside the checkout goes under one scratch
+      # root. Naming it here rather than leaving the Makefile default makes the
+      # cached research target directory below and the directory `make` writes
+      # the same path on both runner images. It is set from a step because the
+      # `runner` context is not available to a job-level `env:` block.
+      - name: Set the scratch root
+        run: echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/whitefoot" >> "$GITHUB_ENV"
 
       # `spec-append-only` reads `main` as a local ref: no released
       # specification archive may differ from main's. A CI checkout
