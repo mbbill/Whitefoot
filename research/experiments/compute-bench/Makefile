@@ -66,6 +66,20 @@ RFLAGS := -C no-vectorize-loops -C no-vectorize-slp -C lto=off \
 # against the WF row, and README.md states it in its own paragraph.
 WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
 
+# An A/B control, and nothing else. Whatever is set here is appended to the
+# `--par` emission below, so a run can compare two compilers' worth of
+# behaviour on one tree by changing one opt-in flag -- for example
+# `make compare WF_PAR_CONTROL_FLAGS='--par-recursive-frontier 8'`. It is
+# EMPTY BY DEFAULT and must stay empty for any table that is recorded: the
+# `wf` row of a recorded table is the program plain `--par` produces, which is
+# this bundle's whole question (README, "What WF means here"). A non-empty
+# setting is written into manifest.txt and announced in the table header, so a
+# control-flag table can never be read as a plain one; the manifest records the
+# variable either way. Nothing here selects a chunk count or a grain: the
+# compiler owns those, and a flag that made the table nicer would be measuring
+# a program no Whitefoot user gets.
+WF_PAR_CONTROL_FLAGS ?=
+
 KERNELS ?= mandelbrot quadrature records fir
 PASSES ?= 5
 CALLS  ?= 5
@@ -147,7 +161,7 @@ deps:
 define kernel-modules
 $$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
-	$$(WFC) --par --par-ledger --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par.ledger
+	$$(WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par.ledger
 	sed -e 's/@main(/@wfb_$(1)_par_main(/g' \
 	    -e 's/@wf__main_body(/@wfb_$(1)_par_body(/g' $$@.raw > $$@
 	sed -e 's/@wf_bench_$(1)(/@wf_bench_$(1)_par(/' \
@@ -340,6 +354,7 @@ compare: build
 	  echo "CFLAGS: $(CFLAGS)"; \
 	  echo "CXXFLAGS: $(CXXFLAGS)"; \
 	  echo "WF_FLAGS: $(WF_FLAGS)"; \
+	  echo "WF_PAR_CONTROL_FLAGS: $(WF_PAR_CONTROL_FLAGS)"; \
 	  echo "RFLAGS: $(RFLAGS)"; \
 	  echo "BENCH_ARCH: $(BENCH_ARCH)"; \
 	  echo "pins: oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0"; \
@@ -386,6 +401,7 @@ compare: build
 	    -v clang="$$(sed -n 's/^clang: //p' $(RESULTS)/manifest.txt)" \
 	    -v rustc="$$(sed -n 's/^rustc: //p' $(RESULTS)/manifest.txt | head -1)" \
 	    -v refflags="$(CFLAGS)" -v wfflags="$(WF_FLAGS)" \
+	    -v parcontrol="$(WF_PAR_CONTROL_FLAGS)" \
 	    -v pins="oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0" \
 	    $(RESULTS)/raw.tsv | tee $(RESULTS)/table.txt
 	@set -e; for k in $(KERNELS); do $(SHA256) $(BUILD)/$$k $(BUILD)/$$k-par.ll $(BUILD)/$$k-seq.ll; done > $(RESULTS)/hashes-after.txt

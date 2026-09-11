@@ -39,6 +39,28 @@ one. It is the sequential **control**, not a reference: it never enters the
 ratio column. It answers "did `--par` buy anything at all", which is a different
 question from "is `--par` the fastest".
 
+### The one A/B handle, and why it never appears in a recorded table
+
+`WF_PAR_CONTROL_FLAGS` is appended to the `--par` emission and is **empty by
+default**. It exists so that one tree can answer "what would this opt-in
+compiler flag be worth here" — two images differing in exactly that flag, built
+from one tree, measured in one `compare` run so the reference rows are shared:
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/ab-8 \
+     WF_PAR_CONTROL_FLAGS='--par-recursive-frontier 8'
+```
+
+It is a measurement control and not a grain knob. **A table recorded in
+`RESULTS.md` is always taken with it empty**, because the `wf` row of a
+recorded table is the program plain `--par` produces and nothing else; a
+setting that made a row nicer would be measuring a program no Whitefoot user
+gets. Two things keep the two kinds of table apart without anyone having to
+remember: `manifest.txt` records `WF_PAR_CONTROL_FLAGS` on every run, empty or
+not, and a non-empty setting adds a `WF --par control flags=` line to the table
+header saying in the table itself that it is not the plain program. The
+bundle's gate target, `programs-check`, never reads the variable.
+
 Two link-time assertions make a `wf` row a `wf` row. The emitted module carries
 **weak no-op stubs for every `wf__par_*` symbol**, so a link that loses the
 scheduler sources would still link, still run, still produce correct output, and
@@ -109,7 +131,8 @@ which also carries the reproduce recipe and the two non-pooling rules.
 mask and cgroup state (recorded, never narrowed, and marked `unqualified` when
 a file is absent rather than reported as "no limit"), the compiler revision,
 every toolchain version — the whole of `rustc -vV`, host triple, commit and
-LLVM version included, one `rustc: ` line each — the exact flag strings, the
+LLVM version included, one `rustc: ` line each — the exact flag strings,
+`WF_PAR_CONTROL_FLAGS` whether it was set or empty, the
 three dependency pins, `BENCH_ARCH`, and the SHA-256 of every kernel image
 and every emitted `.ll` before and after the run. If any of those hashes moved
 during the run the table is not a measurement of one build and `compare` says
