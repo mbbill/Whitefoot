@@ -434,10 +434,13 @@ never on spread, never on an ordering.
 
 ### Widths, and which block is the recorded one
 
-The width set is `{1, 2, 4, 8}`. The harness reads the online CPU count once per
-process and emits every width at most that count, plus the smallest width above
-it when there is one. A width above the count is still emitted, but its header
-carries `oversubscribed=1` and the reducer prints `n/a (oversubscribed)` instead
+The width set is `{1, 2, 4, 8, 16, 32}`. The harness reads the online CPU count
+once per process and emits every width at most that count, plus the smallest
+width above it when there is one; 16 and 32 exist for hosts with that many
+logical CPUs (a 32-thread desktop records `W=32`) and change nothing on a
+smaller host, which still emits its own widths and one oversubscribed block. A
+width above the count is still emitted, but its header carries
+`oversubscribed=1` and the reducer prints `n/a (oversubscribed)` instead
 of a verdict: oversubscription rewards schedulers that yield and changes which
 one wins, so such a block cannot answer this bundle's question.
 

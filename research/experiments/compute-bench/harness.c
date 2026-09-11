@@ -184,7 +184,7 @@ static unsigned wfb_cpus(void) {
    emitted and is marked oversubscribed, because oversubscription rewards
    schedulers that yield and changes which one wins, so such a block carries
    no verdict. */
-static const unsigned wfb_width_set[] = {1u, 2u, 4u, 8u};
+static const unsigned wfb_width_set[] = {1u, 2u, 4u, 8u, 16u, 32u};
 
 static unsigned wfb_widths(unsigned *out) {
     unsigned cpus = wfb_cpus(), n = 0, i;
