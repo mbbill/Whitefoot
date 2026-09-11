@@ -1,0 +1,429 @@
+contract Key<K: linear, E: linear> {
+  fn hash(env: &E, key: &K) -> hash: own u64 effects;
+  fn equal(env: &E, left: &K, right: &K) -> equal: own Bool effects;
+}
+
+struct Seed {
+  salt: u64;
+}
+
+fn seed_hash(env: &Seed, key: &u64) -> hash: own u64 reads(env.salt, key) {
+  let mixed = deref(key) +wrap deref(env).salt;
+  return mixed;
+}
+
+fn seed_equal(env: &Seed, left: &u64, right: &u64) -> equal: own Bool reads(left, right) {
+  let same = deref(left) == deref(right);
+  return same;
+}
+
+conform Seed : Key<u64, Seed> {
+  hash = seed_hash;
+  equal = seed_equal;
+}
+
+struct Resource {
+  id: u64;
+}
+
+enum Slot<K: linear>['s] {
+  Vacant();
+  Deleted();
+  Occupied(fingerprint: u8, key: K, payload: Box<'s, Resource>);
+}
+
+enum Probe {
+  Stop();
+  Skip();
+  Miss();
+  Match();
+}
+
+enum PutOutcome<K: linear>['s] {
+  Installed(previous: Slot<'s, K>);
+  Full(key: K, payload: Box<'s, Resource>);
+}
+
+enum Growth<K: linear>['s] {
+  Refused();
+  Rebacked(previous: Vector<'s, Slot<'s, K>>, remaining: u64);
+}
+
+fn fingerprint(hash: own u64) -> result: own u8 pure {
+  let tag = 0_u8;
+  let bit0 = iand(hash, 1_u64);
+  if bit0 != 0_u64 {
+    set tag = ior(tag, 1_u8);
+  }
+  let bit1 = iand(hash, 2_u64);
+  if bit1 != 0_u64 {
+    set tag = ior(tag, 2_u8);
+  }
+  let bit2 = iand(hash, 4_u64);
+  if bit2 != 0_u64 {
+    set tag = ior(tag, 4_u8);
+  }
+  let bit3 = iand(hash, 8_u64);
+  if bit3 != 0_u64 {
+    set tag = ior(tag, 8_u8);
+  }
+  let bit4 = iand(hash, 16_u64);
+  if bit4 != 0_u64 {
+    set tag = ior(tag, 16_u8);
+  }
+  let bit5 = iand(hash, 32_u64);
+  if bit5 != 0_u64 {
+    set tag = ior(tag, 32_u8);
+  }
+  let bit6 = iand(hash, 64_u64);
+  if bit6 != 0_u64 {
+    set tag = ior(tag, 64_u8);
+  }
+  return tag;
+}
+
+fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 pure contract {
+  requires home < count;
+  requires step < count;
+  ensures index < count;
+} {
+  let until_end = count - home;
+  if step >= until_end {
+    let wrapped = step - until_end;
+    return wrapped;
+  }
+  let straight = home + step;
+  return straight;
+}
+
+fn probe<K: linear, E: linear + Key<K, E>>['s](slot: &Slot<'s, K>, tag: own u8, key: &K, env: &E) -> action: own Probe reads(slot), effects(E.equal(env: env, left: slot[], right: key)) {
+  match deref(slot) {
+    Vacant() => {
+      return Stop();
+    }
+    Deleted() => {
+      return Skip();
+    }
+    Occupied(fingerprint: saved, key: present, payload: owner) => {
+      if deref(saved) == tag {
+        let same = E.equal(env: env, left: present, right: key);
+        if same {
+          return Match();
+        }
+      }
+      return Miss();
+    }
+  }
+}
+
+fn put<K: linear, E: linear + Key<K, E>>['s](slots: &uniq Vector<'s, Slot<'s, K>>, key: own K, payload: own Box<'s, Resource>, env: &E) -> outcome: own PutOutcome<'s, K> reads(slots), writes(slots), effects(E.hash(env: env, key: key)), effects(E.equal(env: env, left: slots[], right: key)) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  let hash = 0_u64;
+  region {
+    set hash = E.hash(env: env, key: &key);
+  }
+  let tag = fingerprint(hash: hash);
+  let count = len_of(deref(slots));
+  let first_deleted = count;
+  for (step in 0_u64..count) {
+    let home = hash % count;
+    let index = probe_index(home: home, step: step, count: count);
+    let action = Miss();
+    region {
+      set action = probe::<K, E>(slot: &deref(slots)[index], tag: tag, key: &key, env: env);
+    }
+    match action {
+      Match() => {
+        let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+        let previous = replace deref(slots)[index] = move offered;
+        return Installed<K>(previous: move previous);
+      }
+      Skip() => {
+        if first_deleted == count {
+          set first_deleted = index;
+        }
+      }
+      Stop() => {
+        let destination = index;
+        if first_deleted < count {
+          set destination = first_deleted;
+        }
+        let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+        let previous = replace deref(slots)[destination] = move offered;
+        return Installed<K>(previous: move previous);
+      }
+      Miss() => {
+      }
+    }
+  }
+  if first_deleted < count {
+    let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+    let previous = replace deref(slots)[first_deleted] = move offered;
+    return Installed<K>(previous: move previous);
+  }
+  return Full<K>(key: move key, payload: move payload);
+}
+
+fn find<K: linear, E: linear + Key<K, E>>['s](slots: &Vector<'s, Slot<'s, K>>, key: &K, env: &E) -> found: own Result<u64, unit> reads(slots), effects(E.hash(env: env, key: key)), effects(E.equal(env: env, left: slots[], right: key)) contract {
+  ensures when Ok(value: index): index < len_of(deref(slots));
+} {
+  let hash = E.hash(env: env, key: key);
+  let tag = fingerprint(hash: hash);
+  let count = len_of(deref(slots));
+  for (step in 0_u64..count) {
+    let home = hash % count;
+    let index = probe_index(home: home, step: step, count: count);
+    region {
+      let action = probe::<K, E>(slot: &deref(slots)[index], tag: tag, key: key, env: env);
+      match action {
+        Match() => {
+          return Ok<u64, unit>(value: index);
+        }
+        Stop() => {
+          return Err<u64, unit>(error: unit);
+        }
+        Skip() => {
+        }
+        Miss() => {
+        }
+      }
+    }
+  }
+  return Err<u64, unit>(error: unit);
+}
+
+fn remove<K: linear, E: linear + Key<K, E>>['s](slots: &uniq Vector<'s, Slot<'s, K>>, key: &K, env: &E) -> previous: own Slot<'s, K> reads(slots), writes(slots), effects(E.hash(env: env, key: key)), effects(E.equal(env: env, left: slots[], right: key)) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  let at = len_of(deref(slots));
+  region {
+    match find::<K, E>(slots: &deref(slots), key: key, env: env) {
+      Ok(value: index) => {
+        set at = index;
+      }
+      Err(error: absent) => {
+      }
+    }
+  }
+  let count = len_of(deref(slots));
+  if at < count {
+    let deleted = Deleted<'s, K>();
+    let previous = replace deref(slots)[at] = move deleted;
+    return move previous;
+  }
+  return Vacant<'s, K>();
+}
+
+fn fill_slots<K: linear>['s](slots: &uniq Vector<'s, Slot<'s, K>>, count: own u64) -> result: own unit reads(slots), writes(slots) contract {
+  requires len_of(deref(slots)) == 0_u64;
+  requires room_of(deref(slots)) >= count;
+  ensures len_of(deref(slots)) == count;
+} {
+  for (
+    index in 0_u64..count,
+    invariant low: len_of(deref(slots)) >= index,
+    invariant high: len_of(deref(slots)) <= index,
+    invariant spare: room_of(deref(slots)) + index >= count
+  ) {
+    let empty = Vacant<'s, K>();
+    region {
+      place_back(vector: &uniq deref(slots), value: move empty);
+    }
+  }
+  return unit;
+}
+
+fn create_slots<K: linear>['s](store: &uniq Heap<'s>, count: own u64) -> result: own Option<Vector<'s, Slot<'s, K>>> reads(store), writes(store), allocates(store) {
+  if buffer_fits::<Slot<'s, K>>(count) {
+    region {
+      match heap_vector::<Slot<'s, K>>(store: &uniq deref(store), count: count) {
+        None() => {
+          return None<Vector<'s, Slot<'s, K>>>();
+        }
+        Some(value: slots) => {
+          region {
+            fill_slots::<K>(slots: &uniq slots, count: count);
+          }
+          return Some<Vector<'s, Slot<'s, K>>>(value: move slots);
+        }
+      }
+    }
+  }
+  return None<Vector<'s, Slot<'s, K>>>();
+}
+
+fn occupied<K: linear>['s](slot: &Slot<'s, K>) -> result: own Bool reads(slot) {
+  match deref(slot) {
+    Occupied(fingerprint: tag, key: present_key, payload: owner) => {
+      return True();
+    }
+    Vacant() => {
+      return False();
+    }
+    Deleted() => {
+      return False();
+    }
+  }
+}
+
+fn slot_hash<K: linear, E: linear + Key<K, E>>['s](slot: &Slot<'s, K>, env: &E) -> result: own Option<u64> reads(slot), effects(E.hash(env: env, key: slot[])) {
+  match deref(slot) {
+    Occupied(fingerprint: tag, key: present_key, payload: owner) => {
+      let hash = E.hash(env: env, key: present_key);
+      return Some<u64>(value: hash);
+    }
+    Vacant() => {
+      return None<u64>();
+    }
+    Deleted() => {
+      return None<u64>();
+    }
+  }
+}
+
+fn rehash<K: linear, E: linear + Key<K, E>>['s](source: &uniq Vector<'s, Slot<'s, K>>, target: &uniq Vector<'s, Slot<'s, K>>, env: &E) -> remaining: own u64 reads(source, target), writes(source, target), effects(E.hash(env: env, key: source[])) {
+  let remaining = 0_u64;
+  let source_count = len_of(deref(source));
+  let target_count = len_of(deref(target));
+  for (
+    at in 0_u64..source_count,
+    invariant count_low: len_of(deref(source)) >= source_count,
+    invariant count_high: len_of(deref(source)) <= source_count,
+    invariant remaining_bound: remaining <= at
+  ) {
+    let held = take_front(vector: &uniq deref(source));
+    region {
+      match slot_hash::<K, E>(slot: &held, env: env) {
+        None() => {
+        }
+        Some(value: hash) => {
+          let moved = False();
+          for (step in 0_u64..target_count) {
+            let home = hash % target_count;
+            let index = probe_index(home: home, step: step, count: target_count);
+            let full = occupied::<K>(slot: &deref(target)[index]);
+            if full {
+            } else {
+              let previous = replace deref(target)[index] = move held;
+              set held = move previous;
+              set moved = True();
+              break;
+            }
+          }
+          if moved {
+          } else {
+            set remaining = remaining + 1_u64;
+          }
+        }
+      }
+    }
+    place_back(vector: &uniq deref(source), value: move held);
+  }
+  return remaining;
+}
+
+fn grow<K: linear, E: linear + Key<K, E>>['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s, K>>, count: own u64, env: &E) -> result: own Growth<'s, K> reads(store, slots), writes(store, slots), allocates(store), effects(E.hash(env: env, key: slots[])) {
+  region {
+    match create_slots::<K>(store: &uniq deref(store), count: count) {
+      None() => {
+        return Refused<'s, K>();
+      }
+      Some(value: target) => {
+        let remaining = 0_u64;
+        region {
+          set remaining = rehash::<K, E>(source: &uniq deref(slots), target: &uniq target, env: env);
+        }
+        let previous = replace deref(slots) = move target;
+        return Rebacked<K>(previous: move previous, remaining: remaining);
+      }
+    }
+  }
+}
+
+fn offer['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s, u64>>, key: own u64, id: own u64, env: &Seed) -> success: own Bool reads(store, slots, env.salt), writes(store, slots), allocates(store) {
+  let value = Resource(id: id);
+  region {
+    match heap_box(store: &uniq deref(store), value: move value) {
+      Err(error: back) => {
+        return False();
+      }
+      Ok(value: owner) => {
+        region {
+          match put::<u64, Seed>(slots: &uniq deref(slots), key: key, payload: move owner, env: env) {
+            Installed(previous: displaced) => {
+              dispose displaced;
+              return True();
+            }
+            Full(key: offered_key, payload: offered_owner) => {
+              dispose offered_owner;
+              return False();
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "D6 proposal source, not admitted by v0.56. Uses the D2 vacant/deleted/owning-slot representation; new backing and all displaced ownership are explicit. The caller chooses cleanup for its concrete key type.";
+  let seed = Seed(salt: 0_u64);
+  let deleted_key = 1_u64;
+  let surviving_key = 5_u64;
+  region {
+    match create_slots::<u64>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 2_u8);
+      }
+      Some(value: slots) => {
+        region {
+          let a = offer(store: &uniq heap, slots: &uniq slots, key: 1_u64, id: 10_u64, env: &seed);
+          let b = offer(store: &uniq heap, slots: &uniq slots, key: 5_u64, id: 20_u64, env: &seed);
+          let c = offer(store: &uniq heap, slots: &uniq slots, key: 1_u64, id: 30_u64, env: &seed);
+          let first_pair = band(a, b);
+          if band(first_pair, c) {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+          let previous = remove::<u64, Seed>(slots: &uniq slots, key: &deleted_key, env: &seed);
+          dispose previous;
+          match find::<u64, Seed>(slots: &slots, key: &surviving_key, env: &seed) {
+            Err(error: absent) => {
+              return exit_status(code: 3_u8);
+            }
+            Ok(value: index) => {
+            }
+          }
+          let reused = offer(store: &uniq heap, slots: &uniq slots, key: 9_u64, id: 40_u64, env: &seed);
+          if reused {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+          match grow::<u64, Seed>(store: &uniq heap, slots: &uniq slots, count: 8_u64, env: &seed) {
+            Refused() => {
+              return exit_status(code: 2_u8);
+            }
+            Rebacked(previous: old_backing, remaining: pending) => {
+              dispose old_backing;
+              if pending != 0_u64 {
+                return exit_status(code: 4_u8);
+              }
+            }
+          }
+          match find::<u64, Seed>(slots: &slots, key: &surviving_key, env: &seed) {
+            Err(error: absent) => {
+              return exit_status(code: 5_u8);
+            }
+            Ok(value: index) => {
+              dispose slots;
+              return exit_status(code: 0_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+}
