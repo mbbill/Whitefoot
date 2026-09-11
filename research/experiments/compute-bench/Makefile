@@ -94,6 +94,34 @@ $(PAR_CONTROL): FORCE
 	@rm -f $@.new
 FORCE:
 
+# The same handle on the other side of the link, and the same discipline. The
+# emission control above changes the module the compiler writes; this one is
+# appended to the compile of the four Whitefoot RUNTIME translation units
+# below, so a run can measure what one runtime constant is worth on this block
+# of kernels without editing the constant per run -- for example
+# `make compare WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_SPLIT_WORK_UNIT=300000`,
+# which builds the splitter's work unit at a quarter of its default. It is
+# EMPTY BY DEFAULT and must stay empty for any table that is recorded: the `wf`
+# row of a recorded table is the program plain `--par` produces linked with the
+# runtime this tree ships, and a runtime built to make a row nicer would be
+# measuring a runtime no Whitefoot program gets. It is written into
+# manifest.txt either way and announced in the table header when it is not
+# empty, exactly as the emission control is. It reaches no reference, no oracle
+# and not the harness: those are not the Whitefoot runtime.
+WF_RUNTIME_CONTROL_FLAGS ?=
+
+# Kept in a stamp for the same reason the emission control is: the value is
+# part of what compiled an object, so the four runtime objects depend on it and
+# a changed value recompiles and relinks every image instead of silently
+# re-timing the one the last run left. A run that changes nothing rebuilds
+# nothing.
+RUNTIME_CONTROL := $(BUILD)/runtime-control-flags.txt
+$(RUNTIME_CONTROL): FORCE
+	@mkdir -p $(BUILD)
+	@printf '%s\n' '$(WF_RUNTIME_CONTROL_FLAGS)' > $@.new
+	@cmp -s $@.new $@ || mv -f $@.new $@
+	@rm -f $@.new
+
 KERNELS ?= mandelbrot quadrature records fir
 PASSES ?= 5
 CALLS  ?= 5
@@ -209,15 +237,15 @@ $(BUILD)/%-par.o: $(BUILD)/%-par.ll
 	$(CC) $(WF_FLAGS) -c $< -o $@
 $(BUILD)/%-seq.o: $(BUILD)/%-seq.ll
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/floor.o: $(FLOOR)
+$(BUILD)/floor.o: $(FLOOR) $(RUNTIME_CONTROL)
 	@mkdir -p $(BUILD)
-	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_core.o: $(SCHED)/core.c
-	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_prim_host.o: $(SCHED)/prim_host.c
-	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_entry.o: $(SCHED)/entry.c
-	$(CC) $(WF_FLAGS) -c $< -o $@
+	$(CC) $(WF_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/sched_core.o: $(SCHED)/core.c $(RUNTIME_CONTROL)
+	$(CC) $(WF_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/sched_prim_host.o: $(SCHED)/prim_host.c $(RUNTIME_CONTROL)
+	$(CC) $(WF_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/sched_entry.o: $(SCHED)/entry.c $(RUNTIME_CONTROL)
+	$(CC) $(WF_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
 
 $(BUILD)/%_bench.o: %_bench.c harness.h backend.h $(BUILD)/%_split.h
 	$(CC) $(CFLAGS) -I$(BUILD) -c $< -o $@
@@ -375,6 +403,7 @@ compare: build
 	  echo "CXXFLAGS: $(CXXFLAGS)"; \
 	  echo "WF_FLAGS: $(WF_FLAGS)"; \
 	  echo "WF_PAR_CONTROL_FLAGS: $(WF_PAR_CONTROL_FLAGS)"; \
+	  echo "WF_RUNTIME_CONTROL_FLAGS: $(WF_RUNTIME_CONTROL_FLAGS)"; \
 	  echo "RFLAGS: $(RFLAGS)"; \
 	  echo "BENCH_ARCH: $(BENCH_ARCH)"; \
 	  echo "pins: oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0"; \
@@ -422,6 +451,7 @@ compare: build
 	    -v rustc="$$(sed -n 's/^rustc: //p' $(RESULTS)/manifest.txt | head -1)" \
 	    -v refflags="$(CFLAGS)" -v wfflags="$(WF_FLAGS)" \
 	    -v parcontrol="$(WF_PAR_CONTROL_FLAGS)" \
+	    -v runtimecontrol="$(WF_RUNTIME_CONTROL_FLAGS)" \
 	    -v pins="oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0" \
 	    $(RESULTS)/raw.tsv | tee $(RESULTS)/table.txt
 	@set -e; for k in $(KERNELS); do $(SHA256) $(BUILD)/$$k $(BUILD)/$$k-par.ll $(BUILD)/$$k-seq.ll; done > $(RESULTS)/hashes-after.txt

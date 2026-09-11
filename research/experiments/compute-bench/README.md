@@ -32,7 +32,10 @@ function the compiler emits has internal linkage.
 - No research copy of the Whitefoot runtime is carried here; the runtime
   sources come from `../../../compiler/` by relative path.
 - Nothing selects the chunk count: no flag, no environment variable, no source
-  edit. The row is the program the compiler produces or it is nothing.
+  edit. The row is the program the compiler produces or it is nothing. The two
+  A/B handles below can build a different compiler control or a different
+  runtime constant, and a table taken under either says so in its own header
+  and is never recorded as a plain one.
 
 Quadrature's recursive component is cut by the recursion budget the runtime
 answers at its entry, and `--par-recursive-frontier off` is the control that
@@ -45,7 +48,7 @@ one. It is the sequential **control**, not a reference: it never enters the
 ratio column. It answers "did `--par` buy anything at all", which is a different
 question from "is `--par` the fastest".
 
-### The one A/B handle, and why it never appears in a recorded table
+### The two A/B handles, and why neither appears in a recorded table
 
 `WF_PAR_CONTROL_FLAGS` is appended to the `--par` emission and is **empty by
 default**. It exists so that one tree can answer "what would this compiler
@@ -72,13 +75,38 @@ not, and a non-empty setting adds a `WF --par control flags=` line to the table
 header saying in the table itself that it is not the plain program. The
 bundle's gate target, `programs-check`, never reads the variable.
 
+`WF_RUNTIME_CONTROL_FLAGS` is the same handle on the other side of the link,
+under the same discipline. It is appended to the compile of the four Whitefoot
+runtime translation units — `floor.o`, `sched_core.o`, `sched_prim_host.o` and
+`sched_entry.o` — so one tree can answer "what would this runtime constant be
+worth on this block of kernels" without editing the constant per run:
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/unit-300k \
+     WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_SPLIT_WORK_UNIT=300000
+```
+
+It is **empty by default**, kept in its own stamp file that the four runtime
+object rules depend on — so setting it or clearing it recompiles and relinks
+every image rather than re-timing the one the last run left — recorded in
+`manifest.txt` on every run, and announced in the table header as a
+`WF runtime control flags=` line when it is not empty. **A table recorded in
+`RESULTS.md` is always taken with both variables empty**, for the same reason:
+the `wf` row of a recorded table is the program plain `--par` produces linked
+with the runtime this tree ships. It reaches no reference, no oracle and not
+the harness, because none of those is the Whitefoot runtime; the harness asks
+the linked runtime for the work unit at run time instead of carrying a copy, so
+the `note` column's chunk count and the two split verify fixtures follow the
+image they describe.
+
 Two link-time assertions make a `wf` row a `wf` row. The emitted module carries
 **weak no-op stubs for every `wf__par_*` symbol**, so a link that loses the
 scheduler sources would still link, still run, still produce correct output, and
-be silently sequential. The harness therefore references `wf__par_grants()`,
-which has no weak stub, and the Makefile requires a strong definition of
-`wf__par_publish`, `wf__par_split_budget` and `wf__par_recursion_budget` in
-every image after the link.
+be silently sequential. The harness therefore references `wf__par_grants()`
+and `wf__sched_split_work()`, neither of which has a weak stub, and the
+Makefile requires a strong definition of `wf__par_publish`,
+`wf__par_split_budget` and `wf__par_recursion_budget` in every image after the
+link.
 
 ## Running it
 

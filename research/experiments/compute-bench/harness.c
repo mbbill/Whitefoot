@@ -242,14 +242,21 @@ static void require_form(const wfb_kernel *k, const char *form) {
    It is a report, never an input: nothing here selects a chunk count, and
    there is no environment override for the split budget -- harness.c's main
    unsets WF_SPLIT_WORK precisely so this default cannot be moved under a
-   recorded row. The constant is wf__sched_split_work()'s default in
-   compiler/src/backend/sched/entry.c. */
-#define WFB_SPLIT_WORK ((size_t)1200000)
+   recorded row.
+
+   The work unit is ASKED OF THE LINKED RUNTIME rather than copied here. A
+   second copy of that constant would be a note column that quietly disagreed
+   with the image it labels the moment the runtime was built at another value
+   -- which the Makefile's WF_RUNTIME_CONTROL_FLAGS makes an ordinary thing to
+   do -- and it would mis-size the two split verify fixtures by the same
+   factor. wf__sched_split_work() answers its compiled default here because
+   main has already unset the one environment variable that could move it. */
 
 static size_t split_divisor(size_t weight) {
+    size_t work = (size_t)wf__sched_split_work();
     size_t divisor;
-    if (!weight) return 0;
-    divisor = (SIZE_MAX / 2 < weight) ? 1 : (WFB_SPLIT_WORK + weight - 1) / weight;
+    if (!weight || !work) return 0;
+    divisor = (SIZE_MAX / 2 < weight) ? 1 : (work + weight - 1) / weight;
     return divisor ? divisor : 1;
 }
 

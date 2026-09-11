@@ -43,6 +43,17 @@ WFB_NORETURN void wfb_fail(const char *message);
    but none for this one. */
 unsigned long wf__par_grants(void);
 
+/* The linked scheduler's independent-map work unit, from
+   compiler/src/backend/sched/entry.c: how much work, in the estimated IR
+   instructions per iteration the emitted weight operand counts, one chunk must
+   be worth before the splitter can afford another. Read rather than copied, so
+   the chunk count in `note` and the two split verify fixtures below can never
+   disagree with the runtime the image actually links; it has no weak stub in
+   the emitted module either, so referencing it is a second link-time proof
+   that the real runtime is present. `main` unsets WF_SPLIT_WORK before
+   anything runs, so this always answers the runtime's compiled default. */
+uint64_t wf__sched_split_work(void);
+
 /* The independent-map split the linked scheduler computes for a loop of
    `span` iterations whose emitted constant weight is `weight`, at `width`
    lanes, exactly as compiler/src/backend/sched/core.c computes it:
@@ -53,8 +64,12 @@ unsigned long wf__par_grants(void);
    weight), so a kernel can size a fixture from the module's emitted weight
    instead of storing a point count that a change of weight would silently
    turn back into an unsplit run. Both are reports and neither is an input:
-   nothing in this bundle selects, requests or overrides a chunk count, and
-   there is no split-budget environment variable on `main`. */
+   nothing in this bundle selects, requests or overrides a chunk count at run
+   time, and there is no split-budget environment variable on `main`. The work
+   unit is read from the linked runtime through wf__sched_split_work() above,
+   so a run whose runtime was built at another one -- the Makefile's
+   WF_RUNTIME_CONTROL_FLAGS, which marks its own table -- is reported here
+   correctly instead of being described by a stale copy. */
 size_t wfb_split_chunks(size_t span, size_t weight, unsigned width);
 size_t wfb_split_floor(size_t weight);
 

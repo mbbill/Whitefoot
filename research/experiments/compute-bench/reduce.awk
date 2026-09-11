@@ -151,6 +151,11 @@ END {
     # absence is the ordinary case and says the `wf` row is plain `--par`;
     # manifest.txt carries WF_PAR_CONTROL_FLAGS either way.
     if (parcontrol) printf "WF --par control flags=%s\n      (an A/B control appended to the --par emission: this table is NOT the\n      plain --par program and must not be recorded as one -- see README)\n", parcontrol
+    # The same line for the other side of the link, on the same terms: present
+    # only when the runtime was built at something other than what this tree
+    # ships, absent in the ordinary case, and recorded in manifest.txt either
+    # way as WF_RUNTIME_CONTROL_FLAGS.
+    if (runtimecontrol) printf "WF runtime control flags=%s\n      (an A/B control appended to the compile of the Whitefoot runtime: this\n      table is NOT the runtime this tree ships and must not be recorded as one\n      -- see README)\n", runtimecontrol
     if (pins) printf "pins: %s\n", pins
     for (i = 1; i <= kernels; i++) printf "sizes: %-12s %s\n", kernel_at[i], workload[kernel_at[i]]
     printf "passes=%d calls=%d\n\n", passes + 0, calls + 0
