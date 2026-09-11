@@ -2081,6 +2081,11 @@ command fn main() -> status: own ExitStatus pure {
     /// Every cyclic component a `--par` build finds is named in the ledger,
     /// with what was done to it or the member that stopped it.
     ///
+    /// Plain `--par` is the first case below, because the budget it reports is
+    /// the shipped default: the runtime's own answer. The three cases after it
+    /// are the control writing that default out, pinning a starting value
+    /// instead, and withholding the family altogether.
+    ///
     /// The recursion budget is an actualization choice, so a reader has to be
     /// able to see which recursions got a family and which kept the ordinary
     /// path — an unspecialized recursion that said nothing would be
@@ -2134,27 +2139,37 @@ command fn main() -> status: own ExitStatus pure {{
             .filter(|line| line.starts_with("PAR frontier"))
             .collect::<Vec<_>>()
         };
-        for (budget, summary, component) in [
+        for (overlap, summary, component) in [
+            // Plain `--par` first: what the shipped default reports. The three
+            // controls after it are the same mechanism written out.
             (
-                RecursionBudget::RuntimeDerived,
+                OverlapLowering::On,
                 "recursion budget runtime-derived  family emitted for 1 of 1 cyclic components",
                 "component(fold)  budget-carrying clone family, entered with recursion budget \
                  runtime-derived",
             ),
             (
-                RecursionBudget::Pinned(std::num::NonZeroU8::new(8).unwrap()),
+                budgeted(RecursionBudget::RuntimeDerived),
+                "recursion budget runtime-derived  family emitted for 1 of 1 cyclic components",
+                "component(fold)  budget-carrying clone family, entered with recursion budget \
+                 runtime-derived",
+            ),
+            (
+                budgeted(RecursionBudget::Pinned(
+                    std::num::NonZeroU8::new(8).unwrap(),
+                )),
                 "recursion budget pinned 8  family emitted for 1 of 1 cyclic components",
                 "component(fold)  budget-carrying clone family, entered with recursion budget \
                  pinned 8",
             ),
             (
-                RecursionBudget::Off,
+                budgeted(RecursionBudget::Off),
                 "recursion budget off  family emitted for 0 of 1 cyclic components",
                 "component(fold)  no family: recursion budget off",
             ),
         ] {
             assert_eq!(
-                lines("fold.wf", recursive.as_bytes(), budgeted(budget)),
+                lines("fold.wf", recursive.as_bytes(), overlap),
                 vec![
                     format!("PAR frontier    {summary}"),
                     format!("PAR frontier    {component}"),

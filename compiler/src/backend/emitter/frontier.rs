@@ -177,7 +177,8 @@ impl RecursiveFrontiers {
     }
 
     /// The component holding this function, or `None` for a function no
-    /// family holds — which is every function of a default build.
+    /// family holds — which is every function of a build that emits no family
+    /// at all.
     pub(super) fn grain(&self, ordinal: usize) -> Option<Grain> {
         Some(Grain {
             component: self.component_of.get(ordinal).copied().flatten()?,

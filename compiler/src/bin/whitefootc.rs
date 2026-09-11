@@ -575,7 +575,7 @@ struct Options {
     /// Opt-in ordinary-ABI sequential calls on refused compute offers.
     sequential_refusal: bool,
     /// Control over the recursion budget: `None` leaves the `--par` default,
-    /// which emits no budget family at all.
+    /// which asks the runtime at each component entry.
     recursive_frontier: Option<RecursionBudget>,
     /// Emit the module a compiler with no overlap lowering at all emits.
     ///

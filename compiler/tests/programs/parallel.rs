@@ -32,6 +32,10 @@ use whitefoot::{CompilationFailureKind, module_requires_parallel_runtime};
 /// an outlined thunk, a lane offer, and a join. `@wf_measure_band` is the
 /// negative control for erasure: its source-only boundary reasoning emits
 /// neither a runtime proof-failure path nor a parallel-runtime call.
+///
+/// Each fold is recursive, so `--par` gives its component a budget-carrying
+/// family and the body is emitted under the variant's symbol. The entry keeps
+/// the writer's own signature and obtains the budget the family descends with.
 #[test]
 fn both_folds_are_handed_out() {
     let llvm = compile_program_with_overlap("par_layout.wf");
@@ -40,8 +44,20 @@ fn both_folds_are_handed_out() {
         "a module with an eligible site must ask for the runtime"
     );
 
-    for symbol in ["@wf_layout", "@wf_layout_banded"] {
+    for name in ["layout", "layout_banded"] {
+        let entry = function_body(&llvm, &format!("@wf_{name}"));
+        assert!(
+            entry.contains("= call i64 @wf__par_recursion_budget()")
+                && entry.contains(&format!("call double @wf__par_budget_{name}(")),
+            "wf_{name} must obtain a budget and enter its family:\n{entry}"
+        );
+        let symbol = format!("@wf__par_budget_{name}");
+        let symbol = symbol.as_str();
         let fold = function_body(&llvm, symbol);
+        assert!(
+            fold.contains(&format!("@wf__par_seq_{name}(")),
+            "{symbol} must enter its sequential clone with its budget spent:\n{fold}"
+        );
         assert!(
             fold.contains("= call ptr @wf__par_acquire_lane(i64 "),
             "{symbol} must acquire a lane for its first child call:\n{fold}"
@@ -240,13 +256,13 @@ fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
 ///
 /// `adaptive_quadrature.wf` is the corpus's one ordinary recursive component:
 /// `adaptive` subdivides until its tolerance is met and hands one half of each
-/// subdivision out. `--par` alone offers at every node of it; the recursion
-/// control gives the component a budget-carrying family instead, cutting the
-/// tree into sequential subtrees at a depth the runtime takes from the pool
-/// width — a different depth at one lane than at four. [PAR-1] fixes every
-/// value to the source-order result, so none of that may move a bit, and the
-/// reference here is the `--no-overlap` build, the lowering that actualizes
-/// nothing at all.
+/// subdivision out. Under `--par` that component gets a budget-carrying
+/// family, so the tree it evaluates is cut into sequential subtrees at a depth
+/// the runtime takes from the pool width — a different depth at one lane than
+/// at four — and `--par-recursive-frontier off` is the same program with the
+/// family withheld, offering at every node. [PAR-1] fixes every value to the
+/// source-order result, so none of that may move a bit, and the reference here
+/// is the `--no-overlap` build, the lowering that actualizes nothing at all.
 #[test]
 fn the_quadrature_program_publishes_one_byte_sequence_at_every_recursion_budget() {
     use whitefoot::{
@@ -272,8 +288,8 @@ fn the_quadrature_program_publishes_one_byte_sequence_at_every_recursion_budget(
     assert_eq!(reference.stdout.len(), 64);
 
     // The command line's own `--par`, scalar-leaf limit and all, and the same
-    // build with the recursion control written.
-    for budget in [None, Some(RecursionBudget::RuntimeDerived)] {
+    // build with the family withheld by the control.
+    for budget in [None, Some(RecursionBudget::Off)] {
         let overlap = match budget {
             None => OverlapLowering::OnWithoutSmallScalarLeaves {
                 maximum_operations: 16,
@@ -293,8 +309,8 @@ fn the_quadrature_program_publishes_one_byte_sequence_at_every_recursion_budget(
         assert_eq!(
             overlapped.contains("define internal double @wf__par_budget_adaptive(")
                 && overlapped.contains("call i64 @wf__par_recursion_budget()"),
-            budget.is_some(),
-            "only the control emits a budget-carrying family"
+            budget.is_none(),
+            "the default emits a budget-carrying family and `off` withholds it"
         );
 
         let program = build_program(&overlapped);
