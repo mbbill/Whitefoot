@@ -1541,11 +1541,11 @@ pub enum OverlapLowering {
     Completion,
     /// Actualize completion operations and eligible compute groups.
     On,
-    /// Optional control: specialize ordinary recursive components into private
-    /// call layers, then enter their existing same-ABI sequential clones.
-    OnWithRecursiveFrontier {
-        /// Number of component call levels that may offer compute work.
-        maximum_levels: std::num::NonZeroU8,
+    /// Control over the recursion budget every other `On` form derives from
+    /// the runtime: pin its starting value, or emit no budget family at all.
+    OnWithRecursionBudget {
+        /// Where one call into a recursive component starts counting.
+        budget: RecursionBudget,
         /// Optional scalar-leaf offer suppression.
         maximum_scalar_leaf_operations: Option<u32>,
         /// Also select sequential clones on refused compute offers.
@@ -1564,6 +1564,33 @@ pub enum OverlapLowering {
         /// Maximum nonconstant operations in a scalar leaf whose offer is omitted.
         maximum_operations: u32,
     },
+}
+
+/// Where one call into an ordinary cyclic call-graph component starts
+/// counting the levels that may still hand work out.
+///
+/// Every member of such a component gets one synthesized variant carrying this
+/// count as a hidden trailing parameter; inside the family a call spends one
+/// level, and a call made with nothing left enters the component's existing
+/// same-ABI sequential clone, the world with no scheduler test in it. The
+/// count therefore selects how much of an admitted program is actualized in
+/// parallel. It is read by the emitter and by no acceptance path: it is not a
+/// timeout, a fuel bound, a proof-work budget or an early failure, it cannot
+/// reject a program, and compiling the same source with any of these three
+/// forms accepts exactly the same programs and computes exactly the same
+/// values.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RecursionBudget {
+    /// Emit no budget family: every node of every recursive component offers.
+    Off,
+    /// Ask the runtime once, at the component's ordinary entry. The answer
+    /// follows the pool width, which a compile-time constant cannot.
+    #[default]
+    RuntimeDerived,
+    /// Start from this compile-time value instead of asking. The A/B control
+    /// the measured depth sweep uses; never the shipped default, because the
+    /// best fixed value is not the same value at two lanes and at four.
+    Pinned(std::num::NonZeroU8),
 }
 
 /// One group of pure sibling calls whose evaluations may be overlapped
@@ -2193,13 +2220,15 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     entry: IrEntry,
     actualization: Vec<String>,
     sequential_compute_refusal: bool,
-    recursive_compute_frontier: Option<std::num::NonZeroU8>,
+    recursion_budget: Option<RecursionBudget>,
 }
 
 impl IrProgram<'_, '_, '_> {
-    /// Opt-in private recursive call specialization; never an acceptance bound.
-    pub(crate) const fn recursive_compute_frontier(&self) -> Option<std::num::NonZeroU8> {
-        self.recursive_compute_frontier
+    /// How a compute-actualizing lowering fixes the recursion budget, or
+    /// `None` where this lowering actualizes no compute at all. Selects
+    /// emitted machine code; never an acceptance bound.
+    pub(crate) const fn recursion_budget(&self) -> Option<RecursionBudget> {
+        self.recursion_budget
     }
 
     /// Opt-in machine-code selection after a refused compute acquisition.

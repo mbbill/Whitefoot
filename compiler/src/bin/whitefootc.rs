@@ -9,9 +9,9 @@ use whitefoot::{
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
     COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile_with_io_notices,
-    compile_with_permission_ledger, module_requires_completion_runtime,
+    OverlapLowering, RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
+    SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
+    compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
     module_requires_parallel_runtime, stack_ledger,
 };
 
@@ -31,7 +31,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier N] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier N|off] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -574,8 +574,9 @@ struct Options {
     scalar_leaf_limit: Option<u32>,
     /// Opt-in ordinary-ABI sequential calls on refused compute offers.
     sequential_refusal: bool,
-    /// Opt-in private recursive component layers, with ordinary call signatures.
-    recursive_frontier: Option<std::num::NonZeroU8>,
+    /// Control over the recursion budget: `None` leaves the `--par` default,
+    /// which asks the runtime at each component entry.
+    recursive_frontier: Option<RecursionBudget>,
     /// Emit the module a compiler with no overlap lowering at all emits.
     ///
     /// This is the sequential reference build, and it exists for one reason:
@@ -642,18 +643,24 @@ impl Options {
                 }
                 "--par-recursive-frontier" => {
                     cursor += 1;
-                    let level = arguments
-                        .get(cursor)
-                        .filter(|value| {
-                            !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
-                        })
-                        .and_then(|value| value.parse::<u8>().ok())
-                        .filter(|value| *value <= 32)
-                        .and_then(std::num::NonZeroU8::new)
-                        .ok_or_else(|| {
-                            "--par-recursive-frontier requires an integer in 1..32".to_owned()
-                        })?;
-                    if recursive_frontier.replace(level).is_some() {
+                    let written = arguments.get(cursor);
+                    let budget = if written.is_some_and(|value| value == "off") {
+                        RecursionBudget::Off
+                    } else {
+                        written
+                            .filter(|value| {
+                                !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                            })
+                            .and_then(|value| value.parse::<u8>().ok())
+                            .filter(|value| *value <= 32)
+                            .and_then(std::num::NonZeroU8::new)
+                            .map(RecursionBudget::Pinned)
+                            .ok_or_else(|| {
+                                "--par-recursive-frontier requires an integer in 1..32 or off"
+                                    .to_owned()
+                            })?
+                    };
+                    if recursive_frontier.replace(budget).is_some() {
                         return Err("--par-recursive-frontier may be written only once".to_owned());
                     }
                 }
@@ -744,9 +751,9 @@ impl Options {
     fn overlap(&self) -> OverlapLowering {
         if self.no_overlap {
             OverlapLowering::Off
-        } else if let Some(maximum_levels) = self.recursive_frontier {
-            OverlapLowering::OnWithRecursiveFrontier {
-                maximum_levels,
+        } else if let Some(budget) = self.recursive_frontier {
+            OverlapLowering::OnWithRecursionBudget {
+                budget,
                 maximum_scalar_leaf_operations: self.scalar_leaf_limit,
                 sequential_refusal: self.sequential_refusal,
             }
@@ -771,9 +778,9 @@ mod tests {
     use std::path::{Component, Path, PathBuf};
 
     use super::{
-        CompilerLimits, Options, OverlapLowering, SourceInput, compile_with_io_notices,
-        compile_with_permission_ledger, io_notice_report, module_requires_parallel_runtime,
-        runtime_units, source_names,
+        CompilerLimits, Options, OverlapLowering, RecursionBudget, SourceInput,
+        compile_with_io_notices, compile_with_permission_ledger, io_notice_report,
+        module_requires_parallel_runtime, runtime_units, source_names,
     };
     use whitefoot::module_requires_completion_runtime;
 
@@ -1076,8 +1083,8 @@ mod tests {
             ])
             .unwrap()
             .overlap(),
-            OverlapLowering::OnWithRecursiveFrontier {
-                maximum_levels: std::num::NonZeroU8::new(8).unwrap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Pinned(std::num::NonZeroU8::new(8).unwrap()),
                 maximum_scalar_leaf_operations: None,
                 sequential_refusal: false,
             }
@@ -1138,16 +1145,34 @@ mod tests {
         .unwrap();
         assert_eq!(
             options.overlap(),
-            OverlapLowering::OnWithRecursiveFrontier {
-                maximum_levels: std::num::NonZeroU8::new(8).unwrap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Pinned(std::num::NonZeroU8::new(8).unwrap()),
                 maximum_scalar_leaf_operations: Some(16),
                 sequential_refusal: true,
             }
         );
-        for value in ["1", "32"] {
+        // Writing nothing is the default, and the default is the runtime's
+        // answer: one mechanism with a pinned or derived starting value.
+        assert_eq!(
+            parse(&["--par", "value.wf"]).unwrap().overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16
+            }
+        );
+        assert_eq!(
+            parse(&["--par", "--par-recursive-frontier", "off", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Off,
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: false,
+            }
+        );
+        for value in ["1", "32", "off"] {
             assert!(parse(&["--par", "--par-recursive-frontier", value, "value.wf"]).is_ok());
         }
-        for value in ["0", "33", "256", "-1", "+1", "", "1.5"] {
+        for value in ["0", "33", "256", "-1", "+1", "", "1.5", "Off", "none"] {
             let error = parse(&["--par", "--par-recursive-frontier", value, "value.wf"])
                 .err()
                 .unwrap();
@@ -1167,6 +1192,15 @@ mod tests {
                 "--par",
                 "--par-recursive-frontier",
                 "8",
+                "--par-recursive-frontier",
+                "8",
+                "value.wf",
+            ],
+            vec!["--par-recursive-frontier", "off", "value.wf"],
+            vec![
+                "--par",
+                "--par-recursive-frontier",
+                "off",
                 "--par-recursive-frontier",
                 "8",
                 "value.wf",

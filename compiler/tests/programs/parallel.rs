@@ -20,8 +20,8 @@
 //! below and hands nothing out at all.
 
 use super::support::{
-    build_program, compile_program, compile_program_with_overlap, compile_programs,
-    corpus_program_files, program_permission_ledger, run_counting_grants,
+    build_program, compile_program, compile_program_with_overlap, compile_program_without_overlap,
+    compile_programs, corpus_program_files, program_permission_ledger, run_counting_grants,
     try_compile_programs_with_overlap,
 };
 use whitefoot::{CompilationFailureKind, module_requires_parallel_runtime};
@@ -232,6 +232,70 @@ fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
             published.stdout, sequential.stdout,
             "WF_WORKERS={spelling} moved a byte of the result"
         );
+    }
+}
+
+/// The recursive corpus program publishes one byte sequence whatever the
+/// recursion budget cuts, and whatever width it was cut for.
+///
+/// `adaptive_quadrature.wf` is the corpus's one ordinary recursive component:
+/// `adaptive` subdivides until its tolerance is met and hands one half of each
+/// subdivision out. Under `--par` that component gets a budget-carrying
+/// family, so the tree it evaluates is cut into sequential subtrees at a depth
+/// the runtime chooses from the pool width — a different depth at one lane
+/// than at four. [PAR-1] fixes every value to the source-order result, so none
+/// of that may move a bit, and the reference here is the `--no-overlap` build,
+/// the lowering that actualizes nothing at all.
+#[test]
+fn the_quadrature_program_publishes_one_byte_sequence_at_every_recursion_budget() {
+    use whitefoot::{CompilerLimits, OverlapLowering, SourceInput, compile_with_overlap};
+
+    let source = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/programs/adaptive_quadrature.wf"
+    ))
+    .expect("the corpus holds the quadrature program");
+    // The command line's own `--par`, scalar-leaf limit and all.
+    let overlapped = compile_with_overlap(
+        &[SourceInput::new("adaptive_quadrature.wf", &source)],
+        CompilerLimits::default(),
+        OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 16,
+        },
+    )
+    .expect("the quadrature program compiles under `--par`");
+    assert!(
+        overlapped.contains("define internal double @wf__par_budget_adaptive(")
+            && overlapped.contains("call i64 @wf__par_recursion_budget()"),
+        "the recursive component must carry a runtime-derived budget family"
+    );
+
+    let sequential = compile_program_without_overlap("adaptive_quadrature.wf");
+    assert!(
+        !module_requires_parallel_runtime(&sequential),
+        "the `--no-overlap` reference must name no part of the runtime"
+    );
+    let reference = build_program(&sequential).run_with_workers(None);
+    assert!(
+        reference.status.success(),
+        "the sequential reference must succeed: {}",
+        String::from_utf8_lossy(&reference.stderr)
+    );
+    assert_eq!(reference.stdout.len(), 64);
+
+    let program = build_program(&overlapped);
+    for workers in ["1", "2", "4"] {
+        let output = program.run_with_workers(Some(workers));
+        assert!(
+            output.status.success(),
+            "WF_WORKERS={workers} must succeed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            output.stdout, reference.stdout,
+            "WF_WORKERS={workers} moved a byte of the integral"
+        );
+        assert!(output.stderr.is_empty(), "WF_WORKERS={workers}");
     }
 }
 

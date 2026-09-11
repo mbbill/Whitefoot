@@ -29,7 +29,7 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use super::emitter::{is_recursive_frontier_symbol, overlapped_clone_symbol};
+use super::emitter::{is_recursion_budget_symbol, overlapped_clone_symbol};
 use super::graph::components;
 
 /// One machine function's frame, as the host compiler reported it.
@@ -239,7 +239,7 @@ fn assign_worlds(frames: &mut [Frame]) {
     let mut overlapped: Vec<usize> = Vec::new();
     let mut sequential: Vec<usize> = Vec::new();
     for position in 0..frames.len() {
-        if is_recursive_frontier_symbol(&frames[position].name) {
+        if is_recursion_budget_symbol(&frames[position].name) {
             overlapped.push(position);
         }
         let Some(original) = overlapped_clone_symbol(&frames[position].name) else {
@@ -508,21 +508,23 @@ _main:                                  ; @main
         assert!(sequential.contains("sequential clone"), "{sequential}");
     }
 
+    /// A budget-carrying variant is the overlapped world's recursive frame,
+    /// and the ledger reports it as one: it reaches itself above the cut, and
+    /// the clone it drops into below the cut reaches itself too. Both cycles
+    /// are real, and the writer's per-level cost is the variant's.
     #[test]
-    fn private_frontiers_are_parallel_frames_without_invented_cycles() {
+    fn budget_variants_are_parallel_frames_with_their_own_cycle() {
         let lines = stack_ledger(
-            "m.ll:wf__par_frontier_1_spine\t48\tstatic\nm.ll:wf__par_seq_spine\t16\tstatic\n",
-            "_wf__par_frontier_1_spine:\n\tbl\t_wf__par_seq_spine\n\tret\n_wf__par_seq_spine:\n\tbl\t_wf__par_seq_spine\n\tret\n",
+            "m.ll:wf__par_budget_spine\t48\tstatic\nm.ll:wf__par_seq_spine\t16\tstatic\n",
+            "_wf__par_budget_spine:\n\tbl\t_wf__par_budget_spine\n\tbl\t_wf__par_seq_spine\n\tret\n_wf__par_seq_spine:\n\tbl\t_wf__par_seq_spine\n\tret\n",
             1024,
             Architecture::Arm64,
         );
-        let frame = line(&lines, "STACK frame     wf__par_frontier_1_spine");
+        let frame = line(&lines, "STACK frame     wf__par_budget_spine");
         assert!(frame.contains("overlapped clone"), "{frame}");
-        assert!(
-            !lines
-                .iter()
-                .any(|line| line.starts_with("STACK cycle") && line.contains("frontier"))
-        );
+        let overlapped = line(&lines, "STACK cycle     wf__par_budget_spine");
+        assert!(overlapped.contains("48 B/level"), "{overlapped}");
+        assert!(overlapped.contains("overlapped clone"), "{overlapped}");
         assert!(line(&lines, "STACK cycle     wf__par_seq_spine").contains("16 B/level"));
     }
 

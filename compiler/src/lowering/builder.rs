@@ -33,14 +33,21 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     let sequential_compute_refusal = matches!(
         overlap,
         OverlapLowering::OnWithSequentialRefusal { .. }
-            | OverlapLowering::OnWithRecursiveFrontier {
+            | OverlapLowering::OnWithRecursionBudget {
                 sequential_refusal: true,
                 ..
             }
     );
-    let recursive_compute_frontier = match overlap {
-        OverlapLowering::OnWithRecursiveFrontier { maximum_levels, .. } => Some(maximum_levels),
-        _ => None,
+    // A lowering that actualizes compute at all carries a recursion budget;
+    // the control form is the only one that says something other than "ask the
+    // runtime". A lowering that actualizes no compute carries none, so a
+    // default or `--no-overlap` build names the budget nowhere.
+    let recursion_budget = match overlap {
+        OverlapLowering::Off | OverlapLowering::Completion => None,
+        OverlapLowering::OnWithRecursionBudget { budget, .. } => Some(budget),
+        OverlapLowering::On
+        | OverlapLowering::OnWithSequentialRefusal { .. }
+        | OverlapLowering::OnWithoutSmallScalarLeaves { .. } => Some(RecursionBudget::default()),
     };
     let scalar_leaf_limit = match overlap {
         OverlapLowering::OnWithoutSmallScalarLeaves { maximum_operations } => {
@@ -49,7 +56,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         OverlapLowering::OnWithSequentialRefusal {
             maximum_scalar_leaf_operations,
         }
-        | OverlapLowering::OnWithRecursiveFrontier {
+        | OverlapLowering::OnWithRecursionBudget {
             maximum_scalar_leaf_operations,
             ..
         } => maximum_scalar_leaf_operations,
@@ -57,7 +64,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     };
     let overlap = if scalar_leaf_limit.is_some()
         || sequential_compute_refusal
-        || recursive_compute_frontier.is_some()
+        || matches!(overlap, OverlapLowering::OnWithRecursionBudget { .. })
     {
         OverlapLowering::On
     } else {
@@ -110,7 +117,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         OverlapLowering::On
         | OverlapLowering::OnWithoutSmallScalarLeaves { .. }
         | OverlapLowering::OnWithSequentialRefusal { .. }
-        | OverlapLowering::OnWithRecursiveFrontier { .. }
+        | OverlapLowering::OnWithRecursionBudget { .. }
         | OverlapLowering::Completion => Some(&checked.data.permission),
         OverlapLowering::Off => None,
     };
@@ -156,7 +163,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         entry,
         actualization,
         sequential_compute_refusal,
-        recursive_compute_frontier,
+        recursion_budget,
     })
 }
 

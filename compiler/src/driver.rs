@@ -599,10 +599,17 @@ fn compile_reporting(
         .collect();
     ledger.extend_from_slice(ir.actualization_ledger());
     emit_llvm(&ir)
-        .map(|module| Reported {
-            module: module.into_string(),
-            ledger,
-            notices,
+        .map(|module| {
+            // The emission's own actualization lines, last: which recursive
+            // components got a budget-carrying family is decided after the
+            // clone sets are known, which is the emitter's work, not lowering's.
+            let mut ledger = ledger;
+            ledger.extend_from_slice(module.actualization_ledger());
+            Reported {
+                module: module.into_string(),
+                ledger,
+                notices,
+            }
         })
         .map_err(|failure: BackendFailure| {
             let (stage, kind) = match failure {
@@ -2060,8 +2067,13 @@ command fn main() -> status: own ExitStatus pure {
     }
 
     /// Actualization is compile-time opt-in, and the judgment is not: the
-    /// ledger of a program full of eligible pairs is the same with the option
-    /// on and off, while only the `--par` module names the runtime.
+    /// judgment lines of a program full of eligible pairs are the same with
+    /// the option on and off, while only the `--par` module names the runtime.
+    ///
+    /// What `--par` adds to the report is what it actualized — which offers it
+    /// kept and which recursive components it gave a budget-carrying family —
+    /// and those lines say so in their own first word. A compilation that
+    /// actualizes nothing has none of them.
     ///
     /// This is what makes the ledger usable on a shipped build. A developer
     /// reading what the compiler decided about a program is reading a property
@@ -2106,7 +2118,21 @@ command fn main() -> status: own ExitStatus pure {{
             compile_with_permission_ledger(&inputs, CompilerLimits::default(), OverlapLowering::On)
                 .expect("the fixture must compile");
 
-        assert_eq!(quiet_ledger, loud_ledger);
+        let (judgment, actualization) = loud_ledger.split_at(quiet_ledger.len());
+        assert_eq!(quiet_ledger, judgment);
+        assert!(
+            actualization
+                .iter()
+                .all(|line| line.starts_with("PAR actualization")
+                    || line.starts_with("PAR frontier")),
+            "only actualization lines may differ between the two lowerings: {actualization:?}"
+        );
+        assert!(
+            actualization
+                .iter()
+                .any(|line| line.contains("budget-carrying clone family")),
+            "the fixture's recursive fold must report the family it got: {actualization:?}"
+        );
         assert!(
             quiet_ledger.iter().any(|line| line.contains("eligible")),
             "the fixture must report an eligible pair: {quiet_ledger:?}"
