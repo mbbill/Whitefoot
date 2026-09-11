@@ -9,6 +9,8 @@ param(
 
     [int]$Warmup = 2,
 
+    [switch]$CompareWorkers,
+
     [switch]$Enforce
 )
 
@@ -42,14 +44,20 @@ $Objects = Join-Path $Out "objects"
 $Clang = (Get-Command clang.exe -ErrorAction Stop).Source
 $Cargo = (Get-Command cargo.exe -ErrorAction Stop).Source
 $Git = (Get-Command git.exe -ErrorAction Stop).Source
-$Workers = [Math]::Min(64, [Environment]::ProcessorCount)
-if ($Workers -lt 2) {
+$LogicalProcessors = [Math]::Min(64, [Environment]::ProcessorCount)
+if ($LogicalProcessors -lt 2) {
     throw "the Windows compute qualification requires at least two logical processors"
 }
-if ($Workers -eq 64) {
+# Keep one logical processor's worth of capacity available to the hosted VM.
+# The affinity mask is unchanged; this does not reserve a physical core.
+$Workers = [Math]::Max(2, $LogicalProcessors - 1)
+if ($CompareWorkers -and $Workers -eq $LogicalProcessors) {
+    throw "the worker comparison requires at least three logical processors"
+}
+if ($LogicalProcessors -eq 64) {
     $AffinityMask = [UInt64]::MaxValue
 } else {
-    $AffinityMask = ([UInt64]1 -shl $Workers) - 1
+    $AffinityMask = ([UInt64]1 -shl $LogicalProcessors) - 1
 }
 $AffinityHex = $AffinityMask.ToString("x", [Globalization.CultureInfo]::InvariantCulture)
 
@@ -424,7 +432,11 @@ $HostLines = @(
     "os: $($Os.Caption) $($Os.Version) build $($Os.BuildNumber)",
     "cpu: $($Cpu.Name)",
     "logical processors visible: $([Environment]::ProcessorCount)",
+    "guest processor cores: $($Cpu.NumberOfCores)",
+    "guest processor logical processors: $($Cpu.NumberOfLogicalProcessors)",
     "workers: $Workers",
+    "worker policy: one fewer than the affinity mask allows, with a minimum of two; no exclusive core reservation",
+    "worker comparison: $CompareWorkers (full mask count versus qualification worker count)",
     "affinity mask: 0x$AffinityHex",
     "compute batches per sampled child: $($ComputeArguments.Count + 1)",
     "memory bytes: $($Os.TotalVisibleMemorySize * 1024)",
@@ -469,18 +481,19 @@ $Variants = @{
 
 $RawPath = Join-Path $Out "raw.tsv"
 $Raw = [IO.StreamWriter]::new($RawPath, $false, [Text.UTF8Encoding]::new($false))
-$Raw.WriteLine("cohort`tattempt`tpair`torder`tvariant`twall_ms`tuser_ms`tkernel_ms")
+$Raw.WriteLine("cohort`tattempt`tpair`torder`tvariant`twall_ms`tuser_ms`tkernel_ms`tworker_limit")
 
 function Invoke-Sample {
     param(
         [Parameter(Mandatory = $true)][string]$Variant,
-        [Parameter(Mandatory = $true)][string]$Label
+        [Parameter(Mandatory = $true)][string]$Label,
+        [int]$WorkerLimit = $Workers
     )
     $configuration = $Variants[$Variant]
     [Environment]::SetEnvironmentVariable("WF_WORKERS", $null, "Process")
     [Environment]::SetEnvironmentVariable("WF_REQUIRE_WINDOWS_IOCP", $null, "Process")
     if ($configuration.Workers) {
-        [Environment]::SetEnvironmentVariable("WF_WORKERS", [string]$Workers, "Process")
+        [Environment]::SetEnvironmentVariable("WF_WORKERS", [string]$WorkerLimit, "Process")
     }
     if ($configuration.RequireIocp) {
         [Environment]::SetEnvironmentVariable("WF_REQUIRE_WINDOWS_IOCP", "1", "Process")
@@ -533,66 +546,84 @@ function Run-CohortAttempt {
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$Reference,
         [Parameter(Mandatory = $true)][string]$Candidate,
-        [Parameter(Mandatory = $true)][int]$Attempt
+        [Parameter(Mandatory = $true)][int]$Attempt,
+        [int[]]$WorkerLimits = @($Workers)
     )
+    # The optional same-host comparison uses the existing two-cohort sample
+    # allowance: fifteen candidates at each worker count, sharing each serial
+    # reference. It adds neither a round nor a retry. Reverse the whole order
+    # on odd rounds so neither candidate always runs first.
+    if ($Variants[$Reference].Workers) {
+        throw "a shared comparison reference must not depend on the worker limit"
+    }
+    $settings = @(@{ Key = "reference"; Variant = $Reference; Workers = $Workers })
+    $ratios = @{}
+    $candidateWalls = @{}
+    foreach ($limit in $WorkerLimits) {
+        $settings += @{ Key = "candidate.$limit"; Variant = $Candidate; Workers = $limit }
+        $ratios[$limit] = [Collections.Generic.List[double]]::new()
+        $candidateWalls[$limit] = [Collections.Generic.List[double]]::new()
+    }
     for ($warm = 0; $warm -lt $Warmup; $warm += 1) {
-        $warmOrder = if (($warm % 2) -eq 0) {
-            @($Reference, $Candidate)
-        } else {
-            @($Candidate, $Reference)
+        $warmOrder = @($settings)
+        if (($warm % 2) -ne 0) {
+            [Array]::Reverse($warmOrder)
         }
-        foreach ($variant in $warmOrder) {
-            [void](Invoke-Sample -Variant $variant -Label "warm.$Name.$warm.$variant")
+        foreach ($setting in $warmOrder) {
+            [void](Invoke-Sample -Variant $setting.Variant -WorkerLimit $setting.Workers `
+                -Label "warm.$Name.$warm.$($setting.Key)")
         }
     }
-    $ratios = [Collections.Generic.List[double]]::new()
     $referenceWalls = [Collections.Generic.List[double]]::new()
-    $candidateWalls = [Collections.Generic.List[double]]::new()
     for ($pair = 0; $pair -lt $Rounds; $pair += 1) {
-        $order = if (($pair % 2) -eq 0) {
-            @($Reference, $Candidate)
-        } else {
-            @($Candidate, $Reference)
+        $order = @($settings)
+        if (($pair % 2) -ne 0) {
+            [Array]::Reverse($order)
         }
         $pairSamples = @{}
-        for ($position = 0; $position -lt 2; $position += 1) {
-            $variant = $order[$position]
-            $sample = Invoke-Sample -Variant $variant `
-                -Label "$Name.$Attempt.$pair.$position.$variant"
-            $pairSamples[$variant] = $sample
+        for ($position = 0; $position -lt $order.Count; $position += 1) {
+            $setting = $order[$position]
+            $sample = Invoke-Sample -Variant $setting.Variant -WorkerLimit $setting.Workers `
+                -Label "$Name.$Attempt.$pair.$position.$($setting.Key)"
+            $pairSamples[$setting.Key] = $sample
             $Raw.WriteLine((
-                "{0}`t{1}`t{2}`t{3}`t{4}`t{5:F3}`t{6:F3}`t{7:F3}" -f
-                $Name, $Attempt, $pair, $position, $variant,
-                $sample.Wall, $sample.User, $sample.Kernel
+                "{0}`t{1}`t{2}`t{3}`t{4}`t{5:F3}`t{6:F3}`t{7:F3}`t{8}" -f
+                $Name, $Attempt, $pair, $position, $setting.Variant,
+                $sample.Wall, $sample.User, $sample.Kernel, $setting.Workers
             ))
             $Raw.Flush()
         }
-        $referenceWall = [double]$pairSamples[$Reference].Wall
-        $candidateWall = [double]$pairSamples[$Candidate].Wall
+        $referenceWall = [double]$pairSamples["reference"].Wall
         $referenceWalls.Add($referenceWall)
-        $candidateWalls.Add($candidateWall)
-        $ratios.Add($candidateWall / $referenceWall)
+        foreach ($limit in $WorkerLimits) {
+            $candidateWall = [double]$pairSamples["candidate.$limit"].Wall
+            $candidateWalls[$limit].Add($candidateWall)
+            $ratios[$limit].Add($candidateWall / $referenceWall)
+        }
     }
-    $ratioValues = [double[]]$ratios.ToArray()
-    $ratioMedian = Median -Values $ratioValues
-    $deviations = [double[]]@($ratioValues | ForEach-Object { [Math]::Abs($_ - $ratioMedian) })
-    $mad = Median -Values $deviations
-    $p10 = Percentile -Values $ratioValues -Fraction 0.10
-    $p90 = Percentile -Values $ratioValues -Fraction 0.90
-    $referenceMedian = Median -Values ([double[]]$referenceWalls.ToArray())
-    $candidateMedian = Median -Values ([double[]]$candidateWalls.ToArray())
-    return [pscustomobject]@{
-        Name = $Name
-        Reference = $Reference
-        Candidate = $Candidate
-        Attempt = $Attempt
-        ReferenceMedian = $referenceMedian
-        CandidateMedian = $candidateMedian
-        Ratio = $ratioMedian
-        MadFraction = $mad / $ratioMedian
-        SpreadFraction = ($p90 - $p10) / $ratioMedian
-        P10 = $p10
-        P90 = $p90
+    foreach ($limit in $WorkerLimits) {
+        $ratioValues = [double[]]$ratios[$limit].ToArray()
+        $ratioMedian = Median -Values $ratioValues
+        $deviations = [double[]]@($ratioValues | ForEach-Object { [Math]::Abs($_ - $ratioMedian) })
+        $mad = Median -Values $deviations
+        $p10 = Percentile -Values $ratioValues -Fraction 0.10
+        $p90 = Percentile -Values $ratioValues -Fraction 0.90
+        $referenceMedian = Median -Values ([double[]]$referenceWalls.ToArray())
+        $candidateMedian = Median -Values ([double[]]$candidateWalls[$limit].ToArray())
+        [pscustomobject]@{
+            Name = $Name
+            Reference = $Reference
+            Candidate = $Candidate
+            Attempt = $Attempt
+            WorkerLimit = $limit
+            ReferenceMedian = $referenceMedian
+            CandidateMedian = $candidateMedian
+            Ratio = $ratioMedian
+            MadFraction = $mad / $ratioMedian
+            SpreadFraction = ($p90 - $p10) / $ratioMedian
+            P10 = $p10
+            P90 = $p90
+        }
     }
 }
 
@@ -615,13 +646,20 @@ function Run-QualifiedCohort {
 try {
     [void](Invoke-Sample -Variant "io.direct" -Label "preflight.io.direct")
     [void](Invoke-Sample -Variant "io.iocp" -Label "preflight.io.iocp")
-    $Results = @(
-        Run-QualifiedCohort -Name "compute" -Reference "compute.seq" -Candidate "compute.par"
-        Run-QualifiedCohort -Name "io-warm" -Reference "io.direct" -Candidate "io.iocp"
-        Run-QualifiedCohort -Name "mixed-iocp" -Reference "mixed.seq" -Candidate "mixed.iocp"
-        Run-QualifiedCohort -Name "mixed-full" -Reference "mixed.iocp" -Candidate "mixed.full"
-        Run-QualifiedCohort -Name "mixed-total" -Reference "mixed.seq" -Candidate "mixed.full"
+    $Cohorts = @(
+        @{ Name = "compute"; Reference = "compute.seq"; Candidate = "compute.par" }
+        @{ Name = "io-warm"; Reference = "io.direct"; Candidate = "io.iocp" }
+        @{ Name = "mixed-iocp"; Reference = "mixed.seq"; Candidate = "mixed.iocp" }
+        @{ Name = "mixed-full"; Reference = "mixed.iocp"; Candidate = "mixed.full" }
+        @{ Name = "mixed-total"; Reference = "mixed.seq"; Candidate = "mixed.full" }
     )
+    $Results = @(foreach ($cohort in $Cohorts) {
+        if ($CompareWorkers) {
+            Run-CohortAttempt @cohort -Attempt 1 -WorkerLimits @($LogicalProcessors, $Workers)
+        } else {
+            Run-QualifiedCohort @cohort
+        }
+    })
 } finally {
     $Raw.Dispose()
     [Environment]::SetEnvironmentVariable("WF_WORKERS", $null, "Process")
@@ -639,13 +677,17 @@ foreach ($line in $HostLines) {
 $Summary.WriteLine((Get-Content -Raw -LiteralPath (Join-Path $Out "mixed-observer.txt")).TrimEnd())
 $Summary.WriteLine('```')
 $Summary.WriteLine()
-$Summary.WriteLine("| cohort | reference median ms | candidate median ms | paired candidate/reference | MAD | p10..p90 | attempt |")
-$Summary.WriteLine("|---|---:|---:|---:|---:|---:|---:|")
+if ($CompareWorkers) {
+    $Summary.WriteLine("The full-worker rows are diagnostic before measurements; only W=$Workers is qualified. Each pair shares its serial reference. IO-only candidates do not use WF_WORKERS; their two rows repeat the unchanged configuration. No extra rounds or retries are added.")
+    $Summary.WriteLine()
+}
+$Summary.WriteLine("| cohort | workers | reference median ms | candidate median ms | paired candidate/reference | MAD | p90-p10 / median | attempt |")
+$Summary.WriteLine("|---|---:|---:|---:|---:|---:|---:|---:|")
 foreach ($result in $Results) {
     $Summary.WriteLine((
-        "| {0} | {1:F3} | {2:F3} | {3:F4} | {4:P2} | {5:F4}..{6:F4} | {7} |" -f
-        $result.Name, $result.ReferenceMedian, $result.CandidateMedian,
-        $result.Ratio, $result.MadFraction, $result.P10, $result.P90,
+        "| {0} | {1} | {2:F3} | {3:F3} | {4:F4} | {5:P2} | {6:P2} | {7} |" -f
+        $result.Name, $result.WorkerLimit, $result.ReferenceMedian, $result.CandidateMedian,
+        $result.Ratio, $result.MadFraction, $result.SpreadFraction,
         $result.Attempt
     ))
 }
@@ -654,7 +696,12 @@ $Summary.Dispose()
 if ($Enforce) {
     $ByName = @{}
     foreach ($result in $Results) {
-        $ByName[$result.Name] = $result
+        if ($result.WorkerLimit -eq $Workers) {
+            if ($result.MadFraction -gt 0.05 -or $result.SpreadFraction -gt 0.10) {
+                throw "$($result.Name) failed stability at W=$Workers"
+            }
+            $ByName[$result.Name] = $result
+        }
     }
     if ($ByName["compute"].Ratio -gt 0.90) {
         throw "native compute pool failed its 0.90 paired-ratio qualification"

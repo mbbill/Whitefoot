@@ -13,6 +13,11 @@ name: io-bench
 
 on:
   workflow_dispatch:
+    inputs:
+      compare_windows_workers:
+        description: Compare full worker count with the qualification count on one Windows VM
+        type: boolean
+        default: false
   push:
     paths:
       - 'compiler/src/backend/completion/**'
@@ -46,6 +51,7 @@ env:
 
 jobs:
   bench-linux:
+    if: ${{ !inputs.compare_windows_workers }}
     name: bench-linux (ubuntu-24.04)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -161,6 +167,7 @@ jobs:
   # not known in advance; a table whose probe refused the label says so on its
   # own label line.
   bench-linux-read:
+    if: ${{ !inputs.compare_windows_workers }}
     name: bench-linux-read (ubuntu-24.04)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -239,6 +246,7 @@ jobs:
             bench-read.txt
 
   bench-macos-read:
+    if: ${{ !inputs.compare_windows_workers }}
     name: bench-macos-read (macos-14)
     runs-on: macos-14
     timeout-minutes: 120
@@ -376,6 +384,7 @@ jobs:
             -Out $out `
             -Rounds 15 `
             -Warmup 2 `
+            -CompareWorkers:([bool]::Parse('${{ inputs.compare_windows_workers || false }}')) `
             -Enforce
 
       - name: Publish the qualification table

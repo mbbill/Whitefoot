@@ -2579,3 +2579,34 @@ to decide for files, where every operation of a program went through one
 thread's submissions; they are the next performance work on this line, in a
 new PR by the owner's decision.
 
+## Windows hosted-worker comparison criterion, 2026-09-11
+
+The current question is measurement stability, without changing runtime code,
+any numerical qualification threshold, the five cohorts, or the number of
+rounds and allowed retries. Run 34549854655 has compute-parallel wall-time
+spreads of 16.73% and 20.51%, against process-CPU spreads of 2.40% and 4.08%.
+Its CPU is an EPYC 7763 with four visible logical processors. Run 34546727283
+instead reports a Xeon 8573C: compute qualifies there, but mixed-total does
+not. CPU model and visible processor count alone do not establish physical
+host topology or prove that unrelated host work caused either failure.
+
+Before selecting a policy, compare the full visible worker count with one
+fewer worker, using the same compiler, executables, affinity mask, normal
+process priority, warm tree, and Windows VM. The default trial is W=3 on a
+four-logical-processor runner; it reserves no exclusive physical core. The
+optional `CompareWorkers` mode uses fifteen alternating rounds with a shared
+serial reference and one candidate at each worker count. Thus each policy
+has fifteen paired ratios, using fewer child runs than the existing maximum
+of two complete attempts. Warmup remains two rounds, and there is no retry in
+comparison mode. The two IO-only cohorts repeat their unchanged candidate.
+Record both raw distributions, guest topology, wall time, and process CPU.
+
+W=3 is selected only if every cohort meets the existing absolute MAD <=5%
+and (p90-p10)/median <=10% limits, every existing performance ratio ceiling
+and exact-output check passes, and the normal qualification job remains
+within its roughly eight-minute envelope including the build. A W=4 failure
+that clears at W=3 while CPU work stays comparable supports sensitivity to
+CPU availability; it does not establish the identity of competing work.
+If the comparison identifies a different cause, stop for owner review.
+Native relative controls and ABOVE_NORMAL priority remain unselected trials;
+an observed failure does not authorize changing the thresholds.

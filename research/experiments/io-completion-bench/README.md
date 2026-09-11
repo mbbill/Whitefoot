@@ -416,6 +416,30 @@ Windows build, CPU, processor mask, memory, power scheme, toolchain, revision,
 and every raw sample ship with the table; a hosted VM is not treated as a
 persistent cross-revision hardware baseline.
 
+The hosted qualification uses one fewer compute worker than the affinity
+mask's logical-processor count, with a minimum of two: W=3 on the four-logical
+runner. The full mask remains available to every child. This leaves scheduler
+capacity for other VM work; it does not reserve an exclusive core or establish
+the physical host's SMT topology. The summary records both the visible count
+and the guest's reported cores/logical processors. Process priority is normal.
+All five cohorts, fifteen pairs, two warmups, the single retry, and every
+numerical stability and performance threshold are unchanged.
+
+For same-head before/after evidence, dispatch `io-bench` with
+`compare_windows_workers=true`, or pass `-CompareWorkers` to
+`windows-bench.ps1`. That diagnostic runs only the Windows job. Each of the
+fifteen rounds shares one sequential reference between full-count and
+reduced-count candidates, reversing all three children on odd rounds. It
+uses the existing allowance of two candidate cohorts, with fewer reference
+children and no retries. The IO-only candidates repeat their unchanged
+configuration because they do not use `WF_WORKERS`. The table prints both
+policies' raw paired MAD/median and (p90-p10)/median; the full-count rows are
+diagnostic and `-Enforce` qualifies the reduced-count rows against the same
+absolute bounds. `raw.tsv` records the policy's `worker_limit`, including
+on the shared reference; it is not a count of threads actually running.
+The [selection criterion](../../investigations/io-model/RESULTS.md#windows-hosted-worker-comparison-criterion-2026-09-11)
+records the open host-contention hypothesis before the comparison.
+
 `linux` builds `linux.Dockerfile` and runs the whole pipeline inside one
 container, because the generated tree must sit on a container-local
 filesystem: measuring a bind mount would measure the host's file sharing
