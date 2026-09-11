@@ -317,6 +317,8 @@ the lines it holds.
 
 ## Reproducing
 
+    make -C research/experiments/io-completion-bench programs-check  # compile every program; the gate's `bench-programs` stage
+
     make -C research/experiments/io-completion-bench verify       # bytes only
     make -C research/experiments/io-completion-bench bench        # macOS table
     make -C research/experiments/io-completion-bench bench-pipe
