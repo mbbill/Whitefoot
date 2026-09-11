@@ -59,7 +59,7 @@ BEGIN {
     # The A/B twin's presence is read off the stream and nowhere else: the
     # Makefile renames the twin's own `wf` to `wf-b` on its way into raw.tsv,
     # so a table that has one says so in its rows. It changes what the header
-    # lines below say about the two control variables, because with a twin the
+    # lines below say about the three control variables, because with a twin the
     # controls built `wf-b` and `wf` is still the plain program.
     if (h_form == "wf-b") has_twin = 1
     if (h_calls != calls + 0) bad("header calls=" h_calls " is not " calls)
@@ -169,11 +169,21 @@ END {
         if (has_twin) printf "WF runtime control flags=%s\n      (appended to the compile of the `wf-b` TWIN's Whitefoot runtime only:\n      `wf` above is still the runtime this tree ships. A table with a wf-b row\n      is an A/B instrument and must not be recorded as a plain table -- see\n      README)\n", runtimecontrol
         else printf "WF runtime control flags=%s\n      (an A/B control appended to the compile of the Whitefoot runtime: this\n      table is NOT the runtime this tree ships and must not be recorded as one\n      -- see README)\n", runtimecontrol
     }
+    # The third control: the same disclosure for the flags the twin's Whitefoot
+    # side was COMPILED at, as against the constants it was compiled with.
+    # Present only when the twin's module object and runtime units were built at
+    # something other than the flags whitefootc itself passes clang, absent in
+    # the ordinary case, and recorded in manifest.txt either way as
+    # WF_MODULE_CONTROL_FLAGS.
+    if (modulecontrol) {
+        if (has_twin) printf "WF module control flags=%s\n      (appended to the compile of the `wf-b` TWIN's emitted module object and\n      its Whitefoot runtime only: `wf` above is still built at the WF flags\n      above. A table with a wf-b row is an A/B instrument and must not be\n      recorded as a plain table -- see README)\n", modulecontrol
+        else printf "WF module control flags=%s\n      (an A/B control appended to the compile of the Whitefoot module and\n      runtime: this table is NOT built at the flags whitefootc passes clang and\n      must not be recorded as one -- see README)\n", modulecontrol
+    }
     # WF_AB=1 asks for the twin with no control set at all, which is the
     # instrument's own null check: two images built from one tree that differ
     # in nothing, so every `A/B` line below should read near 1.000 with mixed
     # `lower` counts. Neither line above would print, so this one does.
-    if (has_twin && !parcontrol && !runtimecontrol) printf "WF A/B twin: `wf-b` is built from the same sources as `wf` with NO control\n      flag set (WF_AB=1), so the A/B lines below read this host's own\n      within-pass spread over identical behaviour -- see README\n"
+    if (has_twin && !parcontrol && !runtimecontrol && !modulecontrol) printf "WF A/B twin: `wf-b` is built from the same sources as `wf` with NO control\n      flag set (WF_AB=1), so the A/B lines below read this host's own\n      within-pass spread over identical behaviour -- see README\n"
     if (pins) printf "pins: %s\n", pins
     for (i = 1; i <= kernels; i++) printf "sizes: %-12s %s\n", kernel_at[i], workload[kernel_at[i]]
     printf "passes=%d calls=%d\n\n", passes + 0, calls + 0

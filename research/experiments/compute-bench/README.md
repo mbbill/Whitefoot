@@ -1,7 +1,7 @@
 <!-- Serves compute-bench: the reader's entry point. It states the one question
      the bundle answers, how to run it, how to read the table it prints, what
-     each reference's grain policy is and what it is not, the two flag sets and
-     the asymmetry between them, the one compiled-Whitefoot standing the old
+     each reference's grain policy is and what it is not, the three A/B
+     handles, the two flag sets and the asymmetry between them, the one compiled-Whitefoot standing the old
      research bundle left behind, and where a table that matters is recorded.
      Nothing here is a gate and nothing here decides a result. -->
 
@@ -48,7 +48,7 @@ one. It is the sequential **control**, not a reference: it never enters the
 ratio column. It answers "did `--par` buy anything at all", which is a different
 question from "is `--par` the fastest".
 
-### The two A/B handles, and why neither appears in a recorded table
+### The three A/B handles, and why none of them appears in a recorded table
 
 `WF_PAR_CONTROL_FLAGS` is appended to the `--par` emission of the **twin image**
 described in the next subsection, and is **empty by
@@ -101,13 +101,41 @@ rule, so the `note` column's chunk count and the two split verify fixtures
 follow the image they describe — under a changed work unit and under a changed
 oversubscription cap alike.
 
+`WF_MODULE_CONTROL_FLAGS` is the third handle, and the one that moves how the
+Whitefoot side of the twin is **compiled** rather than what it says. It is
+appended to the twin's compile of the emitted `--par` module object and of its
+four Whitefoot runtime units — both sides of the link that `WF_FLAGS` owns — so
+one tree can answer "what would this code generation flag be worth on exactly
+the translation units `whitefootc` builds":
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/aligned \
+     WF_MODULE_CONTROL_FLAGS='-falign-functions=64 -falign-loops=32'
+```
+
+It is **empty by default**, kept in its own stamp file that the twin's module
+object and its four runtime objects depend on — so setting it or clearing it
+recompiles and relinks the twin rather than re-timing the one the last run left
+— recorded in `manifest.txt` on every run, and announced in the table header as
+a `WF module control flags=` line when it is not empty. **A table recorded in
+`RESULTS.md` is always taken with all three variables empty**, for the same
+reason as the two above: the `wf` row of a recorded table is the program plain
+`--par` produces, built the way `whitefootc` builds it. It reaches no reference,
+no oracle, not the harness and not the shared `--no-overlap` control object,
+because none of those is the Whitefoot side of the link.
+
+Its first use is in the record: the `wf` row is built with no alignment flag
+while every reference gets `-falign-loops=32` (the asymmetry paragraph below),
+and code placement is this bundle's largest confound, so "what does alignment do
+to the Whitefoot rows" is an A/B this handle asks directly.
+
 ### The A/B twin: what the controls actually build, and how to read it
 
-Neither control moves the plain image. Setting either one — or setting `WF_AB=1`
-with neither — builds a **second image per kernel**, `$(BUILD)/<kernel>-b`, from
+No control moves the plain image. Setting any of the three — or setting
+`WF_AB=1` with none of them — builds a **second image per kernel**, `$(BUILD)/<kernel>-b`, from
 the same sources with the controls applied, and times it in the same passes as
-the form **`wf-b`**. `$(BUILD)/<kernel>` is always built with both controls
-empty.
+the form **`wf-b`**. `$(BUILD)/<kernel>` is always built with all three
+controls empty.
 
 **Why a twin and not a second run.** On a host whose run-to-run spread is wider
 than the effect being looked for, two separate `compare` runs cannot select
@@ -166,12 +194,12 @@ is not a thing this tree produces.
 
 **A recorded table never contains a `wf-b` row.** The twin is an instrument, not
 a result: the tables copied into `RESULTS.md` as the record of what this tree
-produces are taken with both controls empty and `WF_AB` unset, which builds no
+produces are taken with all three controls empty and `WF_AB` unset, which builds no
 twin, runs no extra process and leaves the bundle exactly as it was. An A/B run
 is recorded as the *arms of an experiment*, with the control flags in its
 heading and the `A/B` lines quoted in its reading. The hosted workflow sets
-neither variable and therefore never builds a twin, and `programs-check` — the
-one target the repository's `make check` runs — reads none of the three.
+none of the three and therefore never builds a twin, and `programs-check` — the
+one target the repository's `make check` runs — reads none of the four.
 
 Two link-time assertions make a `wf` row a `wf` row. The emitted module carries
 **weak no-op stubs for every `wf__par_*` symbol**, so a link that loses the
@@ -248,8 +276,8 @@ which also carries the reproduce recipe and the two non-pooling rules.
 mask and cgroup state (recorded, never narrowed, and marked `unqualified` when
 a file is absent rather than reported as "no limit"), the compiler revision,
 every toolchain version — the whole of `rustc -vV`, host triple, commit and
-LLVM version included, one `rustc: ` line each — the exact flag strings,
-`WF_PAR_CONTROL_FLAGS` whether it was set or empty, the
+LLVM version included, one `rustc: ` line each — the exact flag strings, all
+three A/B control variables whether they were set or empty, the
 three dependency pins, `BENCH_ARCH`, and the SHA-256 of every kernel image
 and every emitted `.ll` before and after the run. If any of those hashes moved
 during the run the table is not a measurement of one build and `compare` says

@@ -128,6 +128,40 @@ $(RUNTIME_CONTROL): FORCE
 	@cmp -s $@.new $@ || mv -f $@.new $@
 	@rm -f $@.new
 
+# The third handle, and the one that moves how the B TWIN's Whitefoot side is
+# COMPILED rather than what it says. Whatever is set here is appended to the
+# twin's compile of the emitted `--par` module object AND of its four Whitefoot
+# runtime units -- never to the plain image's, which are compiled with
+# $(WF_FLAGS) alone whatever this is set to -- so a run can measure what a code
+# generation flag is worth on exactly the translation units whitefootc itself
+# builds, against the shipped flag set in the same passes: for example
+# `make compare WF_MODULE_CONTROL_FLAGS='-falign-functions=64 -falign-loops=32'`,
+# which gives the twin's WF side the loop alignment the references already get
+# and the WF side does not (see the asymmetry paragraph in README.md). It
+# reaches no reference, no oracle, not the harness and not the `--no-overlap`
+# control object, because none of those is the Whitefoot side of the link, and
+# the seq object is shared with the plain image.
+#
+# It is EMPTY BY DEFAULT and must stay empty for any table that is recorded,
+# exactly as the two above: the `wf` row of a recorded table is the program
+# plain `--par` produces built the way whitefootc builds it, and a WF side
+# compiled at flags no Whitefoot program gets would be measuring a program no
+# Whitefoot user gets. It is written into manifest.txt either way and announced
+# in the table header when it is not empty.
+WF_MODULE_CONTROL_FLAGS ?=
+
+# Kept in a stamp for the same reason the other two are: the value is part of
+# what compiled an object, so the twin's module object and its four runtime
+# objects depend on it and a changed value recompiles and relinks the twin
+# instead of silently re-timing the one the last run left. The plain image's
+# objects never read it at all.
+MODULE_CONTROL := $(BUILD)/module-control-flags.txt
+$(MODULE_CONTROL): FORCE
+	@mkdir -p $(BUILD)
+	@printf '%s\n' '$(WF_MODULE_CONTROL_FLAGS)' > $@.new
+	@cmp -s $@.new $@ || mv -f $@.new $@
+	@rm -f $@.new
+
 # ---------------------------------------------------------------- the twin --
 # The A/B instrument. Either control above answers "what would this be worth
 # here", and on a host whose run-to-run spread is wider than the effect being
@@ -139,23 +173,24 @@ $(RUNTIME_CONTROL): FORCE
 # paired ratios rather than a quotient of two medians. What was missing was a
 # second Whitefoot image in those same passes.
 #
-# So when either control is set -- or when WF_AB=1 asks for the twin with no
+# So when any of the three controls is set -- or when WF_AB=1 asks for the twin
+# with no
 # control at all, which is the instrument's own null check -- every kernel gets
 # a SECOND image, `$(BUILD)/<kernel>-b`, built from the same sources with the
 # controls applied, timed as the form `wf-b` in the same alternating per-pass
 # order as every other form, and reported by reduce.awk with its own
 # ratio/cpu_r/lower plus one `A/B wf-b/wf` line per block. The plain image is
-# always built with both controls empty, and every `-b` module and object
+# always built with all three controls empty, and every `-b` module and object
 # carries its own name (`<kernel>-par-b.ll`, `sched_core-b.o`, ...), so nothing
 # plain is ever rebuilt with a control flag and the two images differ in
 # exactly what the controls say.
 #
 # A table with a `wf-b` row is an A/B instrument and is NEVER recorded as a
-# plain table; the hosted workflow sets neither variable and therefore never
-# builds a twin. Leaving both controls empty leaves the bundle exactly as it
+# plain table; the hosted workflow sets none of the three variables and
+# therefore never builds a twin. Leaving all three empty leaves the bundle as it
 # was: one image per kernel, one `wf` row, no extra build and no extra process.
 WF_AB ?=
-AB := $(if $(strip $(WF_PAR_CONTROL_FLAGS)$(WF_RUNTIME_CONTROL_FLAGS)$(WF_AB)),1,)
+AB := $(if $(strip $(WF_PAR_CONTROL_FLAGS)$(WF_RUNTIME_CONTROL_FLAGS)$(WF_MODULE_CONTROL_FLAGS)$(WF_AB)),1,)
 
 KERNELS ?= mandelbrot quadrature records fir
 PASSES ?= 5
@@ -170,10 +205,11 @@ JOBS    ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 PARLAY_OBJ := $(if $(wildcard $(DEPS)/parlay-unavailable.txt),,$(BUILD)/backend_parlay.o)
 
 # The harness, the references and the oracles are one build, shared by the
-# plain image and the twin: neither control reaches them, so a second copy
+# plain image and the twin: no control reaches them, so a second copy
 # would be the same bytes under another name and would move code placement,
-# which is this bundle's largest confound. Only the Whitefoot runtime units
-# are doubled, because only they read WF_RUNTIME_CONTROL_FLAGS.
+# which is this bundle's largest confound. Only the Whitefoot side of the link
+# is doubled -- the emitted module object and the four runtime units -- because
+# only those read WF_RUNTIME_CONTROL_FLAGS or WF_MODULE_CONTROL_FLAGS.
 SHARED_OBJS := $(BUILD)/harness.o $(BUILD)/backend_serial.o $(BUILD)/backend_static.o \
                $(BUILD)/backend_tbb.o $(PARLAY_OBJ) $(BUILD)/backend_rayon.o
 RUNTIME_OBJS   := $(BUILD)/floor.o $(BUILD)/sched_core.o $(BUILD)/sched_prim_host.o \
@@ -303,8 +339,8 @@ $(foreach k,$(KERNELS),$(eval $(call kernel-modules,$(k))))
 # --------------------------------------------------------------- objects ----
 $(BUILD)/%-par.o: $(BUILD)/%-par.ll
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/%-par-b.o: $(BUILD)/%-par-b.ll
-	$(CC) $(WF_FLAGS) -c $< -o $@
+$(BUILD)/%-par-b.o: $(BUILD)/%-par-b.ll $(MODULE_CONTROL)
+	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) -c $< -o $@
 $(BUILD)/%-seq.o: $(BUILD)/%-seq.ll
 	$(CC) $(WF_FLAGS) -c $< -o $@
 
@@ -323,15 +359,15 @@ $(BUILD)/sched_entry.o: $(SCHED)/entry.c
 
 # The twin's four, the same sources with the runtime control appended and the
 # stamp that re-compiles them when its value changes.
-$(BUILD)/floor-b.o: $(FLOOR) $(RUNTIME_CONTROL)
+$(BUILD)/floor-b.o: $(FLOOR) $(RUNTIME_CONTROL) $(MODULE_CONTROL)
 	@mkdir -p $(BUILD)
-	$(CC) $(WF_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_core-b.o: $(SCHED)/core.c $(RUNTIME_CONTROL)
-	$(CC) $(WF_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_prim_host-b.o: $(SCHED)/prim_host.c $(RUNTIME_CONTROL)
-	$(CC) $(WF_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_entry-b.o: $(SCHED)/entry.c $(RUNTIME_CONTROL)
-	$(CC) $(WF_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/sched_core-b.o: $(SCHED)/core.c $(RUNTIME_CONTROL) $(MODULE_CONTROL)
+	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/sched_prim_host-b.o: $(SCHED)/prim_host.c $(RUNTIME_CONTROL) $(MODULE_CONTROL)
+	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/sched_entry-b.o: $(SCHED)/entry.c $(RUNTIME_CONTROL) $(MODULE_CONTROL)
+	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
 
 $(BUILD)/%_bench.o: %_bench.c harness.h backend.h $(BUILD)/%_split.h
 	$(CC) $(CFLAGS) -I$(BUILD) -c $< -o $@
@@ -445,7 +481,7 @@ $(foreach k,$(KERNELS),$(eval $(call kernel-image-b,$(k))))
 build: compiler deps
 	$(MAKE) images
 # The twin images are in this list only when a control is set or WF_AB=1 asks
-# for them; with both controls empty this is the plain list it always was.
+# for them; with all three controls empty this is the plain list it always was.
 # `compare` consults the same $(AB) below rather than looking for the file, so
 # a stale `-b` image left by an earlier A/B run is neither rebuilt nor timed.
 images: $(addprefix $(BUILD)/,$(KERNELS)) \
@@ -550,6 +586,7 @@ compare: build
 	  echo "WF_FLAGS: $(WF_FLAGS)"; \
 	  echo "WF_PAR_CONTROL_FLAGS: $(WF_PAR_CONTROL_FLAGS)"; \
 	  echo "WF_RUNTIME_CONTROL_FLAGS: $(WF_RUNTIME_CONTROL_FLAGS)"; \
+	  echo "WF_MODULE_CONTROL_FLAGS: $(WF_MODULE_CONTROL_FLAGS)"; \
 	  echo "WF_AB_TWIN: $(if $(AB),yes (the wf-b row; the wf row is plain),no)"; \
 	  echo "RFLAGS: $(RFLAGS)"; \
 	  echo "BENCH_ARCH: $(BENCH_ARCH)"; \
@@ -611,6 +648,7 @@ compare: build
 	    -v refflags="$(CFLAGS)" -v wfflags="$(WF_FLAGS)" \
 	    -v parcontrol="$(WF_PAR_CONTROL_FLAGS)" \
 	    -v runtimecontrol="$(WF_RUNTIME_CONTROL_FLAGS)" \
+	    -v modulecontrol="$(WF_MODULE_CONTROL_FLAGS)" \
 	    -v pins="oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0" \
 	    $(RESULTS)/raw.tsv | tee $(RESULTS)/table.txt
 	@set -e; for k in $(KERNELS); do $(SHA256) $(BUILD)/$$k $(BUILD)/$$k-par.ll $(BUILD)/$$k-seq.ll; \
