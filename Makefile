@@ -138,6 +138,7 @@ research-tests:
 # fails here instead of emptying a table on the bench runner.
 bench-programs:
 	$(MAKE) -C research/experiments/io-completion-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
+	$(MAKE) -C research/experiments/compute-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 
 # Enumerate every declared case through the native adapter. Every non-pending
 # case reaches an actual compiler verdict; run cases are linked and
