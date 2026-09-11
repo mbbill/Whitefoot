@@ -19,7 +19,11 @@ container's headline ratio does not reproduce, the batch-0086 one for absolute
 values on the many-files workload, and the batch-0084 one for the findings it
 established; everything before that date was a C-level measurement of the
 completion core alone and is retained below, labelled, because it still
-describes what it measured.
+describes what it measured. The sixty-eight scheduler experiments that followed
+the batch-0108 section, their numbers and which of them survived the runtime
+they measured, are digested in
+[`SCHEDULER-FINDINGS.md`](SCHEDULER-FINDINGS.md); its first entry retracts a
+prediction this file made and marks it superseded in place below.
 
 The program-level sections are the ones that answer the design's own question.
 Reproduce them with:
@@ -2578,6 +2582,28 @@ and the steal from idleness are scheduler structure the design did not have
 to decide for files, where every operation of a program went through one
 thread's submissions; they are the next performance work on this line, in a
 new PR by the owner's decision.
+
+That sentence is retracted here, together with the identically worded
+prediction that closes the `perf` paragraph above it. The design they name was
+built and measured, and it did not pay. The first experiment of the scheduler
+series linked the same emitted program against three runtimes — one global
+ready queue, one queue per worker preferring the worker that parked the stack,
+and one preferring the worker that enqueues it — holding the shared mutex, the
+wake epoch, the ring and the stack representation fixed. At four connections
+the two preferences give paired throughput ratios of 0.851 and 0.809 against
+the global queue; at 64 and 1024 they give 0.991/0.995 and 1.000/1.000. The
+mechanism did move: cross-worker resumes at 64 connections fall from 55.3
+percent under the global queue to 38.1 under parking-worker preference.
+Locality moved and throughput did not follow. The same measurement corrects
+the inference above that placing work on the reaping worker's queue keeps the
+connection on that worker: a different worker can reap the next completion and
+another can steal the ready stack immediately. Server CPU at four connections
+rose from 20.375 to 25.750 and 24.375 microseconds a trip. The profile is not
+wrong about where the time goes; the repair it suggested is refuted. That
+measurement, the sixty-seven experiments that followed it, and the reason each
+one is or is not still worth acting on are recorded in
+[`SCHEDULER-FINDINGS.md`](SCHEDULER-FINDINGS.md); the runtime all of them
+measured was itself retired on 2026-09-10.
 
 ## Windows hosted-worker comparison criterion, 2026-09-11
 
