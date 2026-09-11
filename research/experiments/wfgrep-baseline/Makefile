@@ -14,7 +14,7 @@
 # evidence of the frozen run.
 
 ROOT := $(abspath ../../..)
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 WORK_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-wfgrep-baseline
 BUILD := $(WORK_ROOT)/build
 TMP := $(WORK_ROOT)/tmp
