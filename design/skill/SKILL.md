@@ -23,17 +23,13 @@ Three parts:
 
 ## Node format
 
-See `templates/node.md`. A node has a title, one `Scope:` line directly
-under it, one or more `Decision:` lines, and an optional `Rejected:` list.
+See `templates/node.md`. A node has a title, one or more `Decision:`
+lines, and an optional `Rejected:` list.
 Nothing else: no dates, no facts, no measurements, no task progress. A
 measurement belongs in its results record; a node may cite it in its reason.
 Every field is one line, every field is separated from the next by a blank
 line so it renders as its own paragraph, and a list follows its header line
 directly. The lint rejects anything outside the template.
-
-`Scope:` comes first because it says what the node governs: which code and
-which concepts a reviewer must look at beyond the diff when the node
-changes.
 
 A decision line states the choice, its reason after `because`, and the
 alternative after `instead of`. At least one of the two must be present. A
@@ -113,7 +109,7 @@ question. Their findings are review input, never acceptance authority.
 ## Lint
 
 `lint.py` checks form, not meaning, and is the one check that cannot be
-skipped: run it from the gate. It verifies node structure and field order,
+skipped: run it from the gate. It verifies node structure,
 blank-line separation, decision and rejection markers, name uniqueness,
 ASCII-only text, absence of history sections, log-entry structure, and,
 with `--base <ref>`, that every tree change since `<ref>` is listed in a

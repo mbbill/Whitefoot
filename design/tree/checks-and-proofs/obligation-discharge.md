@@ -1,7 +1,5 @@
 # Obligation discharge
 
-Scope: every proof-required partial operation and every contract, invariant, and certificate
-
 Decision: Acceptance of a partial operation is defined by the ENT rules alone, covering fact sources, closure, kills, joins, and exact domain obligations, because one authority keeps optimizer results and runtime origin from becoming independent sources of proof, instead of optimizer-derived or runtime-derived facts.
 
 Decision: Requirements are proved at callers, postconditions at every selected return, and summaries are published only in call-graph component order, because a recursive component must not bootstrap itself from a summary it has not yet earned, instead of assuming a callee's postcondition while checking its component.

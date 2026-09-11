@@ -20,7 +20,7 @@ LOG_REQUIRED = ("Nodes:", "Summary:")
 FORBIDDEN_HEADINGS = ("## Facts", "## Moves")
 DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
 REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
-FIELDS = ("Decision:", "Scope:", "Rejected:")
+FIELDS = ("Decision:", "Rejected:")
 
 
 class Lint:
@@ -87,7 +87,6 @@ class Lint:
         if not content or not content[0].startswith("# "):
             self.err(where, "first line must be a '# ' title")
         decisions = 0
-        scopes = []
         section = None
         rejected = []
         prev = "start"  # start | title | blank | field | item
@@ -106,8 +105,6 @@ class Lint:
             if is_field:
                 if prev not in ("blank", "title"):
                     self.err(loc, "a field must be separated from the previous line by a blank line")
-                if not seen_field and not line.startswith("Scope:"):
-                    self.err(loc, "Scope: must be the first field after the title")
                 seen_field = True
                 prev = "field"
             elif is_item:
@@ -121,10 +118,6 @@ class Lint:
                 low = line.lower()
                 if not any(marker in low for marker in DECISION_MARKERS):
                     self.err(loc, "decision has neither 'because' nor 'instead of'")
-                section = None
-                continue
-            if line.startswith("Scope:"):
-                scopes.append(line[len("Scope:"):].strip())
                 section = None
                 continue
             if line.startswith("Rejected:"):
@@ -145,8 +138,6 @@ class Lint:
             self.err(loc, "line outside the node template")
         if decisions == 0:
             self.err(where, "node has no Decision: line")
-        if len(scopes) != 1:
-            self.err(where, "node needs exactly one Scope: line")
         self.decisions += decisions
         self.rejected += len(rejected)
 

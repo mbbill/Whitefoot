@@ -1,7 +1,5 @@
 # Requires and entry contract
 
-Scope: the contract block of every non-entry function
-
 Decision: A non-entry function may carry one contract block after its signature, compiled away entirely, in which shared define abbreviations come first and any number of requires and ensures clauses follow, each proved on its own, and a present block holds at least one clause, because the earlier separate requires and ensures blocks were spelled like executable code so a reader could not see they were erased, an abbreviation needed by both had to be written twice, and ensures had no name for the function's result, instead of a single final requirement block ending in one Boolean check.
 
 Decision: A define is a proof-only abbreviation that is substituted textually into every clause using it and never runs, stores a value, or takes a snapshot, because the same abbreviation is read at two different moments, before the call for requires and at the callee's return for ensures, and no single stored value could be right at both, instead of evaluating it once into a hidden slot.

@@ -1,7 +1,5 @@
 # Checks and proofs
 
-Scope: the proof system and every source proof form
-
 Decision: Required partial-operation domains are established only by the specification's deterministic proof system, whose facts come from admitted types and declarations, selected control-flow edges, verified contracts, and checked invariants, because a writer conclusion taken on trust is an unauditable escape, instead of trusting writer assertions.
 
 Decision: Automatic derivation is a fixed set of terminating families that run to completion, and a harder proof is a finite explicit certificate the checker verifies without rediscovering it, because acceptance must never depend on solver state, a timeout, machine speed, or a work budget, instead of SMT-backed acceptance.

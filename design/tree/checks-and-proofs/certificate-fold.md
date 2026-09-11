@@ -1,7 +1,5 @@
 # Certificate fold
 
-Scope: folding of explicit certificate steps into the affine residual
-
 Decision: A written certificate may scale a premise by an unsigned value or a decimal, its accumulated polynomial has degree at most two, each nonlinear monomial folds to the value image of an admitted exact multiplication matched by operand and multiplicity declaration, and a surviving nonlinear monomial rejects, because a local's image is transparent so matching by image failed on every derived stride and accepted only a stride copied straight from a parameter, instead of folding by operand image.
 
 Decision: Each demanded binding contributes one opaque handle that exists only between the fold and the residual and is replaced by the binding image before the residual is proved, and only certificate folding uses handles, because the multiplication's domain site needs the transparent interval while the fold site needs the identity and they are different sites, instead of one global representation for the binding.

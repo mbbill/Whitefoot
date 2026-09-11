@@ -16,7 +16,7 @@ need the record to be understood.
 
 G2. Consistency scan. The tree is assumed consistent before the change;
 only the change is checked against it. For each added or changed node, read
-its ancestor chain and the nodes in the same scope, then extend to whatever
+its ancestor chain and its neighbors under the same parent, then extend to whatever
 else looks relevant. When the changed node is high in the tree or governs a
 whole concept, read that whole subtree. Report the nodes read and every
 conflict, narrowing, or broken dependency found, naming both nodes.

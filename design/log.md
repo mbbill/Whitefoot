@@ -3,6 +3,11 @@
 Newest first. One entry per approved tree change. Format:
 `skill/templates/log-entry.md`.
 
+## 2026-09-11 Remove the Scope field
+
+Nodes: ~tree, ~tree/checks-and-proofs, ~tree/checks-and-proofs/obligation-discharge, ~tree/checks-and-proofs/obligation-discharge/goal-decomposition, ~tree/checks-and-proofs/obligation-discharge/loop-fact-retention, ~tree/checks-and-proofs/obligation-discharge/writer-trap-surface, ~tree/checks-and-proofs/certificate-fold, ~tree/checks-and-proofs/requires-entry-contract, ~tree/checks-and-proofs/requires-entry-contract/requirement-enforcement
+Summary: The owner removed `Scope:` under a general rule: a field with no rule that maintains it will rot and should not exist. Scope restated what the node's title and position already imply and nothing updated it. The line was deleted from every node, the lint no longer requires or orders it, and the procedure and template no longer mention it. No decision content changed.
+
 ## 2026-09-11 Write decisions for a reader who has not seen the record
 
 Nodes: ~tree/checks-and-proofs/requires-entry-contract
