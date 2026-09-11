@@ -566,6 +566,17 @@ compare: build
 	@set -e; { \
 	  echo "uname: $$(uname -a)"; \
 	  echo "cpus_online: $$(getconf _NPROCESSORS_ONLN)"; \
+	  if [ -d /sys/devices/system/cpu/cpu0/topology ]; then \
+	     for d in /sys/devices/system/cpu/cpu[0-9]*/topology; do \
+	       c=$${d%/topology}; c=$${c##*/}; \
+	       echo "topology: $$c core=$$(cat $$d/core_id 2>/dev/null) package=$$(cat $$d/physical_package_id 2>/dev/null) siblings=$$(cat $$d/thread_siblings_list 2>/dev/null)"; \
+	     done; \
+	  elif [ "$$(uname -s)" = Darwin ] && command -v sysctl > /dev/null 2>&1; then \
+	     echo "topology: physicalcpu=$$(sysctl -n hw.physicalcpu) logicalcpu=$$(sysctl -n hw.logicalcpu)"; \
+	  else echo "topology: unqualified (sysfs topology absent)"; fi; \
+	  if [ -r /sys/devices/system/cpu/smt/active ]; then \
+	     echo "smt: $$(cat /sys/devices/system/cpu/smt/active)"; \
+	  else echo "smt: unqualified (file absent)"; fi; \
 	  if command -v taskset > /dev/null 2>&1; then echo "mask: $$(taskset -pc $$$$ 2>&1)"; \
 	  else echo "mask: unqualified (no taskset on this host)"; fi; \
 	  if [ -r /sys/fs/cgroup/cpu.max ]; then echo "cgroup_cpu_max: $$(cat /sys/fs/cgroup/cpu.max)"; \

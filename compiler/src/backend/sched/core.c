@@ -28,10 +28,22 @@
  * (research/investigations/compute-runtime/RESULTS.md, the spin bound sized to
  * a measured park-and-wake). Re-measure both numbers before moving this: a
  * change that makes a round cheaper shortens this window by the same factor and
- * is not a separate variable. */
+ * is not a separate variable. The guard around the value is what lets the
+ * compute scoreboard build its A/B twin at a different bound through
+ * WF_RUNTIME_CONTROL_FLAGS and measure it against the shipped one inside one
+ * set of passes, instead of editing this file per run (see the twin's section
+ * in research/experiments/compute-bench/README.md). */
+#ifndef WF_PAR_SPIN_ROUNDS
 #define WF_PAR_SPIN_ROUNDS 1024
-/* Yields are cheap next to a park and the sweep gave no reason to move them. */
+#endif
+/* Yields are cheap next to a park and the sweep gave no reason to move them.
+ * Guarded for the same reason as the spin bound above: the compute
+ * scoreboard's twin can be built at another count through
+ * WF_RUNTIME_CONTROL_FLAGS and measured against the shipped one without
+ * editing this file. */
+#ifndef WF_PAR_YIELD_ROUNDS
 #define WF_PAR_YIELD_ROUNDS 16
+#endif
 /* How many chunks an independent map may be split into, as a multiple of the
  * lane count. `wf__par_split_budget` below combines this with the work term --
  * span / ceil(work unit / weight), the floor on chunk size entry.c owns -- by
