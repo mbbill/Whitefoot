@@ -9,8 +9,10 @@ never accepts or rejects a program.
 G1. Decision test. For each added or changed node: does every `Decision:`
 line name a choice and either a reason or a refused alternative, and does
 every `Rejected:` line give a reason that would actually rule the
-alternative out? Report lines that describe without deciding and refusals
-whose reason is a restatement.
+alternative out? Can a reader who has not seen the source record understand
+the choice and the reason from the line alone? Report lines that describe
+without deciding, refusals whose reason is a restatement, and lines that
+need the record to be understood.
 
 G2. Scope test. For each node whose scope begins with `all `: is every
 instance the concept currently has listed with a status? Report instances

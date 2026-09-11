@@ -3,6 +3,13 @@
 Newest first. One entry per approved tree change. Format:
 `skill/templates/log-entry.md`.
 
+## 2026-09-11 Write decisions for a reader who has not seen the record
+
+Nodes: ~tree/checks-and-proofs/requires-entry-contract
+Origin: discussion
+Summary: The owner could not read the contract-block decision: its reason was compressed from the memory record's terms of art (pseudo-runtime, erased status, unnamed result convention, alpha-expanded, symbolic whole-result datum, narrow integer relation carrier). All five decisions and both rejected lines of the node were rewritten in plain words with no change in content. The owner made this a standing rule: a decision is written for a reader who has not seen the record it came from, and a reader who must open the source to understand the reason has found a defect in the node. The rule was added to the procedure's node-format section, to the bootstrapping step, and to design-gate check G1. The remaining subtrees are to be migrated under this rule and the other pilot nodes swept for the same defect.
+Code: none; this change touches only the design tree and its skill.
+
 ## 2026-09-11 Node layout: scope first, blank lines between fields, reasoned rejections
 
 Nodes: ~tree, ~tree/checks-and-proofs, ~tree/checks-and-proofs/obligation-discharge, ~tree/checks-and-proofs/obligation-discharge/goal-decomposition, ~tree/checks-and-proofs/obligation-discharge/loop-fact-retention, ~tree/checks-and-proofs/obligation-discharge/writer-trap-surface, ~tree/checks-and-proofs/certificate-fold, ~tree/checks-and-proofs/requires-entry-contract, ~tree/checks-and-proofs/requires-entry-contract/requirement-enforcement

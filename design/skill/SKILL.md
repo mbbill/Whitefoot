@@ -46,6 +46,12 @@ alternative after `instead of`. At least one of the two must be present. A
 line with neither is a description, not a decision, and does not belong in
 the tree.
 
+A decision is written for a reader who has not seen the record it came
+from. Terms of art compressed from a memory node, a specification section,
+or a compiler internal are expanded into plain words or replaced. A reader
+who has to open the source to understand the reason has found a defect in
+the node, not in their reading.
+
 `Applies-to:` links other nodes as `[[node-name]]` when this decision
 constrains them and the hierarchy does not already say so. Links resolve by
 node name, which must be unique across the tree.
@@ -134,8 +140,9 @@ entry. It reports node count, depth, and per-subtree counts.
 To build a tree from an earlier decision record or from code:
 
 1. Take each existing node's live summary as candidate decisions. Apply the
-   three filters. Drop dated statements unless one is the only source of a
-   live decision.
+   three filters. Rewrite every reason in plain words; do not copy a
+   record's terms of art. Drop dated statements unless one is the only
+   source of a live decision.
 2. Turn each recorded rejected alternative into a `Rejected:` line with its
    reason.
 3. Migrate one subtree first, review its size, adjust the filters, then
