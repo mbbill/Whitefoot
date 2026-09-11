@@ -1,8 +1,9 @@
 <!-- Serves compute-bench: the reader's entry point. It states the one question
      the bundle answers, how to run it, how to read the table it prints, what
      each reference's grain policy is and what it is not, the three A/B
-     handles, the two flag sets and the asymmetry between them, the one compiled-Whitefoot standing the old
-     research bundle left behind, and where a table that matters is recorded.
+     handles, the two flag sets and the asymmetry between them, the one
+     compiled-Whitefoot standing the old research bundle left behind, and
+     where a table that matters is recorded.
      Nothing here is a gate and nothing here decides a result. -->
 
 # compute-bench
@@ -124,19 +125,25 @@ reason as the two above: the `wf` row of a recorded table is the program plain
 no oracle, not the harness and not the shared `--no-overlap` control object,
 because none of those is the Whitefoot side of the link.
 
-Its first use is in the record: the `wf` row is built with no alignment flag
-while every reference gets `-falign-loops=32` (the asymmetry paragraph below),
-and code placement is this bundle's largest confound, so "what does alignment do
-to the Whitefoot rows" is an A/B this handle asks directly.
+Its first use is on the record, and it is why the asymmetry below still stands.
+The `wf` row is built with no alignment flag while every reference gets
+`-falign-loops=32`, so "what would alignment do to the Whitefoot rows" is an A/B
+this handle asks directly: it reads all sixteen twin lines inside [0.954, 1.010]
+on this bundle's development host — nothing worse than one percent at any width,
+and less than the same host's own placement spread in either direction. The
+driver was left alone on that reading
+([`RESULTS.md`](../../investigations/compute-runtime/RESULTS.md), loop and
+function alignment on the Whitefoot side).
 
 ### The placement-only arm
 
 Every candidate the twin has measured so far differed in bytes as well as in
 behaviour, so a reading could never be attributed to one rather than the other.
-`compiler/src/backend/sched/core.c` therefore carries a never-called, non-inlined
-587-byte function under `#ifdef WF_PLACEMENT_PAD`, which nothing that ships
-defines and `whitefootc` never passes. Through the runtime handle it gives the
-twin an arm that is **identical in behaviour and shifted in placement**:
+`compiler/src/backend/sched/core.c` therefore carries a never-called,
+non-inlined 587-byte function under `#ifdef WF_PLACEMENT_PAD`, which nothing
+that ships defines and `whitefootc` never passes. Through the runtime handle it
+gives the twin an arm that is **identical in behaviour and shifted in
+placement**:
 
 ```sh
 make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/null-shift \
@@ -153,13 +160,19 @@ the kernel calls into. Read against `WF_AB=1`, whose arms are byte-identical,
 the difference between the two is what that placement alone is worth on the
 host. A quadrature row is the cleanest reading of it: that kernel emits no split
 call, so its two arms do identical work in every pass whatever the runtime
-handle carries.
+handle carries. What it read here is in
+[`RESULTS.md`](../../investigations/compute-runtime/RESULTS.md), what code
+placement alone is worth, with a shifted null arm: a block median moved 11.7
+percent and one kernel's five paired readings spanned 0.68 to 1.30 over
+identical work, which is the bound on what a single A/B line can select on this
+host.
 
 ### The A/B twin: what the controls actually build, and how to read it
 
 No control moves the plain image. Setting any of the three — or setting
-`WF_AB=1` with none of them — builds a **second image per kernel**, `$(BUILD)/<kernel>-b`, from
-the same sources with the controls applied, and times it in the same passes as
+`WF_AB=1` with none of them — builds a **second image per kernel**,
+`$(BUILD)/<kernel>-b`, from the same sources with the controls applied, and
+times it in the same passes as
 the form **`wf-b`**. `$(BUILD)/<kernel>` is always built with all three
 controls empty.
 
