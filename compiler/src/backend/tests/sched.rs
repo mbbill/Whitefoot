@@ -92,3 +92,87 @@ fn concurrent_ring_wrap_and_live_counters_with_and_without_statistics() {
     }
     std::fs::remove_dir_all(directory).expect("remove native probe");
 }
+
+/// The wait station really parks and really wakes, and this host's cost of
+/// doing so is printed beside the cost of one spin round.
+///
+/// `WF_PAR_SPIN_ROUNDS` is a count of misses standing in for a length of time,
+/// and it is only meaningful against those two numbers. The probe measures them
+/// through the core's own `wf__par_signal`, `posted` flag and
+/// `wf_prim_wait_sleep`, so the constant beside them can be re-derived on any
+/// host rather than inherited. Nothing here bounds an elapsed time: the
+/// assertion is that a round genuinely parked, and the figures are printed for
+/// a reader.
+#[test]
+fn the_wait_station_parks_and_reports_this_hosts_park_and_wake_cost() {
+    let directory = test_directory();
+    let executable = build_probe(&directory, include_str!("../sched/wake_probe.c"), &[]);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run native park-and-wake probe");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = String::from_utf8_lossy(&output.stdout);
+    assert!(report.contains("park-and-wake probe: PASS"), "{report}");
+    assert!(report.contains("park_and_wake_ns="), "{report}");
+    assert!(report.contains("spin_round_floor_ns="), "{report}");
+    std::fs::remove_dir_all(directory).expect("remove native probe");
+}
+
+/// The budget one call into an ordinary recursive component starts from.
+///
+/// The answer is `floor(log2(64 * lanes))` — six private levels per lane's
+/// worth of sequential leaves — so it rises by one per doubling of the pool
+/// and holds at one lane's answer when there is no pool at all. The ceiling is
+/// unreachable through the lane count on any supported host, so the last
+/// configuration reaches it through the leaves-per-lane constant instead.
+#[test]
+fn recursion_budget_follows_the_pool_width_and_stops_at_its_ceiling() {
+    let directory = test_directory();
+    let executable = build_probe(
+        &directory,
+        include_str!("../sched/recursion_budget_probe.c"),
+        &[],
+    );
+    for (workers, budget) in [
+        ("0", "6"),
+        ("1", "6"),
+        ("2", "7"),
+        ("4", "8"),
+        ("8", "9"),
+        ("16", "10"),
+    ] {
+        let output = Command::new(&executable)
+            .arg(budget)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run native recursion budget probe");
+        assert!(
+            output.status.success(),
+            "workers={workers}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("recursion budget probe: PASS"));
+    }
+    let clamped = build_probe(
+        &directory,
+        include_str!("../sched/recursion_budget_probe.c"),
+        &["-DWF_PAR_RECURSION_LEAVES_PER_LANE=(1ull << 40)"],
+    );
+    for workers in ["1", "4"] {
+        let output = Command::new(&clamped)
+            .arg("24")
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run clamped recursion budget probe");
+        assert!(
+            output.status.success(),
+            "workers={workers}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    std::fs::remove_dir_all(directory).expect("remove native probe");
+}

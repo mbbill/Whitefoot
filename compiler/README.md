@@ -206,18 +206,54 @@ result ABI, while declining descendant compute offers. Granted tasks and the
 source-last inline call retain their parallel code. Calls without a clone and
 may-suspend callees keep their ordinary fallback. No runtime query is added.
 
-`--par --par-recursive-frontier N` optionally emits `N` ordinary parallel call
-levels for eligible recursive components, then enters their sequential clones.
-The CLI range `1..32` limits private code expansion, not source recursion or
-proof work. Every direct or mutual call within a component, including a task
-callback, advances a level. A call into another component starts at its ordinary
-entry; this is not a global nesting bound. Sequential clones also suppress
-offers in their descendant call closure. Suspending components, staged
-completion and synthesized loop functions keep their existing path. The copies
-use the same emitter and ordinary ABI, without hidden parameters or runtime
-depth counters. This control composes with scalar-leaf suppression and refusal;
-refusal may enter a sequential subtree before the frontier. Both controls are
-opt-in experiments, with no selected universal grain policy.
+Under `--par`, each ordinary cyclic call-graph component gets one synthesized
+budget-carrying variant per member, and the member's ordinary symbol obtains an
+initial budget and enters that variant. Inside the family every
+intra-component call and every published callback enters the callee's variant
+with one level less; a variant handed nothing left enters its own sequential
+clone, the world with no scheduler test, no null branch and no phi in it. That
+is one compare and one branch per node above the cut and nothing at all below
+it. The cut exists because a recursion otherwise offers at every node, at a
+per-node cost the leaf work does not pay for.
+
+The initial budget is the runtime's answer to `wf__par_recursion_budget()`,
+asked once per call into the component: `floor(log2(64 * lanes))`, clamped to
+24, with one lane's answer when there is no pool — 6 with the pool off, 7 at
+two lanes, 8 at four, 9 at eight. A module carries its own weak stub answering
+0, so a scheduler-less link runs the sequential clone from the first node. The
+constant of 64 sequential leaves per lane is measured, and
+[`sched/core.c`](src/backend/sched/core.c) records against it which measurement
+selected it.
+
+`--par --par-recursive-frontier auto|N|off` is the control over that one
+mechanism's starting value, not a second mechanism: `auto` is the default
+written out, `N` in the CLI range `1..32` pins the starting value at compile
+time instead of asking the runtime, and `off` emits no family at all, so every
+node of every recursive component offers, which is what every `--par` build did
+before the family existed. The default is the query and not a number because
+the measured best fixed value is not the same value at two lanes and at four;
+on the four-CPU development host the family is worth 1.685 to 1.031 at two
+lanes, 1.564 to 0.987 at four and 1.665 to 1.000 at eight on the compute
+scoreboard's quadrature row, with its process CPU falling from 1.81 to 1.17
+times the sequential control.
+`research/investigations/compute-runtime/RESULTS.md` records the tables and the
+spread they were read through.
+
+A member's ordinary symbol keeps its signature and result ABI, so the hidden
+trailing parameter is the synthesized variant's alone and no source call names
+it. A call into another component starts at that component's ordinary entry and
+asks for a budget of its own, so this is not a global nesting bound. A
+component is excluded, and named with its reason in `--par-ledger`, when any
+member may suspend, carries a staged completion pipeline, is a synthesized loop
+function, or has no sequential clone; the three map kernels of the compute
+scoreboard reach the runtime through a synthesized splitter and are therefore
+untouched. A published callback carries the budget through its lane frame,
+which is 8 bytes larger for that reason; a frame that no longer fits the lane
+slot declines the offer, as it already did. This composes with scalar-leaf
+suppression and with refusal; refusal may enter a sequential subtree above the
+cut. The budget selects actualization of an already accepted program: no
+acceptance path reads it, it cannot reject a program, and it is not a timeout,
+a fuel bound or a proof-work budget.
 
 The default limit can be remeasured on
 [`adaptive_quadrature.wf`](../tests/programs/adaptive_quadrature.wf), whose kernel
@@ -245,8 +281,9 @@ count, and report the median of all five process times for each form. The
 comparison checks visible offer suppression, identical outputs, and
 a default median no higher than `off` on the current runtime. The M1 Pro
 exploratory comparison satisfies this limited criterion; it does not establish
-that 16 is optimal, that every workload benefits, or that refusal/frontier should default
-on. Revisit the default with a contrary representative workload or target.
+that 16 is optimal, that every workload benefits, or that the opt-in refusal
+control should default on. Revisit the default with a contrary representative
+workload or target.
 
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop

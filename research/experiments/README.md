@@ -55,6 +55,23 @@ high-level sequencing; plans do not grant or withhold branch permission.
   comparators, two real source trees, one large-text corpus, nine equal-weight
   end-to-end cases, correctness oracles, statistics, and the future 2x rule
   before comparative timing.
+- `compute-bench/` — the compute scoreboard: for each of four kernels
+  (adaptive-Simpson recursion, UTF-8 record batches, a flat FIR map, a skewed
+  Mandelbrot map), at each width, is the Whitefoot program built by this
+  tree's `whitefootc` with plain `--par` the fastest thing in the row? One
+  uniform harness, one scheduler boundary, bit-for-bit equality against an
+  independent oracle per call, and native references built on oneTBB,
+  ParlayLib, Rayon, a static pthread pool and a serial loop at fixed grain
+  policies. Nothing in it fails on a ratio, a spread or an elapsed time;
+  `make check` runs only its compile-only `programs-check`. Four tables are
+  recorded in
+  [`compute-runtime/RESULTS.md`](../investigations/compute-runtime/RESULTS.md):
+  two from a four-CPU local Linux host — a baseline at compiler `33ed2c00` and
+  the merged tree at `11d1e4a2` — and the first hosted run, `34574271919` at
+  `5dd1eb7b`, one section per leg. Which kernel's plain-`--par` program is the
+  fastest form in its block differs by host: FIR alone on the local host, none
+  at W=4 on the `ubuntu-24.04` runner, and records, FIR and Mandelbrot at W=2
+  on the three-CPU `macos-14` runner.
 
 ## Completed current-compiler bounded research
 
