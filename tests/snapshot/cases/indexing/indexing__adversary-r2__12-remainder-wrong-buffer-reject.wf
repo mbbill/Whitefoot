@@ -11,31 +11,79 @@ fn cross_index<const n_small: u64, const n_big: u64>(small: own FixedVector<u8, 
 
 command fn main() -> status: own ExitStatus pure {
   let small = fixed_vector::<u8, 4>();
-  set small = place_back(vector: move small, value: 1_u8);
-  set small = place_back(vector: move small, value: 1_u8);
-  set small = place_back(vector: move small, value: 1_u8);
-  set small = place_back(vector: move small, value: 1_u8);
+  region {
+    place_back(vector: &uniq small, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq small, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq small, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq small, value: 1_u8);
+  }
   let big = fixed_vector::<u8, 20>();
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
-  set big = place_back(vector: move big, value: 2_u8);
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq big, value: 2_u8);
+  }
   let found = cross_index::<4, 20>(small: move small, big: move big, n: 15_u64);
   return exit_status(code: found);
 }

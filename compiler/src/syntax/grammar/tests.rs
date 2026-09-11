@@ -10,7 +10,7 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 
 /// The committed inventory's own shape. That this data belongs to the active
 /// specification is checked by regenerating it from the active grammar, in
-/// `committed_tables_are_derived_from_the_active_grammar`. The 6,255 select
+/// `committed_tables_are_derived_from_the_active_grammar`. The 6,554 select
 /// rows are the complete two-position derivation of the current 89
 /// productions, not a separately chosen test allowance: [TYPE-2] gives
 /// `struct_decl` and `enum_decl` an optional `region_params`, which is two
@@ -20,12 +20,14 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 /// no new production — and [PRF-1]'s `use_premise` is one new production
 /// carrying one new Choice decision, whose delimited relation form removes
 /// more rows from the `proof_use` frontier than the premise node adds.
+/// The `entry` Pbase alternative adds 299 select rows and one diagnostic
+/// terminal, without adding a production or a decision.
 #[test]
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 89);
     assert_eq!(DECISIONS.len(), 137);
-    assert_eq!(SELECT_ROWS.len(), 6_255);
-    assert_eq!(diagnostic_terminal_order().len(), 112);
+    assert_eq!(SELECT_ROWS.len(), 6_554);
+    assert_eq!(diagnostic_terminal_order().len(), 113);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
     assert_eq!(productions()[13], Production::RequiresClause);
@@ -294,6 +296,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
         }
     }
     // This independent traversal must reproduce the complete generated table.
-    assert_eq!(total_rows, 6_255);
+    assert_eq!(total_rows, 6_554);
     assert!(saw_atom_only);
 }

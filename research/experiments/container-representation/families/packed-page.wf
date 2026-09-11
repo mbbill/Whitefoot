@@ -8,7 +8,7 @@ fn blank_page() -> page: own FixedVector<u8, 32> pure contract {
     invariant bound: len_of(page) <= index,
     invariant spare: room_of(page) + index >= 32_u64
   ) {
-    set page = place_back(vector: move page, value: 0_u8);
+    place_back(vector: &uniq page, value: 0_u8);
   }
   return move page;
 }
@@ -53,69 +53,69 @@ fn checksum(page: &FixedVector<u8, 32>, used: own u64) -> result: own Option<u64
   return Some<u64>(value: sum);
 }
 
-fn remove_first(page: own FixedVector<u8, 32>, used: own u64) -> (updated: own FixedVector<u8, 32>, remaining: own u64, removed: own Bool) reads(page), writes(page) contract {
-  requires len_of(page) >= 32_u64;
-  ensures len_of(updated) == len_of(page);
+fn remove_first(page: &uniq FixedVector<u8, 32>, used: own u64) -> (remaining: own u64, removed: own Bool) reads(page), writes(page) contract {
+  requires len_of(deref(page)) >= 32_u64;
+  ensures len_of(deref(page)) == len_of(deref(entry(page)));
 } {
   if used == 0_u64 {
-    return move page, used, False();
+    return used, False();
   }
   if used > 32_u64 {
-    return move page, used, False();
+    return used, False();
   }
-  let width_byte = page[0_u64];
+  let width_byte = deref(page)[0_u64];
   let width = cvt::<u8, u64>(width_byte);
   let after_header = used - 1_u64;
   if width > after_header {
-    return move page, used, False();
+    return used, False();
   }
   let start = width + 1_u64;
   let remaining = used - start;
   for (destination in 0_u64..remaining) {
     let source = destination + start;
-    let byte = page[source];
-    set page[destination] = byte;
+    let byte = deref(page)[source];
+    set deref(page)[destination] = byte;
   }
-  return move page, remaining, True();
+  return remaining, True();
 }
 
-fn prepend(page: own FixedVector<u8, 32>, used: own u64, payload: &FixedVector<u8, 8>, width_byte: own u8) -> (updated: own FixedVector<u8, 32>, occupied: own u64, inserted: own Bool) reads(page, payload), writes(page) contract {
-  requires len_of(page) >= 32_u64;
-  ensures len_of(updated) == len_of(page);
+fn prepend(page: &uniq FixedVector<u8, 32>, used: own u64, payload: &FixedVector<u8, 8>, width_byte: own u8) -> (occupied: own u64, inserted: own Bool) reads(page, payload), writes(page) contract {
+  requires len_of(deref(page)) >= 32_u64;
+  ensures len_of(deref(page)) == len_of(deref(entry(page)));
 } {
   if used > 32_u64 {
-    return move page, used, False();
+    return used, False();
   }
   let width = cvt::<u8, u64>(width_byte);
   let available = len_of(deref(payload));
   if width > available {
-    return move page, used, False();
+    return used, False();
   }
   let record_width = width + 1_u64;
   let spare = 32_u64 - used;
   if record_width > spare {
-    return move page, used, False();
+    return used, False();
   }
   let occupied = used + record_width;
   for (
     step in 0_u64..used,
-    invariant size: used + record_width <= len_of(page),
+    invariant size: used + record_width <= len_of(deref(page)),
     invariant payload_size: width <= len_of(deref(payload)),
     invariant result_size: occupied <= 32_u64
   ) {
     let end = used - step;
     let source = end - 1_u64;
     let destination = source + record_width;
-    let byte = page[source];
-    set page[destination] = byte;
+    let byte = deref(page)[source];
+    set deref(page)[destination] = byte;
   }
   for (offset in 0_u64..width) {
     let byte = deref(payload)[offset];
     let destination = offset + 1_u64;
-    set page[destination] = byte;
+    set deref(page)[destination] = byte;
   }
-  set page[0_u64] = width_byte;
-  return move page, occupied, True();
+  set deref(page)[0_u64] = width_byte;
+  return occupied, True();
 }
 
 fn is_sum(value: own Option<u64>, expected: own u64) -> result: own Bool pure {
@@ -158,96 +158,104 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 1_u8);
     }
   }
-  let (compacted, remaining, removed) = remove_first(page: move page, used: 9_u64);
-  if bnot(removed) {
-    return exit_status(code: 2_u8);
-  }
-  if remaining != 6_u64 {
-    return exit_status(code: 3_u8);
-  }
   region {
-    let after = checksum(page: &compacted, used: remaining);
-    let after_ok = is_sum(value: move after, expected: 47421924604_u64);
-    if bnot(after_ok) {
-      return exit_status(code: 4_u8);
+    let (remaining, removed) = remove_first(page: &uniq page, used: 9_u64);
+    if bnot(removed) {
+      return exit_status(code: 2_u8);
     }
-  }
-  set compacted[0_u64] = 255_u8;
-  region {
-    let malformed = checksum(page: &compacted, used: remaining);
-    let malformed_ok = is_invalid(value: move malformed);
-    if bnot(malformed_ok) {
-      return exit_status(code: 5_u8);
-    }
-  }
-  region {
-    let oversized = checksum(page: &compacted, used: 33_u64);
-    let oversized_ok = is_invalid(value: move oversized);
-    if bnot(oversized_ok) {
-      return exit_status(code: 6_u8);
-    }
-  }
-  let (unchanged, same_length, refused) = remove_first(page: move compacted, used: remaining);
-  if refused {
-    return exit_status(code: 7_u8);
-  }
-  if same_length != remaining {
-    return exit_status(code: 8_u8);
-  }
-  if unchanged[0_u64] != 255_u8 {
-    return exit_status(code: 9_u8);
-  }
-  if unchanged[1_u64] != 30_u8 {
-    return exit_status(code: 10_u8);
-  }
-  let payload = fixed_vector::<u8, 8>();
-  set payload = place_back(vector: move payload, value: 5_u8);
-  set payload = place_back(vector: move payload, value: 6_u8);
-  set payload = place_back(vector: move payload, value: 7_u8);
-  let empty = blank_page();
-  region {
-    let (first, first_used, first_inserted) = prepend(page: move empty, used: 0_u64, payload: &payload, width_byte: 3_u8);
-    if bnot(first_inserted) {
-      return exit_status(code: 11_u8);
-    }
-    let (second, second_used, second_inserted) = prepend(page: move first, used: first_used, payload: &payload, width_byte: 2_u8);
-    if bnot(second_inserted) {
-      return exit_status(code: 12_u8);
-    }
-    if second_used != 7_u64 {
-      return exit_status(code: 13_u8);
+    if remaining != 6_u64 {
+      return exit_status(code: 3_u8);
     }
     region {
-      let inserted_sum = checksum(page: &second, used: second_used);
-      let inserted_ok = is_sum(value: move inserted_sum, expected: 10302497567214_u64);
-      if bnot(inserted_ok) {
-        return exit_status(code: 14_u8);
+      let after = checksum(page: &page, used: remaining);
+      let after_ok = is_sum(value: move after, expected: 47421924604_u64);
+      if bnot(after_ok) {
+        return exit_status(code: 4_u8);
       }
     }
-    let (full, full_used, full_inserted) = prepend(page: move second, used: 31_u64, payload: &payload, width_byte: 1_u8);
-    if full_inserted {
-      return exit_status(code: 15_u8);
+    set page[0_u64] = 255_u8;
+    region {
+      let malformed = checksum(page: &page, used: remaining);
+      let malformed_ok = is_invalid(value: move malformed);
+      if bnot(malformed_ok) {
+        return exit_status(code: 5_u8);
+      }
     }
-    if full_used != 31_u64 {
-      return exit_status(code: 16_u8);
+    region {
+      let oversized = checksum(page: &page, used: 33_u64);
+      let oversized_ok = is_invalid(value: move oversized);
+      if bnot(oversized_ok) {
+        return exit_status(code: 6_u8);
+      }
     }
-    if full[0_u64] != 2_u8 {
-      return exit_status(code: 17_u8);
+    let (same_length, refused) = remove_first(page: &uniq page, used: remaining);
+    if refused {
+      return exit_status(code: 7_u8);
     }
-    let (invalid, invalid_used, invalid_inserted) = prepend(page: move full, used: 7_u64, payload: &payload, width_byte: 4_u8);
-    if invalid_inserted {
-      return exit_status(code: 18_u8);
+    if same_length != remaining {
+      return exit_status(code: 8_u8);
     }
-    if invalid_used != 7_u64 {
-      return exit_status(code: 19_u8);
+    if page[0_u64] != 255_u8 {
+      return exit_status(code: 9_u8);
     }
-    let (still_empty, zero, did_remove) = remove_first(page: move invalid, used: 0_u64);
-    if did_remove {
-      return exit_status(code: 20_u8);
+    if page[1_u64] != 30_u8 {
+      return exit_status(code: 10_u8);
     }
-    if zero != 0_u64 {
-      return exit_status(code: 21_u8);
+    let payload = fixed_vector::<u8, 8>();
+    region {
+      place_back(vector: &uniq payload, value: 5_u8);
     }
+    region {
+      place_back(vector: &uniq payload, value: 6_u8);
+    }
+    region {
+      place_back(vector: &uniq payload, value: 7_u8);
+    }
+    let empty = blank_page();
+    region {
+      let (first_used, first_inserted) = prepend(page: &uniq empty, used: 0_u64, payload: &payload, width_byte: 3_u8);
+      if bnot(first_inserted) {
+        return exit_status(code: 11_u8);
+      }
+      let (second_used, second_inserted) = prepend(page: &uniq empty, used: first_used, payload: &payload, width_byte: 2_u8);
+      if bnot(second_inserted) {
+        return exit_status(code: 12_u8);
+      }
+      if second_used != 7_u64 {
+        return exit_status(code: 13_u8);
+      }
+      region {
+        let inserted_sum = checksum(page: &empty, used: second_used);
+        let inserted_ok = is_sum(value: move inserted_sum, expected: 10302497567214_u64);
+        if bnot(inserted_ok) {
+          return exit_status(code: 14_u8);
+        }
+      }
+      let (full_used, full_inserted) = prepend(page: &uniq empty, used: 31_u64, payload: &payload, width_byte: 1_u8);
+      if full_inserted {
+        return exit_status(code: 15_u8);
+      }
+      if full_used != 31_u64 {
+        return exit_status(code: 16_u8);
+      }
+      if empty[0_u64] != 2_u8 {
+        return exit_status(code: 17_u8);
+      }
+      let (invalid_used, invalid_inserted) = prepend(page: &uniq empty, used: 7_u64, payload: &payload, width_byte: 4_u8);
+      if invalid_inserted {
+        return exit_status(code: 18_u8);
+      }
+      if invalid_used != 7_u64 {
+        return exit_status(code: 19_u8);
+      }
+      let (zero, did_remove) = remove_first(page: &uniq empty, used: 0_u64);
+      if did_remove {
+        return exit_status(code: 20_u8);
+      }
+      if zero != 0_u64 {
+        return exit_status(code: 21_u8);
+      }
+    }
+    return exit_status(code: 0_u8);
   }
-  return exit_status(code: 0_u8);
 }

@@ -1,8 +1,11 @@
-fn append(vector: own FixedVector<u8, 4>, value: own u8) -> result: own FixedVector<u8, 4> reads(vector), writes(vector) contract {
-  requires room_of(vector) > 0_u64;
+fn append(vector: &uniq FixedVector<u8, 4>, value: own u8) -> result: own unit reads(vector), writes(vector) contract {
+  requires room_of(deref(vector)) > 0_u64;
 } {
   doc "Places one value at the back boundary of a run.";
-  return place_back(vector: move vector, value: value);
+  region {
+    place_back(vector: &uniq deref(vector), value: value);
+  }
+  return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {

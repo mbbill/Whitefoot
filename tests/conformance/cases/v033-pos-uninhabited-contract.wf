@@ -3,7 +3,9 @@ fn impossible(value: own u8) -> output: own u8 pure contract {
   requires value != 0_u8;
 } {
   let values = fixed_vector::<u8, 1>();
-  set values = place_back(vector: move values, value: 0_u8);
+  region {
+    place_back(vector: &uniq values, value: 0_u8);
+  }
   return values[7_u64];
 }
 

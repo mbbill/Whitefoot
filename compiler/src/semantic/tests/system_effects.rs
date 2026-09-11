@@ -38,8 +38,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn release(file: own ReadFile, spare: own box<u64>) -> result: own unit writes(file) {
-  let entry = Entry(file: move file, spare: move spare);
-  let present = Some<Entry>(value: move entry);
+  let stored_entry = Entry(file: move file, spare: move spare);
+  let present = Some<Entry>(value: move stored_entry);
   return unit;
 }
 
@@ -74,8 +74,12 @@ fn pack(first: own box<u64>, second: own box<u64>) -> (values: own FixedVector<b
   ensures len_of(values) == 2_u64;
 } {
   let values = fixed_vector::<box<u64>, 2>();
-  set values = place_back(vector: move values, value: move first);
-  set values = place_back(vector: move values, value: move second);
+  region {
+    place_back(vector: &uniq values, value: move first);
+  }
+  region {
+    place_back(vector: &uniq values, value: move second);
+  }
   return move values, 7_u64;
 }
 
@@ -118,7 +122,10 @@ fn acquired_run_success_carries_length_without_giving_it_to_refusal() {
         return None<Vector<'s, box<u64>>>();
       }
       Some(value: empty) => {
-        let full = place_back(vector: move empty, value: move value);
+        region {
+          place_back(vector: &uniq empty, value: move value);
+        }
+        let full = move empty;
         return Some<Vector<'s, box<u64>>>(value: move full);
       }
     }
@@ -152,10 +159,17 @@ command fn main() -> status: own ExitStatus pure {
 fn known_back_extraction_returns_the_corresponding_owner() {
     let source = r#"fn tail(first: own box<u64>, second: own box<u64>) -> result: own box<u64> reads(first, second), writes(first, second) {
   let values = fixed_vector::<box<u64>, 2>();
-  set values = place_back(vector: move values, value: move first);
-  set values = place_back(vector: move values, value: move second);
-  let (rest, last) = take_back(vector: move values);
-  RETURN
+  region {
+    place_back(vector: &uniq values, value: move first);
+  }
+  region {
+    place_back(vector: &uniq values, value: move second);
+  }
+  region {
+    let last = take_back(vector: &uniq values);
+    let rest = move values;
+    RETURN
+  }
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -165,7 +179,7 @@ command fn main() -> status: own ExitStatus pure {
     for (tail, parameter) in [
         ("return move last;", 1),
         (
-            "let (empty, previous) = take_back(vector: move rest);\n  return move previous;",
+            "region {\n      let previous = take_back(vector: &uniq rest);\n      return move previous;\n    }",
             0,
         ),
     ] {
@@ -189,9 +203,13 @@ command fn main() -> status: own ExitStatus pure {
 fn run_length_joins_do_not_enumerate_capacity_or_preserve_different_lengths() {
     let source = br#"fn choose(first: own box<u64>, second: own box<u64>, extra: own Bool) -> result: own FixedVector<box<u64>, 1000000000> reads(first), writes(first) {
   let values = fixed_vector::<box<u64>, 1000000000>();
-  set values = place_back(vector: move values, value: move first);
+  region {
+    place_back(vector: &uniq values, value: move first);
+  }
   if extra {
-    set values = place_back(vector: move values, value: move second);
+    region {
+      place_back(vector: &uniq values, value: move second);
+    }
     return move values;
   }
   return move values;
@@ -199,14 +217,20 @@ fn run_length_joins_do_not_enumerate_capacity_or_preserve_different_lengths() {
 
 fn rotate(value: own box<u64>) -> result: own FixedVector<box<u64>, 1000000000> reads(value), writes(value) {
   let values = fixed_vector::<box<u64>, 1000000000>();
-  set values = place_back(vector: move values, value: move value);
+  region {
+    place_back(vector: &uniq values, value: move value);
+  }
   for (
     round in 0_u64..8_u64,
     invariant at_most_one: len_of(values) <= 1_u64,
     invariant at_least_one: len_of(values) >= 1_u64
   ) {
-    let (rest, first) = take_front(vector: move values);
-    set values = place_back(vector: move rest, value: move first);
+    let first = take_front(vector: &uniq values);
+    let rest = move values;
+    region {
+      place_back(vector: &uniq rest, value: move first);
+    }
+    set values = move rest;
   }
   return move values;
 }
@@ -334,8 +358,12 @@ fn consume(first: own ReadFile, second: own ReadFile, incoming: own Slot, index:
   let first_slot = Slot(file: move first, scratch: move first_empty);
   let second_slot = Slot(file: move second, scratch: move second_empty);
   let values = fixed_vector::<Slot, 2>();
-  set values = place_back(vector: move values, value: move first_slot);
-  set values = place_back(vector: move values, value: move second_slot);
+  region {
+    place_back(vector: &uniq values, value: move first_slot);
+  }
+  region {
+    place_back(vector: &uniq values, value: move second_slot);
+  }
   let slots = array_from_fixed(vector: move values);
   EXCHANGE
   let Slot(file: previous_file, scratch: unused) = move previous;
@@ -549,7 +577,10 @@ command fn main() -> status: own ExitStatus pure {
 fn precise_run_contents_separate_descriptor_and_release_effects() {
     let length = br#"fn length(value: own box<u64>) -> result: own u64 pure {
   let empty = fixed_vector::<box<u64>, 1>();
-  let one = place_back(vector: move empty, value: move value);
+  region {
+    place_back(vector: &uniq empty, value: move value);
+  }
+  let one = move empty;
   return len_of(one);
 }
 
@@ -572,9 +603,12 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn release(file: own ReadFile, spare: own box<u64>) -> result: own unit writes(file) {
-  let entry = Entry(file: move file, spare: move spare);
+  let stored_entry = Entry(file: move file, spare: move spare);
   let empty = fixed_vector::<Entry, 1>();
-  let one = place_back(vector: move empty, value: move entry);
+  region {
+    place_back(vector: &uniq empty, value: move stored_entry);
+  }
+  let one = move empty;
   return unit;
 }
 
@@ -607,8 +641,14 @@ fn pack(first: own box<u64>, second: own box<u64>, spare: own box<u64>) -> (valu
   ensures len_of(values) == 2_u64;
 } {
   let empty = fixed_vector::<box<u64>, 2>();
-  let one = place_back(vector: move empty, value: move first);
-  let two = place_front(vector: move one, value: move second);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let one = move empty;
+  region {
+    place_front(vector: &uniq one, value: move second);
+  }
+  let two = move one;
   return move two, move spare;
 }
 
@@ -889,7 +929,10 @@ fn front_insertion_cannot_reuse_the_previous_logical_slot_origins() {
 } {
   let displaced = replace slots[0_u64] = move incoming;
   let first = box_new(7_u64);
-  let both = place_front(vector: move slots, value: move first);
+  region {
+    place_front(vector: &uniq slots, value: move first);
+  }
+  let both = move slots;
   let empty = box_new(0_u64);
   let recovered = replace both[1_u64] = move empty;
   return move recovered;
@@ -926,7 +969,10 @@ fn bounded_run_helpers_preserve_imported_sources_and_resolve_fresh_actuals() {
   ensures len_of(result) == 1_u64;
 } {
   let empty = fixed_vector::<box<u64>, 1>();
-  let full = place_back(vector: move empty, value: move value);
+  region {
+    place_back(vector: &uniq empty, value: move value);
+  }
+  let full = move empty;
   return move full;
 }
 
@@ -942,11 +988,14 @@ fn relay(value: own box<u64>) -> result: own FixedVector<box<u64>, 1> pure contr
 command fn main() -> status: own ExitStatus pure {{
   let value = box_new(37_u64);
   let full = relay(value: move value);
-  let (empty, extracted) = take_back(vector: move full);
-  if deref(extracted) != 37_u64 {{
-    return exit_status(code: 1_u8);
+  region {{
+    let extracted = take_back(vector: &uniq full);
+    let empty = move full;
+    if deref(extracted) != 37_u64 {{
+      return exit_status(code: 1_u8);
+    }}
+    return exit_status(code: 0_u8);
   }}
-  return exit_status(code: 0_u8);
 }}
 "#
     );
@@ -955,8 +1004,11 @@ command fn main() -> status: own ExitStatus pure {{
         r#"{helpers}
 fn observe(value: own box<u64>) -> result: own u64 pure {{
   let full = relay(value: move value);
-  let (empty, extracted) = take_back(vector: move full);
-  return deref(extracted);
+  region {{
+    let extracted = take_back(vector: &uniq full);
+    let empty = move full;
+    return deref(extracted);
+  }}
 }}
 
 command fn main() -> status: own ExitStatus pure {{
@@ -2186,8 +2238,11 @@ fn copy_run_take_preserves_the_remainder_origin_through_loops_and_helpers() {
   requires len_of(vector) >= 1_u64;
   ensures len_of(rest) + 1_u64 == len_of(vector);
 } {
-  let (rest, value) = TAKE(vector: move vector);
-  return move rest, value;
+  region {
+    let value = TAKE(vector: &uniq vector);
+    let rest = move vector;
+    return move rest, value;
+  }
 }
 
 fn drain(vector: own FixedVector<u64, 2>) -> result: own FixedVector<u64, 2> reads(vector), writes(vector) contract {
@@ -2248,15 +2303,21 @@ fn affine_run_take_does_not_use_the_copy_result_shortcut() {
         let source = r#"fn take(vector: own FixedVector<box<u64>, 1>) -> (rest: own FixedVector<box<u64>, 1>, value: own box<u64>) reads(vector), writes(vector) contract {
   requires len_of(vector) >= 1_u64;
 } {
-  let (rest, value) = TAKE(vector: move vector);
-  return move rest, move value;
+  region {
+    let value = TAKE(vector: &uniq vector);
+    let rest = move vector;
+    return move rest, move value;
+  }
 }
 
 fn observe(vector: own FixedVector<box<u64>, 1>) -> result: own u64 reads(vector), writes(vector) contract {
   requires len_of(vector) >= 1_u64;
 } {
-  let (rest, taken) = TAKE(vector: move vector);
-  return deref(taken);
+  region {
+    let taken = TAKE(vector: &uniq vector);
+    let rest = move vector;
+    return deref(taken);
+  }
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -2775,7 +2836,7 @@ fn owner_writeback_follows_nested_reborrowed_fields() {
 }
 
 #[test]
-fn owner_writeback_does_not_bypass_the_unique_generic_run_restriction() {
+fn owner_writeback_accepts_whole_replacement_through_a_generic_unique_parameter() {
     let source = br#"fn exchange<T: affine>(target: &uniq T, incoming: own T) -> previous: own T reads(target), writes(target) {
   let previous = replace deref(target) = move incoming;
   return move previous;
@@ -2792,12 +2853,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_kind(source, SemanticRule::Blk4, |kind| {
-        matches!(
-            kind,
-            SemanticIssueKind::UniqueParameterReachesContainer { .. }
-        )
-    });
+    assert_complete(source);
 }
 
 #[test]

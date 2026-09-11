@@ -249,14 +249,21 @@ impl StateSelection {
     }
 }
 
+/// The normal result and, for a boundary row, its exclusive referent's
+/// post-state. A run mutation transfers no run owner through the result.
+pub(crate) struct KernelStateImage<I> {
+    pub(crate) result: I,
+    pub(crate) mutated_run: Option<I>,
+}
+
 pub(crate) fn kernel_state_image<I: StateImage>(
     row: crate::KernelRow,
     copy_element: bool,
     arguments: &[I],
-) -> I {
+) -> KernelStateImage<I> {
     use crate::KernelRow;
     let argument = |index| arguments.get(index).cloned().unwrap_or_else(I::unknown);
-    match row {
+    let result = match row {
         KernelRow::FixedVector | KernelRow::ArenaVectorProved => {
             I::fresh().with_run_length(Some(0))
         }
@@ -287,7 +294,7 @@ pub(crate) fn kernel_state_image<I: StateImage>(
             let run = argument(0);
             let length = run.run_lengths().and_then(KnownRunLengths::root);
             let next_length = length.and_then(|length| length.checked_add(1));
-            if copy_element {
+            let updated = if copy_element {
                 run.with_run_length(next_length)
             } else if row == KernelRow::PlaceBack
                 && let Some(length) = length
@@ -298,7 +305,11 @@ pub(crate) fn kernel_state_image<I: StateImage>(
                 run.merged(argument(1))
                     .whole_transfer()
                     .with_run_length(next_length)
-            }
+            };
+            return KernelStateImage {
+                result: I::fresh(),
+                mutated_run: Some(updated),
+            };
         }
         KernelRow::TakeFront | KernelRow::TakeBack => {
             let value = argument(0);
@@ -306,32 +317,35 @@ pub(crate) fn kernel_state_image<I: StateImage>(
                 .run_lengths()
                 .and_then(KnownRunLengths::root)
                 .and_then(|length| length.checked_sub(1));
-            if copy_element {
-                value
-                    .with_run_length(remaining)
-                    .prefixed(&[CheckedStateStep::Field(0)])
+            let (updated, taken) = if copy_element {
+                (value.with_run_length(remaining), I::fresh())
             } else if row == KernelRow::TakeBack
                 && let Some(index) = remaining
             {
                 let path = [CheckedStateStep::Element(index)];
                 let taken = value.clone().projected_value(&path);
-                value
-                    .replaced_value(&path, I::fresh())
-                    .with_run_length(remaining)
-                    .prefixed(&[CheckedStateStep::Field(0)])
-                    .merged(taken.prefixed(&[CheckedStateStep::Field(1)]))
+                (
+                    value
+                        .replaced_value(&path, I::fresh())
+                        .with_run_length(remaining),
+                    taken,
+                )
             } else {
                 let bound = value.unlocated();
-                bound
-                    .clone()
-                    .with_run_length(remaining)
-                    .prefixed(&[CheckedStateStep::Field(0)])
-                    .merged(bound.prefixed(&[CheckedStateStep::Field(1)]))
-            }
+                (bound.clone().with_run_length(remaining), bound)
+            };
+            return KernelStateImage {
+                result: taken,
+                mutated_run: Some(updated),
+            };
         }
         KernelRow::ArrayFromFixed | KernelRow::FixedFromArray => argument(0),
         // Views carry their separately checked backing-place provenance.
         KernelRow::SliceOf | KernelRow::MutSliceOf => I::fresh(),
+    };
+    KernelStateImage {
+        result,
+        mutated_run: None,
     }
 }
 
@@ -958,13 +972,15 @@ mod tests {
                     value,
                     CheckedStateOrigins::formal_leaves(source, vec![Vec::new()]),
                 ],
-            );
+            )
+            .mutated_run
+            .expect("placement updates the run");
         }
         let split = kernel_state_image(crate::KernelRow::TakeBack, false, &[value]);
-        let taken = split.clone().projected(&[1]);
+        let taken = split.result;
         assert_eq!(taken.formals.len(), 1);
         assert_eq!(taken.formals[0].source.root, second);
-        let remaining = split.projected(&[0]);
+        let remaining = split.mutated_run.expect("remaining run");
         assert_eq!(remaining.run_lengths.root(), Some(1));
         assert_eq!(remaining.formals.len(), 1);
         assert_eq!(remaining.formals[0].source.root, first);
@@ -1068,8 +1084,13 @@ mod tests {
         );
 
         let taken = kernel_state_image(crate::KernelRow::TakeBack, false, &[complete]);
-        assert!(taken.clone().projected(&[0]).lacks_exact_origins());
-        assert!(taken.projected(&[1]).lacks_exact_origins());
+        assert!(
+            taken
+                .mutated_run
+                .expect("remaining run")
+                .lacks_exact_origins()
+        );
+        assert!(taken.result.lacks_exact_origins());
     }
 
     #[test]

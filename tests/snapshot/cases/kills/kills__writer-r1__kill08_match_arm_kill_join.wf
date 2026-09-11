@@ -26,10 +26,18 @@ fn step_size(mode: own Mode, table: own FixedVector<u16, 4>) -> result: own u16 
 
 command fn main() -> status: own ExitStatus pure {
   let first_table = fixed_vector::<u16, 4>();
-  set first_table = place_back(vector: move first_table, value: 0_u16);
-  set first_table = place_back(vector: move first_table, value: 0_u16);
-  set first_table = place_back(vector: move first_table, value: 0_u16);
-  set first_table = place_back(vector: move first_table, value: 0_u16);
+  region {
+    place_back(vector: &uniq first_table, value: 0_u16);
+  }
+  region {
+    place_back(vector: &uniq first_table, value: 0_u16);
+  }
+  region {
+    place_back(vector: &uniq first_table, value: 0_u16);
+  }
+  region {
+    place_back(vector: &uniq first_table, value: 0_u16);
+  }
   set first_table[1_u64] = 5_u16;
   set first_table[3_u64] = 9_u16;
   let fast = Fast();
@@ -39,10 +47,18 @@ command fn main() -> status: own ExitStatus pure {
     return exit_status(code: 1_u8);
   }
   let second_table = fixed_vector::<u16, 4>();
-  set second_table = place_back(vector: move second_table, value: 0_u16);
-  set second_table = place_back(vector: move second_table, value: 0_u16);
-  set second_table = place_back(vector: move second_table, value: 0_u16);
-  set second_table = place_back(vector: move second_table, value: 0_u16);
+  region {
+    place_back(vector: &uniq second_table, value: 0_u16);
+  }
+  region {
+    place_back(vector: &uniq second_table, value: 0_u16);
+  }
+  region {
+    place_back(vector: &uniq second_table, value: 0_u16);
+  }
+  region {
+    place_back(vector: &uniq second_table, value: 0_u16);
+  }
   set second_table[1_u64] = 5_u16;
   set second_table[3_u64] = 9_u16;
   let slow = Slow();

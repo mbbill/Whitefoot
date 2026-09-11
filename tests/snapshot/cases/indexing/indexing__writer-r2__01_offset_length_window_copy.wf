@@ -24,7 +24,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_src: room_of(src) + at >= 8_u64,
         invariant flat_src: head_of(src) <= 0_u64
       ) {
-        set src = place_back(vector: move src, value: 5_u8);
+        place_back(vector: &uniq src, value: 5_u8);
       }
       let dst = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
       for @fill_dst (
@@ -33,7 +33,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_dst: room_of(dst) + at >= 8_u64,
         invariant flat_dst: head_of(dst) <= 0_u64
       ) {
-        set dst = place_back(vector: move dst, value: 0_u8);
+        place_back(vector: &uniq dst, value: 0_u8);
       }
       region {
         let view_dst = mut_slice_of(&uniq dst);

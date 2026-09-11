@@ -10,10 +10,18 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
   region {
     let index = args_count(args: &args);
     let bytes = fixed_vector::<u8, 4>();
-    set bytes = place_back(vector: move bytes, value: 0_u8);
-    set bytes = place_back(vector: move bytes, value: 0_u8);
-    set bytes = place_back(vector: move bytes, value: 0_u8);
-    set bytes = place_back(vector: move bytes, value: 0_u8);
+    region {
+      place_back(vector: &uniq bytes, value: 0_u8);
+    }
+    region {
+      place_back(vector: &uniq bytes, value: 0_u8);
+    }
+    region {
+      place_back(vector: &uniq bytes, value: 0_u8);
+    }
+    region {
+      place_back(vector: &uniq bytes, value: 0_u8);
+    }
     let value = read_at_index::<4>(bytes: move bytes, index: index);
     return exit_status(code: value);
   }

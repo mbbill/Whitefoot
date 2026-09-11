@@ -28,18 +28,42 @@ fn bucket_offset<const n_buckets: u64>(buckets: own FixedVector<u8, n_buckets>, 
 
 command fn main() -> status: own ExitStatus pure {
   let buckets = fixed_vector::<u8, 12>();
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
-  set buckets = place_back(vector: move buckets, value: 0_u8);
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buckets, value: 0_u8);
+  }
   set buckets[9_u64] = 77_u8;
   let found = bucket_offset::<12>(buckets: move buckets, n: 9_u64);
   match found {

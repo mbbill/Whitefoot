@@ -165,7 +165,7 @@ fn initial(value: &HostString) -> result: own u8 reads(value) {
     invariant spare: room_of(bytes) + index >= 12_u64,
     invariant flat: head_of(bytes) <= 0_u64
   ) {
-    set bytes = place_back(vector: move bytes, value: 0_u8);
+    place_back(vector: &uniq bytes, value: 0_u8);
   }
   region {
     let view = mut_slice_of(&uniq bytes);

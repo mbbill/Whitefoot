@@ -108,7 +108,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
           invariant spare_digits: room_of(digits) + at >= 16_u64,
           invariant flat_digits: head_of(digits) <= 0_u64
         ) {
-          set digits = place_back(vector: move digits, value: 0_u8);
+          place_back(vector: &uniq digits, value: 0_u8);
         }
         match heap_vector::<u8>(store: &uniq heap, count: 4096_u64) {
           None() => {
@@ -122,7 +122,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
               invariant spare_chunk: room_of(chunk) + at >= 4096_u64,
               invariant flat_chunk: head_of(chunk) <= 0_u64
             ) {
-              set chunk = place_back(vector: move chunk, value: 0_u8);
+              place_back(vector: &uniq chunk, value: 0_u8);
             }
             let room = len_of(digits);
             let held = len_of(chunk);
@@ -142,7 +142,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
                 Err(error: problem) => {
                 }
               }
-              set payload = place_back(vector: move payload, value: letter);
+              place_back(vector: &uniq payload, value: letter);
             }
             let carried = 0_u64;
             let port = 0_u16;

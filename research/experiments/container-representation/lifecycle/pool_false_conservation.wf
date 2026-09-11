@@ -1,9 +1,11 @@
-fn take_wrong['s: affine](free: own FixedVector<Vector<'s, u8>, 2>) -> (rest: own FixedVector<Vector<'s, u8>, 2>, block: own Vector<'s, u8>) reads(free), writes(free) contract {
-  requires len_of(free) > 0_u64;
-  ensures len_of(rest) == len_of(free);
+fn take_wrong['s: affine](free: &uniq FixedVector<Vector<'s, u8>, 2>) -> block: own Vector<'s, u8> reads(free), writes(free) contract {
+  requires len_of(deref(free)) > 0_u64;
+  ensures len_of(deref(free)) == len_of(deref(entry(free)));
 } {
-  let (rest, block) = take_back(vector: move free);
-  return move rest, move block;
+  region {
+    let block = take_back(vector: &uniq deref(free));
+    return move block;
+  }
 }
 
 command fn main() -> status: own ExitStatus pure {

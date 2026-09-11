@@ -17,16 +17,36 @@ fn wrap_lookup(table: own FixedVector<u16, 10>, pos: own u64) -> result: own u16
 
 command fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u16, 10>();
-  set table = place_back(vector: move table, value: 3_u16);
-  set table = place_back(vector: move table, value: 3_u16);
-  set table = place_back(vector: move table, value: 3_u16);
-  set table = place_back(vector: move table, value: 3_u16);
-  set table = place_back(vector: move table, value: 3_u16);
-  set table = place_back(vector: move table, value: 3_u16);
-  set table = place_back(vector: move table, value: 3_u16);
-  set table = place_back(vector: move table, value: 3_u16);
-  set table = place_back(vector: move table, value: 3_u16);
-  set table = place_back(vector: move table, value: 3_u16);
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
+  region {
+    place_back(vector: &uniq table, value: 3_u16);
+  }
   let value = wrap_lookup(table: move table, pos: 9_u64);
   if value == 3_u16 {
   } else {

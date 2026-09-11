@@ -1,11 +1,21 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: sum and count are maintained together, each with its own header invariant.";
   let data = fixed_vector::<u8, 5>();
-  set data = place_back(vector: move data, value: 4_u8);
-  set data = place_back(vector: move data, value: 4_u8);
-  set data = place_back(vector: move data, value: 4_u8);
-  set data = place_back(vector: move data, value: 4_u8);
-  set data = place_back(vector: move data, value: 4_u8);
+  region {
+    place_back(vector: &uniq data, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 4_u8);
+  }
   let sum = 0_u64;
   let count = 0_u64;
   for (

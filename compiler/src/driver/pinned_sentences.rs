@@ -191,11 +191,11 @@ command fn main() -> status: own ExitStatus pure {
     // [MSR-3] and [CALL-6]: the two judgments the fact machinery adds.
     // -------------------------------------------------------------------
     Probe {
-        name: "uniq-state-measure-in-an-ensures.wf",
-        source: br#"fn record(destination: &uniq buffer<u8>, value: own u8) -> written: own u64 reads(destination), writes(destination) contract {
-  ensures written <= len_of(deref(destination));
+        name: "entry-of-a-shared-parameter.wf",
+        source: br#"fn record(destination: &buffer<u8>) -> written: own u64 reads(destination) contract {
+  ensures written == len_of(deref(entry(destination)));
 } {
-  return 0_u64;
+  return len_of(deref(destination));
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -204,8 +204,8 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "MSR-3",
         sentences: &[
-            "InadmissibleStateParameterMeasure",
-            "take the value by value and relate the result, or state the fact as a requires",
+            "InvalidEntryFormer",
+            "entry",
         ],
     },
     Probe {

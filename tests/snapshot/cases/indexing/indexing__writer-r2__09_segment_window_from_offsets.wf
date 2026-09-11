@@ -36,21 +36,41 @@ fn segment_sum(offsets: own Slice<u64>, data: own Slice<u32>, segment: own u64) 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: each offsets[i] read is guarded by its own dominating index check, and the data window subscript is then discharged by the runtime-checked end <= spare fact composing with the for-loop's automatic i < end fact.";
   let offsets = fixed_vector::<u64, 4>();
-  set offsets = place_back(vector: move offsets, value: 0_u64);
-  set offsets = place_back(vector: move offsets, value: 0_u64);
-  set offsets = place_back(vector: move offsets, value: 0_u64);
-  set offsets = place_back(vector: move offsets, value: 0_u64);
+  region {
+    place_back(vector: &uniq offsets, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq offsets, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq offsets, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq offsets, value: 0_u64);
+  }
   set offsets[0_u64] = 0_u64;
   set offsets[1_u64] = 2_u64;
   set offsets[2_u64] = 5_u64;
   set offsets[3_u64] = 6_u64;
   let data = fixed_vector::<u32, 6>();
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
   set data[0_u64] = 10_u32;
   set data[1_u64] = 20_u32;
   set data[2_u64] = 1_u32;

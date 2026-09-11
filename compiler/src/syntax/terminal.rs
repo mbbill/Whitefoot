@@ -133,6 +133,8 @@ pub enum FixedTerminal {
     Move,
     /// `deref`.
     Deref,
+    /// `entry`.
+    Entry,
     /// `.`.
     Dot,
     /// `pure`.
@@ -232,7 +234,7 @@ pub enum FixedTerminal {
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 104] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 105] = [
     FixedTerminal::Linear,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
@@ -333,6 +335,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 104] = [
     FixedTerminal::GreaterEqual,
     FixedTerminal::ColonColon,
     FixedTerminal::Deref,
+    FixedTerminal::Entry,
     FixedTerminal::Pure,
     FixedTerminal::Reads,
     FixedTerminal::Writes,
@@ -407,6 +410,7 @@ impl FixedTerminal {
             Self::FatArrow => "=>",
             Self::Move => "move",
             Self::Deref => "deref",
+            Self::Entry => "entry",
             Self::Dot => ".",
             Self::Pure => "pure",
             Self::Reads => "reads",
@@ -846,30 +850,30 @@ mod tests {
                 Some(terminal)
             );
         }
-        assert_eq!(FixedTerminal::PercentChecked as u8, 78);
-        assert_eq!(FixedTerminal::For as u8, 79);
-        assert_eq!(FixedTerminal::In as u8, 80);
-        assert_eq!(FixedTerminal::DotDot as u8, 81);
-        assert_eq!(FixedTerminal::Ensures as u8, 82);
-        assert_eq!(FixedTerminal::Replace as u8, 83);
-        assert_eq!(FixedTerminal::Invariant as u8, 90);
-        assert_eq!(FixedTerminal::Use as u8, 91);
-        assert_eq!(FixedTerminal::Is as u8, 97);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 79);
+        assert_eq!(FixedTerminal::For as u8, 80);
+        assert_eq!(FixedTerminal::In as u8, 81);
+        assert_eq!(FixedTerminal::DotDot as u8, 82);
+        assert_eq!(FixedTerminal::Ensures as u8, 83);
+        assert_eq!(FixedTerminal::Replace as u8, 84);
+        assert_eq!(FixedTerminal::Invariant as u8, 91);
+        assert_eq!(FixedTerminal::Use as u8, 92);
+        assert_eq!(FixedTerminal::Is as u8, 98);
         // [PROV-6, S37] the four linearity atoms take four consecutive
         // discriminants after `is`. [S23] the retired `heap` allocation atom
         // stood before all of them, so every discriminant after it moved one
         // place down.
-        assert_eq!(FixedTerminal::Linear as u8, 98);
-        assert_eq!(FixedTerminal::Affine as u8, 99);
-        assert_eq!(FixedTerminal::Copy as u8, 100);
-        assert_eq!(FixedTerminal::Dispose as u8, 101);
+        assert_eq!(FixedTerminal::Linear as u8, 99);
+        assert_eq!(FixedTerminal::Affine as u8, 100);
+        assert_eq!(FixedTerminal::Copy as u8, 101);
+        assert_eq!(FixedTerminal::Dispose as u8, 102);
         // [S6, S35] `MutSlice` is the atom v0.45 appends and [PRF-1] `times`
         // the atom v0.48 appends, so they take the enum's last two
         // discriminants and the external predicates start after them.
-        assert_eq!(FixedTerminal::MutSlice as u8, 102);
-        assert_eq!(FixedTerminal::Times as u8, 103);
-        assert_eq!(TerminalPredicate::Identifier.index(), 104);
-        assert_eq!(TerminalPredicate::Digits.index(), 111);
+        assert_eq!(FixedTerminal::MutSlice as u8, 103);
+        assert_eq!(FixedTerminal::Times as u8, 104);
+        assert_eq!(TerminalPredicate::Identifier.index(), 105);
+        assert_eq!(TerminalPredicate::Digits.index(), 112);
     }
 
     /// The inventory holds every predicate, once.

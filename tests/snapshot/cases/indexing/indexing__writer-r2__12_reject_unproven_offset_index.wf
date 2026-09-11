@@ -6,10 +6,18 @@ fn read_at_offset(data: own Slice<u8>, base: own u64, delta: own u64) -> value: 
 command fn main() -> status: own ExitStatus pure {
   doc "REJECT (expected): base + delta is an unproven offset with no dominating branch, contract requirement, or invariant bounding it against len_of(data), so the subscript is an [OP-4] compile-time rejection even though the call below passes base=1, delta=2 into a 4-element buffer (position 3, in bounds at runtime) -- OP-4 rejects at the definition, independent of any caller's actual values.";
   let data = fixed_vector::<u8, 4>();
-  set data = place_back(vector: move data, value: 9_u8);
-  set data = place_back(vector: move data, value: 9_u8);
-  set data = place_back(vector: move data, value: 9_u8);
-  set data = place_back(vector: move data, value: 9_u8);
+  region {
+    place_back(vector: &uniq data, value: 9_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 9_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 9_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 9_u8);
+  }
   region {
     let data_view = slice_of(&data);
     let value = read_at_offset(data: data_view, base: 1_u64, delta: 2_u64);

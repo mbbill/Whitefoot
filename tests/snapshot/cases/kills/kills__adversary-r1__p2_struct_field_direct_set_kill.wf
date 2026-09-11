@@ -5,10 +5,18 @@ struct Cursor {
 command fn main() -> status: own ExitStatus pure {
   doc "expect: REJECT (ENT-5) - obj.cursor is bound-checked, then set obj.cursor=99 (kill), reused for subscript unproven; cursor=99,limit=4 -> OOB";
   let buf = fixed_vector::<u8, 4>();
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
   let obj = Cursor(pos: 0_u64);
   let limit = len_of(buf);
   let ok = obj.pos < limit;

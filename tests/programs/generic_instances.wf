@@ -19,7 +19,7 @@ fn filled_array<T: Int, const n: u64>(value: own T) -> result: own FixedVector<T
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: value);
+    place_back(vector: &uniq built, value: value);
   }
   return move built;
 }
@@ -41,7 +41,7 @@ fn filled_buffer<T: Int>(store: &uniq Heap, length: own u64, value: own T) -> re
           invariant spare: room_of(built) + at >= length,
           invariant flat: head_of(built) <= 0_u64
         ) {
-          set built = place_back(vector: move built, value: value);
+          place_back(vector: &uniq built, value: value);
         }
         return Some<Vector<T>>(value: move built);
       }
@@ -53,15 +53,29 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
   let small_maximum = maximum::<u8>(left: 4_u8, right: 9_u8);
   let signed_maximum = maximum::<i64>(left: -7_i64, right: -2_i64);
   let short_input = fixed_vector::<u8, 2>();
-  set short_input = place_back(vector: move short_input, value: 7_u8);
-  set short_input = place_back(vector: move short_input, value: 7_u8);
+  region {
+    place_back(vector: &uniq short_input, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq short_input, value: 7_u8);
+  }
   let short = forward::<2>(value: move short_input);
   let long_input = fixed_vector::<u8, 5>();
-  set long_input = place_back(vector: move long_input, value: 11_u8);
-  set long_input = place_back(vector: move long_input, value: 11_u8);
-  set long_input = place_back(vector: move long_input, value: 11_u8);
-  set long_input = place_back(vector: move long_input, value: 11_u8);
-  set long_input = place_back(vector: move long_input, value: 11_u8);
+  region {
+    place_back(vector: &uniq long_input, value: 11_u8);
+  }
+  region {
+    place_back(vector: &uniq long_input, value: 11_u8);
+  }
+  region {
+    place_back(vector: &uniq long_input, value: 11_u8);
+  }
+  region {
+    place_back(vector: &uniq long_input, value: 11_u8);
+  }
+  region {
+    place_back(vector: &uniq long_input, value: 11_u8);
+  }
   let long = forward::<5>(value: move long_input);
   let short_room = len_of(short);
   let short_ok = 1_u64 < short_room;

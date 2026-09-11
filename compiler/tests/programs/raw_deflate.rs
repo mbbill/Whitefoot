@@ -230,8 +230,7 @@ fn boundary_append_preserves_its_clause_stripped_invalid_domain_behavior() {
         .trim_end()
         .to_owned();
     // The control program moved off `buffer<T>` with the corpus: its two
-    // destinations are runs of one region-confined bump extent, because
-    // `mut_slice_of` forms no exclusive view over an inline run, and its two
+    // destinations are runs of one region-confined bump extent; its two
     // message tables are inline runs held at the length each case needs. The
     // lengths, the arguments, and the eight statuses are the ones the
     // pre-migration control used, so the invalid-domain behaviour this case
@@ -251,7 +250,7 @@ command fn main() -> status: own ExitStatus pure {{
         invariant spare: room_of(empty_destination) + at >= 3_u64,
         invariant flat: head_of(empty_destination) <= 0_u64
       ) {{
-        set empty_destination = place_back(vector: move empty_destination, value: 9_u8);
+        place_back(vector: &uniq empty_destination, value: 9_u8);
       }}
       region {{
         let text = slice_of(&empty_text);
@@ -277,8 +276,10 @@ command fn main() -> status: own ExitStatus pure {{
         return exit_status(code: 4_u8);
       }}
       let nonempty_text = fixed_vector::<u8, 2>();
-      set nonempty_text = place_back(vector: move nonempty_text, value: 1_u8);
-      set nonempty_text = place_back(vector: move nonempty_text, value: 1_u8);
+      region {{
+        place_back(vector: &uniq nonempty_text, value: 1_u8);
+        place_back(vector: &uniq nonempty_text, value: 1_u8);
+      }}
       let nonempty_destination = arena_vector_proved::<u8>(store: &uniq workspace, count: 3_u64);
       for @fill_nonempty_destination (
         at in 0_u64..3_u64,
@@ -286,7 +287,7 @@ command fn main() -> status: own ExitStatus pure {{
         invariant spare: room_of(nonempty_destination) + at >= 3_u64,
         invariant flat: head_of(nonempty_destination) <= 0_u64
       ) {{
-        set nonempty_destination = place_back(vector: move nonempty_destination, value: 9_u8);
+        place_back(vector: &uniq nonempty_destination, value: 9_u8);
       }}
       region {{
         let text = slice_of(&nonempty_text);

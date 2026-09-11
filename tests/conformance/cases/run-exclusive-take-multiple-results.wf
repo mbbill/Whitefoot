@@ -1,0 +1,25 @@
+fn pop(values: &uniq FixedVector<u64, 4>) -> (value: own u64, count: own u64) reads(values), writes(values) contract {
+  requires len_of(deref(values)) > 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values))) - 1_u64;
+  ensures count == len_of(deref(values));
+} {
+  region {
+    let value = take_back(vector: &uniq deref(values));
+    let count = len_of(deref(values));
+    return value, count;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = fixed_vector::<u64, 4>();
+  region {
+    place_back(vector: &uniq values, value: 7_u64);
+    let (value, count) = pop(values: &uniq values);
+    invariant empty: len_of(values) <= 0_u64;
+    invariant reported: count <= 0_u64;
+    if value != 7_u64 {
+      return exit_status(code: 1_u8);
+    }
+    return exit_status(code: 0_u8);
+  }
+}

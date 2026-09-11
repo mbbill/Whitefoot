@@ -129,7 +129,7 @@ surface without changing what the row records:
 `diagnostics__writer-r1__r03_allocation_fit_unproved` and
 `diagnostics__writer-r2__r05_world_value_allocation_no_branch`. The first five
 lend a run, or a struct holding one, through a `&uniq` parameter, which
-[BLK-4] refuses; the hand-back or view restructure changes the kill each row
+the then-active [BLK-4] refused; the hand-back or view restructure changes the kill each row
 was written to record. The last two allocate at a runtime count in an entry
 with no store, and their successor's entry row carries `command.heap`, which is
 a different program. Their sources are deleted with their rows.

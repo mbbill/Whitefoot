@@ -18,12 +18,24 @@ fn count_nonzero<const n: u64>(values: own FixedVector<u64, n>) -> kept: own u64
 
 command fn main() -> status: own ExitStatus pure {
   let source = fixed_vector::<u64, 6>();
-  set source = place_back(vector: move source, value: 0_u64);
-  set source = place_back(vector: move source, value: 0_u64);
-  set source = place_back(vector: move source, value: 0_u64);
-  set source = place_back(vector: move source, value: 0_u64);
-  set source = place_back(vector: move source, value: 0_u64);
-  set source = place_back(vector: move source, value: 0_u64);
+  region {
+    place_back(vector: &uniq source, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq source, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq source, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq source, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq source, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq source, value: 0_u64);
+  }
   set source[0_u64] = 4_u64;
   set source[1_u64] = 0_u64;
   set source[2_u64] = 9_u64;

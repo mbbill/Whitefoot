@@ -298,6 +298,8 @@ pub(crate) struct PostconditionCallSubstitution {
     /// recorded, because [FN-9]'s narrow receiver routes are stated over
     /// which formal an actual supplies and not over what the operand denotes.
     pub(crate) datum: bool,
+    /// This operand is read after the call's own effects; later kills still apply.
+    pub(crate) exit_state: bool,
 }
 
 /// The closed set of proof steps emitted by the existing entailment flow.
@@ -818,6 +820,9 @@ pub(crate) enum DerivationRootKind {
     },
     PostconditionAggregate {
         relation_ordinal: u32,
+    },
+    PostconditionState {
+        occurrence: u32,
     },
     PostconditionDirectResult {
         occurrence: u32,

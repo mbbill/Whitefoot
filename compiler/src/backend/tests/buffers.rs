@@ -193,10 +193,22 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
-  let one = place_back(vector: move empty, value: 7_u8);
-  let two = place_back(vector: move one, value: 7_u8);
-  let three = place_back(vector: move two, value: 7_u8);
-  let weights = place_back(vector: move three, value: 7_u8);
+  region {
+    place_back(vector: &uniq empty, value: 7_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 7_u8);
+  }
+  let two = move one;
+  region {
+    place_back(vector: &uniq two, value: 7_u8);
+  }
+  let three = move two;
+  region {
+    place_back(vector: &uniq three, value: 7_u8);
+  }
+  let weights = move three;
   let code = 0_u8;
   region {
     let window = slice_of(&weights);
@@ -537,12 +549,9 @@ fn borrowed_columns_cross_helpers_without_transferring_ownership() {
     assert!(output.stderr.is_empty());
 }
 
-/// LEFT ON `buffer<T>` DELIBERATELY: [BLK-4] refuses a `&uniq` whose
-/// referent reaches a run, so a pool of runs cannot be lent as one struct
-/// pointer at all. The address-path property this pins — one caller-storage
-/// update through a single `ptr` parameter — has no run shape to hold it;
-/// `compiler_independent_borrowed_pool_tree_executes` above records what the
-/// migrated pool does instead, which is to lend two views and a scalar.
+/// This legacy buffer control pins one caller-storage update through a
+/// single struct pointer. The corresponding run/view controls exercise the
+/// current container surface and preserve the same address-path property.
 #[test]
 fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() {
     let source = br#"struct Pool {
@@ -1027,7 +1036,7 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
           invariant flat: head_of(slots) <= 0_u64
         ) {
           let empty = None<u32>();
-          set slots = place_back(vector: move slots, value: move empty);
+          place_back(vector: &uniq slots, value: move empty);
         }
         let filled = Some<u32>(value: 7_u32);
         let vacant = replace slots[2_u64] = move filled;

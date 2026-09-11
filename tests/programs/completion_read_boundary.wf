@@ -13,7 +13,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           invariant spare_data_a: room_of(data_a) + at >= 1_u64,
           invariant flat_data_a: head_of(data_a) <= 0_u64
         ) {
-          set data_a = place_back(vector: move data_a, value: 0_u8);
+          place_back(vector: &uniq data_a, value: 0_u8);
         }
         match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
           None() => {
@@ -27,7 +27,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
               invariant spare_data_b: room_of(data_b) + at >= 1_u64,
               invariant flat_data_b: head_of(data_b) <= 0_u64
             ) {
-              set data_b = place_back(vector: move data_b, value: 0_u8);
+              place_back(vector: &uniq data_b, value: 0_u8);
             }
             match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
               None() => {
@@ -41,7 +41,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   invariant spare_pair: room_of(pair) + at >= 2_u64,
                   invariant flat_pair: head_of(pair) <= 0_u64
                 ) {
-                  set pair = place_back(vector: move pair, value: 0_u8);
+                  place_back(vector: &uniq pair, value: 0_u8);
                 }
                 region {
                   match arg_get(args: &args, position: 1_u64) {

@@ -3,8 +3,8 @@
 //!
 //! A run carries no per-slot tag and no runtime discriminant: `len` and `head`
 //! are the complete typestate. Boundary operations update these words and the
-//! selected element in the result destination; a surviving input value keeps
-//! an independent snapshot.
+//! selected element through the exclusive referent. A placement returns unit;
+//! a take returns the removed element without transferring the run owner.
 //!
 //! The window is `len` slots beginning at `head` modulo `cap`, so a subscript
 //! at logical offset `i` reads slot `(head + i) mod cap` [BLK-1]. Because
@@ -89,6 +89,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run: IrValueId,
         ty: IrType,
     ) -> Result<IrValueId, BackendFailure> {
+        if matches!(self.value_type(run), Some(IrType::Address(_))) {
+            return Ok(run);
+        }
         if self.storage.slot(result).is_some() {
             let source = self.value_place(run)?;
             let destination = self.value_place(result)?;
@@ -642,7 +645,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if row.places() {
             return Err(BackendFailure::InvalidIr);
         }
-        let run_type = self.value_type(run).ok_or(BackendFailure::InvalidIr)?;
+        let run_type = self.run_value_type(run)?;
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
@@ -654,8 +657,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.load_place_result(result, ty, &format!("%{element_pointer}"))
     }
 
-    /// [BLK-3] the run one boundary operation hands back: one store at the
-    /// boundary slot for a placement, and the moved boundary for both.
+    /// [BLK-3] update an exclusive run: one store at the boundary slot for a
+    /// placement, and the moved boundary for both.
     pub(super) fn emit_run_boundary(
         &mut self,
         result: IrValueId,
@@ -664,8 +667,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run: IrValueId,
         value: Option<IrValueId>,
     ) -> Result<(), BackendFailure> {
-        let run_type = self.value_type(run).ok_or(BackendFailure::InvalidIr)?;
-        if run_type != ty {
+        let run_type = self.run_value_type(run)?;
+        if ty != IrType::Unit || !matches!(self.value_type(run), Some(IrType::Address(_))) {
             return Err(BackendFailure::InvalidIr);
         }
         let Some(shape) = RunShape::of(run_type) else {
@@ -680,7 +683,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             (false, None) => {}
             _ => return Err(BackendFailure::InvalidIr),
         }
-        let llvm = llvm_type(self.program, run_type)?;
         let length = self.run_word(run_type, run, shape.length_field())?;
         let head = self.run_word(run_type, run, shape.head_field())?;
         let updated = self.prepare_run_update(result, run, run_type)?;
@@ -720,29 +722,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         } else {
             head
         };
-        if self.storage.slot(result).is_some() {
-            let destination = self.value_place(result)?;
-            let length_address = self.aggregate_field_pointer(
-                run_type,
-                &destination,
-                shape.length_field() as usize,
-            )?;
-            let head_address =
-                self.aggregate_field_pointer(run_type, &destination, shape.head_field() as usize)?;
-            return writeln!(self.output, "  store i64 %{new_length}, ptr {length_address}\n  store i64 {new_head}, ptr {head_address}")
-                .map_err(|_| BackendFailure::TextEmission);
-        }
-        // Only an external-backing descriptor remains an SSA aggregate.
-        let base = self.value_name(run);
-        let with_length = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{with_length} = insertvalue {llvm} {base}, i64 %{new_length}, {}\n  {} = insertvalue {llvm} %{with_length}, i64 {new_head}, {}",
-            shape.length_field(),
-            self.value_name(result),
-            shape.head_field(),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        let destination = self.run_storage(run)?.ok_or(BackendFailure::InvalidIr)?;
+        let length_address =
+            self.aggregate_field_pointer(run_type, &destination, shape.length_field() as usize)?;
+        let head_address =
+            self.aggregate_field_pointer(run_type, &destination, shape.head_field() as usize)?;
+        writeln!(self.output, "  store i64 %{new_length}, ptr {length_address}\n  store i64 {new_head}, ptr {head_address}")
+            .map_err(|_| BackendFailure::TextEmission)?;
+        self.emit_constant(result, ty, IrConstant::Unit)
     }
 
     /// The physical slot one boundary operation touches [BLK-1].

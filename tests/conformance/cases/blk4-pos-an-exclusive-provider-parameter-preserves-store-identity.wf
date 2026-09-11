@@ -1,5 +1,5 @@
 fn take_one['s: affine](store: &uniq Arena<'s, 256, 16>) -> made: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
-  doc "BLK-4: a provider parameter is the one `&uniq` this rule does not refuse. No operation changes a provider's identity, only its measures, and every row that hands a provider's post-state back is a compiler-owned record whose relations are complete over what it writes.";
+  doc "BLK-4: an exclusive provider parameter uses the ordinary borrow boundary. No operation changes a provider's identity, only its measures, and every row that hands a provider's post-state back is a compiler-owned record whose relations are complete over what it writes.";
   region {
     return arena_vector::<u8>(store: &uniq deref(store), count: 8_u64);
   }

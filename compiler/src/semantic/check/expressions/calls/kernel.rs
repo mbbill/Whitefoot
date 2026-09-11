@@ -215,23 +215,43 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let result = self.kernel_result_type(node, record, signature, &instance)?;
         let requirements = self.kernel_requirements(signature, &instance, &goal_arguments)?;
-        let result_origins = if self.type_carries_identity(result)? {
-            let argument_images = state_origins
-                .into_iter()
-                .map(|origin| {
-                    origin.unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh)
-                })
-                .collect::<Vec<_>>();
-            Some(Box::new(
-                crate::semantic::state_origins::kernel_state_image(
-                    record.row,
-                    self.is_copy_type(instance.element)?,
-                    &argument_images,
-                ),
-            ))
-        } else {
-            None
-        };
+        let argument_images = state_origins
+            .into_iter()
+            .map(|origin| origin.unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh))
+            .collect::<Vec<_>>();
+        let image = crate::semantic::state_origins::kernel_state_image(
+            record.row,
+            self.is_copy_type(instance.element)?,
+            &argument_images,
+        );
+        if let Some(updated) = image.mutated_run
+            && !self.deriving_result_state_origin.get()
+        {
+            let borrow = checked_borrows
+                .first()
+                .and_then(Option::as_ref)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let Some(fields) = self
+                .state_fields_of_place(&borrow.place, bindings)?
+                .filter(|_| borrow.exact_place && !updated.unknown)
+            else {
+                return self
+                    .unsupported(crate::UnsupportedSemanticFeature::OwnerStateRouting, node);
+            };
+            let local = bindings
+                .get_mut(&borrow.place.root)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            local.state_origins = Some(
+                local
+                    .state_origins
+                    .take()
+                    .unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh)
+                    .replace_value_path(&fields, Some(updated)),
+            );
+        }
+        let result_origins = self
+            .type_carries_identity(result)?
+            .then(|| Box::new(image.result));
 
         self.statement_loans
             .borrow_mut()
@@ -516,6 +536,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | KernelShape::MutSlice
             // No row takes an outcome as an operand S39.
             | KernelShape::ResultBox => Err(SemanticCompilerFailure::InvalidResolution.into()),
+            KernelShape::Unit => Ok(CheckedType::Unit),
             KernelShape::U64 => Ok(CheckedType::Integer(IntegerType::U64)),
             // `T` is written on every row that has no operand of this shape,
             // and supplied by this operand on the two cell formations S39,
@@ -735,6 +756,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             KernelShape::Viewable | KernelShape::Slice | KernelShape::MutSlice => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
+            KernelShape::Unit => CheckedType::Unit,
             KernelShape::U64 => CheckedType::Integer(IntegerType::U64),
             KernelShape::Element => instance.element,
             KernelShape::Run => instance

@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare_grid: room_of(grid) + at_grid >= 12_u64,
     invariant flat_grid: head_of(grid) <= 0_u64
   ) {
-    set grid = place_back(vector: move grid, value: 1_u8);
+    place_back(vector: &uniq grid, value: 1_u8);
   }
   set grid[9_u64] = 0_u8;
   let zero_row = 0_u64;

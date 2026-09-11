@@ -5,16 +5,28 @@ command fn main() -> status: own ExitStatus pure {
       let first = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
       let second = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
       let free = fixed_vector::<Vector<'a, u8>, 2>();
-      let one = place_back(vector: move free, value: move first);
-      let two = place_back(vector: move one, value: move second);
-      let (rest, taken) = take_block(free: move two);
-      invariant remaining_min: len_of(rest) >= 1_u64;
-      invariant remaining_max: len_of(rest) <= 1_u64;
-      invariant returned_space_min: room_of(rest) >= 1_u64;
-      invariant returned_space_max: room_of(rest) <= 1_u64;
-      let full = return_block(free: move rest, block: move taken);
-      invariant conserved: len_of(full) >= 2_u64;
-      return exit_status(code: 0_u8);
+      region {
+        place_back(vector: &uniq free, value: move first);
+      }
+      let one = move free;
+      region {
+        place_back(vector: &uniq one, value: move second);
+      }
+      let two = move one;
+      region {
+        let taken = take_block(free: &uniq two);
+        let rest = move two;
+        invariant remaining_min: len_of(rest) >= 1_u64;
+        invariant remaining_max: len_of(rest) <= 1_u64;
+        invariant returned_space_min: room_of(rest) >= 1_u64;
+        invariant returned_space_max: room_of(rest) <= 1_u64;
+        region {
+          return_block(free: &uniq rest, block: move taken);
+          let full = move rest;
+          invariant conserved: len_of(full) >= 2_u64;
+          return exit_status(code: 0_u8);
+        }
+      }
     }
   }
 }

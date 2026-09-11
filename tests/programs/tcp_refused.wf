@@ -146,7 +146,7 @@ command fn main(command.args as args: own Args, command.handles as handles: own 
           invariant spare_digits: room_of(digits) + at >= 16_u64,
           invariant flat_digits: head_of(digits) <= 0_u64
         ) {
-          set digits = place_back(vector: move digits, value: 0_u8);
+          place_back(vector: &uniq digits, value: 0_u8);
         }
         let room = len_of(digits);
         let port = 0_u16;

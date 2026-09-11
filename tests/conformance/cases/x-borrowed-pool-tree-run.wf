@@ -139,7 +139,7 @@ fn checksum(left: own Slice<u64>, right: own Slice<u64>, root: own u64) -> funct
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "Two parallel store runs and a count are lent as views and a scalar borrow rather than as one struct: [BLK-4] refuses a `&uniq` whose referent reaches a run, so the tree builder takes the two exclusive views its writes need and the checksum walk takes the two shared ones its reads need.";
+  doc "Two parallel store runs and a count are lent as views and a scalar borrow. The tree builder takes the two exclusive element views its writes need, and the checksum walk takes shared views; element-only effects preserve the run windows.";
   let capacity = 64_u64;
   region 'w {
     let workspace = arena_frame::<1024, 8, 'w>();
@@ -151,7 +151,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_left: room_of(left) + at >= 64_u64,
         invariant flat_left: head_of(left) <= 0_u64
       ) {
-        set left = place_back(vector: move left, value: 0_u64);
+        place_back(vector: &uniq left, value: 0_u64);
       }
       let right = arena_vector_proved::<u64>(store: &uniq workspace, count: 64_u64);
       for @fill_right (
@@ -160,7 +160,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_right: room_of(right) + at >= 64_u64,
         invariant flat_right: head_of(right) <= 0_u64
       ) {
-        set right = place_back(vector: move right, value: 0_u64);
+        place_back(vector: &uniq right, value: 0_u64);
       }
       let count = 1_u64;
       let depth = 5_u32;

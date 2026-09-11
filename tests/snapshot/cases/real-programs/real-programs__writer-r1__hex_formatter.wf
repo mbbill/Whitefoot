@@ -12,7 +12,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_input: room_of(input) + at >= 3_u64,
         invariant flat_input: head_of(input) <= 0_u64
       ) {
-        set input = place_back(vector: move input, value: 0_u8);
+        place_back(vector: &uniq input, value: 0_u8);
       }
       set input[0_u64] = 0_u8;
       set input[1_u64] = 175_u8;
@@ -25,7 +25,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_output: room_of(output) + at >= 6_u64,
         invariant flat_output: head_of(output) <= 0_u64
       ) {
-        set output = place_back(vector: move output, value: 0_u8);
+        place_back(vector: &uniq output, value: 0_u8);
       }
       let output_room = len_of(output);
       let digit_room = len_of(hex_digits);

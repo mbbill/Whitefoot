@@ -34,8 +34,8 @@ fn bs_reserve(s: own Vector<u8>, heap: &uniq Heap, total: own u64) -> grown: own
           invariant spare_hi: room_of(built) + at <= total,
           invariant flat: head_of(built) <= 0_u64
         ) {
-          set (s, byte) = take_front(vector: move s);
-          set built = place_back(vector: move built, value: byte);
+          set byte = take_front(vector: &uniq s);
+          place_back(vector: &uniq built, value: byte);
         }
         dispose s;
         return Grew(value: move built);
@@ -88,7 +88,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
                 invariant spare_left: room_of(grown) + at >= 24_u64,
                 invariant flat_run: head_of(grown) <= 0_u64
               ) {
-                set grown = place_back(vector: move grown, value: b);
+                place_back(vector: &uniq grown, value: b);
                 set b = b +wrap 7_u8;
               }
               let total = len_of(grown);
@@ -150,7 +150,9 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
               } else {
                 return exit_status(code: 1_u8);
               }
-              set held = place_back(vector: move held, value: 65_u8);
+              region {
+                place_back(vector: &uniq held, value: 65_u8);
+              }
               region {
                 let source = slice_of(&appended_bytes);
                 for @append (
@@ -161,7 +163,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
                   invariant flat_run: head_of(held) <= 0_u64
                 ) {
                   let byte = source[at];
-                  set held = place_back(vector: move held, value: byte);
+                  place_back(vector: &uniq held, value: byte);
                 }
               }
               let stored = len_of(held);

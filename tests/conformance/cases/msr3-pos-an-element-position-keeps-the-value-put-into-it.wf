@@ -7,10 +7,16 @@ command fn main() -> status: own ExitStatus pure {
       let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
       let second = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
       let third = arena_vector_proved::<u8>(store: &uniq workspace, count: 32_u64);
-      let one = place_back(vector: move blocks, value: move first);
+      region {
+        place_back(vector: &uniq blocks, value: move first);
+      }
+      let one = move blocks;
       let spare = replace one[0_u64] = move second;
       let held = replace one[0_u64] = move third;
-      let filled = place_back(vector: move held, value: 9_u8);
+      region {
+        place_back(vector: &uniq held, value: 9_u8);
+      }
+      let filled = move held;
       let seen = filled[0_u64];
       if seen == 9_u8 {
       } else {

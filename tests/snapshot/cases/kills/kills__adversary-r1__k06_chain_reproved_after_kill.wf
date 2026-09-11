@@ -11,7 +11,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> 
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: value);
+    place_back(vector: &uniq built, value: value);
   }
   return move built;
 }

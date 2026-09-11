@@ -24,12 +24,24 @@ fn window_sum(data: own Slice<u32>, start: own u64, width: own u64) -> total: ow
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: the dominating branch establishes end <= spare, then the for-loop's automatic i < end fact composes with it under [OP-4]'s two-premise automatic rule, so the window subscript needs no written invariant.";
   let data = fixed_vector::<u32, 6>();
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
-  set data = place_back(vector: move data, value: 0_u32);
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u32);
+  }
   set data[0_u64] = 1_u32;
   set data[1_u64] = 2_u32;
   set data[2_u64] = 3_u32;

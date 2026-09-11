@@ -6,8 +6,14 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
         return exit_status(code: 70_u8);
       }
       Some(value: fresh) => {
-        let one = place_back(vector: move fresh, value: 7_u8);
-        let two = place_back(vector: move one, value: 9_u8);
+        region {
+          place_back(vector: &uniq fresh, value: 7_u8);
+        }
+        let one = move fresh;
+        region {
+          place_back(vector: &uniq one, value: 9_u8);
+        }
+        let two = move one;
         let first = two[0_u64];
         let second = two[1_u64];
         let total = first +wrap second;

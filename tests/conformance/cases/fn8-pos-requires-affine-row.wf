@@ -20,7 +20,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_src: room_of(src_run) + at >= 4_u64,
         invariant flat_src: head_of(src_run) <= 0_u64
       ) {
-        set src_run = place_back(vector: move src_run, value: 0_u8);
+        place_back(vector: &uniq src_run, value: 0_u8);
       }
       let out_run = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
       for @fill_out (
@@ -29,7 +29,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_out: room_of(out_run) + at >= 8_u64,
         invariant flat_out: head_of(out_run) <= 0_u64
       ) {
-        set out_run = place_back(vector: move out_run, value: 0_u8);
+        place_back(vector: &uniq out_run, value: 0_u8);
       }
       let out_length = len_of(out_run);
       let src_length = len_of(src_run);

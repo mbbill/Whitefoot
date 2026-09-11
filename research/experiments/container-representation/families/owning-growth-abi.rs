@@ -106,10 +106,14 @@ fn descriptor_writes(body: &str) -> u64 {
     }
     assert_eq!(
         writes,
-        (0..32).collect(),
+        (0..writes.len() as u64).collect(),
         "descriptor write coverage:\n{body}"
     );
-    32
+    assert!(
+        writes.is_empty() || writes.len() == 32,
+        "descriptor write coverage:\n{body}"
+    );
+    writes.len() as u64
 }
 
 #[cfg(test)]
@@ -191,11 +195,16 @@ fn inspect(paths: &[String]) {
                     "aggregate transfer returned to the inlined body"
                 );
             }
-            let bytes = if bridge == "wf_map_find_bridge" {
-                0
-            } else {
-                descriptor_writes(body)
-            };
+            let bytes = descriptor_writes(body);
+            if bridge != "wf_map_grow_bridge" || *variant == "retained" {
+                assert_eq!(
+                    bytes, 0,
+                    "an exclusive helper bridge must not copy a run back"
+                );
+            }
+            if bridge == "wf_map_grow_bridge" && *variant == "inlined" {
+                assert_eq!(bytes, 32, "growth must commit its genuinely new backing");
+            }
             println!(
                 "owning-growth IR: {variant} {bridge}: helper_call={calls_helper}; receiver_descriptor_write={bytes} bytes"
             );
@@ -244,27 +253,22 @@ fn main() {
     let put = result_type(&input, "wf_put");
     let find = result_type(&input, "wf_find");
     let grow = result_type(&input, "wf_rehash_all");
-    let put_fields = fields(&input, &put);
-    let outcome = put_fields
-        .strip_prefix(&format!("{{ {RUN}, "))
-        .and_then(|text| text.strip_suffix(" }"))
-        .expect("put returns one run and one outcome");
-    assert_eq!(fields(&input, outcome), "{ i32, ptr, ptr }");
+    assert_eq!(fields(&input, &put), "{ i32, ptr, ptr }");
     let option = fields(&input, &find)
         .strip_prefix("{ ")
         .and_then(|text| text.strip_suffix(", i64 }"))
         .expect("find returns one option and the examination count");
     assert_eq!(fields(&input, option), "{ i32, i64 }");
-    assert_eq!(fields(&input, &grow), format!("{{ {RUN}, i8, i64, i64 }}"));
+    assert_eq!(fields(&input, &grow), "{ i8, i64, i64 }");
     for (name, signature) in [
         (
             "wf_put",
-            format!("ptr %wf.result, {RUN} %v0, i64 %v2, ptr %v3"),
+            "ptr %wf.result, ptr %v0, i64 %v1, ptr %v2".to_owned(),
         ),
         ("wf_find", "ptr %wf.result, ptr %v0, i64 %v1".to_owned()),
         (
             "wf_rehash_all",
-            format!("ptr %wf.result, ptr %v0, {RUN} %v1, i64 %v2"),
+            "ptr %wf.result, ptr %v0, ptr %v1, i64 %v2".to_owned(),
         ),
     ] {
         assert!(function(&input, name).starts_with(&format!(
@@ -317,15 +321,11 @@ fn main() {
 define i32 @wf_map_put_bridge(ptr %descriptor, i64 %key, ptr %owner, ptr %returned) noinline {{
 entry:
   %result = alloca {put}, align 8
-  %run = load {RUN}, ptr %descriptor
-  call void @wf_put(ptr %result, {RUN} %run, i64 %key, ptr %owner)
-  %new.run = load {RUN}, ptr %result
-  store {RUN} %new.run, ptr %descriptor
-  %outcome = getelementptr inbounds {put}, ptr %result, i32 0, i32 1
-  %tag = load i32, ptr %outcome
-  %old.at = getelementptr inbounds {outcome}, ptr %outcome, i32 0, i32 1
+  call void @wf_put(ptr %result, ptr %descriptor, i64 %key, ptr %owner)
+  %tag = load i32, ptr %result
+  %old.at = getelementptr inbounds {put}, ptr %result, i32 0, i32 1
   %old = load ptr, ptr %old.at
-  %full.at = getelementptr inbounds {outcome}, ptr %outcome, i32 0, i32 2
+  %full.at = getelementptr inbounds {put}, ptr %result, i32 0, i32 2
   %full = load ptr, ptr %full.at
   %replaced = icmp eq i32 %tag, 1
   %back = select i1 %replaced, ptr %old, ptr %full
@@ -352,16 +352,13 @@ entry:
 define i64 @wf_map_grow_bridge(ptr %descriptor, i64 %count, ptr %code) noinline {{
 entry:
   %result = alloca {grow}, align 8
-  %run = load {RUN}, ptr %descriptor
-  call void @wf_rehash_all(ptr %result, ptr null, {RUN} %run, i64 %count)
-  %new.run = load {RUN}, ptr %result
-  store {RUN} %new.run, ptr %descriptor
-  %code.at = getelementptr inbounds {grow}, ptr %result, i32 0, i32 1
+  call void @wf_rehash_all(ptr %result, ptr null, ptr %descriptor, i64 %count)
+  %code.at = getelementptr inbounds {grow}, ptr %result, i32 0, i32 0
   %status = load i8, ptr %code.at
   store i8 %status, ptr %code
-  %work.at = getelementptr inbounds {grow}, ptr %result, i32 0, i32 2
+  %work.at = getelementptr inbounds {grow}, ptr %result, i32 0, i32 1
   %work = load i64, ptr %work.at
-  %moved.at = getelementptr inbounds {grow}, ptr %result, i32 0, i32 3
+  %moved.at = getelementptr inbounds {grow}, ptr %result, i32 0, i32 2
   %moved = load i64, ptr %moved.at
   %prefix = mul i64 %work, 131
   %checksum = add i64 %prefix, %moved
@@ -373,8 +370,7 @@ entry:
 ; to be readnone and noncapturing before the timed bridge may supply null.
 define void @wf_map_heap_probe(ptr %heap, ptr %result, ptr %descriptor, i64 %count) noinline {{
 entry:
-  %run = load {RUN}, ptr %descriptor
-  call void @wf_rehash_all(ptr %result, ptr %heap, {RUN} %run, i64 %count)
+  call void @wf_rehash_all(ptr %result, ptr %heap, ptr %descriptor, i64 %count)
   ret void
 }}
 "#

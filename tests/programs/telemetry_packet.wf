@@ -88,7 +88,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare: room_of(packet) + at >= 12_u64,
         invariant flat: head_of(packet) <= 0_u64
       ) {
-        set packet = place_back(vector: move packet, value: 0_u8);
+        place_back(vector: &uniq packet, value: 0_u8);
       }
       let temperature = 36.5_f32;
       let temperature_bits = reinterpret::<f32, u32>(temperature);

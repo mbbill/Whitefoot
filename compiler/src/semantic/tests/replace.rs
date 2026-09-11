@@ -31,7 +31,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
     invariant spare: room_of(first) + at >= 4_u64,
     invariant flat: head_of(first) <= 0_u64
   ) {
-    set first = place_back(vector: move first, value: 7_u8);
+    place_back(vector: &uniq first, value: 7_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
   let second = fixed_vector::<u8, 4>();
@@ -41,7 +41,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
     invariant spare: room_of(second) + at >= 2_u64,
     invariant flat: head_of(second) <= 0_u64
   ) {
-    set second = place_back(vector: move second, value: 9_u8);
+    place_back(vector: &uniq second, value: 9_u8);
   }
   let old = replace holder.payload = move second;
   let size = len_of(old);
@@ -81,7 +81,7 @@ fn replace_of_a_copy_place_rejects_citing_set2() {
     invariant spare: room_of(first) + at >= 1_u64,
     invariant flat: head_of(first) <= 0_u64
   ) {
-    set first = place_back(vector: move first, value: 0_u8);
+    place_back(vector: &uniq first, value: 0_u8);
   }
   let holder = Holder(payload: move first, count: 3_u64);
   let old = replace holder.count = 4_u64;
@@ -110,7 +110,7 @@ fn set_of_an_affine_place_still_rejects_and_names_replace() {
     invariant spare: room_of(first) + at >= 1_u64,
     invariant flat: head_of(first) <= 0_u64
   ) {
-    set first = place_back(vector: move first, value: 0_u8);
+    place_back(vector: &uniq first, value: 0_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
   let second = fixed_vector::<u8, 4>();
@@ -120,7 +120,7 @@ fn set_of_an_affine_place_still_rejects_and_names_replace() {
     invariant spare: room_of(second) + at >= 1_u64,
     invariant flat: head_of(second) <= 0_u64
   ) {
-    set second = place_back(vector: move second, value: 0_u8);
+    place_back(vector: &uniq second, value: 0_u8);
   }
   set holder.payload = move second;
   return exit_status(code: 0_u8);
@@ -153,7 +153,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
     invariant spare: room_of(first) + at >= 4_u64,
     invariant flat: head_of(first) <= 0_u64
   ) {
-    set first = place_back(vector: move first, value: 7_u8);
+    place_back(vector: &uniq first, value: 7_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len_of(holder.payload);
@@ -166,7 +166,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
       invariant spare: room_of(second) + at >= 2_u64,
       invariant flat: head_of(second) <= 0_u64
     ) {
-      set second = place_back(vector: move second, value: 9_u8);
+      place_back(vector: &uniq second, value: 9_u8);
     }
     let old = replace holder.payload = move second;
     set holder.payload[3_u64] = 5_u8;
@@ -196,7 +196,7 @@ fn the_same_subscript_discharges_without_the_replace() {
     invariant spare: room_of(first) + at >= 4_u64,
     invariant flat: head_of(first) <= 0_u64
   ) {
-    set first = place_back(vector: move first, value: 7_u8);
+    place_back(vector: &uniq first, value: 7_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len_of(holder.payload);
@@ -233,7 +233,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare: room_of(first) + at >= 2_u64,
     invariant flat: head_of(first) <= 0_u64
   ) {
-    set first = place_back(vector: move first, value: 1_u8);
+    place_back(vector: &uniq first, value: 1_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
   let second = fixed_vector::<u8, 4>();
@@ -243,7 +243,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare: room_of(second) + at >= 3_u64,
     invariant flat: head_of(second) <= 0_u64
   ) {
-    set second = place_back(vector: move second, value: 2_u8);
+    place_back(vector: &uniq second, value: 2_u8);
   }
   let old = replace holder.payload = move second;
   set holder.count = 1_u64;
@@ -276,7 +276,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare: room_of(first) + at >= 2_u64,
     invariant flat: head_of(first) <= 0_u64
   ) {
-    set first = place_back(vector: move first, value: 1_u8);
+    place_back(vector: &uniq first, value: 1_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
   let gone = sink(h: move holder);
@@ -287,7 +287,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare: room_of(second) + at >= 1_u64,
     invariant flat: head_of(second) <= 0_u64
   ) {
-    set second = place_back(vector: move second, value: 0_u8);
+    place_back(vector: &uniq second, value: 0_u8);
   }
   let old = replace holder.payload = move second;
   return exit_status(code: 0_u8);
@@ -313,7 +313,7 @@ fn replace_through_a_shared_borrow_rejects() {
     invariant spare: room_of(first) + at >= 2_u64,
     invariant flat: head_of(first) <= 0_u64
   ) {
-    set first = place_back(vector: move first, value: 1_u8);
+    place_back(vector: &uniq first, value: 1_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
   region {
@@ -325,7 +325,7 @@ fn replace_through_a_shared_borrow_rejects() {
       invariant spare: room_of(second) + at >= 1_u64,
       invariant flat: head_of(second) <= 0_u64
     ) {
-      set second = place_back(vector: move second, value: 0_u8);
+      place_back(vector: &uniq second, value: 0_u8);
     }
     let old = replace deref(view).payload = move second;
   }
@@ -352,7 +352,7 @@ fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_oblig
     invariant flat: head_of(slots) <= 0_u64
   ) {
     let empty = None<u32>();
-    set slots = place_back(vector: move slots, value: move empty);
+    place_back(vector: &uniq slots, value: move empty);
   }
   let filled = Some<u32>(value: 7_u32);
   let vacant = replace slots[2_u64] = move filled;
@@ -392,16 +392,8 @@ fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_oblig
     });
 }
 
-/// B7c4b left this case on the retiring surface, and the reason is a finding
-/// rather than an omission: on the container surface neither route to
-/// "content reached through a borrow" exists for an affine element. A struct
-/// holding a run lent `&uniq` is [BLK-4]'s refusal
-/// (`UniqueParameterReachesContainer`), and the exclusive view that replaces
-/// it — `&uniq MutSlice<Option<u32>>` — stops as an unsupported composite
-/// value, because a view's element domain is flat and `Option<u32>` reaches
-/// it only as a nominal a view may not carry. Until one of those two lands,
-/// [SET-2]'s sole admitted move of borrowed content has no writable program
-/// on the new surface.
+/// A legacy buffer element exchange retains [SET-2]'s ownership and bounds
+/// judgments through a unique holder; run referents use the same rule.
 #[test]
 fn element_position_replace_through_a_unique_holder_accepts() {
     // The DESIGN walkthrough shape: the commit through a live usable `&uniq`
@@ -473,7 +465,7 @@ fn element_replacement_rhs_must_be_the_exact_element_type() {
     invariant flat: head_of(slots) <= 0_u64
   ) {
     let empty = None<u32>();
-    set slots = place_back(vector: move slots, value: move empty);
+    place_back(vector: &uniq slots, value: move empty);
   }
   let taken = replace slots[0_u64] = 3_u32;
   return exit_status(code: 0_u8);
@@ -563,7 +555,7 @@ fn replace_rhs_type_mismatch_rejects_citing_type5() {
     invariant spare: room_of(first) + at >= 1_u64,
     invariant flat: head_of(first) <= 0_u64
   ) {
-    set first = place_back(vector: move first, value: 0_u8);
+    place_back(vector: &uniq first, value: 0_u8);
   }
   let holder = Holder(payload: move first, count: 0_u64);
   let second = fixed_vector::<u16, 4>();

@@ -1,17 +1,8 @@
-//! [BLK-4] confinement: the position closure and the `&uniq` parameter
-//! refusal.
+//! [BLK-4] confinement and the stored-position reachability closure.
 //!
-//! A confined type is one whose complete type after substitution names a
-//! region, and confinement is a set rather than a flag: a value may be moved,
-//! returned, or bound only where every member of that set outlives the
-//! destination. The half this module carries is the one [STOR-5] deferred —
-//! the refusal of a `&uniq` parameter of a source-declared `fn` whose
-//! referent reaches a run or a type parameter — together with the
-//! reachability closure [PROV-4] states and [PROV-6]'s release graph reads.
-//!
-//! Nothing here reads a name or a signature shape: the closure is over
-//! fields, enum variant payloads, run elements, and written type arguments,
-//! and the verdict is one per declaration.
+//! A confined value can occupy a destination only when every region in its
+//! complete type outlives that destination. Exclusive parameters, including
+//! generic referents, use ordinary projected-effect kills [CALL-6, ENT-5].
 
 use std::collections::HashSet;
 
@@ -21,65 +12,7 @@ use crate::{Production, SemanticIssueKind, SemanticRule};
 use super::super::model::{CheckedNominalKind, CheckedType, NominalId};
 use super::{CheckStop, Checker};
 
-/// What a `&uniq` referent reached that [BLK-4] refuses.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ReachedSurface {
-    /// One of the two runs [BLK-1], whose boundary operations move exactly
-    /// the measures a caller would otherwise retain across the call [MSR-3].
-    Run,
-    /// A type parameter, which is opaque at the declaration where this
-    /// verdict is reached, and which no [S37] bound excludes a run at: the
-    /// runs are affine, so the `affine` and `linear` bounds admit one and the
-    /// unbounded position admits one too.
-    TypeParameter,
-}
-
-impl ReachedSurface {
-    const fn phrase(self) -> &'static str {
-        match self {
-            Self::Run => "a container nominal",
-            Self::TypeParameter => "a type parameter no linearity bound excludes both at",
-        }
-    }
-}
-
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// [BLK-4] the `&uniq` parameter refusal of one source-declared `fn`.
-    ///
-    /// A provider parameter is the one `&uniq` this rule does not refuse
-    /// [PROV-2]: no operation changes a provider's identity, only its
-    /// measures, and every row that hands a provider's post-state back is a
-    /// compiler-owned record whose relations are complete.
-    ///
-    /// Full arrays and legacy buffers are outside the refusal. An array's
-    /// four measures are fixed by its type; a buffer's length is fixed at
-    /// formation. A callee holding one `&uniq` cannot change those outer
-    /// measures. The two runs are refused because their four boundary
-    /// operations [BLK-3] change the window's measures.
-    pub(super) fn check_unique_parameter_confinement(
-        &self,
-        mode: super::CheckedMode,
-        ty: CheckedType,
-        name: &str,
-        node: NodeId,
-    ) -> Result<(), CheckStop> {
-        if !matches!(mode, super::CheckedMode::Unique(_)) {
-            return Ok(());
-        }
-        let Some(reached) = self.reaches_confined_surface(ty)? else {
-            return Ok(());
-        };
-        self.issue_node(
-            SemanticRule::Blk4,
-            node,
-            SemanticIssueKind::UniqueParameterReachesContainer {
-                parameter: name.to_owned(),
-                reached: reached.phrase(),
-                mechanical_fix: "take the run by value and return it, or take a view of it",
-            },
-        )
-    }
-
     /// [BLK-4] a stored position whose brand resolves to the entry heap's
     /// store region, in a unit whose entry selects no `command.heap` row.
     ///
@@ -188,61 +121,5 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(false)
-    }
-
-    /// The [PROV-4] reachability closure over one type, answering with the
-    /// first refused surface it reaches: through fields, enum variant
-    /// payloads, run elements, and written type arguments, at any depth.
-    fn reaches_confined_surface(
-        &self,
-        ty: CheckedType,
-    ) -> Result<Option<ReachedSurface>, CheckStop> {
-        let mut pending = vec![ty];
-        let mut visited: HashSet<NominalId> = HashSet::new();
-        while let Some(current) = pending.pop() {
-            match current {
-                CheckedType::FixedVector { element, .. } => {
-                    let _ = element;
-                    return Ok(Some(ReachedSurface::Run));
-                }
-                CheckedType::Vector { .. } => return Ok(Some(ReachedSurface::Run)),
-                // [BLK-4, VIEW-4] a `&uniq` whose referent is a view is
-                // admitted: a view carries no measure a callee could move,
-                // [VIEW-4] already forbids replacing a view through such a
-                // borrow, and [CALL-3] classifies what a callee writes
-                // through one as a viewed-storage write. That is what lets a
-                // helper be handed `&uniq MutSlice<u8>`, fill it, and leave
-                // its caller's own measures standing.
-                CheckedType::Slice { .. } => {}
-                CheckedType::Generic(_) => return Ok(Some(ReachedSurface::TypeParameter)),
-                CheckedType::Array { element, .. } => pending.push(self.element_type(element)?),
-                CheckedType::Buffer { element } => {
-                    pending.push(element.ty());
-                }
-                CheckedType::Nominal(id) => {
-                    if !visited.insert(id) {
-                        continue;
-                    }
-                    match &self.nominal(id)?.kind {
-                        CheckedNominalKind::Struct { fields } => {
-                            pending.extend(fields.iter().map(|field| field.ty));
-                        }
-                        CheckedNominalKind::Enum { variants } => {
-                            pending.extend(
-                                variants.iter().flat_map(|variant| {
-                                    variant.fields.iter().map(|field| field.ty)
-                                }),
-                            );
-                        }
-                        CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
-                        CheckedNominalKind::Arena { content, .. } => pending.push(*content),
-                        CheckedNominalKind::ArenaStorage
-                        | CheckedNominalKind::SystemResource { .. } => {}
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(None)
     }
 }

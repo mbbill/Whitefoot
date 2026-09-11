@@ -6,10 +6,18 @@ struct Ring {
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- writing filter.cursor kills the old bound on that field [ENT-5](a); each iteration reestablishes it before indexing.";
   let samples = fixed_vector::<u32, 4>();
-  set samples = place_back(vector: move samples, value: 0_u32);
-  set samples = place_back(vector: move samples, value: 0_u32);
-  set samples = place_back(vector: move samples, value: 0_u32);
-  set samples = place_back(vector: move samples, value: 0_u32);
+  region {
+    place_back(vector: &uniq samples, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0_u32);
+  }
   let ring = Ring(samples: move samples, cursor: 0_u64);
   let total = 0_u32;
   let mark = 0_u32;

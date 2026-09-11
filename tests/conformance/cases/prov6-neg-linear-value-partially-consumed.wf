@@ -6,10 +6,22 @@ linear struct Chunk {
 command fn main() -> status: own ExitStatus pure {
   doc "PROV-6: a consume of a proper sub-place of a value linear in this scope, with no commit reinitialising that sub-place, abandons the residual the obligation was written for. The refusal is stated over the consume and names the destructuring consume as its repair.";
   let empty = fixed_vector::<u8, 4>();
-  let r1 = place_back(vector: move empty, value: 0_u8);
-  let r2 = place_back(vector: move r1, value: 0_u8);
-  let r3 = place_back(vector: move r2, value: 0_u8);
-  let run = place_back(vector: move r3, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let r1 = move empty;
+  region {
+    place_back(vector: &uniq r1, value: 0_u8);
+  }
+  let r2 = move r1;
+  region {
+    place_back(vector: &uniq r2, value: 0_u8);
+  }
+  let r3 = move r2;
+  region {
+    place_back(vector: &uniq r3, value: 0_u8);
+  }
+  let run = move r3;
   let chunk = Chunk(page: move run, spare: 7_u8);
   let page = move chunk.page;
   dispose page;

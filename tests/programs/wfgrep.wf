@@ -143,7 +143,7 @@ fn zeroed_bytes(store: &uniq Heap, count: own u64) -> made: own Option<Vector<u8
           invariant spare: room_of(built) + at >= count,
           invariant flat: head_of(built) <= 0_u64
         ) {
-          set built = place_back(vector: move built, value: 0_u8);
+          place_back(vector: &uniq built, value: 0_u8);
         }
         return Some<Vector<u8>>(value: move built);
       }
@@ -168,7 +168,7 @@ fn zeroed_words(store: &uniq Heap, count: own u64) -> made: own Option<Vector<u6
           invariant spare: room_of(built) + at >= count,
           invariant flat: head_of(built) <= 0_u64
         ) {
-          set built = place_back(vector: move built, value: 0_u64);
+          place_back(vector: &uniq built, value: 0_u64);
         }
         return Some<Vector<u64>>(value: move built);
       }
@@ -997,32 +997,32 @@ fn walk(factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Slice<u8>
                                           break @batches;
                                         }
                                         let at = 0_u64;
-                                        loop @entry {
+                                        loop @stored_entry {
                                           let entries_room = len_of(entries);
                                           let names_room = len_of(names);
                                           let header_end = at +wrap 3_u64;
                                           let complete = header_end <= produced;
                                           if complete {
                                           } else {
-                                            break @entry;
+                                            break @stored_entry;
                                           }
                                           let kind_readable = at < entries_room;
                                           if kind_readable {
                                           } else {
-                                            break @entry;
+                                            break @stored_entry;
                                           }
                                           let kind = entries[at];
                                           let length_low_at = at +wrap 1_u64;
                                           let length_low_readable = length_low_at < entries_room;
                                           if length_low_readable {
                                           } else {
-                                            break @entry;
+                                            break @stored_entry;
                                           }
                                           let length_high_at = at +wrap 2_u64;
                                           let length_high_readable = length_high_at < entries_room;
                                           if length_high_readable {
                                           } else {
-                                            break @entry;
+                                            break @stored_entry;
                                           }
                                           let name_length_low = entries[length_low_at];
                                           let name_length_high = entries[length_high_at];
@@ -1035,17 +1035,17 @@ fn walk(factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Slice<u8>
                                           let bounded = name_end <= produced;
                                           if bounded {
                                           } else {
-                                            break @entry;
+                                            break @stored_entry;
                                           }
                                           let ordered = name_at <= name_end;
                                           if ordered {
                                           } else {
-                                            break @entry;
+                                            break @stored_entry;
                                           }
                                           let addressable = name_end <= entries_room;
                                           if addressable {
                                           } else {
-                                            break @entry;
+                                            break @stored_entry;
                                           }
                                           set at = name_end;
                                           let dotted = 0_u8;

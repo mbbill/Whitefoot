@@ -1,11 +1,19 @@
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
   doc "EFF-5 and SYS-12: both calls take an exclusive borrow of the same `Output`, so ordinary ownership prevents the second call from starting until the first call has released its loan. The redirected sink is read back through an independent DirectoryRead value to witness that source order; no relationship is inferred between distinct Output values merely because the environment may redirect them to one physical sink.";
   let first = fixed_vector::<u8, 2>();
-  set first = place_back(vector: move first, value: 65_u8);
-  set first = place_back(vector: move first, value: 65_u8);
+  region {
+    place_back(vector: &uniq first, value: 65_u8);
+  }
+  region {
+    place_back(vector: &uniq first, value: 65_u8);
+  }
   let second = fixed_vector::<u8, 2>();
-  set second = place_back(vector: move second, value: 66_u8);
-  set second = place_back(vector: move second, value: 66_u8);
+  region {
+    place_back(vector: &uniq second, value: 66_u8);
+  }
+  region {
+    place_back(vector: &uniq second, value: 66_u8);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
       None() => {
@@ -19,7 +27,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           invariant spare: room_of(page) + at >= 8_u64,
           invariant flat: head_of(page) <= 0_u64
         ) {
-          set page = place_back(vector: move page, value: 0_u8);
+          place_back(vector: &uniq page, value: 0_u8);
         }
         region 'o {
           let head = slice_of(&first);

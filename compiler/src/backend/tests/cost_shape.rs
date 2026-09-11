@@ -1336,11 +1336,10 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "wf__handle_reserve"
             // The lease length pass and the path NUL scan.
             | "strlen" | "memchr"
-            // The general store's own take and give-back. The take is
-            // `malloc` and not `calloc` since B7c4b: a store hands out raw
-            // slots and the zero fill is the source's own `zeroed_bytes`
-            // loop, which is where this program's initialization now lives.
-            | "malloc" | "free"
+            // The store supplies raw storage. LLVM may fold that malloc
+            // and the source's zero-fill loop into one calloc; both denote
+            // the same single allocation and initialization.
+            | "malloc" | "calloc" | "free"
             // External resource exhaustion and the final process abort.
             | "wf_resource_record_abort" | "abort"
             // The [PROG-3] start failure: an initial working directory the
@@ -1425,7 +1424,6 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
 /// `research/experiments/buffer-initialization-cost/`.
 #[test]
 fn the_reused_buffers_are_initialized_once_at_allocation() {
-    let program = program();
     // `wfgrep` asks for exactly eleven runs, and gets exactly eleven store
     // takes. Derived from source, function by function: `main` takes the
     // pattern (4096), the root name (256), the root path (1024), and the
@@ -1442,72 +1440,82 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // shape, recorded here rather than hidden — it is one of the numbers the
     // flagship re-attribution has to explain.
     //
-    // B7c4b moved these eleven from the ambient heap to the general store,
-    // and the count is unchanged while its two halves are not. The
-    // allocation is now `@malloc`, because a store hands out raw slots; the
-    // initialization is the source's own `zeroed_bytes` and `zeroed_words`
-    // fill loop, which is why the eleven sites no longer read as eleven
-    // literal `@calloc`s. Every take goes through one of those two helpers,
-    // and the host inliner expands nine of the eleven call sites and leaves
-    // two as calls, so the eleven appear here as nine `@malloc`s of the
-    // expanded sizes plus two calls to the out-of-line
-    // `wf_zeroed_bytes`, whose own take is the one `@malloc` of a
-    // non-constant size in the program. That split is an inlining fact and
-    // not a source one, so both halves are asserted and their sum is the
-    // eleven the source writes. Rechecking 4f971ea0 against b75306c7 accounts
-    // for the former eight/three split: `main`'s 1280-byte report is now
-    // inlined too. All four `main` takes, both `search_file` takes and the
-    // first three `walk` takes are expanded. Only `walk`'s 1024-byte child
-    // path and 1280-byte report remain calls into `zeroed_bytes`.
+    // The source still owns initialization. With exclusive run rows LLVM can
+    // fold malloc plus the zero-fill loop into calloc. Count either optimized
+    // spelling, including both calloc factors, while retaining the exact
+    // source-site and per-size counts, and one allocation per retained helper.
     let mut expanded = 0;
     let mut out_of_line = 0;
-    let mut helper_takes = 0;
+    let mut helper_takes = std::collections::BTreeMap::new();
+    let mut retained_helpers = std::collections::BTreeSet::new();
+    let mut sizes = std::collections::BTreeMap::new();
     for function in program_functions() {
         let signature = function.lines().next().unwrap_or_default();
-        let helper =
-            signature.contains(" @wf_zeroed_bytes(") || signature.contains(" @wf_zeroed_words(");
+        let helper = ["wf_zeroed_bytes", "wf_zeroed_words"]
+            .into_iter()
+            .find(|name| signature.contains(&format!(" @{name}(")));
         for line in function.lines() {
-            if call_target(line) == Some("malloc") {
-                if helper {
-                    helper_takes += 1;
+            if let Some(callee @ ("malloc" | "calloc")) = call_target(line) {
+                if let Some(helper) = helper {
+                    *helper_takes.entry(helper).or_insert(0) += 1;
                 } else {
                     expanded += 1;
+                    let size = |ordinal| {
+                        call_argument(line, callee, ordinal)
+                            .and_then(|argument| argument.split_whitespace().next_back())
+                            .and_then(|value| value.parse::<u64>().ok())
+                            .expect("an expanded source allocation has a constant extent")
+                    };
+                    let bytes = if callee == "calloc" {
+                        size(0) * size(1)
+                    } else {
+                        size(0)
+                    };
+                    *sizes.entry(bytes).or_insert(0) += 1;
                 }
             }
-            if matches!(
-                call_target(line),
-                Some("wf_zeroed_bytes" | "wf_zeroed_words")
-            ) {
+            if let Some(callee @ ("wf_zeroed_bytes" | "wf_zeroed_words")) = call_target(line) {
                 out_of_line += 1;
+                retained_helpers.insert(callee);
+                // Extent is the helper's final source argument. Optimizers can
+                // remove its unused provider argument but do not change that value.
+                let count = (0..)
+                    .map_while(|ordinal| call_argument(line, callee, ordinal))
+                    .last()
+                    .and_then(|argument| argument.split_whitespace().next_back())
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .expect("a retained initialization call has its constant source extent");
+                let bytes = count * if callee == "wf_zeroed_words" { 8 } else { 1 };
+                *sizes.entry(bytes).or_insert(0) += 1;
             }
         }
     }
     assert_eq!(
-        helper_takes, 1,
-        "the retained helper holds exactly its own take"
+        helper_takes,
+        retained_helpers
+            .into_iter()
+            .map(|helper| (helper, 1))
+            .collect(),
+        "every retained initialization helper has exactly one allocation"
     );
     assert_eq!(
         expanded + out_of_line,
         11,
         "eleven source runs, eleven store takes"
     );
-    assert_eq!(expanded, 9, "nine takes are expanded at their call site");
-    assert_eq!(out_of_line, 2, "two takes remain calls into the helper");
-    for (size, count) in [
-        ("@malloc(i64 4096)", 2),
-        ("@malloc(i64 8192)", 2),
-        ("@malloc(i64 1024)", 1),
-        ("@malloc(i64 1280)", 1),
-        ("@malloc(i64 65664)", 1),
-        ("@malloc(i64 512)", 1),
-        ("@malloc(i64 256)", 1),
-    ] {
-        assert_eq!(
-            program.matches(size).count(),
-            count,
-            "allocation {size} must appear {count} times"
-        );
-    }
+    assert_eq!(
+        sizes,
+        std::collections::BTreeMap::from([
+            (4096, 2),
+            (8192, 2),
+            (1024, 2),
+            (1280, 2),
+            (65664, 1),
+            (512, 1),
+            (256, 1),
+        ]),
+        "all eleven source takes retain their exact byte extents"
+    );
     // Nothing reallocates, and nothing re-initializes. That the fill runs once
     // per take is a source fact under this surface rather than an allocator
     // guarantee: the fill loop is inside `zeroed_bytes` and `zeroed_words`,
@@ -1552,11 +1560,15 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // source buffer"; this ordering check additionally requires allocation to
     // begin before that function's first emitted transfer.
     for function in program_functions() {
-        let Some(first_allocation) = ["@malloc(", "@wf_zeroed_bytes(", "@wf_zeroed_words("]
-            .iter()
-            .filter_map(|site| function.find(site))
-            .min()
-        else {
+        let Some(first_allocation) = [
+            "@malloc(",
+            "@calloc(",
+            "@wf_zeroed_bytes(",
+            "@wf_zeroed_words(",
+        ]
+        .iter()
+        .filter_map(|site| function.find(site))
+        .min() else {
             continue;
         };
         for transfer in [

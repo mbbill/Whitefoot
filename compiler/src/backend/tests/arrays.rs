@@ -43,8 +43,12 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
         return exit_status(code: 70_u8);
       }
       Some(value: run) => {
-        set run = place_back(vector: move run, value: 7_u8);
-        set run = place_back(vector: move run, value: 11_u8);
+        region {
+          place_back(vector: &uniq run, value: 7_u8);
+        }
+        region {
+          place_back(vector: &uniq run, value: 11_u8);
+        }
         let spilled = Spilled<4>(values: move run);
         region {
           let actual = read::<4>(bytes: &spilled);
@@ -63,23 +67,37 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
           return exit_status(code: 71_u8);
         }
         Some(value: run) => {
-          set run = place_back(vector: move run, value: 13_u8);
-          set run = place_back(vector: move run, value: 17_u8);
+          region {
+            place_back(vector: &uniq run, value: 13_u8);
+          }
+          region {
+            place_back(vector: &uniq run, value: 17_u8);
+          }
           let spilled = Spilled<4>(values: move run);
           let inline = fixed_vector::<u8, 4>();
-          set inline = place_back(vector: move inline, value: 19_u8);
-          set inline = place_back(vector: move inline, value: 23_u8);
-          let (rest, first) = take_front(vector: move inline);
-          let rotated = place_back(vector: move rest, value: first);
-          let small = Inline<'a, 4>(values: move rotated);
           region {
-            let actual = read::<4>(bytes: &spilled);
-            let local = read::<4>(bytes: &small);
-            if actual != 420_u64 {
-              return exit_status(code: 2_u8);
+            place_back(vector: &uniq inline, value: 19_u8);
+          }
+          region {
+            place_back(vector: &uniq inline, value: 23_u8);
+          }
+          region {
+            let first = take_front(vector: &uniq inline);
+            let rest = move inline;
+            region {
+              place_back(vector: &uniq rest, value: first);
             }
-            if local != 732_u64 {
-              return exit_status(code: 3_u8);
+            let rotated = move rest;
+            let small = Inline<'a, 4>(values: move rotated);
+            region {
+              let actual = read::<4>(bytes: &spilled);
+              let local = read::<4>(bytes: &small);
+              if actual != 420_u64 {
+                return exit_status(code: 2_u8);
+              }
+              if local != 732_u64 {
+                return exit_status(code: 3_u8);
+              }
             }
           }
         }
@@ -117,7 +135,7 @@ fn constant_typed_places_execute_shared_calls_and_nested_projections() {
 
 const entries: array<Entry, 2> =[Entry(tag: 17_u64, samples:[[19_u64, 23_u64],[29_u64, 31_u64]]), Entry(tag: 37_u64, samples:[[41_u64, 43_u64],[47_u64, 53_u64]])];
 
-const entry: Entry = Entry(tag: 59_u64, samples:[[61_u64, 67_u64],[71_u64, 73_u64]]);
+const stored_entry: Entry = Entry(tag: 59_u64, samples:[[61_u64, 67_u64],[71_u64, 73_u64]]);
 
 fn retain['r](values: &'r array<Entry, 2>) -> result: &'r array<Entry, 2> pure {
   return values;
@@ -145,10 +163,10 @@ command fn main() -> status: own ExitStatus pure {
   if entries[1_u64].samples[1_u64][1_u64] != 53_u64 {
     return exit_status(code: 1_u8);
   }
-  if entry.tag != 59_u64 {
+  if stored_entry.tag != 59_u64 {
     return exit_status(code: 2_u8);
   }
-  let length = len_of(entry.samples[1_u64]);
+  let length = len_of(stored_entry.samples[1_u64]);
   if length != 2_u64 {
     return exit_status(code: 3_u8);
   }
@@ -163,11 +181,11 @@ command fn main() -> status: own ExitStatus pure {
       if last != 53_u64 {
         return exit_status(code: 5_u8);
       }
-      let projected = read_row(values: &entry.samples[1_u64], index: 0_u64);
+      let projected = read_row(values: &stored_entry.samples[1_u64], index: 0_u64);
       if projected != 71_u64 {
         return exit_status(code: 6_u8);
       }
-      let tag = read_entry(value: &entry);
+      let tag = read_entry(value: &stored_entry);
       if tag != 59_u64 {
         return exit_status(code: 7_u8);
       }
@@ -299,9 +317,18 @@ command fn main() -> status: own ExitStatus pure {
   let third_tag = second.payload[0_u64] +wrap 11_u64;
   let third = make_record(tag: third_tag);
   let empty = fixed_vector::<Record, 3>();
-  let one = place_back(vector: move empty, value: move first);
-  let two = place_back(vector: move one, value: move second);
-  let wrapped = place_front(vector: move two, value: move third);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: move second);
+  }
+  let two = move one;
+  region {
+    place_front(vector: &uniq two, value: move third);
+  }
+  let wrapped = move two;
   let values = seal(values: move wrapped);
   region {
     let a = read(values: &values, index: 0_u64);
@@ -385,7 +412,8 @@ fn build['s](store: &uniq Heap<'s>) -> result: own Result<array<Record<'s>, 3>, 
       }
       Ok(value: first) => {
         let first_record = Record(tag: 11_u64, owner: move first);
-        let one = place_back(vector: move empty, value: move first_record);
+        place_back(vector: &uniq empty, value: move first_record);
+        let one = move empty;
         region {
           match heap_box(store: &uniq deref(store), value: 22_u64) {
             Err(error: back) => {
@@ -393,7 +421,8 @@ fn build['s](store: &uniq Heap<'s>) -> result: own Result<array<Record<'s>, 3>, 
             }
             Ok(value: second) => {
               let second_record = Record(tag: 22_u64, owner: move second);
-              let two = place_back(vector: move one, value: move second_record);
+              place_back(vector: &uniq one, value: move second_record);
+              let two = move one;
               region {
                 match heap_box(store: &uniq deref(store), value: 33_u64) {
                   Err(error: back) => {
@@ -401,7 +430,8 @@ fn build['s](store: &uniq Heap<'s>) -> result: own Result<array<Record<'s>, 3>, 
                   }
                   Ok(value: third) => {
                     let third_record = Record(tag: 33_u64, owner: move third);
-                    let full = place_back(vector: move two, value: move third_record);
+                    place_back(vector: &uniq two, value: move third_record);
+                    let full = move two;
                     let values = array_from_fixed(vector: move full);
                     let passed = relay::<array<Record<'s>, 3>>(value: move values);
                     return Ok<array<Record<'s>, 3>, u64>(value: move passed);
@@ -597,7 +627,10 @@ fn pass<T: linear>(value: own T) -> result: own T pure {
 fn make['s](owner: own Box<'s, u64>, tag: own u64) -> result: own array<Record<'s>, 1> reads(owner) {
   let record = Record(tag: tag, owner: move owner);
   let empty = fixed_vector::<Record<'s>, 1>();
-  let full = place_back(vector: move empty, value: move record);
+  region {
+    place_back(vector: &uniq empty, value: move record);
+  }
+  let full = move empty;
   return array_from_fixed(vector: move full);
 }
 
@@ -686,8 +719,14 @@ command fn main() -> status: own ExitStatus pure {
   let first = Empty();
   let second = Empty();
   let empty = fixed_vector::<Empty, 2>();
-  let one = place_back(vector: move empty, value: move first);
-  let wrapped = place_front(vector: move one, value: move second);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let one = move empty;
+  region {
+    place_front(vector: &uniq one, value: move second);
+  }
+  let wrapped = move one;
   let empty_values = array_from_fixed(vector: move wrapped);
   let empty_returned = relay::<array<Empty, 2>>(value: move empty_values);
   let previous = replace empty_returned[1_u64] = Empty();
@@ -832,8 +871,14 @@ fn indexed_set_checks_before_rhs_and_updates_the_run() {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 0_u8);
-  let values = place_back(vector: move one, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 0_u8);
+  }
+  let values = move one;
   set values[1_u64] = replacement();
   let stored = values[1_u64];
   if stored != 9_u8 {
@@ -876,8 +921,14 @@ fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 0_u8);
-  let values = place_back(vector: move one, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 0_u8);
+  }
+  let values = move one;
   set values[2_u64] = replacement();
   return exit_status(code: 0_u8);
 }
@@ -908,7 +959,7 @@ fn a_long_loop_over_a_dynamically_indexed_run_keeps_the_frame_bounded() {
     invariant spare: room_of(built) + at >= 8_u64,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: 1_u64);
+    place_back(vector: &uniq built, value: 1_u64);
   }
   let window = move built;
   let completed = 0_u64;
@@ -984,8 +1035,14 @@ fn replacement() -> result: own u8 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 0_u8);
-  let values = place_back(vector: move one, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 0_u8);
+  }
+  let values = move one;
   let inner = Inner(values: move values, sibling: 77_u16);
   let outer = Outer(prefix: 123_u32, inner: move inner);
   set outer.inner.values[1_u64] = replacement();
@@ -1051,7 +1108,10 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let row = array_new::<u64, 2>(7_u64);
   let empty = fixed_vector::<array<u64, 2>, 2>();
-  let rows = place_back(vector: move empty, value: move row);
+  region {
+    place_back(vector: &uniq empty, value: move row);
+  }
+  let rows = move empty;
   let width = len_of(rows[0_u64]);
   let capacity = cap_of(rows[0_u64]);
   let head = head_of(rows[0_u64]);
@@ -1104,12 +1164,20 @@ command fn main() -> status: own ExitStatus pure {
   let first = box_new(17_u64);
   let second = box_new(29_u64);
   let leaf = fixed_vector::<box<u64>, 2>();
-  set leaf = place_back(vector: move leaf, value: move first);
-  set leaf = place_back(vector: move leaf, value: move second);
+  region {
+    place_back(vector: &uniq leaf, value: move first);
+  }
+  region {
+    place_back(vector: &uniq leaf, value: move second);
+  }
   let middle = fixed_vector::<FixedVector<box<u64>, 2>, 1>();
-  set middle = place_back(vector: move middle, value: move leaf);
+  region {
+    place_back(vector: &uniq middle, value: move leaf);
+  }
   let outer = fixed_vector::<FixedVector<FixedVector<box<u64>, 2>, 1>, 1>();
-  set outer = place_back(vector: move outer, value: move middle);
+  region {
+    place_back(vector: &uniq outer, value: move middle);
+  }
   let carried = pass::<FixedVector<FixedVector<FixedVector<box<u64>, 2>, 1>, 1>>(value: move outer);
   return exit_status(code: 0_u8);
 }
@@ -1141,11 +1209,17 @@ fn general_run_elements_preserve_box_brands_across_region_polymorphic_calls() {
 
 fn nest['s](value: own Box<'s, u64>) -> result: own FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1> pure {
   let leaf = fixed_vector::<Box<'s, u64>, 1>();
-  set leaf = place_back(vector: move leaf, value: move value);
+  region {
+    place_back(vector: &uniq leaf, value: move value);
+  }
   let middle = fixed_vector::<FixedVector<Box<'s, u64>, 1>, 1>();
-  set middle = place_back(vector: move middle, value: move leaf);
+  region {
+    place_back(vector: &uniq middle, value: move leaf);
+  }
   let outer = fixed_vector::<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1>();
-  set outer = place_back(vector: move outer, value: move middle);
+  region {
+    place_back(vector: &uniq outer, value: move middle);
+  }
   return move outer;
 }
 
@@ -1222,7 +1296,10 @@ fn build['s](store: &uniq Heap<'s>) -> result: own Option<Tree<'s>> reads(store)
               return None<Tree<'s>>();
             }
             Some(value: parent_children) => {
-              let populated = place_back(vector: move parent_children, value: move child);
+              region {
+                place_back(vector: &uniq parent_children, value: move child);
+              }
+              let populated = move parent_children;
               let root = Tree(children: move populated);
               return Some<Tree<'s>>(value: move root);
             }
@@ -1312,8 +1389,14 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
   let second_tag = first.payload[0_u64] +wrap 11_u64;
   let second = make_record(tag: second_tag);
   let empty = fixed_vector::<Record, 2>();
-  let one = place_back(vector: move empty, value: move first);
-  let two = place_back(vector: move one, value: move second);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: move second);
+  }
+  let two = move one;
   let values = array_from_fixed(vector: move two);
   region {
     match place(store: &uniq heap, values: move values) {

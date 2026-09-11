@@ -971,27 +971,31 @@ fn call_results_substitute_regions_inside_flat_run_elements() {
 fn build['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (slots: own FixedVector<Option<Entry<'s>>, 1>, returned: own Box<'s, u64>) pure contract {
   ensures len_of(slots) == 1_u64;
 } {
-  let entry = Entry(payload: move first);
-  let occupied = Some<Entry<'s>>(value: move entry);
+  let stored_entry = Entry(payload: move first);
+  let occupied = Some<Entry<'s>>(value: move stored_entry);
   let slots = fixed_vector::<Option<Entry<'s>>, 1>();
-  set slots = place_back(vector: move slots, value: move occupied);
+  region {
+    place_back(vector: &uniq slots, value: move occupied);
+  }
   return move slots, move replacement;
 }
 
-fn replace_one['s](slots: own FixedVector<Option<Entry<'s>>, 1>, replacement: own Entry<'s>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(slots), writes(slots) contract {
-  requires 1_u64 <= len_of(slots);
-  ensures len_of(updated) == len_of(slots);
+fn replace_one['s](slots: &uniq FixedVector<Option<Entry<'s>>, 1>, replacement: own Entry<'s>) -> previous: own Option<Entry<'s>> reads(slots), writes(slots) contract {
+  requires 1_u64 <= len_of(deref(slots));
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
 } {
   let occupied = Some<Entry<'s>>(value: move replacement);
-  let previous = replace slots[0_u64] = move occupied;
-  return move slots, move previous;
+  let previous = replace deref(slots)[0_u64] = move occupied;
+  return move previous;
 }
 
 fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(first), writes(first) {
   let (slots, returned) = build(first: move first, replacement: move replacement);
-  let entry = Entry(payload: move returned);
-  let (updated, previous) = replace_one(slots: move slots, replacement: move entry);
-  return move updated, move previous;
+  let stored_entry = Entry(payload: move returned);
+  region {
+    let previous = replace_one(slots: &uniq slots, replacement: move stored_entry);
+    return move slots, move previous;
+  }
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -1089,7 +1093,7 @@ fn nested_borrowed_parameter_regions_are_inferred_at_each_call_position() {
   payload: Box<'s, u64>;
 }
 
-fn inspect['s](entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>) -> result: own u64 pure {
+fn inspect['s](stored_entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>) -> result: own u64 pure {
   return 0_u64;
 }
 
@@ -1097,8 +1101,8 @@ fn inspect_positions['s](entries: own FixedVector<Option<Entry<'s>>, 4>) -> resu
   requires 3_u64 <= len_of(entries);
 } {
   region {
-    let first = inspect(entry: &entries[0_u64], same: &entries[0_u64]);
-    let later = inspect(entry: &entries[2_u64], same: &entries[2_u64]);
+    let first = inspect(stored_entry: &entries[0_u64], same: &entries[0_u64]);
+    let later = inspect(stored_entry: &entries[2_u64], same: &entries[2_u64]);
   }
   return move entries;
 }
@@ -1128,7 +1132,9 @@ fn build['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) 
   let pair = Pair(left: move left, right: move right);
   let occupied = Some<Pair<'left, 'right>>(value: move pair);
   let slots = fixed_vector::<Option<Pair<'left, 'right>>, 1>();
-  set slots = place_back(vector: move slots, value: move occupied);
+  region {
+    place_back(vector: &uniq slots, value: move occupied);
+  }
   return move slots;
 }
 
@@ -1166,7 +1172,9 @@ fn build['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) 
   let pair = Pair(left: move left, right: move right);
   let occupied = Some<Pair<'left, 'right>>(value: move pair);
   let slots = fixed_vector::<Option<Pair<'left, 'right>>, 1>();
-  set slots = place_back(vector: move slots, value: move occupied);
+  region {
+    place_back(vector: &uniq slots, value: move occupied);
+  }
   return move slots;
 }
 
@@ -1322,7 +1330,7 @@ fn numeric_and_const_parameters_flow_through_container_operations() {
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: value);
+    place_back(vector: &uniq built, value: value);
   }
   return move built;
 }
@@ -1337,7 +1345,7 @@ fn filled_float_run<T: Float, const n: u64>(value: own T) -> result: own FixedVe
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: value);
+    place_back(vector: &uniq built, value: value);
   }
   return move built;
 }
@@ -1999,11 +2007,20 @@ fn pass<T: affine>(value: own T) -> result: own T pure {
 
 command fn main() -> status: own ExitStatus pure {
   let empty_leaf = fixed_vector::<u64, 2>();
-  let leaf = place_back(vector: move empty_leaf, value: 7_u64);
+  region {
+    place_back(vector: &uniq empty_leaf, value: 7_u64);
+  }
+  let leaf = move empty_leaf;
   let empty_middle = fixed_vector::<FixedVector<u64, 2>, 2>();
-  let middle = place_back(vector: move empty_middle, value: move leaf);
+  region {
+    place_back(vector: &uniq empty_middle, value: move leaf);
+  }
+  let middle = move empty_middle;
   let empty_outer = fixed_vector::<FixedVector<FixedVector<u64, 2>, 2>, 2>();
-  let outer = place_back(vector: move empty_outer, value: move middle);
+  region {
+    place_back(vector: &uniq empty_outer, value: move middle);
+  }
+  let outer = move empty_outer;
   let returned = pass::<FixedVector<FixedVector<FixedVector<u64, 2>, 2>, 2>>(value: move outer);
   let wrapped = Wrapped(values: move returned);
   let retained = pass::<Wrapped>(value: move wrapped);
@@ -2050,9 +2067,15 @@ fn consume<T: affine>(value: own T) -> result: own unit pure {
 fn wrapper<U: affine>() -> result: own unit pure {
   let pair = Pair<u8>(value: 7_u8);
   let empty_inner = fixed_vector::<Pair<u8>, 1>();
-  let inner = place_back(vector: move empty_inner, value: move pair);
+  region {
+    place_back(vector: &uniq empty_inner, value: move pair);
+  }
+  let inner = move empty_inner;
   let empty_outer = fixed_vector::<FixedVector<Pair<u8>, 1>, 1>();
-  let outer = place_back(vector: move empty_outer, value: move inner);
+  region {
+    place_back(vector: &uniq empty_outer, value: move inner);
+  }
+  let outer = move empty_outer;
   consume::<FixedVector<FixedVector<Pair<u8>, 1>, 1>>(value: move outer);
   return unit;
 }

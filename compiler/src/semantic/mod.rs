@@ -125,7 +125,7 @@ pub enum SemanticRule {
     Blk1,
     /// Formation and reservation: where a reserving occurrence may stand.
     Blk2,
-    /// Confinement: the position closure and the `&uniq` parameter refusal.
+    /// Confinement and the stored-position closure.
     Blk4,
     /// A commit may not displace a live loan.
     View4,
@@ -676,16 +676,6 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by PROV-6.
         mechanical_fix: &'static str,
     },
-    /// [BLK-4] a `&uniq` parameter of a source-declared `fn` whose referent
-    /// reaches a container nominal, a loan-bearing type, or a type parameter.
-    UniqueParameterReachesContainer {
-        /// The refused parameter's own spelling.
-        parameter: String,
-        /// What the referent reached, as [BLK-4] names it.
-        reached: &'static str,
-        /// Exact restructuring required by BLK-4.
-        mechanical_fix: &'static str,
-    },
     /// [BLK-4] a stored position whose brand resolves to the entry heap's
     /// store region in a unit whose entry selects no `command.heap` row.
     ConfinedTypeWithoutStore {
@@ -1053,12 +1043,9 @@ pub enum SemanticIssueKind {
     InvalidPostconditionClause,
     /// The alpha-expanded final condition is not one output-bearing L0 relation.
     InvalidPostconditionRelation,
-    /// [MSR-3] an `ensures` names a measure of a `&uniq` state parameter,
-    /// which denotes no state a source-declared callee can name.
-    InadmissibleStateParameterMeasure {
-        /// The written `&uniq` parameter whose measure the clause names.
-        parameter: String,
-        /// The restructuring this clause needs.
+    /// [MSR-3] entry is proof-only and directly names an exclusive formal.
+    InvalidEntryFormer {
+        /// The restructuring this occurrence needs.
         mechanical_fix: &'static str,
     },
     /// [CALL-6] the relations one contract publishes are contradictory at

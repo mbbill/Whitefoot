@@ -36,12 +36,22 @@ fn sum_all<const n_left: u64, const n_right: u64>(left: own FixedVector<u8, n_le
 
 command fn main() -> status: own ExitStatus pure {
   let left = fixed_vector::<u8, 3>();
-  set left = place_back(vector: move left, value: 2_u8);
-  set left = place_back(vector: move left, value: 2_u8);
-  set left = place_back(vector: move left, value: 2_u8);
+  region {
+    place_back(vector: &uniq left, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq left, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq left, value: 2_u8);
+  }
   let right = fixed_vector::<u8, 2>();
-  set right = place_back(vector: move right, value: 5_u8);
-  set right = place_back(vector: move right, value: 5_u8);
+  region {
+    place_back(vector: &uniq right, value: 5_u8);
+  }
+  region {
+    place_back(vector: &uniq right, value: 5_u8);
+  }
   let total = sum_all::<3, 2>(left: move left, right: move right);
   if total == 16_u64 {
   } else {

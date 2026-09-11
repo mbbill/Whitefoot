@@ -144,14 +144,20 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
         return exit_status(code: 70_u8);
       }}
       Some(value: fresh) => {{
-        let subject = place_back(vector: move fresh, value: 7_u8);
+        let subject = move fresh;
+        region {{
+          place_back(vector: &uniq subject, value: 7_u8);
+        }}
         region {{
           match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {{
             None() => {{
               return exit_status(code: 70_u8);
             }}
             Some(value: other) => {{
-              let needle = place_back(vector: move other, value: 7_u8);
+              let needle = move other;
+              region {{
+                place_back(vector: &uniq needle, value: 7_u8);
+              }}
               region {{
                 match bs_find(haystack: &subject, needle: &needle) {{
                   Some(value: at) => {{

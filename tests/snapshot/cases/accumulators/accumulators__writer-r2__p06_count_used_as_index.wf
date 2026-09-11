@@ -12,7 +12,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_dest: room_of(dest) + at >= 8_u64,
         invariant flat_dest: head_of(dest) <= 0_u64
       ) {
-        set dest = place_back(vector: move dest, value: 0_u8);
+        place_back(vector: &uniq dest, value: 0_u8);
       }
       let count = 0_u64;
       for (

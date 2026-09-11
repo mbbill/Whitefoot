@@ -392,7 +392,13 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // their receiving statement; temporary endpoints and surviving loans remain
 // source checks. No target row, representation, ABI, completion milestone,
 // release action, or execution-overlap permission changes.
-const REVIEWED_FOR: &str = "v0.55";
+// v0.56 qualification review: source entry/exit contracts erase before
+// lowering. The four run boundary rows now use the ordinary exclusive-address
+// ABI and update the existing run storage; their source signatures change,
+// but no SYS-2 operation identity, host wrapper, opaque resource layout,
+// release action, command entry mapping, or suspension milestone changes.
+// Those qualified target rows therefore retain their existing mappings.
+const REVIEWED_FOR: &str = "v0.56";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

@@ -29,7 +29,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_raw: room_of(raw) + at >= 1_u64,
         invariant flat_raw: head_of(raw) <= 0_u64
       ) {
-        set raw = place_back(vector: move raw, value: 0_u8);
+        place_back(vector: &uniq raw, value: 0_u8);
       }
       region {
         let view_raw = mut_slice_of(&uniq raw);

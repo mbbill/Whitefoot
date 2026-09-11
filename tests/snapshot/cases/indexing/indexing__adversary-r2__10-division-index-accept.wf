@@ -12,16 +12,36 @@ fn bucket_of<const n_values: u64>(values: own FixedVector<u8, n_values>, n: own 
 
 command fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u8, 10>();
-  set values = place_back(vector: move values, value: 4_u8);
-  set values = place_back(vector: move values, value: 4_u8);
-  set values = place_back(vector: move values, value: 4_u8);
-  set values = place_back(vector: move values, value: 4_u8);
-  set values = place_back(vector: move values, value: 4_u8);
-  set values = place_back(vector: move values, value: 4_u8);
-  set values = place_back(vector: move values, value: 4_u8);
-  set values = place_back(vector: move values, value: 4_u8);
-  set values = place_back(vector: move values, value: 4_u8);
-  set values = place_back(vector: move values, value: 4_u8);
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq values, value: 4_u8);
+  }
   let found = bucket_of::<10>(values: move values, n: 99_u64);
   return exit_status(code: found);
 }

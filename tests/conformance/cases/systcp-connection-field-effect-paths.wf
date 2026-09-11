@@ -33,7 +33,7 @@ command fn main(command.handles as handles: own HandleFactory, command.heap as h
           invariant spare: room_of(scratch) + at >= 32_u64,
           invariant flat: head_of(scratch) <= 0_u64
         ) {
-          set scratch = place_back(vector: move scratch, value: 0_u8);
+          place_back(vector: &uniq scratch, value: 0_u8);
         }
         region {
           let window = mut_slice_of(&uniq scratch);

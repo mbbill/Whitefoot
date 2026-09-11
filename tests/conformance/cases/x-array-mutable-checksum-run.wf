@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare: room_of(values) + at >= 8_u64,
     invariant flat: head_of(values) <= 0_u64
   ) {
-    set values = place_back(vector: move values, value: 0_u64);
+    place_back(vector: &uniq values, value: 0_u64);
   }
   let length = len_of(values);
   for (fill_index in 0_u64..length) {

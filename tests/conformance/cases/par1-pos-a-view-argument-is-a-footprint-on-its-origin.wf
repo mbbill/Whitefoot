@@ -19,7 +19,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_left: room_of(left) + at >= 2_u64,
         invariant flat_left: head_of(left) <= 0_u64
       ) {
-        set left = place_back(vector: move left, value: 0_u8);
+        place_back(vector: &uniq left, value: 0_u8);
       }
       let right = arena_vector_proved::<u8>(store: &uniq workspace, count: 2_u64);
       for @fill_right (
@@ -28,7 +28,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_right: room_of(right) + at >= 2_u64,
         invariant flat_right: head_of(right) <= 0_u64
       ) {
-        set right = place_back(vector: move right, value: 0_u8);
+        place_back(vector: &uniq right, value: 0_u8);
       }
       region {
         let left_window = mut_slice_of(&uniq left);

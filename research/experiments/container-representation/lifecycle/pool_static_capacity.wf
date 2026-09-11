@@ -2,50 +2,81 @@ struct StaticBlock {
   bytes: FixedVector<u8, 4>;
 }
 
-fn take_static(free: own FixedVector<StaticBlock, 2>) -> (rest: own FixedVector<StaticBlock, 2>, block: own StaticBlock) reads(free), writes(free) contract {
-  requires len_of(free) > 0_u64;
-  ensures len_of(rest) + 1_u64 == len_of(free);
-  ensures room_of(rest) == room_of(free) + 1_u64;
+fn take_static(free: &uniq FixedVector<StaticBlock, 2>) -> block: own StaticBlock reads(free), writes(free) contract {
+  requires len_of(deref(free)) > 0_u64;
+  ensures len_of(deref(free)) + 1_u64 == len_of(deref(entry(free)));
+  ensures room_of(deref(free)) == room_of(deref(entry(free))) + 1_u64;
 } {
-  let (rest, block) = take_back(vector: move free);
-  return move rest, move block;
+  region {
+    let block = take_back(vector: &uniq deref(free));
+    return move block;
+  }
 }
 
-fn return_static(free: own FixedVector<StaticBlock, 2>, block: own StaticBlock) -> rest: own FixedVector<StaticBlock, 2> reads(free), writes(free) contract {
-  requires room_of(free) > 0_u64;
-  ensures len_of(rest) == len_of(free) + 1_u64;
+fn return_static(free: &uniq FixedVector<StaticBlock, 2>, block: own StaticBlock) -> result: own unit reads(free), writes(free) contract {
+  requires room_of(deref(free)) > 0_u64;
+  ensures len_of(deref(free)) == len_of(deref(entry(free))) + 1_u64;
 } {
-  let rest = place_back(vector: move free, value: move block);
-  return move rest;
+  region {
+    place_back(vector: &uniq deref(free), value: move block);
+  }
+  return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
-  let one = place_back(vector: move empty, value: 1_u8);
-  let two = place_back(vector: move one, value: 2_u8);
-  let three = place_back(vector: move two, value: 3_u8);
-  let payload = place_back(vector: move three, value: 4_u8);
+  region {
+    place_back(vector: &uniq empty, value: 1_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 2_u8);
+  }
+  let two = move one;
+  region {
+    place_back(vector: &uniq two, value: 3_u8);
+  }
+  let three = move two;
+  region {
+    place_back(vector: &uniq three, value: 4_u8);
+  }
+  let payload = move three;
   let record = StaticBlock(bytes: move payload);
   let free = fixed_vector::<StaticBlock, 2>();
-  let full = place_back(vector: move free, value: move record);
-  let (rest, block) = take_static(free: move full);
-  invariant capacity: cap_of(block.bytes) >= 4_u64;
-  let length = len_of(block.bytes);
-  for (at in 0_u64..length) {
-    let byte = block.bytes[at];
-    let next = byte +wrap 1_u8;
-    set block.bytes[at] = next;
+  region {
+    place_back(vector: &uniq free, value: move record);
   }
-  let returned = return_static(free: move rest, block: move block);
-  let (restored, recovered) = take_static(free: move returned);
-  let recovered_length = len_of(recovered.bytes);
-  let sum = 0_u8;
-  for (at in 0_u64..recovered_length) {
-    let byte = recovered.bytes[at];
-    set sum = sum +wrap byte;
+  let full = move free;
+  region {
+    let block = take_static(free: &uniq full);
+    let rest = move full;
+    invariant capacity: cap_of(block.bytes) >= 4_u64;
+    let length = len_of(block.bytes);
+    for (at in 0_u64..length) {
+      let byte = block.bytes[at];
+      let next = byte +wrap 1_u8;
+      set block.bytes[at] = next;
+    }
+    region {
+      return_static(free: &uniq rest, block: move block);
+      let returned = move rest;
+      region {
+        let recovered = take_static(free: &uniq returned);
+        let restored = move returned;
+        let recovered_length = len_of(recovered.bytes);
+        let sum = 0_u8;
+        for (at in 0_u64..recovered_length) {
+          let byte = recovered.bytes[at];
+          set sum = sum +wrap byte;
+        }
+        region {
+          return_static(free: &uniq restored, block: move recovered);
+          let complete = move restored;
+          invariant conserved: len_of(complete) >= 1_u64;
+          let result = sum -wrap 14_u8;
+          return exit_status(code: result);
+        }
+      }
+    }
   }
-  let complete = return_static(free: move restored, block: move recovered);
-  invariant conserved: len_of(complete) >= 1_u64;
-  let result = sum -wrap 14_u8;
-  return exit_status(code: result);
 }

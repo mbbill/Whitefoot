@@ -112,7 +112,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare: room_of(output) + at >= 11_u64,
         invariant flat: head_of(output) <= 0_u64
       ) {
-        set output = place_back(vector: move output, value: 204_u8);
+        place_back(vector: &uniq output, value: 204_u8);
       }
       region {
         let input = slice_of(&percent_input);

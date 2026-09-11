@@ -1,7 +1,9 @@
 command fn main() -> status: own ExitStatus pure {
   doc "A take at a bump extent cannot hide a direct slice in extent-resident content; STOR-5 owns the region-bearing content rejection before unsupported extent execution or lowering matters.";
   let data = fixed_vector::<u8, 2>();
-  set data = place_back(vector: move data, value: 11_u8);
+  region {
+    place_back(vector: &uniq data, value: 11_u8);
+  }
   region 'r {
     let workspace = arena_frame::<64, 8, 'r>();
     region {

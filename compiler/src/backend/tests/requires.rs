@@ -98,7 +98,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
           invariant spare: room_of(output) + at >= 4_u64,
           invariant flat: head_of(output) <= 0_u64
         ) {
-          set output = place_back(vector: move output, value: 0_u8);
+          place_back(vector: &uniq output, value: 0_u8);
         }
         match heap_vector::<u8>(store: &uniq heap, count: length) {
           None() => {
@@ -112,7 +112,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
               invariant spare: room_of(source) + at >= 4_u64,
               invariant flat: head_of(source) <= 0_u64
             ) {
-              set source = place_back(vector: move source, value: 7_u8);
+              place_back(vector: &uniq source, value: 7_u8);
             }
             region {
               let destination = mut_slice_of(&uniq output);

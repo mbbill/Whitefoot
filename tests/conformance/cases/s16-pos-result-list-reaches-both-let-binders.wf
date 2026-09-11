@@ -17,14 +17,30 @@ fn needs_eight(bound: own u64) -> ok: own unit pure contract {
 command fn main() -> status: own ExitStatus pure {
   doc "S16, CALL-4: a two-result contract reaches both binders of a destructuring let, and each binder discharges a later requirement from its own ordinal's relation.";
   let run = fixed_vector::<u8, 8>();
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
   let (kept, spare) = split(taken: move run);
   let first = needs_eight(bound: kept);
   let second = needs_eight(bound: spare);

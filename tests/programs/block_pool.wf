@@ -20,7 +20,7 @@ fn pool_new['s: affine](store: &uniq Arena<'s, 65536, 16>) -> made: own Option<B
         return None<BlockPool<'s>>();
       }
       Some(value: run) => {
-        set free = place_back(vector: move free, value: move run);
+        place_back(vector: &uniq free, value: move run);
       }
     }
   }
@@ -33,9 +33,11 @@ fn pool_take['s: affine](pool: own BlockPool<'s>) -> (rest: own BlockPool<'s>, l
   let spare = len_of(pool.free);
   let any = spare > 0_u64;
   if any {
-    set (pool.free, one) = take_back(vector: move pool.free);
-    let ticket = Lease(run: move one);
-    return move pool, Some<Lease<'s>>(value: move ticket);
+    region {
+      set one = take_back(vector: &uniq pool.free);
+      let ticket = Lease(run: move one);
+      return move pool, Some<Lease<'s>>(value: move ticket);
+    }
   }
   return move pool, None<Lease<'s>>();
 }
@@ -45,7 +47,9 @@ fn pool_release['s: affine](pool: own BlockPool<'s>, lease: own Lease<'s>) -> re
 } {
   doc "Returns one lease to the free list; the caller has proved there is room.";
   let Lease(run: back) = move lease;
-  set pool.free = place_back(vector: move pool.free, value: move back);
+  region {
+    place_back(vector: &uniq pool.free, value: move back);
+  }
   return move pool;
 }
 

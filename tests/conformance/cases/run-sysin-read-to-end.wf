@@ -13,7 +13,7 @@ command fn main(command.stdin as input: own InputStream, command.heap as heap: o
           invariant spare: room_of(chunk) + at >= 8_u64,
           invariant flat: head_of(chunk) <= 0_u64
         ) {
-          set chunk = place_back(vector: move chunk, value: 0_u8);
+          place_back(vector: &uniq chunk, value: 0_u8);
         }
         let total = 0_u64;
         let outcome = 0_u8;

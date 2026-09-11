@@ -207,7 +207,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         invariant spare: room_of(scratch) + at >= 4097_u64,
         invariant flat: head_of(scratch) <= 0_u64
       ) {
-        set scratch = place_back(vector: move scratch, value: 0_u8);
+        place_back(vector: &uniq scratch, value: 0_u8);
       }
       let report = arena_vector_proved::<u8>(store: &uniq workspace, count: 128_u64);
       for @reserve_report (
@@ -216,7 +216,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         invariant spare: room_of(report) + at >= 128_u64,
         invariant flat: head_of(report) <= 0_u64
       ) {
-        set report = place_back(vector: move report, value: 0_u8);
+        place_back(vector: &uniq report, value: 0_u8);
       }
       let report_room = len_of(report);
       let arguments = 0_u64;
@@ -373,7 +373,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         invariant spare_hi: room_of(stream) + at <= 4096_u64,
         invariant flat: head_of(stream) <= 0_u64
       ) {
-        set stream = place_back(vector: move stream, value: 0_u8);
+        place_back(vector: &uniq stream, value: 0_u8);
       }
       region {
         let scratch_view = slice_of(&scratch);
@@ -389,7 +389,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         invariant spare: room_of(decoded) + at >= 65536_u64,
         invariant flat: head_of(decoded) <= 0_u64
       ) {
-        set decoded = place_back(vector: move decoded, value: 0_u8);
+        place_back(vector: &uniq decoded, value: 0_u8);
       }
       let decoded_length = 0_u64;
       region {

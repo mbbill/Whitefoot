@@ -29,6 +29,8 @@ use super::model::CheckedMeasure;
 /// them at a call, so a shape plus one resolved instance is a checked type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum KernelShape {
+    /// A mutation returns no owner.
+    Unit,
     /// `own u64`, the one primitive this domain writes.
     U64,
     /// The element type `T`.
@@ -141,10 +143,10 @@ pub(crate) enum KernelPlace {
     /// an `own` operand is that call's call datum and a `&uniq` state operand
     /// is the post-state.
     Parameter(u32),
-    /// `<measure>(<parameter> at the call)`: that call's call datum for the
+    /// `<measure>(deref(entry(parameter)))`: that call's call datum for the
     /// same place, which is the form [BLK-0] admits for a `&uniq` state
     /// operand.
-    ParameterAtCall(u32),
+    ParameterEntry(u32),
     /// One declared result ordinal [CALL-4].
     Result(u32),
     /// The payload binder of a routed clause, which names the result the
@@ -605,7 +607,7 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
         SEQ_ARENA_PAYLOAD[1],
         SEQ_ARENA_PAYLOAD[2],
         SEQ_ARENA_PAYLOAD[3],
-        // `len_of(arena) == len_of(arena at the call) + advance<T>(count)`.
+        // `len_of(deref(arena)) == len_of(deref(entry(arena))) + advance<T>(count)`.
         KernelRelation::routed(
             KernelRoute::Some,
             KernelTerm::new(KernelOperand::Measure(
@@ -614,7 +616,7 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
             )),
             KernelComparison::Equal,
             KernelTerm::advanced(
-                KernelOperand::Measure(CheckedMeasure::Length, KernelPlace::ParameterAtCall(0)),
+                KernelOperand::Measure(CheckedMeasure::Length, KernelPlace::ParameterEntry(0)),
                 1,
             ),
         ),
@@ -627,7 +629,7 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
             KernelComparison::Equal,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Length,
-                KernelPlace::ParameterAtCall(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
         KernelRelation::routed(
@@ -647,7 +649,7 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
             KernelComparison::Equal,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Capacity,
-                KernelPlace::ParameterAtCall(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
     ],
@@ -726,7 +728,7 @@ const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
             )),
             KernelComparison::Equal,
             KernelTerm::advanced(
-                KernelOperand::Measure(CheckedMeasure::Length, KernelPlace::ParameterAtCall(0)),
+                KernelOperand::Measure(CheckedMeasure::Length, KernelPlace::ParameterEntry(0)),
                 1,
             ),
         ),
@@ -738,7 +740,7 @@ const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
             KernelComparison::Equal,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Capacity,
-                KernelPlace::ParameterAtCall(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
     ],
@@ -807,7 +809,7 @@ const ARENA_BOX: KernelSignature = KernelSignature {
         KernelTerm::new(KernelOperand::AlignCeiling),
     )],
     ensures: &[
-        // `len_of(store) == len_of(store at the call) + advance<T>(1)`.
+        // `len_of(deref(store)) == len_of(deref(entry(store))) + advance<T>(1)`.
         KernelRelation::routed(
             KernelRoute::Ok,
             KernelTerm::new(KernelOperand::Measure(
@@ -817,7 +819,7 @@ const ARENA_BOX: KernelSignature = KernelSignature {
             KernelComparison::Equal,
             KernelTerm::advanced_by_a_cell(KernelOperand::Measure(
                 CheckedMeasure::Length,
-                KernelPlace::ParameterAtCall(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
         KernelRelation::routed(
@@ -829,7 +831,7 @@ const ARENA_BOX: KernelSignature = KernelSignature {
             KernelComparison::Equal,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Length,
-                KernelPlace::ParameterAtCall(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
         KernelRelation::routed(
@@ -849,7 +851,7 @@ const ARENA_BOX: KernelSignature = KernelSignature {
             KernelComparison::Equal,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Capacity,
-                KernelPlace::ParameterAtCall(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
     ],
@@ -950,7 +952,7 @@ const ARENA_FRAME: KernelSignature = KernelSignature {
 const PLACE_PARAMETERS: [KernelParameter; 2] = [
     KernelParameter {
         name: "vector",
-        mode: KernelMode::Own,
+        mode: KernelMode::Unique,
         shape: KernelShape::Run,
     },
     KernelParameter {
@@ -963,21 +965,15 @@ const PLACE_PARAMETERS: [KernelParameter; 2] = [
 /// The one value parameter every [BLK-3] removal row writes.
 const TAKE_PARAMETERS: [KernelParameter; 1] = [KernelParameter {
     name: "vector",
-    mode: KernelMode::Own,
+    mode: KernelMode::Unique,
     shape: KernelShape::Run,
 }];
 
-/// The ordered result list of the two removal rows.
-const TAKE_RESULTS: [KernelResult; 2] = [
-    KernelResult {
-        name: "rest",
-        shape: KernelShape::Run,
-    },
-    KernelResult {
-        name: "value",
-        shape: KernelShape::Element,
-    },
-];
+/// A removal returns only the element; its exclusive referent remains live.
+const TAKE_RESULTS: [KernelResult; 1] = [KernelResult {
+    name: "value",
+    shape: KernelShape::Element,
+}];
 
 /// `requires room_of(vector) > 0_u64;`
 const ROOM_AVAILABLE: KernelRelation = KernelRelation::plain(
@@ -1001,39 +997,39 @@ const LENGTH_AVAILABLE: KernelRelation = KernelRelation::plain(
 
 /// The three relations a placement row publishes over its own result before
 /// the `head` cell, which the back and front rows write differently.
-const fn placement_relations(result: u32) -> [KernelRelation; 3] {
+const fn placement_relations() -> [KernelRelation; 3] {
     [
         KernelRelation::plain(
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Length,
-                KernelPlace::Result(result),
+                KernelPlace::Parameter(0),
             )),
             KernelComparison::Equal,
             KernelTerm::plus(
-                KernelOperand::Measure(CheckedMeasure::Length, KernelPlace::Parameter(0)),
+                KernelOperand::Measure(CheckedMeasure::Length, KernelPlace::ParameterEntry(0)),
                 1,
             ),
         ),
         KernelRelation::plain(
             KernelTerm::plus(
-                KernelOperand::Measure(CheckedMeasure::Room, KernelPlace::Result(result)),
+                KernelOperand::Measure(CheckedMeasure::Room, KernelPlace::Parameter(0)),
                 1,
             ),
             KernelComparison::Equal,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Room,
-                KernelPlace::Parameter(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
         KernelRelation::plain(
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Capacity,
-                KernelPlace::Result(result),
+                KernelPlace::Parameter(0),
             )),
             KernelComparison::Equal,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Capacity,
-                KernelPlace::Parameter(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
     ]
@@ -1044,35 +1040,35 @@ const fn removal_relations() -> [KernelRelation; 3] {
     [
         KernelRelation::plain(
             KernelTerm::plus(
-                KernelOperand::Measure(CheckedMeasure::Length, KernelPlace::Result(0)),
+                KernelOperand::Measure(CheckedMeasure::Length, KernelPlace::Parameter(0)),
                 1,
             ),
             KernelComparison::Equal,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Length,
-                KernelPlace::Parameter(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
         KernelRelation::plain(
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Room,
-                KernelPlace::Result(0),
+                KernelPlace::Parameter(0),
             )),
             KernelComparison::Equal,
             KernelTerm::plus(
-                KernelOperand::Measure(CheckedMeasure::Room, KernelPlace::Parameter(0)),
+                KernelOperand::Measure(CheckedMeasure::Room, KernelPlace::ParameterEntry(0)),
                 1,
             ),
         ),
         KernelRelation::plain(
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Capacity,
-                KernelPlace::Result(0),
+                KernelPlace::Parameter(0),
             )),
             KernelComparison::Equal,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Capacity,
-                KernelPlace::Parameter(0),
+                KernelPlace::ParameterEntry(0),
             )),
         ),
     ]
@@ -1080,28 +1076,28 @@ const fn removal_relations() -> [KernelRelation; 3] {
 
 /// `ensures head_of(result) == head_of(vector);` — the back rows leave the window
 /// origin where it was.
-const fn head_retained(result: u32) -> KernelRelation {
+const fn head_retained() -> KernelRelation {
     KernelRelation::plain(
         KernelTerm::new(KernelOperand::Measure(
             CheckedMeasure::Head,
-            KernelPlace::Result(result),
+            KernelPlace::Parameter(0),
         )),
         KernelComparison::Equal,
         KernelTerm::new(KernelOperand::Measure(
             CheckedMeasure::Head,
-            KernelPlace::Parameter(0),
+            KernelPlace::ParameterEntry(0),
         )),
     )
 }
 
 /// The two-sided `head` publication of a front row [MSR-1]: the one bounded
 /// cell of the table, which no row re-establishes exactly.
-const fn head_bounded(result: u32) -> [KernelRelation; 2] {
+const fn head_bounded() -> [KernelRelation; 2] {
     [
         KernelRelation::plain(
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Head,
-                KernelPlace::Result(result),
+                KernelPlace::Parameter(0),
             )),
             KernelComparison::GreaterOrEqual,
             KernelTerm::constant(0),
@@ -1109,22 +1105,22 @@ const fn head_bounded(result: u32) -> [KernelRelation; 2] {
         KernelRelation::plain(
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Head,
-                KernelPlace::Result(result),
+                KernelPlace::Parameter(0),
             )),
             KernelComparison::LessOrEqual,
             KernelTerm::new(KernelOperand::Measure(
                 CheckedMeasure::Capacity,
-                KernelPlace::Result(result),
+                KernelPlace::Parameter(0),
             )),
         ),
     ]
 }
 
-const PLACE_BACK: [KernelRelation; 3] = placement_relations(0);
-const PLACE_FRONT_HEAD: [KernelRelation; 2] = head_bounded(0);
+const PLACE_BACK: [KernelRelation; 3] = placement_relations();
+const PLACE_FRONT_HEAD: [KernelRelation; 2] = head_bounded();
 const TAKE_BACK: [KernelRelation; 3] = removal_relations();
 
-/// `place_back(vector: own V, value: own T) -> result: own V`.
+/// `place_back(vector: &uniq V, value: own T) -> result: own unit`.
 const SEQ_PLACE: KernelSignature = KernelSignature {
     row: KernelRow::PlaceBack,
     spelling: "place_back",
@@ -1132,20 +1128,15 @@ const SEQ_PLACE: KernelSignature = KernelSignature {
     parameters: &PLACE_PARAMETERS,
     results: &[KernelResult {
         name: "result",
-        shape: KernelShape::Run,
+        shape: KernelShape::Unit,
     }],
     effects: KernelEffects::over(0, false),
     requires: &[ROOM_AVAILABLE],
-    ensures: &[
-        PLACE_BACK[0],
-        PLACE_BACK[1],
-        PLACE_BACK[2],
-        head_retained(0),
-    ],
+    ensures: &[PLACE_BACK[0], PLACE_BACK[1], PLACE_BACK[2], head_retained()],
     fits: None,
 };
 
-/// `place_front(vector: own V, value: own T) -> result: own V`.
+/// `place_front(vector: &uniq V, value: own T) -> result: own unit`.
 const SEQ_PLACE_FRONT: KernelSignature = KernelSignature {
     row: KernelRow::PlaceFront,
     spelling: "place_front",
@@ -1153,7 +1144,7 @@ const SEQ_PLACE_FRONT: KernelSignature = KernelSignature {
     parameters: &PLACE_PARAMETERS,
     results: &[KernelResult {
         name: "result",
-        shape: KernelShape::Run,
+        shape: KernelShape::Unit,
     }],
     effects: KernelEffects::over(0, false),
     requires: &[ROOM_AVAILABLE],
@@ -1167,7 +1158,7 @@ const SEQ_PLACE_FRONT: KernelSignature = KernelSignature {
     fits: None,
 };
 
-/// `take_back(vector: own V) -> (rest: own V, value: own T)`.
+/// `take_back(vector: &uniq V) -> value: own T`.
 const SEQ_TAKE: KernelSignature = KernelSignature {
     row: KernelRow::TakeBack,
     spelling: "take_back",
@@ -1176,11 +1167,11 @@ const SEQ_TAKE: KernelSignature = KernelSignature {
     results: &TAKE_RESULTS,
     effects: KernelEffects::over(0, false),
     requires: &[LENGTH_AVAILABLE],
-    ensures: &[TAKE_BACK[0], TAKE_BACK[1], TAKE_BACK[2], head_retained(0)],
+    ensures: &[TAKE_BACK[0], TAKE_BACK[1], TAKE_BACK[2], head_retained()],
     fits: None,
 };
 
-/// `take_front(vector: own V) -> (rest: own V, value: own T)`.
+/// `take_front(vector: &uniq V) -> value: own T`.
 const SEQ_TAKE_FRONT: KernelSignature = KernelSignature {
     row: KernelRow::TakeFront,
     spelling: "take_front",
@@ -1655,7 +1646,8 @@ mod tests {
                     KernelShape::Slice | KernelShape::MutSlice => MeasuredKind::Slice,
                     // S39 a cell carries no measure at all, so neither it
                     // nor the outcome that carries one has a row here.
-                    KernelShape::U64
+                    KernelShape::Unit
+                    | KernelShape::U64
                     | KernelShape::Element
                     | KernelShape::Heap
                     | KernelShape::ResultBox

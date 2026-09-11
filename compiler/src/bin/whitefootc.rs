@@ -998,7 +998,7 @@ mod tests {
     invariant spare: room_of(page) + at >= 8_u64,
     invariant flat: head_of(page) <= 0_u64
   ) {
-    set page = place_back(vector: move page, value: 0_u8);
+    place_back(vector: &uniq page, value: 0_u8);
   }
   region {
     let window = slice_of(&page);

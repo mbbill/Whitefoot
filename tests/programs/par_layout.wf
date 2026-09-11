@@ -251,7 +251,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
                 invariant spare_left: room_of(words) + at >= 8192_u64,
                 invariant flat: head_of(words) <= 0_u64
               ) {
-                set words = place_back(vector: move words, value: width);
+                place_back(vector: &uniq words, value: width);
                 set width = fmul.strict(width, 1.0625_f64);
                 let too_wide = fgt(width, 64.0_f64);
                 if too_wide {
@@ -323,7 +323,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
                       invariant spare_report: room_of(report) + at >= 34_u64,
                       invariant flat_report: head_of(report) <= 0_u64
                     ) {
-                      set report = place_back(vector: move report, value: 10_u8);
+                      place_back(vector: &uniq report, value: 10_u8);
                     }
                     set report[16_u64] = 32_u8;
                     region {

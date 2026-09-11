@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::FixedTerminal;
 use crate::syntax::NodeId;
 use crate::{
     DeclarationClass, DeclarationId, LexicalUseRole, PostconditionCandidateRecord,
@@ -517,6 +518,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
                         projections: Vec::new(),
                         ty: parameter.ty,
+                        exit_state: matches!(parameter.mode, CheckedMode::Unique(_)),
                     }),
                 );
             }
@@ -585,45 +587,62 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 &expanded_bindings,
             )?;
             let relation = self.postcondition_relation(expression, expanded)?;
-            self.reject_state_parameter_measure(function, expression, &relation)?;
             Ok(relation)
         })
     }
 
-    /// [MSR-3] one denotation per position, keyed on the parameter's mode.
-    ///
-    /// A `&uniq` parameter is the one position from which a callee could
-    /// leave a caller holding a measure of a value the callee replaced, so a
-    /// source-declared `ensures` may not name one: the relation would be a
-    /// claim about a caller's object at a point the callee cannot name. The
-    /// same operand in a `requires` denotes the call datum and stays
-    /// admissible, which is why this judgment is stated over the `ensures`
-    /// clause alone.
-    fn reject_state_parameter_measure(
+    /// `entry` selects proof state, never an executable place expression.
+    /// Its argument must be the declaration's own exclusive parameter.
+    pub(super) fn check_entry_formers(
         &self,
         function: &FunctionSignature,
-        expression: NodeId,
-        relation: &RelationTemplate,
     ) -> Result<(), CheckStop> {
-        for operand in &relation.operands {
-            let RelationDatum::Measure(_, place) = &operand.datum else {
+        for base in self
+            .tree
+            .descendants_with(function.node, Production::Pbase)?
+        {
+            if !self.has_fixed(base, FixedTerminal::Entry)? {
                 continue;
-            };
-            // [CALL-4] a measure over a result place names no parameter, so
-            // [MSR-3]'s state-parameter inadmissibility does not reach it.
-            let PostconditionPlaceRoot::Parameter { ordinal } = place.root else {
-                continue;
-            };
-            let Some(parameter) = function.parameters.get(ordinal as usize) else {
-                continue;
-            };
-            if matches!(parameter.mode, CheckedMode::Unique(_)) {
+            }
+            // Clause uses remain provisional until selector admission. This
+            // whole-function position check runs outside an active clause.
+            let path = self.tree.path(base)?;
+            let usage = self
+                .resolved
+                .lexical_uses()
+                .iter()
+                .chain(
+                    self.resolved
+                        .postconditions()
+                        .iter()
+                        .flat_map(|record| &record.provisional_uses),
+                )
+                .find(|usage| {
+                    usage.role() == LexicalUseRole::PlaceBase && usage.origin().node() == path
+                })
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let parameter = function.parameters.iter().find(|parameter| {
+                matches!(usage.target(), ResolvedTarget::Source { declaration, .. }
+                    if declaration == parameter.declaration)
+            });
+            let mut ancestor = self.tree.parent(base)?;
+            let mut in_ensures = false;
+            while let Some(node) = ancestor {
+                if self.tree.production(node)? == Production::EnsuresClause {
+                    in_ensures = true;
+                    break;
+                }
+                if node == function.node {
+                    break;
+                }
+                ancestor = self.tree.parent(node)?;
+            }
+            if !in_ensures || !parameter.is_some_and(|p| matches!(p.mode, CheckedMode::Unique(_))) {
                 return self.issue_node(
                     SemanticRule::Msr3,
-                    expression,
-                    SemanticIssueKind::InadmissibleStateParameterMeasure {
-                        parameter: parameter.name.clone(),
-                        mechanical_fix: "take the value by value and relate the result, or state the fact as a requires",
+                    base,
+                    SemanticIssueKind::InvalidEntryFormer {
+                        mechanical_fix: "use entry only on an exclusive parameter in ensures",
                     },
                 );
             }
@@ -724,7 +743,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if left.ty() != operand_type || right.ty() != operand_type {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        if !left.contains_result() && !right.contains_result() {
+        let is_output = |term: &RelationTerm| {
+            term.contains_result()
+                || matches!(
+                    term.datum,
+                    RelationDatum::Measure(
+                        _,
+                        PostconditionPlace {
+                            root: PostconditionPlaceRoot::ExitParameter { .. },
+                            ..
+                        }
+                    )
+                )
+        };
+        if !is_output(&left) && !is_output(&right) {
             return self.invalid_postcondition_relation(final_expression);
         }
         let normalized = match operation {
@@ -879,6 +911,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ordinal,
                 projections,
                 ty,
+                ..
             }) => Some(RelationDatum::Parameter {
                 ordinal: *ordinal,
                 projections: projections.clone(),
@@ -919,8 +952,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ordinal,
                         projections,
                         ty,
+                        exit_state,
                     } => (
-                        PostconditionPlaceRoot::Parameter { ordinal: *ordinal },
+                        if *exit_state {
+                            PostconditionPlaceRoot::ExitParameter { ordinal: *ordinal }
+                        } else {
+                            PostconditionPlaceRoot::Parameter { ordinal: *ordinal }
+                        },
                         projections.clone(),
                         *ty,
                     ),
@@ -1814,10 +1852,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature: &FunctionSignature,
         symbolic: bool,
     ) -> Result<CheckedPostconditionSelector, CheckStop> {
+        let state_only = record.class == PostconditionSelectorClass::Plain
+            && record.selector_uses.is_empty()
+            && signature
+                .parameters
+                .iter()
+                .any(|parameter| matches!(parameter.mode, CheckedMode::Unique(_)));
         if signature
             .results
             .iter()
             .any(|entry| entry.mode != CheckedMode::Own)
+            && !state_only
         {
             return self.issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
         }
@@ -1857,7 +1902,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             _ => (SelectorAdmissionType::Invalid, declared.ty),
         };
-        self.validate_postcondition_selector(record, admission, ordinal)?;
+        self.validate_postcondition_selector(
+            record,
+            if state_only {
+                SelectorAdmissionType::Symbolic
+            } else {
+                admission
+            },
+            ordinal,
+        )?;
 
         let (candidate, variant, field) = match record.class {
             PostconditionSelectorClass::Plain => (

@@ -17,6 +17,7 @@ mod division_obligations;
 mod entailment;
 mod entailment_sources;
 mod entry_form;
+mod exclusive_contracts;
 mod float_conversion;
 mod floating;
 mod generics;

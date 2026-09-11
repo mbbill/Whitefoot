@@ -1,0 +1,15 @@
+fn clear(values: &uniq FixedVector<u64, 4>) -> result: own unit reads(values), writes(values) {
+  let empty = fixed_vector::<u64, 4>();
+  let old = replace deref(values) = move empty;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = fixed_vector::<u64, 4>();
+  region {
+    place_back(vector: &uniq values, value: 7_u64);
+    clear(values: &uniq values);
+    let last = take_back(vector: &uniq values);
+    return exit_status(code: 0_u8);
+  }
+}

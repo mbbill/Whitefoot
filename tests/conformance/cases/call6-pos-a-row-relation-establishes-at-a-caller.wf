@@ -1,9 +1,12 @@
-fn two_in_a_row(vector: own FixedVector<u8, 4>) -> result: own FixedVector<u8, 4> reads(vector), writes(vector) contract {
-  requires room_of(vector) > 1_u64;
+fn two_in_a_row(vector: &uniq FixedVector<u8, 4>) -> result: own unit reads(vector), writes(vector) contract {
+  requires room_of(deref(vector)) > 1_u64;
 } {
-  doc "The first placement publishes room_of(result) + 1 == room_of(vector), which is the only premise the second placement's own requirement needs.";
-  let one = place_back(vector: move vector, value: 1_u8);
-  return place_back(vector: move one, value: 2_u8);
+  doc "The first placement publishes its exit room relative to its entry room, supplying the second placement's requirement.";
+  region {
+    place_back(vector: &uniq deref(vector), value: 1_u8);
+    place_back(vector: &uniq deref(vector), value: 2_u8);
+  }
+  return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {

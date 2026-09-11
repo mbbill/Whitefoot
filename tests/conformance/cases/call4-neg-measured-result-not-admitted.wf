@@ -8,10 +8,22 @@ fn hold(taken: own FixedVector<u8, 4>) -> kept: own FixedVector<u8, 4> pure cont
 command fn main() -> status: own ExitStatus pure {
   doc "CALL-4: a measured result and a measure over its bare result place are admitted operands, so the refusal is the ordinary FN-9 proof at the selected return rather than the admission or the grammar.";
   let empty = fixed_vector::<u8, 4>();
-  let one = place_back(vector: move empty, value: 0_u8);
-  let two = place_back(vector: move one, value: 0_u8);
-  let three = place_back(vector: move two, value: 0_u8);
-  let run = place_back(vector: move three, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 0_u8);
+  }
+  let two = move one;
+  region {
+    place_back(vector: &uniq two, value: 0_u8);
+  }
+  let three = move two;
+  region {
+    place_back(vector: &uniq three, value: 0_u8);
+  }
+  let run = move three;
   let kept = hold(taken: move run);
   return exit_status(code: 0_u8);
 }

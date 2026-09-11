@@ -1,6 +1,6 @@
-# Kernel Specification v0.55
+# Kernel Specification v0.56
 
-Status: ACTIVE v0.55
+Status: ACTIVE v0.56
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -338,7 +338,7 @@ clause_expr    := affine_expr (clause_op affine_expr)?
 clause_op      := compare_op | "+defined" | "-defined" | "*defined"
                 | "/defined" | "%defined"
 place          := pbase psuffix*
-pbase          := IDENT | "deref" "(" place ")"
+pbase          := IDENT | "deref" "(" place ")" | "entry" "(" IDENT ")"
 psuffix        := "." IDENT | "[" atom "]"
 ```
 
@@ -975,9 +975,8 @@ Completeness is read with [MSR-2]'s standing identity: `room_of` is the compleme
 A row may publish `room_of` explicitly anyway, and the boundary rows [BLK-3] do; the formation rows [BLK-2] do not, and both classes are complete under the same sentence.
 A row's declared relations are published exactly as a source [FN-9] relation set is: instantiated at the call and established on its continuation by [CALL-6], with each operand substituted at the denotation [MSR-3]'s table gives its parameter's mode, and with each routed relation restricted to its own arm [CALL-4].
 A kernel-domain record's requirement and relation lists are normative record notation and are not a source `contract_block`, so [FN-9]'s admission conditions — which datum shapes a clause operand may take, and which variant a route may name — quantify over a source-declared block and reach no record of this domain: a row's relation may name a measure of its own result, may be routed to any variant of the enum that result is, and may name a measure of a `&uniq` state parameter, denoting that parameter's post-state there.
-Rule [MSR-3]'s inadmissibility of that last operand in an `ensures` is the same quantification: a source-declared body is a body, and a record has none.
 What a caller may derive from an established relation is unchanged by this: the relation is instantiated, established, and killed exactly as [CALL-6] states for every other declared relation in the language.
-In that notation the form `<measure>(<parameter> at the call)` denotes that call's call datum for the same place [MSR-3], and the post-state occurrence of the same measure is the live term after the call's own kills; the two are two terms wherever both occur, even though the parameter, the place, and the measure are the same one.
+The form `<measure>(deref(entry(parameter)))` denotes that call's call datum for the same place [MSR-3], with the same `entry` former and explicit dereference as a source contract, and the post-state occurrence of the same measure is the live term after the call's own kills; the two are two terms wherever both occur, even though the parameter, the place, and the measure are the same one.
 A row's declared effect row is a callee effect [ENT-5] like any other: the place a row's `writes` names is written by the call, so every fact whose support that place reaches dies at the call boundary and what a caller holds about that place afterwards is exactly what the row published.
 
 A row's published set is subject to [CALL-6]'s consistency judgment exactly as a source declaration's is.
@@ -985,9 +984,9 @@ The relations one row carries on one declared exit, together with that row's own
 The half of that set a caller reaches on *every* exit — the row's unrouted relations — additionally never makes the caller's fact state contradictory where it was not already, every requirement of the row having been discharged before any relation of it is established [MSR-4]: those relations hold wherever the call's continuation is reached at all, so a state that turns contradictory across them turned so on the row's own relations.
 A contradictory published set is not one wrong fact: at a contradictory point every relation and both signs of every goal are derivable [ENT-4], so the caller discharges every obligation it submits after that call, the subscript bounds and the integer domains among them.
 A caller state that turns contradictory across a row's *routed* relations is a different thing and is admitted: a routed relation is available only on the arm its route names [CALL-6], so a contradiction there is the ordinary [ENT-3] statement that this arm is not reached, exactly as a written guard the caller can refute makes its own arm underivable.
-An acquisition asked for more bytes than the store can hold publishes `len_of(store) = len_of(store at the call) + advance<T>(count)` on its `Some` arm against a `cap_of(store)` that cannot hold it, and the arm it makes underivable is the arm that never runs.
+An acquisition asked for more bytes than the store can hold publishes `len_of(deref(store)) = len_of(deref(entry(store))) + advance<T>(count)` on its `Some` arm against a `cap_of(deref(store))` that cannot hold it, and the arm it makes underivable is the arm that never runs.
 The exits of one call partition its outcomes, so at most one of them is refuted this way and the caller reaches a consistent state on the arm it takes.
-Where a row names one measure of one formal both in the `at the call` form and in its post-state, the two are two terms at every instantiation [MSR-3]; a caller that read one term for both would give the row's own relation the shape `t = t + advance<T>(count)`, which is the bound pair `advance<T>(count) <= 0` and `advance<T>(count) >= 0` and, at any nonzero take, a contradiction the row introduces into every caller on every exit.
+Where a row names one measure of one formal both through `entry(parameter)` and in its post-state, the two are two terms at every instantiation [MSR-3]; a caller that read one term for both would give the row's own relation the shape `t = t + advance<T>(count)`, which is the bound pair `advance<T>(count) <= 0` and `advance<T>(count) >= 0` and, at any nonzero take, a contradiction the row introduces into every caller on every exit.
 Because a row's set is fixed by this document rather than by a program, a row that fails this judgment is a defect in this document or in its implementation and is never a source rejection.
 
 A row's operands are [ENT-2] terms, constants, and exactly the compiler-owned formers this rule defines.
@@ -1039,22 +1038,22 @@ fn arena_vector<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s
   ensures when made is Some(value: r): cap_of(r) == count;
   ensures when made is Some(value: r): room_of(r) == count;
   ensures when made is Some(value: r): head_of(r) == 0_u64;
-  ensures when made is Some(value: r): len_of(store) == len_of(store at the call) + advance<T>(count);
-  ensures when made is None(): len_of(store) == len_of(store at the call);
-  ensures when made is None(): room_of(store) < advance<T>(count);
-  ensures cap_of(store) == cap_of(store at the call);
+  ensures when made is Some(value: r): len_of(deref(store)) == len_of(deref(entry(store))) + advance<T>(count);
+  ensures when made is None(): len_of(deref(store)) == len_of(deref(entry(store)));
+  ensures when made is None(): room_of(deref(store)) < advance<T>(count);
+  ensures cap_of(deref(store)) == cap_of(deref(entry(store)));
 
 fn arena_vector_proved<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, bytes, align>, count: own u64)
     -> result: own Vector<'s, T> reads(store), writes(store), allocates(store)
   requires align >= align_ceiling(T);
   requires fits::<T>(count);
-  requires room_of(store) >= advance<T>(count);
+  requires room_of(deref(store)) >= advance<T>(count);
   ensures len_of(result) == 0_u64;
   ensures cap_of(result) == count;
   ensures room_of(result) == count;
   ensures head_of(result) == 0_u64;
-  ensures len_of(store) == len_of(store at the call) + advance<T>(count);
-  ensures cap_of(store) == cap_of(store at the call);
+  ensures len_of(deref(store)) == len_of(deref(entry(store))) + advance<T>(count);
+  ensures cap_of(deref(store)) == cap_of(deref(entry(store)));
 
 fn heap_vector<T>['s](store: &uniq Heap<'s>, count: own u64)
     -> made: own Option<Vector<'s, T>> reads(store), writes(store), allocates(store)
@@ -1067,10 +1066,10 @@ fn heap_vector<T>['s](store: &uniq Heap<'s>, count: own u64)
 fn arena_box<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, bytes, align>, value: own T)
     -> made: own Result<Box<'s, T>, T> reads(store), writes(store), allocates(store)
   requires align >= align_ceiling(T);
-  ensures when made is Ok(value: b): len_of(store) == len_of(store at the call) + advance<T>(1_u64);
-  ensures when made is Err(error: back): len_of(store) == len_of(store at the call);
-  ensures when made is Err(error: back): room_of(store) < advance<T>(1_u64);
-  ensures cap_of(store) == cap_of(store at the call);
+  ensures when made is Ok(value: b): len_of(deref(store)) == len_of(deref(entry(store))) + advance<T>(1_u64);
+  ensures when made is Err(error: back): len_of(deref(store)) == len_of(deref(entry(store)));
+  ensures when made is Err(error: back): room_of(deref(store)) < advance<T>(1_u64);
+  ensures cap_of(deref(store)) == cap_of(deref(entry(store)));
 
 fn heap_box<T>['s](store: &uniq Heap<'s>, value: own T)
     -> made: own Result<Box<'s, T>, T> reads(store), writes(store), allocates(store)
@@ -1082,11 +1081,11 @@ fn arena_frame<const bytes: u64, const align: u64>['s]() -> result: own Arena<'s
 ```
 
 `fixed_vector` needs no store and is `pure`; each of the five acquiring rows takes its store's provider as a `&uniq` parameter and publishes that store's post-state measures, of which `Heap<'s>` has none.
-The two cell rows [S39] are the domain's one pair that **consumes** an affine input, so their refusal cannot be an `Option`: a refusal that dropped `value` would destroy what the caller handed over [L3], and each therefore hands back `Result<Box<'s, T>, T>`, whose `Err` arm carries the value itself.
-Each writes no argument at all: `T` is supplied by the `value` operand and `'s` — and, for the arena row, `bytes` and `align` — by the `store` operand, so [BLK-0]'s per-argument criterion leaves the call `heap_box(store: s, value: e)`.
+The two cell acquisition rows [S39] consume an element that may be affine, so their refusal cannot be an `Option`: a refusal that dropped `value` would destroy what the caller handed over [L3], and each therefore hands back `Result<Box<'s, T>, T>`, whose `Err` arm carries the value itself.
+Neither cell row spells a generic argument at the call: `T` is supplied by the `value` operand and `'s` — and, for the arena row, `bytes` and `align` — by the `store` operand, so [BLK-0]'s per-argument criterion leaves the call `heap_box(store: s, value: e)`.
 `advance<T>(1_u64)` in the arena row is the record notation's own quantity for one cell: one stride rounded up to the store's alignment constant, exactly as a take of one slot is.
 Each arena row additionally requires `align >= align_ceiling(T)` as a compile-time comparison of two constants, which is what makes the bump cursor a multiple of `align` at every program point, the padding at a take zero, and `len_of(arena)` exact [MSR-1].
-Every failure of a kernel acquisition is an `Option` and this domain declares no failure nominal, because no kernel acquisition takes an affine input: a count is copy and a provider is borrowed, so a refusal has nothing to hand back.
+A fallible run acquisition returns an `Option`: its count is copy and its provider is borrowed, so a refusal has no consumed element to hand back. A proved run acquisition has no refusal result. The cell acquisition rows instead return their consumed element on refusal as stated above.
 The general store has no proved form, because no honest compile-time domain predicate exists for it; the arena has one, whose `room_of` requirement [MSR-4] discharges and whose failure is therefore a static rejection with no runtime fallback.
 `Heap<'s>` has no formation row at all: the one general store enters a program as the entry's `heap` standard input [FN-7] and by no other route.
 
@@ -1104,35 +1103,35 @@ It is deferred because the refusal quantifies over call-graph components and exe
 Four boundary rows followed by two representation-conversion rows, in this preorder, continuing [BLK-2]'s inventory:
 
 ```
-fn place_back(vector: own V, value: own T) -> result: own V reads(vector), writes(vector)
-  requires room_of(vector) > 0_u64;
-  ensures len_of(result) == len_of(vector) + 1_u64;
-  ensures room_of(result) + 1_u64 == room_of(vector);
-  ensures cap_of(result) == cap_of(vector);
-  ensures head_of(result) == head_of(vector);
+fn place_back(vector: &uniq V, value: own T) -> result: own unit reads(vector), writes(vector)
+  requires room_of(deref(vector)) > 0_u64;
+  ensures len_of(deref(vector)) == len_of(deref(entry(vector))) + 1_u64;
+  ensures room_of(deref(vector)) + 1_u64 == room_of(deref(entry(vector)));
+  ensures cap_of(deref(vector)) == cap_of(deref(entry(vector)));
+  ensures head_of(deref(vector)) == head_of(deref(entry(vector)));
 
-fn place_front(vector: own V, value: own T) -> result: own V reads(vector), writes(vector)
-  requires room_of(vector) > 0_u64;
-  ensures len_of(result) == len_of(vector) + 1_u64;
-  ensures room_of(result) + 1_u64 == room_of(vector);
-  ensures cap_of(result) == cap_of(vector);
-  ensures head_of(result) >= 0_u64;
-  ensures head_of(result) <= cap_of(result);
+fn place_front(vector: &uniq V, value: own T) -> result: own unit reads(vector), writes(vector)
+  requires room_of(deref(vector)) > 0_u64;
+  ensures len_of(deref(vector)) == len_of(deref(entry(vector))) + 1_u64;
+  ensures room_of(deref(vector)) + 1_u64 == room_of(deref(entry(vector)));
+  ensures cap_of(deref(vector)) == cap_of(deref(entry(vector)));
+  ensures head_of(deref(vector)) >= 0_u64;
+  ensures head_of(deref(vector)) <= cap_of(deref(vector));
 
-fn take_back(vector: own V) -> (rest: own V, value: own T) reads(vector), writes(vector)
-  requires len_of(vector) > 0_u64;
-  ensures len_of(rest) + 1_u64 == len_of(vector);
-  ensures room_of(rest) == room_of(vector) + 1_u64;
-  ensures cap_of(rest) == cap_of(vector);
-  ensures head_of(rest) == head_of(vector);
+fn take_back(vector: &uniq V) -> value: own T reads(vector), writes(vector)
+  requires len_of(deref(vector)) > 0_u64;
+  ensures len_of(deref(vector)) + 1_u64 == len_of(deref(entry(vector)));
+  ensures room_of(deref(vector)) == room_of(deref(entry(vector))) + 1_u64;
+  ensures cap_of(deref(vector)) == cap_of(deref(entry(vector)));
+  ensures head_of(deref(vector)) == head_of(deref(entry(vector)));
 
-fn take_front(vector: own V) -> (rest: own V, value: own T) reads(vector), writes(vector)
-  requires len_of(vector) > 0_u64;
-  ensures len_of(rest) + 1_u64 == len_of(vector);
-  ensures room_of(rest) == room_of(vector) + 1_u64;
-  ensures cap_of(rest) == cap_of(vector);
-  ensures head_of(rest) >= 0_u64;
-  ensures head_of(rest) <= cap_of(rest);
+fn take_front(vector: &uniq V) -> value: own T reads(vector), writes(vector)
+  requires len_of(deref(vector)) > 0_u64;
+  ensures len_of(deref(vector)) + 1_u64 == len_of(deref(entry(vector)));
+  ensures room_of(deref(vector)) == room_of(deref(entry(vector))) + 1_u64;
+  ensures cap_of(deref(vector)) == cap_of(deref(entry(vector)));
+  ensures head_of(deref(vector)) >= 0_u64;
+  ensures head_of(deref(vector)) <= cap_of(deref(vector));
 
 fn array_from_fixed<T, const n: u64>(vector: own FixedVector<T, n>)
     -> result: own array<T, n> reads(vector)
@@ -1151,7 +1150,7 @@ fn fixed_from_array<T, const n: u64>(values: own array<T, n>)
 ```
 
 `place_back` and `take_back` move the back boundary and leave `head_of` where it was; `place_front` and `take_front` move the front boundary, and `head_of` is the one measure whose cell is bounded [MSR-1], so those two rows publish it two-sidedly and no row re-establishes it exactly.
-Each boundary row takes the run by value and returns it, so every occurrence of a measure of `vector` in its published relations denotes that call's call datum [MSR-3] and no relation of this domain reads as a fixed point of itself.
+Each boundary row mutates its exclusive run referent in place. A placement returns unit and a take returns only the removed element. Measures through `entry(vector)` denote the call datum; measures through `vector` denote the referent after the call. These are distinct terms [MSR-3]. A boundary operation neither transfers the run owner nor changes its backing address.
 Element access is the ordinary surface over the initialized window and needs no row: `v[i]` reads, `set v[i] = e;` writes a copy element [LIV-2], and `let old = replace v[i] = e;` exchanges an affine one [SET-2].
 There is no swap, exchange, rebase, growth, clear, truncate, removal from the middle, or vacant construction anywhere in this domain: a swap of two whole non-overlapping places is `set (p, q) = move q, move p;` [LIV-2], a swap of two elements of one run is the same one commit over its two subscripts, `set (v[i], v[j]) = move v[j], move v[i];`, whose offsets [LIV-2]'s second condition requires to be provably distinct and whose read-outs that rule's own sentence admits, and each remaining item is an ordinary source function over these rows.
 No boundary row is total at a capacity or an emptiness boundary, because an overwriting or an empty-take form would have to publish a displacement or a refusal this domain declares no value for.
@@ -1164,31 +1163,25 @@ They may move inline payloads between their representations; neither promises ad
 `array_from_fixed` reads the source window's coordinates; `fixed_from_array` repacks a complete owner without inspecting or changing its elements [EFF-2].
 At n equal to zero both conversions transfer no elements and perform no element access or release; a zero-byte element representation does not remove its logical element occurrences or their ownership obligations [STOR-6, PROV-6].
 
-[BLK-4] Confinement: the one position closure, and the `&uniq` parameter refusal.
+[BLK-4] Confinement and the one position closure.
 A type is confined when its complete type after substitution names a region, and the confinement of a value is the set of regions its complete type names.
 A confined value may be moved, returned, or bound to a destination that every member of that set outlives or equals [OWN-3]; the quantifier is the whole of it, because [OWN-3] makes two caller-supplied regions incomparable and fail-closed is the answer there.
 
 A confined value may occupy any position whose owning value's own complete type names the same region, so the position is itself confined and [STOR-4] governs it.
 That is what admits a store-branded run into a field, an enum variant payload, and a run element: the store's identity travels in the type [PROV-1], and nothing about the value outlives, hides, or strands anything.
 A loan-bearing type [VIEW-1] may occupy no position from which a value could outlive or hide its origin set — no field, no enum variant payload, no run element, no written generic type argument, and no result outside [VIEW-6]'s ceiling — and a provider type may occupy none of the same positions, because a moved provider strands its own store [STOR-5].
-Rule [STOR-5] states that closure over the stored positions and [FN-2] over the written type argument; this rule is where the two are one judgment, and its own refusals are the two below.
+Rule [STOR-5] states that closure over the stored positions and [FN-2] over the written type argument; this rule is where the two are one judgment.
 
-In the parameter list of a source-declared `fn`, a parameter of mode `&uniq` is a hard error citing BLK-4 at the complete `param`, `UniqueParameterReachesContainer`, when its referent type is, or reaches at any depth, a container nominal or a generic type parameter carrying no bound that excludes one.
-Depth is the reachability closure over fields, enum variant payloads, array or run elements, and written type arguments [EFF-1], the same closure [PROV-6]'s release graph reads.
-The restructuring is `take the run by value and return it, or take a view of it`.
-The container nominals of this refusal are the two runs [BLK-1] and no other: what the refusal is for is a measure a callee moves while its caller retains it [MSR-3], and exactly the four boundary operations [BLK-3] move one.
-Both of `array<T, N>` and `buffer<T>` carry one measure fixed at formation that no operation moves, so neither is a container nominal here; an array whose elements reach a run is still covered by the same recursive refusal.
-The two view types are **not** in this refusal: a view carries no measure a callee could move, [VIEW-4] already forbids replacing a view through such a borrow, and what a callee writes through one is an element write over the storage the view was formed over, which [ENT-5] kills at [MSR-2]'s own granularity, so a `&uniq MutSlice<'r, T>` parameter leaves every measure its caller retained standing.
-That is what admits the fill-and-publish helper a caller hands one destination to, and it is the same admission the `&uniq` destination of a range-bearing [SYS-8] row takes.
-The type-parameter clause is decided at the declaration, where a type parameter is opaque: under [S37] the three linearity classes are `copy`, `affine` and `linear`, and the two runs are affine [OWN-1], so no written bound excludes a container nominal and every such referent is refused.
-A provider parameter is the one `&uniq` this rule does not refuse: no operation changes a provider's identity, only its measures, and every row that hands a provider's post-state back is a [BLK-0] or [SYS-2] record whose relations are complete over what it writes.
-The clause quantifies over a source-declared `fn` and over no compiler-owned domain, for the same reason: a record's behaviour no body can vary, so `mut_slice_of(vector: &uniq 'r v)` and `read_at(destination: &uniq MutSlice<u8>, ...)` are unaffected.
+In the parameter list of a source-declared `fn`, a `&uniq` referent may reach a run or a generic type parameter through any number of fields, enum variant payloads, array or run elements, and written type arguments.
+Caller facts survive exactly when the callee's exact effect row projected onto resolved places does not write their support [CALL-6, ENT-5]; verified two-state relations establish after those kills [FN-9, MSR-3].
+Whole replacement through an opaque type parameter is a write to that resolved referent, and the same storage-overlap kill removes facts about any element it contains.
+The stored-position, confinement and loan-bearing judgments still apply, as do the view replacement restriction [VIEW-4] and provider identity [PROV-1].
 
 A stored position whose brand resolves to the entry heap's store region in a unit whose entry selects no `command.heap` row [FN-7] is a hard error citing BLK-4 at the complete contained `type`, `ConfinedTypeWithoutStore`, with the restructuring `give this nominal a region parameter and confine the field to it, or let the entry receive the general store`.
 The entry heap's store region is minted before `main` in every unit whether or not that unit's entry holds the provider [PROV-1], so this refusal is about reachability of a provider and not existence of a region: a unit with the whole-program fact `heap-unreachable` can form no value of such a type, and the declaration is refused where it is written rather than at every use.
 
-The judgment of this rule is the `&uniq` parameter refusal over that closure, the `ConfinedTypeWithoutStore` refusal above, and the destination check over a confined value's region set; the stored-position half is [STOR-5]'s own judgment and is not repeated here.
-The checked program retains, before lowering [DIAG-2], each value's confinement set and the fact that no source-declared `&uniq` parameter reaches a run or a type parameter.
+The judgment of this rule is the `ConfinedTypeWithoutStore` refusal above and the destination check over a confined value's region set; the stored-position half is [STOR-5]'s own judgment and is not repeated here.
+The checked program retains, before lowering [DIAG-2], each value's confinement set.
 
 [VIEW-1] Two views, one shape, two loan strengths.
 A **view** is a value that reaches storage it does not own [OWN-5]: `Slice<'r, T>` holds a **shared** loan on the range it reaches and reads it, and `MutSlice<'r, T>` holds an **exclusive** loan on the same range and additionally writes its elements.
@@ -1293,7 +1286,7 @@ A successful [SET-2] commit likewise derives no drop, release, finalizer, or cle
 A type is region-bearing when its complete type after generic substitution contains `Slice<'r, T>`, `MutSlice<'r, T>`, `arena<'r, T>`, `Heap<'s>`, or `Arena<'s, bytes, align>` at any depth: a loan whose provenance the storage would hide, a value the region's own release reclaims, and a provider a move would strand.
 A store-branded run is **not** region-bearing under this relation even though its type names a region, because the store's identity travels in the type [PROV-1]: the position is itself confined to that store, and nothing about the value outlives, hides, or strands anything.
 No struct field, enum variant payload, `array`/`buffer`/run element, or `box`/`arena` content may be a borrow or a region-bearing type; a `Vector<'s, T>` is admitted in every one of them, which is what makes `struct N['s] { field: Vector<'s, T>; }` and `Option<Vector<'s, T>>` well-formed, and a provider type in any of them is a hard error citing STOR-5 at the complete contained `type`, with the restructuring `keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value`.
-The confinement judgment over an admitted store-branded position — that the owning value's own complete type names each region the stored value's does — and the `&uniq` parameter refusal over a container, a loan-bearing type, or a type parameter are [BLK-4]'s, which states them as one rule rather than as a clause of this one.
+The confinement judgment over an admitted store-branded position — that the owning value's own complete type names each region the stored value's does — is [BLK-4]'s; the stored-position and loan-bearing judgments do not prohibit exclusive parameters whose referents reach runs or generic type parameters.
 The `field`/`vfield` grammar admits only `type`, and `type` has no borrow (`&` / `&uniq`) production [GRAM-3]; the semantic check is recursive after substitution and therefore also closes indirect forms such as `box<Slice<'r, T>>`, `arena<'a, Slice<'r, T>>`, and a generic field instantiated with a region-bearing type.
 A violation is a hard error citing STOR-5 at the complete contained `type` whose placement would make storage region-bearing, with the restructuring `keep the slice or arena as a direct local, parameter, or result; do not store it inside another value`.
 A direct view type [VIEW-1] or `arena<'r, T>` remains a legal complete parameter, local, or result type where its owning rules admit it.
@@ -1912,12 +1905,12 @@ Omitting Err routes means Err exits are unselected, not unreachable.
 
 After recursively alpha-expanding every shared `contract_define`, the clause expression must have exact type `own Bool` and its root must be exactly one `compare_op` — `==`, `!=`, `<`, `<=`, `>`, or `>=` [GRAM-5].
 Each operand is one **relation term**: one datum displaced by a written constant, which is the shape [ENT-4]'s closure represents and the shape every declared relation of the kernel declaration domain writes [BLK-0].
-Its datum must be one of the clause's symbolic result datums, a parameter datum with field and `deref` projections, a named const, a typed integer literal, a measure of an admitted formal place P [MSR-5], or a measure of a declared result ordinal of measured type [CALL-4]; at least one operand contains a result datum, a measure over one included, and the two may name two different result ordinals.
+Its datum must be one of the clause's symbolic result datums, a parameter datum with field and `deref` projections, a named const, a typed integer literal, a measure of an admitted formal place P [MSR-5], or a measure of a declared result ordinal of measured type [CALL-4]; at least one operand contains a result datum (a measure over one included) or the exit-state measure of a `&uniq` parameter, and the two may name two different result ordinals. A clause naming only exclusive exit state is admitted regardless of the result type, including unit.
 Its displacement is the mathematical value of the rest of that `affine_expr` side, which must reduce to one integer constant: the side is admitted exactly when it carries one such datum with coefficient one, or none and a constant, and a side carrying two datums or a datum with any other coefficient is outside the difference-bound fragment [ENT-4] and is an FN-9 rejection at that clause naming the fragment.
-A `len_of(P)` operand whose place P is rooted at a `&uniq` parameter is inadmissible in an `ensures_clause` and is a hard error citing MSR-3 at that clause.
+A measure rooted at a `&uniq` parameter denotes the selected return's exit state; `entry(parameter)` denotes that parameter at function entry [MSR-3].
 No proof-required exact operation, computed arithmetic result, subscript, occurrence-local evaluated-value datum, Boolean connective, nested result projection, or body local becomes a relation datum; a clause side's own `+`, `-`, and `*` are the mathematical integer expression [MSR-5] fixes and are the displacement rather than an operation.
 The comparison normalizes to one finite L0 RelationTemplate whose two terms carry their displacements as one folded constant; equality's two bounds remain one relation occurrence.
-Parameters denote function-entry images.
+Parameter datums denote function-entry images, except that a bare measure rooted at a `&uniq` parameter denotes exit state [MSR-3].
 The template retains parameter ordinals and projections, result ordinals, route declarations, named-const identity, literals, substitutions, comparison row, operand order, and normalized relation, while excluding result/route/definition spellings, definition sharing, and callee identity.
 Its occurrence is `(concrete function instance, ensures_clause NodePath)`.
 
@@ -1928,7 +1921,7 @@ At a selected return, each result datum the clause names evaluates to one [ENT-2
 For an ordinary inhabited instance, each clause's selected-return set is independently nonempty; an empty set rejects at that `ensures_clause`.
 An [FN-8] uninhabited instance still checks route, type, expression, and return-shape source judgments, but is exempt from nonempty and proof requirements and publishes no relation.
 
-A referenced parameter's measure is that parameter's entry datum [MSR-3], which is minted at body entry, contains no place, and is therefore killed by nothing; a body that writes its own parameter back still relates the entry value.
+A referenced `own` or shared-borrow parameter's measure, or a measure explicitly rooted at `entry(parameter)`, is that parameter's entry datum [MSR-3], which is minted at body entry, contains no place, and is therefore killed by nothing. A bare `&uniq` measure instead evaluates over that parameter's resolved referent immediately before each selected return, after the return's ordinary effects and kills; replacement of that referent changes this exit term and never retargets the entry datum. Non-measure parameter datums retain the entry-image stability rule below.
 Every other referenced parameter entry image creates no snapshot term.
 Its stability begins live at body entry and becomes permanently unavailable on the first structural edge whose [ENT-5] kill overlaps the datum, a holder used by it, or its support; join is intersection and contradiction never restores it.
 An element write does not invalidate such an image, while a write to the place's own descriptor storage or to any prefix of it, or killing its root or holder, does [MSR-2]; at a call, which of the two a projected callee write is, is [CALL-1] through [CALL-3]'s classification and never the argument's shape [CALL-5].
@@ -1948,7 +1941,7 @@ Declaration or worklist order and iteration cannot change the result.
 For one ordinary call c, `A0(c)` means resolution, concrete instantiation, named arguments, exact types, borrow feasibility, every actual-expression obligation, exact formal substitution, and success of every FN-8 requirement have all occurred in that order at the same pre-transfer point.
 Failure forms no postcondition candidate.
 For one relation q, `M(c,q)` holds only when q's route matches that exact establishment event, result and referenced formals substitute independently to live [ENT-2] terms or constants after ordinary kills, and no referenced actual is represented only by an occurrence-local evaluated-value datum.
-A discarded or nested result, stored or propagated whole outcome, unsupported or unselected route, killed support, or nonterm actual makes only that M false.
+A discarded or nested result, stored or propagated whole outcome, unsupported or unselected route, killed support, or nonterm actual makes only the relations that reference that unavailable datum false under M. A relation naming no result needs no result destination and establishes on an ordinary successful call continuation, including a unit-returning or discarded-result call.
 
 Subject to A0 and M, failure-atomic scratch establishes q after transfer, consumes, borrow commits, callee-effect kills, and target kills.
 Every establishment retains the selected-return proof plus all actual-obligation and requirement parents from A0.
@@ -3578,30 +3571,27 @@ A measure whose value the table fixes as a compile-time constant or a runtime-pr
 A row whose cell is *bounded* fixes no such constant: a run's `head_of` is a standing fact only through `Z <= head_of(P)` and `head_of(P) <= cap_of(P)` above, and a run's `len_of` and `room_of` are ordinary killable terms.
 A standing fact holds at every program point of P's scope and no event kills it, exactly as an [ENT-2] implicit fact does.
 
-[MSR-3] One denotation per operand position, keyed on the parameter's mode.
-One spelling occurring at two positions of one declaration denotes two things, and which one is decided by the mode of the parameter the operand names rather than by the rule that reads it.
-The complete table is:
+[MSR-3] One denotation per operand position, keyed on the parameter's mode and the explicit entry former.
+The complete measure table is:
 
 ```text
-| the operand occurs in                                                | it denotes                    |
-|----------------------------------------------------------------------|-------------------------------|
-| a [FN-8] `requires`, naming a parameter                              | that parameter's entry image  |
-| a [FN-9] `ensures`, naming an `own` or shared-borrow parameter       | that parameter's entry image  |
-| a [FN-9] `ensures`, naming a `&uniq` parameter's measure             | inadmissible                  |
-| a [FN-9] clause, naming the result binder                            | that result                   |
-| any of the above, read at the CALLER after substitution, naming an   | that call's call datum        |
-|   `own` parameter                                                    |                               |
-| any of the above, read at the CALLER after substitution, naming a    | the live term                 |
-|   shared-borrow parameter                                            |                               |
-| any of the above, read at the CALLER after substitution, naming the  | the result                    |
-|   result binder                                                      |                               |
+| measure operand position                         | inside the callee     | at the caller          |
+|--------------------------------------------------|-----------------------|------------------------|
+| requires, any parameter                          | entry image           | pre-transfer term      |
+| ensures, own parameter                           | immutable entry datum | immutable call datum   |
+| ensures, shared-borrow parameter                 | immutable entry datum | live term              |
+| ensures, bare &uniq parameter                    | exit-state term       | resolved exit place    |
+| ensures, entry(&uniq parameter)                  | immutable entry datum | immutable call datum   |
+| ensures, result binder                           | selected result       | result destination     |
 ```
 
-An `own` operand denotes the call datum because an `own` parameter is a value the operation received and its post-state is not a thing the caller can name; and because that is what makes a relation naming a consumed operand's measure mean what it reads as, the consume the same statement performs being unable to kill a datum that contains no place.
-A `&uniq` parameter's measure is inadmissible in an `ensures` because a `&uniq` parameter is the one position from which a callee could leave a caller holding a measure of a value the callee replaced: a source-declared body is a body, so a caller reading its post-state would be reading a claim about an object at a point the callee cannot name.
-That inadmissibility is a hard error citing MSR-3 at the clause, with the restructuring `take the value by value and relate the result, or state the fact as a requires`.
-It quantifies over a source-declared `contract_block` and reaches no compiler-owned declaration record: a kernel-domain row [BLK-0] has no body, so its `&uniq` post-state measure is declaration data and is admitted there under that rule's record notation.
-The same operand in a `requires` stays admissible — a requirement is a fact the caller establishes before the call, not a claim about a state after it — and denotes the parameter's entry image inside the body and that call's call datum where the caller reads it, exactly as the table gives it.
+The proof-only former `entry(parameter)` is admitted only in an `ensures_clause` and only when its direct IDENT resolves to a `&uniq` parameter of that function; every other occurrence is a hard error citing MSR-3 at the former, with the restructuring `use entry only on an exclusive parameter in ensures`.
+It has that parameter's ordinary borrow type for projection checking. Ordinary explicit dereference and field projections follow it, as in `len_of(deref(entry(heap)))` and `len_of(deref(entry(frame)).tail)`; it is no runtime value, allocation, holder, or snapshot copy.
+The former selects the entry denotation of the projected measure. A bare `len_of(deref(heap))` in ensures instead selects exit state. A nested `entry`, an expression argument, and entry of a local or of an own or shared parameter are not admitted.
+Non-measure parameter datums retain [FN-9]'s entry-image stability judgment; this former adds no scalar snapshot family.
+An `own` operand denotes the call datum because its caller cannot name the consumed value's post-state. An exclusive referent is still the caller's resolved place after the call: its exit measures can therefore be checked at returns and instantiated there without transferring its owner.
+Entry and exit measures are distinct terms even when both project from the same formal and actual. The exact projected effects kill the caller's supported facts before the verified exit relations establish [CALL-6]; no syntactic property of an actual may retain or kill a fact in place of that effect judgment.
+Kernel records use this same spelling, explicit dereference, and denotation, with no separate snapshot notation [BLK-0].
 
 A **call datum** is a compiler-owned immutable [ENT-2] term with empty support: no place occurs in it, no [ENT-5] event kills it, and no later write retargets it.
 There is one former, keyed on what a datum denotes: a datum is identified by `(that call's NodePath, the formal ordinal, that operand's ordered projections, whether it denotes the operand's value or its length)`, is compiler-owned and immutable, and is established equal to that operand's pre-transfer term at the call's pre-transfer point [ENT-3.S13].
@@ -3612,8 +3602,9 @@ Its placement is the call, which is one of the events at which the language unde
 An **entry datum** is the same former at the second placement, body entry.
 For each parameter of measured type and each [MSR-1] measure of it that a declared relation of that function names, one compiler-owned immutable term is identified by `(the formal ordinal, that operand's ordered projections, which measure it denotes)` and established equal to that measure at body entry.
 It is the same kind of term as a call datum and carries the same closure: no place occurs in it, no [ENT-5] event kills it, and no later write retargets it.
-That is what the two `entry image` rows of the table above denote.
-A body that writes its own parameter back — `set vector = place_back(vector: move vector, ...)`, the ordinary shape a [LIV-2] commit gives an operation over an `own` parameter — therefore leaves every clause naming that parameter's measure meaning exactly what it read as at entry, and the caller reading the same clause after substitution reads that call's call datum, which the same statement's consume cannot kill either.
+That is what the immutable entry-datum cells of the table above denote.
+A body that replaces an `own` parameter's local binding with newly constructed storage — `let old = replace vector = move fresh;` — therefore leaves every clause naming that parameter's measure meaning exactly what it read as at entry, and the caller reading the same clause after substitution reads that call's call datum, which the same statement's consume cannot kill either.
+For a `&uniq` parameter the immutable entry datum is named explicitly through `entry(parameter)`; the bare parameter's measure instead denotes the selected return's resolved referent.
 An entry datum is formed, never proved, and it is not a second fact source: its standing orderings [MSR-2] reach it through the equality it is established with, exactly as they reach any other term.
 A parameter operand that is not a measure keeps the entry-image judgment [FN-9] states over the live place, since a value of fragment type is not a measured value and has no measure datum.
 A **placement datum** is the same former at every remaining placement, each of which is one naming event inside a body at which a measured value crosses from one place to another.
@@ -3644,13 +3635,13 @@ The complete placement table is:
 A right-hand side, operand, or scrutinee that is anything but a bare use of a measured place mints none, and the ordinary sources establish whatever that expression publishes.
 The element and displaced placements name an element position, and an element position is a place exactly where its offset is one a place relation can name [MSR-1]: a written literal, a live `own` fragment-integer binding, or an in-scope const generic [MSR-6].
 Two element places are decided by their offsets [OWN-7], so an offset provably distinct from nothing — itself included — would relate two elements of one run as one term; a commit at such an offset carries no measure and, being an element write of unknown position, kills every measure of every element of that run [MSR-2].
-The element placement reaches only a written element position, so a boundary operation [BLK-3] carries no measure through the slot it writes: `place_back` stores its value at position `len_of(vector)` and `take_back` takes one from position `len_of(rest)`, and a measure term is not an offset this version admits.
+The element placement reaches only a written element position, so a boundary operation [BLK-3] carries no measure through the slot it writes: `place_back` stores its value at the entry length of its referent and `take_back` takes one from the exit length of its referent, and a measure term is not an offset this version admits.
 A run put into a slot by a boundary row and taken back out by one therefore arrives with no measures of its own, and a caller that needs one reads it and branches [MSR-4].
 The payload placement names a field of an enum place's payload, and a tracked place's path is field selections, `deref` wrappings and subscripts [ENT-2] — none of which names a variant.
 It is therefore stated over a nominal enum exactly one of whose variants carries fields, where the field path selects one storage on every execution; the prelude `Option` is such a nominal and the prelude `Result` is not, its `Ok(value)` and `Err(error)` being two storages one path cannot separate.
 DEFERRED: the payload placement over an enum more than one of whose variants carries fields, which needs a place step that names the variant it selects; its delta is numbered rules +0 and grammar productions +0.
 
-*Judgment:* the denotation at every operand position, and the inadmissibility of a `&uniq` parameter's measure in a source-declared `ensures`.
+*Judgment:* the denotation at every operand position, and the restriction of `entry(parameter)` to an exclusive parameter in `ensures`.
 *Publishes:* the call datum at the call placement, the entry datum at the entry placement, the placement datum at every placement of the table above, and the denotation table.
 
 [CALL-1] Through a shared borrow, every fact survives.
@@ -3684,9 +3675,9 @@ This judgment applies to every admitted viewed element type [TYPE-2, VIEW-2], in
 [CALL-5] No transport reads the actual's spelling.
 The transport a call selects for one argument is fixed by the callee's declared parameter mode and type and by its declared contract, and by nothing else: not the argument expression's shape, not the callee's body, not its name, and not any per-parameter summary derived from a body.
 A source-declared `fn` has a body, so no property of that body classifies what one of its calls kills; a system operation and a kernel-domain row [BLK-0] have none, and the declaration record together with the rules stating that record's behaviour is the whole of the declared contract, which is why [CALL-3]'s second sentence reads [SYS-8] and not an implementation's knowledge of what a target does.
-A parameter for which no transport is selected kills conservatively, which is [CALL-3]'s ordinary descriptor-storage event.
-In particular a `&uniq` parameter whose referent type is measured and is not a view selects no transport: a call through it kills that actual's measures whatever the callee's body does, because a body that replaces the referent and a body that writes one element are the same declaration to every reader of the signature.
-A helper that transforms a run therefore takes it by value and returns it [CALL-2], and a helper that writes elements takes a view [CALL-3]; neither can leave a caller holding a measure of a value the callee replaced.
+The exact declared effect row is projected onto each actual's resolved places. A caller fact dies exactly when a projected write overlaps its ordinary support [ENT-5, MSR-2]; the actual's syntactic shape creates no write and removes none. A parameter absent from the declared writes has no write kill.
+For a projected write for which no view transport is selected, the affected extent is the ordinary descriptor storage [CALL-3]. Thus a whole-run write through a `&uniq` formal kills the old window facts, including when the actual is a holder or a nested field. A body that changes only elements can still have the same declared `writes(run)` row as a whole replacement; callers frame neither body beyond what that exact declaration states.
+Run mutation uses the exclusive boundary rows [BLK-3]; a source helper over an exclusive run parameter may publish the verified exit measures it promises [FN-9, MSR-3]. With no ensures the caller obtains no replacement fact from the mere presence of an exclusive parameter. A genuine empty/nonempty branch after rereading length may supply a new fact; no runtime check substitutes for a required static proof.
 
 *Judgment:* the conservative default for every parameter no transport is selected for.
 *Publishes:* the absence of any call-site-derived or body-derived classification.
@@ -3795,16 +3786,16 @@ For one call c and verified relation q, use exactly FN-9's `A0(c)` and per-relat
 Candidate scratch establishes q once in the current ProofContext exactly as [FN-9] fixes, after ordinary transfer and every applicable consume, borrow, callee-effect, and target kill.
 Each substituted formal is independent: a referenced actual that has no ENT-2 image makes only that q unavailable, while an unreferenced non-ENT-2 actual has no effect on q.
 Occurrence-local call-argument evaluated-value datums never enter q.
-The only destinations are the fresh direct ordinary-let binding, direct-call selected `Ok` payload, the direct-set target place — of which [FN-9]'s narrow direct-set receiver is the case where that same target is also an argument — narrow selected-payload outer receiver, each binder of a destructuring `let`, and each target of a `set` target list [FN-9, CALL-4, ENT-5].
-The last two take result ordinal i at binder or target i and exist only for a declaration that writes an ordered result list [GRAM-2, GRAM-4].
+For relations that name a result, the only result destinations are the fresh direct ordinary-let binding, direct-call selected `Ok` payload, the direct-set target place — of which [FN-9]'s narrow direct-set receiver is the case where that same target is also an argument — narrow selected-payload outer receiver, each binder of a destructuring `let`, and each target of a `set` target list [FN-9, CALL-4, ENT-5].
+The last two take result ordinal i at binder or target i and exist only for a declaration that writes an ordered result list [GRAM-2, GRAM-4]. An unrouted result-free relation over exclusive exit state needs no result destination: it establishes once on the call's normal continuation at its resolved exit places, after the same kills, including for an expression statement and a unit call.
 A named or pending outcome, stored or propagated whole outcome, false matching predicate, killed support, or rejected call establishes nothing.
 The complete candidate set stays unchanged in failure-atomic scratch until the owning source judgment succeeds; any failure publishes none, and success commits all of them atomically.
 
 [ENT-3.S13]
 - S13 (call datums).
-At an ordinary source call whose callee has an atomically published summary, each `own` operand of each declared relation of the resolved callee mints one call datum [MSR-3] and establishes it equal to that operand's exact pre-transfer term, at the pre-transfer point of [ENT-5]'s call-boundary order and before that boundary's consumes, borrow commits, callee-effect kills, and target kills.
+At an ordinary source call whose callee has an atomically published summary, each `own` operand and each explicitly entry-qualified `&uniq` measure of each declared relation of the resolved callee mints one call datum [MSR-3] and establishes it equal to that operand's exact pre-transfer term, at the pre-transfer point of [ENT-5]'s call-boundary order and before that boundary's consumes, borrow commits, callee-effect kills, and target kills.
 The population of this source is every callee whose declared relation list is published data: a source `fn_decl` with a verified [FN-9] summary, and every kernel-domain row [BLK-0], whose relations are declaration data rather than a body's proved consequence and therefore need no earlier-component verification premise.
-A kernel-domain row additionally mints one call datum for each `&uniq` state operand its relations name in the `at the call` form, on exactly the same terms and at the same point; the post-state occurrence of the same measure is not a datum but the ordinary live term after the call's own kills.
+The same datum formation applies to source summaries and kernel records. An exclusive exit measure is never a call datum: it is the ordinary live term after the call's exact projected effects and the statement's own kills.
 The operand's pre-transfer term is the one [FN-9]'s `A0(c)` substitution already fixes; the datum adds no term the substitution could not name and no relation the callee did not declare.
 A datum has empty support, so [ENT-5]'s pre-kill closure carries its consequences across the same statement's kills while every fact whose support those kills remove dies normally.
 An operand the substitution leaves without an [ENT-2] term mints no datum, exactly as it makes only that relation unavailable under `M(c,q)`.
@@ -3825,12 +3816,12 @@ The label S8 is retired, not reused: its midpoint family was struck as an owner-
 Every published relation in this document is published by exactly one route — [ENT-3.S12]'s, with [ENT-3.S13]'s substitution — and nothing else publishes anything.
 This rule states that route's four points once, so no rule computes a fact at one program point and uses it at another without naming both.
 
-A declared relation is **instantiated at the call**, by substituting each operand at the denotation [MSR-3]'s table gives its parameter's mode: an `own` formal by that call's call datum [ENT-3.S13], a shared-borrow formal by the live term of its resolved referent, the result binder by its destination below.
-Its **support** is the ordinary L0 support of the substituted terms, taken at the call.
-It is **established** on the call's normal continuation, after the call's ordinary transfer, consumes, borrow commits, target commit and kills, exactly in [ENT-5] 2898-2905's order.
+A declared relation is **instantiated at the call**, by substituting each operand at the denotation [MSR-3]'s table gives it: an `own` measure or an explicitly entry-qualified exclusive measure by that call's pre-transfer datum [ENT-3.S13], a shared-borrow measure by its live resolved referent, a bare exclusive measure by the actual's resolved exit place, and a referenced result binder by its destination below. Entry and exit terms are distinct even when they name one formal.
+Its **support** is the ordinary L0 support of the substituted terms. The immutable call datums have empty support; an exclusive exit term has the support of the resolved place after the call's projected write kills. Those writes kill pre-call facts, not the exit relation that the verified callee establishes afterwards. A later target commit or other write to that place kills the exit relation normally.
+It is **established** on the call's normal continuation, after the call's ordinary transfer, consumes, borrow commits, target commit and kills, exactly in [ENT-5]'s call-boundary order.
 A relation routed to a variant is instantiated at the call in the same order and is **restricted** to that variant's arm: it is available exactly on the paths on which that arm is entered, and it is not deferred to the arm, so an [ENT-5] event lying between the call and the arm kills a relation whose support it removes rather than preceding an establishment that has not happened.
 A relation whose support is dead is not available at all; a relation over a call datum has empty support and no event kills it.
-The destinations are exactly [ENT-3.S12]'s closed list [CALL-4], and a relation lands nowhere else.
+A relation naming results uses exactly [ENT-3.S12]'s closed result-destination list [CALL-4]. An unrouted relation naming only exclusive exit state is established on the ordinary normal continuation even when no result is bound; its destination is that resolved state, and a unit return adds no result datum.
 
 Every published relation set is checked for consistency at the declaration.
 A `contract_block` whose instantiated relations are contradictory at their establishment point is a hard error citing CALL-6 at the `fn_decl`, `ContradictoryPublishedRelations`, naming the clauses and carrying the restructuring `state one consistent relation set: a contract whose clauses cannot hold together publishes every fact at every caller`.

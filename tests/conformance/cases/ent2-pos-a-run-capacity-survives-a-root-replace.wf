@@ -11,7 +11,7 @@ fn filled_four(value: own u32) -> result: own FixedVector<u32, 4> pure contract 
     invariant spare: room_of(built) + at >= 4_u64,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: value);
+    place_back(vector: &uniq built, value: value);
   }
   return move built;
 }

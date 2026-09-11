@@ -986,7 +986,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
     invariant spare: room_of(built) + at >= 16_u64,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: 97_u8);
+    place_back(vector: &uniq built, value: 97_u8);
   }
   return move built;
 }
@@ -1002,7 +1002,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
         invariant spare: room_of(table) + at >= 16_u64,
         invariant flat: head_of(table) <= 0_u64
       ) {
-        set table = place_back(vector: move table, value: 97_u8);
+        place_back(vector: &uniq table, value: 97_u8);
       }
       let name = component();
       let total = 0_u64;

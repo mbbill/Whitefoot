@@ -17,9 +17,15 @@ fn identity['r](value: &'r Row) -> result: &'r Row pure {
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 4>();
   let first = Row(left: 3_u64, right: 4_u64);
-  let prefix = place_back(vector: move empty, value: move first);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let prefix = move empty;
   let second = Row(left: 5_u64, right: 6_u64);
-  let rows = place_back(vector: move prefix, value: move second);
+  region {
+    place_back(vector: &uniq prefix, value: move second);
+  }
+  let rows = move prefix;
 "#;
 
 fn rows(body: &str) -> String {
@@ -81,7 +87,9 @@ fn field['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(owner)
 fn append['s](storage: own Box<'s, FixedVector<u64, 16>>, value: own u64) -> result: own Box<'s, FixedVector<u64, 16>> reads(storage), writes(storage) contract {
   requires room_of(deref(storage)) > 0_u64;
 } {
-  set deref(storage) = place_back(vector: move deref(storage), value: value);
+  region {
+    place_back(vector: &uniq deref(storage), value: value);
+  }
   return move storage;
 }
 "#,
@@ -341,7 +349,10 @@ struct Table {
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 1>();
   let item = Row(left: 3_u64, right: 4_u64);
-  let rows = place_back(vector: move empty, value: move item);
+  region {
+    place_back(vector: &uniq empty, value: move item);
+  }
+  let rows = move empty;
   let table = Table(rows: move rows);
   region {
     let left = &table.rows[0_u64].left;
@@ -469,8 +480,11 @@ struct Entry {
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Entry, 2>();
   let payload = Payload(value: 3_u64);
-  let entry = Entry(payload: move payload, other: 5_u64);
-  let entries = place_back(vector: move empty, value: move entry);
+  let stored_entry = Entry(payload: move payload, other: 5_u64);
+  region {
+    place_back(vector: &uniq empty, value: move stored_entry);
+  }
+  let entries = move empty;
   let replacement = Payload(value: 7_u64);
   let old = replace entries[0_u64].payload = move replacement;
   set entries[0_u64].payload = move entries[0_u64].payload;
@@ -512,7 +526,10 @@ fn update(value: &uniq u64) -> result: own Payload writes(value) {
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Payload, 1>();
   let payload = Payload(value: 3_u64);
-  let entries = place_back(vector: move empty, value: move payload);
+  region {
+    place_back(vector: &uniq empty, value: move payload);
+  }
+  let entries = move empty;
   region {
     let previous = replace entries[0_u64] = update(value: &uniq entries[0_u64].value);
     let observed = previous.value;
@@ -526,7 +543,10 @@ command fn main() -> status: own ExitStatus pure {
 
 const INLINE_VIEW: &str = r#"command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
-  let built = place_back(vector: move empty, value: 7_u8);
+  region {
+    place_back(vector: &uniq empty, value: 7_u8);
+  }
+  let built = move empty;
   region {
     let view = mut_slice_of(&uniq built);
     set view[0_u64] = 9_u8;
@@ -707,7 +727,10 @@ fn view_descriptor_loans_cover_element_reads_measures_and_commits() {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
-  let bytes = place_back(vector: move empty, value: 3_u8);
+  region {
+    place_back(vector: &uniq empty, value: 3_u8);
+  }
+  let bytes = move empty;
   let left = 0_u64;
   let right = 0_u64;
   let byte = 0_u8;
@@ -763,7 +786,10 @@ fn exclusive_inline_field_view_keeps_sibling_storage_independent() {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let bytes = place_back(vector: move empty, value: 3_u8);
+  region {
+    place_back(vector: &uniq empty, value: 3_u8);
+  }
+  let bytes = move empty;
   let pair = Pair(bytes: move bytes, other: 4_u64);
   region {
     let view = mut_slice_of(&uniq pair.bytes);
@@ -785,10 +811,19 @@ const GUARDED_ELEMENT: &str = r#"fn overwrite(value: &uniq u64) -> result: own u
 
 fn read_if_valid(index: own u64) -> result: own unit pure {
   let no_indices = fixed_vector::<u64, 2>();
-  let prefix = place_back(vector: move no_indices, value: index);
-  let indices = place_back(vector: move prefix, value: 9_u64);
+  region {
+    place_back(vector: &uniq no_indices, value: index);
+  }
+  let prefix = move no_indices;
+  region {
+    place_back(vector: &uniq prefix, value: 9_u64);
+  }
+  let indices = move prefix;
   let no_data = fixed_vector::<u8, 1>();
-  let data = place_back(vector: move no_data, value: 7_u8);
+  region {
+    place_back(vector: &uniq no_data, value: 7_u8);
+  }
+  let data = move no_data;
   region {
     let guarded = &uniq indices[0_u64];
     let valid = deref(guarded) < 1_u64;

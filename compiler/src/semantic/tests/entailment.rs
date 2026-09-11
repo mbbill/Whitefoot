@@ -817,7 +817,27 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_relation_terms_resolve(summary, relation);
                 retained_term(summary, *left);
                 retained_term(summary, *right);
-                assert_source_event(summary, *event, &mut used_events);
+                if retained_event(summary, *event).kind == FlowEventKind::Entry {
+                    // MSR-3 admits exactly an immutable measure datum equated
+                    // to its entering live measure at this source placement.
+                    used_events[event.0 as usize] = true;
+                    let Relation::Equal {
+                        left,
+                        right,
+                        difference: 0,
+                    } = relation
+                    else {
+                        panic!("an entry datum is established by equality");
+                    };
+                    let TermKind::EntryDatum { measure, .. } = retained_term(summary, *left) else {
+                        panic!("entry equality must name an immutable entry datum");
+                    };
+                    assert!(matches!(retained_term(summary, *right),
+                        TermKind::Measure(actual, _) | TermKind::ProjectedMeasure(actual, _)
+                            if actual == measure));
+                } else {
+                    assert_source_event(summary, *event, &mut used_events);
+                }
                 match relation {
                     Relation::Bound {
                         left: source_left,
@@ -2043,6 +2063,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     .collect::<Vec<_>>();
                 assert_eq!(parents, &expected);
             }
+            DerivationRootKind::PostconditionState { occurrence } => {
+                assert_eq!(occurrence, seen_s12);
+                seen_s12 += 1;
+                assert!(!seen_s12_nodes[root.node.0 as usize]);
+                seen_s12_nodes[root.node.0 as usize] = true;
+                assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
+                assert!(matches!(
+                    summary.derivations.nodes[root.node.0 as usize],
+                    DerivationNode::PostconditionCall { .. }
+                ));
+            }
             DerivationRootKind::PostconditionDirectResult { occurrence, .. } => {
                 assert_eq!(occurrence, seen_s12);
                 seen_s12 += 1;
@@ -2143,13 +2174,19 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         "finish must prune every node outside the mandatory-root sub-DAG"
     );
     for (index, node) in summary.derivations.nodes.iter().enumerate() {
-        let is_route = matches!(
-            node,
-            DerivationNode::PostconditionDirectResult { .. }
-                | DerivationNode::PostconditionDirectMatch { .. }
-                | DerivationNode::PostconditionDirectReceiver { .. }
-                | DerivationNode::PostconditionSelectedReceiver { .. }
-        );
+        let is_state_root = matches!(node, DerivationNode::PostconditionCall { .. })
+            && summary.derivations.roots.iter().any(|root| {
+                root.node.0 as usize == index
+                    && matches!(root.kind, DerivationRootKind::PostconditionState { .. })
+            });
+        let is_route = is_state_root
+            || matches!(
+                node,
+                DerivationNode::PostconditionDirectResult { .. }
+                    | DerivationNode::PostconditionDirectMatch { .. }
+                    | DerivationNode::PostconditionDirectReceiver { .. }
+                    | DerivationNode::PostconditionSelectedReceiver { .. }
+            );
         assert_eq!(
             seen_s12_nodes[index], is_route,
             "every retained S12 route node must have exactly one matching required root"
@@ -5320,15 +5357,36 @@ fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
 
 command fn main() -> status: own ExitStatus pure {
   let small_empty = fixed_vector::<u8, 2>();
-  let small_head = place_back(vector: move small_empty, value: 0_u8);
-  let small = place_back(vector: move small_head, value: 0_u8);
+  region {
+    place_back(vector: &uniq small_empty, value: 0_u8);
+  }
+  let small_head = move small_empty;
+  region {
+    place_back(vector: &uniq small_head, value: 0_u8);
+  }
+  let small = move small_head;
   ranges::<2>(values: move small);
   let large_empty = fixed_vector::<u8, 5>();
-  let large_one = place_back(vector: move large_empty, value: 0_u8);
-  let large_two = place_back(vector: move large_one, value: 0_u8);
-  let large_three = place_back(vector: move large_two, value: 0_u8);
-  let large_four = place_back(vector: move large_three, value: 0_u8);
-  let large = place_back(vector: move large_four, value: 0_u8);
+  region {
+    place_back(vector: &uniq large_empty, value: 0_u8);
+  }
+  let large_one = move large_empty;
+  region {
+    place_back(vector: &uniq large_one, value: 0_u8);
+  }
+  let large_two = move large_one;
+  region {
+    place_back(vector: &uniq large_two, value: 0_u8);
+  }
+  let large_three = move large_two;
+  region {
+    place_back(vector: &uniq large_three, value: 0_u8);
+  }
+  let large_four = move large_three;
+  region {
+    place_back(vector: &uniq large_four, value: 0_u8);
+  }
+  let large = move large_four;
   ranges::<5>(values: move large);
   return exit_status(code: 0_u8);
 }
@@ -8566,9 +8624,11 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
     // of these sources publishes on this route too. The raw DEFLATE chain's
     // migration off `buffer<T>` (B7c4b) then made every helper hand its run
     // back by value under an `ensures` over that result, and every caller
-    // commits it with `set`, so the direct-result roots of the two bundles
-    // are now counted in the hundreds rather than the tens. `give` and
-    // delivery-join routes stay absent.
+    // commits it with `set`. Under the exclusive boundary rows the kernel
+    // state relations publish at call completion, without a result binder;
+    // those roots move from DirectResult to PostconditionState. Source
+    // helper results and view/conversion results keep their original route.
+    // `give` and delivery-join routes stay absent.
     assert_eq!(
         program
             .functions
@@ -8579,7 +8639,17 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                 DerivationRootKind::PostconditionDirectResult { .. }
             ))
             .count(),
-        215
+        107
+    );
+    assert_eq!(
+        program
+            .functions
+            .iter()
+            .flat_map(|function| &function.entailment.derivations.roots)
+            .filter(|root| matches!(root.kind, DerivationRootKind::PostconditionState { .. }))
+            .count(),
+        108,
+        "each exclusive kernel state clause publishes once at its call"
     );
     assert!(program.functions.iter().all(|function| {
         function.entailment.derivations.roots.iter().all(|root| {
@@ -10266,15 +10336,36 @@ fn concrete_const_instances_keep_function_local_derivation_inventories() {
 
 command fn main() -> status: own ExitStatus pure {
   let small_empty = fixed_vector::<u8, 2>();
-  let small_head = place_back(vector: move small_empty, value: 7_u8);
-  let small = place_back(vector: move small_head, value: 7_u8);
+  region {
+    place_back(vector: &uniq small_empty, value: 7_u8);
+  }
+  let small_head = move small_empty;
+  region {
+    place_back(vector: &uniq small_head, value: 7_u8);
+  }
+  let small = move small_head;
   let small_first = first::<2>(values: move small);
   let large_empty = fixed_vector::<u8, 5>();
-  let large_one = place_back(vector: move large_empty, value: 9_u8);
-  let large_two = place_back(vector: move large_one, value: 9_u8);
-  let large_three = place_back(vector: move large_two, value: 9_u8);
-  let large_four = place_back(vector: move large_three, value: 9_u8);
-  let large = place_back(vector: move large_four, value: 9_u8);
+  region {
+    place_back(vector: &uniq large_empty, value: 9_u8);
+  }
+  let large_one = move large_empty;
+  region {
+    place_back(vector: &uniq large_one, value: 9_u8);
+  }
+  let large_two = move large_one;
+  region {
+    place_back(vector: &uniq large_two, value: 9_u8);
+  }
+  let large_three = move large_two;
+  region {
+    place_back(vector: &uniq large_three, value: 9_u8);
+  }
+  let large_four = move large_three;
+  region {
+    place_back(vector: &uniq large_four, value: 9_u8);
+  }
+  let large = move large_four;
   let large_first = first::<5>(values: move large);
   return exit_status(code: 0_u8);
 }
@@ -10383,20 +10474,44 @@ command fn main() -> status: own ExitStatus pure {
 fn a_run_length_equality_survives_a_root_replace_after_a_join() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let arr_empty = fixed_vector::<u32, 4>();
-  let arr_one = place_back(vector: move arr_empty, value: 1_u32);
-  let arr_two = place_back(vector: move arr_one, value: 1_u32);
-  let arr_three = place_back(vector: move arr_two, value: 1_u32);
-  let arr = place_back(vector: move arr_three, value: 1_u32);
+  region {
+    place_back(vector: &uniq arr_empty, value: 1_u32);
+  }
+  let arr_one = move arr_empty;
+  region {
+    place_back(vector: &uniq arr_one, value: 1_u32);
+  }
+  let arr_two = move arr_one;
+  region {
+    place_back(vector: &uniq arr_two, value: 1_u32);
+  }
+  let arr_three = move arr_two;
+  region {
+    place_back(vector: &uniq arr_three, value: 1_u32);
+  }
+  let arr = move arr_three;
   let before = arr[0_u64];
   let ok = before == 1_u32;
   if ok {
     return exit_status(code: 1_u8);
   }
   let fresh_empty = fixed_vector::<u32, 4>();
-  let fresh_one = place_back(vector: move fresh_empty, value: 9_u32);
-  let fresh_two = place_back(vector: move fresh_one, value: 9_u32);
-  let fresh_three = place_back(vector: move fresh_two, value: 9_u32);
-  let fresh = place_back(vector: move fresh_three, value: 9_u32);
+  region {
+    place_back(vector: &uniq fresh_empty, value: 9_u32);
+  }
+  let fresh_one = move fresh_empty;
+  region {
+    place_back(vector: &uniq fresh_one, value: 9_u32);
+  }
+  let fresh_two = move fresh_one;
+  region {
+    place_back(vector: &uniq fresh_two, value: 9_u32);
+  }
+  let fresh_three = move fresh_two;
+  region {
+    place_back(vector: &uniq fresh_three, value: 9_u32);
+  }
+  let fresh = move fresh_three;
   let old = replace arr = move fresh;
   let after = arr[0_u64];
   return exit_status(code: 0_u8);
@@ -10418,20 +10533,44 @@ fn a_run_length_equality_survives_a_root_replace_after_a_join() {
 fn a_run_length_verdict_is_invariant_under_an_unrelated_binding() {
     let after_the_replace = br#"command fn main() -> status: own ExitStatus pure {
   let arr_empty = fixed_vector::<u32, 4>();
-  let arr_one = place_back(vector: move arr_empty, value: 1_u32);
-  let arr_two = place_back(vector: move arr_one, value: 1_u32);
-  let arr_three = place_back(vector: move arr_two, value: 1_u32);
-  let arr = place_back(vector: move arr_three, value: 1_u32);
+  region {
+    place_back(vector: &uniq arr_empty, value: 1_u32);
+  }
+  let arr_one = move arr_empty;
+  region {
+    place_back(vector: &uniq arr_one, value: 1_u32);
+  }
+  let arr_two = move arr_one;
+  region {
+    place_back(vector: &uniq arr_two, value: 1_u32);
+  }
+  let arr_three = move arr_two;
+  region {
+    place_back(vector: &uniq arr_three, value: 1_u32);
+  }
+  let arr = move arr_three;
   let before = arr[0_u64];
   let ok = before == 1_u32;
   if ok {
     return exit_status(code: 1_u8);
   }
   let fresh_empty = fixed_vector::<u32, 4>();
-  let fresh_one = place_back(vector: move fresh_empty, value: 9_u32);
-  let fresh_two = place_back(vector: move fresh_one, value: 9_u32);
-  let fresh_three = place_back(vector: move fresh_two, value: 9_u32);
-  let fresh = place_back(vector: move fresh_three, value: 9_u32);
+  region {
+    place_back(vector: &uniq fresh_empty, value: 9_u32);
+  }
+  let fresh_one = move fresh_empty;
+  region {
+    place_back(vector: &uniq fresh_one, value: 9_u32);
+  }
+  let fresh_two = move fresh_one;
+  region {
+    place_back(vector: &uniq fresh_two, value: 9_u32);
+  }
+  let fresh_three = move fresh_two;
+  region {
+    place_back(vector: &uniq fresh_three, value: 9_u32);
+  }
+  let fresh = move fresh_three;
   let old = replace arr = move fresh;
   let novel = 123456_u64;
   let after = arr[0_u64];
@@ -10440,10 +10579,22 @@ fn a_run_length_verdict_is_invariant_under_an_unrelated_binding() {
 "#;
     let before_the_read = br#"command fn main() -> status: own ExitStatus pure {
   let arr_empty = fixed_vector::<u32, 4>();
-  let arr_one = place_back(vector: move arr_empty, value: 1_u32);
-  let arr_two = place_back(vector: move arr_one, value: 1_u32);
-  let arr_three = place_back(vector: move arr_two, value: 1_u32);
-  let arr = place_back(vector: move arr_three, value: 1_u32);
+  region {
+    place_back(vector: &uniq arr_empty, value: 1_u32);
+  }
+  let arr_one = move arr_empty;
+  region {
+    place_back(vector: &uniq arr_one, value: 1_u32);
+  }
+  let arr_two = move arr_one;
+  region {
+    place_back(vector: &uniq arr_two, value: 1_u32);
+  }
+  let arr_three = move arr_two;
+  region {
+    place_back(vector: &uniq arr_three, value: 1_u32);
+  }
+  let arr = move arr_three;
   let novel = 123456_u64;
   let before = arr[0_u64];
   let ok = before == 1_u32;
@@ -10451,10 +10602,22 @@ fn a_run_length_verdict_is_invariant_under_an_unrelated_binding() {
     return exit_status(code: 1_u8);
   }
   let fresh_empty = fixed_vector::<u32, 4>();
-  let fresh_one = place_back(vector: move fresh_empty, value: 9_u32);
-  let fresh_two = place_back(vector: move fresh_one, value: 9_u32);
-  let fresh_three = place_back(vector: move fresh_two, value: 9_u32);
-  let fresh = place_back(vector: move fresh_three, value: 9_u32);
+  region {
+    place_back(vector: &uniq fresh_empty, value: 9_u32);
+  }
+  let fresh_one = move fresh_empty;
+  region {
+    place_back(vector: &uniq fresh_one, value: 9_u32);
+  }
+  let fresh_two = move fresh_one;
+  region {
+    place_back(vector: &uniq fresh_two, value: 9_u32);
+  }
+  let fresh_three = move fresh_two;
+  region {
+    place_back(vector: &uniq fresh_three, value: 9_u32);
+  }
+  let fresh = move fresh_three;
   let old = replace arr = move fresh;
   let after = arr[0_u64];
   return exit_status(code: 0_u8);

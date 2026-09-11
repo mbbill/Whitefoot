@@ -1,0 +1,31 @@
+fn append<T: affine, const n: u64>(values: &uniq FixedVector<T, n>, value: own T) -> result: own unit reads(values), writes(values) contract {
+  requires room_of(deref(values)) > 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values))) + 1_u64;
+  ensures head_of(deref(values)) == head_of(deref(entry(values)));
+} {
+  region {
+    place_back(vector: &uniq deref(values), value: move value);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let scalar = fixed_vector::<u64, 2>();
+  let nested = fixed_vector::<FixedVector<u64, 2>, 2>();
+  region {
+    append::<u64, 2>(values: &uniq scalar, value: 7_u64);
+    invariant scalar_length: len_of(scalar) >= 1_u64;
+    append::<FixedVector<u64, 2>, 2>(values: &uniq nested, value: move scalar);
+    invariant nested_length: len_of(nested) >= 1_u64;
+    let child = take_back(vector: &uniq nested);
+    let size = len_of(child);
+    if size != 1_u64 {
+      return exit_status(code: 1_u8);
+    }
+    let value = child[0_u64];
+    if value != 7_u64 {
+      return exit_status(code: 2_u8);
+    }
+    return exit_status(code: 0_u8);
+  }
+}

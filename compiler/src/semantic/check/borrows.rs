@@ -1059,9 +1059,9 @@ absent when it writes none",
     ///
     /// [OWN-2] restricts no type, so this states what the checker, lowering,
     /// and backend carry today rather than a language rule: every directly
-    /// stored value, including descriptor and opaque-resource types. An
-    /// unsubstituted generic stays explicitly unsupported instead of being
-    /// misreported as invalid source.
+    /// stored value, including descriptor and opaque-resource types. Generic
+    /// referents use the same typed storage path; instantiation supplies their
+    /// concrete representation before lowering.
     pub(super) fn borrowable_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Buffer { .. } | CheckedType::Slice { .. } => true,
@@ -1069,8 +1069,7 @@ absent when it writes none",
             // handle, so each is already the thing a borrow carries; a
             // frame-resident run is inline storage, so a borrow of it is the
             // address of that storage, exactly as a borrow of a struct is
-            // [BLK-1, PROV-1]. [BLK-4] refuses only the `&uniq` of a run, so
-            // the shared borrow is an ordinary one.
+            // [BLK-1, PROV-1]. Both loan strengths address that storage.
             CheckedType::Vector { .. } | CheckedType::Heap { .. } | CheckedType::Extent { .. } => {
                 true
             }
@@ -1087,7 +1086,7 @@ absent when it writes none",
             | CheckedType::Integer(_)
             | CheckedType::Float(_) => true,
             CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
-                false
+                true
             }
         })
     }
@@ -1116,20 +1115,18 @@ absent when it writes none",
             // that storage. Both runs [BLK-1] are borrowed the same way: an
             // inline run is storage in its owner and a store-resident run's
             // descriptor is storage in its owner's frame, so each borrow is
-            // the address of the run's own storage. That is one borrow path
-            // for the two runs rather than one shape each, and [BLK-4]
-            // refuses the `&uniq` of either, so no borrow of a run writes
-            // through it.
+            // the address of the run's own storage. Generic referents name
+            // the same storage; their concrete layout is selected only at
+            // instantiation.
             CheckedType::Heap { .. }
             | CheckedType::Extent { .. }
             | CheckedType::Array { .. }
             | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. } => true,
-            CheckedType::Buffer { .. }
-            | CheckedType::Slice { .. }
+            | CheckedType::Vector { .. }
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => false,
+            | CheckedType::GenericFloat(_) => true,
+            CheckedType::Buffer { .. } | CheckedType::Slice { .. } => false,
         })
     }
 

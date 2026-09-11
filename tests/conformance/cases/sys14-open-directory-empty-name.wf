@@ -1,9 +1,15 @@
 command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "`open_directory` validates its caller-owned name range before any host call [SYS-14]. An empty range names no component, so it yields `InvalidPath` with both detail fields zero, no host call, and no DirectoryRead result. The buffer holds a perfectly valid component; only the requested range is empty, which is what makes this the range judgment rather than a content judgment.";
   let name = fixed_vector::<u8, 3>();
-  set name = place_back(vector: move name, value: 97_u8);
-  set name = place_back(vector: move name, value: 98_u8);
-  set name = place_back(vector: move name, value: 99_u8);
+  region {
+    place_back(vector: &uniq name, value: 97_u8);
+  }
+  region {
+    place_back(vector: &uniq name, value: 98_u8);
+  }
+  region {
+    place_back(vector: &uniq name, value: 99_u8);
+  }
   region 'c {
     let component = slice_of(&name);
     region {

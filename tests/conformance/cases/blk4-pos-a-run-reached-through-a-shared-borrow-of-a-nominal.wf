@@ -14,7 +14,9 @@ fn head(input: &Source) -> byte: own u8 reads(input.bytes) {
 
 command fn main() -> status: own ExitStatus pure {
   let bytes = fixed_vector::<u8, 5>();
-  set bytes = place_back(vector: move bytes, value: 43_u8);
+  region {
+    place_back(vector: &uniq bytes, value: 43_u8);
+  }
   let input = Source(bytes: move bytes);
   region {
     let window = &input;

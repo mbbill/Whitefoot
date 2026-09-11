@@ -3,7 +3,7 @@ struct Holder<T: affine> {
 }
 
 fn swapin<T: affine>(handle: &uniq Holder<T>, made: own T) -> code: own u8 pure {
-  doc "BLK-4: the closure is computed at the declaration, where the type parameter is opaque; no linearity class excludes both a container nominal and a loan-bearing argument, so every such referent is refused.";
+  doc "BLK-4 admits a unique referent reaching a generic type parameter; this pure helper declares no write and leaves the referent unchanged.";
   return 0_u8;
 }
 

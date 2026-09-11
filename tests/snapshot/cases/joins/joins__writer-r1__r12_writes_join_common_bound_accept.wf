@@ -29,7 +29,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_scratch: room_of(scratch) + at >= 8_u64,
         invariant flat_scratch: head_of(scratch) <= 0_u64
       ) {
-        set scratch = place_back(vector: move scratch, value: 0_u8);
+        place_back(vector: &uniq scratch, value: 0_u8);
       }
       let take_direct = True();
       let take_reversed = False();

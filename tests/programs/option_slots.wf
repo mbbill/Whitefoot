@@ -17,7 +17,7 @@ fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pu
     invariant flat: head_of(built) <= 0_u64
   ) {
     let empty = None<T>();
-    set built = place_back(vector: move built, value: move empty);
+    place_back(vector: &uniq built, value: move empty);
   }
   return move built;
 }

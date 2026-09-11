@@ -25,7 +25,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare: room_of(built) + at >= 8_u64,
         invariant flat: head_of(built) <= 0_u64
       ) {
-        set built = place_back(vector: move built, value: at);
+        place_back(vector: &uniq built, value: at);
       }
       let held = len_of(built);
       if held == 8_u64 {
@@ -45,7 +45,10 @@ command fn main() -> status: own ExitStatus pure {
           } else {
             return exit_status(code: 6_u8);
           }
-          let one = place_back(vector: move scratch, value: 99_u64);
+          region {
+            place_back(vector: &uniq scratch, value: 99_u64);
+          }
+          let one = move scratch;
           let front = one[0_u64];
           if front == 99_u64 {
           } else {

@@ -12,7 +12,7 @@ command fn main(command.args as args: own Args, command.heap as heap: own Heap) 
           invariant spare: room_of(bytes) + at >= 3_u64,
           invariant flat: head_of(bytes) <= 0_u64
         ) {
-          set bytes = place_back(vector: move bytes, value: 0_u8);
+          place_back(vector: &uniq bytes, value: 0_u8);
         }
         region {
           let window = mut_slice_of(&uniq bytes);

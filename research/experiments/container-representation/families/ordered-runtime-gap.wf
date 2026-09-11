@@ -33,9 +33,9 @@ fn insert_once['s](store: &uniq Heap<'s>, tree: &uniq Box<'s, RuntimeGapNode<'s>
                   return False();
                 }
                 Some(value: right_child) => {
-                  let entry = Entry(left: move left_child, right: move right_child);
+                  let stored_entry = Entry(left: move left_child, right: move right_child);
                   region {
-                    match heap_box(store: &uniq deref(store), value: move entry) {
+                    match heap_box(store: &uniq deref(store), value: move stored_entry) {
                       Err(error: back) => {
                         return False();
                       }

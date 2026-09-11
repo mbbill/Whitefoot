@@ -17,13 +17,31 @@ command fn main() -> status: own ExitStatus pure {
               let right_room = room_of(second);
               if left_room >= 2_u64 {
                 if right_room >= 2_u64 {
-                  let a0 = place_back(vector: move first, value: 1_u8);
-                  let a1 = place_back(vector: move a0, value: 2_u8);
-                  let b0 = place_back(vector: move second, value: 3_u8);
-                  let b1 = place_back(vector: move b0, value: 4_u8);
+                  region {
+                    place_back(vector: &uniq first, value: 1_u8);
+                  }
+                  let a0 = move first;
+                  region {
+                    place_back(vector: &uniq a0, value: 2_u8);
+                  }
+                  let a1 = move a0;
+                  region {
+                    place_back(vector: &uniq second, value: 3_u8);
+                  }
+                  let b0 = move second;
+                  region {
+                    place_back(vector: &uniq b0, value: 4_u8);
+                  }
+                  let b1 = move b0;
                   let table = fixed_vector::<Vector<'a, u8>, 2>();
-                  let row0 = place_back(vector: move table, value: move a1);
-                  let grid = place_back(vector: move row0, value: move b1);
+                  region {
+                    place_back(vector: &uniq table, value: move a1);
+                  }
+                  let row0 = move table;
+                  region {
+                    place_back(vector: &uniq row0, value: move b1);
+                  }
+                  let grid = move row0;
                   let rows = len_of(grid);
                   if rows == 2_u64 {
                     let left = len_of(grid[0_u64]);

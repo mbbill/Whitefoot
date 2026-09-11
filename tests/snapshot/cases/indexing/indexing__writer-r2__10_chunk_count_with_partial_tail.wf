@@ -41,13 +41,27 @@ fn chunk_count(length: own u64, chunk_size: own u64) -> count: own u64 pure cont
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: sum_all walks cursor with an ordinary loop invariant (cursor <= length), so each subscript is discharged by the has_more branch; chunk_count is a pure division/remainder computation with no subscript at all.";
   let data = fixed_vector::<u8, 7>();
-  set data = place_back(vector: move data, value: 0_u8);
-  set data = place_back(vector: move data, value: 0_u8);
-  set data = place_back(vector: move data, value: 0_u8);
-  set data = place_back(vector: move data, value: 0_u8);
-  set data = place_back(vector: move data, value: 0_u8);
-  set data = place_back(vector: move data, value: 0_u8);
-  set data = place_back(vector: move data, value: 0_u8);
+  region {
+    place_back(vector: &uniq data, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 0_u8);
+  }
   set data[0_u64] = 1_u8;
   set data[1_u64] = 2_u8;
   set data[2_u64] = 3_u8;

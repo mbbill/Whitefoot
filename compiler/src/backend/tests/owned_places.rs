@@ -206,8 +206,14 @@ command fn main() -> status: own ExitStatus pure {
   let first = Point(x: 17_u64, y: 29_u64);
   let second = Point(x: 41_u64, y: 53_u64);
   let empty = fixed_vector::<Point, 2>();
-  let one = place_back(vector: move empty, value: move first);
-  let full = place_back(vector: move one, value: move second);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: move second);
+  }
+  let full = move one;
   let points = array_from_fixed(vector: move full);
   region {
     update(points: &uniq points, index: 1_u64);
@@ -345,21 +351,26 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
             return exit_status(code: 4_u8);
           }
           Ok(value: made) => {
-            let filled = place_back(vector: move reserved, value: move made);
-            let (empty, observed) = take_back(vector: move filled);
-            if observed.words[0_u64] != 17_u64 {
-              return exit_status(code: 5_u8);
+            region {
+              place_back(vector: &uniq reserved, value: move made);
             }
-            if observed.words[511_u64] != 17_u64 {
-              return exit_status(code: 6_u8);
+            let filled = move reserved;
+            region {
+              let observed = take_back(vector: &uniq filled);
+              if observed.words[0_u64] != 17_u64 {
+                return exit_status(code: 5_u8);
+              }
+              if observed.words[511_u64] != 17_u64 {
+                return exit_status(code: 6_u8);
+              }
+              if deref(observed.first) != 17_u64 {
+                return exit_status(code: 7_u8);
+              }
+              if deref(observed.second) != 29_u64 {
+                return exit_status(code: 8_u8);
+              }
+              return exit_status(code: 0_u8);
             }
-            if deref(observed.first) != 17_u64 {
-              return exit_status(code: 7_u8);
-            }
-            if deref(observed.second) != 29_u64 {
-              return exit_status(code: 8_u8);
-            }
-            return exit_status(code: 0_u8);
           }
         }
       }
@@ -467,35 +478,41 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_owned_parameter_uses_same_or_distinct_result_storage_after_entry_transfer() {
-    let source = br#"fn append(items: own FixedVector<u64, 16>, value: own u64, watch: &u64) -> updated: own FixedVector<u64, 16> reads(items, watch), writes(items) contract {
-  requires room_of(items) >= 1_u64;
-  ensures len_of(updated) == len_of(items) + 1_u64;
-} {
+    // Run mutation now uses an address, so use an ordinary value-field update
+    // to keep testing the independent owned input/result ABI. The wide array
+    // still forces indirect storage; the watch read and both result aliases
+    // still expose a misplaced or premature entry transfer.
+    let source = br#"struct Row {
+  payload: array<u64, 16>;
+  value: u64;
+}
+
+fn append(items: own Row, value: own u64, watch: &u64) -> updated: own Row reads(watch), writes(items.value) {
   let bias = deref(watch);
   let adjusted = value +wrap bias;
-  let filled = place_back(vector: move items, value: adjusted);
-  return move filled;
+  set items.value = adjusted;
+  return move items;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let watch = 5_u64;
-  let same = fixed_vector::<u64, 16>();
+  let payload = array_new::<u64, 16>(41_u64);
+  let same = Row(payload: move payload, value: 0_u64);
   region {
     set same = append(items: move same, value: 12_u64, watch: &watch);
-    let vacant = fixed_vector::<u64, 16>();
+    let other_payload = array_new::<u64, 16>(43_u64);
+    let vacant = Row(payload: move other_payload, value: 0_u64);
     let distinct = append(items: move vacant, value: 24_u64, watch: &watch);
-    let same_count = len_of(same);
-    let distinct_count = len_of(distinct);
-    if same_count != 1_u64 {
+    if same.value != 17_u64 {
       return exit_status(code: 1_u8);
     }
-    if distinct_count != 1_u64 {
+    if distinct.value != 29_u64 {
       return exit_status(code: 2_u8);
     }
-    if same[0_u64] != 17_u64 {
+    if same.payload[15_u64] != 41_u64 {
       return exit_status(code: 3_u8);
     }
-    if distinct[0_u64] != 29_u64 {
+    if distinct.payload[15_u64] != 43_u64 {
       return exit_status(code: 4_u8);
     }
     if watch != 5_u64 {
@@ -1140,11 +1157,23 @@ fn finish(offset: &uniq u64, trace: &uniq u64) -> result: own u64 reads(offset, 
 
 command fn main() -> status: own ExitStatus pure {
   let empty_left = fixed_vector::<u64, 2>();
-  let prefix_left = place_back(vector: move empty_left, value: 3_u64);
-  let left = place_back(vector: move prefix_left, value: 5_u64);
+  region {
+    place_back(vector: &uniq empty_left, value: 3_u64);
+  }
+  let prefix_left = move empty_left;
+  region {
+    place_back(vector: &uniq prefix_left, value: 5_u64);
+  }
+  let left = move prefix_left;
   let empty_right = fixed_vector::<u64, 2>();
-  let prefix_right = place_back(vector: move empty_right, value: 7_u64);
-  let right = place_back(vector: move prefix_right, value: 11_u64);
+  region {
+    place_back(vector: &uniq empty_right, value: 7_u64);
+  }
+  let prefix_right = move empty_right;
+  region {
+    place_back(vector: &uniq prefix_right, value: 11_u64);
+  }
+  let right = move prefix_right;
   let offset = 0_u64;
   let trace = 0_u64;
   invariant single_target_bound: offset < len_of(left);
@@ -1221,9 +1250,15 @@ fn replacement(offset: &uniq u64) -> result: own Row writes(offset) {
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 2>();
   let first = Row(left: 3_u64, right: 5_u64);
-  let prefix = place_back(vector: move empty, value: move first);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let prefix = move empty;
   let second = Row(left: 11_u64, right: 13_u64);
-  let rows = place_back(vector: move prefix, value: move second);
+  region {
+    place_back(vector: &uniq prefix, value: move second);
+  }
+  let rows = move prefix;
   let offset = 0_u64;
   invariant target_bound: offset < len_of(rows);
   region {
@@ -1284,10 +1319,16 @@ command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Entry, 2>();
   let first_row = Row(left: 3_u64, right: 5_u64);
   let first = Entry(row: move first_row, tag: 7_u64);
-  let prefix = place_back(vector: move empty, value: move first);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let prefix = move empty;
   let second_row = Row(left: 11_u64, right: 13_u64);
   let second = Entry(row: move second_row, tag: 17_u64);
-  let entries = place_back(vector: move prefix, value: move second);
+  region {
+    place_back(vector: &uniq prefix, value: move second);
+  }
+  let entries = move prefix;
   let replacement_row = Row(left: 19_u64, right: 23_u64);
   let replacement = Entry(row: move replacement_row, tag: 29_u64);
   let old = replace entries[0_u64] = move replacement;
@@ -1363,8 +1404,14 @@ command fn main() -> status: own ExitStatus pure {
     return exit_status(code: 4_u8);
   }
   let empty = fixed_vector::<Row, 2>();
-  let prefix = place_back(vector: move empty, value: move first);
-  let rows = place_back(vector: move prefix, value: move second);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let prefix = move empty;
+  region {
+    place_back(vector: &uniq prefix, value: move second);
+  }
+  let rows = move prefix;
   let table = Table(rows: move rows, tag: 41_u64);
   set (table.rows[0_u64], table.rows[1_u64]) = move table.rows[1_u64], move table.rows[0_u64];
   set (table.rows[0_u64].left, table.rows[1_u64].right) = table.rows[1_u64].right, table.rows[0_u64].left;
@@ -1415,11 +1462,20 @@ fn exclusive['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 2>();
   let first = Row(left: 3_u64, right: 5_u64);
-  let prefix = place_back(vector: move empty, value: move first);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let prefix = move empty;
   let second = Row(left: 7_u64, right: 11_u64);
-  let rows = place_back(vector: move prefix, value: move second);
+  region {
+    place_back(vector: &uniq prefix, value: move second);
+  }
+  let rows = move prefix;
   let raw = fixed_vector::<u8, 2>();
-  let bytes = place_back(vector: move raw, value: 13_u8);
+  region {
+    place_back(vector: &uniq raw, value: 13_u8);
+  }
+  let bytes = move raw;
   let table = Table(rows: move rows, bytes: move bytes, tag: 17_u64);
   region {
     let saved = identity(value: &table.rows[0_u64]);
@@ -1806,7 +1862,9 @@ fn boxed_fixed_vector_read_out_preserves_storage_and_elements() {
 fn append['s](storage: own Box<'s, FixedVector<box<u64>, 2>>, value: own box<u64>) -> result: own Box<'s, FixedVector<box<u64>, 2>> reads(storage), writes(storage) contract {
   requires room_of(deref(storage)) > 0_u64;
 } {
-  set deref(storage) = place_back(vector: move deref(storage), value: move value);
+  region {
+    place_back(vector: &uniq deref(storage), value: move value);
+  }
   return move storage;
 }
 
@@ -1824,15 +1882,21 @@ fn inspect(values: own FixedVector<box<u64>, 2>) -> code: own u8 reads(values), 
   if length != 2_u64 {
     return 4_u8;
   }
-  let (one, second) = take_back(vector: move values);
-  let (empty, first) = take_back(vector: move one);
-  if deref(first) != 17_u64 {
-    return 5_u8;
+  region {
+    let second = take_back(vector: &uniq values);
+    let one = move values;
+    region {
+      let first = take_back(vector: &uniq one);
+      let empty = move one;
+      if deref(first) != 17_u64 {
+        return 5_u8;
+      }
+      if deref(second) != 29_u64 {
+        return 6_u8;
+      }
+      return 0_u8;
+    }
   }
-  if deref(second) != 29_u64 {
-    return 6_u8;
-  }
-  return 0_u8;
 }
 
 fn exercise['s](storage: own Box<'s, FixedVector<box<u64>, 2>>) -> result: own Checked<'s> reads(storage), writes(storage) {

@@ -5,29 +5,33 @@ struct Entry['s] {
 fn build['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (slots: own FixedVector<Option<Entry<'s>>, 1>, returned: own Box<'s, u64>) pure contract {
   ensures len_of(slots) == 1_u64;
 } {
-  let entry = Entry(payload: move first);
-  let occupied = Some<Entry<'s>>(value: move entry);
+  let stored_entry = Entry(payload: move first);
+  let occupied = Some<Entry<'s>>(value: move stored_entry);
   let slots = fixed_vector::<Option<Entry<'s>>, 1>();
-  set slots = place_back(vector: move slots, value: move occupied);
+  region {
+    place_back(vector: &uniq slots, value: move occupied);
+  }
   return move slots, move replacement;
 }
 
-fn replace_one['s](slots: own FixedVector<Option<Entry<'s>>, 1>, replacement: own Entry<'s>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(slots), writes(slots) contract {
-  requires 1_u64 <= len_of(slots);
-  ensures len_of(updated) == len_of(slots);
+fn replace_one['s](slots: &uniq FixedVector<Option<Entry<'s>>, 1>, replacement: own Entry<'s>) -> previous: own Option<Entry<'s>> reads(slots), writes(slots) contract {
+  requires 1_u64 <= len_of(deref(slots));
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
 } {
   let occupied = Some<Entry<'s>>(value: move replacement);
-  let previous = replace slots[0_u64] = move occupied;
-  return move slots, move previous;
+  let previous = replace deref(slots)[0_u64] = move occupied;
+  return move previous;
 }
 
 fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(first), writes(first) contract {
   ensures len_of(updated) == 1_u64;
 } {
   let (slots, returned) = build(first: move first, replacement: move replacement);
-  let entry = Entry(payload: move returned);
-  let (updated, previous) = replace_one(slots: move slots, replacement: move entry);
-  return move updated, move previous;
+  let stored_entry = Entry(payload: move returned);
+  region {
+    let previous = replace_one(slots: &uniq slots, replacement: move stored_entry);
+    return move slots, move previous;
+  }
 }
 
 command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
@@ -53,18 +57,21 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
                 }
               }
             }
-            let (empty, occupied) = take_back(vector: move updated);
-            match move occupied {
-              None() => {
-                return exit_status(code: 4_u8);
-              }
-              Some(value: new_entry) => {
-                if deref(new_entry.payload) != 22_u64 {
-                  return exit_status(code: 5_u8);
+            region {
+              let occupied = take_back(vector: &uniq updated);
+              let empty = move updated;
+              match move occupied {
+                None() => {
+                  return exit_status(code: 4_u8);
+                }
+                Some(value: new_entry) => {
+                  if deref(new_entry.payload) != 22_u64 {
+                    return exit_status(code: 5_u8);
+                  }
                 }
               }
+              return exit_status(code: 0_u8);
             }
-            return exit_status(code: 0_u8);
           }
         }
       }

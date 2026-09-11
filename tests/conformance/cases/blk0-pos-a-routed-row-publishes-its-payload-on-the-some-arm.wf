@@ -8,7 +8,10 @@ command fn main() -> status: own ExitStatus pure {
           return exit_status(code: 1_u8);
         }
         Some(value: run) => {
-          let filled = place_back(vector: move run, value: 7_u8);
+          region {
+            place_back(vector: &uniq run, value: 7_u8);
+          }
+          let filled = move run;
           let seen = filled[0_u64];
           if seen == 7_u8 {
           } else {

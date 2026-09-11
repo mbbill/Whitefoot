@@ -5,7 +5,10 @@ command fn main() -> status: own ExitStatus pure {
     region {
       let empty = fixed_vector::<Vector<'a, u8>, 2>();
       let small = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
-      let grid = place_back(vector: move empty, value: move small);
+      region {
+        place_back(vector: &uniq empty, value: move small);
+      }
+      let grid = move empty;
       let other = arena_vector_proved::<u8>(store: &uniq workspace, count: 512_u64);
       set grid[0_u64] = move other;
       let held = len_of(grid);

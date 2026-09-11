@@ -21,12 +21,24 @@ fn second_or_zero(values: own FixedVector<u32, 6>, idx: own u64) -> result: own 
 
 command fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u32, 6>();
-  set values = place_back(vector: move values, value: 9_u32);
-  set values = place_back(vector: move values, value: 9_u32);
-  set values = place_back(vector: move values, value: 9_u32);
-  set values = place_back(vector: move values, value: 9_u32);
-  set values = place_back(vector: move values, value: 9_u32);
-  set values = place_back(vector: move values, value: 9_u32);
+  region {
+    place_back(vector: &uniq values, value: 9_u32);
+  }
+  region {
+    place_back(vector: &uniq values, value: 9_u32);
+  }
+  region {
+    place_back(vector: &uniq values, value: 9_u32);
+  }
+  region {
+    place_back(vector: &uniq values, value: 9_u32);
+  }
+  region {
+    place_back(vector: &uniq values, value: 9_u32);
+  }
+  region {
+    place_back(vector: &uniq values, value: 9_u32);
+  }
   let picked = second_or_zero(values: move values, idx: 2_u64);
   if picked == 9_u32 {
   } else {

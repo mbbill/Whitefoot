@@ -13,7 +13,10 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
         return exit_status(code: 70_u8);
       }
       Some(value: fresh) => {
-        let filled = place_back(vector: move fresh, value: 0_u8);
+        region {
+          place_back(vector: &uniq fresh, value: 0_u8);
+        }
+        let filled = move fresh;
         region {
           let code = consume(run: move filled, store: &uniq heap);
           return exit_status(code: code);

@@ -180,6 +180,10 @@ pub(crate) enum PostconditionPlaceRoot {
     Parameter {
         ordinal: u32,
     },
+    /// The resolved exclusive referent at the selected return or call exit.
+    ExitParameter {
+        ordinal: u32,
+    },
     /// One declared result ordinal [CALL-4]: a measure over an admitted
     /// result place is an operand with no per-family admission, exactly as a
     /// measure over an admitted formal place is.

@@ -1,0 +1,24 @@
+fn replace_first<T: affine, const n: u64>(values: &uniq FixedVector<T, n>, incoming: own T) -> previous: own T reads(values), writes(values) contract {
+  requires len_of(deref(values)) > 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values)));
+} {
+  let previous = replace deref(values)[0_u64] = move incoming;
+  return move previous;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let child = fixed_vector::<u64, 2>();
+  let values = fixed_vector::<FixedVector<u64, 2>, 2>();
+  let fresh = fixed_vector::<u64, 2>();
+  region {
+    place_back(vector: &uniq child, value: 7_u64);
+    place_back(vector: &uniq values, value: move child);
+    let size = len_of(values[0_u64]);
+    if size > 0_u64 {
+      let old = replace_first::<FixedVector<u64, 2>, 2>(values: &uniq values, incoming: move fresh);
+      let stale = values[0_u64][0_u64];
+      return exit_status(code: 0_u8);
+    }
+    return exit_status(code: 1_u8);
+  }
+}

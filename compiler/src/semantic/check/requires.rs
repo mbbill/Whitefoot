@@ -36,6 +36,9 @@ pub(super) enum ExpandedClauseDatum {
         ordinal: u32,
         projections: Vec<GoalProjection>,
         ty: CheckedType,
+        /// Bare exclusive measures in ensures denote exit state. An entry
+        /// former clears this bit before ordinary projections are expanded.
+        exit_state: bool,
     },
     NamedConst {
         declaration: DeclarationId,
@@ -131,6 +134,7 @@ impl ExpandedClauseExpression {
                 ordinal,
                 projections,
                 ty,
+                ..
             }) => Some(GoalExpression::Datum(GoalDatum::Parameter {
                 ordinal,
                 projections,
@@ -192,6 +196,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ordinal,
                     projections: Vec::new(),
                     ty: parameter.ty,
+                    exit_state: false,
                 }),
             );
         }
@@ -1021,6 +1026,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             }
         };
+        if self.has_fixed(pbase, FixedTerminal::Entry)? {
+            let ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
+                exit_state, ..
+            }) = &mut expression
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            *exit_state = false;
+        }
         let suffixes = self.tree.children_with(place, Production::Psuffix)?;
         if holder_pending && !suffixes.is_empty() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());

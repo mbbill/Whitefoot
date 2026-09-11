@@ -216,13 +216,13 @@ pub const KERNEL_OPERATIONS: [KernelOperation; 13] = [
         spelling: "take_back",
         row: KernelRow::TakeBack,
         parameters: &["vector"],
-        results: &["rest", "value"],
+        results: &["value"],
     },
     KernelOperation {
         spelling: "take_front",
         row: KernelRow::TakeFront,
         parameters: &["vector"],
-        results: &["rest", "value"],
+        results: &["value"],
     },
     KernelOperation {
         spelling: "array_from_fixed",

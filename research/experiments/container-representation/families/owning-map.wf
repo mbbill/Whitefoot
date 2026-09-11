@@ -61,21 +61,37 @@ fn search_step['s](slot: &Slot<'s>, key: own u64) -> result: own SearchStep read
 fn empty_slots['s]() -> result: own array<Slot<'s>, 8> pure {
   let slots = fixed_vector::<Slot<'s>, 8>();
   let empty0 = Vacant<'s>();
-  set slots = place_back(vector: move slots, value: move empty0);
+  region {
+    place_back(vector: &uniq slots, value: move empty0);
+  }
   let empty1 = Vacant<'s>();
-  set slots = place_back(vector: move slots, value: move empty1);
+  region {
+    place_back(vector: &uniq slots, value: move empty1);
+  }
   let empty2 = Vacant<'s>();
-  set slots = place_back(vector: move slots, value: move empty2);
+  region {
+    place_back(vector: &uniq slots, value: move empty2);
+  }
   let empty3 = Vacant<'s>();
-  set slots = place_back(vector: move slots, value: move empty3);
+  region {
+    place_back(vector: &uniq slots, value: move empty3);
+  }
   let empty4 = Vacant<'s>();
-  set slots = place_back(vector: move slots, value: move empty4);
+  region {
+    place_back(vector: &uniq slots, value: move empty4);
+  }
   let empty5 = Vacant<'s>();
-  set slots = place_back(vector: move slots, value: move empty5);
+  region {
+    place_back(vector: &uniq slots, value: move empty5);
+  }
   let empty6 = Vacant<'s>();
-  set slots = place_back(vector: move slots, value: move empty6);
+  region {
+    place_back(vector: &uniq slots, value: move empty6);
+  }
   let empty7 = Vacant<'s>();
-  set slots = place_back(vector: move slots, value: move empty7);
+  region {
+    place_back(vector: &uniq slots, value: move empty7);
+  }
   let complete = array_from_fixed(vector: move slots);
   return move complete;
 }

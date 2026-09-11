@@ -155,6 +155,7 @@ enum OperandKey {
     /// One measure of one formal place [MSR-1]: two clauses name one term
     /// only when they name the same measure of the same place.
     Measure(CheckedMeasure, u32, ProjectionKey),
+    ExitMeasure(CheckedMeasure, u32, ProjectionKey),
     /// One measure of one declared result place [CALL-4].
     ResultMeasure(CheckedMeasure, u32, ProjectionKey),
 }
@@ -211,6 +212,9 @@ impl DeclaredSystem {
             RelationDatum::Measure(measure, place) => match place.root {
                 PostconditionPlaceRoot::Parameter { ordinal } => {
                     OperandKey::Measure(*measure, ordinal, projection_key(&place.projections))
+                }
+                PostconditionPlaceRoot::ExitParameter { ordinal } => {
+                    OperandKey::ExitMeasure(*measure, ordinal, projection_key(&place.projections))
                 }
                 PostconditionPlaceRoot::Result { ordinal } => {
                     OperandKey::ResultMeasure(*measure, ordinal, projection_key(&place.projections))
@@ -317,7 +321,7 @@ enum KernelOperandKey {
 #[derive(Eq, PartialEq)]
 enum KernelPlaceKey {
     Parameter(u32),
-    ParameterAtCall(u32),
+    ParameterEntry(u32),
     Result(u32),
     Payload,
 }
@@ -326,7 +330,7 @@ enum KernelPlaceKey {
 const fn kernel_place_key(place: KernelPlace) -> KernelPlaceKey {
     match place {
         KernelPlace::Parameter(ordinal) => KernelPlaceKey::Parameter(ordinal),
-        KernelPlace::ParameterAtCall(ordinal) => KernelPlaceKey::ParameterAtCall(ordinal),
+        KernelPlace::ParameterEntry(ordinal) => KernelPlaceKey::ParameterEntry(ordinal),
         KernelPlace::Result(ordinal) => KernelPlaceKey::Result(ordinal),
         KernelPlace::Payload => KernelPlaceKey::Payload,
     }

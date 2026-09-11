@@ -3,11 +3,11 @@ struct Entry {
 }
 
 struct Slot {
-  entry: Option<Entry>;
+  stored_entry: Option<Entry>;
 }
 
-fn view(entry: &Option<Entry>) -> result: own u64 reads(entry) {
-  match deref(entry) {
+fn view(stored_entry: &Option<Entry>) -> result: own u64 reads(stored_entry) {
+  match deref(stored_entry) {
     Some(value: present) => {
       return deref(present).value;
     }
@@ -21,7 +21,7 @@ fn lookup(slots: &FixedVector<Slot, 1>) -> result: own u64 reads(slots) contract
   requires 1_u64 <= len_of(deref(slots));
 } {
   region {
-    let found = view(entry: &deref(slots)[0_u64].entry);
+    let found = view(stored_entry: &deref(slots)[0_u64].stored_entry);
     return found;
   }
 }
@@ -30,12 +30,18 @@ command fn main() -> status: own ExitStatus pure {
   let present = Entry(value: 37_u64);
   let some = Some<Entry>(value: move present);
   let none = None<Entry>();
-  let occupied = Slot(entry: move some);
-  let vacant = Slot(entry: move none);
+  let occupied = Slot(stored_entry: move some);
+  let vacant = Slot(stored_entry: move none);
   let first = fixed_vector::<Slot, 1>();
-  let with_value = place_back(vector: move first, value: move occupied);
+  region {
+    place_back(vector: &uniq first, value: move occupied);
+  }
+  let with_value = move first;
   let second = fixed_vector::<Slot, 1>();
-  let without_value = place_back(vector: move second, value: move vacant);
+  region {
+    place_back(vector: &uniq second, value: move vacant);
+  }
+  let without_value = move second;
   region {
     let found = lookup(slots: &with_value);
     if found != 37_u64 {

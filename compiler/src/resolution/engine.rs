@@ -393,7 +393,7 @@ fn declaring_set_target_candidates(
         let record = topology
             .node(pbase)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
-        if record.production != Production::Pbase {
+        if record.production != Production::Pbase || record.terminal_count != 1 {
             continue;
         }
         // `pbase := IDENT | "deref" "(" place ")"`: a `deref` base owns a

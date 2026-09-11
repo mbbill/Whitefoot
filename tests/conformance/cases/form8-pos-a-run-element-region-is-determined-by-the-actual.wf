@@ -1,15 +1,17 @@
-fn width_of['s: affine](blocks: own FixedVector<Vector<'s, u8>, 4>) -> (rest: own FixedVector<Vector<'s, u8>, 4>, taken: own Option<Vector<'s, u8>>) reads(blocks), writes(blocks) contract {
-  ensures head_of(rest) == head_of(blocks);
-  ensures len_of(rest) <= len_of(blocks);
+fn width_of['s: affine](blocks: &uniq FixedVector<Vector<'s, u8>, 4>) -> taken: own Option<Vector<'s, u8>> reads(blocks), writes(blocks) contract {
+  ensures head_of(deref(blocks)) == head_of(deref(entry(blocks)));
+  ensures len_of(deref(blocks)) <= len_of(deref(entry(blocks)));
 } {
   doc "Takes one store-backed block off the back of a run of runs, generic over the store.";
-  let held = len_of(blocks);
+  let held = len_of(deref(blocks));
   let any = held > 0_u64;
   if any {
-    let (rest, one) = take_back(vector: move blocks);
-    return move rest, Some<Vector<'s, u8>>(value: move one);
+    region {
+      let one = take_back(vector: &uniq deref(blocks));
+      return Some<Vector<'s, u8>>(value: move one);
+    }
   }
-  return move blocks, None<Vector<'s, u8>>();
+  return None<Vector<'s, u8>>();
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -19,24 +21,29 @@ command fn main() -> status: own ExitStatus pure {
     region {
       let blocks = fixed_vector::<Vector<'a, u8>, 4>();
       let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
-      let one = place_back(vector: move blocks, value: move block);
-      let (rest, taken) = width_of(blocks: move one);
-      match taken {
-        None() => {
-          return exit_status(code: 1_u8);
-        }
-        Some(value: got) => {
-          let width = cap_of(got);
-          if width == 16_u64 {
-          } else {
-            return exit_status(code: 2_u8);
+      region {
+        place_back(vector: &uniq blocks, value: move block);
+      }
+      let one = move blocks;
+      region {
+        let taken = width_of(blocks: &uniq one);
+        match taken {
+          None() => {
+            return exit_status(code: 1_u8);
+          }
+          Some(value: got) => {
+            let width = cap_of(got);
+            if width == 16_u64 {
+            } else {
+              return exit_status(code: 2_u8);
+            }
           }
         }
-      }
-      let left = len_of(rest);
-      if left == 0_u64 {
-      } else {
-        return exit_status(code: 3_u8);
+        let left = len_of(one);
+        if left == 0_u64 {
+        } else {
+          return exit_status(code: 3_u8);
+        }
       }
     }
   }

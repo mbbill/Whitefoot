@@ -571,9 +571,15 @@ fn select['r](stamp: own u64, value: &'r Row) -> result: &'r Row pure {
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 2>();
   let first = Row(value: 3_u64);
-  let prefix = place_back(vector: move empty, value: move first);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let prefix = move empty;
   let second = Row(value: 5_u64);
-  let rows = place_back(vector: move prefix, value: move second);
+  region {
+    place_back(vector: &uniq prefix, value: move second);
+  }
+  let rows = move prefix;
   region {
     let chosen = select(stamp: 7_u64, value: &rows[1_u64]);
     let observed = deref(chosen).value;

@@ -53,8 +53,8 @@ enum BoxSlotView {
   Empty();
 }
 
-fn view_box_entry['s](entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>) -> result: own BoxSlotView reads(entry) {
-  match deref(entry) {
+fn view_box_entry['s](stored_entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>) -> result: own BoxSlotView reads(stored_entry) {
+  match deref(stored_entry) {
     Some(value: present) => {
       return Occupied(key: deref(present).key, value: deref(deref(present).payload));
     }
@@ -73,15 +73,31 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
   let inserted_entry = Entry(key: 9_u64, payload: move inserted);
   let inserted_slot = Some<Entry<'s>>(value: move inserted_entry);
   let entries = fixed_vector::<Option<Entry<'s>>, 4>();
-  set entries = place_back(vector: move entries, value: move empty0);
-  set entries = place_back(vector: move entries, value: move first_slot);
-  set entries = place_back(vector: move entries, value: move second_slot);
-  set entries = place_back(vector: move entries, value: move inserted_slot);
+  region {
+    place_back(vector: &uniq entries, value: move empty0);
+  }
+  region {
+    place_back(vector: &uniq entries, value: move first_slot);
+  }
+  region {
+    place_back(vector: &uniq entries, value: move second_slot);
+  }
+  region {
+    place_back(vector: &uniq entries, value: move inserted_slot);
+  }
   let states = fixed_vector::<u64, 4>();
-  set states = place_back(vector: move states, value: 0_u64);
-  set states = place_back(vector: move states, value: 1_u64);
-  set states = place_back(vector: move states, value: 1_u64);
-  set states = place_back(vector: move states, value: 1_u64);
+  region {
+    place_back(vector: &uniq states, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq states, value: 1_u64);
+  }
+  region {
+    place_back(vector: &uniq states, value: 1_u64);
+  }
+  region {
+    place_back(vector: &uniq states, value: 1_u64);
+  }
   let replacement_entry = Entry(key: 5_u64, payload: move replacement);
   let replacement_slot = Some<Entry<'s>>(value: move replacement_entry);
   let previous = replace entries[2_u64] = move replacement_slot;
@@ -126,7 +142,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
     return 30_u8;
   }
   region {
-    let through_first_collision = view_box_entry(entry: &entries[2_u64], same: &entries[2_u64]);
+    let through_first_collision = view_box_entry(stored_entry: &entries[2_u64], same: &entries[2_u64]);
     match through_first_collision {
       Empty() => {
         return 31_u8;
@@ -144,7 +160,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
     }
   }
   region {
-    let through_second_collision = view_box_entry(entry: &entries[3_u64], same: &entries[3_u64]);
+    let through_second_collision = view_box_entry(stored_entry: &entries[3_u64], same: &entries[3_u64]);
     match through_second_collision {
       Empty() => {
         return 34_u8;
@@ -182,23 +198,55 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
   let target_empty6 = None<Entry<'s>>();
   let target_empty7 = None<Entry<'s>>();
   let target = fixed_vector::<Option<Entry<'s>>, 8>();
-  set target = place_back(vector: move target, value: move target_empty0);
-  set target = place_back(vector: move target, value: move target_empty1);
-  set target = place_back(vector: move target, value: move target_empty2);
-  set target = place_back(vector: move target, value: move target_empty3);
-  set target = place_back(vector: move target, value: move target_empty4);
-  set target = place_back(vector: move target, value: move target_empty5);
-  set target = place_back(vector: move target, value: move target_empty6);
-  set target = place_back(vector: move target, value: move target_empty7);
+  region {
+    place_back(vector: &uniq target, value: move target_empty0);
+  }
+  region {
+    place_back(vector: &uniq target, value: move target_empty1);
+  }
+  region {
+    place_back(vector: &uniq target, value: move target_empty2);
+  }
+  region {
+    place_back(vector: &uniq target, value: move target_empty3);
+  }
+  region {
+    place_back(vector: &uniq target, value: move target_empty4);
+  }
+  region {
+    place_back(vector: &uniq target, value: move target_empty5);
+  }
+  region {
+    place_back(vector: &uniq target, value: move target_empty6);
+  }
+  region {
+    place_back(vector: &uniq target, value: move target_empty7);
+  }
   let target_states = fixed_vector::<u64, 8>();
-  set target_states = place_back(vector: move target_states, value: 0_u64);
-  set target_states = place_back(vector: move target_states, value: 0_u64);
-  set target_states = place_back(vector: move target_states, value: 0_u64);
-  set target_states = place_back(vector: move target_states, value: 0_u64);
-  set target_states = place_back(vector: move target_states, value: 0_u64);
-  set target_states = place_back(vector: move target_states, value: 0_u64);
-  set target_states = place_back(vector: move target_states, value: 0_u64);
-  set target_states = place_back(vector: move target_states, value: 0_u64);
+  region {
+    place_back(vector: &uniq target_states, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq target_states, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq target_states, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq target_states, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq target_states, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq target_states, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq target_states, value: 0_u64);
+  }
+  region {
+    place_back(vector: &uniq target_states, value: 0_u64);
+  }
   let observe_after = 2_u64;
   let visited = 0_u64;
   let observed_prefix = False();
@@ -214,7 +262,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       } else {
         return 50_u8;
       }
-      let observed_prefix_source = view_box_entry(entry: &entries[2_u64], same: &entries[2_u64]);
+      let observed_prefix_source = view_box_entry(stored_entry: &entries[2_u64], same: &entries[2_u64]);
       match observed_prefix_source {
         Empty() => {
           return 51_u8;
@@ -234,7 +282,7 @@ fn run_boxes['s](store: &uniq Heap<'s>, first: own Box<'s, u64>, second: own Box
       } else {
         return 54_u8;
       }
-      let observed_prefix_target = view_box_entry(entry: &target[5_u64], same: &target[5_u64]);
+      let observed_prefix_target = view_box_entry(stored_entry: &target[5_u64], same: &target[5_u64]);
       match observed_prefix_target {
         Empty() => {
           return 55_u8;

@@ -19,7 +19,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare: room_of(run) + at >= 2_u64,
         invariant flat: head_of(run) <= 0_u64
       ) {
-        set run = place_back(vector: move run, value: 0_u8);
+        place_back(vector: &uniq run, value: 0_u8);
       }
       region {
         let first_window = mut_slice_of(&uniq run);

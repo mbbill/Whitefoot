@@ -3,10 +3,22 @@ command fn main() -> status: own ExitStatus pure {
   region 'a {
     let workspace = arena_frame::<8192, 16, 'a>();
     let empty = fixed_vector::<u8, 4>();
-    let t1 = place_back(vector: move empty, value: 0_u8);
-    let t2 = place_back(vector: move t1, value: 0_u8);
-    let t3 = place_back(vector: move t2, value: 0_u8);
-    let table = place_back(vector: move t3, value: 0_u8);
+    region {
+      place_back(vector: &uniq empty, value: 0_u8);
+    }
+    let t1 = move empty;
+    region {
+      place_back(vector: &uniq t1, value: 0_u8);
+    }
+    let t2 = move t1;
+    region {
+      place_back(vector: &uniq t2, value: 0_u8);
+    }
+    let t3 = move t2;
+    region {
+      place_back(vector: &uniq t3, value: 0_u8);
+    }
+    let table = move t3;
     region {
       let made = arena_vector::<u8>(store: &uniq workspace, count: 8_u64);
       let seen = table[9_u64];

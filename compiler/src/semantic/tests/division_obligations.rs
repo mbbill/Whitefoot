@@ -929,7 +929,10 @@ fn a_fixed_run_indexed_defined_guard_discharges_the_same_structural_exact_operat
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
-  let values = place_back(vector: move empty, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let values = move empty;
   let result = increment(values: move values);
   return exit_status(code: result);
 }
@@ -978,7 +981,10 @@ fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
-  let values = place_back(vector: move empty, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let values = move empty;
   let result = increment_after_write(values: move values);
   return exit_status(code: result);
 }

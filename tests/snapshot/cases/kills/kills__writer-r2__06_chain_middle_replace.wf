@@ -10,10 +10,18 @@ struct Filter {
 command fn main() -> status: own ExitStatus pure {
   doc "SNAPSHOT REJECT [OP-2]: the finder expected ACCEPT, and the re-read chain after the middle-term replace is now accepted, but the later checked product after * filter.gain still has no proved domain.";
   let first_samples = fixed_vector::<u32, 4>();
-  set first_samples = place_back(vector: move first_samples, value: 1_u32);
-  set first_samples = place_back(vector: move first_samples, value: 1_u32);
-  set first_samples = place_back(vector: move first_samples, value: 1_u32);
-  set first_samples = place_back(vector: move first_samples, value: 1_u32);
+  region {
+    place_back(vector: &uniq first_samples, value: 1_u32);
+  }
+  region {
+    place_back(vector: &uniq first_samples, value: 1_u32);
+  }
+  region {
+    place_back(vector: &uniq first_samples, value: 1_u32);
+  }
+  region {
+    place_back(vector: &uniq first_samples, value: 1_u32);
+  }
   let first_delay = DelayLine(samples: move first_samples);
   let filter = Filter(delay: move first_delay, gain: 2_u32);
   let before_held = len_of(filter.delay.samples);
@@ -29,10 +37,18 @@ command fn main() -> status: own ExitStatus pure {
     return exit_status(code: 1_u8);
   }
   let second_samples = fixed_vector::<u32, 4>();
-  set second_samples = place_back(vector: move second_samples, value: 9_u32);
-  set second_samples = place_back(vector: move second_samples, value: 9_u32);
-  set second_samples = place_back(vector: move second_samples, value: 9_u32);
-  set second_samples = place_back(vector: move second_samples, value: 9_u32);
+  region {
+    place_back(vector: &uniq second_samples, value: 9_u32);
+  }
+  region {
+    place_back(vector: &uniq second_samples, value: 9_u32);
+  }
+  region {
+    place_back(vector: &uniq second_samples, value: 9_u32);
+  }
+  region {
+    place_back(vector: &uniq second_samples, value: 9_u32);
+  }
   let second_delay = DelayLine(samples: move second_samples);
   let old = replace filter.delay = move second_delay;
   let after_held = len_of(filter.delay.samples);

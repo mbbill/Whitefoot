@@ -10,12 +10,24 @@ fn table_lookup(table: own FixedVector<u8, 6>, key: own u64) -> value: own u8 re
 
 command fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u8, 6>();
-  set table = place_back(vector: move table, value: 11_u8);
-  set table = place_back(vector: move table, value: 11_u8);
-  set table = place_back(vector: move table, value: 11_u8);
-  set table = place_back(vector: move table, value: 11_u8);
-  set table = place_back(vector: move table, value: 11_u8);
-  set table = place_back(vector: move table, value: 11_u8);
+  region {
+    place_back(vector: &uniq table, value: 11_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 11_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 11_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 11_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 11_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 11_u8);
+  }
   let value = table_lookup(table: move table, key: 4000000000_u64);
   if value == 11_u8 {
   } else {

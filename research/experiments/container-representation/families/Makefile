@@ -104,34 +104,27 @@ $(BUILD)/priority-borrowed-retained.ll: $(BUILD)/priority-borrowed.ll
 $(BUILD)/priority-borrowed-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed-retained.ll
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
 
-$(BUILD)/priority-placement$(EXE): priority-placement.rs | $(BUILD)
+$(BUILD)/priority-interface$(EXE): priority-interface.rs | $(BUILD)
 	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
 
-$(BUILD)/priority-placement.stamp: $(BUILD)/priority.ll $(BUILD)/priority-placement$(EXE)
-	$(BUILD)/priority-placement$(EXE) $< $(BUILD)/priority-retained.ll $(BUILD)/priority-placed.ll
-	touch $@
+$(BUILD)/priority-interface-tests$(EXE): priority-interface.rs | $(BUILD)
+	$(RUSTC) --edition=2024 -D warnings --test $< -o $@
 
-$(BUILD)/priority-retained.ll $(BUILD)/priority-placed.ll: $(BUILD)/priority-placement.stamp
-	@test -f $@
+$(BUILD)/priority-retained.ll: $(BUILD)/priority.ll $(BUILD)/priority-interface$(EXE)
+	$(BUILD)/priority-interface$(EXE) $< $@
 
 $(BUILD)/priority-retained.opt.ll: $(BUILD)/priority-retained.ll
-	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
-
-$(BUILD)/priority-placed.opt.ll: $(BUILD)/priority-placed.ll
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
 
 $(BUILD)/priority-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-retained.ll
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
 
-$(BUILD)/priority-placed-costs$(EXE): priority-costs.c $(BUILD)/priority-placed.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
-
-check-interface: $(BUILD)/priority-retained-costs$(EXE) $(BUILD)/priority-placed-costs$(EXE) \
-                 $(BUILD)/priority-borrowed-retained-costs$(EXE) \
-                 $(BUILD)/priority-retained.opt.ll $(BUILD)/priority-placed.opt.ll
-	$(BUILD)/priority-placement$(EXE) --inspect $(BUILD)/priority-retained.opt.ll $(BUILD)/priority-placed.opt.ll
+check-interface: $(BUILD)/priority-interface-tests$(EXE) $(BUILD)/priority-retained-costs$(EXE) \
+                 $(BUILD)/priority-borrowed-retained-costs$(EXE) $(BUILD)/priority-retained.opt.ll
+	rustfmt --edition 2024 --check priority-interface.rs
+	$(BUILD)/priority-interface-tests$(EXE)
+	$(BUILD)/priority-interface$(EXE) --inspect $(BUILD)/priority-retained.opt.ll
 	$(BUILD)/priority-retained-costs$(EXE) check
-	$(BUILD)/priority-placed-costs$(EXE) check
 	$(BUILD)/priority-borrowed-retained-costs$(EXE) check
 
 # Fresh observations stay in .build; check never overwrites retained CSVs.
@@ -140,9 +133,9 @@ measure-interface: check-interface $(BUILD)/priority-costs$(EXE)
 	  output=$(BUILD)/priority-interface-measurements.csv; \
 	  echo 'cohort,contract,variant,rounds,sample,calls,elapsed_ns,checksum' > "$$output"; \
 	  for cohort in 0 1; do \
-	    if test "$$cohort" = 0; then variants='original retained placed borrowed'; else variants='borrowed placed retained original'; fi; \
+	    if test "$$cohort" = 0; then variants='normal retained borrowed'; else variants='borrowed retained normal'; fi; \
 	    for variant in $$variants; do \
-	      case "$$variant" in original) binary=priority-costs ;; retained) binary=priority-retained-costs ;; placed) binary=priority-placed-costs ;; borrowed) binary=priority-borrowed-retained-costs ;; esac; \
+	      case "$$variant" in normal) binary=priority-costs ;; retained) binary=priority-retained-costs ;; borrowed) binary=priority-borrowed-retained-costs ;; esac; \
 	      $(BUILD)/$$binary$(EXE) measure > $(BUILD)/priority-interface-sample.csv; \
 	      awk -v cohort="$$cohort" -v contract="$$variant" 'NR > 1 { print cohort "," contract "," $$0 }' $(BUILD)/priority-interface-sample.csv >> "$$output"; \
 	    done; \
@@ -177,7 +170,7 @@ check: check-interface check-owning-growth check-owning-costs $(BUILD)/priority-
        $(BUILD)/priority-borrowed-costs$(EXE) $(BUILD)/priority-borrowed-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-retained-costs$(EXE) \
        $(BUILD)/owning-map-observer$(EXE) $(BUILD)/growth-costs$(EXE)
-	rustfmt --edition 2024 --check abi.rs growth-abi.rs priority-placement.rs
+	rustfmt --edition 2024 --check abi.rs growth-abi.rs priority-interface.rs
 	@set -eu; \
 	  for source in hashmap owning-map owning-growth ordered priority priority-borrowed packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view; do \
 	    for mode in default par no-overlap; do \

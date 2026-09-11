@@ -145,7 +145,7 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
           invariant spare: room_of(scratch) + at >= 64_u64,
           invariant flat: head_of(scratch) <= 0_u64
         ) {
-          set scratch = place_back(vector: move scratch, value: 0_u8);
+          place_back(vector: &uniq scratch, value: 0_u8);
         }
         region {
           let window = mut_slice_of(&uniq scratch);
@@ -243,7 +243,7 @@ fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
           invariant spare: room_of(scratch) + at >= 64_u64,
           invariant flat: head_of(scratch) <= 0_u64
         ) {
-          set scratch = place_back(vector: move scratch, value: 0_u8);
+          place_back(vector: &uniq scratch, value: 0_u8);
         }
         region {
           let window = mut_slice_of(&uniq scratch);

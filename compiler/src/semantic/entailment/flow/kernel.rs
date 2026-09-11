@@ -42,6 +42,8 @@ const SOME_VARIANT: u8 = 6;
 /// establishment path: an unrouted relation is a member of every exit's set,
 /// and a routed one only of the arm its route names.
 struct KernelExit<'a> {
+    /// The call's normal continuation, without any result destination.
+    state_only: bool,
     /// The route this exit selects, absent where the exit enters no arm.
     route: Option<KernelRoute>,
     /// The payload binder the route's variant carries, and its type.
@@ -88,7 +90,7 @@ impl Analyzer<'_, '_> {
     /// term.
     ///
     /// The row additionally mints one datum for each `&uniq` state operand
-    /// its relations name in the `at the call` form, on exactly the same
+    /// its relations name in the `entry(parameter)` form, on exactly the same
     /// terms and at the same point.
     pub(super) fn establish_kernel_call_datums(
         &mut self,
@@ -115,7 +117,7 @@ impl Analyzer<'_, '_> {
                             operands.push((ordinal, Some(measure)));
                         }
                     }
-                    KernelOperand::Measure(measure, KernelPlace::ParameterAtCall(ordinal)) => {
+                    KernelOperand::Measure(measure, KernelPlace::ParameterEntry(ordinal)) => {
                         operands.push((ordinal, Some(measure)));
                     }
                     KernelOperand::Measure(..)
@@ -188,6 +190,7 @@ impl Analyzer<'_, '_> {
             value,
             prepared,
             &KernelExit {
+                state_only: destinations.is_empty(),
                 route: None,
                 payload: None,
                 destinations,
@@ -231,6 +234,7 @@ impl Analyzer<'_, '_> {
             scrutinee,
             prepared,
             &KernelExit {
+                state_only: false,
                 route: Some(route),
                 payload,
                 destinations: &[],
@@ -282,8 +286,8 @@ impl Analyzer<'_, '_> {
     /// them is not a defect: it is the ordinary [ENT-3] statement that this
     /// arm is not reached, which a written `if` guard the caller can refute
     /// produces in exactly the same way. `arena_vector` asked for more bytes
-    /// than the extent holds publishes `len_of(store) = len_of(store at the
-    /// call) + advance<T>(count)` on its `Some` arm against a `cap_of(store)`
+    /// than the extent holds publishes `len_of(deref(store)) =
+    /// len_of(deref(entry(store))) + advance<T>(count)` on its `Some` arm against a `cap_of(store)`
     /// that cannot hold it, and the arm it makes underivable is the arm that
     /// never runs. The exits of one call partition its outcomes, so at most
     /// one of them can be refuted this way.
@@ -311,8 +315,14 @@ impl Analyzer<'_, '_> {
         let call = site.call.clone();
         let goal_arguments = site.goal_arguments.to_vec();
         let destinations = exit.destinations.to_vec();
-        let Some(anchor) = self.kernel_exit_anchor(exit, &destinations, &goal_arguments) else {
-            return;
+
+        let anchor = if exit.state_only {
+            None
+        } else {
+            let Some(anchor) = self.kernel_exit_anchor(exit, &destinations, &goal_arguments) else {
+                return;
+            };
+            Some(anchor)
         };
         self.assert_kernel_denotations(signature, exit, &call, &goal_arguments);
         let already_contradictory = self.state_is_contradictory(state);
@@ -323,6 +333,22 @@ impl Analyzer<'_, '_> {
                 if relation.route.is_none() != shared
                     || (relation.route.is_some() && relation.route != exit.route)
                 {
+                    continue;
+                }
+                let names_result = [relation.left, relation.right].iter().any(|term| {
+                    matches!(
+                        term.operand,
+                        KernelOperand::Measure(_, KernelPlace::Result(_) | KernelPlace::Payload)
+                    )
+                });
+                if exit.state_only {
+                    if names_result || relation.route.is_some() {
+                        continue;
+                    }
+                } else if relation.route.is_none() && !names_result {
+                    // This state relation was established immediately after
+                    // the call. A result commit must neither publish it twice
+                    // nor resurrect it after that commit killed its support.
                     continue;
                 }
                 let displacement = |offset: KernelOffset| match offset {
@@ -367,6 +393,7 @@ impl Analyzer<'_, '_> {
                         right,
                         bound: bound.bound,
                     };
+
                     self.retain_kernel_relation(
                         statement,
                         anchor,
@@ -393,13 +420,13 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// [MSR-3, BLK-0] a measure's `at the call` form and its post-state
+    /// [MSR-3, BLK-0] a measure's `entry(parameter)` form and its post-state
     /// occurrence are two terms wherever both occur.
     ///
     /// This is asserted over the terms the instantiation formed rather than
     /// over the record, because the record already keys the two apart and the
     /// defect this closes was the caller reading one term for both: the row's
-    /// own `len_of(store) = len_of(store at the call) + advance<T>(count)`
+    /// own `len_of(deref(store)) = len_of(deref(entry(store))) + advance<T>(count)`
     /// then becomes `t = t + advance<T>(count)` over one term, which is the
     /// bound pair `advance<T>(count) <= 0` and `advance<T>(count) >= 0` and,
     /// at any nonzero take, a contradiction the row introduces into every
@@ -417,7 +444,7 @@ impl Analyzer<'_, '_> {
         let mut pairs: Vec<(CheckedMeasure, u32)> = Vec::new();
         for relation in signature.ensures.iter().filter(carried) {
             for term in [relation.left, relation.right] {
-                if let KernelOperand::Measure(measure, KernelPlace::ParameterAtCall(ordinal)) =
+                if let KernelOperand::Measure(measure, KernelPlace::ParameterEntry(ordinal)) =
                     term.operand
                 {
                     pairs.push((measure, ordinal));
@@ -466,7 +493,6 @@ impl Analyzer<'_, '_> {
         if let Some((binding, _, _)) = destinations.iter().flatten().next() {
             return Some(*binding);
         }
-        exit.route?;
         goal_arguments.iter().find_map(|argument| {
             let super::super::super::goal::GoalExpression::Datum(
                 super::super::super::goal::GoalDatum::Place { root, .. },
@@ -491,7 +517,7 @@ impl Analyzer<'_, '_> {
     fn retain_kernel_relation(
         &mut self,
         statement: &crate::NodePath,
-        binding: BindingId,
+        binding: Option<BindingId>,
         operation: u8,
         relation_ordinal: u32,
         call: &crate::NodePath,
@@ -516,24 +542,32 @@ impl Analyzer<'_, '_> {
                         parents: prepared.parents.clone(),
                     }),
                 });
-        let route = self.derivations.intern(
-            super::super::state::DerivationNode::PostconditionDirectResult {
-                statement: statement.clone(),
-                binding,
-                relation: Box::new(relation.clone()),
-                parent: source,
-            },
-        );
         let occurrence = self.s12_roots;
         self.s12_roots = self
             .s12_roots
             .checked_add(1)
             .expect("S12 roots exceed the u32 identity space");
-        self.derivations.add_root(
-            DerivationRootKind::PostconditionDirectResult { occurrence },
-            route,
-        );
-        state.establish_from_proof(relation, route, &self.derivations);
+        let (root, proof) = if let Some(binding) = binding {
+            let proof = self.derivations.intern(
+                super::super::state::DerivationNode::PostconditionDirectResult {
+                    statement: statement.clone(),
+                    binding,
+                    relation: Box::new(relation.clone()),
+                    parent: source,
+                },
+            );
+            (
+                DerivationRootKind::PostconditionDirectResult { occurrence },
+                proof,
+            )
+        } else {
+            (
+                DerivationRootKind::PostconditionState { occurrence },
+                source,
+            )
+        };
+        self.derivations.add_root(root, proof);
+        state.establish_from_proof(relation, proof, &self.derivations);
     }
 
     /// One record operand as an [ENT-2] term at this call.
@@ -567,9 +601,9 @@ impl Analyzer<'_, '_> {
                 self.kernel_call_operand_term(call, ordinal, None, false, actual, signature)
             }
             KernelOperand::Measure(measure, place) => match place {
-                KernelPlace::Parameter(ordinal) | KernelPlace::ParameterAtCall(ordinal) => {
+                KernelPlace::Parameter(ordinal) | KernelPlace::ParameterEntry(ordinal) => {
                     let actual = goal_arguments.get(ordinal as usize)?;
-                    let at_call = matches!(place, KernelPlace::ParameterAtCall(_));
+                    let at_call = matches!(place, KernelPlace::ParameterEntry(_));
                     self.kernel_call_operand_term(
                         call,
                         ordinal,
@@ -607,12 +641,12 @@ impl Analyzer<'_, '_> {
     /// the call, the ordinal, the projections and the measure and on nothing
     /// else — so the position decides which of the two this operand is
     /// before the datum table is consulted, and never after. An `own`
-    /// operand and the `at the call` form both denote this call's call datum
+    /// operand and the `entry(parameter)` form both denote this call's call datum
     /// [BLK-0]; the plain occurrence of a `&uniq` state operand denotes the
     /// live term after the call's own kills, which is a different term even
     /// though its place, its measure and its ordinal are the same. Reading
-    /// the datum for that position would make a row's own `len_of(store) =
-    /// len_of(store at the call) + advance<T>(count)` the bound
+    /// the datum for that position would make a row's own `len_of(deref(store)) =
+    /// len_of(deref(entry(store))) + advance<T>(count)` the bound
     /// `0 <= -advance<T>(count)` over one term, which is a contradiction the
     /// row would introduce into the caller's state.
     fn kernel_call_operand_term(

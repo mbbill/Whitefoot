@@ -10,7 +10,10 @@ fn update(value: &uniq u64) -> result: own Payload writes(value) {
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Payload, 1>();
   let payload = Payload(value: 3_u64);
-  let entries = place_back(vector: move empty, value: move payload);
+  region {
+    place_back(vector: &uniq empty, value: move payload);
+  }
+  let entries = move empty;
   region {
     let previous = replace entries[0_u64] = update(value: &uniq entries[0_u64].value);
   }

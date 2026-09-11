@@ -221,7 +221,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare: room_of(output) + at >= 15_u64,
         invariant flat: head_of(output) <= 0_u64
       ) {
-        set output = place_back(vector: move output, value: 99_u32);
+        place_back(vector: &uniq output, value: 99_u32);
       }
       region {
         let window = mut_slice_of(&uniq output);

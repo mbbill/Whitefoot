@@ -14,13 +14,27 @@ fn probe_midpoint(table: own Slice<u32>, lo: own u64, hi: own u64) -> found: own
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: lo < hi and hi <= spare let the automatic affine rule fold the division image 2*half <= span into 2*mid + 1 <= 2*hi, which with hi <= spare discharges the subscript [ENT-6, OP-4].";
   let table = fixed_vector::<u32, 7>();
-  set table = place_back(vector: move table, value: 0_u32);
-  set table = place_back(vector: move table, value: 0_u32);
-  set table = place_back(vector: move table, value: 0_u32);
-  set table = place_back(vector: move table, value: 0_u32);
-  set table = place_back(vector: move table, value: 0_u32);
-  set table = place_back(vector: move table, value: 0_u32);
-  set table = place_back(vector: move table, value: 0_u32);
+  region {
+    place_back(vector: &uniq table, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u32);
+  }
   region {
     let table_view = slice_of(&table);
     let value = probe_midpoint(table: table_view, lo: 1_u64, hi: 6_u64);

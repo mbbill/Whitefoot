@@ -1,73 +1,79 @@
-fn push(heap: own FixedVector<u64, 16>, value: own u64) -> updated: own FixedVector<u64, 16> reads(heap), writes(heap) contract {
-  requires room_of(heap) >= 1_u64;
-  requires head_of(heap) <= 0_u64;
-  ensures len_of(updated) == len_of(heap) + 1_u64;
-  ensures room_of(updated) == room_of(heap) - 1_u64;
-  ensures head_of(updated) <= 0_u64;
+fn push(heap: &uniq FixedVector<u64, 16>, value: own u64) -> result: own unit reads(heap), writes(heap) contract {
+  requires room_of(deref(heap)) >= 1_u64;
+  requires head_of(deref(heap)) <= 0_u64;
+  ensures len_of(deref(heap)) == len_of(deref(entry(heap))) + 1_u64;
+  ensures room_of(deref(heap)) == room_of(deref(entry(heap))) - 1_u64;
+  ensures head_of(deref(heap)) <= 0_u64;
 } {
-  let at = len_of(heap);
-  set heap = place_back(vector: move heap, value: value);
-  loop @rise (
-    invariant live: at < len_of(heap)
-  ) {
-    if at == 0_u64 {
-      break @rise;
+  region {
+    let at = len_of(deref(heap));
+    place_back(vector: &uniq deref(heap), value: value);
+    let values = mut_slice_of(&uniq deref(heap));
+    loop @rise (
+      invariant live: at < len_of(values)
+    ) {
+      if at == 0_u64 {
+        break @rise;
+      }
+      let before = at - 1_u64;
+      let parent = before / 2_u64;
+      let lower = values[at];
+      let upper = values[parent];
+      if upper <= lower {
+        break @rise;
+      }
+      set values[parent] = lower;
+      set values[at] = upper;
+      set at = parent;
     }
-    let before = at - 1_u64;
-    let parent = before / 2_u64;
-    let lower = heap[at];
-    let upper = heap[parent];
-    if upper <= lower {
-      break @rise;
-    }
-    set heap[parent] = lower;
-    set heap[at] = upper;
-    set at = parent;
+    return unit;
   }
-  return move heap;
 }
 
-fn pop(heap: own FixedVector<u64, 16>) -> (updated: own FixedVector<u64, 16>, minimum: own u64) reads(heap), writes(heap) contract {
-  requires len_of(heap) >= 1_u64;
-  requires head_of(heap) <= 0_u64;
-  ensures len_of(updated) == len_of(heap) - 1_u64;
-  ensures head_of(updated) <= 0_u64;
+fn pop(heap: &uniq FixedVector<u64, 16>) -> minimum: own u64 reads(heap), writes(heap) contract {
+  requires len_of(deref(heap)) >= 1_u64;
+  requires head_of(deref(heap)) <= 0_u64;
+  ensures len_of(deref(heap)) == len_of(deref(entry(heap))) - 1_u64;
+  ensures head_of(deref(heap)) <= 0_u64;
 } {
-  let minimum = heap[0_u64];
-  let (rest, last) = take_back(vector: move heap);
-  let count = len_of(rest);
-  if count == 0_u64 {
-    return move rest, minimum;
-  }
-  set rest[0_u64] = last;
-  let at = 0_u64;
-  loop @sink (
-    invariant live: at < len_of(rest)
-  ) {
-    let doubled = at * 2_u64;
-    let left = doubled + 1_u64;
-    if left >= count {
-      break @sink;
+  region {
+    let minimum = deref(heap)[0_u64];
+    let last = take_back(vector: &uniq deref(heap));
+    let count = len_of(deref(heap));
+    if count == 0_u64 {
+      return minimum;
     }
-    let best = left;
-    let right = left + 1_u64;
-    if right < count {
-      let left_value = rest[left];
-      let right_value = rest[right];
-      if right_value < left_value {
-        set best = right;
+    let values = mut_slice_of(&uniq deref(heap));
+    set values[0_u64] = last;
+    let at = 0_u64;
+    loop @sink (
+      invariant live: at < len_of(values)
+    ) {
+      let doubled = at * 2_u64;
+      let left = doubled + 1_u64;
+      if left >= count {
+        break @sink;
       }
+      let best = left;
+      let right = left + 1_u64;
+      if right < count {
+        let left_value = values[left];
+        let right_value = values[right];
+        if right_value < left_value {
+          set best = right;
+        }
+      }
+      let lower = values[best];
+      let upper = values[at];
+      if upper <= lower {
+        break @sink;
+      }
+      set values[at] = lower;
+      set values[best] = upper;
+      set at = best;
     }
-    let lower = rest[best];
-    let upper = rest[at];
-    if upper <= lower {
-      break @sink;
-    }
-    set rest[at] = lower;
-    set rest[best] = upper;
-    set at = best;
+    return minimum;
   }
-  return move rest, minimum;
 }
 
 fn empty_heap() -> heap: own FixedVector<u64, 16> pure contract {
@@ -82,28 +88,29 @@ fn priority_round(seed: own u64, entering: own u64) -> (checksum: own u64, next_
   let checksum = entering;
   let state = seed;
   let heap = empty_heap();
-  for (
-    index in 0_u64..16_u64,
-    invariant grown: len_of(heap) >= index,
-    invariant spare: room_of(heap) + index >= 16_u64,
-    invariant flat: head_of(heap) <= 0_u64
-  ) {
-    let product = state *wrap 6364136223846793005_u64;
-    set state = product +wrap 1442695040888963407_u64;
-    let value = state % 97_u64;
-    set heap = push(heap: move heap, value: value);
+  region {
+    for (
+      index in 0_u64..16_u64,
+      invariant grown: len_of(heap) >= index,
+      invariant spare: room_of(heap) + index >= 16_u64,
+      invariant flat: head_of(heap) <= 0_u64
+    ) {
+      let product = state *wrap 6364136223846793005_u64;
+      set state = product +wrap 1442695040888963407_u64;
+      let value = state % 97_u64;
+      push(heap: &uniq heap, value: value);
+    }
+    for (
+      index in 0_u64..16_u64,
+      invariant remaining: len_of(heap) + index >= 16_u64,
+      invariant flat: head_of(heap) <= 0_u64
+    ) {
+      let value = pop(heap: &uniq heap);
+      let product = checksum *wrap 1099511628211_u64;
+      set checksum = product +wrap value;
+    }
+    return checksum, state;
   }
-  for (
-    index in 0_u64..16_u64,
-    invariant remaining: len_of(heap) + index >= 16_u64,
-    invariant flat: head_of(heap) <= 0_u64
-  ) {
-    let value = 0_u64;
-    set (heap, value) = pop(heap: move heap);
-    let product = checksum *wrap 1099511628211_u64;
-    set checksum = product +wrap value;
-  }
-  return checksum, state;
 }
 
 fn priority_trace(seed: own u64, rounds: own u64) -> checksum: own u64 pure {
@@ -117,45 +124,47 @@ fn priority_trace(seed: own u64, rounds: own u64) -> checksum: own u64 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let heap = fixed_vector::<u64, 16>();
-  set heap = push(heap: move heap, value: 9_u64);
-  set heap = push(heap: move heap, value: 2_u64);
-  set heap = push(heap: move heap, value: 7_u64);
-  set heap = push(heap: move heap, value: 2_u64);
-  set heap = push(heap: move heap, value: 0_u64);
-  set heap = push(heap: move heap, value: 8_u64);
-  set heap = push(heap: move heap, value: 1_u64);
-  let (a, v0) = pop(heap: move heap);
-  let (b, v1) = pop(heap: move a);
-  let (c, v2) = pop(heap: move b);
-  let (d, v3) = pop(heap: move c);
-  let (e, v4) = pop(heap: move d);
-  let (f, v5) = pop(heap: move e);
-  let (g, v6) = pop(heap: move f);
-  if v0 != 0_u64 {
-    return exit_status(code: 1_u8);
+  region {
+    push(heap: &uniq heap, value: 9_u64);
+    push(heap: &uniq heap, value: 2_u64);
+    push(heap: &uniq heap, value: 7_u64);
+    push(heap: &uniq heap, value: 2_u64);
+    push(heap: &uniq heap, value: 0_u64);
+    push(heap: &uniq heap, value: 8_u64);
+    push(heap: &uniq heap, value: 1_u64);
+    let v0 = pop(heap: &uniq heap);
+    let v1 = pop(heap: &uniq heap);
+    let v2 = pop(heap: &uniq heap);
+    let v3 = pop(heap: &uniq heap);
+    let v4 = pop(heap: &uniq heap);
+    let v5 = pop(heap: &uniq heap);
+    let v6 = pop(heap: &uniq heap);
+    if v0 != 0_u64 {
+      return exit_status(code: 1_u8);
+    }
+    if v1 != 1_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if v2 != 2_u64 {
+      return exit_status(code: 3_u8);
+    }
+    if v3 != 2_u64 {
+      return exit_status(code: 4_u8);
+    }
+    if v4 != 7_u64 {
+      return exit_status(code: 5_u8);
+    }
+    if v5 != 8_u64 {
+      return exit_status(code: 6_u8);
+    }
+    if v6 != 9_u64 {
+      return exit_status(code: 7_u8);
+    }
+    push(heap: &uniq heap, value: 5_u64);
+    let value = pop(heap: &uniq heap);
+    if value != 5_u64 {
+      return exit_status(code: 8_u8);
+    }
+    return exit_status(code: 0_u8);
   }
-  if v1 != 1_u64 {
-    return exit_status(code: 2_u8);
-  }
-  if v2 != 2_u64 {
-    return exit_status(code: 3_u8);
-  }
-  if v3 != 2_u64 {
-    return exit_status(code: 4_u8);
-  }
-  if v4 != 7_u64 {
-    return exit_status(code: 5_u8);
-  }
-  if v5 != 8_u64 {
-    return exit_status(code: 6_u8);
-  }
-  if v6 != 9_u64 {
-    return exit_status(code: 7_u8);
-  }
-  set g = push(heap: move g, value: 5_u64);
-  let (empty, value) = pop(heap: move g);
-  if value != 5_u64 {
-    return exit_status(code: 8_u8);
-  }
-  return exit_status(code: 0_u8);
 }

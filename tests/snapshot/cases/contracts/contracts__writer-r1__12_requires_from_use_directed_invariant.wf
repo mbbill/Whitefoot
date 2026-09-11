@@ -30,7 +30,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare_table: room_of(table) + at_table >= 12_u64,
     invariant flat_table: head_of(table) <= 0_u64
   ) {
-    set table = place_back(vector: move table, value: 3_u8);
+    place_back(vector: &uniq table, value: 3_u8);
   }
   let byte = combined_probe::<12>(table: move table, first: 2_u64, first_limit: 3_u64, second: 3_u64, second_limit: 3_u64, third: 3_u64, third_limit: 3_u64);
   if byte == 3_u8 {

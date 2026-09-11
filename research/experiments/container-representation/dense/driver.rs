@@ -47,11 +47,11 @@ fn element_code(lanes: usize) -> (String, String, String) {
         ));
     }
     if lanes == 1 {
-        build.push_str("    set values = place_back(vector: move values, value: a);");
+        build.push_str("    place_back(vector: &uniq values, value: a);");
         update.push_str("      set values[at] = a;");
     } else {
-        build.push_str("    let entry = Wide(a: a, b: b, c: c, d: d);\n    set values = place_back(vector: move values, value: move entry);");
-        update.push_str("      }\n      let entry = Wide(a: a, b: b, c: c, d: d);\n      let previous_entry = replace values[at] = move entry;");
+        build.push_str("    let stored_entry = Wide(a: a, b: b, c: c, d: d);\n    place_back(vector: &uniq values, value: move stored_entry);");
+        update.push_str("      }\n      let stored_entry = Wide(a: a, b: b, c: c, d: d);\n      let previous_entry = replace values[at] = move stored_entry;");
     }
     (build, update, consume)
 }

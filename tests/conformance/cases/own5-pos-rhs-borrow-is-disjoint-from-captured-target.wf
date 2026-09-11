@@ -5,8 +5,14 @@ fn change(value: &uniq u64) -> result: own u64 writes(value) {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u64, 2>();
-  let prefix = place_back(vector: move empty, value: 3_u64);
-  let values = place_back(vector: move prefix, value: 5_u64);
+  region {
+    place_back(vector: &uniq empty, value: 3_u64);
+  }
+  let prefix = move empty;
+  region {
+    place_back(vector: &uniq prefix, value: 5_u64);
+  }
+  let values = move prefix;
   region {
     set values[0_u64] = change(value: &uniq values[1_u64]);
     set values[1_u64] = values[1_u64] +wrap 1_u64;

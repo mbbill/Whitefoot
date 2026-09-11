@@ -42,23 +42,41 @@ fn merge_step(left: own FixedVector<u32, 3>, right: own FixedVector<u32, 3>, out
 
 command fn main() -> status: own ExitStatus pure {
   let left = fixed_vector::<u32, 3>();
-  set left = place_back(vector: move left, value: 0_u32);
-  set left = place_back(vector: move left, value: 0_u32);
-  set left = place_back(vector: move left, value: 0_u32);
+  region {
+    place_back(vector: &uniq left, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq left, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq left, value: 0_u32);
+  }
   set left[0_u64] = 1_u32;
   set left[1_u64] = 4_u32;
   set left[2_u64] = 6_u32;
   let right = fixed_vector::<u32, 3>();
-  set right = place_back(vector: move right, value: 0_u32);
-  set right = place_back(vector: move right, value: 0_u32);
-  set right = place_back(vector: move right, value: 0_u32);
+  region {
+    place_back(vector: &uniq right, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq right, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq right, value: 0_u32);
+  }
   set right[0_u64] = 2_u32;
   set right[1_u64] = 3_u32;
   set right[2_u64] = 9_u32;
   let out = fixed_vector::<u32, 3>();
-  set out = place_back(vector: move out, value: 0_u32);
-  set out = place_back(vector: move out, value: 0_u32);
-  set out = place_back(vector: move out, value: 0_u32);
+  region {
+    place_back(vector: &uniq out, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq out, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq out, value: 0_u32);
+  }
   let merged = merge_step(left: move left, right: move right, out: move out, i: 0_u64, j: 0_u64, k: 0_u64);
   let first = merged[0_u64];
   let second = merged[1_u64];

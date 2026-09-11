@@ -6,7 +6,10 @@ command fn main() -> status: own ExitStatus pure {
       let second = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
       let replacement = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
       let free = fixed_vector::<Vector<'a, u8>, 2>();
-      let one = place_back(vector: move free, value: move first);
+      region {
+        place_back(vector: &uniq free, value: move first);
+      }
+      let one = move free;
       let spare = replace one[0_u64] = move second;
       let known = replace one[0_u64] = move replacement;
       let passed = pass_bytes(bytes: move known);
@@ -21,7 +24,10 @@ command fn main() -> status: own ExitStatus pure {
           invariant capacity_min: cap_of(returned) >= 4_u64;
           invariant capacity_max: cap_of(returned) <= 4_u64;
           invariant empty: len_of(returned) <= 0_u64;
-          let written = place_back(vector: move returned, value: 23_u8);
+          region {
+            place_back(vector: &uniq returned, value: 23_u8);
+          }
+          let written = move returned;
           let seen = written[0_u64];
           let result = seen -wrap 23_u8;
           return exit_status(code: result);

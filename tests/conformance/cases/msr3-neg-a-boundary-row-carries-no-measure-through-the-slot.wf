@@ -5,13 +5,22 @@ command fn main() -> status: own ExitStatus pure {
     region {
       let blocks = fixed_vector::<Vector<'a, u8>, 2>();
       let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-      let one = place_back(vector: move blocks, value: move first);
-      let (rest, last) = take_back(vector: move one);
-      let filled = place_back(vector: move last, value: 3_u8);
-      let seen = filled[0_u64];
-      if seen == 3_u8 {
-      } else {
-        return exit_status(code: 1_u8);
+      region {
+        place_back(vector: &uniq blocks, value: move first);
+      }
+      let one = move blocks;
+      region {
+        let last = take_back(vector: &uniq one);
+        let rest = move one;
+        region {
+          place_back(vector: &uniq last, value: 3_u8);
+        }
+        let filled = move last;
+        let seen = filled[0_u64];
+        if seen == 3_u8 {
+        } else {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }

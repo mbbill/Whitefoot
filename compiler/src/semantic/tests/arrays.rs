@@ -230,7 +230,10 @@ fn full_array_conversion_requires_fullness_and_preserves_linear_obligations() {
     assert_rule_kind(
         br#"command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u64, 2>();
-  let partial = place_back(vector: move empty, value: 7_u64);
+  region {
+    place_back(vector: &uniq empty, value: 7_u64);
+  }
+  let partial = move empty;
   let invalid = array_from_fixed(vector: move partial);
   return exit_status(code: 0_u8);
 }
@@ -282,7 +285,10 @@ fn general_array_views_remain_an_explicit_capability_gap() {
         br#"command fn main() -> status: own ExitStatus pure {
   let inner = array_new::<u64, 2>(7_u64);
   let empty = fixed_vector::<array<u64, 2>, 1>();
-  let full = place_back(vector: move empty, value: move inner);
+  region {
+    place_back(vector: &uniq empty, value: move inner);
+  }
+  let full = move empty;
   let values = array_from_fixed(vector: move full);
   region {
     let view = slice_of(&values);
@@ -419,7 +425,10 @@ fn an_owned_box_referent_is_an_admitted_measured_place() {
     let store = arena_frame::<64, 8, 'a>();
     region {
       let empty = fixed_vector::<u8, 4>();
-      let one = place_back(vector: move empty, value: 1_u8);
+      region {
+        place_back(vector: &uniq empty, value: 1_u8);
+      }
+      let one = move empty;
       match arena_box(store: &uniq store, value: move one) {
         Err(error: back) => {
           return exit_status(code: 1_u8);
@@ -445,7 +454,7 @@ fn an_owned_box_referent_is_an_admitted_measured_place() {
         let CheckedStatement::Region { body, .. } = &body[1] else {
             panic!("inner borrow region must remain checked");
         };
-        let CheckedStatement::Match { arms, .. } = &body[2] else {
+        let CheckedStatement::Match { arms, .. } = &body[3] else {
             panic!("arena_box result must remain a checked match");
         };
         let CheckedStatement::Let {
@@ -487,7 +496,10 @@ fn replacing_an_owned_box_kills_its_referents_old_measure() {
     let store = arena_frame::<128, 8, 'a>();
     region {
       let old_empty = fixed_vector::<u8, 1>();
-      let old_run = place_back(vector: move old_empty, value: 7_u8);
+      region {
+        place_back(vector: &uniq old_empty, value: 7_u8);
+      }
+      let old_run = move old_empty;
       match arena_box(store: &uniq store, value: move old_run) {
         Err(error: back) => {
           return exit_status(code: 1_u8);
@@ -540,8 +552,14 @@ const table: FixedVector<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<i32, count>();
-  let one = place_back(vector: move empty, value: 7_i32);
-  let values = place_back(vector: move one, value: 7_i32);
+  region {
+    place_back(vector: &uniq empty, value: 7_i32);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 7_i32);
+  }
+  let values = move one;
   let length = len_of(values);
   let local = values[1_u64];
   let stored = table[2_u64];
@@ -567,7 +585,7 @@ command fn main() -> status: own ExitStatus pure {
 
         let body = &checked.data.functions[0].body;
         assert!(matches!(
-            &body[3],
+            &body[5],
             CheckedStatement::Let {
                 value: CheckedExpression::ContainerMeasure {
                     root: CheckedContainerRoot {
@@ -583,7 +601,7 @@ command fn main() -> status: own ExitStatus pure {
             } if checked.element_type(*element) == Some(CheckedType::Integer(IntegerType::I32))
         ));
         assert!(matches!(
-            &body[4],
+            &body[6],
             CheckedStatement::Let {
                 value: CheckedExpression::ReadStorage {
                     root: CheckedContainerRoot {
@@ -600,7 +618,7 @@ command fn main() -> status: own ExitStatus pure {
                 && !index.obligation.components().is_empty())
         ));
         assert!(matches!(
-            &body[5],
+            &body[7],
             CheckedStatement::Let {
                 value: CheckedExpression::ReadStorage {
                     root: CheckedContainerRoot {
@@ -703,8 +721,14 @@ command fn main() -> status: own ExitStatus pure {
 fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 0_u8);
-  let values = place_back(vector: move one, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 0_u8);
+  }
+  let values = move one;
   set values[1_u64] = 9_u8;
   let stored = values[1_u64];
   return exit_status(code: 0_u8);
@@ -714,8 +738,8 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("indexed fixed-run set must check: {outcome:?}");
         };
-        let CheckedStatement::Set { target, .. } = &checked.data.functions[0].body[3] else {
-            panic!("fourth statement must be the indexed set");
+        let CheckedStatement::Set { target, .. } = &checked.data.functions[0].body[5] else {
+            panic!("sixth statement must be the indexed set");
         };
         let CheckedSetTarget::Storage(target) = target else {
             panic!("indexed set must retain a run-index target");
@@ -746,7 +770,7 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
     // A discharged subscript adds no runtime effect: the indexed set with a
     // constant in-range offset is accepted in a `pure` function.
     with_semantics(
-        b"command fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  let values = place_back(vector: move empty, value: 0_u8);\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -755,12 +779,12 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
         },
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  let values = place_back(vector: move empty, value: 0_u8);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"fn consume(values: own FixedVector<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  let values = place_back(vector: move empty, value: 0_u8);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn consume(values: own FixedVector<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
@@ -780,8 +804,14 @@ struct Outer {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 0_u8);
-  let values = place_back(vector: move one, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 0_u8);
+  }
+  let values = move one;
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   let length = len_of(outer.inner.values);
@@ -795,8 +825,8 @@ command fn main() -> status: own ExitStatus pure {
             panic!("nested struct run places must check: {outcome:?}");
         };
         let body = &checked.data.functions[0].body;
-        let CheckedStatement::Set { target, .. } = &body[6] else {
-            panic!("seventh statement must be the projected indexed set");
+        let CheckedStatement::Set { target, .. } = &body[8] else {
+            panic!("ninth statement must be the projected indexed set");
         };
         let CheckedSetTarget::Storage(target) = target else {
             panic!("set must retain one checked run-index target");
@@ -810,7 +840,7 @@ command fn main() -> status: own ExitStatus pure {
             ]
         ));
         assert!(matches!(
-            &body[7],
+            &body[9],
             CheckedStatement::Let {
                 value: CheckedExpression::ReadStorage {
                     root: CheckedContainerRoot { path, .. },
@@ -836,8 +866,14 @@ fn replacement(value: own Outer) -> result: own u8 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 0_u8);
-  let values = place_back(vector: move one, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 0_u8);
+  }
+  let values = move one;
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   set outer.inner.values[1_u64] = replacement(value: move outer);
@@ -861,8 +897,14 @@ struct Outer {
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 0_u8);
-  let values = place_back(vector: move one, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 0_u8);
+  }
+  let values = move one;
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   region {
@@ -920,7 +962,10 @@ fn general_elements_allow_an_array_value_inside_a_run_slot() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let row = array_new::<u64, 2>(7_u64);
   let empty = fixed_vector::<array<u64, 2>, 2>();
-  let rows = place_back(vector: move empty, value: move row);
+  region {
+    place_back(vector: &uniq empty, value: move row);
+  }
+  let rows = move empty;
   set rows[0_u64][1_u64] = 9_u64;
   let value = rows[0_u64][1_u64];
   let width = len_of(rows[0_u64]);
@@ -944,7 +989,7 @@ fn general_elements_allow_an_array_value_inside_a_run_slot() {
         let CheckedStatement::Set {
             target: CheckedSetTarget::Storage(target),
             ..
-        } = &main.body[3]
+        } = &main.body[4]
         else {
             panic!("nested array mutation must use the ordinary typed storage path");
         };

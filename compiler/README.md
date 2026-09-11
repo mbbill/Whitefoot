@@ -274,8 +274,15 @@ a store-resident run from that extent. [FN-7]'s `command.heap` entry supplies a
 `Heap<'s>` provider, and `heap_vector` takes a run from it, returning `Some` on
 success or `None` when the store cannot satisfy the allocation. The row still
 requires [OP-9]'s static allocation-fit proof; runtime refusal does not replace
-that proof. [BLK-3]'s four boundary operations move either run's boundaries,
-the measure readers observe the cells defined for each run or bump extent, and
+that proof. [BLK-3]'s four boundary operations take `vector: &uniq V` and
+mutate either run's boundaries in place. Placements return unit; takes return
+only the element. Source helpers use the same exclusive interface and can
+state exit measures in ensures, with `entry(parameter)` selecting the entry
+measure before ordinary deref/field projections. FN-9 verifies both equality
+bounds, CALL-6 instantiates entry datums and resolved exit places after the
+exact projected effect kills, and result-free state relations need no result
+binding. BLK-4 admits run and generic referents while preserving confinement and loan-bearing position judgments. The measure readers observe the cells
+defined for each run or bump extent, and
 a subscript selects the window at `(head_of + i) mod cap_of`. Each row's
 requirements are discharged at the call under [MSR-4], and its declared
 relations are published at the caller under [CALL-6]. A run's release class is
@@ -539,9 +546,8 @@ Precise negative controls catch reads of a second supplier on later iterations
 and after exhaustion; retained native calls cover zero, one and two iterations.
 Indexed mutation targets no longer overwrite the containing owner's image
 merely because their effect access names that storage root. For copy elements,
-kernel run-take result lists preserve the run's origin in the remainder's
-ordinal through direct calls and helper summaries; the removed observation
-carries no identity. Noncopy elements retain complete supplier bounds, but exact
+kernel run-take rows preserve the updated run's origin through the exclusive
+referent; the returned copy element carries no identity. Noncopy elements retain complete supplier bounds, but exact
 remainder/content images still need their own transfer: front insertion shifts
 logical indices, and removal does not leave every old owner in both outputs.
 Recursive contained-owner extraction remains a separate capability gap.
@@ -549,7 +555,7 @@ An owning Box's run or extent referent supports measures and indexed access
 through the same typed place path. Replacing its owner invalidates referent
 facts. Box content also supports copy assignment, affine replacement and
 [LIV-2] read-out into the same statement's commit, including
-`set deref(storage) = place_back(vector: move deref(storage), value: value);`
+`place_back(vector: &uniq deref(storage), value: value);`
 when the operation's ordinary room obligation is proved. The target may be
 reached through nested Boxes or a live usable exclusive holder, and may select
 a field of the referent. Checked storage paths retain each owning Box
@@ -705,8 +711,9 @@ destructuring binder, an element position and a single-payload enum's arm
 binder, and a struct operand carries the measures of every run beneath it and
 not only its own, so a run two field levels down arrives at its new path with
 what it had. A `requires` or `ensures` side is an affine
-expression [GRAM-4, GRAM-5, MSR-5], a parameter's measure named in an
-`ensures` is its entry datum [MSR-3], and an in-scope const generic is an
+expression [GRAM-4, GRAM-5, MSR-5]. An own parameter's measure in
+`ensures` is its entry datum; an exclusive parameter's bare measure names its
+exit, and `entry(parameter)` names its immutable entry image [MSR-3]. An in-scope const generic is an
 affine atom [MSR-6, INV-1]. The fixed-run library source in
 `tests/programs/fixed_run_library.wf` exercises these facilities through
 `vacant`, `filled`, `take_at`, `try_place`, `try_take` and `rebase`, each
@@ -864,13 +871,13 @@ A third one is what [BLK-0]'s consistency sentence is for. A kernel row's
 operand denotation is decided by its position [MSR-3] *before* the call-datum
 table is consulted, because that table is keyed on the call, the ordinal, the
 projections and the measure and on nothing that separates a `&uniq` state
-operand's post-state from that call's `at the call` datum; reading the datum for
-both made `arena_vector_proved`'s own `len_of(store) = len_of(store at the call)
+operand's post-state from that call's `entry(...)` datum; reading the datum for
+both made `arena_vector_proved`'s own `len_of(deref(store)) = len_of(deref(entry(store)))
 + advance<T>(count)` the pair of bounds `advance<T>(count) <= 0` and
 `>= 0` over one term. And a row's declared effect row is a callee effect like
 any other, so the place its `writes` names is written by the call and every fact
 whose support that place reaches dies there; without that the post-state term is
-still pinned by the caller's pre-call `len_of(store) = 0` and the same
+still pinned by the caller's pre-call `len_of(deref(store)) = 0` and the same
 contradiction arrives one statement later. Either way [ENT-4]'s least closure
 made the caller's whole fact state universally discharging, so a function that
 called the row discharged *every* [OP-4] obligation it contained and a nine-slot
@@ -882,18 +889,19 @@ state did not turn contradictory across the half of its set every exit carries.
 Across the **routed** half no such assert is made, because a routed relation is
 available only on the arm its route names and a contradiction there is the
 ordinary statement that the arm is not reached: an acquisition asked for more
-bytes than the extent holds publishes `len_of(store) = len_of(store at the call)
+bytes than the extent holds publishes `len_of(deref(store)) = len_of(deref(entry(store)))
 + advance<T>(count)` on a `Some` arm the caller can refute, and the arm it makes
 underivable is the arm that never runs. What is asserted on every exit instead is
-the denotation itself — a measure a row names both `at the call` and in its
+the denotation itself — a measure a row names both through `entry(...)` and in its
 post-state is two terms at every instantiation — which is the position the defect
 above actually occupied.
 
 A row's routed relations reach the arm the caller matches. The destination list a
-binder or target list gives an unrouted result and one arm of a `match` over a
-routed one are one publication path over one filter: an unrouted relation is a
-member of every exit's set and a routed one only of the arm its route names, and
-the payload place a routed clause names is the arm's own binder. A caller of
+binder or target list gives a result-bearing clause and one arm of a `match`
+give the corresponding result places. Result-free state clauses publish once
+on normal call completion, before any destination write; routed clauses remain
+restricted to their selected arm. The payload place a routed clause names is
+the arm's own binder. A caller of
 `arena_vector` therefore holds the four measures of the run on its `Some` arm and
 `room_of(store) < advance<T>(count)` on its `None` arm, where before it held
 neither.
@@ -906,7 +914,7 @@ rebind, an element-position commit, the value a [SET-2] `replace` displaces, a
 payload binder. Two of them carry a boundary the place representation fixes. An
 element position is a place only at an offset the place relations can name, so
 the boundary rows carry nothing through the slot they write — `place_back` stores
-at `len_of(vector)` and `take_back` takes from `len_of(rest)`, and a measure term
+at `len_of(vector)` and `take_back` takes from the decremented `len_of(deref(vector))`, and a measure term
 is not such an offset — and a run pushed onto a free list and leased back off it
 still arrives with no measures of its own. And a place's path names no variant, so
 the payload placement is stated over an enum exactly one of whose variants carries

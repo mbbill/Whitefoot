@@ -1,0 +1,50 @@
+fn push(values: &uniq FixedVector<u64, 4>, value: own u64) -> result: own unit reads(values), writes(values) contract {
+  requires room_of(deref(values)) > 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values))) + 1_u64;
+  ensures cap_of(deref(values)) == cap_of(deref(entry(values)));
+} {
+  region {
+    place_back(vector: &uniq deref(values), value: value);
+  }
+  return unit;
+}
+
+fn pop(values: &uniq FixedVector<u64, 4>) -> (value: own u64, count: own u64) reads(values), writes(values) contract {
+  requires len_of(deref(values)) > 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values))) - 1_u64;
+  ensures count == len_of(deref(values));
+} {
+  region {
+    let value = take_back(vector: &uniq deref(values));
+    let count = len_of(deref(values));
+    return value, count;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = fixed_vector::<u64, 4>();
+  let sum = 0_u64;
+  region {
+    for (
+      index in 0_u64..4_u64,
+      invariant lower: len_of(values) >= index,
+      invariant upper: len_of(values) <= index,
+      invariant spare: room_of(values) + index >= 4_u64
+    ) {
+      push(values: &uniq values, value: index);
+    }
+    for (
+      index in 0_u64..4_u64,
+      invariant remaining_min: len_of(values) + index >= 4_u64,
+      invariant remaining_max: len_of(values) + index <= 4_u64
+    ) {
+      let (value, count) = pop(values: &uniq values);
+      set sum = sum +wrap value;
+    }
+    invariant empty: len_of(values) <= 0_u64;
+    if sum != 6_u64 {
+      return exit_status(code: 1_u8);
+    }
+    return exit_status(code: 0_u8);
+  }
+}

@@ -17,7 +17,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
                     invariant spare: room_of(entries) + at >= 1024_u64,
                     invariant flat: head_of(entries) <= 0_u64
                   ) {
-                    set entries = place_back(vector: move entries, value: 0_u8);
+                    place_back(vector: &uniq entries, value: 0_u8);
                   }
                   region {
                     let destination = mut_slice_of(&uniq entries);

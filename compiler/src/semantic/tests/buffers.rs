@@ -895,7 +895,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare: room_of(left) + at >= 4_u64,
     invariant flat: head_of(left) <= 0_u64
   ) {
-    set left = place_back(vector: move left, value: 0_u64);
+    place_back(vector: &uniq left, value: 0_u64);
   }
   let right = fixed_vector::<u64, 4>();
   for @fill_right (
@@ -904,7 +904,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare: room_of(right) + at >= 4_u64,
     invariant flat: head_of(right) <= 0_u64
   ) {
-    set right = place_back(vector: move right, value: 0_u64);
+    place_back(vector: &uniq right, value: 0_u64);
   }
   let columns = Columns(left: move left, right: move right);
   let left_room = len_of(columns.left);
@@ -1094,12 +1094,9 @@ command fn main() -> status: own ExitStatus pure {
 /// Without any live length fact the call is undischarged, so the hoisted fact
 /// is doing real work rather than being redundant ceremony.
 ///
-/// B7c4b moved the first half to the container surface — the destination is a
-/// view of a store-resident run and the consumed prefix is a view of the same
-/// run — and left the second and third there, because their subject is the
-/// transport a `&uniq buffer<T>` destination does *not* select and [BLK-4]
-/// admits no `&uniq` that reaches a run at all. They retire with the
-/// spelling.
+/// The view case lends only element storage. Legacy buffer controls retain
+/// the opposite whole-descriptor write and missing-fact cases; exclusive run
+/// parameters now have their own kill-and-publish controls.
 #[test]
 fn a_hoisted_length_fact_survives_a_callee_write_through_a_view() {
     with_semantics(

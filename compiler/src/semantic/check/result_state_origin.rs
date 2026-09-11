@@ -1061,11 +1061,19 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     .iter()
                     .map(|argument| self.expression(argument, environment))
                     .collect::<Result<Vec<_>, _>>()?;
-                super::super::state_origins::kernel_state_image(
+                let image = super::super::state_origins::kernel_state_image(
                     *row,
                     self.checker.is_copy_type(instance.element)?,
                     &images,
-                )
+                );
+                if let Some(updated) = image.mutated_run {
+                    let actual = arguments
+                        .first()
+                        .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+                    let place = self.borrow_place(actual, environment)?;
+                    environment.write(place, updated);
+                }
+                image.result
             }
             CheckedExpression::ConstructStruct { fields, .. } => {
                 let mut origin = OriginSet::Absent;

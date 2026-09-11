@@ -54,7 +54,9 @@ fn make['s](store: &uniq Heap<'s>, input: own Slice<u8>, depth: own u64) -> resu
 
 command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let bytes = fixed_vector::<u8, 2>();
-  set bytes = place_back(vector: move bytes, value: 7_u8);
+  region {
+    place_back(vector: &uniq bytes, value: 7_u8);
+  }
   region {
     let window = slice_of(&bytes);
     match make(store: &uniq heap, input: window, depth: 2_u64) {

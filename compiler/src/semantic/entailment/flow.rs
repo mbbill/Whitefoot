@@ -16,6 +16,7 @@
 mod kernel;
 mod sources;
 
+use super::super::postcondition::PostconditionPlace;
 use sources::{MeasureCarry, ValueImage};
 use std::collections::{HashMap, HashSet};
 
@@ -264,7 +265,7 @@ enum ProofGoal<'a> {
     },
     Ordering {
         relation: &'a Relation,
-        affine: Option<&'a AffineInequality>,
+        affine: Option<&'a [AffineInequality]>,
     },
     /// One OP-2 exact-integer domain proposition. The dispatcher first checks
     /// its finite goal/L0 normalization, then the fixed affine clauses, then
@@ -1296,6 +1297,7 @@ impl Analyzer<'_, '_> {
                     })
                 });
             let residual = self.render_relation(&relation);
+
             let entry_images = self.postcondition_entry_images[index]
                 .iter()
                 .map(|entry_index| PostconditionEntryImageOutcome {
@@ -1315,7 +1317,7 @@ impl Analyzer<'_, '_> {
                 statement,
                 &relation,
                 &states.facts,
-                affine_target.as_ref(),
+                affine_target.as_deref(),
                 &states.affine,
                 unavailable,
             );
@@ -1338,7 +1340,7 @@ impl Analyzer<'_, '_> {
         statement: &crate::NodePath,
         relation: &Relation,
         state: &FactState,
-        affine_target: Option<&AffineInequality>,
+        affine_target: Option<&[AffineInequality]>,
         affine_state: &AffineFlowState,
         unavailable: bool,
     ) -> PostconditionExitProof {
@@ -1402,15 +1404,38 @@ impl Analyzer<'_, '_> {
         &mut self,
         relation: &Relation,
         state: &AffineFlowState,
-    ) -> Option<AffineInequality> {
-        let Relation::Bound { left, right, bound } = relation else {
-            return None;
+    ) -> Option<Vec<AffineInequality>> {
+        let (left, right, difference, equal) = match relation {
+            Relation::Bound { left, right, bound } => (*left, *right, *bound, false),
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => (*left, *right, *difference, true),
+            _ => return None,
         };
-        let left = self.affine_term_value(*left, state)?;
-        let right = self.affine_term_value(*right, state)?;
+        let left = self.affine_term_value(left, state)?;
+        let right = self.affine_term_value(right, state)?;
         let mut check = AffineCheckState::new();
-        let right = right.add(&AffineForm::constant(*bound), &mut check).ok()?;
-        AffineInequality::from_forms(&left, &right, &mut check).ok()
+        let right = right
+            .add(&AffineForm::constant(difference), &mut check)
+            .ok()?;
+        Self::affine_ordering_targets(&left, &right, equal)
+    }
+
+    /// Equality is the conjunction of its two ordinary affine bounds. Both
+    /// are checked by the same deterministic numeric derivation as <=.
+    fn affine_ordering_targets(
+        left: &AffineForm,
+        right: &AffineForm,
+        equal: bool,
+    ) -> Option<Vec<AffineInequality>> {
+        let mut check = AffineCheckState::new();
+        let mut targets = vec![AffineInequality::from_forms(left, right, &mut check).ok()?];
+        if equal {
+            targets.push(AffineInequality::from_forms(right, left, &mut check).ok()?);
+        }
+        Some(targets)
     }
 
     fn postcondition_affine_target(
@@ -1418,27 +1443,28 @@ impl Analyzer<'_, '_> {
         postcondition: &CheckedPostcondition,
         result: &AffineForm,
         state: &AffineFlowState,
-    ) -> Option<AffineInequality> {
+    ) -> Option<Vec<AffineInequality>> {
         let operands = postcondition
             .relation
             .operands
             .iter()
             .map(|operand| {
-                let form = self.postcondition_affine_datum(&operand.datum, result, state)?;
-                form.add(
-                    &AffineForm::constant(operand.displacement),
-                    &mut AffineCheckState::new(),
-                )
-                .ok()
+                self.postcondition_affine_datum(&operand.datum, result, state)?
+                    .add(
+                        &AffineForm::constant(operand.displacement),
+                        &mut AffineCheckState::new(),
+                    )
+                    .ok()
             })
             .collect::<Option<Vec<_>>>()?;
-        let NormalizedRelation::UpperBound {
-            left,
-            right,
-            strict,
-        } = postcondition.relation.normalized
-        else {
-            return None;
+        let (left, right, strict, equal) = match postcondition.relation.normalized {
+            NormalizedRelation::UpperBound {
+                left,
+                right,
+                strict,
+            } => (left, right, strict, false),
+            NormalizedRelation::Equal => (0, 1, false, true),
+            NormalizedRelation::NotEqual => return None,
         };
         let left = operands.get(left as usize)?;
         let right = operands.get(right as usize)?;
@@ -1449,7 +1475,7 @@ impl Analyzer<'_, '_> {
         } else {
             right.clone()
         };
-        AffineInequality::from_forms(left, &right, &mut AffineCheckState::new()).ok()
+        Self::affine_ordering_targets(left, &right, equal)
     }
 
     fn postcondition_affine_datum(
@@ -1751,6 +1777,15 @@ impl Analyzer<'_, '_> {
                     if let Some(datum) = self.terms.interned(&kind) {
                         return Some(datum);
                     }
+                    let binding = self.function.parameters.get(ordinal as usize)?.binding;
+                    self.postcondition_measure_term(
+                        *measure,
+                        PlaceRoot::Binding(binding),
+                        &place.projections,
+                        place.ty,
+                    )
+                }
+                PostconditionPlaceRoot::ExitParameter { ordinal } => {
                     let binding = self.function.parameters.get(ordinal as usize)?.binding;
                     self.postcondition_measure_term(
                         *measure,
@@ -2232,8 +2267,12 @@ impl Analyzer<'_, '_> {
         &self,
         substitutions: &[PostconditionCallSubstitution],
         events: &[KillEvent],
+        call_transfer: bool,
     ) -> bool {
         substitutions.iter().all(|substitution| {
+            if call_transfer && substitution.exit_state {
+                return true;
+            }
             events
                 .iter()
                 .all(|event| !self.s12_transfer_event_kills_substitution(substitution, event))
@@ -2402,7 +2441,12 @@ impl Analyzer<'_, '_> {
         }
         let event = self.proof_event(FlowEventKind::S13, Some(call));
         for (ordinal, projections, measure, ty) in operands {
-            if parameter_modes.get(ordinal as usize) != Some(&CheckedMode::Own) {
+            let Some(mode) = parameter_modes.get(ordinal as usize).copied() else {
+                continue;
+            };
+            if mode != CheckedMode::Own
+                && !(measure.is_some() && matches!(mode, CheckedMode::Unique(_)))
+            {
                 continue;
             }
             let Some(datum_type) = (if measure.is_some() {
@@ -2419,8 +2463,7 @@ impl Analyzer<'_, '_> {
             let Some(actual) = goal_arguments.get(ordinal as usize) else {
                 continue;
             };
-            let Some(term) =
-                self.call_parameter_term(actual, &projections, ty, measure, CheckedMode::Own)
+            let Some(term) = self.call_parameter_term(actual, &projections, ty, measure, mode)
             else {
                 continue;
             };
@@ -2560,6 +2603,16 @@ impl Analyzer<'_, '_> {
                             ),
                         }
                     }
+                    PostconditionPlaceRoot::ExitParameter { ordinal } => (
+                        self.call_parameter_term(
+                            arguments.get(ordinal as usize)?,
+                            &place.projections,
+                            place.ty,
+                            Some(*measure),
+                            *parameter_modes.get(ordinal as usize)?,
+                        )?,
+                        Some((ordinal, false)),
+                    ),
                     // [CALL-4] the destination supplies one place per
                     // declared result ordinal, and this operand is that
                     // place's measure rather than its value.
@@ -2584,6 +2637,16 @@ impl Analyzer<'_, '_> {
                         arguments.get(formal as usize)?,
                     ),
                     datum,
+                    exit_state: matches!(
+                        &term_operand.datum,
+                        RelationDatum::Measure(
+                            _,
+                            PostconditionPlace {
+                                root: PostconditionPlaceRoot::ExitParameter { .. },
+                                ..
+                            }
+                        )
+                    ),
                 });
             }
             operands.push((term, term_operand.displacement));
@@ -2744,11 +2807,14 @@ impl Analyzer<'_, '_> {
         let result_term = fragment_type(*result)
             .and_then(|_| self.postcondition_place_term(PlaceRoot::Binding(binding), &[], *result));
         let result_place = Some((PlaceRoot::Binding(binding), Vec::new(), *result));
-        if result_term.is_none() && measured_kind(*result).is_none() {
-            return;
-        }
         for available in self.available_postconditions(*function) {
-            if available.variant.is_some() {
+            if available.variant.is_some()
+                || !available
+                    .relation
+                    .operands
+                    .iter()
+                    .any(|term| term.contains_result())
+            {
                 continue;
             }
             let Some(instantiated) = self.instantiate_call_postcondition_relation(
@@ -2762,7 +2828,7 @@ impl Analyzer<'_, '_> {
             ) else {
                 continue;
             };
-            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills) {
+            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills, true) {
                 continue;
             }
             self.retain_direct_result(
@@ -2849,7 +2915,13 @@ impl Analyzer<'_, '_> {
         for available in self.available_postconditions(*function) {
             // A variant-routed relation is restricted to its arm [CALL-6];
             // a binder or target list enters no arm.
-            if available.variant.is_some() {
+            if available.variant.is_some()
+                || !available
+                    .relation
+                    .operands
+                    .iter()
+                    .any(|term| term.contains_result())
+            {
                 continue;
             }
             let Some(instantiated) = self.instantiate_call_postcondition_relation(
@@ -2863,8 +2935,8 @@ impl Analyzer<'_, '_> {
             ) else {
                 continue;
             };
-            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills)
-                || !self.s12_substitutions_survive(&instantiated.substitutions, extra_kills)
+            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills, true)
+                || !self.s12_substitutions_survive(&instantiated.substitutions, extra_kills, false)
             {
                 continue;
             }
@@ -3022,7 +3094,13 @@ impl Analyzer<'_, '_> {
         self.available_postconditions(*function)
             .into_iter()
             .filter_map(|available| {
-                if available.variant.is_some() {
+                if available.variant.is_some()
+                    || !available
+                        .relation
+                        .operands
+                        .iter()
+                        .any(|term| term.contains_result())
+                {
                     return None;
                 }
                 let instantiated = self.instantiate_call_postcondition_relation(
@@ -3038,8 +3116,16 @@ impl Analyzer<'_, '_> {
                     .substitutions
                     .iter()
                     .any(|substitution| substitution.formal == route.formal)
-                    || !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills)
-                    || !self.s12_substitutions_survive(&instantiated.substitutions, target_events)
+                    || !self.s12_substitutions_survive(
+                        &instantiated.substitutions,
+                        &prepared.kills,
+                        true,
+                    )
+                    || !self.s12_substitutions_survive(
+                        &instantiated.substitutions,
+                        target_events,
+                        false,
+                    )
                 {
                     return None;
                 }
@@ -3177,7 +3263,7 @@ impl Analyzer<'_, '_> {
             ) else {
                 continue;
             };
-            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills) {
+            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills, true) {
                 continue;
             }
             let route = DirectMatchRoute {
@@ -3300,6 +3386,7 @@ impl Analyzer<'_, '_> {
         if !self.s12_substitutions_survive(
             &direct_match.instantiated.substitutions,
             std::slice::from_ref(&target_kill),
+            false,
         ) {
             return None;
         }
@@ -3654,7 +3741,8 @@ impl Analyzer<'_, '_> {
                             place.ty,
                         )),
                         // A result place is not a parameter entry image.
-                        PostconditionPlaceRoot::Result { .. } => None,
+                        PostconditionPlaceRoot::Result { .. }
+                        | PostconditionPlaceRoot::ExitParameter { .. } => None,
                     },
                     RelationDatum::Result { .. }
                     | RelationDatum::NamedConst { .. }
@@ -7122,7 +7210,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         context: ProofContext<'_>,
         relation: &Relation,
-        affine_target: Option<&AffineInequality>,
+        affine_target: Option<&[AffineInequality]>,
     ) -> ProofResult {
         let closed = close(
             context.facts,
@@ -7162,7 +7250,7 @@ impl Analyzer<'_, '_> {
             };
         }
 
-        let Some(target) = affine_target else {
+        let Some(targets) = affine_target else {
             return ProofResult {
                 disposition: ProofDisposition::Unknown,
                 route: None,
@@ -7172,21 +7260,27 @@ impl Analyzer<'_, '_> {
             };
         };
         let assumptions = Self::affine_facts(context.affine);
-        let Some(proof) =
-            self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-        else {
-            return ProofResult {
-                disposition: ProofDisposition::Unknown,
-                route: None,
-                derivation: None,
-                numeric_upper_bound: None,
-                product_interval: None,
+        let mut premises = Vec::new();
+        let mut parents = Vec::new();
+        for target in targets {
+            let Some(proof) =
+                self.affine_target_proof(target, &assumptions, context.affine, context.facts)
+            else {
+                return ProofResult {
+                    disposition: ProofDisposition::Unknown,
+                    route: None,
+                    derivation: None,
+                    numeric_upper_bound: None,
+                    product_interval: None,
+                };
             };
-        };
+            premises.extend(proof.premises);
+            parents.extend(proof.parents);
+        }
         let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
             relation: None,
-            premises: proof.premises.into_boxed_slice(),
-            parents: proof.parents,
+            premises: premises.into_boxed_slice(),
+            parents,
         });
         ProofResult {
             disposition: ProofDisposition::Proved,
@@ -11294,7 +11388,7 @@ impl Analyzer<'_, '_> {
                     },
                     |relation| ProofGoal::Ordering {
                         relation,
-                        affine: Some(premise),
+                        affine: Some(std::slice::from_ref(premise)),
                     },
                 );
                 self.prove(ProofContext::new(facts, values), goal)
@@ -12414,7 +12508,72 @@ impl Analyzer<'_, '_> {
         } else {
             self.apply_kills(state, &events);
         }
+        if let Some(prepared) = &judgment.prepared_call {
+            self.establish_call_state(expression, prepared, &mut state.facts);
+        }
         judgment
+    }
+
+    /// A relation over exclusive exit state needs no result destination.
+    /// It is established after the call's effects; enclosing commits and
+    /// scope exits kill its ordinary place support in the normal flow.
+    fn establish_call_state(
+        &mut self,
+        expression: &CheckedExpression,
+        prepared: &PreparedCall,
+        state: &mut FactState,
+    ) {
+        if matches!(prepared.callee, PreparedCallee::Kernel(_)) {
+            self.establish_kernel_relations(&prepared.call, &[], expression, prepared, state);
+            return;
+        }
+        let CheckedExpression::UserCall {
+            function,
+            call,
+            arguments,
+            goal_arguments,
+            ..
+        } = expression
+        else {
+            return;
+        };
+        for available in self.available_postconditions(*function) {
+            if available.variant.is_some()
+                || available
+                    .relation
+                    .operands
+                    .iter()
+                    .any(|term| term.contains_result())
+            {
+                continue;
+            }
+            let Some(instantiated) = self.instantiate_call_postcondition_relation(
+                *function,
+                call,
+                &available.relation,
+                arguments,
+                goal_arguments,
+                &[],
+                &[],
+            ) else {
+                continue;
+            };
+            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills, true) {
+                continue;
+            }
+            let Some(proof) = self.retain_postcondition_call(&instantiated, &available, prepared)
+            else {
+                continue;
+            };
+            let occurrence = self.s12_roots;
+            self.s12_roots = self
+                .s12_roots
+                .checked_add(1)
+                .expect("S12 roots exceed the u32 identity space");
+            self.derivations
+                .add_root(DerivationRootKind::PostconditionState { occurrence }, proof);
+            state.establish_from_proof(&instantiated.relation, proof, &self.derivations);
+        }
     }
 
     /// The [ENT-5] commit kill of one `set` target, and the goal-origin and
@@ -14590,11 +14749,16 @@ impl Analyzer<'_, '_> {
                 projections,
                 measure,
             } => {
-                let mut place = self
-                    .function
-                    .parameters
-                    .get(*formal as usize)
-                    .map_or_else(|| "?".to_owned(), |parameter| parameter.name.clone());
+                let mut place = self.function.parameters.get(*formal as usize).map_or_else(
+                    || "?".to_owned(),
+                    |parameter| {
+                        if matches!(parameter.mode, CheckedMode::Unique(_)) {
+                            format!("entry({})", parameter.name)
+                        } else {
+                            parameter.name.clone()
+                        }
+                    },
+                );
                 for projection in projections {
                     match projection {
                         CallDatumProjection::Deref => place = format!("deref({place})"),

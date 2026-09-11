@@ -455,7 +455,8 @@ impl IrBuilder<'_> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         };
         let run = self.expression(run)?;
-        if self.value_type(run)? != run_type {
+        if !matches!(self.value_type(run)?, IrType::Address(referent) if referent.ty() == run_type)
+        {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         let value = match (boundary.places(), rest) {
@@ -474,34 +475,19 @@ impl IrBuilder<'_> {
         let taken = (!boundary.places())
             .then(|| self.define(element_type, IrOperation::RunTaken { row: boundary, run }))
             .transpose()?;
-        let handed_back = self.define(
-            run_type,
+        let completed = self.define(
+            IrType::Unit,
             IrOperation::RunBoundary {
                 row: boundary,
                 run,
                 value,
             },
         )?;
-        let Some(taken) = taken else {
-            if result_type == run_type {
-                return Ok(handed_back);
-            }
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        };
-        // The ordered result list [CALL-4] is one value of the row's
-        // compiler-owned result-list nominal, whose fields are `rest` then
-        // `value` in declared order.
-        let CheckedType::Nominal(nominal) = result else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        };
-        let nominal = self.erased(nominal);
-        self.define(
-            IrType::Nominal(nominal),
-            IrOperation::ConstructStruct {
-                nominal,
-                fields: vec![handed_back, taken],
-            },
-        )
+        match taken {
+            Some(taken) if result_type == element_type => Ok(taken),
+            None if result_type == IrType::Unit => Ok(completed),
+            _ => Err(LoweringFailure::InvalidCheckedProgram),
+        }
     }
 
     /// The run or extent value one measured place reads, projected out of its

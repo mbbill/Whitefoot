@@ -582,8 +582,14 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let window = slice_of(&values);
     set values[0_u64] = 1_u8;
@@ -598,8 +604,14 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let window = slice_of(&values);
     let taken = move values;
@@ -751,8 +763,14 @@ fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
     // cannot reach the write [PROV-3].
     let inner_view = br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region 'outer {
     region {
       let view = slice_of(&'outer values);
@@ -773,8 +791,14 @@ fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   let take_view = True();
   region {
     let view = slice_of(&values);
@@ -795,8 +819,14 @@ fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
     // refuse is admitted inside that same region [PROV-3].
     let dead_view = br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let view = slice_of(&values);
     let seen = view[0_u64];
@@ -814,8 +844,14 @@ fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
 
     let ended_region = br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let view = slice_of(&values);
   }
@@ -836,8 +872,14 @@ fn slice_loans_follow_structured_break_region_exits() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let view = slice_of(&values);
     loop @once {
@@ -855,8 +897,14 @@ fn slice_loans_follow_structured_break_region_exits() {
 
     let ended_on_break = br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   loop @once {
     let view = slice_of(&values);
     break @once;
@@ -877,8 +925,14 @@ fn slice_loans_follow_structured_break_region_exits() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region 'r {
     loop @once {
       let view = slice_of(&'r values);
@@ -907,9 +961,15 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
     let direct_move = format!(
         r#"{OWNER}command fn main() -> status: own ExitStatus pure {{
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }}
+  let source = move source_empty;
   let sibling_empty = fixed_vector::<u8, 1>();
-  let sibling = place_back(vector: move sibling_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq sibling_empty, value: 0_u8);
+  }}
+  let sibling = move sibling_empty;
   let owner = Owner(source: move source, sibling: move sibling);
   region {{
     let view = slice_of(&owner.source);
@@ -933,9 +993,15 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
 
 command fn main() -> status: own ExitStatus pure {{
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }}
+  let source = move source_empty;
   let sibling_empty = fixed_vector::<u8, 1>();
-  let sibling = place_back(vector: move sibling_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq sibling_empty, value: 0_u8);
+  }}
+  let sibling = move sibling_empty;
   let owner = Owner(source: move source, sibling: move sibling);
   region {{
     let view = slice_of(&owner.source);
@@ -964,9 +1030,15 @@ struct Owner {
 
 command fn main() -> status: own ExitStatus pure {
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }
+  let source = move source_empty;
   let sibling_value_empty = fixed_vector::<u8, 1>();
-  let sibling_value = place_back(vector: move sibling_value_empty, value: 0_u8);
+  region {
+    place_back(vector: &uniq sibling_value_empty, value: 0_u8);
+  }
+  let sibling_value = move sibling_value_empty;
   let sibling = Full(value: move sibling_value);
   let owner = Owner(source: move source, sibling: move sibling);
   region {
@@ -991,12 +1063,21 @@ command fn main() -> status: own ExitStatus pure {
     let given = format!(
         r#"{OWNER}command fn main() -> status: own ExitStatus pure {{
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }}
+  let source = move source_empty;
   let sibling_empty = fixed_vector::<u8, 1>();
-  let sibling = place_back(vector: move sibling_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq sibling_empty, value: 0_u8);
+  }}
+  let sibling = move sibling_empty;
   let owner = Owner(source: move source, sibling: move sibling);
   let spare_empty = fixed_vector::<u8, 1>();
-  let spare = place_back(vector: move spare_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq spare_empty, value: 0_u8);
+  }}
+  let spare = move spare_empty;
   let choose_owner = True();
   region {{
     let view = slice_of(&owner.source);
@@ -1044,9 +1125,15 @@ command fn main() -> status: own ExitStatus pure {
     let ended_region = format!(
         r#"{OWNER}command fn main() -> status: own ExitStatus pure {{
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }}
+  let source = move source_empty;
   let sibling_empty = fixed_vector::<u8, 1>();
-  let sibling = place_back(vector: move sibling_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq sibling_empty, value: 0_u8);
+  }}
+  let sibling = move sibling_empty;
   let owner = Owner(source: move source, sibling: move sibling);
   region {{
     let view = slice_of(&owner.source);
@@ -1072,8 +1159,14 @@ fn a_shared_view_is_no_set_target_and_an_exclusive_view_is() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let window = slice_of(&values);
     set window[0_u64] = 1_u8;
@@ -1101,7 +1194,7 @@ fn a_shared_view_is_no_set_target_and_an_exclusive_view_is() {
         invariant spare: room_of(values) + at >= 2_u64,
         invariant flat: head_of(values) <= 0_u64
       ) {
-        set values = place_back(vector: move values, value: 0_u8);
+        place_back(vector: &uniq values, value: 0_u8);
       }
       region {
         let window = mut_slice_of(&uniq values);
@@ -1131,8 +1224,14 @@ fn slice_formation_enforces_storage_duration_and_explicit_boundaries() {
     assert_rule_kind(
         br#"fn invalid['caller](anchor: &'caller u8) -> result: &'caller u8 pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   let window = slice_of(&'caller values);
   return anchor;
 }
@@ -1214,7 +1313,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     invariant spare: room_of(data) + at >= 4_u64,
     invariant flat: head_of(data) <= 0_u64
   ) {
-    set data = place_back(vector: move data, value: 0_u8);
+    place_back(vector: &uniq data, value: 0_u8);
   }
   region {
     region {
@@ -1244,7 +1343,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     invariant spare: room_of(data) + at >= 4_u64,
     invariant flat: head_of(data) <= 0_u64
   ) {
-    set data = place_back(vector: move data, value: 0_u8);
+    place_back(vector: &uniq data, value: 0_u8);
   }
   region {
     let view = slice_of(&data);
@@ -1272,7 +1371,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     invariant spare: room_of(data) + at >= 4_u64,
     invariant flat: head_of(data) <= 0_u64
   ) {
-    set data = place_back(vector: move data, value: 0_u8);
+    place_back(vector: &uniq data, value: 0_u8);
   }
   region 'view {
     slice_of::<'view, u8>(&data);
@@ -1301,11 +1400,23 @@ fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r,
 
 command fn main() -> status: own ExitStatus pure {
   let left_empty = fixed_vector::<u8, 2>();
-  let left_0 = place_back(vector: move left_empty, value: 11_u8);
-  let left = place_back(vector: move left_0, value: 11_u8);
+  region {
+    place_back(vector: &uniq left_empty, value: 11_u8);
+  }
+  let left_0 = move left_empty;
+  region {
+    place_back(vector: &uniq left_0, value: 11_u8);
+  }
+  let left = move left_0;
   let right_empty = fixed_vector::<u8, 2>();
-  let right_0 = place_back(vector: move right_empty, value: 29_u8);
-  let right = place_back(vector: move right_0, value: 29_u8);
+  region {
+    place_back(vector: &uniq right_empty, value: 29_u8);
+  }
+  let right_0 = move right_empty;
+  region {
+    place_back(vector: &uniq right_0, value: 29_u8);
+  }
+  let right = move right_0;
   region {
     let pass_source = slice_of(&left);
     let passed = pass(value: pass_source);
@@ -1342,10 +1453,10 @@ command fn main() -> status: own ExitStatus pure {
             CheckedSliceOrigin::ImmutableConst
         ));
 
-        // The two runs are built by `fixed_vector` plus one `place_back`
-        // each, which is three statements where `array_new` was one, so the
-        // view region is `main`'s seventh statement.
-        let CheckedStatement::Region { body, .. } = &checked.data.functions[2].body[6] else {
+        // The two runs are built by `fixed_vector` plus two `place_back`s
+        // each. Each unit call has its own region before the owning alias,
+        // so the view region is main's eleventh statement.
+        let CheckedStatement::Region { body, .. } = &checked.data.functions[2].body[10] else {
             panic!("main must retain the slice region");
         };
         let CheckedStatement::Let {
@@ -1429,11 +1540,23 @@ command fn main() -> status: own ExitStatus pure {
 
 command fn main() -> status: own ExitStatus pure {
   let left_empty = fixed_vector::<u8, 2>();
-  let left_0 = place_back(vector: move left_empty, value: 0_u8);
-  let left = place_back(vector: move left_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq left_empty, value: 0_u8);
+  }
+  let left_0 = move left_empty;
+  region {
+    place_back(vector: &uniq left_0, value: 0_u8);
+  }
+  let left = move left_0;
   let right_empty = fixed_vector::<u8, 2>();
-  let right_0 = place_back(vector: move right_empty, value: 0_u8);
-  let right = place_back(vector: move right_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq right_empty, value: 0_u8);
+  }
+  let right_0 = move right_empty;
+  region {
+    place_back(vector: &uniq right_0, value: 0_u8);
+  }
+  let right = move right_0;
   region {
     let left_view = slice_of(&left);
     let right_view = slice_of(&right);
@@ -1479,15 +1602,8 @@ command fn main() -> status: own ExitStatus pure {
     // view over the very storage it hands to the unique position reaches one
     // place twice, once uniquely.
     //
-    // B7c4b left this program on the retiring surface. Two things stand
-    // between it and a run: `&uniq` may no longer reach a run at all, which
-    // is [BLK-4]'s `UniqueParameterReachesContainer`, and the exclusive view
-    // that replaces such a parameter is a *bound* view value, which
-    // `argument_place` resolves to nothing — the footprint-resolver gap 6.0v
-    // recorded for [PAR] and [OWN-12] alike. Both migrated shapes therefore
-    // record an accept rather than this refusal. It retires with `buffer<T>`,
-    // or lands again when the footprint resolver gains its
-    // declaration-to-binding map.
+    // Keep this legacy descriptor control beside the run/view overlap cases:
+    // the shared view and unique actual must resolve to the same storage.
     assert_rule(
         br#"fn consume(view: own Slice<u8>, output: &uniq buffer<u8>) -> result: own unit pure {
   return unit;

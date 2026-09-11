@@ -17,7 +17,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare_values: room_of(values) + at_values >= 12_u64,
     invariant flat_values: head_of(values) <= 0_u64
   ) {
-    set values = place_back(vector: move values, value: 0_u8);
+    place_back(vector: &uniq values, value: 0_u8);
   }
   let index = last_index(values: move values);
   if index == 11_u64 {

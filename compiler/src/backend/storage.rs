@@ -814,7 +814,6 @@ impl FlowInstruction {
                 result, operation, ..
             } => {
                 let reuse = match operation {
-                    IrOperation::RunBoundary { run, .. } => Some(index(*run)),
                     IrOperation::InsertStruct { aggregate, .. } => Some(index(*aggregate)),
                     IrOperation::Call { .. } => {
                         call_reuse_operand(program, function, *result, operation)?.map(index)
@@ -1795,7 +1794,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare: room_of(built) + at >= 8_u64,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: 1_u64);
+    place_back(vector: &uniq built, value: 1_u64);
   }
   return exit_status(code: 0_u8);
 }

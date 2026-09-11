@@ -1521,9 +1521,8 @@ command fn main() -> status: own ExitStatus pure {
 /// nothing.
 #[test]
 fn an_unresolvable_loan_actual_denies_rather_than_dropping_the_loan() {
-    // [BLK-4] refuses the `&uniq Slice<u8>` parameter this fixture first
-    // took, so the loan actual is a shared borrow of a view binding. The view
-    // is the *parameter* rather than a local formed over named storage: a
+    // The loan actual is a shared borrow of a view binding. The view is the
+    // *parameter* rather than a local formed over named storage: a
     // view is a claim on the storage it was formed over [VIEW-1], and the
     // judgment now reads a local formation through to that origin, so a view
     // this function received is the shape whose place stays unresolvable.

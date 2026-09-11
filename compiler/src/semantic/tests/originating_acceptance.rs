@@ -231,14 +231,14 @@ fn an_external_call_actual_needs_a_real_control_flow_fact() {
 
 "#;
     let direct = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    let bytes = place_back(vector: move empty, value: 0_u8);\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
+        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    region {{\n      place_back(vector: &uniq empty, value: 0_u8);\n    }}\n    let bytes = move empty;\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
     );
     rejects_as(direct.as_bytes(), SemanticRule::Fn8, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
     });
 
     let guarded = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    let bytes = place_back(vector: move empty, value: 0_u8);\n    let spare = len_of(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
+        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    region {{\n      place_back(vector: &uniq empty, value: 0_u8);\n    }}\n    let bytes = move empty;\n    let spare = len_of(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
     );
     accepts(guarded.as_bytes());
 }

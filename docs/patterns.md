@@ -43,10 +43,10 @@ in-place writes. Those are unrepresentable here BY DESIGN.
 
 Problem: many homogeneous-ish nodes with cross-references (AST, graph, ECS).
 Pattern: one struct of parallel `Vector<'s, T>` columns plus a count; a node is
-a `u64` index; indices never recycle; the whole pool drops at once. Appends go
-**by value**: [BLK-4] refuses a `&uniq` parameter whose referent reaches a run,
-so a helper that grows a column takes the column and returns it, or is handed a
-view of it and writes elements through that. Current v0.17 executable reference for the
+a `u64` index; indices never recycle; the whole pool drops at once. A helper
+that appends takes the column through `&uniq` and states its length transition
+using `entry(column)` in an ensures [BLK-3, MSR-3]; a helper restricted to
+existing elements can take a view. Executable reference for the
 fixed-capacity append-only shape:
 `tests/conformance/cases/x-borrowed-pool-tree-run.wf`.
 Current value: contiguous per-field columns improve locality and avoid
@@ -649,11 +649,11 @@ At a call the transports decide which of those two a projected callee write is:
   copy one: a `Slice` handed at an `own` parameter leaves the caller's place and
   its facts standing, which is what lets a view-taking helper be called in a
   loop [CALL-2];
-- **every other `&uniq` parameter** — a `&uniq Heap<'s>` or a
-  `&uniq Arena<'s, ...>` provider among them — selects no transport and kills
-  the actual's descriptor storage, whatever the callee's body does [CALL-5]. A
-  run is never in this bullet: [BLK-4] refuses a `&uniq` parameter that reaches
-  one at all.
+- **every other `&uniq` parameter**, including runs and storage providers,
+  applies the callee's exact declared writes to the actual's resolved places.
+  Each overlapping descriptor fact dies; disjoint supports survive. Verified
+  ensures then establish exit facts. An exclusive parameter absent from the
+  write row causes no write kill [CALL-5, CALL-6].
 
 So the helper that fills a caller's storage without costing it the length takes
 `destination: &uniq MutSlice<u8>`, and the caller forms the view:
@@ -734,8 +734,8 @@ The clause and the invariant now share one production [GRAM-4, GRAM-5, MSR-5],
 so what a loop header may state a contract may state too:
 
 ```whitefoot
-requires at + 2_u64 <= len_of(vector);
-ensures len_of(rest) + 1_u64 == len_of(vector);
+requires at + 2_u64 <= len_of(deref(vector));
+ensures len_of(deref(vector)) + 1_u64 == len_of(deref(entry(vector)));
 ```
 
 Before this version the `+` was a [GRAM-2] parse rejection at the operator, and
@@ -876,29 +876,37 @@ write its own parameter back and every clause naming it still means what it
 read as at entry:
 
 ```whitefoot
-fn try_place(vector: own FixedVector<u8, 4>, value: own u8)
-    -> (rest: own FixedVector<u8, 4>, unplaced: own Option<u8>)
-    reads(vector), writes(vector) contract {
-  ensures len_of(rest) <= len_of(vector) + 1_u64;
+fn rebuild(vector: own FixedVector<u8, 4>)
+    -> result: own FixedVector<u8, 4> reads(vector), writes(vector) contract {
+  requires len_of(vector) == 1_u64;
+  ensures len_of(result) == len_of(vector) + 1_u64;
 } {
-  set vector = place_back(vector: move vector, value: value);
+  let fresh = fixed_vector::<u8, 4>();
+  region {
+    place_back(vector: &uniq fresh, value: 7_u8);
+    place_back(vector: &uniq fresh, value: 9_u8);
+  }
+  let old = replace vector = move fresh;
+  return move vector;
+}
 ```
 
-Before this version the `set` killed `len_of(vector)` and the clause was
-unproved, so the shape this pattern recommends could not be used in any
-function with a contract over the value it commits.
+The result is newly constructed storage. Replacing the incoming owner's local
+binding does not change the entry datum named by `len_of(vector)` in the
+contract. An ordinary mutation helper instead takes `&uniq` and relates its
+exit measure to `entry(parameter)`, as in P21.
 
 **And a `let` that only renames a measured value keeps its measures.** The same
 former stands at the rebind, so `let built = move spare;` carries every measure
 `spare` had onto `built`; a rename is not a place a proof falls out of. The
-other four naming events — a `construct`, a [LIV-2] `set` target, a `match`
-payload binder and a destructuring binder — do not carry them yet, so a
-measured value that reaches its new name through one of those arrives with no
-measures and the fact has to be re-established from the operation that
-published it.
+other placements admitted by [MSR-3] carry the same source/destination relation:
+a measured `set` target, a displaced `replace` result, a construct field, a
+destructuring binder, and a payload binder of a single-payload-variant enum.
+Each requires the source place and offset shape stated by that rule; there is
+no arbitrary history of values pushed into and removed from a run.
 
-Replaces: a mutable accumulator parameter threaded by reference, `+=` into a
-caller's struct, and the three-line temporary-variable swap.
+Replaces: an unnecessary temporary-variable swap and manual reconstruction of
+a value whose old owner must be returned. Mutable run helpers use P21.
 
 ## P18. The loop's own buffer, published once
 
@@ -1128,53 +1136,51 @@ blocks were already narrower than their bodies.
 Replaces: the habit of opening a `region` block as the first line of every loop
 body.
 
-## P21. Hand the measure back by value, and never through a `&uniq`
+## P21. Mutate through an exclusive parameter and state both measures
 
-Status: active in v0.44. Two of its rules decide one writer choice together.
+Problem: a helper changes a run's initialized window, and its caller needs the
+new length without transporting the complete owning run into and out of the
+helper.
 
-Problem: a helper receives a run, does something with it, and the caller
-afterwards needs to know a measure of what it got back. The reflex is to lend
-the run — `fn fill(destination: &uniq Vector<'s, u8>, ...)`, which [BLK-4]
-refuses outright — and publish the
-measure from the callee: `ensures written <= len_of(deref(destination));`. That
-clause is a claim about a caller's object at a point the callee cannot name,
-because the callee may have replaced the very thing the measure describes, and
-[MSR-3] refuses it at the clause.
-
-Pattern: take the value by value and relate the *result*; state the fact the
-caller must supply as a `requires` instead of an `ensures`.
+Pattern: take the run through `&uniq`. In ensures, a bare measure of the
+referent is its exit state; `entry(parameter)` selects its entry state. Entry
+is proof-only, is admitted only directly on an exclusive formal in ensures,
+and is followed by the ordinary `deref` and field projections [MSR-3].
 
 ```whitefoot
-fn size_of['s](taken: own Vector<'s, u8>) -> measured: own u64 reads(taken) contract {
-  ensures measured == len_of(taken);
-} { ... }
-
-let run = /* one take from a store, matched on its refusal */;
-let measured = size_of(taken: move run);
+fn push(values: &uniq FixedVector<u64, 4>, value: own u64) -> result: own unit reads(values), writes(values) contract {
+  requires room_of(deref(values)) > 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values))) + 1_u64;
+} {
+  region {
+    place_back(vector: &uniq deref(values), value: value);
+  }
+  return unit;
+}
 ```
 
-The relation reads at the caller as it is written, and it survives the `move`
-in the very same statement, because an `own` operand of a published relation
-denotes that call's **call datum** [MSR-3] — the value at transfer, a term
-with no place in it, which no consume and no later write can kill. That is the
-whole reason the value-in form is not merely tolerated but preferred: a
-borrowed run's measure cannot be published at all, and a consumed run's can.
+The boundary rows mutate the borrowed run in place. Placements return unit;
+takes return only the removed element. Neither transfers the run owner or
+changes its backing address. Keep by-value input/output for an operation that
+creates a new owning value, such as the full-array conversions.
 
-The second half is a discipline on the contract as a set. Everything a
-contract publishes is closed together at the caller [ENT-4], so two clauses
-that cannot both hold do not make one caller goal wrong — they make every
-caller goal discharge. [CALL-6] refuses such a contract at its declaration, so
-write the clauses that hold and check that they hold together; a clause added
-"to be safe" that contradicts an earlier one is not conservative, it is the
-end of every proof downstream of the call.
+At a call, the exact projected write row first invalidates the old facts on
+its support. The verified ensures then relates the resolved exit place to
+immutable call datums recording entry. The same rule works through a nested
+field. A whole-referent replacement invalidates the old measure, and a live
+view still prevents an overlapping exclusive call. Without ensures, reread
+the measure and use an ordinary branch when both outcomes are intended
+program behavior; an impossible-case return is not a proof technique.
 
-Current value: measured on the v0.44 batch branch. The `ensures` over a consumed
-operand's measure is a real fact at the caller, where before v0.44 the
-consume in the same statement deleted it and the caller was left proving the
-measure again from its own allocation.
+`ensures len_of(deref(values)) == len_of(deref(values)) + 1_u64` is not a
+transition: both sides denote exit state, so [CALL-6] rejects the contradictory
+relation. Clauses are verified independently and their published set must
+also be consistent.
 
-Replaces: publishing a caller's post-state through a `&uniq` parameter, and
-re-measuring a run the caller just handed away.
+The [counted push/pop case](../tests/conformance/cases/run-exclusive-push-pop-counted.wf)
+shows these relations across loop edges; the
+[nested-field case](../tests/conformance/cases/run-exclusive-nested-field.wf)
+shows disjoint facts surviving the projected write.
 
 ## P22. Write `linear` for a logical obligation, and never for a storage one
 
@@ -1372,7 +1378,9 @@ region 'a {
   let workspace = arena_frame::<256, 8, 'a>();
   region {
     let page = arena_vector_proved::<u64>(store: &uniq workspace, count: 4_u64);
-    let one = place_back(vector: move page, value: 11_u64);
+    region {
+      place_back(vector: &uniq page, value: 11_u64);
+    }
   }
 }
 ```
@@ -1438,25 +1446,27 @@ in.
 Replaces: two functions with two signatures where one body would do, and
 `let limit = ...;`-style workarounds for a bound a declaration could not state.
 
-## P28. Take a run out of a run before you read it
+## P28. Borrow a contained run or take ownership of it
 
 A run's element type may itself be a run — `FixedVector<Vector<'s, u8>, 8>` is
 a free list of eight store-backed blocks, and `FixedVector<FixedVector<u8, 4>,
 4>` is a fixed grid — and the slot holds the element run's complete
 representation, its descriptor words included.
 
-An element that is a run is **affine**, and that decides how you read one:
+An element that is a run is **affine**. Borrow it to read or mutate it in
+place, or remove it when the caller needs its ownership:
 
 ```whitefoot
-let (rest, block) = take_back(vector: move free);   // the element comes out
-let width = cap_of(block);                          // and is read there
-let back = place_back(vector: move rest, value: move block);
+let block = take_back(vector: &uniq free);   // the element comes out
+let width = cap_of(block);                  // and is read there
+place_back(vector: &uniq free, value: move block);
 ```
 
 A bare `free[0_u64]` is [OWN-1]'s ordinary refusal at an affine element, exactly
-as it is for any other affine element type, so the two routes are the boundary
-rows [BLK-3] and the element-position exchange `let old = replace free[i] = e;`
-[SET-2]. Reach for `take_back` and `place_back` first: a free list is used at
+as it is for any other affine element type. `&free[i]` and `&uniq free[i]`
+borrow the element; the boundary rows [BLK-3] and the element-position exchange
+`let old = replace free[i] = e;` [SET-2] hand its owner out.
+Reach for `take_back` and `place_back` for a free list used at
 one end, and the pair is total under `room_of > 0` and `len_of > 0`.
 
 A helper over such a run is generic over the store the *elements* live in, and
@@ -1464,8 +1474,8 @@ A helper over such a run is generic over the store the *elements* live in, and
 level down, in the element position, and the actual determines it.
 
 ```whitefoot
-fn pool_take['s: affine](free: own FixedVector<Vector<'s, u8>, 8>)
-    -> (rest: own FixedVector<Vector<'s, u8>, 8>, leased: own Option<Vector<'s, u8>>)
+fn pool_take['s: affine](free: &uniq FixedVector<Vector<'s, u8>, 8>)
+    -> leased: own Option<Vector<'s, u8>>
 ```
 
 A measure of an element is an ordinary term — `len_of(free[i])`, `cap_of(free[i])`
@@ -1476,7 +1486,9 @@ come out for it:
 let rows = len_of(grid);
 if rows > 0_u64 {
   let width = len_of(grid[0_u64]);          // the element's own descriptor
-  let cell = grid[0_u64][0_u64];            // and, for a copy element, its slot
+  if width > 0_u64 {
+    let cell = grid[0_u64][0_u64];          // a proved initialized copy element
+  }
 }
 ```
 
@@ -1497,31 +1509,37 @@ reaches exactly the two routes that name the position:
 ```whitefoot
 let spare = replace free[0_u64] = move fresh;   // free[0]'s measures are fresh's
 let held = replace free[0_u64] = move other;    // held's measures are fresh's
-let filled = place_back(vector: move held, value: 3_u8);   // and this discharges
+region {
+  place_back(vector: &uniq held, value: 3_u8);  // and this discharges
+}
 ```
 
 The boundary rows are the exception, and they are the common case, so plan for
-it: `place_back` puts its value at position `len_of(vector)` and `take_back`
-takes one from position `len_of(rest)`, and neither is an offset the place rules
+it: `place_back` puts its value at the referent's entry length and `take_back`
+takes one from its exit length, and neither is an offset the place rules
 can name. **A block pushed onto a free list with `place_back` and leased off it
 with `take_back` therefore comes back with no measures of its own**, and a
 caller that needs its room reads `room_of` once and branches:
 
 ```whitefoot
-let (rest, block) = take_back(vector: move free);
+let block = take_back(vector: &uniq free);
 let spare = room_of(block);
 if spare > 0_u64 {
-  let filled = place_back(vector: move block, value: 7_u8);
+  region {
+    place_back(vector: &uniq block, value: 7_u8);
+  }
 }
 ```
 
-That branch is not a workaround for a missing check; it is the honest price of a
-capacity that lives in a descriptor rather than in a type. Reach for
+The branch handles the returned block's current room at runtime. A fixed
+capacity type retains its capacity, but its current length can still vary;
+the limitation here is the boundary row's missing element-state relation.
+Reach for
 `replace free[i] = e` when the position is written and you want the figure to
 travel, and for the boundary rows when you want the end of the run.
 
-One limit remains: one level of *element* is what exists, so a run of runs of
-runs is an unsupported capability.
+Nested owners use the same ownership and measure rules. A measure of an
+element must still use a place and offset that [MSR-1] can name.
 
 Replaces: an `Option<T>` slot array standing in for a run of runs, a parallel
 array of lengths beside a run of buffers, and a hand-written `cap` field beside
@@ -1578,8 +1596,8 @@ At a call you write **nothing**: a parameter whose type names the nominal's
 region determines it from the actual, exactly as `Vector<'s, T>` does.
 
 ```whitefoot
-fn pool_take['s: affine](pool: own BlockPool<'s>)
-    -> (rest: own BlockPool<'s>, leased: own Option<Lease<'s>>)
+fn pool_take['s: affine](pool: &uniq BlockPool<'s>)
+    -> leased: own Option<Lease<'s>>
 ```
 
 Two instances at two regions are two types, and a store region is invariant: a
@@ -1598,7 +1616,9 @@ not lose its room by being put in a `Lease` and taken out again:
 ```whitefoot
 let ticket = Lease(run: move block);          // lease.run has block's measures
 let Lease(run: back) = move ticket;           // and back has lease.run's
-let filled = place_back(vector: move back, value: 7_u8);
+region {
+  place_back(vector: &uniq back, value: 7_u8);
+}
 ```
 
 The same holds through an enum whose nominal has **one** payload-carrying
@@ -1614,7 +1634,7 @@ header-created child ends before the selected arm, so later statements in that
 arm may reuse the store while the acquired owned value remains live. A preceding
 `let` plus a later match still cannot share that child's local region. Separately,
 a contract clause may name a measure of a **parameter**'s field
-(`requires room_of(pool.free) > 0_u64;`) but not of a *result*'s, so a caller
+(`requires room_of(deref(pool).free) > 0_u64;`) but not of a *result*'s, so a caller
 that needs a figure about a returned nominal reads it and branches.
 
 Replaces: threading the bare container the struct would have held through every
@@ -1697,7 +1717,7 @@ inside the same region block, so
 ```whitefoot
 let window = slice_of(&run);
 let sum = total(window: window);
-let longer = place_back(vector: move run, value: 9_u8);
+place_back(vector: &uniq run, value: 9_u8);
 ```
 
 compiles, while moving the `place_back` above the `total` call does not. A

@@ -34,7 +34,7 @@ fn growth_trace(store: &uniq Heap, seed: own u8, initial: own u64, count: own u6
         ) {
           let product = state *wrap 73_u8;
           set state = product +wrap 41_u8;
-          set original = place_back(vector: move original, value: state);
+          place_back(vector: &uniq original, value: state);
         }
         if count == initial {
           region {
@@ -62,7 +62,7 @@ fn growth_trace(store: &uniq Heap, seed: own u8, initial: own u64, count: own u6
                 invariant flat: head_of(grown) <= 0_u64
               ) {
                 let byte = original[index];
-                set grown = place_back(vector: move grown, value: byte);
+                place_back(vector: &uniq grown, value: byte);
               }
               dispose original;
               for (
@@ -74,7 +74,7 @@ fn growth_trace(store: &uniq Heap, seed: own u8, initial: own u64, count: own u6
               ) {
                 let product = state *wrap 73_u8;
                 set state = product +wrap 41_u8;
-                set grown = place_back(vector: move grown, value: state);
+                place_back(vector: &uniq grown, value: state);
               }
               region {
                 return digest(run: &grown, status: 1_u64);

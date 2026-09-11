@@ -34,7 +34,7 @@ fn fold['r](left: own Slice<'r, u64>, right: own Slice<'r, u64>, length: own u64
 }
 
 command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Two store runs held in one struct are written and read through views of their own fields: [BLK-4] refuses a `&uniq` of a run, so the two columns are lent as exclusive views and read back as shared ones, and the caller keeps both lengths across each call [CALL-3].";
+  doc "Two store runs held in one struct are written and read through views of their fields. Exclusive views lend only the element storage; shared views read it back, and the caller keeps both window lengths across these element-only calls [CALL-3].";
   let length = 4_u64;
   region {
     match heap_vector::<u64>(store: &uniq heap, count: length) {
@@ -49,7 +49,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
           invariant spare_left: room_of(left) + at >= 4_u64,
           invariant flat_left: head_of(left) <= 0_u64
         ) {
-          set left = place_back(vector: move left, value: 0_u64);
+          place_back(vector: &uniq left, value: 0_u64);
         }
         match heap_vector::<u64>(store: &uniq heap, count: length) {
           None() => {
@@ -63,7 +63,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
               invariant spare_right: room_of(right) + at >= 4_u64,
               invariant flat_right: head_of(right) <= 0_u64
             ) {
-              set right = place_back(vector: move right, value: 0_u64);
+              place_back(vector: &uniq right, value: 0_u64);
             }
             let columns = Columns(left: move left, right: move right);
             let fill_left_length = len_of(columns.left);

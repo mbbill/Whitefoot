@@ -17,9 +17,10 @@ boundaries before selecting a new storage permission.** The
 [full-array experiment](#selected-full-array-experiment) now has
 [native ownership and layout evidence](../../experiments/container-representation/foundation/RESULTS.md#dense-full-array-operations).
 The [generic brand boundary](#generic-brand-parameters) now preserves explicit
-type brands through ordinary helpers. Current owner routing below remains a
-separate correctness and composability gap. Projected slot layout
-remains the selected sparse-storage experiment;
+type brands through ordinary helpers. The selected [exclusive two-state interface](#exclusive-two-state-run-contracts)
+removes run mutation's owned round trip. The D2 enum-slot measurements do not
+yet justify a compiler-known projected sparse layout; ordinary owning slots
+remain the measured baseline. Remaining owner-routing limits below are separate;
 a general library resource-permission system remains its bounded challenger,
 not the public foundation. Neither choice claims coverage of every system
 container.
@@ -36,7 +37,7 @@ capability. [REASSESSMENT.md](REASSESSMENT.md) records the merged owned-place wo
 The [external study](EXTERNAL-WORKLOADS.md) owns pinned source observations, and
 [representation experiments](../../experiments/container-representation/README.md)
 own executable evidence. The completed implementation experiments below include
-general compiler repairs and bounded storage-reuse optimizations without a new
+general compiler repairs and bounded storage-reuse optimizations; the earlier work had no new
 source interface. The selected full-array experiment is a language amendment
 with two kernel rows; its design is not evidence that implementation is complete.
 
@@ -1614,3 +1615,88 @@ The complete gate is still not green: the current endpoint checkpoint's new
 loop fixture is rejected for an invalid invariant equality before its intended
 assertions execute. Neither this loan-endpoint result nor those later repairs
 complete the broader container scenario and performance requirements.
+
+### Exclusive two-state run contracts
+
+The owner selected this interface after the D1 transfer attribution and D2 owning
+map experiment. Mutation takes `&uniq`; owned input/output remains appropriate
+for constructing or converting a value. D1's proposed guaranteed same-place
+owned call contract was dropped. Its dated measurements remain evidence, not a
+pending interface proposal. The [D5 measurements](../../experiments/container-representation/families/RESULTS.md#exclusive-two-state-contracts)
+compare the selected interface against the same retained C helper controls.
+
+The requirement is modular proof with native mutable-call cost, not a smaller
+surface at any cost. A caller must know which state the contract names without
+reading a helper body. A helper must be able to prove its new window length at
+its normal returns. These requirements select two explicit times:
+
+```wf
+fn push(values: &uniq FixedVector<u64, 16>, value: own u64)
+  -> result: own unit reads(values), writes(values) contract {
+  requires room_of(deref(values)) > 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values))) + 1_u64;
+} {
+  region {
+    place_back(vector: &uniq deref(values), value: value);
+  }
+  return unit;
+}
+```
+
+This is a declaration fragment; the canonical layout puts the signature on one
+line. `entry` applies directly to an exclusive formal name, only in ensures;
+normal dereference and field projections follow it. It snapshots proof terms,
+not container bytes. Bare exclusive measures name the selected exit. Own
+parameter measures retain their existing immutable entry meaning. Equality
+requires both affine directions; it is not trusted because it appears in a
+contract. FN-9 checks each selected normal return before CALL-6 can publish it.
+
+At the caller, the exact declared effect row is projected onto resolved places.
+A write kills every fact whose support it overlaps. A whole-run write therefore
+kills the old descriptor facts even when the actual is a holder or a field.
+A disjoint field survives. Verified entry terms use pre-transfer call datums;
+verified exit terms use the resolved actual place after the call. Result-free
+clauses publish on normal call completion and are not published again when a
+result is bound. Result-bearing and routed clauses retain their existing
+selection and destination obligations. No contract supplies a guarantee merely
+because its parameter is exclusive.
+
+The rejected competitors are discriminating, not stylistic: keeping old length
+across an arbitrary whole-place replacement is unsound; interpreting both sides
+of a length increment as the same time establishes a contradiction; killing all
+facts and adding an impossible failure branch merely conceals a missing proof.
+The [whole-place replacement](../../../tests/conformance/cases/exclusive-neg-whole-referent-replace-kills.wf)
+and [same-time increment](../../../tests/conformance/cases/exclusive-neg-exit-is-not-own-increment.wf)
+remain negative controls. [Counted push/pop](../../../tests/conformance/cases/run-exclusive-push-pop-counted.wf),
+[owning map put](../../../tests/conformance/cases/run-exclusive-owning-map-put.wf),
+[nested-field framing](../../../tests/conformance/cases/run-exclusive-nested-field.wf)
+and [multiple results](../../../tests/conformance/cases/run-exclusive-take-multiple-results.wf)
+exercise the positive boundary. The no-ensures controls distinguish a lost fact
+from an intentional runtime reread; the live-view control retains OWN-5.
+
+The amendment is v0.56, archiving the exact outgoing v0.55 bytes. META-5 delta:
+rule IDs +0/-0; fixed terminals +1 (`entry`)/-0; grammar productions +0/-0;
+public formers +1 (`entry`); four boundary rows redeclared, no extra row;
+record-only `at the call` notation removed; exception clauses +0/-0.
+The selection ground is evidence-selected: D1 identifies transfer as the major
+retained-helper cost, D2 demonstrates the useful missing mutable/equality
+contracts, and the negative controls exclude the two invalid shortcuts.
+The single `entry(name)` spelling and its narrow admission are a provisional
+minimality choice within that evidence-selected interface.
+
+Affected rules are BLK-0/3/4, FN-9, MSR-3, CALL-5/6 and ENT-3.S12/S13; the grammar
+and syntax inventory derive the former without a second proof or runtime path.
+BLK-4 removes the entire recursive exclusive-parameter refusal, including
+opaque type parameters. Whole replacement through an opaque `T` is a declared
+write, so the same storage-overlap kill removes caller facts about nested run
+elements. No callee-body inspection or generic proof family is needed. The
+confinement and loan-bearing position judgments remain. The
+[generic append](../../../tests/conformance/cases/run-exclusive-generic-append.wf),
+[whole replacement](../../../tests/conformance/cases/exclusive-generic-whole-replacement.wf)
+and [nested stale-fact negative](../../../tests/conformance/cases/exclusive-neg-generic-element-replacement-kills.wf)
+distinguish this judgment from simply retaining a fact across an opaque write. Existing
+v0.54 result/borrowed-owner routing still handles real owning payload movement;
+run-descriptor round trips no longer motivate it for these mutation witnesses.
+The routing text and machinery remain in place. These measurements do not
+settle general recursive origin summaries, projected sparse layout, staged
+address stability, or behavior parameters.

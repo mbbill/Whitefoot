@@ -1705,13 +1705,14 @@ fn measured_call_return_source(generic: bool, bind_result: bool, expected: u64) 
     } else {
         ("", "box<u64>", "")
     };
+    let build_arguments = if generic { "::<T>" } else { "" };
     let returned = if bind_result {
-        "let filled = place_back(vector: move vacant, value: move value);\n  return move filled;"
+        format!("let filled = build{build_arguments}(value: move value);\n  return move filled;")
     } else {
-        "return place_back(vector: move vacant, value: move value);"
+        format!("return build{build_arguments}(value: move value);")
     };
     format!(
-        "fn singleton{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == {expected}_u64;\n}} {{\n  let vacant = fixed_vector::<{element}, 1>();\n  {returned}\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  let value = box_new(17_u64);\n  let items = singleton{arguments}(value: move value);\n  return exit_status(code: 0_u8);\n}}\n"
+        "fn build{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  let vacant = fixed_vector::<{element}, 1>();\n  region {{\n    place_back(vector: &uniq vacant, value: move value);\n  }}\n  return move vacant;\n}}\n\nfn singleton{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == {expected}_u64;\n}} {{\n  {returned}\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  let value = box_new(17_u64);\n  let items = singleton{arguments}(value: move value);\n  return exit_status(code: 0_u8);\n}}\n"
     )
 }
 
@@ -1732,7 +1733,11 @@ fn a_direct_measured_call_return_reports_its_unsupported_result_datum() {
         assert_rule_at(
             source.as_bytes(),
             SemanticRule::Fn9,
-            "return place_back(vector: move vacant, value: move value);",
+            if generic {
+                "return build::<T>(value: move value);"
+            } else {
+                "return build(value: move value);"
+            },
         );
     }
 }
@@ -1748,7 +1753,7 @@ fn a_bound_measured_call_return_preserves_the_kernel_result_relation() {
 fn a_measured_postcondition_cannot_omit_a_direct_call_return() {
     for returned in ["fixed_vector::<u8, 1>()", "empty()"] {
         let source = format!(
-            "fn empty() -> result: own FixedVector<u8, 1> pure {{\n  return fixed_vector::<u8, 1>();\n}}\n\nfn choose(keep: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  if keep {{\n    let vacant = fixed_vector::<u8, 1>();\n    let full = place_back(vector: move vacant, value: 17_u8);\n    return move full;\n  }}\n  return {returned};\n}}\n\n{COMMAND_MAIN}"
+            "fn empty() -> result: own FixedVector<u8, 1> pure {{\n  return fixed_vector::<u8, 1>();\n}}\n\nfn choose(keep: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  if keep {{\n    let vacant = fixed_vector::<u8, 1>();\n    region {{\n      place_back(vector: &uniq vacant, value: 17_u8);\n    }}\n    let full = move vacant;\n    return move full;\n  }}\n  return {returned};\n}}\n\n{COMMAND_MAIN}"
         );
         with_semantics(source.as_bytes(), |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -1848,7 +1853,7 @@ fn an_unselected_error_skips_other_measured_call_return_datums() {
             )
         };
         let source = format!(
-            "fn build(keep: own Bool) -> ({results}) pure contract {{\n  ensures when status is Ok(value: accepted): len_of(items) == 1_u64;\n}} {{\n  if keep {{\n    let empty = fixed_vector::<u8, 1>();\n    let full = place_back(vector: move empty, value: 17_u8);\n    return {success};\n  }}\n  return {failure};\n}}\n\n{COMMAND_MAIN}"
+            "fn build(keep: own Bool) -> ({results}) pure contract {{\n  ensures when status is Ok(value: accepted): len_of(items) == 1_u64;\n}} {{\n  if keep {{\n    let empty = fixed_vector::<u8, 1>();\n    region {{\n      place_back(vector: &uniq empty, value: 17_u8);\n    }}\n    let full = move empty;\n    return {success};\n  }}\n  return {failure};\n}}\n\n{COMMAND_MAIN}"
         );
         assert_complete(source.as_bytes());
     }

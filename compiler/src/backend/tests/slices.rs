@@ -318,7 +318,10 @@ fn reuse(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) c
 
 command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
-  let bytes = place_back(vector: move empty, value: 3_u8);
+  region {
+    place_back(vector: &uniq empty, value: 3_u8);
+  }
+  let bytes = move empty;
   region {
     let writer = mut_slice_of(&uniq bytes);
     region {
@@ -385,10 +388,22 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
     }
   }
   let empty = fixed_vector::<u8, 4>();
-  let one = place_back(vector: move empty, value: 3_u8);
-  let two = place_back(vector: move one, value: 3_u8);
-  let three = place_back(vector: move two, value: 3_u8);
-  let local = place_back(vector: move three, value: 3_u8);
+  region {
+    place_back(vector: &uniq empty, value: 3_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 3_u8);
+  }
+  let two = move one;
+  region {
+    place_back(vector: &uniq two, value: 3_u8);
+  }
+  let three = move two;
+  region {
+    place_back(vector: &uniq three, value: 3_u8);
+  }
+  let local = move three;
   region {
     let view = slice_of(&local);
     let total = sum(values: view);
@@ -409,7 +424,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
           invariant spare: room_of(runtime) + at >= 4_u64,
           invariant flat: head_of(runtime) <= 0_u64
         ) {
-          set runtime = place_back(vector: move runtime, value: 2_u8);
+          place_back(vector: &uniq runtime, value: 2_u8);
         }
         region {
           let view = slice_of(&runtime);
@@ -449,8 +464,14 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
     // residual [OP-4, ENT-6] — the same residual the array origin gave.
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 0_u8);
-  let bytes = place_back(vector: move one, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 0_u8);
+  }
+  let bytes = move one;
   region {
     let window = slice_of(&bytes);
     let value = window[2_u64];
@@ -492,11 +513,23 @@ fn borrowed_first(value: &Slice<u8>) -> result: own u8 reads(value) contract {
 
 command fn main() -> status: own ExitStatus pure {
   let left_empty = fixed_vector::<u8, 2>();
-  let left_one = place_back(vector: move left_empty, value: 11_u8);
-  let left = place_back(vector: move left_one, value: 11_u8);
+  region {
+    place_back(vector: &uniq left_empty, value: 11_u8);
+  }
+  let left_one = move left_empty;
+  region {
+    place_back(vector: &uniq left_one, value: 11_u8);
+  }
+  let left = move left_one;
   let right_empty = fixed_vector::<u8, 2>();
-  let right_one = place_back(vector: move right_empty, value: 29_u8);
-  let right = place_back(vector: move right_one, value: 29_u8);
+  region {
+    place_back(vector: &uniq right_empty, value: 29_u8);
+  }
+  let right_one = move right_empty;
+  region {
+    place_back(vector: &uniq right_one, value: 29_u8);
+  }
+  let right = move right_one;
   region 'view {
     let borrowed_source = slice_of(&left);
     region {
@@ -578,7 +611,7 @@ fn a_view_of_a_frame_resident_run_reaches_its_own_slots_across_a_may_suspend_cal
     invariant spare: room_of(page) + at >= 4_u64,
     invariant flat: head_of(page) <= 0_u64
   ) {
-    set page = place_back(vector: move page, value: 65_u8);
+    place_back(vector: &uniq page, value: 65_u8);
   }
   region 'o {
     let window = slice_of(&page);

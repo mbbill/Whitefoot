@@ -22,16 +22,36 @@ fn window_sum<const n: u64>(buf: own FixedVector<u8, n>, offset: own u64, length
 
 command fn main() -> status: own ExitStatus pure {
   let buf = fixed_vector::<u8, 10>();
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
-  set buf = place_back(vector: move buf, value: 3_u8);
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 3_u8);
+  }
   let total = window_sum::<10>(buf: move buf, offset: 2_u64, length: 5_u64);
   if total == 15_u64 {
   } else {

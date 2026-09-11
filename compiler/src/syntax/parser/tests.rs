@@ -568,7 +568,7 @@ conform Name<T>: Contract<T> { doc "binding"; member = implementation; }
 const zero: i32 = 0_i32;
 const alias: i32 = zero;
 const table: array<i32, 2> =[0_i32, zero];
-command fn entry(command.args as arguments: own i32, command.cwd as directory: own i32)
+command fn stored_entry(command.args as arguments: own i32, command.cwd as directory: own i32)
 -> result: own unit pure
 {
 return unit;
