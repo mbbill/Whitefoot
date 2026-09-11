@@ -3214,3 +3214,142 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#);
 }
+
+#[test]
+fn loop_origin_sets_ignore_route_enumeration_order() {
+    // Ordinary owning array elements already admit this transfer. Repeated
+    // movement through the held slot exposes the same possible sources in
+    // a different traversal order at the arbitrary backedge.
+    let source = r#"struct Resource {
+  id: u64;
+  data0: u64;
+  data1: u64;
+  data2: u64;
+  data3: u64;
+}
+
+enum Slot['s] {
+  Vacant();
+  Deleted();
+  Occupied(fingerprint: u8, key: u64, payload: Box<'s, Resource>);
+}
+
+struct Progress['s] {
+  held: Slot<'s>;
+  source_next: u64;
+  next_probe: u64;
+  phase: u8;
+}
+
+fn occupied['s](slot: &Slot<'s>) -> full: own Bool reads(slot) {
+  match deref(slot) {
+    Occupied(fingerprint: tag, key: present, payload: owner) => {
+      return True();
+    }
+    Vacant() => {
+      return False();
+    }
+    Deleted() => {
+      return False();
+    }
+  }
+}
+
+fn slot_key['s](slot: &Slot<'s>) -> key: own u64 reads(slot) {
+  match deref(slot) {
+    Occupied(fingerprint: tag, key: present, payload: owner) => {
+      return deref(present);
+    }
+    Vacant() => {
+      return 0_u64;
+    }
+    Deleted() => {
+      return 0_u64;
+    }
+  }
+}
+
+fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 pure contract {
+  requires home < count;
+  requires step < count;
+  ensures index < count;
+} {
+  let until_end = count - home;
+  if step >= until_end {
+    let wrapped = step - until_end;
+    return wrapped;
+  }
+  let straight = home + step;
+  return straight;
+}
+
+fn advance['s](store: &uniq Heap<'s>, source: &uniq array<Slot<'s>, 4>, target: &uniq array<Slot<'s>, 4>, progress: &uniq Progress<'s>, budget: own u64) -> (examined: own u64, moved: own u64) reads(source, target, progress.held, progress.source_next, progress.next_probe, progress.phase), writes(store, source, target, progress.held, progress.source_next, progress.next_probe, progress.phase) {
+  let inspected = 0_u64;
+  let transfers = 0_u64;
+  if deref(progress).phase < 2_u8 {
+    for (
+      tick in 0_u64..budget,
+      invariant work_min: inspected >= tick,
+      invariant work_max: inspected <= tick,
+      invariant moved_bound: transfers <= inspected
+    ) {
+      if deref(progress).phase == 0_u8 {
+        let count = len_of(deref(source));
+        if deref(progress).source_next >= count {
+          set deref(progress).phase = 3_u8;
+          break;
+        }
+        let index = deref(progress).source_next;
+        set deref(progress).source_next = deref(progress).source_next + 1_u64;
+        region {
+          let full = occupied(slot: &deref(source)[index]);
+          if full {
+            let deleted = Deleted<'s>();
+            let held_slot = replace deref(source)[index] = move deleted;
+            let previous_held = replace deref(progress).held = move held_slot;
+            dispose previous_held;
+            set deref(progress).next_probe = 0_u64;
+            set deref(progress).phase = 1_u8;
+          }
+        }
+      } else {
+        let count = len_of(deref(target));
+        if deref(progress).next_probe >= count {
+          set deref(progress).phase = 2_u8;
+          break;
+        }
+        region {
+          let key = slot_key(slot: &deref(progress).held);
+          let home = key % count;
+          let index = probe_index(home: home, step: deref(progress).next_probe, count: count);
+          set deref(progress).next_probe = deref(progress).next_probe + 1_u64;
+          let full = occupied(slot: &deref(target)[index]);
+          if full {
+          } else {
+            let vacant = Vacant<'s>();
+            let held_slot = replace deref(progress).held = move vacant;
+            let previous = replace deref(target)[index] = move held_slot;
+            dispose previous;
+            set transfers = transfers + 1_u64;
+            set deref(progress).phase = 0_u8;
+          }
+        }
+      }
+      set inspected = inspected + 1_u64;
+    }
+    if deref(progress).phase == 0_u8 {
+      let source_count = len_of(deref(source));
+      if deref(progress).source_next == source_count {
+        set deref(progress).phase = 3_u8;
+      }
+    }
+  }
+  return inspected, transfers;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source.as_bytes());
+}

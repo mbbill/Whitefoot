@@ -41,9 +41,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ) {
                 (None, None) => true,
                 (Some(header), Some(backedge)) => {
+                    // Route inventories are sets. Replay and ordinary body
+                    // checking can enumerate the same routes in a different
+                    // order; only an added route or lost must-fact changes
+                    // the header's fixed point.
+                    let mut header = header.clone();
+                    header.formals.sort();
                     let mut joined = header.clone();
                     joined.union(backedge);
-                    joined == *header
+                    joined.formals.sort();
+                    joined == header
                 }
                 _ => false,
             };
