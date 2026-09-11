@@ -3,6 +3,13 @@
 Newest first. One entry per approved tree change. Format:
 `skill/templates/log-entry.md`.
 
+## 2026-09-11 Name what the acceptance half of the optimizer-facts rule constrains
+
+Nodes: ~tree
+Origin: discussion
+Summary: The owner found the acceptance half of the optional-optimizer-facts decision unclear about whom it constrains, while the behavior half was clear and testable. The line now names its subjects and its testable form: the compiler accepts the same programs with the same verdicts with facts on or off, so the checker's fact sources are closed to optimizer output and no language rule makes acceptance depend on whether an optional fact is derivable. Its reasons are that acceptance would otherwise depend on an optimizer's version, target, or pass order, and that a program accepted only with facts on would have no facts-off reference for the behavior rule. The two existing instances stay out of the root by normalize-upward and belong to their subtrees when migrated: a par whose independence is not proved lowers sequentially rather than rejecting (parallelism), and a declared law is checked for acceptance whether or not any optimizer consumes it (fact-channels).
+Code: none; this change touches only the design tree.
+
 ## 2026-09-11 State the real reasons for optional optimizer facts
 
 Nodes: ~tree
