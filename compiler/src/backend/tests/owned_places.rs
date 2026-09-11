@@ -1950,3 +1950,101 @@ fn statement_children_keep_displaced_owners_and_provider_results_alive() {
         assert_success(&retain_calls(&module));
     }
 }
+
+#[test]
+fn borrowing_owned_box_content_addresses_the_allocation() {
+    let source = br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn write(value: &uniq u64, next: own u64) -> result: own unit writes(value) {
+  set deref(value) = next;
+  return unit;
+}
+
+fn read(value: &u64) -> result: own u64 reads(value) {
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let pair = Pair(left: 11_u64, right: 29_u64);
+  let owner = box_new(move pair);
+  region {
+    write(value: &uniq deref(owner).left, next: 37_u64);
+    let observed = read(value: &deref(owner).right);
+    if observed != 29_u64 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  if deref(owner).left != 37_u64 {
+    return exit_status(code: 2_u8);
+  }
+  region {
+    let held = &uniq deref(owner).right;
+    write(value: move held, next: 43_u64);
+  }
+  if deref(owner).right != 43_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let output = compile_link_and_run(&observed, Some(&allocation_observer(1, 0)), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"A1;F1;", "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+#[test]
+fn boxed_run_contracts_keep_the_referent_projection_through_a_holder() {
+    let source =
+        br#"fn first(values: &FixedVector<u64, 2>) -> result: own u64 reads(values) contract {
+  requires len_of(deref(values)) > 0_u64;
+} {
+  return deref(values)[0_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let initial = array_new::<u64, 2>(29_u64);
+  let values = fixed_from_array(values: move initial);
+  let owner = box_new(move values);
+  let size = len_of(deref(owner));
+  if size > 0_u64 {
+    region {
+      let held = &deref(owner);
+      let observed = first(values: held);
+      if observed == 29_u64 {
+        return exit_status(code: 0_u8);
+      }
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 2_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let output = compile_link_and_run(&observed, Some(&allocation_observer(1, 0)), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(output.stdout, b"A1;F1;", "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}

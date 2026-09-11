@@ -1148,13 +1148,12 @@ fn non_admitted_reborrow_forms_are_own14_hard_errors() {
 /// so a borrow of its content is not a reborrow form at all and never reaches
 /// OWN-14's disposition. It is judged by [OWN-10]'s own-mode-binding case —
 /// the borrow region must be introduced within the binding's scope and never
-/// caller-supplied — and then stops explicitly, because the box binding lowers
-/// to the content pointer under the box's own IR type and nothing addresses
-/// the content itself. Before the dispatch fix these programs reported TYPE-7
-/// "deref requires a borrow holder" against source that wrote no holder.
+/// caller-supplied. Its typed BoxReferent path now reaches the allocation
+/// directly. The former capability stop predated ordinary addressed storage;
+/// it was not a source rejection and must not survive that implementation.
 #[test]
 fn box_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
-    assert_unsupported(
+    with_semantics(
         br#"fn bump(n: &uniq i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
@@ -1168,7 +1167,12 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        UnsupportedSemanticFeature::RegionsAndBorrows,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
     );
     assert_rule_kind(
         br#"fn hold(n: &uniq i32) -> result: own unit writes(n) {

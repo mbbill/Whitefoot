@@ -587,7 +587,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Forms a caller-visible referent datum. A root that is itself one of the
     /// caller's borrow parameters remains opaque and therefore retains one
     /// `Deref`; a local borrow/reborrow has already resolved through its holder
-    /// to an own root and adds no such projection.
+    /// to an own root and adds no such projection. Owning indirection remains
+    /// in the typed storage path: overlap may identify a Box with its content,
+    /// but a measure must still select the content's value. This applies to
+    /// direct borrows and forwarded holders alike.
     fn goal_referent_image(
         &self,
         place: &ResolvedPlace,
@@ -601,11 +604,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             projections.push(GoalProjection::Deref);
         }
-        projections.extend(place.path.iter().map(|step| match step {
-            crate::semantic::places::PlaceStep::Field(field) => GoalProjection::Field(*field),
-            crate::semantic::places::PlaceStep::Subscript(index) => {
+        projections.extend(place.storage_path.iter().map(|step| match step {
+            crate::semantic::places::PlaceProjection::Field(field) => GoalProjection::Field(*field),
+            crate::semantic::places::PlaceProjection::Subscript(index) => {
                 GoalProjection::Subscript(*index)
             }
+            crate::semantic::places::PlaceProjection::Deref => GoalProjection::Deref,
         }));
         let datum = if self.constants.contains_key(&place.root) {
             GoalDatum::NamedConst {

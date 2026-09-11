@@ -1219,7 +1219,7 @@ inside the `region` block whose region it takes",
             // programs as OWN-6/OWN-14/TYPE-7 violations.
             if let Some(root) = self.owned_content_deref_root(pbase, bindings)? {
                 return self.check_owned_content_borrow(
-                    node, place_node, region, function, loop_depth, root,
+                    node, place_node, region, function, bindings, loop_depth, root,
                 );
             }
             return self.check_child_reborrow(
@@ -1521,12 +1521,14 @@ inside the `region` block whose region it takes",
     /// as for a borrow of the binding itself; only the region relation
     /// differs, because arena content outlives its region rather than its
     /// binding [STOR-4].
+    #[allow(clippy::too_many_arguments)]
     fn check_owned_content_borrow(
         &self,
         node: NodeId,
         place_node: NodeId,
         region: DeclarationId,
         function: &FunctionSignature,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         root: (LocalBinding, OwnedContent),
     ) -> Result<TypedExpression, CheckStop> {
@@ -1570,26 +1572,76 @@ inside the `region` block whose region it takes",
                 },
             );
         }
-        // The written suffix chain still selects a real field of the content
-        // type, so a wrong spelling stays a source rejection rather than being
-        // masked by the capability stop below [DIAG-1].
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
-        let (_fields, _ty) = self.resolve_struct_path(&suffixes, content.ty())?;
-        // TEMPORARY capability stop, judged after the [OWN-1], [OWN-10], and
-        // [OWN-11] source rejections above. No checked expression addresses
-        // owned indirection content: a `box` binding lowers to the content
-        // pointer with the box's own IR type and arena storage has no runtime
-        // at all, so there is nothing for the IR builder to take the address
-        // of. This is the same explicit stop the arena-content `slice_of`
-        // path takes rather than publishing an unlowerable checked program.
-        match content {
-            OwnedContent::Arena { .. } => {
-                self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, place_node)
-            }
-            OwnedContent::Boxed(_) => {
-                self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node)
-            }
+        let (suffix, ty, offsets) = self.resolve_storage_path(
+            &suffixes,
+            content.ty(),
+            bindings,
+            function,
+            loop_depth,
+            true,
+        )?;
+        if matches!(content, OwnedContent::Arena { .. }) {
+            return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, place_node);
         }
+        if !self.borrow_addresses_storage(ty)? {
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+        }
+        let CheckedType::Nominal(nominal) = local.ty else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        // The ordinary typed place path already lowers BoxReferent by loading
+        // the owner's pointer slot and addressing its allocation. Reuse that
+        // path instead of materializing a snapshot of the boxed content.
+        let mut path = vec![CheckedPlaceStep::BoxReferent(nominal)];
+        path.extend(suffix);
+        let mut place = ResolvedPlace::fields(local.declaration, Vec::new());
+        place.extend_storage(&path);
+        let kind = if self.has_fixed(node, crate::FixedTerminal::Uniq)? {
+            BorrowKind::Unique
+        } else {
+            BorrowKind::Shared
+        };
+        self.check_commit_place_live(&place, node, false)?;
+        self.check_loan_access(
+            bindings,
+            None,
+            &place,
+            match kind {
+                BorrowKind::Shared => AccessKind::SharedBorrow,
+                BorrowKind::Unique => AccessKind::UniqueBorrow,
+            },
+            node,
+        )?;
+        let borrow = BorrowInfo {
+            kind,
+            region,
+            place,
+            origin_region: None,
+            exact_place: true,
+        };
+        let carrier = self
+            .tree
+            .parent(node)?
+            .filter(|parent| self.tree.production(*parent) == Ok(Production::Atom))
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        Ok(TypedExpression {
+            expression: CheckedExpression::BorrowAddressed {
+                carrier: self.tree.path(carrier)?.clone(),
+                root: CheckedContainerRoot {
+                    root: crate::semantic::CheckedPlaceRoot::Binding(local.binding),
+                    path,
+                    ty,
+                },
+            },
+            mode: borrow.mode(),
+            borrow: Some(borrow),
+            slice: None,
+            holder: None,
+            reference_value: true,
+            effects: offsets.effects,
+            accesses: offsets.accesses,
+        })
     }
 
     pub(super) fn check_direct_slice_borrow_lifetime(
