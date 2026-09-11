@@ -92,14 +92,12 @@
  * boundaries a call, which is why it pays most. An idle lane past the first
  * spin bound now reads one counter instead, and scans only when it moves.
  *
- * One thing the spin loop does NOT do, recorded here because it bounds what
- * any of this can be worth: wf_prim_spin_hint() is YieldProcessor() on
- * Windows -- _mm_pause, the pause instruction, on x86 and x64, and a store
- * barrier plus the yield instruction on arm -- and an EMPTY function body on
- * every other host. A POSIX spin round therefore emits no pause
- * at all, which is exactly the instruction an SMT sibling needs its partner to
- * issue. Left alone here deliberately; it is a separate change with its own
- * measurement.
+ * Each spin round also issues the hardware hint an SMT sibling needs from its
+ * partner: wf_prim_spin_hint() is YieldProcessor() on Windows -- _mm_pause on
+ * x86 and x64, a store barrier plus yield on arm -- and, since the same
+ * hosted evidence, `pause` on x86 and `yield` on aarch64 for the POSIX hosts
+ * too (prim.h); before that a POSIX spin round emitted no pause at all, which
+ * is the tightest loop an SMT sibling can be asked to share a core with.
  *
  * The scheduler probes compile this file with WF_SCHED_TEST and hold native
  * threads at the park protocol's own race windows -- wf_sched_test_before_wait

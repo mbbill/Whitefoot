@@ -13,11 +13,20 @@ typedef struct { SRWLOCK lock; CONDITION_VARIABLE signal; } wf_prim_wait;
 typedef struct { pthread_mutex_t lock; pthread_cond_t signal; } wf_prim_wait;
 #endif
 typedef struct { void (*entry)(void *); void *argument; } wf_prim_thread;
-/* Keep the Windows historical spin hint distinct from an OS thread yield.
- * Other platforms retain their current polling behavior. */
+/* One spin round's hint to the core: a spinning lane should give up issue
+ * slots to its SMT sibling rather than run the loop at full rate. Windows has
+ * YieldProcessor (which mingw and MSVC define as `pause` on x86 and
+ * `dmb ishst; yield` on arm); the POSIX hosts had nothing here until the
+ * hosted SMT runners showed idle lanes stretching a working sibling, so x86
+ * gets `pause` and aarch64 gets `yield`; any other architecture keeps a plain
+ * poll. This is a hint to the hardware, never a scheduler call. */
 static inline void wf_prim_spin_hint(void) {
 #if defined(_WIN32)
     YieldProcessor();
+#elif defined(__x86_64__) || defined(__i386__)
+    __builtin_ia32_pause();
+#elif defined(__aarch64__)
+    __asm__ __volatile__("yield" ::: "memory");
 #endif
 }
 int wf_prim_wait_init(wf_prim_wait *wait);
