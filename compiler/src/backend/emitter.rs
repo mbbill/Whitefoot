@@ -13,6 +13,7 @@ mod completion;
 mod conversion;
 mod floating;
 mod floor;
+mod frontier;
 mod integer;
 mod operations;
 mod parallel;
@@ -58,6 +59,8 @@ pub use completion::{
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_STACK_BYTES;
 pub use floor::{FLOOR_RUNTIME_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE};
+pub(crate) use frontier::is_recursive_frontier_symbol;
+use frontier::{Layer, RecursiveFrontiers};
 pub use parallel::module_requires_parallel_runtime;
 use parallel::{
     HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_DECLARATION, PARALLEL_POOL_QUERY_FALLBACK,
@@ -147,8 +150,22 @@ fn emit_llvm_for(
     let mut intrinsics = BTreeSet::new();
     let mut thunks = ParallelThunks::default();
     let mut completion_used = false;
+    let refusal_clones = if program.sequential_compute_refusal() {
+        sequential_clone_set(program)
+    } else {
+        HashSet::new()
+    };
+    let mut frontier_clones = if program.recursive_compute_frontier().is_some() {
+        sequential_clone_set(program)
+    } else {
+        HashSet::new()
+    };
+    if !frontier_clones.contains(&program.main_ordinal()) {
+        frontier_clones.clear();
+    }
+    let frontiers = RecursiveFrontiers::new(program, &frontier_clones);
     let mut functions = String::new();
-    for function in program.functions() {
+    for (ordinal, function) in program.functions().iter().enumerate() {
         let emitter = FunctionEmitter::new(
             program,
             &qualification,
@@ -159,9 +176,37 @@ fn emit_llvm_for(
                 parallel: &mut thunks,
                 completion_used: &mut completion_used,
                 sequential_clones: None,
+                refusal_clones: &refusal_clones,
+                frontiers: &frontiers,
+                frontier_layer: frontiers.layer(ordinal, 0),
             },
         )?;
         functions.push_str(&emitter.emit()?);
+    }
+    for level in 1..frontiers.levels() {
+        for (ordinal, function) in program.functions().iter().enumerate() {
+            let Some(layer) = frontiers.layer(ordinal, level) else {
+                continue;
+            };
+            functions.push_str(
+                &FunctionEmitter::new(
+                    program,
+                    &qualification,
+                    target,
+                    function,
+                    ModuleState {
+                        intrinsics: &mut intrinsics,
+                        parallel: &mut thunks,
+                        completion_used: &mut completion_used,
+                        sequential_clones: None,
+                        refusal_clones: &refusal_clones,
+                        frontiers: &frontiers,
+                        frontier_layer: Some(layer),
+                    },
+                )?
+                .emit()?,
+            );
+        }
     }
     // The second world. It exists only where the first one actualizes
     // something, so a build that hands nothing out — every default build among
@@ -175,6 +220,8 @@ fn emit_llvm_for(
     // module well-formed by construction instead of by that reasoning.
     let mut clones = if thunks.is_used() {
         sequential_clone_set(program)
+    } else if frontiers.is_used() {
+        frontier_clones
     } else {
         HashSet::new()
     };
@@ -194,13 +241,21 @@ fn emit_llvm_for(
                         parallel: &mut thunks,
                         completion_used: &mut completion_used,
                         sequential_clones: Some(&clones),
+                        refusal_clones: &refusal_clones,
+                        frontiers: &frontiers,
+                        frontier_layer: None,
                     },
                 )?
                 .emit()?,
             );
         }
     }
-    let entry = system::emit_entry(program, &qualification, main, !clones.is_empty())?;
+    let entry = system::emit_entry(
+        program,
+        &qualification,
+        main,
+        thunks.is_used() && !clones.is_empty(),
+    )?;
     let has_matches = program.functions().iter().any(|function| {
         function
             .blocks()
@@ -1173,8 +1228,13 @@ struct FunctionEmitter<'program, 'state> {
     /// build and the overlapped half of a `--par` build. `Some` renders the
     /// clone world: no group is actualized, and a call to a function that also
     /// has a clone names the clone, so the world a call lands in is the world
-    /// it was made from and neither ever reaches the other.
+    /// it was made from. The experimental refusal edge may enter a clone
+    /// from ordinary code without changing its parameters or result ABI.
     sequential_clones: Option<&'state HashSet<u32>>,
+    /// Existing clones callable from the opt-in refused-compute edge.
+    refusal_clones: &'state HashSet<u32>,
+    frontiers: &'state RecursiveFrontiers,
+    frontier_layer: Option<Layer>,
 }
 
 /// What one function's emission shares with the rest of its module, and the
@@ -1192,6 +1252,10 @@ struct ModuleState<'state> {
     completion_used: &'state mut bool,
     /// `None` emits the ordinary lowering; `Some` emits the sequential clone.
     sequential_clones: Option<&'state HashSet<u32>>,
+    /// Existing clones callable from the opt-in refused-compute edge.
+    refusal_clones: &'state HashSet<u32>,
+    frontiers: &'state RecursiveFrontiers,
+    frontier_layer: Option<Layer>,
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
@@ -1207,6 +1271,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             parallel,
             completion_used,
             sequential_clones,
+            refusal_clones,
+            frontiers,
+            frontier_layer,
         } = module;
         // A sequential clone suppresses compute hand-outs only. Target
         // completion is independent of the compute-pool choice and remains
@@ -1367,6 +1434,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             block_drains: false,
             completion_used,
             sequential_clones,
+            refusal_clones,
+            frontiers,
+            frontier_layer,
         })
     }
 
@@ -1381,8 +1451,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     /// world the entry selected. Everything else — including every callee with
     /// no hand-out anywhere below it — is the one copy both worlds share.
     pub(super) fn callee_symbol(&self, ordinal: u32, name: &str) -> String {
-        match self.sequential_clones {
-            Some(clones) if clones.contains(&ordinal) => sequential_clone_symbol(name),
+        match (self.sequential_clones, self.frontier_layer) {
+            (Some(clones), _) if clones.contains(&ordinal) => sequential_clone_symbol(name),
+            (None, Some(layer)) => self.frontiers.callee(ordinal, name, layer),
             _ => source_symbol(name),
         }
     }
@@ -1390,9 +1461,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     fn emit(mut self) -> Result<String, BackendFailure> {
         self.incoming = self.collect_incoming()?;
         let abi = FunctionAbi::build(self.program, self.function)?;
-        let symbol = match self.sequential_clones {
-            Some(_) => sequential_clone_symbol(self.function.name()),
-            None => source_symbol(self.function.name()),
+        let symbol = match (self.sequential_clones, self.frontier_layer) {
+            (Some(_), _) => sequential_clone_symbol(self.function.name()),
+            (None, Some(layer)) => RecursiveFrontiers::definition(self.function.name(), layer),
+            (None, None) => source_symbol(self.function.name()),
         };
         write!(
             self.output,

@@ -31,7 +31,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier N] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -569,6 +569,14 @@ struct Options {
     /// worker lanes or terminate when the pool is first required; it cannot
     /// silently select the sequential world.
     par: bool,
+    /// Resolved scalar-leaf offer limit: 16 under --par unless overridden.
+    /// Explicit `off` keeps every otherwise eligible offer; zero still filters
+    /// leaves containing no nonconstant operations.
+    scalar_leaf_limit: Option<u32>,
+    /// Opt-in ordinary-ABI sequential calls on refused compute offers.
+    sequential_refusal: bool,
+    /// Opt-in private recursive component layers, with ordinary call signatures.
+    recursive_frontier: Option<std::num::NonZeroU8>,
     /// Emit the module a compiler with no overlap lowering at all emits.
     ///
     /// This is the sequential reference build, and it exists for one reason:
@@ -603,6 +611,9 @@ impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
         let mut par = false;
+        let mut scalar_leaf_limit = None;
+        let mut sequential_refusal = false;
+        let mut recursive_frontier = None;
         let mut no_overlap = false;
         let mut par_ledger = false;
         let mut stack_ledger = false;
@@ -613,6 +624,46 @@ impl Options {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
                 "--par" => par = true,
+                "--par-scalar-leaf-limit" => {
+                    cursor += 1;
+                    let invalid =
+                        || "--par-scalar-leaf-limit requires a nonnegative u32 or off".to_owned();
+                    let value = arguments.get(cursor).ok_or_else(invalid)?;
+                    let limit = if value == "off" {
+                        None
+                    } else {
+                        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                            return Err(invalid());
+                        }
+                        Some(value.parse::<u32>().map_err(|_| invalid())?)
+                    };
+                    if scalar_leaf_limit.replace(limit).is_some() {
+                        return Err("--par-scalar-leaf-limit may be written only once".to_owned());
+                    }
+                }
+                "--par-recursive-frontier" => {
+                    cursor += 1;
+                    let level = arguments
+                        .get(cursor)
+                        .filter(|value| {
+                            !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                        })
+                        .and_then(|value| value.parse::<u8>().ok())
+                        .filter(|value| *value <= 32)
+                        .and_then(std::num::NonZeroU8::new)
+                        .ok_or_else(|| {
+                            "--par-recursive-frontier requires an integer in 1..32".to_owned()
+                        })?;
+                    if recursive_frontier.replace(level).is_some() {
+                        return Err("--par-recursive-frontier may be written only once".to_owned());
+                    }
+                }
+                "--par-sequential-refusal" => {
+                    if sequential_refusal {
+                        return Err("--par-sequential-refusal may be written only once".to_owned());
+                    }
+                    sequential_refusal = true;
+                }
                 "--no-overlap" => no_overlap = true,
                 "--par-ledger" => par_ledger = true,
                 "--stack-ledger" => stack_ledger = true,
@@ -659,9 +710,25 @@ impl Options {
         if par && no_overlap {
             return Err("--no-overlap and --par select opposite lowerings: write one".to_owned());
         }
+        if scalar_leaf_limit.is_some() && !par {
+            return Err("--par-scalar-leaf-limit requires --par".to_owned());
+        }
+        if sequential_refusal && !par {
+            return Err("--par-sequential-refusal requires --par".to_owned());
+        }
+        if recursive_frontier.is_some() && !par {
+            return Err("--par-recursive-frontier requires --par".to_owned());
+        }
         Ok(Self {
             emit_llvm,
             par,
+            scalar_leaf_limit: if par {
+                scalar_leaf_limit.unwrap_or(Some(16))
+            } else {
+                None
+            },
+            sequential_refusal,
+            recursive_frontier,
             no_overlap,
             par_ledger,
             stack_ledger,
@@ -678,8 +745,21 @@ impl Options {
     fn overlap(&self) -> OverlapLowering {
         if self.no_overlap {
             OverlapLowering::Off
+        } else if let Some(maximum_levels) = self.recursive_frontier {
+            OverlapLowering::OnWithRecursiveFrontier {
+                maximum_levels,
+                maximum_scalar_leaf_operations: self.scalar_leaf_limit,
+                sequential_refusal: self.sequential_refusal,
+            }
+        } else if self.par && self.sequential_refusal {
+            OverlapLowering::OnWithSequentialRefusal {
+                maximum_scalar_leaf_operations: self.scalar_leaf_limit,
+            }
         } else if self.par {
-            OverlapLowering::On
+            self.scalar_leaf_limit
+                .map_or(OverlapLowering::On, |maximum_operations| {
+                    OverlapLowering::OnWithoutSmallScalarLeaves { maximum_operations }
+                })
         } else {
             OverlapLowering::Completion
         }
@@ -935,6 +1015,195 @@ mod tests {
         assert!(options.par);
         assert!(!options.par_ledger, "lanes are not a ledger request");
         assert_eq!(options.sources.len(), 1);
+    }
+
+    #[test]
+    fn compute_leaf_default_and_explicit_overrides_select_the_expected_lowering() {
+        assert_eq!(
+            parse(&["value.wf"]).unwrap().overlap(),
+            OverlapLowering::Completion
+        );
+        assert_eq!(
+            parse(&["--par", "value.wf"]).unwrap().overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16
+            }
+        );
+        assert_eq!(
+            parse(&["--par", "--par-scalar-leaf-limit", "off", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::On
+        );
+        assert_eq!(
+            parse(&["--par", "--par-scalar-leaf-limit", "0", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 0
+            }
+        );
+        for (arguments, expected) in [
+            (
+                vec!["--par", "--par-sequential-refusal", "value.wf"],
+                Some(16),
+            ),
+            (
+                vec![
+                    "--par",
+                    "--par-sequential-refusal",
+                    "--par-scalar-leaf-limit",
+                    "off",
+                    "value.wf",
+                ],
+                None,
+            ),
+        ] {
+            assert_eq!(
+                parse(&arguments).unwrap().overlap(),
+                OverlapLowering::OnWithSequentialRefusal {
+                    maximum_scalar_leaf_operations: expected
+                }
+            );
+        }
+        assert_eq!(
+            parse(&[
+                "--par",
+                "--par-recursive-frontier",
+                "8",
+                "--par-scalar-leaf-limit",
+                "off",
+                "value.wf"
+            ])
+            .unwrap()
+            .overlap(),
+            OverlapLowering::OnWithRecursiveFrontier {
+                maximum_levels: std::num::NonZeroU8::new(8).unwrap(),
+                maximum_scalar_leaf_operations: None,
+                sequential_refusal: false,
+            }
+        );
+        assert!(parse(&["--par-scalar-leaf-limit", "off", "value.wf"]).is_err());
+        assert!(
+            parse(&[
+                "--par",
+                "--par-scalar-leaf-limit",
+                "off",
+                "--par-scalar-leaf-limit",
+                "16",
+                "value.wf"
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn scalar_leaf_control_requires_an_explicit_compute_invocation() {
+        let options = parse(&["--par", "--par-scalar-leaf-limit", "16", "value.wf"])
+            .expect("the scalar control is available for compute experiments");
+        assert_eq!(
+            options.overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16
+            }
+        );
+        for arguments in [
+            vec!["--par-scalar-leaf-limit", "16", "value.wf"],
+            vec!["--par", "--par-scalar-leaf-limit"],
+            vec!["--par", "--par-scalar-leaf-limit", "-1", "value.wf"],
+            vec!["--par", "--par-scalar-leaf-limit", "4294967296", "value.wf"],
+            vec![
+                "--par",
+                "--par-scalar-leaf-limit",
+                "1",
+                "--par-scalar-leaf-limit",
+                "2",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&arguments).is_err(), "{arguments:?}");
+        }
+    }
+
+    #[test]
+    fn recursive_frontier_requires_compute_and_composes_with_other_controls() {
+        let options = parse(&[
+            "--par",
+            "--par-recursive-frontier",
+            "8",
+            "--par-sequential-refusal",
+            "--par-scalar-leaf-limit",
+            "16",
+            "value.wf",
+        ])
+        .unwrap();
+        assert_eq!(
+            options.overlap(),
+            OverlapLowering::OnWithRecursiveFrontier {
+                maximum_levels: std::num::NonZeroU8::new(8).unwrap(),
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: true,
+            }
+        );
+        for value in ["1", "32"] {
+            assert!(parse(&["--par", "--par-recursive-frontier", value, "value.wf"]).is_ok());
+        }
+        for value in ["0", "33", "256", "-1", "+1", "", "1.5"] {
+            let error = parse(&["--par", "--par-recursive-frontier", value, "value.wf"])
+                .err()
+                .unwrap();
+            assert!(error.contains("--par-recursive-frontier"), "{error}");
+        }
+        for args in [
+            vec!["--par-recursive-frontier", "8", "value.wf"],
+            vec!["--par", "--par-recursive-frontier"],
+            vec![
+                "--par",
+                "--par-recursive-frontier",
+                "8",
+                "--no-overlap",
+                "value.wf",
+            ],
+            vec![
+                "--par",
+                "--par-recursive-frontier",
+                "8",
+                "--par-recursive-frontier",
+                "8",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&args).is_err(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn sequential_refusal_requires_compute_and_composes_with_leaf_control() {
+        let options = parse(&[
+            "--par",
+            "--par-sequential-refusal",
+            "--par-scalar-leaf-limit",
+            "16",
+            "value.wf",
+        ])
+        .unwrap();
+        assert_eq!(
+            options.overlap(),
+            OverlapLowering::OnWithSequentialRefusal {
+                maximum_scalar_leaf_operations: Some(16)
+            }
+        );
+        for args in [
+            vec!["--par-sequential-refusal", "value.wf"],
+            vec![
+                "--par",
+                "--par-sequential-refusal",
+                "--par-sequential-refusal",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&args).is_err());
+        }
     }
 
     /// The sequential reference build is its own switch, off unless asked

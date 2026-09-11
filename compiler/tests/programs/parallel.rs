@@ -242,6 +242,7 @@ fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
 /// [`the_corpus_units_cover_every_program_file`], which is what keeps it from
 /// silently falling behind the corpus it is intended to cover.
 const CORPUS_UNITS: &[&[&str]] = &[
+    &["adaptive_quadrature.wf"],
     &["arena_workspace.wf"],
     &["block_pool.wf"],
     &["byte_string.wf"],
