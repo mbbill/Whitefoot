@@ -1,7 +1,13 @@
 # Design tree change log
 
-Newest first. One entry per approved tree change. Format:
-`skill/templates/log-entry.md`.
+Newest first. One entry per approved tree change: a dated title, `Nodes:`
+naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
+
+## 2026-09-11 Bring the compiler tree up to the current-stack runtime and the grain controls
+
+Nodes: compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime
+
+Summary: `main` merged four runtime changes after this branch started: compute tasks moved to persistent native threads and ordinary stacks, the park-on-miss scheduler and its schedule enumerator were retired, and three opt-in `--par` grain controls landed with a provisional scalar-leaf default of 16. Their records were new entries in `mcts_mem/whitefoot/parallelism.md`, `parallelism/two-worlds.md`, and `system-interface.md` and new paragraphs in the compiler README that this branch retires; they become six decisions and one rejected alternative here. One reason is assembled by the agent rather than transcribed and needs the owner's confirmation: the current-stack runtime's reason joins the 2026-09-06 park-cost measurement with the owner's runtime-only split direction. The startup-fallback reason in `compiler/parallel-lowering` is transcribed from the emitter's recorded rationale. The connection-concurrency gap and the inert `WF_STACKS` setting go to `docs/todo.md`, the new flags to the root README, and the scalar-leaf remeasurement protocol to the proof-derived-parallelism investigation. The Windows worker-count qualification entries are measurements owned by `research/investigations/io-model/RESULTS.md` and add no decision.
 
 ## 2026-09-11 Migrate the remaining memory subtrees and retire the compiler README
 

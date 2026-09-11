@@ -96,3 +96,40 @@ sentence in this file claims otherwise about a cell so marked.
 all Whitefoot outputs of a configuration against each other across the default
 compilation and every worker count and every round; all Rust outputs likewise;
 and then Whitefoot against Rust.
+
+## Scalar-leaf suppression, default against off
+
+The provisional `--par` default keeps scalar leaves of at most 16 nonconstant
+operations out of compute offers. Remeasure it on
+[`adaptive_quadrature.wf`](../../../../tests/programs/adaptive_quadrature.wf),
+whose kernel comes from PR #28 at `70aa8e5`: the program integrates 2048
+narrow Lorentz profiles, emits the sum's 64-bit representation as ASCII, and
+runs through the normal compiler and runtime path; the corpus test
+independently compares it with the analytic integral. From the repository
+root:
+
+```sh
+cargo build --profile gate --manifest-path compiler/Cargo.toml --bin whitefootc
+out=$(mktemp -d)
+compiler/target/gate/whitefootc --par --par-ledger -o "$out/default" tests/programs/adaptive_quadrature.wf
+compiler/target/gate/whitefootc --par --par-scalar-leaf-limit off -o "$out/off" tests/programs/adaptive_quadrature.wf
+for round in 1 2 3 4 5; do
+  case "$round" in 1|3|5) modes="default off" ;; *) modes="off default" ;; esac
+  for mode in $modes; do
+    /usr/bin/time -p env WF_WORKERS=4 "$out/$mode" > "$out/$round-$mode.out"
+  done
+  cmp "$out/$round-default.out" "$out/$round-off.out" || exit 1
+done
+```
+
+Use one idle host and no inherited runtime overrides except the stated worker
+count; report the median of the five process times for each form. The
+comparison checks visible offer suppression in the `--par-ledger` report,
+identical outputs, and a default median no higher than `off` on the current
+runtime. Recorded 2026-09-10 on an 8-core M1 Pro at four workers from `main`
+at `33ed2c00`: medians 34.357 ms with the default and 83.056 ms with `off`,
+all outputs equal, all results within 1e-8 of the analytic sum, and two
+omitted offers each in `adaptive` and `integrate`. That satisfies this limited
+criterion; it does not establish that 16 is optimal, that every workload
+benefits, or that refusal or the frontier should default on. Revisit the
+default with a contrary representative workload or target.

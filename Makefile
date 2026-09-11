@@ -172,4 +172,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests bench-programs conformance-run snapshot-run install-hooks
+.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler research-tests bench-programs conformance-run snapshot-run install-hooks

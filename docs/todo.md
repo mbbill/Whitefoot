@@ -1,7 +1,7 @@
 # Known compiler defects and open costs
 
-Defects and unresolved costs of the current compiler that are not decisions
-and not unsupported capabilities. Remove an item when its fix and test land.
+Defects, capability gaps, and unresolved costs of the current compiler. None
+of them is a decision. Remove an item when its fix and test land.
 
 - **Unguarded affine expression nesting depth.** A proof-domain affine
   expression nesting parentheses about 1400 deep aborts the driver with a
@@ -27,3 +27,11 @@ and not unsupported capabilities. Remove an item when its fix and test land.
   the implementation or the accepted proof rules; the
   [selection-ground assessment](../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
   separates the unresolved costs from the safety obligations.
+- **Connection-level concurrency through suspended user calls is missing, and
+  silently.** A loop that accepts and serves connections in source order
+  completes the current handler before entering the next, so a handler waiting
+  on a silent peer holds up every later connection, and 1024 open connections
+  are not 1024 independently resumable handlers. The source is accepted and
+  compiled through ordinary calls with no report. No restoration mechanism has
+  been chosen. `WF_STACKS` is inert for the same reason: the runtime has no
+  switchable-stack pool for it to size, so it is neither read nor validated.
