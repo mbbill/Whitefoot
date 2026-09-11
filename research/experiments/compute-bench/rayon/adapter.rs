@@ -8,7 +8,7 @@
 //! Adapted from the research bundle's records-rayon/adapter.rs and the fork
 //! direction of its quadrature.rs. The named cut: that file asserted
 //! `matches!(width, 1 | 2 | 4)`; both entry points here assert
-//! `matches!(width, 1..=8)`, which is the same ceiling as `WFB_MAX_WIDTH` in
+//! `matches!(width, 1..=32)`, which is the same ceiling as `WFB_MAX_WIDTH` in
 //! backend.h. The two are changed together or not at all.
 //!
 //! No unsafe Rust: the binding to C is recovered from the emitted symbol by
@@ -29,7 +29,7 @@ type Task = extern "C" fn(*mut c_void);
 static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
 
 fn pool(width: u32) -> &'static rayon::ThreadPool {
-    assert!(matches!(width, 1..=8), "width must be 1 through 8");
+    assert!(matches!(width, 1..=32), "width must be 1 through 32");
     let pool = POOL.get_or_init(|| {
         assert!(
             rayon::current_thread_index().is_none(),

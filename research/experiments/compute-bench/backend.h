@@ -12,11 +12,11 @@
 extern "C" {
 #endif
 
-/* The width ceiling, written once. It is exactly the width set {1, 2, 4, 8};
+/* The width ceiling, written once. It is exactly the width set {1, 2, 4, 8, 16, 32};
  * raising the set means raising this, and every backend's guard reads it.
  * rayon/adapter.rs carries the same number in Rust and says so; the two are
  * changed together or not at all. */
-#define WFB_MAX_WIDTH 8
+#define WFB_MAX_WIDTH 32
 
 typedef void (*wfb_chunk)(void *context, size_t index);
 typedef void (*wfb_task)(void *context);
