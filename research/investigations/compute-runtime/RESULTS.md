@@ -4556,7 +4556,10 @@ numbers the wait-path steps are about.
   256, **16 chunks** at every parallel width; records 131,072 records,
   **32 chunks** at W=2 and **64** at W=4 and W=8; fir K=64 over N=524,288,
   **32/64/64**; quadrature M=64, no independent-map split, `chunks=na`
-- workflow run: `local`
+- workflow run: `local`. The push carrying this change touches
+  `research/experiments/compute-bench/**`, so the hosted `compute-bench`
+  workflow runs on `ubuntu-24.04` and `macos-14` and its two tables are the
+  quieter reading; they are not waited on here.
 - sizing window, read off the second table: every `wf-seq` median at W=1 inside
   [5 ms, 60 ms] — mandelbrot 26.916 ms, quadrature 15.807 ms, records 35.541 ms,
   fir 28.345 ms; every `wf` median at the recorded W=4 above 1 ms — mandelbrot
@@ -5098,7 +5101,11 @@ land.
   points at limit 256, **16 chunks**; records 131,072 records, **32/64/64**
   chunks at W=2/4/8; fir K=64 over N=524,288, **32/64/64**; quadrature M=64, no
   independent-map split, `chunks=na`
-- workflow run: `local`
+- workflow run: `local`. The push carrying this record touches
+  `compiler/src/backend/sched/**` only through the step that does not land, so
+  the hosted `compute-bench` workflow runs on both runners against a tree whose
+  runtime is unchanged; its tables are a reading of the control, not of the
+  probe.
 - sizing window, all four runs: every `wf-seq` median at W=1 inside [5 ms,
   60 ms] — mandelbrot 27.013 / 26.701 / 26.790 / 26.739 ms, quadrature 16.641 /
   16.561 / 16.241 / 16.426, records 36.684 / 36.573 / 35.499 / 36.062, fir
@@ -5683,7 +5690,13 @@ brief §5c, blocked on a cadence column.
   256, **16 chunks**; records 131,072 records, **32/64/64** chunks at W=2/4/8;
   fir K=64 over N=524,288, **32/64/64**; quadrature M=64, no independent-map
   split, `chunks=na`
-- workflow run: `local`
+- workflow run: `local`. The push carrying this change touches
+  `compiler/src/backend/sched/**`, so the hosted `compute-bench` workflow runs
+  on `ubuntu-24.04` (recorded W=4) and `macos-14` (recorded W=2) against the
+  1,024-round bound. Those two tables are the quieter reading of this choice on
+  hosts with different core counts and, on the Linux runner, with SMT siblings
+  this host does not have; they are not waited on here and are not part of this
+  section.
 - sizing window: every `wf-seq` median at W=1 inside [5 ms, 60 ms] — at 256
   mandelbrot 27.066 ms, quadrature 16.276, records 36.377, fir 27.632; at 1,024
   mandelbrot 26.788 / 27.007, quadrature 16.411 / 16.105, records 37.001 /
