@@ -236,9 +236,12 @@ a result: the tables copied into `RESULTS.md` as the record of what this tree
 produces are taken with all three controls empty and `WF_AB` unset, which builds no
 twin, runs no extra process and leaves the bundle exactly as it was. An A/B run
 is recorded as the *arms of an experiment*, with the control flags in its
-heading and the `A/B` lines quoted in its reading. The hosted workflow sets
-none of the three and therefore never builds a twin, and `programs-check` — the
-one target the repository's `make check` runs — reads none of the four.
+heading and the `A/B` lines quoted in its reading. A push to the hosted
+workflow sets none of the three and therefore builds no twin; a manual dispatch
+of `.github/workflows/compute-bench.yml` takes the three as inputs, which is
+how an A/B pair is read on a quiet runner (its table is an experiment, never a
+recorded plain one). `programs-check` — the one target the repository's
+`make check` runs — reads none of the four.
 
 Two link-time assertions make a `wf` row a `wf` row. The emitted module carries
 **weak no-op stubs for every `wf__par_*` symbol**, so a link that loses the

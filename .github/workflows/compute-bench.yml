@@ -24,6 +24,22 @@ name: compute-bench
 
 on:
   workflow_dispatch:
+    # An A/B twin on a quiet runner: a non-empty value builds the second image
+    # and adds the wf-b rows (README, "The A/B twin"); such a table is never a
+    # recorded plain table. Pushes always run plain.
+    inputs:
+      par_control_flags:
+        description: WF_PAR_CONTROL_FLAGS for the B image (emission)
+        default: ""
+        type: string
+      runtime_control_flags:
+        description: WF_RUNTIME_CONTROL_FLAGS for the B image (runtime objects)
+        default: ""
+        type: string
+      module_control_flags:
+        description: WF_MODULE_CONTROL_FLAGS for the B image (module and runtime compile)
+        default: ""
+        type: string
   push:
     paths:
       - 'research/experiments/compute-bench/**'
@@ -78,6 +94,14 @@ jobs:
           rustc -vV
           cargo --version
           echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/scratch" >> "$GITHUB_ENV"
+          # The three A/B controls travel as environment variables, which the
+          # bundle Makefile's `?=` defaults yield to; they are empty on a push
+          # and on a dispatch that set none, so those runs build no twin.
+          {
+            echo "WF_PAR_CONTROL_FLAGS=${{ inputs.par_control_flags }}"
+            echo "WF_RUNTIME_CONTROL_FLAGS=${{ inputs.runtime_control_flags }}"
+            echo "WF_MODULE_CONTROL_FLAGS=${{ inputs.module_control_flags }}"
+          } >> "$GITHUB_ENV"
 
       # The OS prefix is load-bearing. Keyed on the three hashes alone, both
       # legs compute the same key, so whichever leg saved first would hand the
