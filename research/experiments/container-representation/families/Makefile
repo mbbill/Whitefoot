@@ -30,6 +30,9 @@ check-owning-growth: $(addprefix $(BUILD)/owning-growth-observer-,default$(EXE) 
 $(BUILD)/owning-growth-abi$(EXE): owning-growth-abi.rs | $(BUILD)
 	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
 
+$(BUILD)/owning-growth-abi-tests$(EXE): owning-growth-abi.rs | $(BUILD)
+	$(RUSTC) --edition=2024 -D warnings --test $< -o $@
+
 $(BUILD)/owning-growth-cost.raw.ll: owning-growth.wf $(WHITEFOOTC) | $(BUILD)
 	$(WHITEFOOTC) --no-overlap --emit-llvm $< -o $@
 
@@ -44,9 +47,11 @@ $(BUILD)/owning-growth-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-grow
 	  $(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $$flags $< $(BUILD)/owning-growth-cost-$*.ll -o $@
 
 .PHONY: check-owning-costs measure-owning-costs
-check-owning-costs: $(addprefix $(BUILD)/owning-growth-costs-,normal$(EXE) retained$(EXE) inlined$(EXE)) \
+check-owning-costs: $(BUILD)/owning-growth-abi-tests$(EXE) \
+                    $(addprefix $(BUILD)/owning-growth-costs-,normal$(EXE) retained$(EXE) inlined$(EXE)) \
                     $(addprefix $(BUILD)/owning-growth-cost-,normal.opt.ll retained.opt.ll inlined.opt.ll)
 	rustfmt --edition 2024 --check owning-growth-abi.rs
+	$(BUILD)/owning-growth-abi-tests$(EXE)
 	$(BUILD)/owning-growth-abi$(EXE) --inspect $(addprefix $(BUILD)/owning-growth-cost-,normal.opt.ll retained.opt.ll inlined.opt.ll)
 	$(BUILD)/owning-growth-costs-normal$(EXE) check
 	$(BUILD)/owning-growth-costs-retained$(EXE) check

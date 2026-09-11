@@ -56,9 +56,27 @@ fn descriptor_writes(body: &str) -> u64 {
     let mut places = std::collections::BTreeMap::from([("%descriptor", 0_u64)]);
     for line in body.lines() {
         if let Some((name, gep)) = line.trim().split_once(" = getelementptr ")
-            && let Some((_, offset)) = gep.split_once("i8, ptr %descriptor, i64 ")
+            && let Some((element, indices)) = gep.split_once(", ptr %descriptor, ")
         {
-            places.insert(name, offset.parse().expect("constant descriptor offset"));
+            // Older LLVM retains aggregate-field GEPs where newer LLVM emits
+            // byte offsets. Both denote the same four-word descriptor.
+            let offset = if element.ends_with(RUN) {
+                let (zero, field) = indices.split_once(", i32 ").expect("run field GEP");
+                assert!(zero == "i32 0" || zero == "i64 0");
+                let field = field.parse::<u64>().expect("constant descriptor field");
+                assert!(field < 4);
+                field * 8
+            } else {
+                let index = indices.strip_prefix("i64 ").expect("constant GEP index");
+                let index = index.parse::<u64>().expect("constant descriptor offset");
+                if element.ends_with(" i8") {
+                    index
+                } else {
+                    assert!(element.ends_with(" i64"), "unexpected descriptor GEP type");
+                    index * 8
+                }
+            };
+            places.insert(name, offset);
         }
     }
     let mut writes = std::collections::BTreeSet::new();
@@ -86,8 +104,45 @@ fn descriptor_writes(body: &str) -> u64 {
             }
         }
     }
-    assert_eq!(writes, (0..32).collect());
+    assert_eq!(
+        writes,
+        (0..32).collect(),
+        "descriptor write coverage:\n{body}"
+    );
     32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RUN, descriptor_writes};
+
+    fn stores(aggregate: bool) -> String {
+        let mut body = String::from("  store ptr %backing, ptr %descriptor, align 8\n");
+        for field in 1..4 {
+            let address = if aggregate {
+                format!("{RUN}, ptr %descriptor, i64 0, i32 {field}")
+            } else {
+                format!("i8, ptr %descriptor, i64 {}", field * 8)
+            };
+            body.push_str(&format!(
+                "  %field{field} = getelementptr inbounds {address}\n  store i64 %word{field}, ptr %field{field}, align 8\n"
+            ));
+        }
+        body
+    }
+
+    #[test]
+    fn aggregate_and_byte_geps_cover_the_same_descriptor() {
+        assert_eq!(descriptor_writes(&stores(true)), 32);
+        assert_eq!(descriptor_writes(&stores(false)), 32);
+    }
+
+    #[test]
+    #[should_panic(expected = "descriptor write coverage")]
+    fn missing_aggregate_field_is_not_a_complete_transfer() {
+        let body = stores(true).replace("  store i64 %word2, ptr %field2, align 8\n", "");
+        descriptor_writes(&body);
+    }
 }
 
 fn inspect(paths: &[String]) {

@@ -926,6 +926,10 @@ transfer sites. Deliberately removing a retained call or descriptor store,
 introducing an inlined copy, and removing the Heap non-access property each
 caused the inspector to reject. These are experiment-shape checks, not compiler
 acceptance tests; an optimizer that changes these shapes requires re-attribution.
+Descriptor coverage recognizes both aggregate-field GEPs retained by older LLVM
+and equivalent byte-offset GEPs. Its native unit tests require identical coverage
+and reject an omitted field; recognizing that address spelling changes neither
+the emitted measurement module nor the retained samples.
 
 | Optimized path | Retained helper traffic | Inlined configuration |
 | --- | --- | --- |
