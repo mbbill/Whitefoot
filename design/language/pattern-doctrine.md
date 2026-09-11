@@ -4,7 +4,7 @@ Decision: A restriction needs an accessible alternative and evidence about its a
 
 Decision: A guidance restriction is revised when it excludes a better-performing implementation that meets the safety and development-feasibility requirements, because the constitution's performance objective outranks any particular guidance mechanism, instead of guidance that outlives its measured benefit.
 
-Decision: A writer-trial result describes the tested model and assistance and imposes no permanent authoring-cost or context ceiling on the language, because the main sacrifice behind performance and checked correctness is human authorship ergonomics and agents may write source humans would reject as inconvenient, instead of reading current writing difficulty as a language limit.
+Decision: The result of a trial in which a model writes programs under stated assistance describes only that model and that assistance and imposes no permanent authoring-cost or context ceiling on the language, because the main sacrifice behind performance and checked correctness is human authorship ergonomics and agents may write source humans would reject as inconvenient, instead of reading current writing difficulty as a language limit.
 
 Rejected:
 - Accommodating whatever architecture a writer's training or history favors: rejected because an agent writer has no installed base to appease, so a closed taught catalog can be forced as long as it stays complete and efficient.

@@ -1,4 +1,4 @@
-Decision: Source contracts and conformances are compile-time signature-and-law metadata that create no runtime value, ABI component, dispatch path, lowering operation, or optimizer authority, because a contract that lowered to anything would be a second semantics, instead of runtime interface objects.
+Decision: Source contracts and conformances, the trait-like declarations of member signatures and laws, are compile-time signature-and-law metadata that create no runtime value, ABI component, dispatch path, lowering operation, or optimizer authority, because a contract that lowered to anything would be a second semantics, instead of runtime interface objects.
 
 Decision: Member compatibility is exact after positional region renaming, with independently valid effect rows required to have equal normalized read, write, and allocation components and no subtyping, because normalized equality preserves signature regularity across irrelevant occurrence order, repetition, and region spelling while still requiring every capability on both sides, instead of raw source-row equality or effect subtyping.
 

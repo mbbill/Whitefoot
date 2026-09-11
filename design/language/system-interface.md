@@ -1,4 +1,4 @@
-Decision: System access uses typed entry inputs and ordinary owned resources under ordinary ownership, with no separate capability category, because the alternatives each hid access, forged identity, serialized unrelated resources, or imported another ecosystem's contract, instead of raw descriptors, ambient functions, one process object, or a literal WASI contract.
+Decision: System access uses typed entry inputs and ordinary owned resources under ordinary ownership, with no separate capability category, because the alternatives each forged identity, hid access, serialized unrelated resources, or imported another ecosystem's contract, instead of raw descriptors, ambient functions, one process object, or a literal WASI contract.
 
 Decision: State effects on system resources are ordinary parameter paths in the effect row, because system use invisible in a signature cannot be narrowed, tested, or parallelized by ownership, instead of a hidden inter-function channel.
 
