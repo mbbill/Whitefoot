@@ -24,6 +24,10 @@ objectives, assumptions, mechanism choices, and experimental results. The active
 - [Decision workflow investigation](investigations/decision-workflow/DESIGN.md):
   external practices, the constitutional reassessment and index migration,
   and the evidence still needed to assess the selected workflow.
+- [Prior compute-runtime bundle](investigations/compute-runtime/PRIOR-BUNDLE.md):
+  the two-runtime comparison behind the 2026-09-09 current-stack selection, the
+  grain panel and recursion-frontier evidence, and what the compute scoreboard
+  replaced.
 
 The [roadmap](../docs/roadmap.md) is reference material outside the working
 loop. Research does not update its status or wait for it. Dated results state

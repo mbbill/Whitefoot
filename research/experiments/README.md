@@ -118,7 +118,14 @@ high-level sequencing; plans do not grant or withhold branch permission.
   shape is source width, not protocol cost: overlap groups are runs of
   consecutive calls in one basic block, so the natural one-file-per-iteration
   loop overlaps nothing. Table in
-  [`io-model/RESULTS.md`](../investigations/io-model/RESULTS.md).
+  [`io-model/RESULTS.md`](../investigations/io-model/RESULTS.md). The 68
+  scheduler experiments this bench later carried — the TCP packet-policy tail,
+  the client-width reversal, the storage and allocator negatives, the native
+  and Go references and the continuation lowering — are digested in
+  [`io-model/SCHEDULER-FINDINGS.md`](../investigations/io-model/SCHEDULER-FINDINGS.md),
+  and the prior compute bundle's grain panel, recursion-frontier evidence and
+  two-runtime comparison in
+  [`compute-runtime/PRIOR-BUNDLE.md`](../investigations/compute-runtime/PRIOR-BUNDLE.md).
 - `buffer-initialization-cost/` — the dossier §9.1 initialization-cost row,
   whose control §9.1 requires to be an *uninitialized* native read loop. A
   Whitefoot drain over a language-initialized reused buffer measures at
