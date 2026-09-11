@@ -3,6 +3,18 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-11 把拉取请求检查的发现应用到 compiler 树
+
+Nodes: compiler, compiler/cleanup-traversal, compiler/tag-only-lowering, compiler/resource-exhaustion-floor, compiler/parallel-lowering, compiler/parallel-lowering/lane-stack, compiler/parallel-lowering/parallel-runtime
+
+Summary: 本流程的拉取请求检查，针对代码对整棵 compiler 树运行了一遍。有一处真实的偏离（drift），需要项目负责人确认：cleanup-traversal 此前是从一份记忆记录迁移而来的，该记录描述的是一个由强连通分量决定的显式工作列表，但在本分支开始之前，生成器（emitter）依据项目负责人 2026-09-04 的裁定，已经去掉了那个工作列表以及它曾用来绕开的循环拒绝，现在会为每个节点类型生成一个释放动作，它会在释放图闭合的地方调用自身，并由栈账本把这次自调用报告为一条循环记录；该节点已依据生成器记录在案的裁定重写，工作列表与循环拒绝连同该裁定的理由一起移入了它的被否决列表，而 buffer 决策现在陈述的是代码实际拥有的那一个生成出来的释放循环。智能体所做的措辞修复，含义未变：根节点关于划分的那句话，不再使用"语义切分"的说法；tag-only-lowering 说明了字宽惩罚对向量化器具体做了什么；parallel-runtime 在第一次用到"粗粒度上限"和"偏斜状况"这两个说法时就给出了定义；parallel-lowering 中关于启动的决策，点名的是并行下沉版本及其顺序克隆，而不是"世界"与"克隆"；lane-stack 陈述了它所依赖的那条入口栈的事实；而 resource-exhaustion-floor 现在则说明，它的中止覆盖的是栈和堆，而一个不可用的计算 worker 是一次由普通调用回退路径处理的被拒绝 offer。其余每一项编译器决策都被发现已经实现，审查记录中引用的文件与函数保存在本仓库之外。
+
+## 2026-09-11 把拉取请求检查的发现应用到 language 树
+
+Nodes: language, language/checks-and-proofs/certificate-fold, language/checks-and-proofs/obligation-discharge, language/checks-and-proofs/obligation-discharge/goal-decomposition, language/checks-and-proofs/obligation-discharge/loop-fact-retention, language/checks-and-proofs/obligation-discharge/writer-trap-surface, language/checks-and-proofs/requires-entry-contract, language/contracts, language/ownership/no-reborrow, language/system-interface, language/system-interface/directory-enumeration, language/data-model/container-representation, language/pattern-doctrine
+
+Summary: 本流程的拉取请求检查，针对规范对整棵 language 树运行了一遍：决策测试、一致性扫描，以及缺乏支撑节点的检查。由智能体应用的以下各项，都是含义源自原始记录或规范本身的措辞或精简修复：system-interface 根节点中的缺陷列表，此前与其替代方案的配对顺序有误，现已重新排序；那些需要依赖旧记录才能理解的术语被展开说明，具体是：certificate-fold 中操作数的已知值、loop-fact-retention 中 DEFLATE 解码器"29 处证出 5 处"的说法、goal-decomposition 中的两种守卫形态、no-reborrow 中的被拥有值穿引（threading）、obligation-discharge 中"把一切都变成陷阱"的编译模式、pattern-doctrine 中的编写者试验，以及 container-representation 中被推迟的库表示权威；在都用到了 contract 这个词的两个节点中，requires-and-ensures 块与类似 trait 的 contract 被区分开来了；directory-enumeration 中不加过滤的自身与父目录条目，现在附上了规范自身的理由；并且移除了两处对根节点已经陈述过的规则的重述——writer-trap-surface 中重复的陷阱原则，以及 obligation-discharge 中重复的单一权威规则——同时把被否决的 claim 形式连同它们各自的理由一起保留在 writer-trap-surface 之下。留给项目负责人决定、未作改动的内容：data-model 中 struct-of-arrays 这一默认设置，其依据是模式目录（patterns catalog）而不是规范；data-model 中的可回收稳定身份，读起来像是已经实现，而规范却仍然把可回收槽位的容器判定为受阻的；data-model 中的重新安置操作——重新哈希、压缩、drain 修复、移位，以及编码字符串的删除——在规范中根本找不到；以及 pattern-doctrine 整体，还有 surface-form 中两条关于证据政策的决策，其依据是章程（constitution）而不是规范正文，因此是否应当把它们留在这棵树中，由项目负责人来决定。
+
 ## 2026-09-11 把 compiler 树更新到当前栈运行时与粒度控制
 
 Nodes: compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime
