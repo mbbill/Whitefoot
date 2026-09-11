@@ -66,7 +66,8 @@ Two link-time assertions make a `wf` row a `wf` row. The emitted module carries
 scheduler sources would still link, still run, still produce correct output, and
 be silently sequential. The harness therefore references `wf__par_grants()`,
 which has no weak stub, and the Makefile requires a strong definition of
-`wf__par_publish` and `wf__par_split_budget` in every image after the link.
+`wf__par_publish`, `wf__par_split_budget` and `wf__par_recursion_budget` in
+every image after the link.
 
 ## Running it
 
@@ -277,7 +278,9 @@ each one from the emitted `--par` module at every build, into
 `$(BUILD)/<kernel>_split.h`, so a codegen change moves the reported chunk count
 instead of silently invalidating a number written here. Quadrature emits no
 `wf__par_split_budget` call at all: it parallelizes by recursion structure and
-has no minimum-size admission threshold.
+has no minimum-size admission threshold. What it asks the runtime instead is
+`wf__par_recursion_budget()`, once per call into its recursive component, for
+the levels below which that component runs its sequential clone.
 
 **Confirm the window on the host that records a table**, before recording it:
 the `wf-seq` median inside [5 ms, 60 ms], the `wf` median above 1 ms at the

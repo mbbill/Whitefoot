@@ -227,6 +227,9 @@ $(BUILD)/backend_parlay.o: backend_parlay.cpp backend.h harness.h
 #   1. Link-time: harness.c references wf__par_grants(), which has no weak
 #      stub in the emitted module, so dropping the scheduler sources fails the
 #      link outright.
+#      The recursion budget is asserted the same way and for the same reason:
+#      a link that reached its weak stub would answer zero at every component
+#      entry and run every recursive kernel sequentially from its first node.
 #   2. Post-link, in two parts, because the ELF spelling is wrong on Darwin in
 #      both halves: Mach-O nm prints the label with a leading underscore, so an
 #      anchored wf__par_publish$ never matches, and Mach-O renders a weak
@@ -241,11 +244,14 @@ $(BUILD)/backend_parlay.o: backend_parlay.cpp backend.h harness.h
 define assert-real-runtime
 	nm $(1) | grep -q ' [TS] _\{0,1\}wf__par_publish$$'
 	nm $(1) | grep -q ' [TS] _\{0,1\}wf__par_split_budget$$'
+	nm $(1) | grep -q ' [TS] _\{0,1\}wf__par_recursion_budget$$'
 	case "$$(uname -s)" in \
 	  Darwin) nm -m $(1) | grep -q '(__TEXT,__text) external _wf__par_publish$$' && \
-	          nm -m $(1) | grep -q '(__TEXT,__text) external _wf__par_split_budget$$' ;; \
+	          nm -m $(1) | grep -q '(__TEXT,__text) external _wf__par_split_budget$$' && \
+	          nm -m $(1) | grep -q '(__TEXT,__text) external _wf__par_recursion_budget$$' ;; \
 	  *)      nm    $(1) | grep -q ' T wf__par_publish$$' && \
-	          nm    $(1) | grep -q ' T wf__par_split_budget$$' ;; \
+	          nm    $(1) | grep -q ' T wf__par_split_budget$$' && \
+	          nm    $(1) | grep -q ' T wf__par_recursion_budget$$' ;; \
 	esac
 endef
 
