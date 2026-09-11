@@ -12,7 +12,7 @@ Decision: Artifacts, replay, stable protocols, release machinery, and product-sc
 
 Decision: Conformance cases are independent evidence and never an acceptance authority, because the numbered specification alone defines source-language behavior and a second authority would let tests define the language, instead of production acceptance driven by the corpus.
 
-Decision: Any semantic slicing of the implementation describes build and test order only and never becomes a normative admission profile, a function or signature allowlist, or an alternate compiler path, because a capability implemented by shape or identity rather than by rule is a special case the language does not have, instead of profile-gated acceptance.
+Decision: Any partition of the implementation into stages or slices describes build and test order only and never becomes a normative admission profile, a function or signature allowlist, or an alternate compiler path, because a capability implemented by shape or identity rather than by rule is a special case the language does not have, instead of profile-gated acceptance.
 
 Decision: A post-resolution rejection must establish an actual numbered-rule violation and be deterministic for one compiler executable, while the choice among competing first errors is not part of the language's identity, because a writer acts on a rule and a location but two correct checkers may legitimately meet different first violations, instead of specifying a portable first-error order.
 
