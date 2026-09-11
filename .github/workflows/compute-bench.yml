@@ -62,8 +62,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-14]
-    env:
-      WHITEFOOT_SCRATCH_ROOT: ${{ runner.temp }}/scratch
     steps:
       # No historical compiler is built here, so a shallow checkout is enough.
       # The manifest records the revision from it.
@@ -71,11 +69,15 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Record the Rust toolchain
+      # The scratch root goes through GITHUB_ENV because the `runner` context
+      # is not available to a job-level `env`; a workflow that uses it there
+      # fails validation before any job starts.
+      - name: Record the Rust toolchain and set the scratch root
         run: |
           rustup default stable
           rustc -vV
           cargo --version
+          echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/scratch" >> "$GITHUB_ENV"
 
       # The OS prefix is load-bearing. Keyed on the three hashes alone, both
       # legs compute the same key, so whichever leg saved first would hand the
@@ -100,11 +102,7 @@ jobs:
             ~/.cargo/git
             compiler/target
             ${{ runner.temp }}/scratch/whitefoot-compute-deps
-          key: >-
-            ${{ runner.os }}-${{ matrix.os }}-computebench-${{ hashFiles(
-              'compiler/Cargo.lock',
-              'research/experiments/compute-bench/rayon/Cargo.lock',
-              'research/experiments/compute-bench/deps.sh') }}
+          key: ${{ runner.os }}-${{ matrix.os }}-computebench-${{ hashFiles('compiler/Cargo.lock', 'research/experiments/compute-bench/rayon/Cargo.lock', 'research/experiments/compute-bench/deps.sh') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.os }}-computebench-
 
