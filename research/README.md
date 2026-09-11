@@ -7,8 +7,8 @@ should buy, compare plausible alternatives, and retain the observed limits.
 The [evidence method](../docs/practice.md#evidence-guidance) separates design
 objectives, assumptions, mechanism choices, and experimental results. The active
 [specification](../spec/kernel-spec.md) defines the language, the
-[compiler README](../compiler/README.md) describes the implementation, and
-[AGENTS.md](../AGENTS.md) defines the work-branch and merge boundary.
+[design trees](../design/) record why the language and the compiler are the way
+they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge boundary.
 
 - `investigations/`: a selected question's design, measurements, and rejected
   alternatives. Keep useful evidence here after implementation; an ended task
@@ -17,8 +17,8 @@ objectives, assumptions, mechanism choices, and experimental results. The active
   limitations, and maintained harnesses.
 - `notes/` and existing documents at this directory's root: bounded design
   questions and supporting analysis.
-- [Decision memory](../mcts_mem/): what was settled, why, and which attempts
-  were replaced. Update the affected standing guidance when recording a change.
+- [Design trees](../design/): what was settled, why, and which alternatives
+  were refused. A tree change is planned and approved before the code it governs.
 - [Archive promotion audit](archive-promotion-audit.md): a non-authoritative
   map from historical findings to useful successors and remaining questions.
 - [Decision workflow investigation](investigations/decision-workflow/DESIGN.md):

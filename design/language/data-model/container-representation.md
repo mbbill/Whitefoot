@@ -1,0 +1,7 @@
+Decision: Owned aggregates are represented through general typed storage places with explicit initialization and ownership state, using caller-provided result destinations and consumed-place reuse when sound, because a source value transfer is neither permission to duplicate an owner nor a requirement to copy an entire payload at every element operation, instead of copying payloads on every element operation.
+
+Decision: Full fixed arrays, initialized prefixes, and circular windows are distinct states, and placement and stable identity are separate axes with no mandatory handle or store indirection on dense values, because variable length and a head position are not universal array metadata and a fixed extent belongs to the type or state that has it, instead of one universal dynamic-array representation.
+
+Decision: Source-function signatures keep their checked ownership and access modes independently of how parameters and results are represented, and those modes alone supply no loan origin, lifetime, or aliasing permission, because a representation choice must not widen or narrow what a signature promises, instead of deriving permissions from representation.
+
+Decision: The initial public storage transitions stay compiler-checked, and general library representation authority remains a checked extension direction that needs an exact checked implementation and a real workload before selection, because a concrete checker model is not a verified symbolic library or a production erasure path, instead of granting libraries representation privileges now.

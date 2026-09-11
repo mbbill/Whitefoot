@@ -101,12 +101,12 @@ spec-append-only-staged:
 # the phrase check alone.
 spec-prose-integrity:
 	@failed=0; \
-	for file in README.md AGENTS.md CLAUDE.md compiler/README.md docs/*.md; do \
+	for file in README.md AGENTS.md CLAUDE.md docs/*.md; do \
 		if grep -nE '(^|[^0-9a-f])[0-9a-f]{64}([^0-9a-f]|$$)' "$$file"; then \
 			echo "spec prose integrity: $$file quotes a specification digest; the identity is derived from the specification's own bytes" >&2; failed=1; \
 		fi; \
 	done; \
-	for file in README.md AGENTS.md CLAUDE.md compiler/README.md docs/*.md spec/derivation/derivation-ledger.md; do \
+	for file in README.md AGENTS.md CLAUDE.md docs/*.md spec/derivation/derivation-ledger.md; do \
 		if grep -nE 'Kernel specification v[0-9]+\.[0-9]+ is the active|[Aa]ctive language authority(:| is) v[0-9]+\.[0-9]+|active v[0-9]+\.[0-9]+ (guidance|authority)|the exact v[0-9]+\.[0-9]+ bytes' "$$file"; then \
 			echo "spec prose integrity: $$file names a version as the active authority; say 'the active specification at spec/kernel-spec.md' instead" >&2; failed=1; \
 		fi; \

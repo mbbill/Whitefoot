@@ -34,7 +34,7 @@ Read the material that owns the question you are working on:
 | Question | Source |
 |---|---|
 | What does the language admit? | [Active kernel specification](spec/kernel-spec.md) |
-| What does this compiler implement, and how do I run it? | [Compiler README](compiler/README.md) |
+| What does this compiler implement, and how do I run it? | [Running the compiler](#running-the-compiler) below; the conformance report states the implemented surface |
 | What are the project goals and design principles? | [Constitution](docs/constitution.md) |
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md); [CLAUDE.md](CLAUDE.md) is the identical alternate entry |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
@@ -49,7 +49,7 @@ authority rules are in [AGENTS.md](AGENTS.md#authority-and-reading).
 
 ## Repository
 
-- [compiler/](compiler/README.md): the Rust compiler, LLVM emission, and native
+- [compiler/](compiler/): the Rust compiler, LLVM emission, and native
   runtime support.
 - [spec/](spec/): the active language, immutable version archives, and rule
   [selection-ground index](spec/derivation/derivation-ledger.md#current-index).
@@ -96,8 +96,19 @@ make install-hooks   # optional: catch immutable-spec edits earlier
 `make check` is the canonical complete gate and prints stage timings. Its
 stage inventory is defined in the root [Makefile](Makefile) and
 [compiler Makefile](compiler/Makefile). For a shorter development feedback
-loop, use the [compiler's focused commands](compiler/README.md#running-and-checking).
-The complete gate is still required on the exact revision merged into main.
+loop:
+
+```sh
+make static
+make -C compiler format lint
+make -C compiler test-unit
+cargo test --manifest-path compiler/Cargo.toml --profile gate --locked --offline --lib semantic::tests::source_proofs
+```
+
+Use a test filter matching the responsibility changed; `source_proofs` above
+is one example. The `gate` profile keeps debug assertions and overflow checks
+while optimizing the compiler's analysis work. The complete gate is still
+required on the exact revision merged into main.
 
 The [gate workflow](.github/workflows/gate.yml) runs those stages on Linux and
 macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and

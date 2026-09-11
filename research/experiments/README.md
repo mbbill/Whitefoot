@@ -7,10 +7,9 @@ bundles below still name the retired democ toolchain; their RESULTS and source
 evidence remain useful, but their old runner is not replayable from HEAD and is
 not a current compiler gate. Historical chronology and decisions are indexed
 by `../../archive/governance/decision-log.md`; current design decisions live in
-`../../mcts_mem/`, current direction status in `../../docs/roadmap.md`, current
-execution proposal and status in `../../docs/roadmap.md`, and
-implementation detail in `../../compiler/README.md`. The current plan records
-high-level sequencing; plans do not grant or withhold branch permission.
+`../../design/`, current direction status in `../../docs/roadmap.md`, and known
+compiler defects in `../../docs/todo.md`. Plans do not grant or withhold branch
+permission.
 
 ## Current flagship experiment evidence
 

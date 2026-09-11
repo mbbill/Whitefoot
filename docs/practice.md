@@ -34,19 +34,19 @@ Scale the reasoning to uncertainty, impact, error cost, and reversibility.
 
 | Occasion | Action | Observable result / completion check |
 |---|---|---|
-| Start or resume | Read the requested outcome and scope, then the affected current owner: the specification for language behavior, compiler guide and code for implementation, or document role for prose. Newly found issues do not expand the task's scope. For a material choice, read the relevant constitutional clauses and follow the rule index to its reasons; walk the relevant memory branch and alternatives with the skill. On resumption, verify the actual working tree and PR state. | The work follows the relevant requirements and accounts for prior objections. No reading log or task document. A1, D3, R1. |
+| Start or resume | Read the requested outcome and scope, then the affected current owner: the specification for language behavior, the compiler design tree and code for implementation, or document role for prose. Newly found issues do not expand the task's scope. For a material choice, read the relevant constitutional clauses and follow the rule index to its reasons; read the relevant design subtree with its ancestors and refused alternatives. On resumption, verify the actual working tree and PR state. | The work follows the relevant requirements and accounts for prior objections. No reading log or task document. A1, D3, R1. |
 | Choose | State required properties, facts, assumptions, actual alternatives, the selection reason, and what could change it. Use deduction only for conclusions the stated premises entail; otherwise state the empirical or provisional ground. Before an experiment intended to select a design, record what result would distinguish the candidates; keep later exploration identifiable. | A concise reason in the existing investigation, or the PR for a small choice; experimental criteria and results at their source. R1, R2. |
-| Update | When a choice is settled or its grounds change, update the standing owner and memory; update index rows for affected language rules. Follow references and material dependencies into consumers, reconsidering each affected choice. Continue if its conclusion or grounds change; stop at an unaffected dependency. Keep unresolved grounds explicit, with a concrete question and affected rows marked `revisit`. Do this when the conclusion is reached, including during long tasks. | Current guidance, recorded reasons, and the index agree. State the affected set and any unresolved reason in the existing explanation. R3, R4, M1–M3. |
+| Update | When a choice is settled or its grounds change, update the standing owner and the design tree; update index rows for affected language rules. Follow references and material dependencies into consumers, reconsidering each affected choice. Continue if its conclusion or grounds change; stop at an unaffected dependency. Keep unresolved grounds explicit, with a concrete question and affected rows marked `revisit`. Do this when the conclusion is reached, including during long tasks. | Current guidance, recorded reasons, and the index agree. State the affected set and any unresolved reason in the existing explanation. R3, R4, M1–M3. |
 | Finish | Run applicable mechanical checks, give another agent the task constraints, full diff and actual results, and use the completion checklist. Fix findings and recheck affected items, then publish the reviewed changes and compact report to the existing PR. | Check results, findings and limitations at the review surface. No separate review file or additional approval stage. V1–V4. |
 
-For a choice without an existing rule or memory node, use the nearest relevant
-owner and memory branch; do not require an index entry merely to begin.
+For a choice without an existing rule or design node, use the nearest relevant
+owner and design subtree; do not require an index entry merely to begin.
 A recorded reason names its material premises and dependent rules or interfaces
 where known. Follow these links and search changed rule IDs or concepts to
 find consumers; a search supplements reading and cannot prove completeness.
 Choose where to write using the [document roles](review-checklist.md#document-roles).
-The skill determines whether a memory node is warranted; the index covers
-language rules, not every task or engineering choice.
+The design-tree procedure determines whether a node is warranted; the index
+covers language rules, not every task or engineering choice.
 
 The constitution supplies purpose, objectives, tradeoffs, and conditional
 principles. It does not supply a unique solution. The active specification
@@ -98,7 +98,7 @@ new choice. An ordinary implementation fix need not clear unrelated legacy
 markers.
 
 When a rule is added, amended, or retired, add, update, or remove its current
-row. Retain useful dated evidence and skill-managed history. When a reason
+row. Retain useful dated evidence. When a reason
 changes or moves, check rows that cite it and the directly affected standing
 guidance; changing an index row alone cannot repair a false source. Follow
 actual premise dependencies rather than treating every related link as an
@@ -118,7 +118,7 @@ condition; an unresolved safety objection still requires substantive resolution.
 Reconsider the method itself when a task exposes a missed dependency,
 unsupported conclusion, repeated owner correction, or upkeep that displaces
 useful compiler work. Repair the specific trigger, owner, or check that failed
-and record a changed decision in the workflow memory. This is also a material
+and record a changed decision in the guidance that owns it. This is also a material
 choice; adding more process without a demonstrated use is not the remedy.
 
 ## Documentation and local context
@@ -130,8 +130,8 @@ owner instead of copying the owner's changing details.
 For a change, identify the concepts it changes and follow their rule IDs,
 interfaces, and references into the affected documents. Read those sections
 with their surrounding qualifications. Update the standing text when the
-decision is settled, then record the reason and replaced alternatives in the
-owning memory node. A new dated fact beneath an old instruction leaves two
+decision is settled, then record the reason and refused alternatives in the
+owning design node. A new dated fact beneath an old instruction leaves two
 conflicting instructions; it is not an update to the old one.
 
 At task completion, use the [review checklist](review-checklist.md) to check
@@ -139,19 +139,11 @@ content placement, references, examples and consistency in this affected set.
 Mechanical checks establish paths and executable behavior, not consistency
 of the prose or suitability for its reader.
 
-Invalid legacy memory formatting needs a documented repair, not a lint waiver.
-Identify the original Git revision and account for each changed entry; preserve
-its claims, dates, experimental limits, and actual alternatives. Correct only
-supported metadata or classification errors; append substantive corrections.
-Review the repair against that original revision before committing it, then run
-lint on the committed tree. Its HEAD-based append-only check is not evidence
-that the historical repair preserved meaning.
-
 Historical essays and experimental records keep their original conditions;
 do not append a second implementation inventory to keep an old essay
 apparently current. The roadmap remains outside the working loop. A retained
 investigation need not be moved when implementation lands: its design and
-measurements remain useful evidence, while the implementation README changes.
+measurements remain useful evidence, while the compiler design tree changes.
 
 ## Feedback and implementation boundaries
 

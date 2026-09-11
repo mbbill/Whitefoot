@@ -52,9 +52,10 @@ probably not the next work.
   projects. It is not part of this loop: nothing waits on it, no step updates
   it, and it grants or withholds nothing. Read it for orientation; do not treat
   a line in it as a statement of what the compiler currently does, which is the
-  specification's and `compiler/README.md`'s to say.
+  specification's and the conformance results' to say.
 - The active specification at `spec/kernel-spec.md` defines the language.
-  `compiler/README.md` owns the current implementation map and known gaps.
+  The conformance results state what the compiler implements, `docs/todo.md`
+  lists its known defects, and `design/compiler` records its decisions.
   Compiler behavior, tests, archived code, and design prose do not define the
   language.
 - `docs/constitution.md` owns purpose, chosen objectives, tradeoffs, and
@@ -81,8 +82,8 @@ probably not the next work.
   written to again, and not cited. A finished task is not evidence — a claim
   that needs support cites the specification, a conformance case, a measured
   result under `research/experiments/`, a design under
-  `research/investigations/`, or decision rationale where the completion
-  checklist's citation boundaries permit memory references. None of these
+  `research/investigations/`, or a design-tree decision where the completion
+  checklist's citation boundaries permit it. None of these
   defines live approval or workflow requirements. Any imperative process
   wording retained in those evidence artifacts is historical and superseded by
   the four rules below.
@@ -210,8 +211,7 @@ one-time cleanup.
   the old in the same change. Do not accumulate parallel versions, stale
   dossiers, or abandoned experiments beside their replacements. This applies
   to current guidance and replaceable implementation artifacts; frozen
-  archives, useful dated evidence, and skill-managed decision memory retain
-  history under their own rules.
+  archives and useful dated evidence retain history under their own rules.
 - Keep important folders as clean as the root. The same discipline applies
   inside `spec/`, `compiler/`, `tools/`, `conformance/`, and the research
   directories. An important folder turning into a junk drawer is the same

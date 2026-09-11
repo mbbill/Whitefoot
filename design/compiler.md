@@ -18,3 +18,7 @@ Decision: A post-resolution rejection must establish an actual numbered-rule vio
 
 Rejected:
 - A Python reference-model gate: rejected because it consumed a historical toy syntax tree and neither exercised nor compared with the Rust compiler, so it did not justify its workflow and maintenance cost.
+
+Decision: Valid specified source that the compiler has not implemented stops as an explicit unsupported capability and is never reported as invalid source, because a compiler gap reported as a language rejection rewrites the language from the implementation side, instead of misreporting unsupported source as invalid.
+
+Decision: The umbrella target is ripgrep with a fair two-times end-to-end objective, and performance comes first in that loop, so a missing performance capability stops downstream expansion until its owning layer is fixed rather than being written around, because the target exists to expose general language defects and to attribute wins to generated code, and writing downstream code on top of a missing capability hides the blocker inside an integration, instead of SQLite as the umbrella target or shipping the finished tool as the completion criterion.

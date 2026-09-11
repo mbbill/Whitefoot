@@ -1,0 +1,4 @@
+Decision: A body binder's mode and type are derived from its right-hand side and never written, with every right-hand side self-typed and no derivation reading a later statement or a use site, because the checker reconstructs them uniquely from the same declaration so a written copy is redundancy with no trust boundary, while signature modes, types, named fields, and argument labels stay written because a reader at that boundary cannot reconstruct them, instead of writing the mode and type at every body binder.
+
+Rejected:
+- Every body binder states its mode and type explicitly: rejected because a body binder's mode and type are uniquely reconstructed from its right-hand side, so the spelling rule deletes the written form by class, and the only redundancy that survives is the redundancy at a trust boundary.

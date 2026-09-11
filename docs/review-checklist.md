@@ -57,7 +57,7 @@ or self-description merely to satisfy this table.
 | Root README | Project introduction, getting started, navigation | Detailed compiler inventory, a second specification, task history |
 | `docs/constitution.md` | Complete statements of purpose, chosen objectives, obligations, prohibitions, tradeoffs, and applicable conditions that can guide a choice and test its grounds | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions, abbreviated labels in place of clauses, per-clause usage checklists, a selected mechanism asserted as an inevitable consequence of the purpose |
 | `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
-| `compiler/README.md` | Running and checking the compiler, implementation map, supported surface and known limitations | New language rules, task diaries, duplicated investigation reports |
+| `docs/todo.md` | Known compiler defects and open costs, removed when fixed | Decisions, unsupported capabilities, task progress |
 | `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
 | `AGENTS.md` / `CLAUDE.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
 | `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
@@ -74,8 +74,8 @@ Citation boundaries:
 - Definitions point to their current owner; technical claims point to the
   specification, source/cases, a relevant design, or reproducible evidence.
   The linked passage must support the claim, not merely discuss the topic.
-- The constitution, specification, compiler guide, writer patterns and
-  explanatory essays must be usable without consulting the design trees.
+- The constitution, specification, writer patterns and explanatory essays
+  must be usable without consulting the design trees.
   Do not link to `design/` from those documents or use it as their
   authority. State the relevant principle or explanation in the document and
   cite direct technical evidence when needed.
@@ -265,8 +265,8 @@ Source: [evidence practice](practice.md#evidence-guidance) and
 Use existing checks when applicable: `git diff --check` for patch whitespace;
 `make static` for repository invariants, immutable spec archives and live spec
 references; `make -C compiler format lint` and the
-[focused compiler commands](../compiler/README.md#running-and-checking) for
+[focused compiler commands](../README.md#verification) for
 code. `make static` does not check document purpose or all links, and compiler
 `docs` builds Rust API documentation, not this prose checklist. The root
-[Makefile](../Makefile) owns the full gate inventory; memory verification follows
-the current skill and is checked under M2.
+[Makefile](../Makefile) owns the full gate inventory; the design-tree checks
+follow `design/skill/SKILL.md` and are covered by M1-M3.

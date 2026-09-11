@@ -1,0 +1,6 @@
+Decision: Exhausting a resource the trusted computing base supplies ends the process by a defined abort that first writes one fixed record naming only the exhausted resource class, and that record names no source construct, rule, function, address, depth, or size, because the absence of those fields is what distinguishes it from a language trap record, and neither its bytes nor the exit status are fixed by the language, instead of a language-level trap.
+
+Decision: The entry runs on a stack the runtime sizes, every generated function carries the target's stack-probing attribute, and a fault below a thread's stack keeps the host's own disposition, because an explicit check in every prologue spends the headroom it guards while the target's own probing attribute contains the same fault class for free and leaves reporting to a signal disposition, instead of a stack-pointer check in every prologue.
+
+Rejected:
+- A stack-pointer comparison against a per-thread limit in every generated prologue: rejected because the check spends the headroom it guards, and the target's stack-probing attribute contains the same fault class at no cost.

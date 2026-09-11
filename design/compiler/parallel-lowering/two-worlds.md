@@ -1,0 +1,6 @@
+Decision: A `--par` module carries two lowerings of every function on a path from the entry to a handed-out call, the overlapped world and a sequential clone whose code is the sequential lowering byte for byte, with one world selected once per process at bootstrap by whether a pool was asked for, because the hand-out's rejoin takes the callee's result out of tail position and forecloses tail-recursion elimination, so no single lowering serves both worlds, measured as a 2.96 times pool-off tax that fell to 1.00 with the clone world, instead of one lowering with a per-task demand switch.
+
+Decision: The clone set is derived from the call graph and the permission table, the functions reachable from the entry that can reach a hand-out, and never from a name or a source shape, because a capability implemented by shape or identity is a special case the language does not have, instead of marking functions by name.
+
+Rejected:
+- A per-task demand signal switching to a sequential clone per subtree when no idle capacity is reported: rejected because the signal cost contended read-modify-writes measured at 0.49 to 0.93 seconds on the fine-grain cell, while pool-off selection needs one decision per process.
