@@ -3,8 +3,9 @@
 Status: batch contract for branch `par/proof-derived-parallelism`. This
 document is the executors' brief and the merge packet's design summary. It
 synthesizes PAL.md (same directory), the three research rounds
-(`do_not_scan/wf-parallelism-research/`), and the owner's rulings of
-2026-08-20/21. Nothing here is approved until the branch merges.
+(`wf-parallelism-research/`, in the local scratch directory outside the
+repository), and the owner's rulings of 2026-08-20/21. Nothing here is
+approved until the branch merges.
 
 > **Superseded in three places by later landings on this branch, and corrected
 > in place.** The runtime protocol named in section 5 (`wf_par_try_fork` /
@@ -293,7 +294,7 @@ differences under 20% reported as unresolved): WF_WORKERS=1 vs 2/4/8,
 wall time + byte-compare. Report the Amdahl share observed. Results into
 `research/investigations/proof-derived-parallelism/RESULTS.md`, alongside
 the deciding debate probes copied into `probes/` here (evidence-mortality
-repair; sources under do_not_scan are dying artifacts).
+repair; sources under the scratch root are dying artifacts).
 
 ## 9. PAL.md alignment (the requested gap-check, condensed)
 

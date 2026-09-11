@@ -263,13 +263,19 @@ bundle that touches the network; everything after it is offline).
 
 ```sh
 cd research/experiments/compute-bench
-export WHITEFOOT_SCRATCH_ROOT=$HOME/do_not_scan   # the default; nothing is
-                                                  # ever written in the repo
+export WHITEFOOT_SCRATCH_ROOT=${TMPDIR:-/tmp}/whitefoot   # the default; nothing is
+                                                          # ever written in the repo
 make deps      # fetch (network) and build the pinned schedulers
 make build     # the compiler, both modules per kernel, one image per kernel
 make verify    # every form at every emitted width, correctness only
 make compare   # the timed passes and the table, into a fresh RESULTS
 ```
+
+The default scratch root is the system temporary directory, which the host may
+clear on reboot: the fetched and built dependencies and any `RESULTS` left
+there are then gone and have to be rebuilt, so copy out anything worth keeping
+(the tables that matter are transcribed into `RESULTS.md` by hand anyway), or
+set `WHITEFOOT_SCRATCH_ROOT` to a durable directory outside the repository.
 
 `make deps`, `make build` and `make verify` are the only targets that can fail
 on anything other than a missing or malformed row.
@@ -328,7 +334,7 @@ so and fails.
 ### Reproduce recipe
 
 ```sh
-export WHITEFOOT_SCRATCH_ROOT=$HOME/do_not_scan
+export WHITEFOOT_SCRATCH_ROOT=${TMPDIR:-/tmp}/whitefoot
 make -C research/experiments/compute-bench deps     # once, with a network
 make -C research/experiments/compute-bench build
 make -C research/experiments/compute-bench verify
@@ -562,7 +568,7 @@ This is the one place every compiler flag is written, quoted from the
 
 ```make
 ROOT   := $(abspath ../../..)
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 WORK   := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-compute-bench
 BUILD  := $(WORK)/build
 DEPS   := $(WORK)/deps

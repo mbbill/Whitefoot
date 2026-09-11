@@ -15,7 +15,7 @@
 # of the frozen run.
 
 ROOT := $(abspath ../../..)
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 BASE_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/wf-0026-base
 WORK_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-wide-scan-lowering
 BUILD := $(WORK_ROOT)/build

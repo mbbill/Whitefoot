@@ -64,7 +64,7 @@ the admitted asymmetry between the two flag sets.
 ## Reproduce
 
 ```sh
-export WHITEFOOT_SCRATCH_ROOT=$HOME/do_not_scan
+export WHITEFOOT_SCRATCH_ROOT=${TMPDIR:-/tmp}/whitefoot
 make -C research/experiments/compute-bench deps     # once, with a network
 make -C research/experiments/compute-bench build
 make -C research/experiments/compute-bench verify

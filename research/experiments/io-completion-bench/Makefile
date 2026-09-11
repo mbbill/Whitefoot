@@ -22,7 +22,7 @@
 # research/investigations/io-model/RESULTS.md.
 
 ROOT := $(abspath ../../..)
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
 BUILD := $(WORK)/build
 TREE := $(WORK)/tree

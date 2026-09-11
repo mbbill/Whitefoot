@@ -34,6 +34,12 @@ jobs:
   gate:
     name: ${{ matrix.stage }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Everything the gate writes outside the checkout goes under one scratch
+    # root. Naming it here rather than leaving the Makefile default makes the
+    # cached research target directory below and the directory `make` writes
+    # the same path on both runner images.
+    env:
+      WHITEFOOT_SCRATCH_ROOT: ${{ runner.temp }}/whitefoot
     # The budget, enforced where it cannot flake. Eight minutes is the ceiling,
     # not the target: the target is five, and a job that reaches eight has a
     # defect worth failing over rather than waiting out. No test asserts a wall
@@ -127,7 +133,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/do_not_scan/whitefoot-research-tests-target
+            ${{ runner.temp }}/whitefoot/whitefoot-research-tests-target
           key: gate-${{ matrix.os }}-deps-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}
           restore-keys: |
             gate-${{ matrix.os }}-deps-

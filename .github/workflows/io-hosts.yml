@@ -28,6 +28,10 @@ jobs:
     name: completion-linux (ubuntu-24.04)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # `completion-test` writes its harness under this root, and the step below
+    # runs that harness by path. Naming the root here keeps the two agreed.
+    env:
+      WHITEFOOT_SCRATCH_ROOT: ${{ runner.temp }}/whitefoot
     steps:
       - uses: actions/checkout@v4
 
@@ -83,11 +87,11 @@ jobs:
       # actually selects between.
       - name: Completion harness with io_uring required
         run: |
-          harness="$HOME/do_not_scan/whitefoot-completion-test/harness"
+          harness="$WHITEFOOT_SCRATCH_ROOT/whitefoot-completion-test/harness"
           for helpers in 0 1 4; do
             echo "== WF_REQUIRE_LINUX_IO_URING=1 WF_IO_HELPERS=$helpers =="
             WF_REQUIRE_LINUX_IO_URING=1 WF_IO_HELPERS="$helpers" \
-              "$harness" "$HOME/do_not_scan/whitefoot-completion-test"
+              "$harness" "$WHITEFOOT_SCRATCH_ROOT/whitefoot-completion-test"
           done
 
       - name: Address and undefined sanitizers
