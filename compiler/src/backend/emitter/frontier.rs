@@ -109,14 +109,18 @@ impl RecursiveFrontiers {
             let refusal = component.iter().find_map(|&ordinal| {
                 let function = &functions[ordinal];
                 let name = function.name();
-                if !u32::try_from(ordinal).is_ok_and(|i| clones.contains(&i)) {
-                    Some(format!("{name} has no sequential clone"))
+                // Structural reasons first, so a member that is several of
+                // these at once is named by the one a reader can act on: a
+                // splitter is synthesized *and* has no clone, and the first of
+                // those is why.
+                if function.synthesis().is_some() {
+                    Some(format!("{name} is a synthesized loop function"))
                 } else if function.target_action().may_suspend() {
                     Some(format!("{name} may suspend"))
                 } else if function.completion_pipeline().is_some() {
                     Some(format!("{name} carries a staged completion pipeline"))
-                } else if function.synthesis().is_some() {
-                    Some(format!("{name} is a synthesized loop function"))
+                } else if !u32::try_from(ordinal).is_ok_and(|i| clones.contains(&i)) {
+                    Some(format!("{name} has no sequential clone"))
                 } else {
                     None
                 }
