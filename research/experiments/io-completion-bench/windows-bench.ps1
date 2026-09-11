@@ -142,11 +142,19 @@ $Target = if (Test-Path Env:CARGO_TARGET_DIR) {
 $Wfc = Join-Path $Target "gate/whitefootc.exe"
 $Runner = Join-Path $Bin "windows-runner.exe"
 $Generator = Join-Path $Bin "gen.exe"
+$NativeTarget = Join-Path $Target "native-control"
+$NativeControl = Join-Path $NativeTarget "release/paired-layout.exe"
 
 Invoke-Tool -File $Cargo -Arguments @(
     "build", "--manifest-path", (Join-Path $Root "compiler/Cargo.toml"),
     "--profile", "gate", "--locked", "--offline", "--bin", "whitefootc"
 ) -Description "build whitefootc"
+
+Invoke-Tool -File $Cargo -Arguments @(
+    "rustc", "--manifest-path", (Join-Path $Root "research/investigations/proof-derived-parallelism/bench/rust/Cargo.toml"),
+    "--target-dir", $NativeTarget, "--release", "--locked", "--offline",
+    "--bin", "paired-layout", "--", "-C", "no-vectorize-loops", "-C", "no-vectorize-slp"
+) -Description "build the scalar native scheduling control"
 
 Invoke-Tool -File $Clang -Arguments @(
     "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-Wpedantic",
@@ -173,6 +181,12 @@ $IoArguments = @(
 Write-AsciiFile -Path $ComputeExpected -Text "420a993efa7437a1 41fa962893d45299`n"
 Write-AsciiFile -Path $IoExpected -Text "18028327385673861873 00000000000134217728`n"
 Write-AsciiFile -Path $MixedExpected -Text "17574306422404092952`n"
+$NativeFullExpected = Join-Path $Out "native-full.expected"
+$NativeShortExpected = Join-Path $Out "native-short.expected"
+# These are par_layout's two existing fold oracles. Reset-seed batches keep
+# the first result unchanged; a 4096-word twin matches its half-width fold.
+Write-AsciiFile -Path $NativeFullExpected -Text "420a993efa7437a1`n"
+Write-AsciiFile -Path $NativeShortExpected -Text "41fa962893d45299`n"
 
 $ComputeSeq = Join-Path $Bin "compute-seq.exe"
 $ComputePar = Join-Path $Bin "compute-par.exe"
@@ -443,11 +457,14 @@ $HostLines = @(
     "power: $Power",
     "clang: $ClangVersion",
     "rust: $RustVersion",
+    "native control: existing Rust/Rayon scalar layout twin; W=$Workers; loop and SLP vectorization disabled",
+    "native kernels: full-width 8192 words x 800 reps x 3 reset-seed batches; short 4096 x 800 x 1",
+    "stability: Whitefoot/reference MAD and spread may exceed native/reference by at most 0.05 and 0.10 respectively",
     "cache state: warm, verified by a full sequential pre-read of all eight files",
     $(if ($CompareWorkers) {
-        "protocol: $Warmup warm-up triplets, $Rounds recorded position-balanced triplets, QPC wall and child process CPU"
+        "protocol: $Warmup warm-up rounds, $Rounds recorded four-child balanced rounds, QPC wall and child process CPU"
     } else {
-        "protocol: $Warmup warm-up pairs, $Rounds recorded alternating pairs, QPC wall and child process CPU"
+        "protocol: $Warmup warm-up triplets, $Rounds recorded position-balanced triplets, QPC wall and child process CPU"
     })
 )
 [IO.File]::WriteAllLines($HostPath, $HostLines, [Text.UTF8Encoding]::new($false))
@@ -480,6 +497,14 @@ $Variants = @{
     "mixed.full" = @{
         Exe = $MixedFull; Args = @("f00000.dat", "f00001.dat")
         Expected = $MixedExpected; Workers = $true; RequireIocp = $true
+    }
+    "control.compute" = @{
+        Exe = $NativeControl; Args = @("rayoncut", "bal", "6", "8192", "800", [string]$Workers, "3")
+        Expected = $NativeFullExpected; Workers = $false; RequireIocp = $false
+    }
+    "control.short" = @{
+        Exe = $NativeControl; Args = @("rayoncut", "bal", "6", "4096", "800", [string]$Workers, "1")
+        Expected = $NativeShortExpected; Workers = $false; RequireIocp = $false
     }
 }
 
@@ -514,12 +539,19 @@ function Invoke-Sample {
     if ($fields.Count -ne 5 -or $fields[0] -cne $Label -or $fields[4] -cne "0") {
         throw "malformed native sample for ${Variant}: $($lines[0])"
     }
-    return [pscustomobject]@{
+    $sample = [pscustomobject]@{
         Variant = $Variant
         Wall = [double]::Parse($fields[1], [Globalization.CultureInfo]::InvariantCulture)
         User = [double]::Parse($fields[2], [Globalization.CultureInfo]::InvariantCulture)
         Kernel = [double]::Parse($fields[3], [Globalization.CultureInfo]::InvariantCulture)
     }
+    foreach ($value in @($sample.Wall, $sample.User, $sample.Kernel)) {
+        if (-not [double]::IsFinite($value) -or $value -lt 0) {
+            throw "invalid native timing for $Variant"
+        }
+    }
+    if ($sample.Wall -eq 0) { throw "invalid native timing for $Variant" }
+    return $sample
 }
 
 function Median {
@@ -547,6 +579,13 @@ function Percentile {
 
 function Get-SampleOrder {
     param([object[]]$Settings, [int]$Round)
+    if ($Settings.Count -eq 4) {
+        # A four-treatment Williams design balances positions and immediate
+        # precedence every four rounds. Fifteen rounds differ by one row.
+        $base = @(0, 1, 3, 2)
+        $indices = @($base | ForEach-Object { ($_ + $Round) % 4 })
+        return $Settings[$indices]
+    }
     if ($Settings.Count -eq 3) {
         # Every three rounds put each policy at each position once. Every
         # six also balance pairwise precedence and reference distance.
@@ -564,29 +603,64 @@ function Get-SampleOrder {
     return $Settings[1, 0]
 }
 
+function Measure-Distribution {
+    param([double[]]$Values)
+    foreach ($value in $Values) {
+        if (-not [double]::IsFinite($value) -or $value -le 0) {
+            throw "invalid wall or ratio distribution"
+        }
+    }
+    $median = Median -Values $Values
+    $deviations = [double[]]@($Values | ForEach-Object { [Math]::Abs($_ - $median) })
+    $p10 = Percentile -Values $Values -Fraction 0.10
+    $p90 = Percentile -Values $Values -Fraction 0.90
+    return [pscustomobject]@{
+        Median = $median
+        MadFraction = (Median -Values $deviations) / $median
+        SpreadFraction = ($p90 - $p10) / $median
+        P10 = $p10; P90 = $p90
+    }
+}
+
+function Test-CohortStability {
+    param($Result)
+    foreach ($value in @(
+        $Result.MadFraction, $Result.SpreadFraction,
+        $Result.ControlMadFraction, $Result.ControlSpreadFraction
+    )) {
+        if (-not [double]::IsFinite($value)) { return $false }
+    }
+    return (($Result.MadFraction - $Result.ControlMadFraction) -le 0.05 -and
+        ($Result.SpreadFraction - $Result.ControlSpreadFraction) -le 0.10)
+}
+
 function Run-CohortAttempt {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$Reference,
         [Parameter(Mandatory = $true)][string]$Candidate,
+        [Parameter(Mandatory = $true)][string]$Control,
         [Parameter(Mandatory = $true)][int]$Attempt,
         [int[]]$WorkerLimits = @($Workers)
     )
     # The optional same-host comparison uses the existing two-cohort sample
     # allowance: fifteen candidates at each worker count, sharing each serial
-    # reference. It adds neither a round nor a retry. Rotate positions and
-    # precedence so neither candidate always runs first or beside the reference.
+    # reference and one native control. No Whitefoot pair, round or retry is
+    # added. Balance positions and precedence across all measured children.
     if ($Variants[$Reference].Workers) {
         throw "a shared comparison reference must not depend on the worker limit"
     }
     $settings = @(@{ Key = "reference"; Variant = $Reference; Workers = $Workers })
     $ratios = @{}
     $candidateWalls = @{}
+    $controlWalls = [Collections.Generic.List[double]]::new()
+    $controlRatios = [Collections.Generic.List[double]]::new()
     foreach ($limit in $WorkerLimits) {
         $settings += @{ Key = "candidate.$limit"; Variant = $Candidate; Workers = $limit }
         $ratios[$limit] = [Collections.Generic.List[double]]::new()
         $candidateWalls[$limit] = [Collections.Generic.List[double]]::new()
     }
+    $settings += @{ Key = "control"; Variant = $Control; Workers = $Workers }
     for ($warm = 0; $warm -lt $Warmup; $warm += 1) {
         $warmOrder = @(Get-SampleOrder -Settings $settings -Round $warm)
         foreach ($setting in $warmOrder) {
@@ -612,21 +686,22 @@ function Run-CohortAttempt {
         }
         $referenceWall = [double]$pairSamples["reference"].Wall
         $referenceWalls.Add($referenceWall)
+        $controlWall = [double]$pairSamples["control"].Wall
+        $controlWalls.Add($controlWall)
+        $controlRatios.Add($controlWall / $referenceWall)
         foreach ($limit in $WorkerLimits) {
             $candidateWall = [double]$pairSamples["candidate.$limit"].Wall
             $candidateWalls[$limit].Add($candidateWall)
             $ratios[$limit].Add($candidateWall / $referenceWall)
         }
     }
+    $controlStats = Measure-Distribution -Values ([double[]]$controlRatios.ToArray())
+    $controlWallStats = Measure-Distribution -Values ([double[]]$controlWalls.ToArray())
     foreach ($limit in $WorkerLimits) {
         $ratioValues = [double[]]$ratios[$limit].ToArray()
-        $ratioMedian = Median -Values $ratioValues
-        $deviations = [double[]]@($ratioValues | ForEach-Object { [Math]::Abs($_ - $ratioMedian) })
-        $mad = Median -Values $deviations
-        $p10 = Percentile -Values $ratioValues -Fraction 0.10
-        $p90 = Percentile -Values $ratioValues -Fraction 0.90
+        $ratioStats = Measure-Distribution -Values $ratioValues
         $referenceMedian = Median -Values ([double[]]$referenceWalls.ToArray())
-        $candidateMedian = Median -Values ([double[]]$candidateWalls[$limit].ToArray())
+        $candidateWallStats = Measure-Distribution -Values ([double[]]$candidateWalls[$limit].ToArray())
         [pscustomobject]@{
             Name = $Name
             Reference = $Reference
@@ -634,12 +709,18 @@ function Run-CohortAttempt {
             Attempt = $Attempt
             WorkerLimit = $limit
             ReferenceMedian = $referenceMedian
-            CandidateMedian = $candidateMedian
-            Ratio = $ratioMedian
-            MadFraction = $mad / $ratioMedian
-            SpreadFraction = ($p90 - $p10) / $ratioMedian
-            P10 = $p10
-            P90 = $p90
+            CandidateMedian = $candidateWallStats.Median
+            CandidateWallMad = $candidateWallStats.MadFraction
+            CandidateWallSpread = $candidateWallStats.SpreadFraction
+            Ratio = $ratioStats.Median
+            MadFraction = $ratioStats.MadFraction
+            SpreadFraction = $ratioStats.SpreadFraction
+            P10 = $ratioStats.P10; P90 = $ratioStats.P90
+            Control = $Control; ControlMedian = $controlWallStats.Median
+            ControlWallMad = $controlWallStats.MadFraction
+            ControlWallSpread = $controlWallStats.SpreadFraction
+            ControlMadFraction = $controlStats.MadFraction
+            ControlSpreadFraction = $controlStats.SpreadFraction
         }
     }
 }
@@ -648,12 +729,13 @@ function Run-QualifiedCohort {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$Reference,
-        [Parameter(Mandatory = $true)][string]$Candidate
+        [Parameter(Mandatory = $true)][string]$Candidate,
+        [Parameter(Mandatory = $true)][string]$Control
     )
     for ($attempt = 1; $attempt -le 2; $attempt += 1) {
         $result = Run-CohortAttempt -Name $Name -Reference $Reference `
-            -Candidate $Candidate -Attempt $attempt
-        if ($result.MadFraction -le 0.05 -and $result.SpreadFraction -le 0.10) {
+            -Candidate $Candidate -Control $Control -Attempt $attempt
+        if (Test-CohortStability -Result $result) {
             return $result
         }
     }
@@ -664,11 +746,11 @@ try {
     [void](Invoke-Sample -Variant "io.direct" -Label "preflight.io.direct")
     [void](Invoke-Sample -Variant "io.iocp" -Label "preflight.io.iocp")
     $Cohorts = @(
-        @{ Name = "compute"; Reference = "compute.seq"; Candidate = "compute.par" }
-        @{ Name = "io-warm"; Reference = "io.direct"; Candidate = "io.iocp" }
-        @{ Name = "mixed-iocp"; Reference = "mixed.seq"; Candidate = "mixed.iocp" }
-        @{ Name = "mixed-full"; Reference = "mixed.iocp"; Candidate = "mixed.full" }
-        @{ Name = "mixed-total"; Reference = "mixed.seq"; Candidate = "mixed.full" }
+        @{ Name = "compute"; Reference = "compute.seq"; Candidate = "compute.par"; Control = "control.compute" }
+        @{ Name = "io-warm"; Reference = "io.direct"; Candidate = "io.iocp"; Control = "control.short" }
+        @{ Name = "mixed-iocp"; Reference = "mixed.seq"; Candidate = "mixed.iocp"; Control = "control.short" }
+        @{ Name = "mixed-full"; Reference = "mixed.iocp"; Candidate = "mixed.full"; Control = "control.short" }
+        @{ Name = "mixed-total"; Reference = "mixed.seq"; Candidate = "mixed.full"; Control = "control.short" }
     )
     $Results = @(foreach ($cohort in $Cohorts) {
         if ($CompareWorkers) {
@@ -695,7 +777,7 @@ $Summary.WriteLine((Get-Content -Raw -LiteralPath (Join-Path $Out "mixed-observe
 $Summary.WriteLine('```')
 $Summary.WriteLine()
 if ($CompareWorkers) {
-    $Summary.WriteLine("The full-worker rows are diagnostic before measurements; the W=$Workers rows are subject to the existing qualification bounds. Each triplet shares its serial reference. IO-only candidates do not use WF_WORKERS; their two rows repeat the unchanged configuration. No extra rounds or retries are added.")
+    $Summary.WriteLine("The full-worker rows are diagnostic; W=$Workers is subject to qualification. Each round shares its serial reference and W=$Workers native control. IO-only candidates repeat the unchanged configuration. No extra Whitefoot pairs, rounds or retries are added.")
     $Summary.WriteLine()
 }
 $Summary.WriteLine("| cohort | workers | reference median ms | candidate median ms | paired candidate/reference | MAD | p90-p10 / median | attempt |")
@@ -708,13 +790,38 @@ foreach ($result in $Results) {
         $result.Attempt
     ))
 }
+$Summary.WriteLine()
+$Summary.WriteLine("Raw candidate wall-time distributions, before division by the reference:")
+$Summary.WriteLine()
+$Summary.WriteLine("| cohort | workers | Whitefoot MAD | Whitefoot spread | native MAD | native spread |")
+$Summary.WriteLine("|---|---:|---:|---:|---:|---:|")
+foreach ($result in $Results) {
+    $Summary.WriteLine((
+        "| {0} | {1} | {2:P2} | {3:P2} | {4:P2} | {5:P2} |" -f
+        $result.Name, $result.WorkerLimit, $result.CandidateWallMad, $result.CandidateWallSpread,
+        $result.ControlWallMad, $result.ControlWallSpread
+    ))
+}
+$Summary.WriteLine()
+$Summary.WriteLine("Stability uses percentage-point excess over the native/reference distribution, bounded by MAD 5% and spread 10%. The table above remains unadjusted; the native control is a CPU-availability witness, not an I/O throughput baseline.")
+$Summary.WriteLine()
+$Summary.WriteLine("| cohort | native median ms | native/reference MAD | native/reference spread | W=$Workers excess MAD | W=$Workers excess spread |")
+$Summary.WriteLine("|---|---:|---:|---:|---:|---:|")
+foreach ($result in $Results | Where-Object { $_.WorkerLimit -eq $Workers }) {
+    $Summary.WriteLine((
+        "| {0} | {1:F3} | {2:P2} | {3:P2} | {4:P2} | {5:P2} |" -f
+        $result.Name, $result.ControlMedian, $result.ControlMadFraction, $result.ControlSpreadFraction,
+        [Math]::Max(0, $result.MadFraction - $result.ControlMadFraction),
+        [Math]::Max(0, $result.SpreadFraction - $result.ControlSpreadFraction)
+    ))
+}
 $Summary.Dispose()
 
 if ($Enforce) {
     $ByName = @{}
     foreach ($result in $Results) {
         if ($result.WorkerLimit -eq $Workers) {
-            if (-not ($result.MadFraction -le 0.05 -and $result.SpreadFraction -le 0.10)) {
+            if (-not (Test-CohortStability -Result $result)) {
                 throw "$($result.Name) failed stability at W=$Workers"
             }
             $ByName[$result.Name] = $result

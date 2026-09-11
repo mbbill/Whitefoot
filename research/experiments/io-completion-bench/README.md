@@ -405,10 +405,16 @@ one initialized pool's steady-state work instead of trying to stabilize a
 sub-second process by weakening the spread bound or averaging repeated pool
 startups. Ordinary argument-free corpus runs still execute one batch.
 
-Each cohort records fifteen candidate/reference ratios, alternating order in
-each pair, after two unrecorded warm-up pairs. A cohort with ratio MAD above
-5% or p10-to-p90 width above 10% is repeated once and fails qualification if
-still unstable; that result alone does not identify the cause. The production bounds are compute
+Each cohort records fifteen candidate/reference ratios and fifteen
+native/reference ratios after two unrecorded warm-up rounds. The three
+children's positions balance every three rounds and precedence every six.
+The candidate's MAD/median may exceed the native control's by at most 5
+percentage points, and its (p90-p10)/median by at most 10 percentage points.
+A cohort outside either margin is repeated once and fails qualification if
+still unstable; that result alone does not identify the cause. These are
+the former absolute limits used as relative margins, not a claim that the
+absolute limits passed. Nonfinite results or failed control samples fail.
+The production speed bounds remain compute
 at most 0.90, warm IOCP at most 1.10, and full mixed at most 0.95 relative to
 both its IOCP-only control and the fully sequential program. These are
 same-host runtime qualifications. The host,
@@ -422,25 +428,38 @@ runner. The full mask remains available to every child. This leaves scheduler
 capacity for other VM work; it does not reserve an exclusive core or establish
 the physical host's SMT topology. The summary records both the visible count
 and the guest's reported cores/logical processors. Process priority is normal.
-All five cohorts, fifteen pairs, two warmups, the single retry, and every
-numerical stability and performance threshold are unchanged.
+All five cohorts, fifteen Whitefoot pairs, two warmups, the single retry,
+and every numerical stability and performance threshold are retained.
+
+The native control reuses the existing safe Rust/Rayon layout twin in
+`research/investigations/proof-derived-parallelism/bench/rust/`, built with
+loop and SLP vectorization disabled. It runs the same reduced worker count,
+normal priority, full mask and QPC runner, and must publish the known exact
+layout fold oracle before its time counts. Compute uses three reset-seed
+full-width batches in one pool; the four shorter cohorts use one half-width
+batch. It witnesses concurrent CPU availability during each cohort; it is
+not an I/O throughput baseline or an excuse for variation specific to I/O.
+The summary keeps raw wall and paired distributions visible beside the
+relative margins. The additional control samples add no Whitefoot pair or
+retry, and the job duration must still be qualified on the hosted runner.
 
 For same-head before/after evidence, dispatch `io-bench` with
 `compare_windows_workers=true`, or pass `-CompareWorkers` to
 `windows-bench.ps1`. That diagnostic runs only the Windows job. Each of the
-fifteen rounds shares one sequential reference between full-count and
-reduced-count candidates, balancing each child's position over every three
-rounds and precedence over every six. It
+fifteen rounds shares one sequential reference and one reduced-count native
+control between full-count and reduced-count candidates. A four-treatment
+Williams order balances positions and immediate precedence every four
+rounds; fifteen rounds differ by one row. It
 uses the existing allowance of two candidate cohorts, with fewer reference
 children and no retries. The IO-only candidates repeat their unchanged
 configuration because they do not use `WF_WORKERS`. The table prints both
 policies' raw paired MAD/median and (p90-p10)/median; the full-count rows are
-diagnostic and `-Enforce` qualifies the reduced-count rows against the same
-absolute bounds. `raw.tsv` records the policy's `worker_limit`, including
+diagnostic and `-Enforce` qualifies the reduced-count rows against the
+native-relative stability margins and unchanged speed bounds. `raw.tsv` records the policy's `worker_limit`, including
 on the shared reference; it is not a count of threads actually running.
 The [selection criterion](../../investigations/io-model/RESULTS.md#windows-hosted-worker-comparison-criterion-2026-09-11)
-records the prior criterion, measured worker-count tradeoff, and remaining
-uncertainty about the earlier failures' cause.
+records the measured worker-count tradeoff, its later failure, and the
+criterion for qualifying the native-relative protocol.
 
 `linux` builds `linux.Dockerfile` and runs the whole pipeline inside one
 container, because the generated tree must sit on a container-local

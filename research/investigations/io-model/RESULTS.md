@@ -2667,7 +2667,7 @@ the unchanged 0.90 ceiling. Its process-CPU median decreases from 6515.625 to
 mixed-total from 163.569 to 158.983 ms. Every speed and stability threshold
 remains numerically and definitionally unchanged.
 
-Select W=3 for the four-logical-processor qualification: it satisfies the
+Provisionally select W=3 for the four-logical-processor qualification: it satisfies the
 existing bounds on both measured CPU families, keeps the job below eight
 minutes, and narrows the three parallel cohorts' spreads in the matched
 comparison. This is a qualification resource choice, not a runtime speedup.
@@ -2683,3 +2683,49 @@ The affected implementation and standing guidance are the Windows benchmark
 script, its workflow entry, this bundle's README, and the parallelism memory.
 This selection changes no compiler, runtime, language rule, conformance case,
 or ordinary program's default worker count.
+
+### Reopened after a same-head failure
+
+The next same-head comparison,
+[34558846333](https://github.com/mbbill/Whitefoot/actions/runs/34558846333),
+at `6e95208a` on a Xeon 8573C guest reporting two cores / four logical
+processors, failed compute stability at W=3. Its paired MAD/spread was
+0.33%/12.19%, against 2.22%/48.24% at W=4. The W=3 raw wall spread was
+13.55%, while its process-CPU spread was 3.06%; the W=4 values were 49.07%
+and 6.95%. Slow parallel samples cluster in rounds 2--5 under both worker
+counts. This reopens the sufficiency of the worker-count-only policy. The
+ordinary W=3 qualification at the same head passed on an EPYC guest, so
+neither that success nor the preceding successes establish stable behavior
+on all hosted allocations. No compiler/runtime defect is isolated by this
+observation; the CPU-availability explanation remains a hypothesis.
+
+Before choosing a relative criterion, add a W=3 native scheduling control to
+every cohort using the existing scalar Rust/Rayon layout twin. Its long
+control repeats the known full-width layout result three times inside one
+pool; its short control uses the known half-width result once. The control
+is a CPU-availability witness, not an I/O throughput reference. It must use
+the same affinity, normal priority, runner, exact-output checks and reference
+sample, with vectorization disabled. Keep fifteen Whitefoot pairs, two
+warmups, at most one retry, every cohort, and every performance ceiling.
+
+The proposed stability calculation compares the paired Whitefoot/reference
+and native/reference distributions: Whitefoot's relative MAD may exceed the
+native control's by at most 0.05, and its relative p90--p10 spread by at most
+0.10. These retain the numerical limits as percentage-point margins, but
+change the criterion from absolute to relative as the owner proposed; raw
+wall and paired spreads must both remain visible. This is not a claim that
+the original absolute bound passed. Missing control samples, wrong output,
+nonfinite values, or a Whitefoot excess beyond either margin must fail.
+
+Select this protocol only if the native control provides usable concurrent
+CPU work, all five cohorts meet these predeclared margins and unchanged speed
+bounds, and the qualification job remains within roughly eight minutes
+including build. The control may not excuse unrelated I/O-specific variation.
+Inspect round-by-round wall and process-CPU times, native CPU/wall concurrency,
+and control duration before attributing excess wall variation to host CPU
+availability. Subtracting two distribution spreads does not itself establish
+that their slowdowns occurred together. If the independent control stays
+quiet while Whitefoot alone remains noisy, do not call the cause generic host
+contention. Priority changes remain a
+separate, unselected option. Record the control's own distribution, not just
+the residual that passes a bound.
