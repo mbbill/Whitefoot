@@ -12,8 +12,9 @@ lines, `PURE-COMPUTE-COMPARISON.md`, `BASELINES.md`, `WORKLOADS.md` and a
 `research/experiments/compute-runtime/` measurement bundle and a restorable
 checkpoint of the retired unified scheduler. Each section names the document and
 heading it comes from. Measured revisions are quoted where the source records
-them; they are text here, not reachable objects, so the branch head must be
-tagged before it is deleted if any of them must stay buildable.
+them; they are text here, not reachable objects. The branch head `70aa8e5b` is
+one parent of the archive commit on `archive/codex-io-2026-09-11`, so it and
+everything it reaches stay reachable after the branch name is deleted.
 
 `mcts_mem/whitefoot/parallelism.md` already records the outcome — the
 2026-09-10 boundary entry retiring the park-on-miss scheduler, and the
@@ -351,7 +352,7 @@ the runtime the I/O experiments measured. It is not carried into this tree: the
 scheduler is retired, the digest at
 `research/investigations/io-model/SCHEDULER-FINDINGS.md` records what it
 established, and a patch that reconstructs a retired runtime is an artifact to
-tag on the branch rather than a file to maintain here.
+leave reachable on the archive branch rather than a file to maintain here.
 
 *Source:* `codex/compute-runtime@70aa8e5b`,
 `research/investigations/compute-runtime/WORKLOADS.md` and `BASELINES.md`;

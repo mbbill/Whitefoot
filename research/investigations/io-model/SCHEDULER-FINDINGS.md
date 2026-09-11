@@ -44,8 +44,10 @@ retired runtime and is kept as a closed door, with the reason to keep it closed.
 says what would. Sources give a branch and commit pair plus the notebook
 heading; most are `codex/io-runtime-followup@6de4557c`, the file-level and
 content-level superset of the family, and where a result exists only on an
-earlier head that head is named. Hashes are given because the branches are to be
-deleted: each cited pair must be tagged first, and the per-experiment measured
+earlier head that head is named. Hashes are given because the branch names are
+deleted: every one of the family's sixty-one heads, and `codex/compute-runtime`,
+is a parent of the archive commit on `archive/codex-io-2026-09-11`, so each
+cited pair resolves from that one branch, while the per-experiment measured
 revisions quoted inside paragraphs are text here, not reachable objects.
 
 ## Scheduler core, ready queues and cooperative checkpoints
