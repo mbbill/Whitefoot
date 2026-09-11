@@ -2729,3 +2729,60 @@ quiet while Whitefoot alone remains noisy, do not call the cause generic host
 contention. Priority changes remain a
 separate, unselected option. Record the control's own distribution, not just
 the residual that passes a bound.
+
+### Native control qualification, 2026-09-11
+
+[Run 34560763765, Windows job 103142831746](https://github.com/mbbill/Whitefoot/actions/runs/34560763765/job/103142831746)
+at `a93e4c1c` passes all five cohorts on attempt 1 in **6m18s including
+build**. The EPYC 7763 guest reports two cores and four logical processors;
+W=3, normal priority and mask `0xf` apply. Each cohort contains fifteen
+Whitefoot pairs and fifteen native samples. Exact outputs, IOCP assertions
+and the untimed positive-grant check pass. Other platforms' unrelated
+measurement jobs are not part of this Windows qualification result.
+
+All entries below are percentages. The paired columns use the shared
+reference; excess is the positive difference, in percentage points.
+
+| Cohort | WF paired MAD / spread | Native paired MAD / spread | Excess MAD / spread | WF raw wall MAD / spread | Native raw wall MAD / spread |
+|---|---:|---:|---:|---:|---:|
+| compute | 0.31 / 1.11 | 0.31 / 1.11 | 0.00 / 0.00 | 0.35 / 0.78 | 0.29 / 0.96 |
+| io-warm | 2.98 / 9.59 | 0.76 / 5.56 | 2.22 / 4.04 | 1.09 / 6.58 | 0.46 / 1.72 |
+| mixed-iocp | 0.27 / 1.38 | 0.43 / 1.45 | 0.00 / 0.00 | 0.16 / 0.66 | 0.55 / 1.41 |
+| mixed-full | 0.32 / 1.63 | 0.11 / 1.25 | 0.21 / 0.38 | 0.56 / 1.55 | 0.25 / 0.95 |
+| mixed-total | 0.97 / 13.54 | 0.51 / 10.02 | 0.46 / 3.52 | 0.92 / 17.41 | 0.54 / 5.84 |
+
+The four speed ratios are 0.4192 / 1.0180 / 0.5812 / 0.5828, below their
+unchanged 0.90 / 1.10 / 0.95 / 0.95 ceilings. Native median CPU/wall ratios
+are 2.72--2.79. Its compute median is 956.879 ms against Whitefoot's
+1996.911 ms; short-control medians are 171.733--172.717 ms against
+159.097--274.122 ms. It provides substantial concurrent CPU work on the
+same duration scale, with no I/O, compiler or Whitefoot runtime involved.
+
+Mixed-total is the discriminating cohort: the old absolute paired-spread
+bound would fail, while the new paired excess is 3.52 points. In round 7,
+the native child slows to 208.810 ms (484.375 ms CPU), Whitefoot full to
+187.073 ms (375.000 ms CPU), and the sequential reference to 285.851 ms
+(250.000 ms CPU). Their usual medians are approximately 173 / 161 / 275 ms.
+In round 3, the native child runs first and stays near its median, followed
+by Whitefoot full at 329.969 ms and its reference at 394.954 ms, both with
+less process CPU than their medians. These short disturbances and the
+independent native slowdown are consistent with changing CPU availability.
+They do not identify the host process or prove that every slow sample has
+the same cause. Raw widths and paired widths are distinct: the raw
+Whitefoot/native spread difference here is 11.58 points, not the 3.52-point
+paired excess that the specified protocol judges.
+
+Select the native-relative protocol with W=3 on these measured grounds,
+subject to the same-head worker comparison before publication. Keep the
+five/ten-point margins, all speed bounds and the duration constraint. This
+changes the stability question rather than claiming the old absolute bound
+became stable. Reopen if the native control lacks concurrent work or if
+Whitefoot-only variation defeats the stated margins. Priority elevation
+remains unselected. No production compiler/runtime setting changes.
+
+The raw artifact and its component distributions support this table. That
+run's rendered excess columns incorrectly show zero because PowerShell chose
+the integer overload of `Math.Max(0, value)`. Qualification used direct
+floating-point subtraction and was unaffected. The display now uses `0.0`;
+an isolated check of the actual summary code requires nonzero 2.22% / 3.52%
+cells, and rejects the previous rendering.

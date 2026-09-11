@@ -811,8 +811,8 @@ foreach ($result in $Results | Where-Object { $_.WorkerLimit -eq $Workers }) {
     $Summary.WriteLine((
         "| {0} | {1:F3} | {2:P2} | {3:P2} | {4:P2} | {5:P2} |" -f
         $result.Name, $result.ControlMedian, $result.ControlMadFraction, $result.ControlSpreadFraction,
-        [Math]::Max(0, $result.MadFraction - $result.ControlMadFraction),
-        [Math]::Max(0, $result.SpreadFraction - $result.ControlSpreadFraction)
+        [Math]::Max(0.0, $result.MadFraction - $result.ControlMadFraction),
+        [Math]::Max(0.0, $result.SpreadFraction - $result.ControlSpreadFraction)
     ))
 }
 $Summary.Dispose()

@@ -459,7 +459,11 @@ native-relative stability margins and unchanged speed bounds. `raw.tsv` records 
 on the shared reference; it is not a count of threads actually running.
 The [selection criterion](../../investigations/io-model/RESULTS.md#windows-hosted-worker-comparison-criterion-2026-09-11)
 records the measured worker-count tradeoff, its later failure, and the
-criterion for qualifying the native-relative protocol.
+criterion and measured grounds for the native-relative protocol. On the
+recorded four-logical-processor guest, its first ordinary run passes every
+cohort in 6m18s including build; mixed-total still exceeds the old absolute
+spread bound. Neither a passing relative margin nor these finite samples
+guarantee the absence of host noise or identify every slow sample's cause.
 
 `linux` builds `linux.Dockerfile` and runs the whole pipeline inside one
 container, because the generated tree must sit on a container-local
