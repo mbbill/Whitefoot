@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""Structural lint for the design tree. It checks form, not meaning.
+
+Run from the repository root:
+
+    python3 -B design/skill/lint.py [--root design] [--base REF]
+
+Exit status 1 on any error. With --base REF, every node changed relative to
+REF (committed or not) must be named in lines added to the change log.
+"""
+import argparse
+import os
+import re
+import subprocess
+import sys
+
+DECISION_MARKERS = (" because ", " instead of ")
+INSTANCE_STATUS = re.compile(r"^(applied|pending|exempt \(.+\))$")
+LOG_ENTRY = re.compile(r"^## \d{4}-\d{2}-\d{2} \S")
+LOG_REQUIRED = ("Nodes:", "Origin:", "Summary:")
+ORIGINS = {"discussion", "agent", "migration"}
+FORBIDDEN_HEADINGS = ("## Facts", "## Moves")
+DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
+LINK = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+class Lint:
+    def __init__(self, root):
+        self.root = root
+        self.errors = []
+        self.nodes = {}  # node path (relative to root, no .md) -> lines
+        self.decisions = 0
+        self.rejected = 0
+
+    def err(self, where, msg):
+        self.errors.append(f"{where}: {msg}")
+
+    # ---- discovery -----------------------------------------------------
+
+    def discover(self):
+        tree_md = os.path.join(self.root, "tree.md")
+        tree_dir = os.path.join(self.root, "tree")
+        if not os.path.isfile(tree_md):
+            self.err(tree_md, "missing root node")
+            return
+        self.nodes["tree"] = self.read(tree_md)
+        if not os.path.isdir(tree_dir):
+            return
+        for dirpath, dirnames, filenames in os.walk(tree_dir):
+            rel_dir = os.path.relpath(dirpath, self.root)
+            parent_md = os.path.join(self.root, rel_dir + ".md")
+            if not os.path.isfile(parent_md):
+                self.err(rel_dir, "directory has no sibling node file")
+            for name in sorted(filenames):
+                path = os.path.join(dirpath, name)
+                rel = os.path.relpath(path, self.root)
+                if not name.endswith(".md"):
+                    self.err(rel, "only node files (.md) belong under tree/")
+                    continue
+                self.nodes[rel[:-3]] = self.read(path)
+            dirnames.sort()
+
+    def read(self, path):
+        with open(path, "rb") as handle:
+            data = handle.read()
+        rel = os.path.relpath(path, self.root)
+        for number, raw in enumerate(data.split(b"\n"), 1):
+            if any(byte > 127 for byte in raw):
+                self.err(f"{rel}:{number}", "non-ASCII text; the tree is English only")
+        return data.decode("ascii", errors="replace").split("\n")
+
+    # ---- node form -----------------------------------------------------
+
+    def check_nodes(self):
+        stems = {}
+        for path in self.nodes:
+            stem = path.rsplit("/", 1)[-1]
+            stems.setdefault(stem, []).append(path)
+        for stem, paths in stems.items():
+            if len(paths) > 1:
+                self.err(stem, "node name used more than once: " + ", ".join(paths))
+        for path, lines in sorted(self.nodes.items()):
+            self.check_node(path, lines, stems)
+
+    def check_node(self, path, lines, stems):
+        where = path + ".md"
+        content = [line for line in lines if line.strip()]
+        if not content or not content[0].startswith("# "):
+            self.err(where, "first line must be a '# ' title")
+        decisions = 0
+        scopes = []
+        section = None
+        instances = []
+        rejected = []
+        for number, line in enumerate(lines, 1):
+            loc = f"{where}:{number}"
+            if not line.strip():
+                section = None
+                continue
+            if line.startswith("# "):
+                continue
+            if line.startswith("Decision:"):
+                decisions += 1
+                low = line.lower()
+                if not any(marker in low for marker in DECISION_MARKERS):
+                    self.err(loc, "decision has neither 'because' nor 'instead of'")
+                section = None
+                continue
+            if line.startswith("Scope:"):
+                scopes.append(line[len("Scope:"):].strip())
+                section = None
+                continue
+            if line.startswith("Instances:"):
+                section = "instances"
+                continue
+            if line.startswith("Applies-to:"):
+                for link in LINK.findall(line):
+                    if link not in stems:
+                        self.err(loc, f"link to unknown node [[{link}]]")
+                section = None
+                continue
+            if line.startswith("Rejected:"):
+                section = "rejected"
+                continue
+            if line.startswith(FORBIDDEN_HEADINGS) or DATED_LINE.match(line):
+                self.err(loc, "history belongs in git and the change log, not in a node")
+                continue
+            if line.startswith("- "):
+                body = line[2:]
+                if section == "instances":
+                    if ": " not in body:
+                        self.err(loc, "instance needs '<name>: <status>'")
+                    else:
+                        name, status = body.split(": ", 1)
+                        if not INSTANCE_STATUS.match(status.strip()):
+                            self.err(loc, "instance status must be applied, pending, or exempt (reason)")
+                        instances.append(name)
+                    continue
+                if section == "rejected":
+                    if ": " not in body or not body.split(": ", 1)[1].strip():
+                        self.err(loc, "rejected entry needs '<alternative>: <reason>'")
+                    rejected.append(body)
+                    continue
+                self.err(loc, "list item outside Instances: or Rejected:")
+                continue
+            self.err(loc, "line outside the node template")
+        if decisions == 0:
+            self.err(where, "node has no Decision: line")
+        if len(scopes) != 1:
+            self.err(where, "node needs exactly one Scope: line")
+        elif scopes[0].lower().startswith("all ") and "(new code only)" not in scopes[0]:
+            if not instances:
+                self.err(where, "a universal scope must list Instances: with a status each")
+        self.decisions += decisions
+        self.rejected += len(rejected)
+
+    # ---- log -----------------------------------------------------------
+
+    def check_log(self):
+        path = os.path.join(self.root, "log.md")
+        if not os.path.isfile(path):
+            self.err("log.md", "missing change log")
+            return []
+        lines = self.read(path)
+        entries = []
+        current = None
+        for number, line in enumerate(lines, 1):
+            if line.startswith("## "):
+                if not LOG_ENTRY.match(line):
+                    self.err(f"log.md:{number}", "entry heading must be '## YYYY-MM-DD <title>'")
+                current = {"line": number, "fields": {}}
+                entries.append(current)
+                continue
+            if current is None:
+                continue
+            for field in LOG_REQUIRED + ("Code:",):
+                if line.startswith(field):
+                    current["fields"][field] = line[len(field):].strip()
+        for entry in entries:
+            loc = f"log.md:{entry['line']}"
+            for field in LOG_REQUIRED:
+                if field not in entry["fields"] or not entry["fields"][field]:
+                    self.err(loc, f"entry lacks {field}")
+            origin = entry["fields"].get("Origin:", "")
+            if origin and origin not in ORIGINS:
+                self.err(loc, "Origin: must be discussion, agent, or migration")
+        return entries
+
+    def check_diff(self, base):
+        probe = subprocess.run(["git", "rev-parse", "--verify", "--quiet", base],
+                               capture_output=True, text=True)
+        if probe.returncode != 0:
+            print(f"notice: base {base!r} not found; skipping the log-per-change check")
+            return
+        names = subprocess.run(["git", "diff", "--name-only", base, "--", self.root],
+                               capture_output=True, text=True, check=True).stdout.split()
+        prefix = self.root.rstrip("/") + "/"
+        changed = []
+        for name in names:
+            rel = name[len(prefix):] if name.startswith(prefix) else name
+            if rel == "tree.md" or rel.startswith("tree/"):
+                if rel.endswith(".md"):
+                    changed.append(rel[:-3])
+        if not changed:
+            return
+        log_rel = prefix + "log.md"
+        if log_rel not in names:
+            self.err("log.md", "tree changed since base but the change log did not")
+            return
+        diff = subprocess.run(["git", "diff", base, "--", log_rel],
+                              capture_output=True, text=True, check=True).stdout
+        added = "\n".join(line[1:] for line in diff.split("\n")
+                          if line.startswith("+") and not line.startswith("+++"))
+        for node in changed:
+            if node not in added:
+                self.err("log.md", f"changed node {node} is not named in a new log entry")
+
+    # ---- metrics -------------------------------------------------------
+
+    def metrics(self):
+        depth = max((path.count("/") for path in self.nodes), default=0)
+        per_subtree = {}
+        for path in self.nodes:
+            parts = path.split("/")
+            if len(parts) >= 2:
+                per_subtree[parts[1]] = per_subtree.get(parts[1], 0) + 1
+        print(f"nodes: {len(self.nodes)}  depth: {depth}  decisions: {self.decisions}  rejected: {self.rejected}")
+        for name, count in sorted(per_subtree.items()):
+            print(f"  {name}: {count}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="structural lint for the design tree")
+    parser.add_argument("--root", default="design")
+    parser.add_argument("--base", default=None)
+    args = parser.parse_args()
+    lint = Lint(args.root)
+    lint.discover()
+    lint.check_nodes()
+    lint.check_log()
+    if args.base:
+        lint.check_diff(args.base)
+    if lint.errors:
+        for error in lint.errors:
+            print("error: " + error, file=sys.stderr)
+        print(f"design lint: {len(lint.errors)} error(s)", file=sys.stderr)
+        return 1
+    lint.metrics()
+    print("design lint: ok")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -48,6 +48,14 @@ check:
 # stages left the workflow naming targets that no longer exist.
 static: repository-invariants spec-append-only spec-prose-integrity
 
+# The design tree's structural lint: node form, decision markers, links,
+# universal-scope instance lists, ASCII-only text, no history sections, and one
+# change-log entry naming every node changed since main. It checks form; the
+# correspondence checks in design/skill/checks.md are run by a model and are
+# review input, not a gate stage.
+design-lint:
+	@$(PY) design/skill/lint.py --base origin/main
+
 repository-invariants:
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
 	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
