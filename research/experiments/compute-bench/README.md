@@ -314,7 +314,11 @@ table that matters is copied by hand, with its CI run id, into
 [`../../investigations/compute-runtime/RESULTS.md`](../../investigations/compute-runtime/RESULTS.md),
 which also carries the reproduce recipe and the two non-pooling rules.
 
-`manifest.txt` records `uname -a`, the online CPU count, the **inherited** CPU
+`manifest.txt` records `uname -a`, the online CPU count, the CPU topology — one
+`topology: cpu<N> core=<id> package=<id> siblings=<list>` line per online CPU on
+Linux, `topology: physicalcpu=<n> logicalcpu=<n>` on macOS, and `unqualified`
+where neither source is readable, beside an `smt:` line read from
+`/sys/devices/system/cpu/smt/active` — the **inherited** CPU
 mask and cgroup state (recorded, never narrowed, and marked `unqualified` when
 a file is absent rather than reported as "no limit"), the compiler revision,
 every toolchain version — the whole of `rustc -vV`, host triple, commit and
@@ -324,6 +328,14 @@ three dependency pins, `BENCH_ARCH`, and the SHA-256 of every kernel image
 and every emitted `.ll` before and after the run. If any of those hashes moved
 during the run the table is not a measurement of one build and `compare` says
 so and fails.
+
+The topology and `smt:` lines are there because hosted runs land on
+`ubuntu-24.04` runners of more than one machine class, and four online CPUs may
+be four cores or two cores with SMT siblings. Without them a recorded table
+cannot be classified by runner, and the lane-placement question — whether
+Whitefoot's two lanes landed on the SMT siblings of one core, which is what a
+W=2 row spending two lanes' CPU on one lane's work would look like — cannot be
+asked of a run after the fact.
 
 ### Reproduce recipe
 

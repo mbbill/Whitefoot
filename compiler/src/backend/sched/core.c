@@ -83,7 +83,9 @@
  * fuel bound or a proof-work budget; no acceptance path reads it, it cannot
  * reject a program, and with the window at zero the loops behave as they did
  * before it existed. */
+#ifndef WF_PAR_SPIN_ROUNDS
 #define WF_PAR_SPIN_ROUNDS 1024
+#endif
 #if defined(WF_SCHED_TEST)
 #undef WF_PAR_IDLE_WINDOW_US
 #define WF_PAR_IDLE_WINDOW_US 0
@@ -92,7 +94,9 @@
 #define WF_PAR_IDLE_WINDOW_US 1000
 #endif
 /* Yields are cheap next to a park and the sweep gave no reason to move them. */
+#ifndef WF_PAR_YIELD_ROUNDS
 #define WF_PAR_YIELD_ROUNDS 16
+#endif
 /* How many chunks an independent map may be split into, as a multiple of the
  * lane count. `wf__par_split_budget` below combines this with the work term --
  * span / ceil(work unit / weight), the floor on chunk size entry.c owns -- by
