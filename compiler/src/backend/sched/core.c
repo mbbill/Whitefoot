@@ -152,6 +152,48 @@ static wf_prim_thread wf__par_threads[WF_PAR_MAX_LANES];
 
 extern size_t wf__floor_stack_bytes(void);
 
+#ifdef WF_PLACEMENT_PAD
+/* A MEASUREMENT INSTRUMENT, compiled only when this macro is defined and
+ * defined by nothing that ships. No shipped build, no gate target and no test
+ * defines it; whitefootc never passes it. It exists so the compute scoreboard's
+ * A/B twin can hold its two arms byte-identical in behaviour while moving one
+ * arm's CODE PLACEMENT, which is that bundle's largest confound and which its
+ * within-pass twin cannot otherwise separate from a runtime change: every
+ * candidate the twin has measured so far differed in bytes as well as in
+ * behaviour, so a reading could never be attributed to one rather than the
+ * other. Defined, it adds this never-called function ahead of every function
+ * below it in this file, so the scheduler core's text moves by its size and
+ * nothing else about the program changes.
+ *
+ * It is external and noinline so it survives to the link with nothing calling
+ * it, and its body is a dependent chain on an argument so no optimizer folds
+ * it away. Remove it when the scoreboard no longer needs a placement-only arm
+ * -- there is no other reader. The measurement is in
+ * research/investigations/compute-runtime/RESULTS.md, the placement
+ * sensitivity measured with a shifted null arm. */
+uint64_t wf__par_placement_pad(uint64_t seed);
+#define WF_PLACEMENT_PAD_STEP(k)                                               \
+    acc = acc * 6364136223846793005ULL + (uint64_t)(k);                        \
+    acc ^= acc >> 29;
+#define WF_PLACEMENT_PAD_EIGHT(k)                                              \
+    WF_PLACEMENT_PAD_STEP((k) + 1)                                             \
+    WF_PLACEMENT_PAD_STEP((k) + 2)                                             \
+    WF_PLACEMENT_PAD_STEP((k) + 3)                                             \
+    WF_PLACEMENT_PAD_STEP((k) + 4)                                             \
+    WF_PLACEMENT_PAD_STEP((k) + 5)                                             \
+    WF_PLACEMENT_PAD_STEP((k) + 6)                                             \
+    WF_PLACEMENT_PAD_STEP((k) + 7)                                             \
+    WF_PLACEMENT_PAD_STEP((k) + 8)
+__attribute__((noinline)) uint64_t wf__par_placement_pad(uint64_t seed) {
+    uint64_t acc = seed;
+    WF_PLACEMENT_PAD_EIGHT(0)
+    WF_PLACEMENT_PAD_EIGHT(8)
+    WF_PLACEMENT_PAD_EIGHT(16)
+    WF_PLACEMENT_PAD_EIGHT(24)
+    return acc;
+}
+#endif
+
 static void wf__par_signal(struct wf__par_lane *lane) {
     wf_prim_wait_lock(&lane->wait);
     lane->posted = 1;

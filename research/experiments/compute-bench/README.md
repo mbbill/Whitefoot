@@ -129,6 +129,32 @@ while every reference gets `-falign-loops=32` (the asymmetry paragraph below),
 and code placement is this bundle's largest confound, so "what does alignment do
 to the Whitefoot rows" is an A/B this handle asks directly.
 
+### The placement-only arm
+
+Every candidate the twin has measured so far differed in bytes as well as in
+behaviour, so a reading could never be attributed to one rather than the other.
+`compiler/src/backend/sched/core.c` therefore carries a never-called, non-inlined
+587-byte function under `#ifdef WF_PLACEMENT_PAD`, which nothing that ships
+defines and `whitefootc` never passes. Through the runtime handle it gives the
+twin an arm that is **identical in behaviour and shifted in placement**:
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/null-shift \
+     PASSES=5 CALLS=5 WF_RUNTIME_CONTROL_FLAGS='-DWF_PLACEMENT_PAD=1'
+```
+
+The pad sits ahead of every function in the scheduler core, so the core's own
+functions and the two runtime objects the link places after it —
+`sched_prim_host-b.o` and `sched_entry-b.o` — move by its size, and nothing else
+about either image changes. What it does **not** move is the emitted module:
+that object is linked ahead of the four runtime ones, so the kernel's own code
+sits at the same offsets in both arms and what the arm shifts is the scheduler
+the kernel calls into. Read against `WF_AB=1`, whose arms are byte-identical,
+the difference between the two is what that placement alone is worth on the
+host. A quadrature row is the cleanest reading of it: that kernel emits no split
+call, so its two arms do identical work in every pass whatever the runtime
+handle carries.
+
 ### The A/B twin: what the controls actually build, and how to read it
 
 No control moves the plain image. Setting any of the three — or setting
