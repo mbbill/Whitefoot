@@ -68,8 +68,9 @@ WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
 
 # An A/B control, and nothing else. Whatever is set here is appended to the
 # `--par` emission below, so a run can compare two compilers' worth of
-# behaviour on one tree by changing one opt-in flag -- for example
-# `make compare WF_PAR_CONTROL_FLAGS='--par-recursive-frontier 8'`. It is
+# behaviour on one tree by changing one compiler control -- for example
+# `make compare WF_PAR_CONTROL_FLAGS='--par-recursive-frontier off'`, which
+# withholds the recursion budget the default asks the runtime for. It is
 # EMPTY BY DEFAULT and must stay empty for any table that is recorded: the
 # `wf` row of a recorded table is the program plain `--par` produces, which is
 # this bundle's whole question (README, "What WF means here"). A non-empty
@@ -79,6 +80,19 @@ WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
 # compiler owns those, and a flag that made the table nicer would be measuring
 # a program no Whitefoot user gets.
 WF_PAR_CONTROL_FLAGS ?=
+
+# The value of that variable is part of what emitted a module, exactly as the
+# source and the compiler binary are, so it is kept in a stamp the module rule
+# depends on and that is rewritten only when the value changes: a control-flag
+# run re-emits instead of silently re-timing the plain image the last run left,
+# and a run that changes nothing re-emits nothing.
+PAR_CONTROL := $(BUILD)/par-control-flags.txt
+$(PAR_CONTROL): FORCE
+	@mkdir -p $(BUILD)
+	@printf '%s\n' '$(WF_PAR_CONTROL_FLAGS)' > $@.new
+	@cmp -s $@.new $@ || mv -f $@.new $@
+	@rm -f $@.new
+FORCE:
 
 KERNELS ?= mandelbrot quadrature records fir
 PASSES ?= 5
@@ -100,7 +114,7 @@ COMMON_OBJS := $(BUILD)/harness.o $(BUILD)/backend_serial.o $(BUILD)/backend_sta
 LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
              $(DEPS)/rayon/libwf_compute_bench_rayon.a -ldl -lm
 
-.PHONY: all compiler deps build images verify compare programs-check clean clean-deps
+.PHONY: all compiler deps build images verify compare programs-check clean clean-deps FORCE
 all: build
 
 # ---------------------------------------------------------------- compiler --
@@ -159,7 +173,7 @@ deps:
 # research/investigations/compute-runtime/RESULTS.md timed quadrature on a
 # module emitted at 33ed2c00; the fresh emission is the table that replaced it).
 define kernel-modules
-$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll $$(WFC) | compiler
+$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll $$(WFC) $$(PAR_CONTROL) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par.ledger
 	sed -e 's/@main(/@wfb_$(1)_par_main(/g' \

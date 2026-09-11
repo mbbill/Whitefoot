@@ -34,6 +34,12 @@ function the compiler emits has internal linkage.
 - Nothing selects the chunk count: no flag, no environment variable, no source
   edit. The row is the program the compiler produces or it is nothing.
 
+Quadrature's recursive component is cut by the recursion budget the runtime
+answers at its entry, and `--par-recursive-frontier off` is the control that
+withholds that cut; the three map kernels reach the runtime through a
+synthesized splitter, which no budget can touch, so their modules are
+byte-identical under every setting of it.
+
 `wf-seq` is the same source compiled `--no-overlap --emit-llvm` and run at width
 one. It is the sequential **control**, not a reference: it never enters the
 ratio column. It answers "did `--par` buy anything at all", which is a different
@@ -42,14 +48,19 @@ question from "is `--par` the fastest".
 ### The one A/B handle, and why it never appears in a recorded table
 
 `WF_PAR_CONTROL_FLAGS` is appended to the `--par` emission and is **empty by
-default**. It exists so that one tree can answer "what would this opt-in
-compiler flag be worth here" — two images differing in exactly that flag, built
-from one tree, measured in one `compare` run so the reference rows are shared:
+default**. It exists so that one tree can answer "what would this compiler
+control be worth here" — two images differing in exactly that flag, built from
+one tree, measured in one `compare` run so the reference rows are shared:
 
 ```sh
-make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/ab-8 \
-     WF_PAR_CONTROL_FLAGS='--par-recursive-frontier 8'
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/ab-off \
+     WF_PAR_CONTROL_FLAGS='--par-recursive-frontier off'
 ```
+
+The emitted module depends on this value the way it depends on the source and
+on the compiler binary: the Makefile keeps the value in a stamp file the module
+rule reads, so setting the variable or clearing it again re-emits, and a
+control-flag run can never silently re-time the plain image the last run left.
 
 It is a measurement control and not a grain knob. **A table recorded in
 `RESULTS.md` is always taken with it empty**, because the `wf` row of a
