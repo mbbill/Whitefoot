@@ -63,12 +63,15 @@ high-level sequencing; plans do not grant or withhold branch permission.
   independent oracle per call, and native references built on oneTBB,
   ParlayLib, Rayon, a static pthread pool and a serial loop at fixed grain
   policies. Nothing in it fails on a ratio, a spread or an elapsed time;
-  `make check` runs only its compile-only `programs-check`. Two tables from a
-  four-CPU local Linux host are recorded in
-  [`compute-runtime/RESULTS.md`](../investigations/compute-runtime/RESULTS.md)
-  — a baseline at compiler `33ed2c00` and the merged tree at `ed7eb0a7`, where
-  FIR is the only kernel whose plain-`--par` program is the fastest form in its
-  block; no hosted run is recorded yet.
+  `make check` runs only its compile-only `programs-check`. Four tables are
+  recorded in
+  [`compute-runtime/RESULTS.md`](../investigations/compute-runtime/RESULTS.md):
+  two from a four-CPU local Linux host — a baseline at compiler `33ed2c00` and
+  the merged tree at `ed7eb0a7` — and the first hosted run, `34574271919` at
+  `5dd1eb7b`, one section per leg. Which kernel's plain-`--par` program is the
+  fastest form in its block differs by host: FIR alone on the local host, none
+  at W=4 on the `ubuntu-24.04` runner, and records, FIR and Mandelbrot at W=2
+  on the three-CPU `macos-14` runner.
 
 ## Completed current-compiler bounded research
 
