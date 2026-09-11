@@ -131,13 +131,13 @@ The same four commands run in `.github/workflows/compute-bench.yml` on
 ## How to read the table
 
 ```
-kernel       w form              grain              median_us  mad%  p10..p90_us  ratio  lower  steals  note
+kernel       w form              median_us  mad%  p10..p90_us  ratio  lower  steals  note
+...one row per form of this kernel at this width, ascending by median...
+<kernel>   <w> BEST REFERENCE = <form>   FASTEST = <form>   WF fastest: yes|no
+  <form>: <that form's grain policy, the whole string the binary printed>
+  <form>: ...
 ```
 
-- **`grain`** is the reference's fixed grain policy, printed by the binary
-  itself and **never truncated**: the column is sized to the longest grain
-  string the run printed, so a reference's policy and its role both survive
-  into `table.txt`. The `wf` row prints `compiler-chosen`, because it is.
 - **`median_us`** is a median of medians: the median over the five passes of
   each process's median over its five recorded calls. A pass is one sweep over
   every cell; each cell is a fresh process; the sweep order is rotated by
@@ -171,7 +171,17 @@ kernel       w form              grain              median_us  mad%  p10..p90_us
   row's `excursions retained`: that reference has no stealing, its skewed-shape
   medians carry multi-millisecond excursions, and nothing in this bundle
   removes an outlier or discards a process.
-- Each block ends with `BEST REFERENCE = ... FASTEST = ... WF fastest: yes|no`.
+- Each block ends with `BEST REFERENCE = ... FASTEST = ... WF fastest: yes|no`,
+  and under that line a **legend**: one line per form in the block, in the same
+  order as the rows above it, reading `  <form>: <grain policy>`. The policy is
+  the string the binary itself prints and is **never truncated**, so a
+  reference's policy and its role both survive into `table.txt`. The `wf` entry
+  reads `compiler-chosen`, because it is. It is a legend and not a column
+  because a column has to be as wide as the longest policy string — the
+  `static` row's, which is a whole sentence — and that made every data row
+  about 200 characters wide, past any terminal that has to read the numbers.
+  Nothing is abbreviated to win that width back: the rows carry the numbers and
+  the legend carries the sentences, once per block instead of once per row.
 
 The reducer's exit status is nonzero only on a missing or malformed row — a
 planned cell with no process, a wrong row count, a non-dense call index, a

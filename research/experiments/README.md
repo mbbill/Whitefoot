@@ -63,9 +63,12 @@ high-level sequencing; plans do not grant or withhold branch permission.
   independent oracle per call, and native references built on oneTBB,
   ParlayLib, Rayon, a static pthread pool and a serial loop at fixed grain
   policies. Nothing in it fails on a ratio, a spread or an elapsed time;
-  `make check` runs only its compile-only `programs-check`. No table
-  recorded yet — the first goes to
-  [`compute-runtime/RESULTS.md`](../investigations/compute-runtime/RESULTS.md).
+  `make check` runs only its compile-only `programs-check`. Two tables from a
+  four-CPU local Linux host are recorded in
+  [`compute-runtime/RESULTS.md`](../investigations/compute-runtime/RESULTS.md)
+  — a baseline at compiler `33ed2c00` and the merged tree at `ed7eb0a7`, where
+  FIR is the only kernel whose plain-`--par` program is the fastest form in its
+  block; no hosted run is recorded yet.
 
 ## Completed current-compiler bounded research
 

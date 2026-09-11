@@ -4,8 +4,8 @@
 # answered on a real Linux host and on an ordinary Apple M1.
 #
 # It runs on demand, and automatically only when what it measures changes: the
-# scheduler runtime, the floor, the parallel emitter, the compiler driver, or
-# the bundle itself.
+# scheduler runtime, the floor, the emitter and the lowering that decide what
+# `--par` actualizes, the compiler driver, or the bundle itself.
 #
 # FAILURE POLICY. The job fails on a `deps`, `build` or `verify` failure and on
 # nothing else. The `compare` step's exit status is the reducer's, and the
@@ -29,7 +29,9 @@ on:
       - 'research/experiments/compute-bench/**'
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/wf_floor.c'
-      - 'compiler/src/backend/emitter/parallel.rs'
+      - 'compiler/src/backend/emitter/**'
+      - 'compiler/src/lowering/**'
+      - 'compiler/src/driver.rs'
       - 'compiler/src/bin/whitefootc.rs'
       - '.github/workflows/compute-bench.yml'
 

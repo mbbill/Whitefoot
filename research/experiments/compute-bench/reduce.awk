@@ -145,23 +145,10 @@ END {
     if (pins) printf "pins: %s\n", pins
     for (i = 1; i <= kernels; i++) printf "sizes: %-12s %s\n", kernel_at[i], workload[kernel_at[i]]
     printf "passes=%d calls=%d\n\n", passes + 0, calls + 0
-    # The grain column is sized to the longest grain string this run actually
-    # printed, and is never truncated. A fixed 32-column field silently cut
-    # every reference's policy sentence in half, and it cut the `static` row's
-    # disclosure -- that it is a regular-work reference and not a
-    # dynamic-scheduling ceiling for skew -- out of the table entirely, which
-    # is the one thing readers of that row kept getting wrong. A wide line is
-    # cheaper than a missing disclosure.
-    grainw = 5
-    for (c = 1; c <= cellcount; c++) {
-        cell = cell_order[c]
-        if (!(cell in med)) continue
-        if (length(cell_grain[cell]) > grainw) grainw = length(cell_grain[cell])
-    }
-    grainfmt = "%-" grainw "s"
-
-    printf "%-11s %2s %-16s " grainfmt " %10s %5s %-22s %-16s %5s %7s %s\n",
-        "kernel", "w", "form", "grain", "median_us", "mad%", "p10..p90_us", "ratio", "lower", "steals", "note"
+    # No grain column. Each block prints its own grain strings in full as a
+    # legend under its verdict line; see the end of `report` below.
+    printf "%-11s %2s %-16s %10s %5s %-22s %-16s %5s %7s %s\n",
+        "kernel", "w", "form", "median_us", "mad%", "p10..p90_us", "ratio", "lower", "steals", "note"
 
     for (i = 1; i <= kernels; i++) {
         k = kernel_at[i]
@@ -228,7 +215,7 @@ function report(block,   c, cell, n, i, p, order, best, bestname, wfcell, ratios
         }
         madpct = med[cell] > 0 ? 100.0 * mad[cell] / med[cell] : 0
         spread = sprintf("%.1f..%.1f", p10[cell] / 1000.0, p90[cell] / 1000.0)
-        printf "%-11s %2d %-16s " grainfmt " %10.1f %5.1f %-22s ", block_kernel[block], block_width[block], cell_form[cell], cell_grain[cell], med[cell] / 1000.0, madpct, spread
+        printf "%-11s %2d %-16s %10.1f %5.1f %-22s ", block_kernel[block], block_width[block], cell_form[cell], med[cell] / 1000.0, madpct, spread
         if (cell == wfcell && nr > 0) {
             sorted(ratios, nr)
             ratiotext = sprintf("%.3f [%.2f-%.2f]", median(ratios, nr), ratios[1], ratios[nr])
@@ -241,5 +228,16 @@ function report(block,   c, cell, n, i, p, order, best, bestname, wfcell, ratios
         printf "%-11s %2d BEST REFERENCE = %-12s FASTEST = %-12s WF fastest: %s\n",
             block_kernel[block], block_width[block], modalname, cell_form[fastest], verdict
     }
+    # The legend: one line per form of this block, in the row order above it,
+    # every grain string in full and NEVER truncated. These strings were a
+    # column once. A fixed 32-column field cut every reference's policy
+    # sentence in half, and it cut the `static` row's disclosure -- that it is
+    # a regular-work reference and not a dynamic-scheduling ceiling for skew --
+    # out of the table entirely, which is the one thing readers of that row
+    # kept getting wrong. Sizing the column to the longest string the run
+    # printed kept the disclosure and made every data row about 200 characters
+    # wide instead, past the width of any terminal that has to read the
+    # numbers. Printing the same strings once per block keeps both.
+    for (i = 1; i <= n; i++) printf "  %s: %s\n", cell_form[order[i]], cell_grain[order[i]]
     printf "\n"
 }
