@@ -67,7 +67,7 @@ high-level sequencing; plans do not grant or withhold branch permission.
   recorded in
   [`compute-runtime/RESULTS.md`](../investigations/compute-runtime/RESULTS.md):
   two from a four-CPU local Linux host — a baseline at compiler `33ed2c00` and
-  the merged tree at `ed7eb0a7` — and the first hosted run, `34574271919` at
+  the merged tree at `11d1e4a2` — and the first hosted run, `34574271919` at
   `5dd1eb7b`, one section per leg. Which kernel's plain-`--par` program is the
   fastest form in its block differs by host: FIR alone on the local host, none
   at W=4 on the `ubuntu-24.04` runner, and records, FIR and Mandelbrot at W=2

@@ -137,8 +137,15 @@ deps:
 # not recreate a missing intermediate while the image that consumed it is
 # still up to date -- which would leave `compare` hashing a module that is no
 # longer on disk.
+#
+# The compiler binary is a normal prerequisite as well: a module emitted by an
+# earlier build of the compiler is not this tree's module, and with the
+# order-only `| compiler` alone make kept one revision's modules across three
+# compiler rebuilds (found landed: the first merged-tree table in
+# research/investigations/compute-runtime/RESULTS.md timed quadrature on a
+# module emitted at 33ed2c00; the fresh emission is the table that replaced it).
 define kernel-modules
-$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll | compiler
+$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WFC) --par --par-ledger --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par.ledger
 	sed -e 's/@main(/@wfb_$(1)_par_main(/g' \
@@ -147,7 +154,7 @@ $$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll | compiler
 	    -e 's/@wf_bench_$(1)_release(/@wf_bench_$(1)_par_release(/' $(1)_host.ll >> $$@
 	grep -q 'call void @wf__par_publish(' $$@
 
-$$(BUILD)/$(1)-seq.ll: programs/$(1).wf $(1)_host.ll | compiler
+$$(BUILD)/$(1)-seq.ll: programs/$(1).wf $(1)_host.ll $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WFC) --no-overlap --emit-llvm programs/$(1).wf -o $$@.raw
 	sed -e 's/@main(/@wfb_$(1)_seq_main(/g' \
