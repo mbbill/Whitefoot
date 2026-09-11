@@ -15,7 +15,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # `approval-history-integrity` and `spec-archive-integrity` were retired with
 # the approval ledger they both read.
 CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	conformance compiler research-tests conformance-run snapshot-run
+	design-lint conformance compiler research-tests conformance-run snapshot-run
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -46,13 +46,9 @@ check:
 # program. CI's `static` job runs this instead of restating their names: a
 # second copy of the list is a copy that goes stale, and did — retiring two
 # stages left the workflow naming targets that no longer exist.
-static: repository-invariants spec-append-only spec-prose-integrity
+static: repository-invariants spec-append-only spec-prose-integrity design-lint
 
-# The design tree's structural lint: node form, decision markers, links,
-# universal-scope instance lists, ASCII-only text, no history sections, and one
-# change-log entry naming every node changed since main. It checks form; the
-# correspondence checks in design/skill/checks.md are run by a model and are
-# review input, not a gate stage.
+# Structural lint for the design tree; form only, see design/skill/lint.py.
 design-lint:
 	@$(PY) design/skill/lint.py --base origin/main
 

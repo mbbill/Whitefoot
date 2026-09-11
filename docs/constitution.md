@@ -33,9 +33,8 @@ Within the constraints of required safety and practical development
 feasibility, prefer runtime performance over ease of writing or speed of
 compilation. Additional writing, proof, and compilation work may be accepted,
 and the compiler should be improved to reduce that work. Compilation and
-proof checking must not require work that grows exponentially with program or
-written-proof size. Their costs must also permit practical iteration at the
-target project's scale; guaranteed termination alone is insufficient.
+proof-checking costs must permit practical iteration at the target project's
+scale; guaranteed termination alone is insufficient.
 
 Constraints and guidance for agents must serve these objectives. If a
 restriction intended to guide writers excludes a better-performing
@@ -48,14 +47,11 @@ evidence.
 
 Accepted Whitefoot programs must exclude undefined behavior, memory corruption,
 data races, uninitialized reads, silent overflow, and any other operation whose
-required safety conditions have not been established by machine proof. Runtime
-traps must not be admitted as a language feature.
+required safety conditions have not been established by machine proof.
 
 Required safety guarantees must be established by machine verification before
-a program is accepted. Program authors must not be able to bypass or waive
-these guarantees, or substitute unchecked assertions for required proof.
-Safety guarantees are constraints that performance and other objectives must
-respect.
+a program is accepted. Safety guarantees are constraints that performance and
+other objectives must respect.
 
 For uses with explicit resource budgets and applicable conditions, the language
 must support machine-verifiable bounds on memory and other hardware resource
@@ -72,10 +68,8 @@ environment failures must have defined program behavior.
 ## Compatibility and evolution
 
 Backward compatibility may yield to the language's objectives and long-term
-evolution. Before Whitefoot has real project users, migration costs of existing
-language designs must not be used as grounds for language choices. Once real
-projects have compatibility needs, weigh improvement benefits, actual impact,
-and migration capability.
+evolution. Once real projects have compatibility needs, weigh improvement
+benefits, actual impact, and migration capability.
 
 Reassess objectives, tradeoffs, and design choices as AI capabilities, evidence,
 and expectations about future software development change their grounds.

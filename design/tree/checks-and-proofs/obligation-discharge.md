@@ -1,5 +1,3 @@
-# Obligation discharge
-
 Decision: Acceptance of a partial operation is defined by the ENT rules alone, covering fact sources, closure, kills, joins, and exact domain obligations, because one authority keeps optimizer results and runtime origin from becoming independent sources of proof, instead of optimizer-derived or runtime-derived facts.
 
 Decision: Requirements are proved at callers, postconditions at every selected return, and summaries are published only in call-graph component order, because a recursive component must not bootstrap itself from a summary it has not yet earned, instead of assuming a callee's postcondition while checking its component.
@@ -15,6 +13,6 @@ Decision: An integer-typed named const is an affine atom folded at formation to 
 Rejected:
 - Implicit retained checks on every unproved obligation: rejected because the trap surface was neither stated nor enumerable, a caller could not tell from a signature when a callee would trap, and the saturating traps bit hid every unproved obligation until it fired.
 - Result-everywhere, where every fallible operation returns a value: rejected because each checker-incompleteness site would force an error arm for a condition that is impossible when the code is correct, and a catchable internal error lets a stuck writer swallow a violated invariant.
-- Global prove-or-handle as language law: rejected because a deterministic no-search checker leaves a true-but-unprovable residue that would be camouflaged inside genuine fallibility; lapses when an opt-in partition mode is selected.
+- Global prove-or-handle as language law: rejected because a deterministic no-search checker leaves a true-but-unprovable residue that would be camouflaged inside genuine fallibility
 - Assume-without-check, a writer-stated fact reaching the prover with no proof: rejected because no construct may introduce a fact without proof.
 - A total-access operation beside the ordinary index: rejected because under caller-side discharge the value branch already is the total access, so the second form served nothing.

@@ -60,6 +60,8 @@ authority rules are in [AGENTS.md](AGENTS.md#authority-and-reading).
 - [research/](research/README.md): investigations and experiments with their
   designs, measurements, and rejected alternatives.
 - [mcts_mem/](mcts_mem/): settled decisions and their reasons.
+- [design/](design/): live design decisions with their reasons, and the
+  procedure that maintains them.
 - [governance/](governance/): archive-protection hooks and specification-change
   design evidence. The old approval ledger is retired.
 - [.github/](.github/): CI and the pull-request template.

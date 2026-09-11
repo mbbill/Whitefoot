@@ -1,5 +1,3 @@
-# Writer trap surface
-
 Decision: There is no writer-visible trap surface, no claim statement and no runtime proof trap, because any legal writer-reachable trap gives AI-authored code an unauditable failure edge, instead of a named claim as the sole trap.
 
 Decision: An expected failure is a typed outcome or intended control flow, and an always-true relation is a verified contract or invariant, because a branch whose false edge is not intended program behavior is a proof written as executable code, instead of an impossible-case branch added to satisfy the checker.

@@ -1,10 +1,6 @@
-# Whitefoot
+Decision: Every required source fact is machine-checked before acceptance and erased before lowering, with no writer-accessible unsafe, trusted theorem, or runtime trap of any kind, because any writer-reachable escape becomes an unauditable failure edge in generated code, instead of Rust-style unsafe policed by convention or panics admitted as a language feature.
 
-Decision: Whitefoot is a systems language whose writer is an AI agent and whose approver is a person, because an AI writer pays verbosity in tokens, has no installed base or style attachment, and must not be given an escape hatch it will use when stuck, instead of a human-first language with AI assistance.
-
-Decision: Every required source fact is machine-checked before acceptance and erased before lowering, with no writer-accessible unsafe, trusted theorem, or runtime proof trap, because any writer-reachable escape becomes an unauditable failure edge in generated code, instead of Rust-style unsafe policed by convention.
-
-Decision: Within required safety and practical development feasibility, runtime performance is preferred over ease of writing and speed of compilation, because the target projects are kernels, compilers, and browsers, instead of optimizing manual writability.
+Decision: Compilation and proof checking never require work that grows exponentially with program or written-proof size, because the target projects must stay practical to iterate on and guaranteed termination alone does not make a checker usable, instead of admitting exponential families and relying on timeouts or budgets to keep them practical.
 
 Decision: The compiler accepts the same programs with the same verdicts whether optimizer facts are on or off, so the checker's fact sources are closed to optimizer output and no language rule makes acceptance depend on whether an optional fact is derivable, because otherwise whether a program compiles would depend on an optimizer's version, target, or pass order, and a program accepted only with facts on would have no facts-off reference for the behavior rule to compare against, instead of fact-dependent acceptance.
 

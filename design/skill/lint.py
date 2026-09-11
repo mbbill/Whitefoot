@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Structural lint for the design tree. It checks form, not meaning.
-
-Run from the repository root:
-
-    python3 -B design/skill/lint.py [--root design] [--base REF]
-
-Exit status 1 on any error. With --base REF, every node changed relative to
-REF (committed or not) must be named in lines added to the change log.
-"""
+"""Structural lint for the design tree: form only. Its messages say what it checks."""
 import argparse
 import os
 import re
@@ -83,13 +75,10 @@ class Lint:
 
     def check_node(self, path, lines, stems):
         where = path + ".md"
-        content = [line for line in lines if line.strip()]
-        if not content or not content[0].startswith("# "):
-            self.err(where, "first line must be a '# ' title")
         decisions = 0
         section = None
         rejected = []
-        prev = "start"  # start | title | blank | field | item
+        prev = "start"  # start | blank | field | item
         seen_field = False
         for number, line in enumerate(lines, 1):
             loc = f"{where}:{number}"
@@ -97,13 +86,10 @@ class Lint:
                 section = None
                 prev = "blank"
                 continue
-            if line.startswith("# "):
-                prev = "title"
-                continue
             is_field = line.startswith(FIELDS)
             is_item = line.startswith("- ")
             if is_field:
-                if prev not in ("blank", "title"):
+                if prev not in ("blank", "start"):
                     self.err(loc, "a field must be separated from the previous line by a blank line")
                 seen_field = True
                 prev = "field"
