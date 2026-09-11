@@ -2071,8 +2071,8 @@ command fn main() -> status: own ExitStatus pure {
     /// the option on and off, while only the `--par` module names the runtime.
     ///
     /// What `--par` adds to the report is what it actualized — which offers it
-    /// kept and which recursive components it gave a budget-carrying family —
-    /// and those lines say so in their own first word. A compilation that
+    /// kept, and what it did with each recursive component it found — and
+    /// those lines say so in their own first word. A compilation that
     /// actualizes nothing has none of them.
     ///
     /// This is what makes the ledger usable on a shipped build. A developer
@@ -2130,8 +2130,8 @@ command fn main() -> status: own ExitStatus pure {{
         assert!(
             actualization
                 .iter()
-                .any(|line| line.contains("budget-carrying clone family")),
-            "the fixture's recursive fold must report the family it got: {actualization:?}"
+                .any(|line| line.contains("component(fold)")),
+            "the fixture's recursive fold must be named with what it got: {actualization:?}"
         );
         assert!(
             quiet_ledger.iter().any(|line| line.contains("eligible")),

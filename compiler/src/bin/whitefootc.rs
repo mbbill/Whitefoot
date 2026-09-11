@@ -31,7 +31,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier N|off] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -575,7 +575,7 @@ struct Options {
     /// Opt-in ordinary-ABI sequential calls on refused compute offers.
     sequential_refusal: bool,
     /// Control over the recursion budget: `None` leaves the `--par` default,
-    /// which asks the runtime at each component entry.
+    /// which emits no budget family at all.
     recursive_frontier: Option<RecursionBudget>,
     /// Emit the module a compiler with no overlap lowering at all emits.
     ///
@@ -643,11 +643,11 @@ impl Options {
                 }
                 "--par-recursive-frontier" => {
                     cursor += 1;
-                    let written = arguments.get(cursor);
-                    let budget = if written.is_some_and(|value| value == "off") {
-                        RecursionBudget::Off
-                    } else {
-                        written
+                    let written = arguments.get(cursor).map(String::as_str);
+                    let budget = match written {
+                        Some("off") => RecursionBudget::Off,
+                        Some("auto") => RecursionBudget::RuntimeDerived,
+                        _ => written
                             .filter(|value| {
                                 !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
                             })
@@ -656,9 +656,9 @@ impl Options {
                             .and_then(std::num::NonZeroU8::new)
                             .map(RecursionBudget::Pinned)
                             .ok_or_else(|| {
-                                "--par-recursive-frontier requires an integer in 1..32 or off"
+                                "--par-recursive-frontier requires auto, an integer in 1..32, or off"
                                     .to_owned()
-                            })?
+                            })?,
                     };
                     if recursive_frontier.replace(budget).is_some() {
                         return Err("--par-recursive-frontier may be written only once".to_owned());
@@ -1169,10 +1169,22 @@ mod tests {
                 sequential_refusal: false,
             }
         );
-        for value in ["1", "32", "off"] {
+        for value in ["1", "32", "off", "auto"] {
             assert!(parse(&["--par", "--par-recursive-frontier", value, "value.wf"]).is_ok());
         }
-        for value in ["0", "33", "256", "-1", "+1", "", "1.5", "Off", "none"] {
+        assert_eq!(
+            parse(&["--par", "--par-recursive-frontier", "auto", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::RuntimeDerived,
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: false,
+            }
+        );
+        for value in [
+            "0", "33", "256", "-1", "+1", "", "1.5", "Off", "none", "Auto",
+        ] {
             let error = parse(&["--par", "--par-recursive-frontier", value, "value.wf"])
                 .err()
                 .unwrap();

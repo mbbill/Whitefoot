@@ -206,31 +206,35 @@ result ABI, while declining descendant compute offers. Granted tasks and the
 source-last inline call retain their parallel code. Calls without a clone and
 may-suspend callees keep their ordinary fallback. No runtime query is added.
 
-Under `--par`, each ordinary cyclic call-graph component gets one synthesized
-budget-carrying variant per member, and the member's ordinary symbol obtains an
-initial budget and enters that variant. Inside the family every intra-component
-call and every published callback enters the callee's variant with one level
-less; a variant handed nothing left enters its own sequential clone, the world
-with no scheduler test, no null branch and no phi in it. That is one compare and
-one branch per node above the cut and nothing at all below it. The cut exists
-because a recursion otherwise offers at every node, at a per-node cost the leaf
-work does not pay for.
+`--par --par-recursive-frontier auto|N|off` gives each ordinary cyclic
+call-graph component one synthesized budget-carrying variant per member, and
+makes the member's ordinary symbol obtain an initial budget and enter that
+variant. Inside the family every intra-component call and every published
+callback enters the callee's variant with one level less; a variant handed
+nothing left enters its own sequential clone, the world with no scheduler test,
+no null branch and no phi in it. That is one compare and one branch per node
+above the cut and nothing at all below it. The cut exists because a recursion
+otherwise offers at every node, at a per-node cost the leaf work does not pay
+for.
 
-The initial budget is the runtime's answer to `wf__par_recursion_budget()`,
-asked once per call into the component: `floor(log2(64 * lanes))`, clamped to
-24, with one lane's answer when there is no pool — 6 with the pool off, 7 at two
-lanes, 8 at four, 9 at eight. A module carries its own weak stub answering 0, so
-a scheduler-less link runs the sequential clone from the first node. The
-constant of 64 sequential leaves per lane is measured, and
+`auto` takes the initial budget from the runtime, through one
+`wf__par_recursion_budget()` per call into the component: `floor(log2(64 *
+lanes))`, clamped to 24, with one lane's answer when there is no pool — 6 with
+the pool off, 7 at two lanes, 8 at four, 9 at eight. A module carries its own
+weak stub answering 0, so a scheduler-less link runs the sequential clone from
+the first node. The constant of 64 sequential leaves per lane is measured, and
 [`sched/core.c`](src/backend/sched/core.c) records against it which measurement
-selected it.
+selected it. `N` in the CLI range `1..32` pins that starting value at compile
+time instead of asking; `off`, which is the default, emits no family at all, so
+every node of every recursive component offers.
 
-`--par --par-recursive-frontier N|off` controls that one mechanism: `N` in the
-CLI range `1..32` pins the initial budget to a compile-time value instead of
-asking the runtime, and `off` emits no family at all, so every node of every
-recursive component offers. `off` is the A/B control for the mechanism and `N`
-the control for its starting value; neither is the shipped default, because the
-measured best fixed value is not the same value at two lanes and at four.
+The three are one mechanism with three starting values, not three mechanisms.
+`off` is the default because the measurement that would have defaulted `auto`
+missed one of its own acceptance bounds: on the four-CPU development host the
+family is worth 1.739 to 1.056 at two lanes and 1.592 to 1.008 at four on the
+compute scoreboard's quadrature row, and the two-lane bound asked for 1.03.
+`research/investigations/compute-runtime/RESULTS.md` records the tables, the
+spread they were read through, and what would reopen the question.
 
 A member's ordinary symbol keeps its signature and result ABI, so the hidden
 trailing parameter is the synthesized variant's alone and no source call names

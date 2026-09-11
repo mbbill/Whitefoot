@@ -508,10 +508,11 @@ _main:                                  ; @main
         assert!(sequential.contains("sequential clone"), "{sequential}");
     }
 
-    /// A budget-carrying variant is the overlapped world's recursive frame,
-    /// and the ledger reports it as one: it reaches itself above the cut, and
-    /// the clone it drops into below the cut reaches itself too. Both cycles
-    /// are real, and the writer's per-level cost is the variant's.
+    /// A budget-carrying variant is the overlapped world's recursive frame
+    /// wherever the recursion control emitted one, and the ledger reports it
+    /// as such: it reaches itself above the cut, and the clone it drops into
+    /// below the cut reaches itself too. Both cycles are real, and the
+    /// writer's per-level cost above the cut is the variant's.
     #[test]
     fn budget_variants_are_parallel_frames_with_their_own_cycle() {
         let lines = stack_ledger(

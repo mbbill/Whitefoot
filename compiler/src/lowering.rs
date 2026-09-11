@@ -1582,14 +1582,21 @@ pub enum OverlapLowering {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum RecursionBudget {
     /// Emit no budget family: every node of every recursive component offers.
+    ///
+    /// The default, and what a `--par` build does with no control written.
+    /// The family is measurably better than this on the compute scoreboard's
+    /// quadrature kernel at every width, and the measurement that would have
+    /// defaulted it missed one of its own acceptance bounds at two lanes;
+    /// `research/investigations/compute-runtime/RESULTS.md` records which and
+    /// by how much, and what would reopen it.
+    #[default]
     Off,
     /// Ask the runtime once, at the component's ordinary entry. The answer
     /// follows the pool width, which a compile-time constant cannot.
-    #[default]
     RuntimeDerived,
-    /// Start from this compile-time value instead of asking. The A/B control
-    /// the measured depth sweep uses; never the shipped default, because the
-    /// best fixed value is not the same value at two lanes and at four.
+    /// Start from this compile-time value instead of asking. The control the
+    /// measured depth sweep uses; the best fixed value is not the same value
+    /// at two lanes and at four, which is why it is not the way to default.
     Pinned(std::num::NonZeroU8),
 }
 

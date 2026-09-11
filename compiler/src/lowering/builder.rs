@@ -39,8 +39,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             }
     );
     // A lowering that actualizes compute at all carries a recursion budget;
-    // the control form is the only one that says something other than "ask the
-    // runtime". A lowering that actualizes no compute carries none, so a
+    // the control form is the only one that says something other than the
+    // default. A lowering that actualizes no compute carries none, so a
     // default or `--no-overlap` build names the budget nowhere.
     let recursion_budget = match overlap {
         OverlapLowering::Off | OverlapLowering::Completion => None,

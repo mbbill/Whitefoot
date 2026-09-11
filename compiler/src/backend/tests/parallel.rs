@@ -461,17 +461,9 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         module.contains("(ptr %frame) #0 {\nentry:\n  %p0 = getelementptr inbounds "),
         "no outlined thunk over a frame:\n{module}"
     );
-    // `fold` is recursive, so `--par` gives its component a budget-carrying
-    // family: the thunk and the inline edge both enter the variant, carrying
-    // the offering activation's remaining levels.
     assert!(
-        module.contains("%result = call i64 @wf__par_budget_fold(ptr %a0, i64 %ab)"),
+        module.contains("%result = call i64 @wf_fold(ptr %a0)"),
         "the thunk must call the same function the inline edge calls:\n{module}"
-    );
-    assert!(
-        function_body(&module, "@wf__par_budget_fold")
-            .contains("= call i64 @wf__par_budget_fold(ptr %v"),
-        "the inline edge must enter the same variant the thunk does:\n{module}"
     );
     assert!(
         module.contains("  store i64 %result, ptr %slot\n  ret void\n"),
@@ -491,9 +483,8 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     // `fold`'s own recursive pair: a lane is acquired and the first call is
     // published to it, the second runs inline on this thread, and only then is
     // the published one joined. The ordering is what makes the overlap window
-    // exactly the second call. It is read in the budget-carrying variant,
-    // which is where a recursive component's body is emitted.
-    let body = function_body(&module, "@wf__par_budget_fold");
+    // exactly the second call.
+    let body = function_body(&module, "@wf_fold");
     let acquisition = body
         .find("= call ptr @wf__par_acquire_lane(i64 ")
         .expect("fold must acquire a lane for its first recursive call");
@@ -504,7 +495,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         .find("par.offered.")
         .and_then(|start| {
             body[start..]
-                .find("call i64 @wf__par_budget_fold(")
+                .find("call i64 @wf_fold(")
                 .map(|at| start + at)
         })
         .expect("fold must run its second recursive call inline");
@@ -543,7 +534,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         .find("\npar.inline.")
         .and_then(|start| {
             body[start..]
-                .find("call i64 @wf__par_budget_fold(")
+                .find("call i64 @wf_fold(")
                 .map(|at| start + at)
         })
         .expect("the refused edge must make the call on this thread");
@@ -1264,10 +1255,7 @@ fn the_shipped_default_keeps_a_deep_recursion() {
 
     let directory = test_directory();
     let lines = super::stack_ledger::ledger_lines(&overlapped_module, &directory);
-    // The overlapped level of a recursive component is its budget-carrying
-    // variant: the ordinary symbol obtains the budget and enters the family
-    // once, so the frame one level costs is the variant's.
-    let overlapped = super::stack_ledger::reported_frame_bytes(&lines, "wf__par_budget_spine");
+    let overlapped = super::stack_ledger::reported_frame_bytes(&lines, "wf_spine");
     let sequential = super::stack_ledger::reported_frame_bytes(&lines, "wf__par_seq_spine");
     assert!(
         overlapped <= sequential + WIDEST_ADMITTED_OVERHEAD,
@@ -1443,26 +1431,17 @@ fn the_bootstrap_selects_one_world_once() {
             );
         }
     }
-    // And nothing but the bootstrap and the recursion budget's own cut
-    // reaches the clone world. The cut is the mechanism, not an exception to
-    // it: a member handed nothing left enters its clone, which is where the
-    // world with no scheduler test in it begins.
+    // And nothing but the bootstrap reaches the clone world. The opt-in
+    // recursion budget adds the one other entrance there is — a member whose
+    // budget is spent enters its own clone — and
+    // `recursive_controls_preserve_scalar_and_destination_results` reads that
+    // edge where it exists; a default build has neither the family nor it.
     let actualized = without_clones(&overlapped);
     let bootstrap_free = actualized.replace(function_body(&actualized, "@wf__main_body"), "");
-    let mut spent = false;
-    for line in bootstrap_free.lines() {
-        if line == "par.grain.spent:" {
-            spent = true;
-            continue;
-        }
-        assert!(
-            !line.contains("@wf__par_seq_") || spent,
-            "only the bootstrap and a spent budget may name a clone:\n{bootstrap_free}"
-        );
-        if line.starts_with("  ret ") {
-            spent = false;
-        }
-    }
+    assert!(
+        !bootstrap_free.contains("@wf__par_seq_"),
+        "only the bootstrap may name a clone:\n{bootstrap_free}"
+    );
 }
 
 /// A Windows module with compute offers carries unresolved lane-protocol
@@ -3208,6 +3187,11 @@ command fn main() -> status: own ExitStatus pure {
     assert!(module_requires_parallel_runtime(&retained));
 }
 
+/// One pinned budget, as the matrix below writes it.
+fn pinned(levels: u8) -> crate::RecursionBudget {
+    crate::RecursionBudget::Pinned(std::num::NonZeroU8::new(levels).expect("a positive budget"))
+}
+
 /// Self/mutual budget families and rejecting a task must compute every leaf.
 /// Sequential clones remove descendant attempts without changing result storage.
 /// A deferred granted root also checks that its callback spends a level of the
@@ -3280,19 +3264,23 @@ command fn main() -> status: own ExitStatus pure {{
             } else {
                 source
             };
-            for (sequential, frontier) in [
+            // The default is no family at all, so its cells are written as the
+            // policies a build with no recursion control selects; the rest are
+            // the control's three forms, pinned and derived.
+            for (sequential, budget) in [
                 (false, None),
                 (true, None),
-                (false, Some(1_u8)),
-                (false, Some(3)),
-                (false, Some(6)),
-                (true, Some(3)),
+                (false, Some(crate::RecursionBudget::Off)),
+                (false, Some(pinned(1))),
+                (false, Some(pinned(3))),
+                (false, Some(pinned(6))),
+                (true, Some(pinned(3))),
+                (false, Some(crate::RecursionBudget::RuntimeDerived)),
+                (true, Some(crate::RecursionBudget::RuntimeDerived)),
             ] {
-                let policy = if let Some(levels) = frontier {
+                let policy = if let Some(budget) = budget {
                     crate::OverlapLowering::OnWithRecursionBudget {
-                        budget: crate::RecursionBudget::Pinned(
-                            std::num::NonZeroU8::new(levels).unwrap(),
-                        ),
+                        budget,
                         maximum_scalar_leaf_operations: Some(16),
                         sequential_refusal: sequential,
                     }
@@ -3305,33 +3293,47 @@ command fn main() -> status: own ExitStatus pure {{
                         maximum_operations: 16,
                     }
                 };
+                let family = matches!(
+                    budget,
+                    Some(
+                        crate::RecursionBudget::Pinned(_) | crate::RecursionBudget::RuntimeDerived
+                    )
+                );
                 let module = super::emit_lowered(source.as_bytes(), policy);
                 let entry = function_body(&module, "@wf_fold");
                 let target = if mutual { "alternate" } else { "fold" };
-                // Every form here carries a family, because every one of them
-                // actualizes compute: what the control changes is where the
-                // count starts. A pinned entry starts from a constant above
-                // zero, so it queries nothing; a derived entry asks once.
-                let variant = function_body(&module, &format!("@wf__par_budget_{target}"));
-                assert!(entry.contains("@wf__par_budget_fold("));
-                assert!(variant.contains(&format!("@wf__par_budget_{target}(")));
-                assert!(variant.contains(&format!("@wf__par_seq_{target}(")));
-                assert_eq!(
-                    entry.contains("@wf__par_recursion_budget()"),
-                    frontier.is_none()
-                );
-                // The entry keeps the writer's own signature and result ABI:
-                // what it adds is the budget it enters the family with.
-                assert!(!entry.contains("@wf__par_acquire_lane("), "{entry}");
-                // The refusal control is what selects the clone at a refused
-                // acquisition, and it composes with the budget unchanged.
-                assert!(variant.contains("par.grain.spent:"), "{variant}");
-                assert_eq!(
-                    function_body(&module, "@wf__par_budget_fold")
-                        .matches(&format!("@wf__par_seq_{target}("))
-                        .count(),
-                    usize::from(!mutual) + usize::from(sequential)
-                );
+                assert_eq!(module.contains("@wf__par_budget_fold("), family);
+                if family {
+                    // The entry keeps the writer's own signature and result
+                    // ABI: what it adds is the budget it enters the family
+                    // with, asked of the runtime unless it was pinned.
+                    let variant = function_body(&module, &format!("@wf__par_budget_{target}"));
+                    assert!(entry.contains("@wf__par_budget_fold("), "{entry}");
+                    assert!(!entry.contains("@wf__par_acquire_lane("), "{entry}");
+                    assert_eq!(
+                        entry.contains("@wf__par_recursion_budget()"),
+                        budget == Some(crate::RecursionBudget::RuntimeDerived)
+                    );
+                    // The cut: a variant handed nothing left enters its own
+                    // clone. The refusal control selects the callee's clone at
+                    // a refused acquisition, and composes with it unchanged.
+                    assert!(variant.contains("par.grain.spent:"), "{variant}");
+                    assert!(
+                        variant.contains(&format!("@wf__par_seq_{target}(")),
+                        "{variant}"
+                    );
+                    assert_eq!(
+                        function_body(&module, "@wf__par_budget_fold")
+                            .matches(&format!("@wf__par_seq_{target}("))
+                            .count(),
+                        usize::from(!mutual) + usize::from(sequential)
+                    );
+                } else {
+                    assert_eq!(
+                        entry.contains(&format!("@wf__par_seq_{target}(")),
+                        sequential
+                    );
+                }
 
                 assert!(
                     !function_body(&module, "@wf__par_seq_fold").contains("@wf__par_acquire_lane(")
@@ -3376,7 +3378,13 @@ command fn main() -> status: own ExitStatus pure {{
                         // runs the left subtree's right spine: 5 + 4. A
                         // budget of N cuts the tree at N levels, and nothing
                         // under the cut acquires anything at all.
-                        let levels = frontier.map_or(derived, u32::from).min(5);
+                        let levels = match budget {
+                            Some(crate::RecursionBudget::Pinned(levels)) => u32::from(levels.get()),
+                            Some(crate::RecursionBudget::RuntimeDerived) => derived,
+                            // No family: every node of the component offers.
+                            Some(crate::RecursionBudget::Off) | None => 5,
+                        }
+                        .min(5);
                         let granted = granted && levels > 0;
                         let attempts = if levels == 0 {
                             0
