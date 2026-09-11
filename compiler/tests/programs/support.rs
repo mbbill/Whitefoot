@@ -229,7 +229,7 @@ pub fn try_compile_programs_with_overlap(names: &[&str]) -> Result<String, Compi
 }
 
 /// Compiles one corpus program with the [PAR-1 candidate] overlap lowering
-/// switched on, which is what `whitefootc --par` compiles.
+/// switched on without scalar-leaf suppression (`--par-scalar-leaf-limit off`).
 ///
 /// [`compile_program`] is the shipped default and hands nothing out, so a case
 /// about actualization has to name this entry. The two differ in the emitted

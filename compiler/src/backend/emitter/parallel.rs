@@ -8,10 +8,11 @@
 //! immediately after it — before the group's values are read and before any
 //! exit edge.
 //!
-//! Both edges of the hand-out call the same monomorphized function on the same
-//! arguments, so there is still exactly one lowering of the source call: the
-//! thunk and the fallback are the same code reached two ways, and a lane that
-//! is never granted computes the sequential result on the sequential schedule.
+//! By default both edges call the same monomorphized function on the same
+//! arguments. The opt-in sequential-refusal experiment instead calls its
+//! existing sequential clone at the join, when one exists and the callee cannot
+//! suspend. The clone has the same ordinary ABI and operations, and merely
+//! declines descendant compute permissions. The successful task is unchanged.
 //! Nothing here consults a fact, a source proof statement, or a row; it
 //! consumes the group the checker already judged.
 //!
@@ -39,9 +40,10 @@
 //! that actualizes nothing — the sequential lowering, byte for byte, so that
 //! every transform the default build gets fires on it. The bootstrap asks the
 //! runtime once whether this run was asked for a pool, and enters one world or
-//! the other; neither ever calls into the other, so nothing below that branch
-//! tests anything again. [`sequential_clone_set`] carries why the second copy has to
-//! exist, why once-per-process is the only selection that is safe here, and
+//! the other. In the default policy neither calls into the other, so nothing
+//! below that branch tests anything again. The experimental refusal policy
+//! also permits the already-required null branch to enter a sequential clone.
+//! [`sequential_clone_set`] explains the second copy, the default selection, and
 //! why the set is exactly that closure.
 //!
 //! **Symbol reservation.** A source function is emitted as `wf_` followed by
@@ -56,7 +58,7 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
-use super::{BackendFailure, FunctionEmitter, llvm_type, source_symbol, value_name};
+use super::{BackendFailure, FunctionEmitter, llvm_type, value_name};
 
 use crate::backend::abi::{FunctionAbi, ResultAbi};
 use crate::{IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId};
@@ -188,8 +190,8 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// both: the phi is what actualization *is*, and the transform requires its
 /// absence. So the module carries both lowerings and selects between them.
 ///
-/// **Why the selection is safe.** It is made once per process, from whether the
-/// run asked for a pool, and never again. Without one every acquisition is refused for
+/// **Why the selection is safe.** The default policy selects once per process,
+/// from whether the run asked for a pool. Without one every acquisition is refused for
 /// the whole process, so the two worlds compute on exactly the same schedule and
 /// the choice between them is a choice of machine code, not of semantics.
 /// On every maintained target, partial startup retains the available workers;
@@ -200,7 +202,13 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// entirely, and was measured killing the scheduler it was meant to help: the
 /// shared word it needs costs two contended read-modify-writes per task, which
 /// took the fine-grain oracle cell from 0.4905 s to 0.9254 s. Nothing here reads
-/// a per-task signal, and the two worlds never call each other.
+/// a per-task signal. Under the default policy the two worlds never call each
+/// other; the opt-in refusal policy reuses an existing null branch, while the
+/// recursive frontier selects the sequential callee statically at its final
+/// private layer. Neither adds a runtime demand signal. Declining descendant compute permissions
+/// preserves [PAR-1] operations, arguments and the same-ABI result; the call
+/// still executes at the original join. May-suspend callees retain their
+/// ordinary fallback.
 ///
 /// **Why this set and not another.** A function outside it has the same body
 /// in both worlds — no hand-out is reachable from it, so nothing about its
@@ -371,8 +379,8 @@ pub(crate) struct ComputeHandedOut {
     frame: String,
     /// The frame field the result occupies: the argument count.
     result_field: usize,
-    /// The call the refused edge makes: the same symbol on the same operands
-    /// the thunk calls, rendered once so the two edges cannot drift apart.
+    /// The call the refused edge makes with the original operands. Normally
+    /// the thunk's symbol; the opt-in policy may select its same-ABI clone.
     callee: String,
     arguments: String,
 }
@@ -437,7 +445,7 @@ impl FunctionEmitter<'_, '_> {
             .copied()
             .ok_or(BackendFailure::InvalidIr)?;
 
-        let callee = source_symbol(target.name());
+        let callee = self.callee_symbol(function, target.name());
         let thunk = self.parallel.register(|symbol| {
             thunk_definition(
                 symbol,
@@ -481,7 +489,13 @@ impl FunctionEmitter<'_, '_> {
             frame_type,
             frame,
             result_field,
-            callee,
+            callee: if self.refusal_clones.contains(&function)
+                && !target.target_action().may_suspend()
+            {
+                sequential_clone_symbol(target.name())
+            } else {
+                callee
+            },
             arguments: call_arguments.join(", "),
         }));
         Ok(())
