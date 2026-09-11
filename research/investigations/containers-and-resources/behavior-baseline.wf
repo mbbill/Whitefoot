@@ -1,0 +1,473 @@
+// D6b design appendix; proposed syntax, not a v0.56 executable test.
+// Same D2 enum-slot find/put and single-place priority push/pop in all options.
+// This comparison does not claim the old scalar heap's native performance.
+// Replace with the selected executable witnesses after implementation; delete rivals.
+
+struct Seed {
+  salt: u64;
+}
+
+fn seed_hash(env: &Seed, key: &u64) -> hash: own u64 reads(env.salt, key) {
+  let mixed = deref(key) +wrap deref(env).salt;
+  return mixed;
+}
+
+fn seed_equal(env: &Seed, left: &u64, right: &u64) -> equal: own Bool reads(left, right) {
+  let same = deref(left) == deref(right);
+  return same;
+}
+
+struct Resource {
+  id: u64;
+}
+
+enum Slot<K: linear>['s] {
+  Vacant();
+  Deleted();
+  Occupied(fingerprint: u8, key: K, payload: Box<'s, Resource>);
+}
+
+enum Probe {
+  Stop();
+  Skip();
+  Miss();
+  Match();
+}
+
+enum PutOutcome<K: linear>['s] {
+  Installed(previous: Slot<'s, K>);
+  Full(key: K, payload: Box<'s, Resource>);
+}
+
+fn fingerprint(hash: own u64) -> result: own u8 pure {
+  let tag = 0_u8;
+  let bit0 = iand(hash, 1_u64);
+  if bit0 != 0_u64 {
+    set tag = ior(tag, 1_u8);
+  }
+  let bit1 = iand(hash, 2_u64);
+  if bit1 != 0_u64 {
+    set tag = ior(tag, 2_u8);
+  }
+  let bit2 = iand(hash, 4_u64);
+  if bit2 != 0_u64 {
+    set tag = ior(tag, 4_u8);
+  }
+  let bit3 = iand(hash, 8_u64);
+  if bit3 != 0_u64 {
+    set tag = ior(tag, 8_u8);
+  }
+  let bit4 = iand(hash, 16_u64);
+  if bit4 != 0_u64 {
+    set tag = ior(tag, 16_u8);
+  }
+  let bit5 = iand(hash, 32_u64);
+  if bit5 != 0_u64 {
+    set tag = ior(tag, 32_u8);
+  }
+  let bit6 = iand(hash, 64_u64);
+  if bit6 != 0_u64 {
+    set tag = ior(tag, 64_u8);
+  }
+  return tag;
+}
+
+fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 pure contract {
+  requires home < count;
+  requires step < count;
+  ensures index < count;
+} {
+  let until_end = count - home;
+  if step >= until_end {
+    let wrapped = step - until_end;
+    return wrapped;
+  }
+  let straight = home + step;
+  return straight;
+}
+
+struct Item {
+  rank: u64;
+}
+
+struct Ascending {
+}
+
+fn ascending_compare(env: &Ascending, left: &Item, right: &Item) -> order: own i32 reads(left.rank, right.rank) contract {
+  ensures order >= -1_i32;
+  ensures order <= 1_i32;
+} {
+  if deref(left).rank < deref(right).rank {
+    return -1_i32;
+  }
+  if deref(left).rank > deref(right).rank {
+    return 1_i32;
+  }
+  return 0_i32;
+}
+
+shape Key<K: linear, E: linear> {
+  fn hash(env: &E, key: &K) -> hash: own u64 reads(env, key);
+  fn equal(env: &E, left: &K, right: &K) -> equal: own Bool reads(env, left, right);
+}
+
+shape Order<T: linear, E: linear> {
+  fn compare(env: &E, left: &T, right: &T) -> order: own i32 reads(env, left, right) contract {
+    ensures order >= -1_i32;
+    ensures order <= 1_i32;
+  };
+}
+
+struct Map<Key<K, E>>['s] {
+  slots: Vector<'s, Slot<'s, K>>;
+}
+
+struct Queue<Order<T, E>> {
+  heap: FixedVector<T, 16>;
+}
+
+group SeedKey : Key<u64, Seed> {
+  hash = seed_hash;
+  equal = seed_equal;
+}
+
+group ItemOrder : Order<Item, Ascending> {
+  compare = ascending_compare;
+}
+
+fn probe<Key<K, E>>['s](slot: &Slot<'s, K>, tag: own u8, key: &K, env: &E) -> action: own Probe reads(slot, key, env) {
+  match deref(slot) {
+    Vacant() => {
+      return Stop();
+    }
+    Deleted() => {
+      return Skip();
+    }
+    Occupied(fingerprint: saved, key: present, payload: owner) => {
+      if deref(saved) == tag {
+        let same = Key::equal(env: env, left: present, right: key);
+        if same {
+          return Match();
+        }
+      }
+      return Miss();
+    }
+  }
+}
+
+fn put<Key<K, E>>['s](map: &uniq Map<'s, Key<K, E>>, key: own K, payload: own Box<'s, Resource>, env: &E) -> outcome: own PutOutcome<'s, K> reads(map.slots, key, env), writes(map.slots) contract {
+  ensures len_of(deref(map).slots) == len_of(deref(entry(map)).slots);
+  ensures head_of(deref(map).slots) == head_of(deref(entry(map)).slots);
+} {
+  let hash = 0_u64;
+  region {
+    set hash = Key::hash(env: env, key: &key);
+  }
+  let tag = fingerprint(hash: hash);
+  let count = len_of(deref(map).slots);
+  let first_deleted = count;
+  for (step in 0_u64..count) {
+    let home = hash % count;
+    let index = probe_index(home: home, step: step, count: count);
+    let action = Miss();
+    region {
+      set action = probe::<Key<K, E>>(slot: &deref(map).slots[index], tag: tag, key: &key, env: env);
+    }
+    match action {
+      Match() => {
+        let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+        let previous = replace deref(map).slots[index] = move offered;
+        return Installed<K>(previous: move previous);
+      }
+      Skip() => {
+        if first_deleted == count {
+          set first_deleted = index;
+        }
+      }
+      Stop() => {
+        let destination = index;
+        if first_deleted < count {
+          set destination = first_deleted;
+        }
+        let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+        let previous = replace deref(map).slots[destination] = move offered;
+        return Installed<K>(previous: move previous);
+      }
+      Miss() => {
+      }
+    }
+  }
+  if first_deleted < count {
+    let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+    let previous = replace deref(map).slots[first_deleted] = move offered;
+    return Installed<K>(previous: move previous);
+  }
+  return Full<K>(key: move key, payload: move payload);
+}
+
+fn find<Key<K, E>>['s](map: &Map<'s, Key<K, E>>, key: &K, env: &E) -> found: own Result<u64, unit> reads(map.slots, key, env) contract {
+  ensures when Ok(value: index): index < len_of(deref(map).slots);
+} {
+  let hash = Key::hash(env: env, key: key);
+  let tag = fingerprint(hash: hash);
+  let count = len_of(deref(map).slots);
+  for (step in 0_u64..count) {
+    let home = hash % count;
+    let index = probe_index(home: home, step: step, count: count);
+    region {
+      let action = probe::<Key<K, E>>(slot: &deref(map).slots[index], tag: tag, key: key, env: env);
+      match action {
+        Match() => {
+          return Ok<u64, unit>(value: index);
+        }
+        Stop() => {
+          return Err<u64, unit>(error: unit);
+        }
+        Skip() => {
+        }
+        Miss() => {
+        }
+      }
+    }
+  }
+  return Err<u64, unit>(error: unit);
+}
+
+fn fill_slots<K: linear>['s](slots: &uniq Vector<'s, Slot<'s, K>>, count: own u64) -> result: own unit reads(slots), writes(slots) contract {
+  requires len_of(deref(slots)) == 0_u64;
+  requires room_of(deref(slots)) >= count;
+  ensures len_of(deref(slots)) == count;
+} {
+  for (
+    index in 0_u64..count,
+    invariant low: len_of(deref(slots)) >= index,
+    invariant high: len_of(deref(slots)) <= index,
+    invariant spare: room_of(deref(slots)) + index >= count
+  ) {
+    let empty = Vacant<'s, K>();
+    region {
+      place_back(vector: &uniq deref(slots), value: move empty);
+    }
+  }
+  return unit;
+}
+
+fn create_slots<K: linear>['s](store: &uniq Heap<'s>, count: own u64) -> result: own Option<Vector<'s, Slot<'s, K>>> reads(store), writes(store), allocates(store) {
+  if buffer_fits::<Slot<'s, K>>(count) {
+    region {
+      match heap_vector::<Slot<'s, K>>(store: &uniq deref(store), count: count) {
+        None() => {
+          return None<Vector<'s, Slot<'s, K>>>();
+        }
+        Some(value: slots) => {
+          region {
+            fill_slots::<K>(slots: &uniq slots, count: count);
+          }
+          return Some<Vector<'s, Slot<'s, K>>>(value: move slots);
+        }
+      }
+    }
+  }
+  return None<Vector<'s, Slot<'s, K>>>();
+}
+
+fn exchange_at<T: linear>(heap: &uniq FixedVector<T, 16>, left: own u64, right: own u64) -> result: own unit reads(heap), writes(heap) contract {
+  requires left < len_of(deref(heap));
+  requires right < len_of(deref(heap));
+  requires head_of(deref(heap)) <= 0_u64;
+  ensures len_of(deref(heap)) == len_of(deref(entry(heap)));
+  ensures head_of(deref(heap)) <= 0_u64;
+} {
+  doc "Single-place exchanges preserve an owner without LIV-2 dynamic-index read-out. The three-exchange path costs extra element transfers; it is not a native-performance claim.";
+  if left == right {
+    return unit;
+  }
+  region {
+    let tail = take_back(vector: &uniq deref(heap));
+    let end = len_of(deref(heap));
+    if left == end {
+      let previous = replace deref(heap)[right] = move tail;
+      place_back(vector: &uniq deref(heap), value: move previous);
+      return unit;
+    }
+    if right == end {
+      let previous = replace deref(heap)[left] = move tail;
+      place_back(vector: &uniq deref(heap), value: move previous);
+      return unit;
+    }
+    let left_value = replace deref(heap)[left] = move tail;
+    let right_value = replace deref(heap)[right] = move left_value;
+    let saved_tail = replace deref(heap)[left] = move right_value;
+    place_back(vector: &uniq deref(heap), value: move saved_tail);
+    return unit;
+  }
+}
+
+fn sift_rise<Order<T, E>>(queue: &uniq Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(queue.heap, env), writes(queue.heap) contract {
+  requires len_of(deref(queue).heap) == count;
+  requires count >= 1_u64;
+  requires head_of(deref(queue).heap) <= 0_u64;
+  ensures len_of(deref(queue).heap) == count;
+  ensures head_of(deref(queue).heap) <= 0_u64;
+} {
+  region {
+    let at = count - 1_u64;
+    loop @rise (
+      invariant live: at < count,
+      invariant count_low: len_of(deref(queue).heap) >= count,
+      invariant count_high: len_of(deref(queue).heap) <= count,
+      invariant origin: head_of(deref(queue).heap) <= 0_u64
+    ) {
+      if at == 0_u64 {
+        return unit;
+      }
+      let before = at - 1_u64;
+      let parent = before / 2_u64;
+      let order = Order::compare(env: env, left: &deref(queue).heap[parent], right: &deref(queue).heap[at]);
+      if order <= 0_i32 {
+        return unit;
+      }
+      exchange_at::<T>(heap: &uniq deref(queue).heap, left: parent, right: at);
+      set at = parent;
+    }
+    return unit;
+  }
+}
+
+fn sift_sink<Order<T, E>>(queue: &uniq Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(queue.heap, env), writes(queue.heap) contract {
+  requires len_of(deref(queue).heap) == count;
+  requires count >= 1_u64;
+  requires head_of(deref(queue).heap) <= 0_u64;
+  ensures len_of(deref(queue).heap) == count;
+  ensures head_of(deref(queue).heap) <= 0_u64;
+} {
+  region {
+    let at = 0_u64;
+    loop @sink (
+      invariant live: at < count,
+      invariant count_low: len_of(deref(queue).heap) >= count,
+      invariant count_high: len_of(deref(queue).heap) <= count,
+      invariant origin: head_of(deref(queue).heap) <= 0_u64
+    ) {
+      let doubled = at * 2_u64;
+      let left = doubled + 1_u64;
+      if left >= count {
+        return unit;
+      }
+      let best = left;
+      let right = left + 1_u64;
+      if right < count {
+        let sibling_order = Order::compare(env: env, left: &deref(queue).heap[right], right: &deref(queue).heap[left]);
+        if sibling_order < 0_i32 {
+          set best = right;
+        }
+      }
+      let order = Order::compare(env: env, left: &deref(queue).heap[at], right: &deref(queue).heap[best]);
+      if order <= 0_i32 {
+        return unit;
+      }
+      exchange_at::<T>(heap: &uniq deref(queue).heap, left: at, right: best);
+      set at = best;
+    }
+    return unit;
+  }
+}
+
+fn push<Order<T, E>>(queue: &uniq Queue<Order<T, E>>, value: own T, env: &E) -> result: own unit reads(queue.heap, value, env), writes(queue.heap, value) contract {
+  requires room_of(deref(queue).heap) >= 1_u64;
+  requires head_of(deref(queue).heap) <= 0_u64;
+  ensures len_of(deref(queue).heap) == len_of(deref(entry(queue)).heap) + 1_u64;
+  ensures head_of(deref(queue).heap) <= 0_u64;
+} {
+  region {
+    let entering = len_of(deref(queue).heap);
+    let count = entering + 1_u64;
+    place_back(vector: &uniq deref(queue).heap, value: move value);
+    sift_rise::<Order<T, E>>(queue: &uniq deref(queue), count: count, env: env);
+    return unit;
+  }
+}
+
+fn pop<Order<T, E>>(queue: &uniq Queue<Order<T, E>>, env: &E) -> minimum: own T reads(queue.heap, env), writes(queue.heap) contract {
+  requires len_of(deref(queue).heap) >= 1_u64;
+  requires head_of(deref(queue).heap) <= 0_u64;
+  ensures len_of(deref(queue).heap) == len_of(deref(entry(queue)).heap) - 1_u64;
+  ensures head_of(deref(queue).heap) <= 0_u64;
+} {
+  region {
+    let last = take_back(vector: &uniq deref(queue).heap);
+    let count = len_of(deref(queue).heap);
+    if count == 0_u64 {
+      return move last;
+    }
+    let minimum = replace deref(queue).heap[0_u64] = move last;
+    sift_sink::<Order<T, E>>(queue: &uniq deref(queue), count: count, env: env);
+    return move minimum;
+  }
+}
+
+fn offer['s](store: &uniq Heap<'s>, map: &uniq Map<'s, SeedKey>, key: own u64, id: own u64, env: &Seed) -> success: own Bool reads(store, map.slots, env), writes(store, map.slots), allocates(store) {
+  let value = Resource(id: id);
+  region {
+    match heap_box(store: &uniq deref(store), value: move value) {
+      Err(error: back) => { return False(); }
+      Ok(value: owner) => {
+        region {
+          match put::<SeedKey>(map: &uniq deref(map), key: key, payload: move owner, env: env) {
+            Installed(previous: displaced) => { dispose displaced; return True(); }
+            Full(key: offered_key, payload: offered_owner) => { dispose offered_owner; return False(); }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn queue_demo() -> result: own u8 pure {
+  let ordering = Ascending();
+  let values = fixed_vector::<Item, 16>();
+  let queue = Queue<ItemOrder>(heap: move values);
+  let first = Item(rank: 9_u64);
+  let second = Item(rank: 2_u64);
+  let third = Item(rank: 7_u64);
+  region {
+    push::<ItemOrder>(queue: &uniq queue, value: move first, env: &ordering);
+    push::<ItemOrder>(queue: &uniq queue, value: move second, env: &ordering);
+    push::<ItemOrder>(queue: &uniq queue, value: move third, env: &ordering);
+    let low = pop::<ItemOrder>(queue: &uniq queue, env: &ordering);
+    let middle = pop::<ItemOrder>(queue: &uniq queue, env: &ordering);
+    let high = pop::<ItemOrder>(queue: &uniq queue, env: &ordering);
+    if low.rank != 2_u64 { return 1_u8; }
+    if middle.rank != 7_u64 { return 2_u8; }
+    if high.rank != 9_u64 { return 3_u8; }
+    return 0_u8;
+  }
+}
+
+command fn main(command.heap as store: own Heap) -> status: own ExitStatus reads(store), writes(store), allocates(store) {
+  let queue_status = queue_demo();
+  if queue_status != 0_u8 { return exit_status(code: queue_status); }
+  let seed = Seed(salt: 0_u64);
+  let needle = 5_u64;
+  region {
+    match create_slots::<u64>(store: &uniq store, count: 4_u64) {
+      None() => { return exit_status(code: 4_u8); }
+      Some(value: backing) => {
+        let map = Map<SeedKey>(slots: move backing);
+        region {
+          let a = offer(store: &uniq store, map: &uniq map, key: 1_u64, id: 10_u64, env: &seed);
+          let b = offer(store: &uniq store, map: &uniq map, key: 5_u64, id: 20_u64, env: &seed);
+          let c = offer(store: &uniq store, map: &uniq map, key: 1_u64, id: 30_u64, env: &seed);
+          let ab = band(a, b);
+          if band(ab, c) {
+            match find::<SeedKey>(map: &map, key: &needle, env: &seed) {
+              Ok(value: index) => { return exit_status(code: 0_u8); }
+              Err(error: absent) => { return exit_status(code: 6_u8); }
+            }
+          }
+          return exit_status(code: 5_u8);
+        }
+      }
+    }
+  }
+}
