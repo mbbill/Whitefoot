@@ -32,7 +32,61 @@
 #define WF_PAR_SPIN_ROUNDS 1024
 /* Yields are cheap next to a park and the sweep gave no reason to move them. */
 #define WF_PAR_YIELD_ROUNDS 16
+/* How many chunks an independent map may be split into, as a multiple of the
+ * lane count. `wf__par_split_budget` below combines this with the work term --
+ * span / ceil(work unit / weight), the floor on chunk size entry.c owns -- by
+ * a MINIMUM, so this is a ceiling on chunk count and never a floor on chunk
+ * size: a range too small to be worth splitting stays bounded by the work term
+ * however much oversubscription this allows.
+ *
+ * What is known about 16, which arrived with the splitter: on the compute
+ * scoreboard it is the BINDING term for two of the three map kernels at the
+ * widths that host records. At weight 812 over
+ * 131,072 records and weight 150 over 524,288 outputs the work term affords
+ * far more chunks than `16 * lanes`, so records and fir read exactly 32 chunks
+ * at two lanes and 64 at four -- the cap, not the grain -- which is why the
+ * work unit's own sweep could not move either row at either width
+ * (research/investigations/compute-runtime/RESULTS.md, the split work unit
+ * swept against the Mandelbrot grain). Mandelbrot is the opposite case: at
+ * weight 219 over 98,304 points the work term affords 17, so its 16 chunks are
+ * the grain and this cap is slack there; against it oneTBB's auto_partitioner
+ * hands the same skewed map out as about 1,536 callbacks.
+ *
+ * It was swept and it does not move. The compute scoreboard ran three
+ * candidate pairs against the shipped runtime through its A/B twin -- the cap
+ * and the work unit raised together, so mandelbrot's chunk count could pass its
+ * own cap rather than stop at it -- one `compare PASSES=5 CALLS=5` each on the
+ * four-CPU Linux development host, the plain image byte-identical in all three.
+ * The chunk counts moved exactly as the rule predicts: (64, 300,000) gave
+ * mandelbrot 64 chunks at every width with records and fir at 128/256/256,
+ * (256, 75,000) gave 256 with 512/1024/1024, and (1024, 20,000) gave 1,024
+ * with records 2048/4096/4096 and fir 2,048 at every width. The acceptance was
+ * mandelbrot's W=4 `wf-b/wf` wall below 1.000 with at least four of five
+ * paired passes lower, no kernel reproducibly worse at W=2 or W=4, W=4 paired
+ * CPU no worse than 1.05, and W=1 unchanged. It read 0.999 (3/5), 0.992 (3/5)
+ * and 0.970 (5/5), and the third is not selectable, because QUADRATURE IS A
+ * NULL ARM IN EVERY ONE OF THOSE RUNS -- it emits no split call at all, so its
+ * two images do identical work -- and in that same third run quadrature's own
+ * W=4 pair read 0.940 with five of five lower. Over the four runs quadrature's
+ * identical-work W=4 pair spans 0.936 to 1.086, including both a 5/5-lower and
+ * a 0/5-lower reading, which is the one thing a within-pass twin cannot remove:
+ * the two images differ in bytes and therefore in code placement, this bundle's
+ * largest confound. (1024, 20,000) also took fir's W=2 pair to 1.053 with one
+ * of five lower. So nothing here selects a cap, and 16 stands unmeasured rather
+ * than measured-and-kept (research/investigations/compute-runtime/RESULTS.md,
+ * the oversubscription cap measured with the A/B twin). Reopen on a host whose
+ * null arm holds inside one percent, or on an eight-CPU host where W=8 is the
+ * recorded block -- at the oversubscribed W=8 here the middle candidate read
+ * fir 0.909 with five of five lower and paired CPU 0.922.
+ *
+ * The guard is what lets the compute scoreboard build a runtime at another
+ * value through its WF_RUNTIME_CONTROL_FLAGS and A/B twin, so the cap can be
+ * swept against the shipped runtime inside one set of passes instead of edited
+ * per run. This selects how finely an admitted program is actualized in
+ * parallel; no acceptance path reads it. */
+#ifndef WF_PAR_SPLIT_OVERSUBSCRIBE
 #define WF_PAR_SPLIT_OVERSUBSCRIBE 16
+#endif
 /* Sequential leaves a recursive component is cut into, per lane, by
  * wf__par_recursion_budget. Measured on the compute scoreboard's quadrature
  * kernel (research/investigations/compute-runtime/RESULTS.md, the

@@ -98,6 +98,18 @@ static int lanes;
  * with eight lanes where the map kernels are not already at the
  * oversubscription cap, can reopen it.
  *
+ * It was swept a second time, against a raised cap so that the cap could not be
+ * what stopped the count, and again nothing was selected: 300,000 with the cap
+ * at 64, 75,000 with it at 256 and 20,000 with it at 1,024, each measured
+ * against the shipped runtime inside one set of passes by the scoreboard's A/B
+ * twin rather than against a separate control run. The chunk counts moved as
+ * the rule predicts and the readings are not separable from the twin's own null
+ * arm: quadrature emits no split call, so its two images do identical work, and
+ * its W=4 pair read anywhere from 0.936 to 1.086 across those runs. The reason
+ * is stated beside WF_PAR_SPLIT_OVERSUBSCRIBE in core.c
+ * (research/investigations/compute-runtime/RESULTS.md, the oversubscription cap
+ * measured with the A/B twin).
+ *
  * WF_SPLIT_WORK overrides it per process for diagnosis; the scoreboard's
  * harness unsets that variable so a recorded row can never be taken under one.
  * This selects how finely an admitted program is actualized in parallel; no
