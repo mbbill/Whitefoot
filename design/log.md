@@ -6,34 +6,24 @@ Newest first. One entry per approved tree change. Format:
 ## 2026-09-11 Write decisions for a reader who has not seen the record
 
 Nodes: ~tree/checks-and-proofs/requires-entry-contract
-Origin: discussion
 Summary: The owner could not read the contract-block decision: its reason was compressed from the memory record's terms of art (pseudo-runtime, erased status, unnamed result convention, alpha-expanded, symbolic whole-result datum, narrow integer relation carrier). All five decisions and both rejected lines of the node were rewritten in plain words with no change in content. The owner made this a standing rule: a decision is written for a reader who has not seen the record it came from, and a reader who must open the source to understand the reason has found a defect in the node. The rule was added to the procedure's node-format section, to the bootstrapping step, and to design-gate check G1. The remaining subtrees are to be migrated under this rule and the other pilot nodes swept for the same defect.
-Code: none; this change touches only the design tree and its skill.
 
 ## 2026-09-11 Node layout: scope first, blank lines between fields, reasoned rejections
 
 Nodes: ~tree, ~tree/checks-and-proofs, ~tree/checks-and-proofs/obligation-discharge, ~tree/checks-and-proofs/obligation-discharge/goal-decomposition, ~tree/checks-and-proofs/obligation-discharge/loop-fact-retention, ~tree/checks-and-proofs/obligation-discharge/writer-trap-surface, ~tree/checks-and-proofs/certificate-fold, ~tree/checks-and-proofs/requires-entry-contract, ~tree/checks-and-proofs/requires-entry-contract/requirement-enforcement
-Origin: discussion
 Summary: Format only; no decision content changed. The owner asked for three things after reading the rendered tree: fields separated by blank lines so each renders as its own paragraph; `Scope:` placed directly under the title because it says what the node governs and the reviewer needs it before the decisions; and every `Rejected:` line carrying its reason behind the same `because` marker a decision uses, since a refusal without a reason is not a record. The template, procedure, check prompt G1, and the lint were updated together and every node was converted mechanically.
-Code: none; this change touches only the design tree and its skill.
 
 ## 2026-09-11 Name what the acceptance half of the optimizer-facts rule constrains
 
 Nodes: ~tree
-Origin: discussion
 Summary: The owner found the acceptance half of the optional-optimizer-facts decision unclear about whom it constrains, while the behavior half was clear and testable. The line now names its subjects and its testable form: the compiler accepts the same programs with the same verdicts with facts on or off, so the checker's fact sources are closed to optimizer output and no language rule makes acceptance depend on whether an optional fact is derivable. Its reasons are that acceptance would otherwise depend on an optimizer's version, target, or pass order, and that a program accepted only with facts on would have no facts-off reference for the behavior rule. The two existing instances stay out of the root by normalize-upward and belong to their subtrees when migrated: a par whose independence is not proved lowers sequentially rather than rejecting (parallelism), and a declared law is checked for acceptance whether or not any optimizer consumes it (fact-channels).
-Code: none; this change touches only the design tree.
 
 ## 2026-09-11 State the real reasons for optional optimizer facts
 
 Nodes: ~tree
-Origin: discussion
 Summary: The owner questioned the root decision that optional optimizer facts never change acceptance or semantics; its migrated reason restated the rule instead of justifying it. The recorded rationale was recovered from the 2026-07 bootstrap plan, where a facts-off fixpoint was frozen as the oracle for the facts-on compiler, and from the fact-channels and parallelism nodes. The decision is now two lines with the four actual reasons: acceptance must not depend on an optimizer's version, target, or pass order; an emitted attribute is trusted by the backend without re-checking, so only a correct facts-off reference can expose a wrong one; each fact family's gain is attributed against that reference; and a behavioral difference between facts-on and facts-off would reintroduce the debug-versus-release split. The owner confirmed the decision stays. The near-duplicate sentence in the parallelism memory node is to be dropped when that subtree migrates, per normalize-upward.
-Code: none; this change touches only the design tree.
 
 ## 2026-09-11 Migrate the root and the checks-and-proofs subtree
 
 Nodes: +tree, +tree/checks-and-proofs, +tree/checks-and-proofs/obligation-discharge, +tree/checks-and-proofs/obligation-discharge/goal-decomposition, +tree/checks-and-proofs/obligation-discharge/loop-fact-retention, +tree/checks-and-proofs/obligation-discharge/writer-trap-surface, +tree/checks-and-proofs/certificate-fold, +tree/checks-and-proofs/requires-entry-contract, +tree/checks-and-proofs/requires-entry-contract/requirement-enforcement
-Origin: migration
 Summary: Pilot migration from `mcts_mem/whitefoot.md` and `mcts_mem/whitefoot/checks-and-proofs/` at commit 3016842. Live summary bullets became decisions; `.alt` nodes and `replaced` moves became `Rejected:` lines with their recorded reasons; dated facts, measurements, and pitfalls were dropped, since their owners are the results records and `compiler/README.md`. One dated statement was carried as a decision because no live bullet stated it: an integer-typed named const is an affine atom. One dated statement was not carried because the active PRF-1 redundancy rule contradicts it: the 2026-07-11 principle that an unused explicit check is never a hard failure; it appears as a rejected alternative instead. Where a live bullet carried no recorded reason, the reason was taken from the nearest recorded rationale and should be confirmed. The pilot exists to calibrate the leanness filters before the remaining twelve subtrees are migrated. This entry transcribes; it decides nothing new. The owner reviews it as a tree diff.
-Code: none; this change touches only the design tree.

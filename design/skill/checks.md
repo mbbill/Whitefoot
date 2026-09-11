@@ -1,8 +1,8 @@
 # Check prompts
 
-Each prompt reads two short things and answers one bounded question. Run
-them with a mid-sized model. Their output is review input for the owner; it
-never accepts or rejects a program.
+Each prompt reads a bounded input and answers one question. Run them with a
+mid-sized model. Their output is review input for the owner; it never
+accepts or rejects a program.
 
 ## Design gate: run on a tree diff before implementation
 
@@ -14,21 +14,18 @@ the choice and the reason from the line alone? Report lines that describe
 without deciding, refusals whose reason is a restatement, and lines that
 need the record to be understood.
 
-G2. Scope test. For each node whose scope begins with `all `: is every
-instance the concept currently has listed with a status? Report instances
-the tree or the code knows about that the list omits.
+G2. Consistency scan. The tree is assumed consistent before the change;
+only the change is checked against it. For each added or changed node, read
+its ancestor chain and the nodes in the same scope, then extend to whatever
+else looks relevant. When the changed node is high in the tree or governs a
+whole concept, read that whole subtree. Report the nodes read and every
+conflict, narrowing, or broken dependency found, naming both nodes.
 
-G3. Neighborhood test. For each added or changed node: read its parent, its
-`Applies-to:` targets, and every node whose scope contains it. Does the new
-text contradict any of them, or silently narrow one? Report each tension
-with both node names.
+## Correspondence: run on a diff pair at pull request time
 
-## Correspondence: run on a diff pair at every commit and at pull request
-
-Inputs: the tree diff since the last approval, the code diff since the last
-check, and the existing tree nodes in the concept areas the code diff
-touches. For a node changed near the root, the code input is everything in
-the node's scope, not only the diff.
+Inputs: the tree diff since the approved plan, the code diff of the pull
+request, and the existing tree nodes in the concept areas the code diff
+touches. For a language change the code is the specification.
 
 C1. Justification. For each changed region of code (a new function, a
 changed hunk inside a function, a moved or split function): which node
@@ -43,13 +40,7 @@ C3. Orphaned support. For each deleted region: is the node it supported
 still present and still claiming to be implemented? Report each such node.
 
 C4. Unsupported node. For each node added or changed in the tree diff: which
-code implements it? Report nodes with no supporting code. An instance marked
-`pending` and a scope marked `(new code only)` are exempt.
-
-C5. Universal coverage. For each node whose scope begins with `all `: is
-every instance marked `applied` actually compliant in the code, and is every
-`pending` instance still pending rather than silently changed? Report
-mismatches.
+code implements it? Report nodes with no supporting code.
 
 Also report: any deleted function whose disappearance retires an approach,
 when the tree gained no `Rejected:` line for it; and any new `Rejected:`

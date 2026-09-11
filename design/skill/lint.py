@@ -15,15 +15,12 @@ import subprocess
 import sys
 
 DECISION_MARKERS = (" because ", " instead of ")
-INSTANCE_STATUS = re.compile(r"^(applied|pending|exempt \(.+\))$")
 LOG_ENTRY = re.compile(r"^## \d{4}-\d{2}-\d{2} \S")
-LOG_REQUIRED = ("Nodes:", "Origin:", "Summary:")
-ORIGINS = {"discussion", "agent", "migration"}
+LOG_REQUIRED = ("Nodes:", "Summary:")
 FORBIDDEN_HEADINGS = ("## Facts", "## Moves")
 DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
-LINK = re.compile(r"\[\[([^\]]+)\]\]")
 REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
-FIELDS = ("Decision:", "Scope:", "Instances:", "Applies-to:", "Rejected:")
+FIELDS = ("Decision:", "Scope:", "Rejected:")
 
 
 class Lint:
@@ -92,7 +89,6 @@ class Lint:
         decisions = 0
         scopes = []
         section = None
-        instances = []
         rejected = []
         prev = "start"  # start | title | blank | field | item
         seen_field = False
@@ -131,15 +127,6 @@ class Lint:
                 scopes.append(line[len("Scope:"):].strip())
                 section = None
                 continue
-            if line.startswith("Instances:"):
-                section = "instances"
-                continue
-            if line.startswith("Applies-to:"):
-                for link in LINK.findall(line):
-                    if link not in stems:
-                        self.err(loc, f"link to unknown node [[{link}]]")
-                section = None
-                continue
             if line.startswith("Rejected:"):
                 section = "rejected"
                 continue
@@ -148,30 +135,18 @@ class Lint:
                 continue
             if line.startswith("- "):
                 body = line[2:]
-                if section == "instances":
-                    if ": " not in body:
-                        self.err(loc, "instance needs '<name>: <status>'")
-                    else:
-                        name, status = body.split(": ", 1)
-                        if not INSTANCE_STATUS.match(status.strip()):
-                            self.err(loc, "instance status must be applied, pending, or exempt (reason)")
-                        instances.append(name)
-                    continue
                 if section == "rejected":
                     if not REJECTED_ITEM.match(line):
                         self.err(loc, "rejected entry needs '- <alternative>: rejected because <reason>'")
                     rejected.append(body)
                     continue
-                self.err(loc, "list item outside Instances: or Rejected:")
+                self.err(loc, "list item outside Rejected:")
                 continue
             self.err(loc, "line outside the node template")
         if decisions == 0:
             self.err(where, "node has no Decision: line")
         if len(scopes) != 1:
             self.err(where, "node needs exactly one Scope: line")
-        elif scopes[0].lower().startswith("all ") and "(new code only)" not in scopes[0]:
-            if not instances:
-                self.err(where, "a universal scope must list Instances: with a status each")
         self.decisions += decisions
         self.rejected += len(rejected)
 
@@ -194,7 +169,7 @@ class Lint:
                 continue
             if current is None:
                 continue
-            for field in LOG_REQUIRED + ("Code:",):
+            for field in LOG_REQUIRED:
                 if line.startswith(field):
                     current["fields"][field] = line[len(field):].strip()
         for entry in entries:
@@ -202,9 +177,6 @@ class Lint:
             for field in LOG_REQUIRED:
                 if field not in entry["fields"] or not entry["fields"][field]:
                     self.err(loc, f"entry lacks {field}")
-            origin = entry["fields"].get("Origin:", "")
-            if origin and origin not in ORIGINS:
-                self.err(loc, "Origin: must be discussion, agent, or migration")
         return entries
 
     def check_diff(self, base):
