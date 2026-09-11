@@ -22,6 +22,14 @@ uint64_t wfb_now_ns(void);
    process. Printed in the header. Never subtracted from anything. */
 uint64_t wfb_clock_floor_ns(void);
 
+/* Process CPU time in nanoseconds: every thread of this process summed, user
+   plus system. CLOCK_PROCESS_CPUTIME_ID where the host defines it and
+   getrusage(RUSAGE_SELF) otherwise. It is the whole process and not one thread
+   deliberately: what this bundle wants to know is what a decomposition costs in
+   CPU across every lane or worker it started, which a spinning scheduler shows
+   in and a wall clock hides. Never wall time, and never a pass/fail input. */
+uint64_t wfb_cpu_ns(void);
+
 /* End the run with a message on stderr and a nonzero status. It reports a
    wrong result, a missing form or a bad invocation. It never reports a slow
    one: no elapsed time can reach it. */

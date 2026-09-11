@@ -46,6 +46,33 @@ uint64_t wfb_now_ns(void) {
     return (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
 }
 
+/* Process CPU time. CLOCK_PROCESS_CPUTIME_ID is POSIX and is what both hosted
+   legs have: Linux since 2.6.12 and Darwin since 10.12. getrusage is the
+   fallback for a host that defines neither, and it is coarser (microseconds),
+   which is why it is not the first choice on any host that has the clock. The
+   fallback sums user and system time, as the clock does. */
+#if defined(CLOCK_PROCESS_CPUTIME_ID)
+#define WFB_CPU_CLOCK_NAME "CLOCK_PROCESS_CPUTIME_ID"
+uint64_t wfb_cpu_ns(void) {
+    struct timespec t;
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t) != 0) wfb_fail("CPU clock_gettime failed");
+    return (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
+}
+#else
+#define WFB_CPU_CLOCK_NAME "getrusage(RUSAGE_SELF)"
+#include <sys/resource.h>
+uint64_t wfb_cpu_ns(void) {
+    struct rusage r;
+    uint64_t ns;
+    if (getrusage(RUSAGE_SELF, &r) != 0) wfb_fail("getrusage failed");
+    ns = (uint64_t)r.ru_utime.tv_sec * UINT64_C(1000000000)
+       + (uint64_t)r.ru_utime.tv_usec * UINT64_C(1000);
+    ns += (uint64_t)r.ru_stime.tv_sec * UINT64_C(1000000000)
+       + (uint64_t)r.ru_stime.tv_usec * UINT64_C(1000);
+    return ns;
+}
+#endif
+
 uint64_t wfb_clock_floor_ns(void) {
     static uint64_t floor_ns;
     static int measured;
@@ -298,30 +325,47 @@ static int do_time(const wfb_kernel *k, const char *form, unsigned width,
 
     k->prepare(width);
     (void)printf("# driver=%s form=%s grain=%s width=%u cpus=%u oversubscribed=%d"
-                 " calls=%u pass=%u workload=%s clock=%s clock_floor_ns=%llu note=%s",
+                 " calls=%u pass=%u workload=%s clock=%s clock_floor_ns=%llu"
+                 " cpu_clock=%s note=%s",
                  k->name, form, form_grain(k, form), width, cpus,
                  width > cpus ? 1 : 0, calls, pass,
                  k->workload ? k->workload : "unknown", WFB_CLOCK_NAME,
-                 (unsigned long long)wfb_clock_floor_ns(), form_note(k, form));
+                 (unsigned long long)wfb_clock_floor_ns(), WFB_CPU_CLOCK_NAME,
+                 form_note(k, form));
     print_chunks(k, form, width);
     (void)printf("\n");
-    (void)printf("# columns=kernel form width pass call phase wall_ns outputs steals\n");
+    (void)printf("# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals\n");
 
     /* Call zero is the warm-up. It absorbs lazy pool, arena and registry
        startup, is verified like every other call, and enters no statistic.
        Verification between calls warms the data deliberately and is never
-       inside the interval. */
+       inside the interval.
+
+       The wall clock stays the outermost pair and the CPU clock is nested
+       inside it, so the wall interval still encloses exactly one `call()` plus
+       two CPU clock reads and nothing else. The nesting is this way round on
+       purpose: wall is the primary measurement and keeps the widest bracket, so
+       no CPU the call spends can fall outside the wall interval, and the two
+       nested reads cost tens of nanoseconds against a per-call interval of
+       milliseconds -- three to four orders below this bundle's own MAD, and the
+       agreement of a before/after `compare` on one tree is what checks that
+       rather than the arithmetic. The CPU figure is a process figure, so it
+       counts every worker or lane thread the form started, spinning ones
+       included; that is the point of the column. */
     for (unsigned call = 0; call <= calls; ++call) {
         unsigned long before = wf__par_grants();
         uint64_t a = wfb_now_ns();
+        uint64_t ca = wfb_cpu_ns();
         size_t produced = k->call(form, width);
+        uint64_t cb = wfb_cpu_ns();
         uint64_t b = wfb_now_ns();
         unsigned long after = wf__par_grants();
         compared += k->check();
         outputs += produced;
-        (void)printf("%s\t%s\t%u\t%u\t%u\t%s\t%llu\t%zu\t%lu\n", k->name, form,
+        (void)printf("%s\t%s\t%u\t%u\t%u\t%s\t%llu\t%llu\t%zu\t%lu\n", k->name, form,
                      width, pass, call, call ? "warm" : "first",
-                     (unsigned long long)(b - a), produced, after - before);
+                     (unsigned long long)(b - a), (unsigned long long)(cb - ca),
+                     produced, after - before);
     }
 
     shut_down(k, form, &explicit_shutdown, &shutdown_ns);

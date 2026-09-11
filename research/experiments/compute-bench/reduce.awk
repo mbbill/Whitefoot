@@ -84,10 +84,11 @@ BEGIN {
     }
     if ((cell SUBSEP h_pass) in seen_pass) bad("cell " h_form " repeated pass " h_pass)
     seen_pass[cell SUBSEP h_pass] = 1
-    delete warm; delete steal
+    delete warm; delete steal; delete burn
     n = 0
-    for (i = 1; i <= h_calls; i++) { n++; warm[n] = wall[i]; steal[n] = grants[i] }
+    for (i = 1; i <= h_calls; i++) { n++; warm[n] = wall[i]; steal[n] = grants[i]; burn[n] = cpu[i] }
     process_ns[cell, h_pass] = median(warm, n)
+    process_cpu[cell, h_pass] = median(burn, n)
     process_steals[cell, h_pass] = median(steal, n)
     if (h_workload != "") workload[h_kernel] = h_workload
     open_process = 0
@@ -98,13 +99,13 @@ BEGIN {
 
 {
     if (!open_process) { bad("a data row outside any process"); next }
-    if (NF != 9) { bad("a data row with " NF " fields"); next }
+    if (NF != 10) { bad("a data row with " NF " fields"); next }
     call = $5 + 0
     if (call != rows) bad("non-dense call index " call " in " h_form)
     if ((call == 0) != ($6 == "first")) bad("phase " $6 " at call " call " in " h_form)
     if ($1 != h_kernel || $2 != h_form || $3 + 0 != h_width || $4 + 0 != h_pass)
         bad("a data row that does not match its header")
-    if (call >= 1) { wall[call] = $7 + 0; grants[call] = $9 + 0 }
+    if (call >= 1) { wall[call] = $7 + 0; cpu[call] = $8 + 0; grants[call] = $10 + 0 }
     rows++
 }
 
@@ -122,6 +123,9 @@ END {
         }
         if (n == 0) continue
         med[cell] = median(s, n)
+        delete cs; nc = 0
+        for (p = 0; p < passes + 0; p++) if ((cell SUBSEP p) in seen_pass) cs[++nc] = process_cpu[cell, p]
+        cpumed[cell] = nc ? median(cs, nc) : 0
         sorted(s, n)
         p10[cell] = fraction(s, n, 0.10); p90[cell] = fraction(s, n, 0.90)
         delete d
@@ -152,8 +156,8 @@ END {
     printf "passes=%d calls=%d\n\n", passes + 0, calls + 0
     # No grain column. Each block prints its own grain strings in full as a
     # legend under its verdict line; see the end of `report` below.
-    printf "%-11s %2s %-16s %10s %5s %-22s %-16s %5s %7s %s\n",
-        "kernel", "w", "form", "median_us", "mad%", "p10..p90_us", "ratio", "lower", "steals", "note"
+    printf "%-11s %2s %-16s %10s %5s %-22s %10s %-17s %6s %5s %7s %s\n",
+        "kernel", "w", "form", "median_us", "mad%", "p10..p90_us", "cpu_us", "ratio", "cpu_r", "lower", "steals", "note"
 
     for (i = 1; i <= kernels; i++) {
         k = kernel_at[i]
@@ -169,8 +173,8 @@ END {
     exit 0
 }
 
-function report(block,   c, cell, n, i, p, order, best, bestname, wfcell, ratios, nr, low, madpct, spread, ratiotext,
-                         fastest, fastmed, note, count, modal, modalname, verdict) {
+function report(block,   c, cell, n, i, p, order, best, bestname, bestcell, wfcell, ratios, nr, low, madpct, spread, ratiotext,
+                         cpuratios, ncr, cputext, fastest, fastmed, note, count, modal, modalname, verdict) {
     n = 0; wfcell = ""
     for (c = 1; c <= cellcount; c++) {
         cell = cell_order[c]
@@ -188,20 +192,27 @@ function report(block,   c, cell, n, i, p, order, best, bestname, wfcell, ratios
     }
     fastest = order[1]; fastmed = med[fastest]
 
-    nr = 0; low = 0
+    nr = 0; low = 0; ncr = 0
     if (block_width[block] > 1 && wfcell != "") {
         for (p = 0; p < passes + 0; p++) {
-            best = ""; bestname = ""
+            best = ""; bestname = ""; bestcell = ""
             for (c = 1; c <= cellcount; c++) {
                 cell = cell_order[c]
                 if (cell_block[cell] != block || cell_form[cell] == "wf") continue
                 if (!((cell SUBSEP p) in seen_pass)) continue
                 if (best == "" || process_ns[cell, p] < best) {
-                    best = process_ns[cell, p]; bestname = cell_form[cell]
+                    best = process_ns[cell, p]; bestname = cell_form[cell]; bestcell = cell
                 }
             }
             if (best == "" || !((wfcell SUBSEP p) in seen_pass)) continue
             ratios[++nr] = process_ns[wfcell, p] / best
+            # The CPU ratio is paired exactly as the wall ratio is: the same
+            # pass and the same reference -- the one that was fastest by WALL in
+            # that pass -- so the two ratios are about the same pairs and can be
+            # read side by side. Pairing CPU against whichever reference burned
+            # least CPU would answer a different question and would not line up
+            # with the verdict line.
+            if (process_cpu[bestcell, p] > 0) cpuratios[++ncr] = process_cpu[wfcell, p] / process_cpu[bestcell, p]
             count[bestname]++
             if (process_ns[wfcell, p] < best) low++
         }
@@ -220,12 +231,13 @@ function report(block,   c, cell, n, i, p, order, best, bestname, wfcell, ratios
         }
         madpct = med[cell] > 0 ? 100.0 * mad[cell] / med[cell] : 0
         spread = sprintf("%.1f..%.1f", p10[cell] / 1000.0, p90[cell] / 1000.0)
-        printf "%-11s %2d %-16s %10.1f %5.1f %-22s ", block_kernel[block], block_width[block], cell_form[cell], med[cell] / 1000.0, madpct, spread
+        printf "%-11s %2d %-16s %10.1f %5.1f %-22s %10.1f ", block_kernel[block], block_width[block], cell_form[cell], med[cell] / 1000.0, madpct, spread, cpumed[cell] / 1000.0
         if (cell == wfcell && nr > 0) {
             sorted(ratios, nr)
             ratiotext = sprintf("%.3f [%.2f-%.2f]", median(ratios, nr), ratios[1], ratios[nr])
-            printf "%-16s %5s %7d ", ratiotext, sprintf("%d/%d", low, nr), steals[cell]
-        } else printf "%-16s %5s %7s ", "", "", ""
+            cputext = ncr > 0 ? sprintf("%.3f", median(cpuratios, ncr)) : ""
+            printf "%-17s %6s %5s %7d ", ratiotext, cputext, sprintf("%d/%d", low, nr), steals[cell]
+        } else printf "%-17s %6s %5s %7s ", "", "", "", ""
         printf "%s\n", note
     }
     if (block_width[block] > 1) {
