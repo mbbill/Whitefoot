@@ -14,6 +14,22 @@
 #define WF_PAR_SPIN_ROUNDS 4096
 #define WF_PAR_YIELD_ROUNDS 16
 #define WF_PAR_SPLIT_OVERSUBSCRIBE 16
+/* Sequential leaves a recursive component is cut into, per lane, by
+ * wf__par_recursion_budget. Measured on the compute scoreboard's quadrature
+ * kernel (research/investigations/compute-runtime/RESULTS.md, the
+ * recursive-frontier depth sweep): at four lanes, 16 leaves per lane -- the
+ * budget of 6 that sweep pinned -- read 1.221 against the best per-pass
+ * reference, and 64 leaves per lane -- its budget of 8 -- read 1.017, the
+ * fastest median in the block. Sixty-four also gives budget 7 at two lanes,
+ * which that sweep measured as the best budget at that width, 8 at four and 9
+ * at eight lanes. This selects how much of an admitted program is actualized
+ * in parallel; no acceptance path reads it. */
+#ifndef WF_PAR_RECURSION_LEAVES_PER_LANE
+#define WF_PAR_RECURSION_LEAVES_PER_LANE 64
+#endif
+/* The deepest budget handed out, so a very wide pool cannot ask a component
+ * for more private levels than any measured configuration needed. */
+#define WF_PAR_RECURSION_MAX_BUDGET 24
 #define WF_PAR_SLOT_FREE 0
 #define WF_PAR_SLOT_PENDING 1
 #define WF_PAR_SLOT_DONE 2
@@ -474,6 +490,36 @@ uint64_t wf__par_split_budget(uint64_t span, uint64_t weight) {
     while ((chunks >> 1) != 0) {
         chunks >>= 1;
         budget += 1;
+    }
+    return budget;
+}
+
+/* How many times a call into an ordinary recursive component may hand work
+ * out before its callees enter the sequential clone.
+ *
+ * The loop splitter's allowance above answers the same question for a counted
+ * range and is read the same way: one query at entry, an ordinary value
+ * carried down, and a leaf world with no scheduler test below the cut. With no
+ * pool -- fewer than two lanes -- one lane's worth of leaves is still the
+ * honest answer, because the compiled entry may run without a pool and its
+ * sequential clone is what it then descends into. A scheduler-less link never
+ * reaches this definition at all: the module's own weak stub answers zero and
+ * the first node runs the clone. */
+uint64_t wf__par_recursion_budget(void) {
+    int lanes = wf__sched_lanes();
+    uint64_t leaves;
+    uint64_t budget;
+    if (lanes < 2) {
+        lanes = 1;
+    }
+    leaves = (uint64_t)lanes * WF_PAR_RECURSION_LEAVES_PER_LANE;
+    budget = 0;
+    while ((leaves >> 1) != 0) {
+        leaves >>= 1;
+        budget += 1;
+    }
+    if (budget > WF_PAR_RECURSION_MAX_BUDGET) {
+        budget = WF_PAR_RECURSION_MAX_BUDGET;
     }
     return budget;
 }

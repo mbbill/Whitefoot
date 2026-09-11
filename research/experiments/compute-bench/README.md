@@ -34,17 +34,51 @@ function the compiler emits has internal linkage.
 - Nothing selects the chunk count: no flag, no environment variable, no source
   edit. The row is the program the compiler produces or it is nothing.
 
+Quadrature's recursive component is cut by the recursion budget the runtime
+answers at its entry, and `--par-recursive-frontier off` is the control that
+withholds that cut; the three map kernels reach the runtime through a
+synthesized splitter, which no budget can touch, so their modules are
+byte-identical under every setting of it.
+
 `wf-seq` is the same source compiled `--no-overlap --emit-llvm` and run at width
 one. It is the sequential **control**, not a reference: it never enters the
 ratio column. It answers "did `--par` buy anything at all", which is a different
 question from "is `--par` the fastest".
+
+### The one A/B handle, and why it never appears in a recorded table
+
+`WF_PAR_CONTROL_FLAGS` is appended to the `--par` emission and is **empty by
+default**. It exists so that one tree can answer "what would this compiler
+control be worth here" — two images differing in exactly that flag, built from
+one tree, measured in one `compare` run so the reference rows are shared:
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/ab-off \
+     WF_PAR_CONTROL_FLAGS='--par-recursive-frontier off'
+```
+
+The emitted module depends on this value the way it depends on the source and
+on the compiler binary: the Makefile keeps the value in a stamp file the module
+rule reads, so setting the variable or clearing it again re-emits, and a
+control-flag run can never silently re-time the plain image the last run left.
+
+It is a measurement control and not a grain knob. **A table recorded in
+`RESULTS.md` is always taken with it empty**, because the `wf` row of a
+recorded table is the program plain `--par` produces and nothing else; a
+setting that made a row nicer would be measuring a program no Whitefoot user
+gets. Two things keep the two kinds of table apart without anyone having to
+remember: `manifest.txt` records `WF_PAR_CONTROL_FLAGS` on every run, empty or
+not, and a non-empty setting adds a `WF --par control flags=` line to the table
+header saying in the table itself that it is not the plain program. The
+bundle's gate target, `programs-check`, never reads the variable.
 
 Two link-time assertions make a `wf` row a `wf` row. The emitted module carries
 **weak no-op stubs for every `wf__par_*` symbol**, so a link that loses the
 scheduler sources would still link, still run, still produce correct output, and
 be silently sequential. The harness therefore references `wf__par_grants()`,
 which has no weak stub, and the Makefile requires a strong definition of
-`wf__par_publish` and `wf__par_split_budget` in every image after the link.
+`wf__par_publish`, `wf__par_split_budget` and `wf__par_recursion_budget` in
+every image after the link.
 
 ## Running it
 
@@ -109,7 +143,8 @@ which also carries the reproduce recipe and the two non-pooling rules.
 mask and cgroup state (recorded, never narrowed, and marked `unqualified` when
 a file is absent rather than reported as "no limit"), the compiler revision,
 every toolchain version — the whole of `rustc -vV`, host triple, commit and
-LLVM version included, one `rustc: ` line each — the exact flag strings, the
+LLVM version included, one `rustc: ` line each — the exact flag strings,
+`WF_PAR_CONTROL_FLAGS` whether it was set or empty, the
 three dependency pins, `BENCH_ARCH`, and the SHA-256 of every kernel image
 and every emitted `.ll` before and after the run. If any of those hashes moved
 during the run the table is not a measurement of one build and `compare` says
@@ -254,7 +289,9 @@ each one from the emitted `--par` module at every build, into
 `$(BUILD)/<kernel>_split.h`, so a codegen change moves the reported chunk count
 instead of silently invalidating a number written here. Quadrature emits no
 `wf__par_split_budget` call at all: it parallelizes by recursion structure and
-has no minimum-size admission threshold.
+has no minimum-size admission threshold. What it asks the runtime instead is
+`wf__par_recursion_budget()`, once per call into its recursive component, for
+the levels below which that component runs its sequential clone.
 
 **Confirm the window on the host that records a table**, before recording it:
 the `wf-seq` median inside [5 ms, 60 ms], the `wf` median above 1 ms at the

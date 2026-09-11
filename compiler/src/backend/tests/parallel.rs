@@ -354,21 +354,30 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
             .find(|function| function.name() == "over_frame")
             .expect("the over-boundary function must lower");
 
-        let exact_layout = parallel_lane_frame_layout(host, &qualification, program, exact)
+        let exact_layout = parallel_lane_frame_layout(host, &qualification, program, exact, false)
             .expect("the exact frame is target-representable")
             .expect("the exact frame fits the lane slot");
         assert_eq!(exact_layout.size(), crate::LANE_FRAME_BYTES);
         assert_eq!(exact_layout.align(), 1);
         assert!(exact_layout.align() <= PARALLEL_LANE_FRAME_ALIGNMENT);
         assert_eq!(
-            parallel_lane_frame_layout(host, &qualification, program, over),
+            parallel_lane_frame_layout(host, &qualification, program, over, false),
             Ok(None),
             "a target-representable frame beyond the lane capacity must decline overlap"
+        );
+        // A callback into a budget-carrying variant takes the budget across in
+        // the frame, so a frame that already fills the slot exactly declines
+        // the offer rather than overrunning it. The refusal is the existing
+        // one: the group's calls run in place.
+        assert_eq!(
+            parallel_lane_frame_layout(host, &qualification, program, exact, true),
+            Ok(None),
+            "a frame that exactly fills the slot cannot also carry a budget"
         );
 
         let short_domain = host.with_address_index_max_for_test(crate::LANE_FRAME_BYTES - 1);
         assert_eq!(
-            parallel_lane_frame_layout(short_domain, &qualification, program, exact),
+            parallel_lane_frame_layout(short_domain, &qualification, program, exact, false),
             Err(TargetLayoutFailure::Unrepresentable(
                 TargetObject::ParallelLaneFrame
             )),
@@ -448,13 +457,24 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     // calls the same monomorphized function the inline edge calls, and stores
     // the result back into the frame. Its number is the module's, so the
     // assertion is on the shape rather than on which group came first.
+    //
+    // `fold` is recursive, so under the default recursion budget the function
+    // both edges call is the component's budget-carrying variant. The
+    // published callback reads the budget out of the frame the offer wrote it
+    // into; the inline edge carries the same value in a register.
     assert!(
         module.contains("(ptr %frame) #0 {\nentry:\n  %p0 = getelementptr inbounds "),
         "no outlined thunk over a frame:\n{module}"
     );
     assert!(
-        module.contains("%result = call i64 @wf_fold(ptr %a0)"),
-        "the thunk must call the same function the inline edge calls:\n{module}"
+        module.contains("%result = call i64 @wf__par_budget_fold(ptr %a0, i64 %ab)"),
+        "the thunk must call the same function the inline edge calls, with the \
+         budget the offer published:\n{module}"
+    );
+    assert!(
+        function_body(&module, "@wf__par_budget_fold")
+            .contains("= call i64 @wf__par_budget_fold(ptr "),
+        "the inline edge must name the function the thunk calls:\n{module}"
     );
     assert!(
         module.contains("  store i64 %result, ptr %slot\n  ret void\n"),
@@ -474,8 +494,11 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
     // `fold`'s own recursive pair: a lane is acquired and the first call is
     // published to it, the second runs inline on this thread, and only then is
     // the published one joined. The ordering is what makes the overlap window
-    // exactly the second call.
-    let body = function_body(&module, "@wf_fold");
+    // exactly the second call. The body is the component's budget-carrying
+    // variant, because that is where a recursive member's body is emitted
+    // under the default budget; both recursive calls therefore name the
+    // variant and carry the level the caller has left.
+    let body = function_body(&module, "@wf__par_budget_fold");
     let acquisition = body
         .find("= call ptr @wf__par_acquire_lane(i64 ")
         .expect("fold must acquire a lane for its first recursive call");
@@ -486,7 +509,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         .find("par.offered.")
         .and_then(|start| {
             body[start..]
-                .find("call i64 @wf_fold(")
+                .find("call i64 @wf__par_budget_fold(")
                 .map(|at| start + at)
         })
         .expect("fold must run its second recursive call inline");
@@ -525,7 +548,7 @@ fn a_permitted_pair_is_outlined_offered_and_joined() {
         .find("\npar.inline.")
         .and_then(|start| {
             body[start..]
-                .find("call i64 @wf_fold(")
+                .find("call i64 @wf__par_budget_fold(")
                 .map(|at| start + at)
         })
         .expect("the refused edge must make the call on this thread");
@@ -1201,6 +1224,12 @@ fn handing_calls_out_keeps_the_sequential_recursion_depth() {
 /// a bare SIGSEGV: a recursion that ran without `--par` and did not run with
 /// it.
 ///
+/// Which function one overlapped level is moved with the recursion budget's
+/// default: the levels above the cut run in the component's budget-carrying
+/// variant, so the ledger reports the cycle there, while the writer's own
+/// symbol asks the runtime for a budget once and enters it. Below the cut the
+/// sequential clone runs, which is the other row read here.
+///
 /// What is pinned is a bound and not a parity, because an overlapped
 /// activation is genuinely not free: the acquisition handle, the recursion's own
 /// argument and the value the join reads back are live across the call to
@@ -1246,7 +1275,11 @@ fn the_shipped_default_keeps_a_deep_recursion() {
 
     let directory = test_directory();
     let lines = super::stack_ledger::ledger_lines(&overlapped_module, &directory);
-    let overlapped = super::stack_ledger::reported_frame_bytes(&lines, "wf_spine");
+    // Under the default recursion budget the recursion above the cut is the
+    // component's budget-carrying variant, so that is the overlapped level the
+    // ledger reports a cycle for; `wf_spine` is the entry that asks the
+    // runtime for a budget once and is no longer part of the cycle at all.
+    let overlapped = super::stack_ledger::reported_frame_bytes(&lines, "wf__par_budget_spine");
     let sequential = super::stack_ledger::reported_frame_bytes(&lines, "wf__par_seq_spine");
     assert!(
         overlapped <= sequential + WIDEST_ADMITTED_OVERHEAD,
@@ -1422,12 +1455,27 @@ fn the_bootstrap_selects_one_world_once() {
             );
         }
     }
-    // And nothing but the bootstrap reaches the clone world.
+    // And nothing but the bootstrap and the budget family reaches the clone
+    // world. The recursion budget is the one other entrance there is — a
+    // member whose budget is spent enters its own clone — so each variant is
+    // required to name exactly that clone and is then removed; what is left is
+    // the overlapped world, and it may name no clone at all.
+    // `recursive_controls_preserve_scalar_and_destination_results` reads the
+    // spent-budget edge itself, at every setting of the control.
     let actualized = without_clones(&overlapped);
-    let bootstrap_free = actualized.replace(function_body(&actualized, "@wf__main_body"), "");
+    let mut bootstrap_free = actualized.replace(function_body(&actualized, "@wf__main_body"), "");
+    for symbol in budget_symbols(&actualized) {
+        let variant = function_body(&actualized, &symbol);
+        let clone = symbol.replace("@wf__par_budget_", "@wf__par_seq_");
+        assert!(
+            variant.contains(&format!("{clone}(")),
+            "{symbol} must enter {clone} when its budget is spent:\n{variant}"
+        );
+        bootstrap_free = bootstrap_free.replace(variant, "");
+    }
     assert!(
         !bootstrap_free.contains("@wf__par_seq_"),
-        "only the bootstrap may name a clone:\n{bootstrap_free}"
+        "only the bootstrap and the budget family may name a clone:\n{bootstrap_free}"
     );
 }
 
@@ -1906,18 +1954,18 @@ fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
 }
 
 #[test]
-fn recursive_frontier_preserves_exclusive_tree_borrows_and_owned_constructors() {
+fn a_budget_family_preserves_exclusive_tree_borrows_and_owned_constructors() {
     let reference = compile_and_run(&emit(OVERLAPPING_FOLD));
     assert!(reference.status.success());
     let module = super::emit_lowered(
         OVERLAPPING_FOLD,
-        crate::OverlapLowering::OnWithRecursiveFrontier {
-            maximum_levels: std::num::NonZeroU8::new(2).unwrap(),
+        crate::OverlapLowering::OnWithRecursionBudget {
+            budget: crate::RecursionBudget::Pinned(std::num::NonZeroU8::new(2).unwrap()),
             maximum_scalar_leaf_operations: None,
             sequential_refusal: false,
         },
     );
-    assert!(module.contains("@wf__par_frontier_1_fold("));
+    assert!(module.contains("@wf__par_budget_fold("));
     let directory = test_directory();
     let executable = build_executable(&module, &directory);
     for workers in ["1", "4"] {
@@ -2335,6 +2383,17 @@ pub(super) fn clone_symbols(module: &str) -> Vec<String> {
         .filter_map(|line| line.split_once(" @wf__par_seq_"))
         .filter_map(|(_, tail)| tail.split_once('('))
         .map(|(name, _)| format!("@wf__par_seq_{name}"))
+        .collect()
+}
+
+/// The symbols of one module's budget-carrying variants, in definition order.
+fn budget_symbols(module: &str) -> Vec<String> {
+    module
+        .lines()
+        .filter(|line| line.starts_with("define "))
+        .filter_map(|line| line.split_once(" @wf__par_budget_"))
+        .filter_map(|(_, tail)| tail.split_once('('))
+        .map(|(name, _)| format!("@wf__par_budget_{name}"))
         .collect()
 }
 
@@ -3174,10 +3233,16 @@ command fn main() -> status: own ExitStatus pure {
     assert!(module_requires_parallel_runtime(&retained));
 }
 
-/// Self/mutual recursive frontiers and rejecting a task must compute every leaf.
+/// One pinned budget, as the matrix below writes it.
+fn pinned(levels: u8) -> crate::RecursionBudget {
+    crate::RecursionBudget::Pinned(std::num::NonZeroU8::new(levels).expect("a positive budget"))
+}
+
+/// Self/mutual budget families and rejecting a task must compute every leaf.
 /// Sequential clones remove descendant attempts without changing result storage.
-/// A deferred granted root also checks that its callback advances the frontier;
-/// resetting it would exceed the independently counted tree/spine opportunities.
+/// A deferred granted root also checks that its callback spends a level of the
+/// budget; carrying the caller's own count across the hand-out instead would
+/// exceed the independently counted tree/spine opportunities.
 #[test]
 fn recursive_controls_preserve_scalar_and_destination_results() {
     for mutual in [false, true] {
@@ -3245,17 +3310,23 @@ command fn main() -> status: own ExitStatus pure {{
             } else {
                 source
             };
-            for (sequential, frontier) in [
+            // The `None` cells are plain `--par`: the policies a build with
+            // no recursion control selects, which take the default budget and
+            // so get the family. The rest are the control's three forms.
+            for (sequential, budget) in [
                 (false, None),
                 (true, None),
-                (false, Some(1_u8)),
-                (false, Some(3)),
-                (false, Some(6)),
-                (true, Some(3)),
+                (false, Some(crate::RecursionBudget::Off)),
+                (false, Some(pinned(1))),
+                (false, Some(pinned(3))),
+                (false, Some(pinned(6))),
+                (true, Some(pinned(3))),
+                (false, Some(crate::RecursionBudget::RuntimeDerived)),
+                (true, Some(crate::RecursionBudget::RuntimeDerived)),
             ] {
-                let policy = if let Some(levels) = frontier {
-                    crate::OverlapLowering::OnWithRecursiveFrontier {
-                        maximum_levels: std::num::NonZeroU8::new(levels).unwrap(),
+                let policy = if let Some(budget) = budget {
+                    crate::OverlapLowering::OnWithRecursionBudget {
+                        budget,
                         maximum_scalar_leaf_operations: Some(16),
                         sequential_refusal: sequential,
                     }
@@ -3268,13 +3339,42 @@ command fn main() -> status: own ExitStatus pure {{
                         maximum_operations: 16,
                     }
                 };
+                let family = budget != Some(crate::RecursionBudget::Off);
                 let module = super::emit_lowered(source.as_bytes(), policy);
-                let body = function_body(&module, "@wf_fold");
+                let entry = function_body(&module, "@wf_fold");
                 let target = if mutual { "alternate" } else { "fold" };
-                assert_eq!(
-                    body.contains(&format!("@wf__par_seq_{target}(")),
-                    sequential || frontier == Some(1)
-                );
+                assert_eq!(module.contains("@wf__par_budget_fold("), family);
+                if family {
+                    // The entry keeps the writer's own signature and result
+                    // ABI: what it adds is the budget it enters the family
+                    // with, asked of the runtime unless it was pinned.
+                    let variant = function_body(&module, &format!("@wf__par_budget_{target}"));
+                    assert!(entry.contains("@wf__par_budget_fold("), "{entry}");
+                    assert!(!entry.contains("@wf__par_acquire_lane("), "{entry}");
+                    assert_eq!(
+                        entry.contains("@wf__par_recursion_budget()"),
+                        !matches!(budget, Some(crate::RecursionBudget::Pinned(_)))
+                    );
+                    // The cut: a variant handed nothing left enters its own
+                    // clone. The refusal control selects the callee's clone at
+                    // a refused acquisition, and composes with it unchanged.
+                    assert!(variant.contains("par.grain.spent:"), "{variant}");
+                    assert!(
+                        variant.contains(&format!("@wf__par_seq_{target}(")),
+                        "{variant}"
+                    );
+                    assert_eq!(
+                        function_body(&module, "@wf__par_budget_fold")
+                            .matches(&format!("@wf__par_seq_{target}("))
+                            .count(),
+                        usize::from(!mutual) + usize::from(sequential)
+                    );
+                } else {
+                    assert_eq!(
+                        entry.contains(&format!("@wf__par_seq_{target}(")),
+                        sequential
+                    );
+                }
 
                 assert!(
                     !function_body(&module, "@wf__par_seq_fold").contains("@wf__par_acquire_lane(")
@@ -3290,8 +3390,12 @@ command fn main() -> status: own ExitStatus pure {{
                     .replace(
                         "call i32 @wf__par_pool_active()",
                         "call i32 @wf_test_parallel_world()",
+                    )
+                    .replace(
+                        "call i64 @wf__par_recursion_budget()",
+                        "call i64 @wf_test_recursion_budget()",
                     );
-                observed.push_str("\ndeclare ptr @wf_test_acquire(i64)\ndeclare void @wf_test_publish(ptr, ptr)\ndeclare void @wf_test_join(ptr)\ndeclare void @wf_test_release(ptr)\ndeclare i32 @wf_test_parallel_world()\n");
+                observed.push_str("\ndeclare ptr @wf_test_acquire(i64)\ndeclare void @wf_test_publish(ptr, ptr)\ndeclare void @wf_test_join(ptr)\ndeclare void @wf_test_release(ptr)\ndeclare i32 @wf_test_parallel_world()\ndeclare i64 @wf_test_recursion_budget()\n");
                 let directory = test_directory();
                 let executable = build_linked_executable(
                     &observed,
@@ -3299,29 +3403,46 @@ command fn main() -> status: own ExitStatus pure {{
                     &[],
                     &directory,
                 );
-                for granted in [false, true] {
-                    let output = Command::new(&executable)
-                        .env("WF_TEST_ONE_GRANT", if granted { "1" } else { "0" })
-                        .output()
-                        .expect("run deterministic refusal schedule");
-                    assert!(output.status.success(), "{output:?}");
-                    // Full binary tree: 31 internal calls. With no grants only
-                    // the right spine tries: 5. A granted root also runs the
-                    // left subtree's right spine: 5 + 4.
-                    let levels = u32::from(frontier.unwrap_or(5).min(5));
-                    let attempts = if sequential {
-                        if granted { levels + levels - 1 } else { levels }
-                    } else {
-                        (1 << levels) - 1
-                    };
-                    assert_eq!(
-                        String::from_utf8_lossy(&output.stderr),
-                        format!(
-                            "attempts={attempts} granted={} released={}\n",
-                            u8::from(granted),
-                            u8::from(granted)
-                        )
-                    );
+                // The budget the runtime answers, for the forms that ask.
+                // Zero is the answer a scheduler-less link gets from the
+                // module's own weak stub: the first node runs the clone.
+                for derived in [5_u32, 0] {
+                    for granted in [false, true] {
+                        let output = Command::new(&executable)
+                            .env("WF_TEST_ONE_GRANT", if granted { "1" } else { "0" })
+                            .env("WF_TEST_BUDGET", derived.to_string())
+                            .output()
+                            .expect("run deterministic refusal schedule");
+                        assert!(output.status.success(), "{output:?}");
+                        // Full binary tree: 31 internal calls. With no grants
+                        // only the right spine tries: 5. A granted root also
+                        // runs the left subtree's right spine: 5 + 4. A
+                        // budget of N cuts the tree at N levels, and nothing
+                        // under the cut acquires anything at all.
+                        let levels = match budget {
+                            Some(crate::RecursionBudget::Pinned(levels)) => u32::from(levels.get()),
+                            // No family: every node of the component offers.
+                            Some(crate::RecursionBudget::Off) => 5,
+                            Some(crate::RecursionBudget::RuntimeDerived) | None => derived,
+                        }
+                        .min(5);
+                        let granted = granted && levels > 0;
+                        let attempts = if levels == 0 {
+                            0
+                        } else if sequential {
+                            if granted { levels + levels - 1 } else { levels }
+                        } else {
+                            (1 << levels) - 1
+                        };
+                        assert_eq!(
+                            String::from_utf8_lossy(&output.stderr),
+                            format!(
+                                "attempts={attempts} granted={} released={}\n",
+                                u8::from(granted),
+                                u8::from(granted)
+                            )
+                        );
+                    }
                 }
                 std::fs::remove_dir_all(directory).expect("remove refusal artifacts");
             }
@@ -3350,8 +3471,13 @@ command fn main() -> status: own ExitStatus pure {
         crate::OverlapLowering::OnWithSequentialRefusal {
             maximum_scalar_leaf_operations: None,
         },
-        crate::OverlapLowering::OnWithRecursiveFrontier {
-            maximum_levels: std::num::NonZeroU8::new(3).unwrap(),
+        crate::OverlapLowering::OnWithRecursionBudget {
+            budget: crate::RecursionBudget::Pinned(std::num::NonZeroU8::new(3).unwrap()),
+            maximum_scalar_leaf_operations: None,
+            sequential_refusal: false,
+        },
+        crate::OverlapLowering::OnWithRecursionBudget {
+            budget: crate::RecursionBudget::Off,
             maximum_scalar_leaf_operations: None,
             sequential_refusal: false,
         },
@@ -3365,7 +3491,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn recursive_frontier_does_not_specialize_a_suspending_cycle_with_compute_offers() {
+fn a_suspending_cycle_with_compute_offers_gets_no_budget_family() {
     let original = std::str::from_utf8(STAGED_MAY_SUSPEND_CALL).unwrap();
     let source = format!("fn increment(value: own u8) -> result: own u8 pure {{\n  return value +wrap 1_u8;\n}}\n\n{}",
         original.replace("  let answer = mark;", "  if mark == 0_u8 {\n    return probe(root: root, permit: move permit, name: name, scratch: move scratch, mark: 1_u8);\n  }\n  let a = increment(value: mark);\n  let b = increment(value: mark);\n  let answer = a +wrap b;"));
@@ -3379,15 +3505,21 @@ fn recursive_frontier_does_not_specialize_a_suspending_cycle_with_compute_offers
         body.contains("@wf__par_acquire_lane("),
         "the cycle must reach compute offers"
     );
-    let controlled = super::emit_lowered(
-        source.as_bytes(),
-        crate::OverlapLowering::OnWithRecursiveFrontier {
-            maximum_levels: std::num::NonZeroU8::new(3).unwrap(),
-            maximum_scalar_leaf_operations: None,
-            sequential_refusal: false,
-        },
-    );
-    assert_eq!(controlled, baseline);
+    for budget in [
+        crate::RecursionBudget::Pinned(std::num::NonZeroU8::new(3).unwrap()),
+        crate::RecursionBudget::RuntimeDerived,
+    ] {
+        let controlled = super::emit_lowered(
+            source.as_bytes(),
+            crate::OverlapLowering::OnWithRecursionBudget {
+                budget,
+                maximum_scalar_leaf_operations: None,
+                sequential_refusal: false,
+            },
+        );
+        assert_eq!(controlled, baseline);
+        assert!(!controlled.contains("@wf__par_recursion_budget"));
+    }
 }
 
 const SEQUENTIAL_REFUSAL_OBSERVER: &str = r#"#include <stdio.h>
@@ -3403,6 +3535,12 @@ static void report(void) {
     fprintf(stderr, "attempts=%u granted=%u released=%u\n", attempts, grants, releases);
 }
 int wf_test_parallel_world(void) { require(atexit(report) == 0); return 1; }
+/* The strong answer to the module's own weak budget stub, so one schedule can
+ * be measured at a chosen cut without a scheduler in the link. */
+unsigned long long wf_test_recursion_budget(void) {
+    const char *budget = getenv("WF_TEST_BUDGET");
+    return budget ? strtoull(budget, NULL, 10) : 0;
+}
 void *wf_test_acquire(unsigned long bytes) {
     require(bytes <= sizeof frame);
     ++attempts;

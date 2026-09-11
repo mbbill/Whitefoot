@@ -142,6 +142,11 @@ END {
         clang ? clang : "unknown", rustc ? rustc : "unknown"
     if (refflags) printf "reference flags=%s\n      (identical for every reference implementation of every kernel)\n", refflags
     if (wfflags) printf "WF flags=%s\n      (module and runtime, as whitefootc links them: no -march, no loop\n      alignment -- see README)\n", wfflags
+    # Printed only when the bundle's A/B control was set, so a table with this
+    # line is not a plain `--par` table and can never be recorded as one. Its
+    # absence is the ordinary case and says the `wf` row is plain `--par`;
+    # manifest.txt carries WF_PAR_CONTROL_FLAGS either way.
+    if (parcontrol) printf "WF --par control flags=%s\n      (an A/B control appended to the --par emission: this table is NOT the\n      plain --par program and must not be recorded as one -- see README)\n", parcontrol
     if (pins) printf "pins: %s\n", pins
     for (i = 1; i <= kernels; i++) printf "sizes: %-12s %s\n", kernel_at[i], workload[kernel_at[i]]
     printf "passes=%d calls=%d\n\n", passes + 0, calls + 0

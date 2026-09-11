@@ -66,6 +66,34 @@ RFLAGS := -C no-vectorize-loops -C no-vectorize-slp -C lto=off \
 # against the WF row, and README.md states it in its own paragraph.
 WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
 
+# An A/B control, and nothing else. Whatever is set here is appended to the
+# `--par` emission below, so a run can compare two compilers' worth of
+# behaviour on one tree by changing one compiler control -- for example
+# `make compare WF_PAR_CONTROL_FLAGS='--par-recursive-frontier off'`, which
+# withholds the recursion budget the default asks the runtime for. It is
+# EMPTY BY DEFAULT and must stay empty for any table that is recorded: the
+# `wf` row of a recorded table is the program plain `--par` produces, which is
+# this bundle's whole question (README, "What WF means here"). A non-empty
+# setting is written into manifest.txt and announced in the table header, so a
+# control-flag table can never be read as a plain one; the manifest records the
+# variable either way. Nothing here selects a chunk count or a grain: the
+# compiler owns those, and a flag that made the table nicer would be measuring
+# a program no Whitefoot user gets.
+WF_PAR_CONTROL_FLAGS ?=
+
+# The value of that variable is part of what emitted a module, exactly as the
+# source and the compiler binary are, so it is kept in a stamp the module rule
+# depends on and that is rewritten only when the value changes: a control-flag
+# run re-emits instead of silently re-timing the plain image the last run left,
+# and a run that changes nothing re-emits nothing.
+PAR_CONTROL := $(BUILD)/par-control-flags.txt
+$(PAR_CONTROL): FORCE
+	@mkdir -p $(BUILD)
+	@printf '%s\n' '$(WF_PAR_CONTROL_FLAGS)' > $@.new
+	@cmp -s $@.new $@ || mv -f $@.new $@
+	@rm -f $@.new
+FORCE:
+
 KERNELS ?= mandelbrot quadrature records fir
 PASSES ?= 5
 CALLS  ?= 5
@@ -86,7 +114,7 @@ COMMON_OBJS := $(BUILD)/harness.o $(BUILD)/backend_serial.o $(BUILD)/backend_sta
 LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
              $(DEPS)/rayon/libwf_compute_bench_rayon.a -ldl -lm
 
-.PHONY: all compiler deps build images verify compare programs-check clean clean-deps
+.PHONY: all compiler deps build images verify compare programs-check clean clean-deps FORCE
 all: build
 
 # ---------------------------------------------------------------- compiler --
@@ -145,9 +173,9 @@ deps:
 # research/investigations/compute-runtime/RESULTS.md timed quadrature on a
 # module emitted at 33ed2c00; the fresh emission is the table that replaced it).
 define kernel-modules
-$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll $$(WFC) | compiler
+$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll $$(WFC) $$(PAR_CONTROL) | compiler
 	@mkdir -p $$(BUILD)
-	$$(WFC) --par --par-ledger --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par.ledger
+	$$(WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par.ledger
 	sed -e 's/@main(/@wfb_$(1)_par_main(/g' \
 	    -e 's/@wf__main_body(/@wfb_$(1)_par_body(/g' $$@.raw > $$@
 	sed -e 's/@wf_bench_$(1)(/@wf_bench_$(1)_par(/' \
@@ -213,6 +241,9 @@ $(BUILD)/backend_parlay.o: backend_parlay.cpp backend.h harness.h
 #   1. Link-time: harness.c references wf__par_grants(), which has no weak
 #      stub in the emitted module, so dropping the scheduler sources fails the
 #      link outright.
+#      The recursion budget is asserted the same way and for the same reason:
+#      a link that reached its weak stub would answer zero at every component
+#      entry and run every recursive kernel sequentially from its first node.
 #   2. Post-link, in two parts, because the ELF spelling is wrong on Darwin in
 #      both halves: Mach-O nm prints the label with a leading underscore, so an
 #      anchored wf__par_publish$ never matches, and Mach-O renders a weak
@@ -227,11 +258,14 @@ $(BUILD)/backend_parlay.o: backend_parlay.cpp backend.h harness.h
 define assert-real-runtime
 	nm $(1) | grep -q ' [TS] _\{0,1\}wf__par_publish$$'
 	nm $(1) | grep -q ' [TS] _\{0,1\}wf__par_split_budget$$'
+	nm $(1) | grep -q ' [TS] _\{0,1\}wf__par_recursion_budget$$'
 	case "$$(uname -s)" in \
 	  Darwin) nm -m $(1) | grep -q '(__TEXT,__text) external _wf__par_publish$$' && \
-	          nm -m $(1) | grep -q '(__TEXT,__text) external _wf__par_split_budget$$' ;; \
+	          nm -m $(1) | grep -q '(__TEXT,__text) external _wf__par_split_budget$$' && \
+	          nm -m $(1) | grep -q '(__TEXT,__text) external _wf__par_recursion_budget$$' ;; \
 	  *)      nm    $(1) | grep -q ' T wf__par_publish$$' && \
-	          nm    $(1) | grep -q ' T wf__par_split_budget$$' ;; \
+	          nm    $(1) | grep -q ' T wf__par_split_budget$$' && \
+	          nm    $(1) | grep -q ' T wf__par_recursion_budget$$' ;; \
 	esac
 endef
 
@@ -340,6 +374,7 @@ compare: build
 	  echo "CFLAGS: $(CFLAGS)"; \
 	  echo "CXXFLAGS: $(CXXFLAGS)"; \
 	  echo "WF_FLAGS: $(WF_FLAGS)"; \
+	  echo "WF_PAR_CONTROL_FLAGS: $(WF_PAR_CONTROL_FLAGS)"; \
 	  echo "RFLAGS: $(RFLAGS)"; \
 	  echo "BENCH_ARCH: $(BENCH_ARCH)"; \
 	  echo "pins: oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0"; \
@@ -386,6 +421,7 @@ compare: build
 	    -v clang="$$(sed -n 's/^clang: //p' $(RESULTS)/manifest.txt)" \
 	    -v rustc="$$(sed -n 's/^rustc: //p' $(RESULTS)/manifest.txt | head -1)" \
 	    -v refflags="$(CFLAGS)" -v wfflags="$(WF_FLAGS)" \
+	    -v parcontrol="$(WF_PAR_CONTROL_FLAGS)" \
 	    -v pins="oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0" \
 	    $(RESULTS)/raw.tsv | tee $(RESULTS)/table.txt
 	@set -e; for k in $(KERNELS); do $(SHA256) $(BUILD)/$$k $(BUILD)/$$k-par.ll $(BUILD)/$$k-seq.ll; done > $(RESULTS)/hashes-after.txt

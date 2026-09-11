@@ -92,3 +92,58 @@ fn concurrent_ring_wrap_and_live_counters_with_and_without_statistics() {
     }
     std::fs::remove_dir_all(directory).expect("remove native probe");
 }
+
+/// The budget one call into an ordinary recursive component starts from.
+///
+/// The answer is `floor(log2(64 * lanes))` — six private levels per lane's
+/// worth of sequential leaves — so it rises by one per doubling of the pool
+/// and holds at one lane's answer when there is no pool at all. The ceiling is
+/// unreachable through the lane count on any supported host, so the last
+/// configuration reaches it through the leaves-per-lane constant instead.
+#[test]
+fn recursion_budget_follows_the_pool_width_and_stops_at_its_ceiling() {
+    let directory = test_directory();
+    let executable = build_probe(
+        &directory,
+        include_str!("../sched/recursion_budget_probe.c"),
+        &[],
+    );
+    for (workers, budget) in [
+        ("0", "6"),
+        ("1", "6"),
+        ("2", "7"),
+        ("4", "8"),
+        ("8", "9"),
+        ("16", "10"),
+    ] {
+        let output = Command::new(&executable)
+            .arg(budget)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run native recursion budget probe");
+        assert!(
+            output.status.success(),
+            "workers={workers}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("recursion budget probe: PASS"));
+    }
+    let clamped = build_probe(
+        &directory,
+        include_str!("../sched/recursion_budget_probe.c"),
+        &["-DWF_PAR_RECURSION_LEAVES_PER_LANE=(1ull << 40)"],
+    );
+    for workers in ["1", "4"] {
+        let output = Command::new(&clamped)
+            .arg("24")
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run clamped recursion budget probe");
+        assert!(
+            output.status.success(),
+            "workers={workers}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    std::fs::remove_dir_all(directory).expect("remove native probe");
+}
