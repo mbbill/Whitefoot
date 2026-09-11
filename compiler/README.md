@@ -187,6 +187,67 @@ reductions. A denied permission leaves the program sequential; it does not
 change source acceptance. Proof-only statements introduce no runtime branch,
 lock, dependency, scheduling event, or task edge.
 
+Under `--par`, scalar leaves with at most 16 nonconstant IR operations are
+omitted from compute offers by default. `--par-scalar-leaf-limit N` changes
+that provisional threshold; `off` restores all eligible offers, and `0` filters
+only leaves with no nonconstant operations. A qualifying leaf has one returning
+block, scalar arguments and result, and only scalar constants, arithmetic,
+boolean operations, conversions or reinterpretations. Calls, memory operations,
+branches, loops and drops exclude it. The original calls remain at their source
+locations; a remaining group retains its original source-last join site. This
+is offer selection after checking, not a bound on acceptance or proof work.
+The count is not an instruction count or a target cost estimate. Compilation
+without `--par`, public signatures, and I/O submit-then-join are unchanged.
+
+`--par --par-sequential-refusal` optionally enters an existing sequential clone
+when a compute offer is refused, its callee cannot suspend, and a clone exists.
+It executes the call at the original join with the original arguments and
+result ABI, while declining descendant compute offers. Granted tasks and the
+source-last inline call retain their parallel code. Calls without a clone and
+may-suspend callees keep their ordinary fallback. No runtime query is added.
+
+`--par --par-recursive-frontier N` optionally emits `N` ordinary parallel call
+levels for eligible recursive components, then enters their sequential clones.
+The CLI range `1..32` limits private code expansion, not source recursion or
+proof work. Every direct or mutual call within a component, including a task
+callback, advances a level. A call into another component starts at its ordinary
+entry; this is not a global nesting bound. Sequential clones also suppress
+offers in their descendant call closure. Suspending components, staged
+completion and synthesized loop functions keep their existing path. The copies
+use the same emitter and ordinary ABI, without hidden parameters or runtime
+depth counters. This control composes with scalar-leaf suppression and refusal;
+refusal may enter a sequential subtree before the frontier. Both controls are
+opt-in experiments, with no selected universal grain policy.
+
+The default limit can be remeasured on
+[`adaptive_quadrature.wf`](../tests/programs/adaptive_quadrature.wf), whose kernel
+comes from PR #28 at `70aa8e5`. Its command integrates 2048 narrow Lorentz
+profiles, emits the sum's 64-bit representation as ASCII, and runs through the
+normal compiler/runtime path. The corpus test independently compares it with
+the analytic integral. For a local default/off comparison:
+
+```sh
+cargo build --profile gate --manifest-path compiler/Cargo.toml --bin whitefootc
+out=$(mktemp -d)
+compiler/target/gate/whitefootc --par --par-ledger -o "$out/default" tests/programs/adaptive_quadrature.wf
+compiler/target/gate/whitefootc --par --par-scalar-leaf-limit off -o "$out/off" tests/programs/adaptive_quadrature.wf
+for round in 1 2 3 4 5; do
+  case "$round" in 1|3|5) modes="default off" ;; *) modes="off default" ;; esac
+  for mode in $modes; do
+    /usr/bin/time -p env WF_WORKERS=4 "$out/$mode" > "$out/$round-$mode.out"
+  done
+  cmp "$out/$round-default.out" "$out/$round-off.out" || exit 1
+done
+```
+
+Use one idle host, no inherited runtime overrides except the stated worker
+count, and report the median of all five process times for each form. The
+comparison checks visible offer suppression, identical outputs, and
+a default median no higher than `off` on the current runtime. The M1 Pro
+exploratory comparison satisfies this limited criterion; it does not establish
+that 16 is optimal, that every workload benefits, or that refusal/frontier should default
+on. Revisit the default with a contrary representative workload or target.
+
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
 shape. On native POSIX completion targets the runtime window is bounded to

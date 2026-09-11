@@ -14,7 +14,8 @@
 //! two folds compile to and that granting lanes moves none of its bytes.
 //!
 //! Actualization is compile-time opt-in, so the cases that ask about hand-outs
-//! compile through [`compile_program_with_overlap`] — `whitefootc --par`. The
+//! compile through [`compile_program_with_overlap`], the unfiltered
+//! `whitefootc --par --par-scalar-leaf-limit off` form. The
 //! default compilation of the same program is the subject of its own case
 //! below and hands nothing out at all.
 
@@ -242,6 +243,7 @@ fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
 /// [`the_corpus_units_cover_every_program_file`], which is what keeps it from
 /// silently falling behind the corpus it is intended to cover.
 const CORPUS_UNITS: &[&[&str]] = &[
+    &["adaptive_quadrature.wf"],
     &["arena_workspace.wf"],
     &["block_pool.wf"],
     &["byte_string.wf"],

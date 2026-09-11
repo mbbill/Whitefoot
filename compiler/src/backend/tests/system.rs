@@ -88,7 +88,8 @@ pub(super) fn with_mutated_completion_ir<ResultValue>(
 /// [`with_ir`] under the opt-in compute overlap lowering.
 ///
 /// Target-shape tests use this to inspect the same handed-out IR that
-/// `whitefootc --par` emits without changing the shared host-target helpers.
+/// `whitefootc --par --par-scalar-leaf-limit off` emits without changing the
+/// shared host-target helpers.
 pub(super) fn with_parallel_ir<ResultValue>(
     source: &[u8],
     run: impl for<'classified, 'lexed, 'source> FnOnce(
