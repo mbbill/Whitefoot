@@ -166,7 +166,7 @@ The same four commands run in `.github/workflows/compute-bench.yml` on
 ## How to read the table
 
 ```
-kernel       w form              median_us  mad%  p10..p90_us  ratio  lower  steals  note
+kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cpu_r  lower  steals  note
 ...one row per form of this kernel at this width, ascending by median...
 <kernel>   <w> BEST REFERENCE = <form>   FASTEST = <form>   WF fastest: yes|no
   <form>: <that form's grain policy, the whole string the binary printed>
@@ -182,6 +182,15 @@ kernel       w form              median_us  mad%  p10..p90_us  ratio  lower  ste
   in microseconds. **Nothing fails on either.** Spread is information: the
   end-to-end Mandelbrot check behind this bundle's sizing spread 11.3 to 13.4 ms
   on a quiet four-CPU box at width four, which is about eighteen percent.
+- **`cpu_us`** is the same median of medians over **process CPU time** rather
+  than wall: `CLOCK_PROCESS_CPUTIME_ID` read around the same interval the wall
+  clock brackets, so it counts every thread the form started, spinning and
+  parked ones included. The wall clock stays the outermost pair and the two CPU
+  reads are nested inside it, so no CPU a call spends can fall outside the wall
+  interval; the nested reads cost tens of nanoseconds against per-call intervals
+  of milliseconds. A form whose wall time is bought by burning four lanes is
+  indistinguishable from one that is simply fast in `median_us` and is not in
+  `cpu_us`. It is a measurement, never a pass/fail input.
 - **`ratio`** is filled only on `wf` rows. It is the **median of within-pass
   matched pairs**: for each pass, WF's process median divided by the lowest
   process median among the parallel references at that same width, printed with
@@ -190,6 +199,19 @@ kernel       w form              median_us  mad%  p10..p90_us  ratio  lower  ste
   reproduce this number**, and it is not meant to. `serial` and `wf-seq` live in
   the width-one block and never enter the ratio: a parallel row beating a serial
   row answers nothing.
+- **`cpu_r`** is the CPU ratio, paired exactly as `ratio` is: within each pass,
+  WF's process CPU median divided by the CPU median of **the reference that was
+  fastest by wall in that pass**, and the median of those pairs. The two ratios
+  are therefore about the same pairs and can be read side by side --- `ratio`
+  says whether WF finished first, `cpu_r` says what it spent to. Pairing CPU
+  against whichever reference happened to burn least CPU would answer a
+  different question and would not line up with the verdict line. It sits beside
+  `ratio` as a column rather than in `note` because it is the number the
+  process-CPU target is read off, and a reader comparing it with the wall ratio
+  should not have to cross the row to do it; the two extra columns take a data
+  row to at most 141 characters -- the widest a run has printed, the `static`
+  row carrying its own mark -- well inside the width the legend below was
+  introduced to protect.
 - **`lower`** is how many of the paired passes had WF lower, because a median
   can hide adverse pairs — a wall ratio of 0.999 with three of five pairs lower
   is on the record from the earlier bundle.

@@ -93,6 +93,35 @@ fn concurrent_ring_wrap_and_live_counters_with_and_without_statistics() {
     std::fs::remove_dir_all(directory).expect("remove native probe");
 }
 
+/// The wait station really parks and really wakes, and this host's cost of
+/// doing so is printed beside the cost of one spin round.
+///
+/// `WF_PAR_SPIN_ROUNDS` is a count of misses standing in for a length of time,
+/// and it is only meaningful against those two numbers. The probe measures them
+/// through the core's own `wf__par_signal`, `posted` flag and
+/// `wf_prim_wait_sleep`, so the constant beside them can be re-derived on any
+/// host rather than inherited. Nothing here bounds an elapsed time: the
+/// assertion is that a round genuinely parked, and the figures are printed for
+/// a reader.
+#[test]
+fn the_wait_station_parks_and_reports_this_hosts_park_and_wake_cost() {
+    let directory = test_directory();
+    let executable = build_probe(&directory, include_str!("../sched/wake_probe.c"), &[]);
+    let output = Command::new(&executable)
+        .output()
+        .expect("run native park-and-wake probe");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = String::from_utf8_lossy(&output.stdout);
+    assert!(report.contains("park-and-wake probe: PASS"), "{report}");
+    assert!(report.contains("park_and_wake_ns="), "{report}");
+    assert!(report.contains("spin_round_floor_ns="), "{report}");
+    std::fs::remove_dir_all(directory).expect("remove native probe");
+}
+
 /// The budget one call into an ordinary recursive component starts from.
 ///
 /// The answer is `floor(log2(64 * lanes))` — six private levels per lane's
