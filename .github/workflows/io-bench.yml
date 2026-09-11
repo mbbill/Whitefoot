@@ -29,6 +29,14 @@ on:
       - 'research/experiments/io-completion-bench/**'
       - '.github/workflows/io-bench.yml'
 
+# Every shell step runs under `bash -eo pipefail`, so a protocol that fails
+# behind `| tee` fails the step. Before this, the compiler rejecting a bench
+# program printed the rejection into the log and the step stayed green,
+# because the exit status of a pipeline is tee's unless pipefail is set.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: io-bench-${{ github.ref }}
   cancel-in-progress: true
