@@ -75,10 +75,28 @@ static int lanes;
  * chunks at about 16,000 x 150 = 2.4e6 instruction-equivalents and one chunk
  * is worth publishing at about half that. That measurement is a crossing and
  * not a plateau: it says where splitting starts to pay, not what a block of
- * kernels prefers once every chunk already pays for itself, which is a
- * per-block question the compute scoreboard is the instrument for. The guard
- * below is what lets that scoreboard build a runtime at another value without
+ * kernels prefers once every chunk already pays for itself. The guard below is
+ * what lets the compute scoreboard build a runtime at another value without
  * editing this line, through the bundle's WF_RUNTIME_CONTROL_FLAGS.
+ *
+ * That scoreboard swept 1,200,000 / 600,000 / 300,000 / 150,000 on the
+ * four-CPU Linux development host, one plain `compare PASSES=5 CALLS=5` per
+ * value with the control run three times, aimed at the Mandelbrot kernel,
+ * whose 16 chunks over skewed input are what the work term affords rather than
+ * what the oversubscription term wants. The chunk counts moved as the rule
+ * predicts -- mandelbrot 16/16/16, 32/32/32, 32/64/64 and 32/64/128 at
+ * W=2/4/8 -- and none of the candidates met acceptance: mandelbrot's W=4 wall
+ * ratio read 1.057, 1.067 and 1.017 against controls of 1.037, 1.015 and
+ * 1.030, none below the control band, and finer grain cost the W=2 row
+ * (1.020/1.023/1.031 at 16 chunks against 1.040/1.025/1.063 at 32). The reason
+ * the sweep could not select is on the record too: quadrature emits no split
+ * call at all, so its rows are identical work in all six runs, and its W=4
+ * ratio spread 13.0 percent across them, wider than the effect being cut for.
+ * So this value is unchanged by measurement rather than by default
+ * (research/investigations/compute-runtime/RESULTS.md, the split work unit
+ * swept against the Mandelbrot grain). A host whose spread is narrower, or one
+ * with eight lanes where the map kernels are not already at the
+ * oversubscription cap, can reopen it.
  *
  * WF_SPLIT_WORK overrides it per process for diagnosis; the scoreboard's
  * harness unsets that variable so a recorded row can never be taken under one.
