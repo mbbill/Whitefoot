@@ -444,7 +444,11 @@ $HostLines = @(
     "clang: $ClangVersion",
     "rust: $RustVersion",
     "cache state: warm, verified by a full sequential pre-read of all eight files",
-    "protocol: $Warmup warm-up pairs, $Rounds recorded alternating pairs, QPC wall and child process CPU"
+    $(if ($CompareWorkers) {
+        "protocol: $Warmup warm-up triplets, $Rounds recorded position-balanced triplets, QPC wall and child process CPU"
+    } else {
+        "protocol: $Warmup warm-up pairs, $Rounds recorded alternating pairs, QPC wall and child process CPU"
+    })
 )
 [IO.File]::WriteAllLines($HostPath, $HostLines, [Text.UTF8Encoding]::new($false))
 
@@ -541,6 +545,25 @@ function Percentile {
     return [double]$ordered[$index]
 }
 
+function Get-SampleOrder {
+    param([object[]]$Settings, [int]$Round)
+    if ($Settings.Count -eq 3) {
+        # Every three rounds put each policy at each position once. Every
+        # six also balance pairwise precedence and reference distance.
+        $indices = switch ($Round % 6) {
+            0 { 0, 1, 2 }
+            1 { 2, 0, 1 }
+            2 { 1, 2, 0 }
+            3 { 2, 1, 0 }
+            4 { 0, 2, 1 }
+            5 { 1, 0, 2 }
+        }
+        return $Settings[$indices]
+    }
+    if (($Round % 2) -eq 0) { return $Settings }
+    return $Settings[1, 0]
+}
+
 function Run-CohortAttempt {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -551,8 +574,8 @@ function Run-CohortAttempt {
     )
     # The optional same-host comparison uses the existing two-cohort sample
     # allowance: fifteen candidates at each worker count, sharing each serial
-    # reference. It adds neither a round nor a retry. Reverse the whole order
-    # on odd rounds so neither candidate always runs first.
+    # reference. It adds neither a round nor a retry. Rotate positions and
+    # precedence so neither candidate always runs first or beside the reference.
     if ($Variants[$Reference].Workers) {
         throw "a shared comparison reference must not depend on the worker limit"
     }
@@ -565,10 +588,7 @@ function Run-CohortAttempt {
         $candidateWalls[$limit] = [Collections.Generic.List[double]]::new()
     }
     for ($warm = 0; $warm -lt $Warmup; $warm += 1) {
-        $warmOrder = @($settings)
-        if (($warm % 2) -ne 0) {
-            [Array]::Reverse($warmOrder)
-        }
+        $warmOrder = @(Get-SampleOrder -Settings $settings -Round $warm)
         foreach ($setting in $warmOrder) {
             [void](Invoke-Sample -Variant $setting.Variant -WorkerLimit $setting.Workers `
                 -Label "warm.$Name.$warm.$($setting.Key)")
@@ -576,10 +596,7 @@ function Run-CohortAttempt {
     }
     $referenceWalls = [Collections.Generic.List[double]]::new()
     for ($pair = 0; $pair -lt $Rounds; $pair += 1) {
-        $order = @($settings)
-        if (($pair % 2) -ne 0) {
-            [Array]::Reverse($order)
-        }
+        $order = @(Get-SampleOrder -Settings $settings -Round $pair)
         $pairSamples = @{}
         for ($position = 0; $position -lt $order.Count; $position += 1) {
             $setting = $order[$position]
@@ -678,7 +695,7 @@ $Summary.WriteLine((Get-Content -Raw -LiteralPath (Join-Path $Out "mixed-observe
 $Summary.WriteLine('```')
 $Summary.WriteLine()
 if ($CompareWorkers) {
-    $Summary.WriteLine("The full-worker rows are diagnostic before measurements; only W=$Workers is qualified. Each pair shares its serial reference. IO-only candidates do not use WF_WORKERS; their two rows repeat the unchanged configuration. No extra rounds or retries are added.")
+    $Summary.WriteLine("The full-worker rows are diagnostic before measurements; the W=$Workers rows are subject to the existing qualification bounds. Each triplet shares its serial reference. IO-only candidates do not use WF_WORKERS; their two rows repeat the unchanged configuration. No extra rounds or retries are added.")
     $Summary.WriteLine()
 }
 $Summary.WriteLine("| cohort | workers | reference median ms | candidate median ms | paired candidate/reference | MAD | p90-p10 / median | attempt |")

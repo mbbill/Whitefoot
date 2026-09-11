@@ -429,7 +429,8 @@ For same-head before/after evidence, dispatch `io-bench` with
 `compare_windows_workers=true`, or pass `-CompareWorkers` to
 `windows-bench.ps1`. That diagnostic runs only the Windows job. Each of the
 fifteen rounds shares one sequential reference between full-count and
-reduced-count candidates, reversing all three children on odd rounds. It
+reduced-count candidates, balancing each child's position over every three
+rounds and precedence over every six. It
 uses the existing allowance of two candidate cohorts, with fewer reference
 children and no retries. The IO-only candidates repeat their unchanged
 configuration because they do not use `WF_WORKERS`. The table prints both

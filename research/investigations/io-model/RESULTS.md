@@ -2594,8 +2594,10 @@ Before selecting a policy, compare the full visible worker count with one
 fewer worker, using the same compiler, executables, affinity mask, normal
 process priority, warm tree, and Windows VM. The default trial is W=3 on a
 four-logical-processor runner; it reserves no exclusive physical core. The
-optional `CompareWorkers` mode uses fifteen alternating rounds with a shared
-serial reference and one candidate at each worker count. Thus each policy
+optional `CompareWorkers` mode uses fifteen rounds with a shared serial
+reference and one candidate at each worker count. Every three rounds balance
+position; every six also balance precedence and distance from the reference.
+Thus each policy
 has fifteen paired ratios, using fewer child runs than the existing maximum
 of two complete attempts. Warmup remains two rounds, and there is no retry in
 comparison mode. The two IO-only cohorts repeat their unchanged candidate.
