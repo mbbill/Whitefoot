@@ -4,8 +4,9 @@ These probes ask whether current Whitefoot can execute representative container
 operations. They are capability examples, not prevalence evidence or complete
 container implementations. `make check` compiles and runs each supported
 Whitefoot source in the default, `--par`, and `--no-overlap` modes, checks the
-intentional source rejection, the owning-map allocation observer, and the
-matched priority-queue and byte-growth C controls. The original measurements used compiler revision
+intentional source rejection, the owning-map and owning-growth allocation
+observers, and matched priority-queue, byte-growth and owning sparse C controls.
+The original measurements used compiler revision
 `3cd7a8ebbc459b52989806442eff73538f131b96`; the added sources and retained samples
 are in this directory. Checks and measurements were run on 2026-09-08, arm64
 macOS 26.6.2, using Apple Clang 21.0.0 and Rust 1.98.1.
@@ -15,7 +16,7 @@ The whole-effect refinement at `ebc6d059` restores `hashmap.wf` and
 execution modes. The known-endpoint candidate additionally restores
 `boxed-migration.wf`: back insertion retains the last appended owner's logical
 slot through the later literal replacements. The maintained `make check`
-runner now executes all eleven sources in all three modes, the rejection control,
+runner executes the sources listed in its Makefile in all three modes, the rejection control,
 the owning-map allocation observer, and the priority/growth correctness controls; the growth control reports
 4,608 variant/input checks. These recovery runs add behavior
 evidence, not new timing samples to the recorded cost comparisons below.
@@ -791,3 +792,263 @@ smaller recorded extent is **not** a measured physical peak-memory advantage.
 Request counts include injected refusals. Realloc was slower at 16 bytes here;
 its mere availability does not establish a performance win, while a provider
 contract permitting it remains independently useful to test.
+
+## Owning sparse growth over ordinary values (D2)
+
+The question is whether ordinary enum slots and owning values can retain the
+[sparse contract](../../../investigations/containers-and-resources/FOUNDATION.md#sparse-experiment-contract-and-decision-boundary),
+and what their cost is against `costs/sparse-owned.c`. A new layout authority is
+not an assumed outcome. The interface proposal from D1 remains an owner decision.
+
+Before timing, the selection ground is: distinguish physical element stride,
+requested backing bytes, and helper transfers. Compare lookup, insertion and
+complete growth using the same control encoding, keys, payloads and native
+implementation. Retained and inlined helper variants separate the cost exposed
+by call boundaries from the attainable ordinary-value loop. Inlining may change
+optimization beyond literal copies; its timing delta is a boundary intervention,
+not a memcpy bandwidth estimate. The optimized IR must accompany that comparison.
+A repeatable cost remaining after that intervention can motivate a projected
+layout experiment; a difference already explained by allocation ceilings,
+initialization or ordinary lowering does not establish that a new source
+authority is necessary. One scalar trace cannot select an authority for generic,
+stable-address or concurrent maps.
+
+The witness is `owning-growth.wf`; `owning-growth-observer.c` includes the retained
+native implementation and compares its independent table operations with WF.
+`make check-owning-growth` runs default, parallel and no-overlap lowering. Each
+mode currently checks 1,808 complete executions: 304 successes/cancellations and
+1,504 injected refusals. The exact allocation-ordinal release ledger includes
+2,736 forty-byte resources and 1,808 backings, with no live allocation at return.
+The observer checks each request's expected extent before refusing it and keeps
+released storage quarantined and poisoned until the trace ends.
+
+**Answer: yes for this concrete owning map, without a language amendment.**
+`Slot` is `Vacant`, `Deleted`, or `Occupied` with a seven-bit fingerprint, u64
+key and `Box<Resource>`. `Rehash` owns the source, target, held slot and scalar
+cursors. Allocation refusal returns the original source. A paused migration
+returns those owners at its actual progress point, not a rollback promise.
+One budget unit examines one source or target control; zero-budget and blocked
+retries preserve the complete state. Cleanup consumes the held entry and both
+runs. The observer covers all fifteen stops of a three-entry collision trace,
+one-unit resumption, a blocked target, and full insertion returning its owner,
+in addition to the replacement/removal/reuse/growth chain. It compares the full
+logical table/progress digest and work counts, not just the final map contents.
+
+### Representation and matched timing
+
+Measurements in `owning-growth-measurements.csv` were taken on 2026-09-10 PDT
+(2026-09-11 UTC), arm64 macOS 26.6.2, Apple Clang 21.0.0 and Rust 1.98.1.
+The compiler/specification are unchanged from D1 head `26153381`. No throwaway
+compiler variant was needed: `owning-growth-abi.rs` checks the emitted ABI and
+adds private C scalar adapters. It changes only helper inlining attributes,
+entry symbols and allocator targets; the map operations remain compiler output.
+An extra entry with an unknown Heap argument must optimize to a noncapturing,
+`readnone` provider parameter before the timed bridge can supply a placeholder.
+Ordinary WF execution uses the real command Heap.
+
+| Representation | Physical element bytes/capacity | Requested backing bytes/capacity | Half-full backing + 40-byte resources, bytes/capacity | Peak during doubling, bytes/original capacity |
+| --- | ---: | ---: | ---: | ---: |
+| WF ordinary enum slots | 24 | 32 | 52 | 116 |
+| Native interleaved (`I`) | 24 | 24 | 44 | 92 |
+| Native split (`S`), one backing | 17 | 17 | 37 | 71 |
+
+Descriptors and allocator headers are outside this table. Split figures apply
+to the measured capacities, all divisible by eight. WF's LLVM Slot is
+`{ i32, i8, i64, ptr }`: key offset 8, owner offset 16, stride 24.
+Allocation uses the conservative [OP-9](../../../../spec/kernel-spec.md)
+size ceiling, 32, in the `heap_vector` lowering; element GEPs use 24. Thus the
+extra eight bytes per capacity unit are an unused allocation tail, not a
+32-byte element stride. The ceiling qualifies target-independent allocation;
+it is not evidence that a target's actual layout must occupy all those bytes.
+The strict observer checks each side's exact request extent independently.
+
+`owning-growth-costs.c` includes `costs/sparse-owned.c`, rather than rewriting
+the native operations. Both sides use the same linear-probe policy, keys
+`i * 17 + seed`, fingerprint and 40-byte owners, at half load. Lookup mixes
+equal numbers of hits and misses. Insertion starts empty with owners already
+allocated. Rehash doubles capacity, including target allocation/initialization,
+migration and old-backing release. Setup, payload allocation, digest and final
+target cleanup are outside timing. Allocation accounting uses the same constant
+time wrapper. Native assertions remain enabled, as the retained control requires.
+The native insertion's unused `placed_index` output remains part of its inner
+helper; the timed outer contract does not expose it on either side.
+
+All timed outer adapters remain `noinline`. `normal` leaves source helpers to
+Clang; `retained` retains the corresponding operation helpers on both sides;
+`inlined` forces those helpers into their outer adapter. The WF migration chain
+also inlines `begin`, `advance` and its slot helpers in that variant. This is a
+measured boundary-eliminated configuration, not a new source interface promise.
+The C harness initializes a valid full, flat WF run outside timing and checks
+every returned descriptor and owner. The separate all-WF observer covers the
+actual source construction and all refusal positions.
+
+The CSV retains 2,268 observations: two cohorts, three contracts, three
+implementations, three operations, three capacities and fourteen samples.
+Four preliminary samples are discarded. Variant order rotates within each
+sample; contract order reverses between cohorts. Each sample aggregates 64
+complete repetitions at capacity 256, four otherwise, varying seeds identically
+across implementations. Lookup performs `capacity * 16` queries per repetition;
+insert performs `capacity / 2` insertions; rehash performs one doubling.
+Each matched triple agrees on operations, checksum, complete table digest and
+allocation requests. The timer is `CLOCK_MONOTONIC_RAW` on macOS; earlier
+microsecond-granularity exploratory samples are not retained. This is one
+non-exclusive host, without CPU affinity or a general workload distribution.
+
+Medians over both cohorts. Lookup/insert are nanoseconds per operation; rehash
+is nanoseconds per complete doubling. `I` and `S` are the retained native
+interleaved and split implementations, respectively.
+
+| Capacity | Operation | WF normal | I normal | S normal | WF inlined | I inlined | S inlined |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 256 | lookup | 2.607 | 2.864 | 2.868 | 2.660 | 2.308 | 2.282 |
+| 256 | insert | 9.847 | 2.887 | 2.902 | 4.511 | 2.263 | 2.319 |
+| 256 | rehash | 976.539 | 775.750 | 717.141 | 942.047 | 578.789 | 505.875 |
+| 4096 | lookup | 2.523 | 2.771 | 2.803 | 2.598 | 2.224 | 2.230 |
+| 4096 | insert | 9.699 | 2.887 | 3.062 | 4.028 | 2.248 | 2.482 |
+| 4096 | rehash | 14864.875 | 13661.500 | 10093.875 | 14213.500 | 9374.750 | 7218.750 |
+| 16384 | lookup | 2.663 | 2.828 | 3.031 | 2.752 | 2.324 | 2.538 |
+| 16384 | insert | 11.466 | 2.880 | 3.022 | 4.280 | 2.274 | 2.485 |
+| 16384 | rehash | 56057.500 | 53958.500 | 39000.125 | 56770.625 | 38177.250 | 28635.375 |
+
+There is visible drift: at 4096, WF normal-insert cohort medians are 8.626 and
+9.974 ns, retained-insert 9.120 and 9.438 ns, and inlined-insert 3.937 and
+4.041 ns. The raw samples remain available; these medians are not confidence
+intervals or evidence for sub-percent rankings. Inlining does not always improve
+an already optimized normal binary; code placement and timing noise also change.
+
+### Helper-boundary attribution
+
+The optimized-IR inspector runs in `check-owning-costs`. It requires the retained
+calls, absence of selected helper calls and memcpy/memmove in all three inlined
+bridges, the full 32-byte descriptor writeback in put/grow, and the observed
+24-byte target-slot initialization in inlined growth. It prints retained bulk
+transfer sites. Deliberately removing a retained call or descriptor store,
+introducing an inlined copy, and removing the Heap non-access property each
+caused the inspector to reject. These are experiment-shape checks, not compiler
+acceptance tests; an optimizer that changes these shapes requires re-attribution.
+
+| Optimized path | Retained helper traffic | Inlined configuration |
+| --- | --- | --- |
+| put | 32-byte run returned in a 56-byte result; caller reads 32 bytes and writes the receiver's 32 bytes | Helper result temporary gone; receiver still receives 32 bytes |
+| find | Shared input; 24-byte Option/count result through memory | Result scalarized into checksum; no owning run transfer |
+| complete rehash | 112-byte Rehash input copy and 24-byte held-slot cleanup copy in `rehash_all`; two 3-byte padding-copy sites in `advance`; additional scalarized aggregate/result traffic | No helper memcpy/memmove; receiver still receives 32 bytes |
+
+The table counts byte payloads at the named sites, not a sum of every static
+store on mutually exclusive branches. Each successful complete rehash executes
+the listed bulk copies once. Put's descriptor result leg alone accounts for
+32 bytes written by the callee, 32 read by the caller and 32 written to its
+receiver; input descriptor loads and actual Slot updates are separate.
+There is **no whole-backing copy** when the owning Vector moves: it transfers
+a descriptor. The 32-byte receiver store remains even after inlining, so this
+configuration is not a zero-total-transfer floor.
+
+At capacity 4096, retaining the helpers gives:
+
+| Operation | WF retained | I retained | S retained | WF-I gap retained | WF-I gap inlined |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| lookup, ns | 2.917 | 2.774 | 2.785 | 0.143 | 0.373 |
+| insert, ns | 9.249 | 2.897 | 3.075 | 6.353 | 1.780 |
+| rehash, ns | 14807.375 | 13640.750 | 10130.250 | 1166.625 | 4838.750 |
+
+For insertion, the difference of gaps is 4.573 ns: about **72%** of the retained
+gap disappears when both sides lose their corresponding inner boundaries.
+The same calculation is 67% at 256 and 76% at 16384. This attributes a combined
+boundary/transfer/optimization component; it does not isolate memcpy latency.
+Lookup has no owning-run transfer. For growth, native code benefits more from
+inlining, so this intervention supplies **no positive share of the WF-I gap**
+to attribute to helper transfer, despite removing the listed copies. It would
+be wrong to apply D1's priority-queue percentage to this map.
+
+The remaining growth body differs visibly. WF initializes each new Vacant slot
+with a 24-byte memset; native writes only its control byte. WF writes complete
+enum slots on removal/migration and scans the exhausted source's tags during
+generic `dispose`; native knows migration reached Done with no held resource
+and directly releases the empty source backing. Circular-run addressing,
+descriptor writeback and native assertion/output costs also remain. These
+operations are observable in optimized IR; this experiment has not separately
+priced each. Full-slot zeroing and the empty cleanup scan are current lowering
+behavior, not a proof that ordinary-value semantics requires those instructions.
+
+### Limits encountered and exact rejected forms
+
+The following are the rejected source fragments in the corresponding helpers
+of `owning-growth.wf`, with unchanged surrounding types. The active
+[kernel specification](../../../../spec/kernel-spec.md) owns the cited rules.
+Only the first item prevents the initially desired mutable helper interface.
+None requires a new sparse storage authority to execute this concrete contract.
+
+| Rejected fragment | Rule / diagnostic and reason | Used form |
+| --- | --- | --- |
+| `slots: &uniq Vector<'s, Slot<'s>>` in `put` | BLK-4 `UniqueParameterReachesContainer`: source exclusive formals may not reach a variable-window run | Consume/return the Vector; `find` takes a shared borrow. No D1 interface change. |
+| `let low = key % 128_u64;` followed by `return cvt::<u64, u8>(low);` in a u8-returning fingerprint helper | OP-6 / TYPE-4 partition conversion by type pair; FN-1 reports `ReturnMismatch` because narrowing returns Result, even when this operand fits | Seven explicit bit selections into u8. Optimized output is truncation plus `and i8 ..., 127`, with no seven-branch cost. |
+| `return step - until_end;` and `return home + step;` under `ensures index < count;` | FN-9 `InvalidPostconditionReturn`: a referenced returned datum must be a term/constant, not an arithmetic expression | Bind `wrapped` / `straight` with `let`, then return that binder. |
+| `set held = move entry;` | STOR-1 `AffineSetTarget`: overwriting a live affine slot must account for its previous owner | `let previous_held = replace held = move entry;` then `dispose previous_held;`. |
+| `heap_vector::<Slot<'s>>(store: &uniq deref(store), count: count)` with an unconstrained count | OP-9 `UndischargedAllocationFitObligation` | Test `buffer_fits::<Slot<'s>>(count)`; the intended false branch refuses allocation and returns the still-owned source. |
+| `reads(state), writes(store, state)` on `advance` | EFF-2 exact effect-row mismatch after projecting the aggregate's accessed/released fields | Name `state.source`, `state.target`, `state.held`; `state_hash` additionally names its read scalar fields. |
+| `return digest(slots: &full);` when `full` was bound inside the borrowing region | OWN-10 `InvalidBorrowLifetime`: the new storage does not outlive that region | Introduce a smaller region after binding `full`; the borrow ends inside its storage lifetime. |
+| `if source_next == len_of(source) {` | GRAM-9: an infix operand must be an atom | Bind `source_count = len_of(source)` first. |
+
+One additional rejection is a **compiler proof gap**, not a language limit.
+In `fill_slots`, with its current loop and both final local inequalities:
+
+```wf
+ensures len_of(filled) == count;
+```
+
+rejected at `return move slots;` with FN-9 `UndischargedPostcondition`.
+Replacing that clause with the logically identical pair below succeeds:
+
+```wf
+ensures len_of(filled) <= count;
+ensures len_of(filled) >= count;
+```
+
+FN-9 defines equality as two bounds, and MSR-4 requires the same complete numeric
+disposition for postconditions and invariants. The current
+`affine_relation_target` in `compiler/src/semantic/entailment/flow.rs` accepts a
+bound target but not an equality target for that affine route. The witness
+retains both relations; it adds no observable fallback and weakens no contract.
+This experiment changes no compiler code, including for this documented gap.
+To reproduce, replace only those two ensures lines in this witness with the
+equality and compile with the same compiler; the shared-entry measure equality
+in `put` is a different proof path and already succeeds.
+
+Routine authoring rejections also occurred: `Slot` instead of `Slot<'s>`
+(TYPE-5); `step`, `probe` or `checked` as colliding/reserved local names
+(TYPE-6 / FORM-3); `yes` instead of `True()` and `()` instead of `unit`;
+one-line brace bodies (FORM-2); and a sole explicit `region` inside a loop
+(FORM-8). The final source uses explicit region arguments, noncolliding names
+and canonical grammar. These were source corrections, not evidence of missing
+container capability. Generic hash/equality invocation, stable row borrows,
+fallible construction into a vacant final place and concurrent reclamation
+were not attempted here and are not certified by the concrete u64 witness.
+
+### Recommendation for the owner
+
+**No: this measured enum-slot gap does not yet justify choosing a compiler-known
+projected layout.** Ordinary values execute the complete required ownership
+and refusal protocol. WF and native interleaved slots already have the same
+24-byte stride. The extra allocation tail, insertion boundary traffic, full
+Vacant initialization and exhausted-source scan must not be bundled into a
+claim that enum representation itself is inadequate.
+
+The split control remains a meaningful target: 17 versus 24 bytes is a 29%
+backing saving (16% including the common half-full resource payload). At 4096
+and 16384 its inlined growth is about 23% and 25% faster than native interleaved,
+while lookup is similar or worse and insertion is slower. This supports
+investigating compact control storage for workloads that need it; it does not
+select a compiler-known proof authority over an ordinary-value optimization or
+another interface. The discrimination still missing is a matched WF comparison
+after separately pricing/removing the identified allocation, initialization,
+cleanup and interface costs, followed by the required compact control operations
+and resource conservation. Other payload sizes, loads, collision distributions
+and native targets also remain unmeasured. The recommendation is a proposal for
+the owner; no layout decision, specification change or D1 interface was enacted.
+
+Reproduce with `make check-owning-growth`, `make check-owning-costs` and
+`make measure-owning-costs` in this directory. All maintained checks are in the
+families `check` target and therefore the root `make check` research stage.
+Fresh measurements remain in `.build`; checks never overwrite the retained CSV.
+The source, observer, ABI instrument and cost harness serve this owning-map
+comparison and should be superseded together when its contract or representation
+changes; they are not a second runtime or public FFI.

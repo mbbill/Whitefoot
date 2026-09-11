@@ -28,6 +28,12 @@
 #define DELETED 0xfeu
 #define MAX_FULL 0x7fu
 
+/* The owning-growth comparison varies only helper retention. The retained
+ * standalone control keeps the compiler's ordinary inlining policy. */
+#ifndef SPARSE_BOUNDARY
+#define SPARSE_BOUNDARY
+#endif
+
 typedef struct Resource {
     uint64_t id;
     uint64_t data[4];
@@ -302,7 +308,7 @@ typedef enum Phase { PHASE_SCAN, PHASE_PROBE, PHASE_BLOCKED, PHASE_DONE } Phase;
                 left->held.resource == right->held.resource);                                  \
     }                                                                                          \
                                                                                                \
-    static PutResult P##_put(TABLE *table, uint64_t key, Resource *offered,                    \
+    static SPARSE_BOUNDARY PutResult P##_put(TABLE *table, uint64_t key, Resource *offered,                    \
                              Resource **old, size_t *placed_index) {                            \
         assert(table->capacity > 0 && offered != NULL);                                         \
         *old = NULL;                                                                            \
@@ -348,7 +354,7 @@ typedef enum Phase { PHASE_SCAN, PHASE_PROBE, PHASE_BLOCKED, PHASE_DONE } Phase;
         return PUT_FULL;                                                                        \
     }                                                                                          \
                                                                                                \
-    static Resource *P##_find(TABLE *table, uint64_t key, size_t *examined) {                   \
+    static SPARSE_BOUNDARY Resource *P##_find(TABLE *table, uint64_t key, size_t *examined) {                   \
         const size_t start = bucket(key, table->capacity);                                      \
         *examined = 0;                                                                          \
         for (size_t probe = 0; probe < table->capacity; ++probe) {                              \
@@ -438,7 +444,7 @@ typedef enum Phase { PHASE_SCAN, PHASE_PROBE, PHASE_BLOCKED, PHASE_DONE } Phase;
         *target = (TABLE){0};                                                                   \
     }                                                                                          \
                                                                                                \
-    static StepResult P##_step(P##Rehash *rehash, size_t budget, size_t *examined,             \
+    static SPARSE_BOUNDARY StepResult P##_step(P##Rehash *rehash, size_t budget, size_t *examined,             \
                                size_t *moved) {                                                \
         *examined = 0;                                                                          \
         *moved = 0;                                                                             \

@@ -1399,8 +1399,11 @@ The source uses a complete eight-element array of ordinary enum slots and
 modern owning boxes. Its [native allocation observation](../../experiments/container-representation/families/RESULTS.md#operation-contracts-and-recorded-runs)
 checks all 192 allocation-refusal positions and the successful execution,
 including exact owner cleanup. This closes the fixed-capacity owning-value
-operation chain; it does not close the following growth, returned-progress,
-generic behavior, construction, or sparse-layout comparison.
+operation chain. The later
+[ordinary owning-growth comparison](../../experiments/container-representation/families/RESULTS.md#owning-sparse-growth-over-ordinary-values-d2)
+additionally executes growth/refusal, returned progress and exact cleanup,
+and measures it against the native owning sparse controls. Generic behavior,
+construction and selection of a projected sparse authority remain open.
 
 Use one concrete map payload containing an owning resource. Execute collision
 insertion, duplicate replacement, removal, lookup past a tombstone, reuse, growth
@@ -1454,7 +1457,7 @@ The available evidence supports different next actions for different families:
 | --- | --- | --- |
 | Dense/fixed sequences and priority queues | Ordinary valid values admit a scalar heap with borrowed full-array storage and matched native costs; improve remaining owning-run transfer independently | Resource-owning or growing operations still force material initialization, descriptor or movement cost; generic comparison behavior cannot retain the operation contract |
 | Full arrays of general elements | The selected two-conversion experiment executes build/failure/freeze/use/replace/thaw/drain; general views, construction transfers and explicit linear-empty termination remain separate gaps | Matched final-place construction and transfer cost, and ordinary checked views of owning elements |
-| Hash and ordered containers | The ordinary owning-value map executes fixed-capacity probing, replacement, deletion, full/refused input return, reuse and exact cleanup; the runtime-indexed migration and ordered split components also execute. Owning growth/returned progress, projected sparse layout and generic behavior remain open | Failure to preserve the native owning-map contract/cost, or a required operation beyond ordinary projected values; a complete ordered mutation trace |
+| Hash and ordered containers | The ordinary owning-value map executes probing, replacement, deletion, full/refused input return, reuse, growth, returned migration progress and exact cleanup; the ordered split component also executes. The measured hash gap still includes interface/initialization/cleanup costs and does not select projected sparse authority. Generic behavior and complete ordered mutation remain open | Isolated compact-layout benefits after accounting for ordinary lowering/interface costs, or a required operation beyond ordinary values; a complete ordered mutation trace |
 | Deques and rings | A wrapped logical-index trace works; a wrapped run is correctly refused as one contiguous view | A two-span consumer/growth trace that prices any required copying and admits the actual loans |
 | Growable runs, strings and inline/spill forms | Source-written byte growth/refusal executes and has loop/bulk/realloc controls; no WF realloc or finished spill result | General owner-return helper, repeated reserve/spill and copy-heavy resize controls including peak storage and address validity |
 | Packed byte records | Current initialized byte storage executes variable records and overlapping movement | Measured bulk/initialization/compact-handle cost, or an actually required typed layout that byte codecs cannot preserve |

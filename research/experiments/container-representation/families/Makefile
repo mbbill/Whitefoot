@@ -9,6 +9,60 @@ BUILD := .build
 
 .PHONY: check check-interface measure measure-interface reproduce-runtime-gap reproduce-region-gap clean
 
+$(BUILD)/owning-growth-%.raw.ll: owning-growth.wf $(WHITEFOOTC) | $(BUILD)
+	@set -eu; case '$*' in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; *) exit 1 ;; esac; \
+	  $(WHITEFOOTC) $$flags --emit-llvm $< -o $@
+
+$(BUILD)/owning-growth-%.ll: $(BUILD)/owning-growth-%.raw.ll $(BUILD)/abi$(EXE)
+	$(BUILD)/abi$(EXE) --observe-allocations $< $@.tmp
+	awk '/^define internal i64 @wf_map_contract\(ptr %v0, i64 %v1, i64 %v2, i64 %v3\)/ { sub(/internal /, ""); exported++ } { print } END { if (exported != 1) exit 1 }' $@.tmp > $@
+	rm $@.tmp
+
+$(BUILD)/owning-growth-observer-%$(EXE): owning-growth-observer.c $(BUILD)/owning-growth-%.ll ../costs/sparse-owned.c
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $< $(BUILD)/owning-growth-$*.ll -o $@
+
+.PHONY: check-owning-growth
+check-owning-growth: $(addprefix $(BUILD)/owning-growth-observer-,default$(EXE) par$(EXE) no-overlap$(EXE))
+	$(BUILD)/owning-growth-observer-default$(EXE)
+	$(BUILD)/owning-growth-observer-par$(EXE)
+	$(BUILD)/owning-growth-observer-no-overlap$(EXE)
+
+$(BUILD)/owning-growth-abi$(EXE): owning-growth-abi.rs | $(BUILD)
+	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
+
+$(BUILD)/owning-growth-cost.raw.ll: owning-growth.wf $(WHITEFOOTC) | $(BUILD)
+	$(WHITEFOOTC) --no-overlap --emit-llvm $< -o $@
+
+$(addprefix $(BUILD)/owning-growth-cost-,normal.ll retained.ll inlined.ll): $(BUILD)/owning-growth-cost-%.ll: $(BUILD)/owning-growth-cost.raw.ll $(BUILD)/owning-growth-abi$(EXE)
+	$(BUILD)/owning-growth-abi$(EXE) $< $@ $*
+
+$(BUILD)/owning-growth-cost-%.opt.ll: $(BUILD)/owning-growth-cost-%.ll
+	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
+
+$(BUILD)/owning-growth-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-growth-cost-%.ll ../costs/sparse-owned.c
+	@set -eu; case '$*' in normal) flags= ;; retained) flags=-DRETAIN_HELPERS ;; inlined) flags=-DINLINE_HELPERS ;; *) exit 1 ;; esac; \
+	  $(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $$flags $< $(BUILD)/owning-growth-cost-$*.ll -o $@
+
+.PHONY: check-owning-costs measure-owning-costs
+check-owning-costs: $(addprefix $(BUILD)/owning-growth-costs-,normal$(EXE) retained$(EXE) inlined$(EXE)) \
+                    $(addprefix $(BUILD)/owning-growth-cost-,normal.opt.ll retained.opt.ll inlined.opt.ll)
+	rustfmt --edition 2024 --check owning-growth-abi.rs
+	$(BUILD)/owning-growth-abi$(EXE) --inspect $(addprefix $(BUILD)/owning-growth-cost-,normal.opt.ll retained.opt.ll inlined.opt.ll)
+	$(BUILD)/owning-growth-costs-normal$(EXE) check
+	$(BUILD)/owning-growth-costs-retained$(EXE) check
+	$(BUILD)/owning-growth-costs-inlined$(EXE) check
+
+measure-owning-costs: check-owning-costs
+	@set -eu; output=$(BUILD)/owning-growth-measurements.csv; \
+	  echo 'cohort,contract,variant,operation,capacity,sample,repetitions,operations,elapsed_ns,checksum,digest,requests,peak_bytes' > "$$output"; \
+	  for cohort in 0 1; do \
+	    if test "$$cohort" = 0; then contracts='normal retained inlined'; else contracts='inlined retained normal'; fi; \
+	    for contract in $$contracts; do \
+	      $(BUILD)/owning-growth-costs-$$contract$(EXE) measure > $(BUILD)/owning-growth-sample.csv; \
+	      awk -v cohort="$$cohort" 'NR > 1 { print cohort "," $$0 }' $(BUILD)/owning-growth-sample.csv >> "$$output"; \
+	    done; \
+	  done
+
 $(BUILD):
 	mkdir -p $@
 
@@ -114,13 +168,13 @@ $(BUILD)/growth.opt.ll: $(BUILD)/growth.instrumented.ll $(BUILD)/growth-abi$(EXE
 $(BUILD)/growth-costs$(EXE): growth-costs.c $(BUILD)/growth.opt.ll
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
 
-check: check-interface $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
+check: check-interface check-owning-growth check-owning-costs $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-costs$(EXE) $(BUILD)/priority-borrowed-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-retained-costs$(EXE) \
        $(BUILD)/owning-map-observer$(EXE) $(BUILD)/growth-costs$(EXE)
 	rustfmt --edition 2024 --check abi.rs growth-abi.rs priority-placement.rs
 	@set -eu; \
-	  for source in hashmap owning-map ordered priority priority-borrowed packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view; do \
+	  for source in hashmap owning-map owning-growth ordered priority priority-borrowed packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view; do \
 	    for mode in default par no-overlap; do \
 	      case "$$mode" in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; esac; \
 	      "$(WHITEFOOTC)" $$flags "$$source.wf" -o "$(BUILD)/$$source-$$mode$(EXE)"; \
