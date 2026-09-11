@@ -1448,8 +1448,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     ///
     /// In the clone world a call to a function that also has a clone names the
     /// clone, which is what keeps a clone's whole dynamic extent inside the
-    /// world the entry selected. Everything else — including every callee with
-    /// no hand-out anywhere below it — is the one copy both worlds share.
+    /// sequential world. A private frontier layer advances calls within its
+    /// recursive component, ending at the sequential clone; calls to another
+    /// component enter its ordinary symbol. Other calls use the shared original.
     pub(super) fn callee_symbol(&self, ordinal: u32, name: &str) -> String {
         match (self.sequential_clones, self.frontier_layer) {
             (Some(clones), _) if clones.contains(&ordinal) => sequential_clone_symbol(name),

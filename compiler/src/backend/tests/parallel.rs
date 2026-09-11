@@ -9,8 +9,8 @@
 //! actually overlapped.
 //!
 //! Actualization is compile-time opt-in, so every case that expects a hand-out
-//! emits through [`emit_with_overlap`], which is what `whitefootc --par`
-//! compiles. Plain [`emit`] is the default compilation, and
+//! emits through [`emit_with_overlap`], the unfiltered `--par-scalar-leaf-limit off`
+//! form of `whitefootc --par`. Plain [`emit`] is the default compilation, and
 //! `the_default_compilation_hands_nothing_out` is the case that pins what it
 //! leaves out.
 
@@ -1350,7 +1350,9 @@ fn the_sequential_clone_is_the_sequential_lowering() {
     }
 }
 
-/// The two worlds never call each other, and which one runs is decided once.
+/// Under the default policy the two worlds never call each other, and which
+/// one runs is decided once. Optional refusal/frontier controls have their own
+/// cases for entering sequential clones without a new runtime demand query.
 ///
 /// Both halves matter and they fail differently. A clone that called back into
 /// the overlapped world would re-enter the lowering it exists to avoid, and

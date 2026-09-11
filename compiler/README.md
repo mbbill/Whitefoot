@@ -241,11 +241,11 @@ done
 ```
 
 Use one idle host, no inherited runtime overrides except the stated worker
-count, and report the median of all five process times for each form. Before
-selection, the criterion is visible offer suppression, identical outputs, and
+count, and report the median of all five process times for each form. The
+comparison checks visible offer suppression, identical outputs, and
 a default median no higher than `off` on the current runtime. The M1 Pro
-comparison satisfies this limited criterion; it does not establish that 16 is
-optimal, that every workload benefits, or that refusal/frontier should default
+exploratory comparison satisfies this limited criterion; it does not establish
+that 16 is optimal, that every workload benefits, or that refusal/frontier should default
 on. Revisit the default with a contrary representative workload or target.
 
 The first multi-operation loop path is deliberately specific: one

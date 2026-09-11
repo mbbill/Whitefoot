@@ -1577,8 +1577,10 @@ pub enum OverlapLowering {
 ///
 /// The group is a permission the target stage may take, never an obligation:
 /// a target that hands nothing out emits exactly the sequential code, because
-/// the handed-out call and the inline fallback call the same monomorphized
-/// function on the same arguments.
+/// the handed-out call and the default inline fallback call the same
+/// monomorphized function on the same arguments. Optional refusal/frontier
+/// controls may choose a same-ABI sequential clone that declines descendant
+/// offers; the original operations, arguments and join boundary remain.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrOverlap {
     members: Vec<IrValueId>,

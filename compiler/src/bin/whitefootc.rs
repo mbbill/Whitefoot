@@ -560,14 +560,13 @@ struct Options {
     /// the batch 0075 skew investigation attributed and could not name; it is
     /// not a cost of the second copy, and it moves in both directions.
     ///
-    /// The permission is never an obligation, so the default compilation takes
-    /// none of it and emits exactly the module it emitted before this path
-    /// existed, with one world in it. `WF_WORKERS` remains the runtime knob. On
-    /// the optional POSIX path, `0`, `1`, or an unparsable value keeps the
-    /// sequential world. A Windows module that actually hands work out has a
-    /// stricter production contract: its native runtime must initialize usable
-    /// worker lanes or terminate when the pool is first required; it cannot
-    /// silently select the sequential world.
+    /// Compute permission is never an obligation: without `--par`, compute
+    /// outlining stays off while completion keeps its own lowering. On every
+    /// maintained native target, `WF_WORKERS=0` or `1` selects the sequential
+    /// compute world, and invalid settings fail before the program body.
+    /// Partial worker startup keeps the available workers; complete startup
+    /// refusal uses the parallel body's ordinary-call fallback. Windows
+    /// compute offers require the native runtime at link time.
     par: bool,
     /// Resolved scalar-leaf offer limit: 16 under --par unless overridden.
     /// Explicit `off` keeps every otherwise eligible offer; zero still filters

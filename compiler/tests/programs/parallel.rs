@@ -14,7 +14,8 @@
 //! two folds compile to and that granting lanes moves none of its bytes.
 //!
 //! Actualization is compile-time opt-in, so the cases that ask about hand-outs
-//! compile through [`compile_program_with_overlap`] — `whitefootc --par`. The
+//! compile through [`compile_program_with_overlap`], the unfiltered
+//! `whitefootc --par --par-scalar-leaf-limit off` form. The
 //! default compilation of the same program is the subject of its own case
 //! below and hands nothing out at all.
 
