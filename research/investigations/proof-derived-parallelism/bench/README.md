@@ -46,6 +46,13 @@ measurement — N = 18 over all thirteen configurations including the two
 quoted under "Baseline, 2026-08-21" below.
 `wf/`, `bin/`, `out/`, `logs/`, and `rust/target/` are generated and ignored.
 
+The Windows I/O qualification also consumes the Rust layout twin as a scalar
+multithread CPU-availability control. Its optional final `BATCHES` argument
+repeats `bal` or `skew` inside one pool with reset seeds; the default remains
+one. It does not alter this grid's protocol. That caller owns its build flags,
+known fold oracles and sampling in
+`research/experiments/io-completion-bench/windows-bench.ps1`.
+
 ## Rerun
 
 From this directory, with the release compiler already built

@@ -44,7 +44,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-14]
-        stage: [static, unit, sampling, corpus, conformance, research]
+        stage: [static, unit, sampling, corpus, conformance, research, bench-programs]
         include:
           # Everything that reads the tree without running a compiled program.
           - stage: static
@@ -66,6 +66,11 @@ jobs:
           # The maintained executable tests under `research/`.
           - stage: research
             run: make research-tests
+          # The I/O measurement bundle's programs, compiled with the current
+          # compiler and not run: the bench workflow runs them, and this is
+          # what keeps a language change from emptying its tables.
+          - stage: bench-programs
+            run: make bench-programs
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,11 +95,8 @@ jobs:
       - name: Install the host toolchain
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            # Only the Ubuntu toolchain sources are relevant to this gate.
-            test -s /etc/apt/sources.list.d/ubuntu.sources
-            apt_sources=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
-            sudo apt-get "${apt_sources[@]}" update
-            sudo apt-get "${apt_sources[@]}" install -y --no-install-recommends clang cmake
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends clang
           fi
           test -x /usr/bin/clang
           /usr/bin/clang --version
@@ -144,10 +146,6 @@ jobs:
             research/experiments/default-floor/percent-decode/harness/Cargo.toml; do
             cargo fetch --locked --manifest-path "$manifest"
           done
-
-      - name: Fetch pinned native scheduler dependencies
-        if: matrix.stage == 'research'
-        run: make -C research/experiments/compute-runtime scheduler-fetch
 
       # A gate that proves programs die is a gate that makes the kernel run
       # `kernel.core_pattern` a few hundred times. On `ubuntu-24.04` that

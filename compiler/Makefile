@@ -341,6 +341,11 @@ sched-deque-tsan:
 
 # The managed-stack enumerator is retired with its scheduler. Native compute
 # protocol tests above and completion wake tests below exercise the new boundary.
+# sched-deque-tsan checks observed concurrent deque reuse, task completion and
+# counter accesses on real threads. It does not enumerate all interleavings,
+# prove weak-memory ordering or liveness, or cover completion and stack-floor
+# protocols. Their focused tests remain separate; this is not equivalent to
+# the retired managed-stack state-space gate.
 completion-default-route-sanitize:
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \

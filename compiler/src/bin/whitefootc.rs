@@ -8,11 +8,11 @@ use whitefoot::{
     Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
-    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, LoweringOptions,
-    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile_with_io_notices,
-    compile_with_permission_ledger, host_optimization_arguments,
-    module_requires_completion_runtime, module_requires_parallel_runtime, stack_ledger,
+    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
+    OverlapLowering, RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
+    SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
+    compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
+    module_requires_parallel_runtime, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -31,8 +31,8 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier N] [--no-overlap] [--par-ledger] \
-[--stack-ledger] [--no-vectorize] [-o OUTPUT] SOURCE...";
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
+[--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
 // gives the process's primary thread a 1 MiB stack by default, which is small
@@ -239,7 +239,7 @@ fn run() -> Result<(), String> {
         .zip(&bytes)
         .map(|((logical, display), bytes)| SourceInput::from_host_path(logical, display, bytes))
         .collect();
-    let lowering = options.lowering();
+    let overlap = options.overlap();
     let module = if options.par_ledger {
         // The permission ledger is developer output. It goes to stdout, which
         // `Options::parse` has already kept clear of the emitted module, and
@@ -249,7 +249,7 @@ fn run() -> Result<(), String> {
         // was handed — exist only where actualization was asked for, so `--par`
         // adds lines to this ledger rather than changing any of them.
         let (module, ledger) =
-            compile_with_permission_ledger(&inputs, CompilerLimits::default(), lowering)
+            compile_with_permission_ledger(&inputs, CompilerLimits::default(), overlap)
                 .map_err(|failure| failure.to_string())?;
         for line in &ledger {
             println!("{line}");
@@ -264,7 +264,7 @@ fn run() -> Result<(), String> {
         // all. `--par-ledger` above already prints these lines inside the full
         // report, so this branch is the only one that repeats them.
         let (module, notices) =
-            compile_with_io_notices(&inputs, CompilerLimits::default(), lowering)
+            compile_with_io_notices(&inputs, CompilerLimits::default(), overlap)
                 .map_err(|failure| failure.to_string())?;
         for line in io_notice_report(options.no_overlap, &notices) {
             eprintln!("{line}");
@@ -272,7 +272,7 @@ fn run() -> Result<(), String> {
         module
     };
     if options.stack_ledger {
-        for line in print_stack_ledger(&module, lowering.vectorize)? {
+        for line in print_stack_ledger(&module)? {
             println!("{line}");
         }
     }
@@ -288,7 +288,6 @@ fn run() -> Result<(), String> {
     compile_executable(
         &module,
         options.output.as_deref().unwrap_or(Path::new("a.out")),
-        lowering.vectorize,
     )
 }
 
@@ -335,7 +334,7 @@ fn io_notice_report(no_overlap: bool, notices: &[String]) -> Vec<String> {
 /// link does not produce. Both come out of the one compilation below, into a
 /// directory this function owns and removes, and none of it runs unless the
 /// ledger was asked for.
-fn print_stack_ledger(llvm: &str, vectorize: bool) -> Result<Vec<String>, String> {
+fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
     let directory = std::env::temp_dir().join(format!("whitefootc-ledger-{}", std::process::id()));
     std::fs::create_dir_all(&directory)
         .map_err(|error| format!("cannot create the ledger directory: {error}"))?;
@@ -353,7 +352,7 @@ fn print_stack_ledger(llvm: &str, vectorize: bool) -> Result<Vec<String>, String
             .arg(&assembly)
             .arg("-fstack-usage")
             .arg("-Wno-override-module")
-            .args(host_optimization_arguments(vectorize))
+            .args(HOST_OPTIMIZATION_ARGUMENTS)
             .status()
             .map_err(|error| format!("cannot start {}: {error}", clang_executable()))?;
         if !status.success() {
@@ -402,7 +401,7 @@ fn runtime_units(core: bool, completion: bool) -> (Vec<RuntimeUnit>, Vec<&'stati
 ///
 /// One staging for every platform, and the lists above are the only thing that
 /// differs. The floor joins unconditionally, because every program can exhaust
-/// its stack. The shared core and process settings join when either compute
+/// its stack. The compute core and process settings join when either compute
 /// tasks or I/O completions are used. Compute joins help on the current stack;
 /// completion joins wait through their native backend. The completion units
 /// join on the second predicate alone.
@@ -410,7 +409,7 @@ fn runtime_units(core: bool, completion: bool) -> (Vec<RuntimeUnit>, Vec<&'stati
 /// Every one of those bytes travels inside this executable, so no installed
 /// path, no build directory, and no environment decides which runtime a
 /// program gets.
-fn compile_executable(llvm: &str, output: &Path, vectorize: bool) -> Result<(), String> {
+fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     let completion_required = module_requires_completion_runtime(llvm);
     let core_required = module_requires_parallel_runtime(llvm) || completion_required;
     let directory = std::env::temp_dir().join(format!("whitefootc-{}", std::process::id()));
@@ -451,19 +450,19 @@ fn compile_executable(llvm: &str, output: &Path, vectorize: bool) -> Result<(), 
                 .arg("c")
                 .arg(directory.join(relative_path));
         }
-        link(&mut command, llvm, output, vectorize)
+        link(&mut command, llvm, output)
     })();
     let _ = std::fs::remove_dir_all(&directory);
     result
 }
 
-fn link(command: &mut Command, llvm: &str, output: &Path, vectorize: bool) -> Result<(), String> {
+fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> {
     let mut child = command
         .arg("-x")
         .arg("ir")
         .arg("-")
         .arg("-Wno-override-module")
-        .args(host_optimization_arguments(vectorize))
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(TARGET_LINK_LIBRARIES)
         .arg("-o")
         .arg(output)
@@ -529,8 +528,6 @@ fn portable_logical_path(path: &str) -> bool {
 
 struct Options {
     emit_llvm: bool,
-    /// Disable explicit WF vector probes and host automatic vectorization.
-    no_vectorize: bool,
     /// Actualize the permission judgment's eligible groups on worker lanes.
     ///
     /// Compute outlining is off by default; compiler-owned completion I/O
@@ -563,14 +560,13 @@ struct Options {
     /// the batch 0075 skew investigation attributed and could not name; it is
     /// not a cost of the second copy, and it moves in both directions.
     ///
-    /// The permission is never an obligation, so the default compilation takes
-    /// none of it and emits exactly the module it emitted before this path
-    /// existed, with one world in it. `WF_WORKERS` remains the runtime knob. On
-    /// the optional POSIX path, `0`, `1`, or an unparsable value keeps the
-    /// sequential world. A Windows module that actually hands work out has a
-    /// stricter production contract: its native runtime must initialize usable
-    /// worker lanes or terminate when the pool is first required; it cannot
-    /// silently select the sequential world.
+    /// Compute permission is never an obligation: without `--par`, compute
+    /// outlining stays off while completion keeps its own lowering. On every
+    /// maintained native target, `WF_WORKERS=0` or `1` selects the sequential
+    /// compute world, and invalid settings fail before the program body.
+    /// Partial worker startup keeps the available workers; complete startup
+    /// refusal uses the parallel body's ordinary-call fallback. Windows
+    /// compute offers require the native runtime at link time.
     par: bool,
     /// Resolved scalar-leaf offer limit: 16 under --par unless overridden.
     /// Explicit `off` keeps every otherwise eligible offer; zero still filters
@@ -578,8 +574,9 @@ struct Options {
     scalar_leaf_limit: Option<u32>,
     /// Opt-in ordinary-ABI sequential calls on refused compute offers.
     sequential_refusal: bool,
-    /// Opt-in private recursive component layers, with ordinary call signatures.
-    recursive_frontier: Option<std::num::NonZeroU8>,
+    /// Control over the recursion budget: `None` leaves the `--par` default,
+    /// which asks the runtime at each component entry.
+    recursive_frontier: Option<RecursionBudget>,
     /// Emit the module a compiler with no overlap lowering at all emits.
     ///
     /// This is the sequential reference build, and it exists for one reason:
@@ -613,7 +610,6 @@ struct Options {
 impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
-        let mut no_vectorize = false;
         let mut par = false;
         let mut scalar_leaf_limit = None;
         let mut sequential_refusal = false;
@@ -627,7 +623,6 @@ impl Options {
         while cursor < arguments.len() {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
-                "--no-vectorize" => no_vectorize = true,
                 "--par" => par = true,
                 "--par-scalar-leaf-limit" => {
                     cursor += 1;
@@ -648,18 +643,24 @@ impl Options {
                 }
                 "--par-recursive-frontier" => {
                     cursor += 1;
-                    let level = arguments
-                        .get(cursor)
-                        .filter(|value| {
-                            !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
-                        })
-                        .and_then(|value| value.parse::<u8>().ok())
-                        .filter(|value| *value <= 32)
-                        .and_then(std::num::NonZeroU8::new)
-                        .ok_or_else(|| {
-                            "--par-recursive-frontier requires an integer in 1..32".to_owned()
-                        })?;
-                    if recursive_frontier.replace(level).is_some() {
+                    let written = arguments.get(cursor).map(String::as_str);
+                    let budget = match written {
+                        Some("off") => RecursionBudget::Off,
+                        Some("auto") => RecursionBudget::RuntimeDerived,
+                        _ => written
+                            .filter(|value| {
+                                !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                            })
+                            .and_then(|value| value.parse::<u8>().ok())
+                            .filter(|value| *value <= 32)
+                            .and_then(std::num::NonZeroU8::new)
+                            .map(RecursionBudget::Pinned)
+                            .ok_or_else(|| {
+                                "--par-recursive-frontier requires auto, an integer in 1..32, or off"
+                                    .to_owned()
+                            })?,
+                    };
+                    if recursive_frontier.replace(budget).is_some() {
                         return Err("--par-recursive-frontier may be written only once".to_owned());
                     }
                 }
@@ -726,7 +727,6 @@ impl Options {
         }
         Ok(Self {
             emit_llvm,
-            no_vectorize,
             par,
             scalar_leaf_limit: if par {
                 scalar_leaf_limit.unwrap_or(Some(16))
@@ -743,13 +743,6 @@ impl Options {
         })
     }
 
-    fn lowering(&self) -> LoweringOptions {
-        LoweringOptions {
-            overlap: self.overlap(),
-            vectorize: !self.no_vectorize,
-        }
-    }
-
     /// The lowering this invocation compiles: the shipped completion build
     /// unless one of the two switches named another.
     ///
@@ -758,9 +751,9 @@ impl Options {
     fn overlap(&self) -> OverlapLowering {
         if self.no_overlap {
             OverlapLowering::Off
-        } else if let Some(maximum_levels) = self.recursive_frontier {
-            OverlapLowering::OnWithRecursiveFrontier {
-                maximum_levels,
+        } else if let Some(budget) = self.recursive_frontier {
+            OverlapLowering::OnWithRecursionBudget {
+                budget,
                 maximum_scalar_leaf_operations: self.scalar_leaf_limit,
                 sequential_refusal: self.sequential_refusal,
             }
@@ -785,9 +778,9 @@ mod tests {
     use std::path::{Component, Path, PathBuf};
 
     use super::{
-        CompilerLimits, Options, OverlapLowering, SourceInput, compile_with_io_notices,
-        compile_with_permission_ledger, io_notice_report, module_requires_parallel_runtime,
-        runtime_units, source_names,
+        CompilerLimits, Options, OverlapLowering, RecursionBudget, SourceInput,
+        compile_with_io_notices, compile_with_permission_ledger, io_notice_report,
+        module_requires_parallel_runtime, runtime_units, source_names,
     };
     use whitefoot::module_requires_completion_runtime;
 
@@ -988,39 +981,6 @@ mod tests {
         assert!(options.stack_ledger && options.par);
     }
 
-    #[test]
-    fn scalar_codegen_is_independent_of_overlap_and_ledger_selection() {
-        for switches in [
-            vec![],
-            vec!["--par"],
-            vec!["--no-overlap"],
-            vec!["--par-ledger"],
-            vec!["--stack-ledger"],
-        ] {
-            let mut arguments = switches;
-            arguments.push("source.wf");
-            let default = parse(&arguments).expect("default codegen");
-            assert!(default.lowering().vectorize);
-            arguments.insert(0, "--no-vectorize");
-            let scalar = parse(&arguments).expect("scalar codegen");
-            assert!(!scalar.lowering().vectorize);
-            assert_eq!(scalar.overlap(), default.overlap());
-        }
-        let mut expected = vec!["-O2"];
-        if cfg!(target_arch = "x86_64") {
-            expected.push("-falign-loops=32");
-        }
-        assert_eq!(
-            whitefoot::host_optimization_arguments(true).collect::<Vec<_>>(),
-            expected
-        );
-        expected.extend(["-fno-vectorize", "-fno-slp-vectorize"]);
-        assert_eq!(
-            whitefoot::host_optimization_arguments(false).collect::<Vec<_>>(),
-            expected
-        );
-    }
-
     /// Either ledger may not be interleaved into a module that is itself going
     /// to stdout, so that invocation is refused rather than corrupted.
     #[test]
@@ -1123,8 +1083,8 @@ mod tests {
             ])
             .unwrap()
             .overlap(),
-            OverlapLowering::OnWithRecursiveFrontier {
-                maximum_levels: std::num::NonZeroU8::new(8).unwrap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Pinned(std::num::NonZeroU8::new(8).unwrap()),
                 maximum_scalar_leaf_operations: None,
                 sequential_refusal: false,
             }
@@ -1185,16 +1145,46 @@ mod tests {
         .unwrap();
         assert_eq!(
             options.overlap(),
-            OverlapLowering::OnWithRecursiveFrontier {
-                maximum_levels: std::num::NonZeroU8::new(8).unwrap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Pinned(std::num::NonZeroU8::new(8).unwrap()),
                 maximum_scalar_leaf_operations: Some(16),
                 sequential_refusal: true,
             }
         );
-        for value in ["1", "32"] {
+        // Writing nothing is the default, and the default is the runtime's
+        // answer: one mechanism with a pinned or derived starting value.
+        assert_eq!(
+            parse(&["--par", "value.wf"]).unwrap().overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16
+            }
+        );
+        assert_eq!(
+            parse(&["--par", "--par-recursive-frontier", "off", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Off,
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: false,
+            }
+        );
+        for value in ["1", "32", "off", "auto"] {
             assert!(parse(&["--par", "--par-recursive-frontier", value, "value.wf"]).is_ok());
         }
-        for value in ["0", "33", "256", "-1", "+1", "", "1.5"] {
+        assert_eq!(
+            parse(&["--par", "--par-recursive-frontier", "auto", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::RuntimeDerived,
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: false,
+            }
+        );
+        for value in [
+            "0", "33", "256", "-1", "+1", "", "1.5", "Off", "none", "Auto",
+        ] {
             let error = parse(&["--par", "--par-recursive-frontier", value, "value.wf"])
                 .err()
                 .unwrap();
@@ -1214,6 +1204,15 @@ mod tests {
                 "--par",
                 "--par-recursive-frontier",
                 "8",
+                "--par-recursive-frontier",
+                "8",
+                "value.wf",
+            ],
+            vec!["--par-recursive-frontier", "off", "value.wf"],
+            vec![
+                "--par",
+                "--par-recursive-frontier",
+                "off",
                 "--par-recursive-frontier",
                 "8",
                 "value.wf",

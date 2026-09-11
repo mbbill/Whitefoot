@@ -28,20 +28,26 @@ use storage::collect_addressed_bindings;
 
 pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
-    options: impl Into<LoweringOptions>,
+    overlap: OverlapLowering,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
-    let LoweringOptions { overlap, vectorize } = options.into();
     let sequential_compute_refusal = matches!(
         overlap,
         OverlapLowering::OnWithSequentialRefusal { .. }
-            | OverlapLowering::OnWithRecursiveFrontier {
+            | OverlapLowering::OnWithRecursionBudget {
                 sequential_refusal: true,
                 ..
             }
     );
-    let recursive_compute_frontier = match overlap {
-        OverlapLowering::OnWithRecursiveFrontier { maximum_levels, .. } => Some(maximum_levels),
-        _ => None,
+    // A lowering that actualizes compute at all carries a recursion budget;
+    // the control form is the only one that says something other than the
+    // default. A lowering that actualizes no compute carries none, so a
+    // default or `--no-overlap` build names the budget nowhere.
+    let recursion_budget = match overlap {
+        OverlapLowering::Off | OverlapLowering::Completion => None,
+        OverlapLowering::OnWithRecursionBudget { budget, .. } => Some(budget),
+        OverlapLowering::On
+        | OverlapLowering::OnWithSequentialRefusal { .. }
+        | OverlapLowering::OnWithoutSmallScalarLeaves { .. } => Some(RecursionBudget::default()),
     };
     let scalar_leaf_limit = match overlap {
         OverlapLowering::OnWithoutSmallScalarLeaves { maximum_operations } => {
@@ -50,7 +56,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         OverlapLowering::OnWithSequentialRefusal {
             maximum_scalar_leaf_operations,
         }
-        | OverlapLowering::OnWithRecursiveFrontier {
+        | OverlapLowering::OnWithRecursionBudget {
             maximum_scalar_leaf_operations,
             ..
         } => maximum_scalar_leaf_operations,
@@ -58,7 +64,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     };
     let overlap = if scalar_leaf_limit.is_some()
         || sequential_compute_refusal
-        || recursive_compute_frontier.is_some()
+        || matches!(overlap, OverlapLowering::OnWithRecursionBudget { .. })
     {
         OverlapLowering::On
     } else {
@@ -111,7 +117,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         OverlapLowering::On
         | OverlapLowering::OnWithoutSmallScalarLeaves { .. }
         | OverlapLowering::OnWithSequentialRefusal { .. }
-        | OverlapLowering::OnWithRecursiveFrontier { .. }
+        | OverlapLowering::OnWithRecursionBudget { .. }
         | OverlapLowering::Completion => Some(&checked.data.permission),
         OverlapLowering::Off => None,
     };
@@ -123,7 +129,6 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     let synthesis = SynthesisCell::new(Synthesis::new(source_functions));
     let context = LoweringContext {
         erasure,
-        vectorize,
         nominals: &nominals,
         constants: &constants,
         function_results: &function_results,
@@ -158,7 +163,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         entry,
         actualization,
         sequential_compute_refusal,
-        recursive_compute_frontier,
+        recursion_budget,
     })
 }
 
@@ -171,7 +176,6 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 /// growing an argument list at every level.
 #[derive(Clone, Copy)]
 struct LoweringContext<'program> {
-    vectorize: bool,
     /// [S20, PROV-1] each nominal's lowered identity, with its region axis
     /// erased.
     erasure: &'program [IrNominalId],
@@ -586,7 +590,6 @@ struct IrBuilder<'program> {
     /// function's IR. It remains permission-only unless lowering materializes
     /// either the complete one-slot edge or the bounded-batch driver.
     completion_pipeline: Option<IrCompletionPipeline>,
-    vectorize: bool,
     /// The selected loop's submitted call occurrence. The loop has already
     /// been selected by [`CheckedLoopId`]; this path is only the existing call
     /// identity used to map that cut to its IR value.
@@ -616,7 +619,6 @@ impl<'program> IrBuilder<'program> {
     ) -> Result<Self, LoweringFailure> {
         let LoweringContext {
             erasure,
-            vectorize,
             nominals,
             constants,
             function_results,
@@ -641,7 +643,6 @@ impl<'program> IrBuilder<'program> {
             call_results: HashMap::new(),
             permissions,
             overlap,
-            vectorize,
             completion_pipeline: None,
             staged_cut: None,
             synthesis,
@@ -668,7 +669,6 @@ impl<'program> IrBuilder<'program> {
     const fn context(&self) -> LoweringContext<'program> {
         LoweringContext {
             erasure: self.erasure,
-            vectorize: self.vectorize,
             nominals: self.nominals,
             constants: self.constants,
             function_results: self.function_results,
@@ -1089,12 +1089,9 @@ impl<'program> IrBuilder<'program> {
         // single finite step.  The `driver_ready` gate is what prevents a
         // permission-only descriptor from changing emitted execution.
         //
-        // The cut may be a may-suspend user call rather than a system
-        // operation. That is the same schedule with a lane frame in the slot
-        // instead of a completion record, so it is the same step: what the
-        // backend puts in the slot is the backend's choice over one accepted
-        // program, exactly as the choice between a typed adapter and a
-        // qualified wrapper is.
+        // Only a direct typed system operation materializes this driver.
+        // A may-suspend user call remains an ordinary call on the caller's
+        // stack; its internal typed operations submit and join there.
         if self
             .completion_pipeline
             .as_ref()

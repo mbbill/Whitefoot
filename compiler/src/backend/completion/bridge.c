@@ -63,26 +63,13 @@ _Static_assert(
     WF_BRIDGE_MAX_HELPERS <= WF_FILE_MAX_HELPERS,
     "the helper policy may not ask for more helpers than the adapter holds"
 );
-/* Private storage one loop may hold for its in-flight iterations, before the
- * compiler's own ceiling and the loop's per-iteration size are applied.  It
- * exists so a loop whose iteration owns a large buffer gets a small window
- * instead of a large multiple of that buffer: at 64 KiB an iteration this
- * budget affords 64 of them, and at 16 MiB it affords none, which the K >= 1
- * floor turns into the sequential program. */
+/* Bound the storage of in-flight direct completion operations before applying
+ * the compiler's ceiling and the loop's per-iteration record size. A result
+ * below one selects the sequential window. This is not handler-stack storage. */
 #define WF_BRIDGE_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
-/* The runtime's own answer when no argument of `wf__completion_window` bounds
- * it and the ring is the engine.
- *
- * It was half the process-wide operation capacity, because a loop that owned
- * every record would push every other operation in the program onto the
- * capacity-wait path.  There is no operation capacity any more and no capacity
- * wait to be pushed onto, and every submitted operation's batch carries the
- * compiler's own ceiling of two, so this number reaches one form only: a
- * staged loop whose call is a lane hand-out, whose ceiling is the lane's slot
- * count.  It is that count, so that a server keeping 1024 connections in
- * flight is bounded by its own trip count and its stacks rather than by a
- * number chosen here; it moves no file measurement because no file batch
- * reaches it. */
+/* Retain the runtime window ceiling; current generated direct-I/O batches
+ * impose their own smaller ceiling of two. May-suspend user calls are not
+ * staged into this window, and this constant supplies no connection fanout. */
 #define WF_BRIDGE_WINDOW_DEFAULT 1024u
 /* How many completions one progress pass reaps before it returns to the
  * scheduler loop.  It was one, and one is what made the reap the serial

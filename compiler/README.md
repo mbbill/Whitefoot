@@ -187,114 +187,103 @@ reductions. A denied permission leaves the program sequential; it does not
 change source acceptance. Proof-only statements introduce no runtime branch,
 lock, dependency, scheduling event, or task edge.
 
-`--no-vectorize` disables WF's explicit wide byte probes. Native compilation
-and stack-ledger generation also disable the host compiler's loop/SLP
-vectorizers. With `--emit-llvm`, downstream consumers must supply matching
-`-fno-vectorize -fno-slp-vectorize` flags themselves. The normal scalar lowering
-remains; acceptance and proof obligations do not change. This supplies a scalar
-comparison build at the ordinary `-O2` level. It does not promise that platform
-libraries or memory operations contain no SIMD instructions. Vectorization
-remains enabled by default.
+Under `--par`, scalar leaves with at most 16 nonconstant IR operations are
+omitted from compute offers by default. `--par-scalar-leaf-limit N` changes
+that provisional threshold; `off` restores all eligible offers, and `0` filters
+only leaves with no nonconstant operations. A qualifying leaf has one returning
+block, scalar arguments and result, and only scalar constants, arithmetic,
+boolean operations, conversions or reinterpretations. Calls, memory operations,
+branches, loops and drops exclude it. The original calls remain at their source
+locations; a remaining group retains its original source-last join site. This
+is offer selection after checking, not a bound on acceptance or proof work.
+The count is not an instruction count or a target cost estimate. Compilation
+without `--par`, public signatures, and I/O submit-then-join are unchanged.
 
-On x86-64, normal native compilation and the stack ledger use
-`-falign-loops=32` for WF and runtime C. This general code-placement setting
-does not change function signatures or the calling convention. AArch64 keeps
-the host compiler's default alignment. Downstream `--emit-llvm` consumers
-must supply the matching host setting when comparing native performance.
+`--par --par-sequential-refusal` optionally enters an existing sequential clone
+when a compute offer is refused, its callee cannot suspend, and a clone exists.
+It executes the call at the original join with the original arguments and
+result ABI, while declining descendant compute offers. Granted tasks and the
+source-last inline call retain their parallel code. Calls without a clone and
+may-suspend callees keep their ordinary fallback. No runtime query is added.
 
-Normal compilation uses the maintained compute runtime in
-`src/backend/sched/`. Each worker has an ordinary stack and a fixed local
-deque of 64 task slots. A join first runs its newest owned task directly,
-then helps or steals on the current stack; an empty search eventually yields
-and sleeps. There is no managed-stack pool, continuation migration or ready
-queue. Deque cells are atomic, thief index loads participate in the owner's
-SC claim order, and only the offering thread joins and releases its slots.
-Each slot has an atomic waiter pointer and an immutable owner. A completion
-tail may signal that owner after slot reuse; the join rechecks completion
-under its wait lock, so a late notification cannot complete the new task.
-Workers start lazily, with the same stack reservation and exhaustion handling
-as the command entry. Partial startup keeps the workers that actually started;
-complete failure declines offers and executes ordinary calls.
-Failure to install the exhaustion floor itself stops execution at the host
-boundary before an unprotected command or worker can run. POSIX setup checks
-stack bounds, page size, alternate-stack allocation and signal installation;
-its setup diagnostic is distinct from an actual stack-exhaustion record.
+Under `--par`, each ordinary cyclic call-graph component gets one synthesized
+budget-carrying variant per member, and the member's ordinary symbol obtains an
+initial budget and enters that variant. Inside the family every
+intra-component call and every published callback enters the callee's variant
+with one level less; a variant handed nothing left enters its own sequential
+clone, the world with no scheduler test, no null branch and no phi in it. That
+is one compare and one branch per node above the cut and nothing at all below
+it. The cut exists because a recursion otherwise offers at every node, at a
+per-node cost the leaf work does not pay for.
 
-Compute callbacks must not suspend for I/O. Such WF functions retain their
-ordinary calls and ABI. Direct independent I/O operations still submit to the
-typed completion runtime and join at their dependency boundary. Their native
-io_uring, IOCP and helper routes remain, but joining waits on the caller's
-current stack. Generic suspended-function fanout is deferred: a silent TCP
-peer can now hold up a loop that serves connections in source order.
+The initial budget is the runtime's answer to `wf__par_recursion_budget()`,
+asked once per call into the component: `floor(log2(64 * lanes))`, clamped to
+24, with one lane's answer when there is no pool — 6 with the pool off, 7 at
+two lanes, 8 at four, 9 at eight. A module carries its own weak stub answering
+0, so a scheduler-less link runs the sequential clone from the first node. The
+constant of 64 sequential leaves per lane is measured, and
+[`sched/core.c`](src/backend/sched/core.c) records against it which measurement
+selected it.
 
-`WF_SCHED_REPORT=1` enables the private observer; `2` additionally prints
-configured threads, started workers, steals and per-lane capacity at process
-exit. Unset/zero stays silent. Counters are per-lane atomic observations,
-not a simultaneous snapshot; `WF_SCHED_STATS=0` erases counter updates for
-controlled C measurements. Diagnostic runs stay separate from timings.
-`WF_STACKS` no longer configures anything: the runtime has no switchable stack
-pool. The [compute investigation](../research/investigations/compute-runtime/README.md)
-owns current qualification results and the preserved unified-runtime checkpoint.
+`--par --par-recursive-frontier auto|N|off` is the control over that one
+mechanism's starting value, not a second mechanism: `auto` is the default
+written out, `N` in the CLI range `1..32` pins the starting value at compile
+time instead of asking the runtime, and `off` emits no family at all, so every
+node of every recursive component offers, which is what every `--par` build did
+before the family existed. The default is the query and not a number because
+the measured best fixed value is not the same value at two lanes and at four;
+on the four-CPU development host the family is worth 1.685 to 1.031 at two
+lanes, 1.564 to 0.987 at four and 1.665 to 1.000 at eight on the compute
+scoreboard's quadrature row, with its process CPU falling from 1.81 to 1.17
+times the sequential control.
+`research/investigations/compute-runtime/RESULTS.md` records the tables and the
+spread they were read through.
 
-Under `--par`, the compiler omits offers of scalar leaves containing at most
-16 nonconstant IR operations by default. `--par-scalar-leaf-limit N` changes
-that threshold; `--par-scalar-leaf-limit off` restores unfiltered offers.
-Zero retains its meaning of filtering only zero-operation leaves. Eligible
-leaves have one returning block, scalar arguments/results and only scalar
-constants, arithmetic, boolean operations, conversions or reinterpretations;
-calls, memory operations, branches, loops and drops exclude a function. The
-original calls remain, and a partially retained group keeps its original
-source-last join site. This narrows actualization after checking; permission,
-acceptance and ordinary function ABI are unchanged. Compilation without `--par`
-still leaves compute outlining off. The count is a provisional cost heuristic,
-not a target instruction or time estimate. The default was selected from the
-beneficial leaf-filter measurements on the quadrature inputs on M1 and Linux.
-Those selection measurements used the research runtime; they do not establish
-a gain on every workload or select a recursive grain. See the
-[quadrature experiment](../research/experiments/compute-runtime/README.md#scalar-leaf-offer-control).
+A member's ordinary symbol keeps its signature and result ABI, so the hidden
+trailing parameter is the synthesized variant's alone and no source call names
+it. A call into another component starts at that component's ordinary entry and
+asks for a budget of its own, so this is not a global nesting bound. A
+component is excluded, and named with its reason in `--par-ledger`, when any
+member may suspend, carries a staged completion pipeline, is a synthesized loop
+function, or has no sequential clone; the three map kernels of the compute
+scoreboard reach the runtime through a synthesized splitter and are therefore
+untouched. A published callback carries the budget through its lane frame,
+which is 8 bytes larger for that reason; a frame that no longer fits the lane
+slot declines the offer, as it already did. This composes with scalar-leaf
+suppression and with refusal; refusal may enter a sequential subtree above the
+cut. The budget selects actualization of an already accepted program: no
+acceptance path reads it, it cannot reject a program, and it is not a timeout,
+a fuel bound or a proof-work budget.
 
-The additional experiment `--par --par-sequential-refusal` selects an existing
-sequential clone for a refused ordinary compute hand-out when its callee cannot
-suspend and has a clone. It composes with `--par-scalar-leaf-limit N`. The call
-still runs at the original join with the same arguments and ordinary result
-ABI; successful tasks and source-last inline calls retain their parallel code.
-The clone declines descendant compute permissions and returns normally. Calls
-without a clone, may-suspend callees and staged completion keep their existing
-fallback. No new runtime query, hidden parameter or source signature effect is
-introduced. This is an opt-in code-selection experiment, not a default grain
-policy; acceptance and proof checking are unchanged. The
-[quadrature refusal control](../research/experiments/compute-runtime/README.md#sequential-subtrees-after-refusal)
-compares the generated forms and exercises full owner-slot exhaustion.
+The default limit can be remeasured on
+[`adaptive_quadrature.wf`](../tests/programs/adaptive_quadrature.wf), whose kernel
+comes from PR #28 at `70aa8e5`. Its command integrates 2048 narrow Lorentz
+profiles, emits the sum's 64-bit representation as ASCII, and runs through the
+normal compiler/runtime path. The corpus test independently compares it with
+the analytic integral. For a local default/off comparison:
 
-The recursive grain experiment `--par --par-recursive-frontier N` emits N
-ordinary parallel call levels for eligible recursive components, then calls
-their existing sequential clones. The CLI accepts 1..32; this limits private
-code expansion, not source recursion, acceptance or proof work. Direct and
-mutual recursion use the same call-graph rule: every call within a component,
-including a published callback or refused task, advances one level. A call
-to another component starts at that component's ordinary entry. There is no
-global nesting-depth guarantee. Reaching a sequential clone also suppresses
-compute offers in its descendant call closure, as in the existing sequential
-world. No runtime field, TLS counter, hidden parameter or result-layout change
-is introduced; every copy uses the ordinary function ABI and emission path.
-The control composes with scalar-leaf suppression and sequential refusal;
-refusal can select a sequential subtree before the frontier. Components that
-may suspend, carry staged completion, or contain synthesized loop functions
-retain the existing path. Nonrecursive code is unchanged. This is an explicit
-experiment, not a selected default policy. Its qualification and measurements
-live in the [recursive frontier panel](../research/experiments/compute-runtime/README.md#compiler-generated-recursion-frontier).
+```sh
+cargo build --profile gate --manifest-path compiler/Cargo.toml --bin whitefootc
+out=$(mktemp -d)
+compiler/target/gate/whitefootc --par --par-ledger -o "$out/default" tests/programs/adaptive_quadrature.wf
+compiler/target/gate/whitefootc --par --par-scalar-leaf-limit off -o "$out/off" tests/programs/adaptive_quadrature.wf
+for round in 1 2 3 4 5; do
+  case "$round" in 1|3|5) modes="default off" ;; *) modes="off default" ;; esac
+  for mode in $modes; do
+    /usr/bin/time -p env WF_WORKERS=4 "$out/$mode" > "$out/$round-$mode.out"
+  done
+  cmp "$out/$round-default.out" "$out/$round-off.out" || exit 1
+done
+```
 
-The compute runtime's `WF_SPLIT_WORK` setting controls the minimum estimated
-work per chunk of an already permitted compute loop. It is read once before
-the program starts: unset/empty uses 1,200,000, zero declines loop splitting,
-and positive values through 1,000,000,000 tune the threshold. Invalid values
-fail as startup configuration errors. Worker-count bounds and busy-lane
-refusal still apply. This changes no source permission, function ABI, ordinary
-call hand-out or I/O mechanism. It allows the same ordinary CLI executable to
-compare grains without replacing the runtime or changing code placement.
-The default is provisional: static weights cannot distinguish expensive
-data-dependent work from fast exits, and a lower threshold can harm cheap
-loops. Whole-command qualification covers both before selecting a default.
+Use one idle host, no inherited runtime overrides except the stated worker
+count, and report the median of all five process times for each form. The
+comparison checks visible offer suppression, identical outputs, and
+a default median no higher than `off` on the current runtime. The M1 Pro
+exploratory comparison satisfies this limited criterion; it does not establish
+that 16 is optimal, that every workload benefits, or that the opt-in refusal
+control should default on. Revisit the default with a contrary representative
+workload or target.
 
 The first multi-operation loop path is deliberately specific: one
 source-derived fixed two-slot bounded batch for the direct staged counted-loop
@@ -308,34 +297,68 @@ When one function contains two staged loops, both deliberately remain ordinary.
 Wider control flow, operation families, and multi-loop selection remain
 possible future extensions; this path does not imply those capabilities.
 
-May-suspend user calls, including those bound by `let` in a staged loop, use
-ordinary calls. Their aggregate results, addressed storage and checked cleanup
-stay live through return. Only direct typed system operations use the bounded
-completion driver. The source permission is preserved but not actualized by
-a compute lane.
+The compute runtime uses persistent native threads and their ordinary stacks.
+An unstolen join target executes on the joining thread; a stolen target allows
+that thread to run other compute tasks and steal work before its bounded
+spin/yield/condition-wait slow path. Task storage belongs to the offering lane
+until join, result access, and release finish. Deque cells and ownership claims
+are atomic; local execution avoids the completion runtime. Resource exhaustion
+retains the ordinary-call fallback and the native stack-exhaustion floor.
 
-Each completion record lives in its submitting frame. The engine writes the
-result, publishes DONE with release ordering as its final record access, and
-notifies the I/O wake epoch. Join acquires DONE before consuming the result
-or ending the frame's lifetime. There is no separate operation-slot pool or
-runtime generation table. Native queues and helper state remain target-private.
+Direct typed I/O retains one submit-then-join lowering path. A may-suspend user
+call executes on the caller's ordinary stack and is not published to a compute
+worker. At an I/O join, that caller progresses completion and then waits through
+the native backend if necessary; it does not switch stacks or help compute
+tasks from that join. Other compute workers can finish already-published work.
+
+Connection-level concurrency through independent suspended user calls is a
+temporary unsupported capability. A loop that accepts and serves connections
+in source order completes the current handler before entering the next one.
+If that handler waits for a silent peer, later connections do not make progress
+through their WF handlers. Opening 1024 connections does not create 1024
+independently resumable handlers. The source remains accepted and uses ordinary
+calls; no mechanism for restoring this concurrency has been chosen. The direct
+typed-I/O batch above does not supply general connection-handler concurrency.
+
+`WF_STACKS` is inert: the runtime neither reads nor validates it and has no
+switchable-stack pool. It cannot increase I/O concurrency or native worker
+stack capacity. `WF_WORKERS` continues to select compute participation.
+
+The managed-stack scheduler enumerator was retired with the state machine it
+modeled. `make -C compiler sched-deque-test` stresses deque reuse and task
+lifetime on native threads, with counters enabled and disabled;
+`sched-deque-tsan` adds ThreadSanitizer to that same probe. It can detect data
+races in the observed executions, but does not exhaustively enumerate schedules
+or prove weak-memory ordering, liveness, completion wakeups, or stack-exhaustion
+handling. Separate startup, join, completion, and exhaustion tests cover those
+boundaries. This is a change in verification coverage, not an equivalent
+replacement for exhaustive enumeration.
+
+The completion runtime uses bounded, generation-checked operation storage and
+separate exactly-once result-ready, loan-released, and terminal milestones.
+Native queues, helper lanes, wakeups, and completion ports are target-private
+protocol state, never Whitefoot shared storage. The macOS and Linux paths are
+qualified for the implemented operations, including Linux io_uring where its
+route is available.
 
 The exact `x86_64-pc-windows-msvc` row is native-qualified for the
 compiler-owned UTF-16 command bootstrap and the direct, bounded blocking, and
 IOCP positioned-I/O routes. An IOCP-eligible request cannot silently use the
 direct or blocking route: handle association or submission failure stops at
-the host boundary. Native probes require zero eligible fallback. Synchronous-success operations publish inline only
+the host boundary. At full bounded storage the emitter retires the oldest
+addressable source-owned generation; when no one-slot owner is addressable it
+waits for core progress, then retries that same request. Native probes require
+zero eligible fallback. Synchronous-success operations publish inline only
 after the runtime has disabled their completion packets; pending operations
 publish through the IOCP worker.
 
-Every Windows module that emits compute offers requires the compiler-owned
-compute pool through hard external ABI obligations. A missing runtime fails to
-link, and an invalid worker configuration fails before user code. Partial worker
-startup retains the available pool; complete refusal uses ordinary calls. The native gate
-requires a non-owner worker to execute and steal source work while preserving the
-sequential build's exact bytes. A fixed-host paired gate qualifies compute,
-warm IOCP, and mixed compute-plus-IOCP execution against matched controls on
-the same revision.
+An emitted Windows module with compute offers requires the compiler-owned
+runtime through external ABI obligations. A missing runtime fails to link and
+an invalid worker configuration fails before the program body. Partial startup
+retains available workers; complete startup refusal uses the parallel body's
+ordinary-call fallback. Each native worker installs its own exhaustion floor.
+The native gate checks non-owner execution, steals, and preservation of the
+sequential build's bytes. These checks do not establish performance parity.
 
 `--par-ledger` prints the permission and actualization explanation for compiler
 development. `--stack-ledger` reports selected-host frame costs. Neither report

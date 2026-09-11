@@ -322,68 +322,6 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
 const PHASE_ONE: &[u8] = &[0, 1, 15, 16, 17, 31, 36, 200, 201, 0, 1, 15, 16, 17, 202];
 
 #[test]
-fn scalar_cli_codegen_preserves_wide_walk_results_and_boundary_effects() {
-    let directory = fixture_directory();
-    let source = directory.path().join("wide_scan.wf");
-    std::fs::write(&source, ORACLE).expect("write the existing oracle source");
-    for vectorize in [true, false] {
-        let llvm = directory
-            .path()
-            .join(if vectorize { "default.ll" } else { "scalar.ll" });
-        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_whitefootc"));
-        command.arg("--emit-llvm");
-        if !vectorize {
-            command.arg("--no-vectorize");
-        }
-        let compiled = command
-            .arg(&source)
-            .arg("-o")
-            .arg(&llvm)
-            .output()
-            .expect("run ordinary CLI");
-        assert!(
-            compiled.status.success(),
-            "{}",
-            String::from_utf8_lossy(&compiled.stderr)
-        );
-        let module = std::fs::read_to_string(llvm).expect("read emitted LLVM");
-        assert_eq!(
-            module.matches("load <16 x i8>").count(),
-            if vectorize { 3 } else { 0 }
-        );
-    }
-    let executable = directory
-        .path()
-        .join(format!("scalar{}", std::env::consts::EXE_SUFFIX));
-    let compiled = std::process::Command::new(env!("CARGO_BIN_EXE_whitefootc"))
-        .args(["--no-vectorize", "--par-ledger", "--stack-ledger"])
-        .arg(&source)
-        .arg("-o")
-        .arg(&executable)
-        .output()
-        .expect("compile scalar executable with both ledgers");
-    assert!(
-        compiled.status.success(),
-        "{}",
-        String::from_utf8_lossy(&compiled.stderr)
-    );
-    for (argument, status, suffix) in [
-        (None, 0, &[][..]),
-        (Some("first"), 2, &[][..]),
-        (Some("mid"), 3, &[88, 89][..]),
-    ] {
-        let mut command = std::process::Command::new(&executable);
-        if let Some(argument) = argument {
-            command.arg(argument);
-        }
-        let output = command.output().expect("run scalar oracle");
-        assert_eq!(output.status.code(), Some(status));
-        assert_eq!(output.stdout, [PHASE_ONE, suffix].concat());
-        assert!(output.stderr.is_empty());
-    }
-}
-
-#[test]
 fn wide_probe_walks_keep_exact_results_and_typed_boundary_failures() {
     let llvm = compile_sources(&[("wide_scan.wf", ORACLE)]);
     // The three equivalence walks keep the wide probe: their explicit

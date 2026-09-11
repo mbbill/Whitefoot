@@ -409,14 +409,9 @@ static int test_exactly_one_completion_per_submission_under_race(
     return 0;
 }
 
-/* A publisher claims an in-place registration before it stores DONE.
- *
- * This is the I/O half of §6's handshake with no stack to park: a thread that
- * waits in place registers `WF_SCHED_WAITER_IN_PLACE` on its own record, and
- * the one publisher takes that registration back with a compare-exchange
- * before storing DONE, so exactly one of the two owns the wake.  Checked
- * without a park so the answer is a fact rather than a sample: after the
- * publication the registration is gone and the state is DONE. */
+/* Publication makes a record's result available through DONE, including
+ * when no caller has registered a wait. This checks record publication;
+ * the concurrent wake protocol is exercised separately. */
 static int test_a_completion_publishes_results(void) {
     wf_completion_record record;
 

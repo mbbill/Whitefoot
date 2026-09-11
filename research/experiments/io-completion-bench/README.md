@@ -105,15 +105,40 @@ is in `workload.h`: the digest is a serial multiply-add chain running at about
 warm table pure compute, and would add to the uncached table CPU that the
 eight-wide program can spread across helpers and the sequential one cannot.
 
-#### The four-stage chain (retired)
+### The four-stage chain
 
-`chain.c` records the historical raw io_uring / managed-stack experiment.
-It depends on the removed stack-switch API and is no longer a live Makefile
-target. The compute-first runtime deliberately does not support that execution
-model. Reproduce the old experiment at `d858008f`; the unified runtime and its
-restoration instructions are preserved in
-[the I/O investigation](../../investigations/io-model/README.md). Historical
-measurements are in `../park-on-miss-measurements/README.md`.
+`chain.c` is not a Whitefoot program and is not one of the three lines above.
+It is the C program design §12's fourth item asks for: the
+`read -> parse -> request -> write` chain of `PARK-ON-MISS.md` §0, on raw
+io_uring, in the four shapes that item names — nested helping, thread
+compensation, the stack switch, and the staged pipeline as it is lowered today
+(one lane, K slots, the loop blocking on the oldest slot's join). It reports
+the dependent stage's in-flight depth beside the wall time, because the claim
+§0 makes is about depth and not about speed.
+
+It lives here rather than in a home of its own because the ring plumbing,
+the generated tree and the file-name format are this bundle's
+(`uring_baseline.h`, `gen.c`, `workload.h`), and a second copy of them would be
+a second thing to keep true. The shape it compares is driven from
+`research/experiments/park-on-miss-measurements/run.sh`, which is where its
+numbers are recorded.
+
+    make -C research/experiments/io-completion-bench chain
+
+One thing is deliberately the same in all four shapes: the ring is driven by
+one reaper thread, so what the four numbers compare is what a worker does when
+it joins an operation that has not completed, and nothing else. The stack
+switch shape links `compiler/src/backend/sched/core.c` and drives it, so that
+shape is the shipped scheduler rather than a model of it — with the one
+difference its own numbers have to be read against, that the park it sleeps on
+is `prim_host.c`'s fallback epoch condition variable and not the bridge's ring
+park, because the bridge is not linked here.
+
+Every file is opened once, before the timed region, for the reason the
+read-heavy workload opens once: an `openat` of a cold inode costs more here
+than the read that follows it. The descriptors are opened `O_DIRECT` where the
+filesystem allows it, and the printed line says which it was, because on a
+buffered tree a read does not wait and no shape can reach any depth.
 
 ### WF_IO_NOCACHE
 
@@ -292,6 +317,8 @@ the lines it holds.
 
 ## Reproducing
 
+    make -C research/experiments/io-completion-bench programs-check  # compile every program; the gate's `bench-programs` stage
+
     make -C research/experiments/io-completion-bench verify       # bytes only
     make -C research/experiments/io-completion-bench bench        # macOS table
     make -C research/experiments/io-completion-bench bench-pipe
@@ -378,16 +405,65 @@ one initialized pool's steady-state work instead of trying to stabilize a
 sub-second process by weakening the spread bound or averaging repeated pool
 startups. Ordinary argument-free corpus runs still execute one batch.
 
-Each cohort records fifteen candidate/reference ratios, alternating order in
-each pair, after two unrecorded warm-up pairs. A cohort with ratio MAD above
-5% or p10-to-p90 width above 10% is repeated once and fails as an invalid
-measurement environment if still unstable. The production bounds are compute
+Each cohort records fifteen candidate/reference ratios and fifteen
+native/reference ratios after two unrecorded warm-up rounds. The three
+children's positions balance every three rounds and precedence every six.
+The candidate's MAD/median may exceed the native control's by at most 5
+percentage points, and its (p90-p10)/median by at most 10 percentage points.
+A cohort outside either margin is repeated once and fails qualification if
+still unstable; that result alone does not identify the cause. These are
+the former absolute limits used as relative margins, not a claim that the
+absolute limits passed. Nonfinite results or failed control samples fail.
+The production speed bounds remain compute
 at most 0.90, warm IOCP at most 1.10, and full mixed at most 0.95 relative to
 both its IOCP-only control and the fully sequential program. These are
 same-host runtime qualifications. The host,
 Windows build, CPU, processor mask, memory, power scheme, toolchain, revision,
 and every raw sample ship with the table; a hosted VM is not treated as a
 persistent cross-revision hardware baseline.
+
+The hosted qualification uses one fewer compute worker than the affinity
+mask's logical-processor count, with a minimum of two: W=3 on the four-logical
+runner. The full mask remains available to every child. This leaves scheduler
+capacity for other VM work; it does not reserve an exclusive core or establish
+the physical host's SMT topology. The summary records both the visible count
+and the guest's reported cores/logical processors. Process priority is normal.
+All five cohorts, fifteen Whitefoot pairs, two warmups, the single retry,
+and every numerical stability and performance threshold are retained.
+
+The native control reuses the existing safe Rust/Rayon layout twin in
+`research/investigations/proof-derived-parallelism/bench/rust/`, built with
+loop and SLP vectorization disabled. It runs the same reduced worker count,
+normal priority, full mask and QPC runner, and must publish the known exact
+layout fold oracle before its time counts. Compute uses three reset-seed
+full-width batches in one pool; the four shorter cohorts use one half-width
+batch. It witnesses concurrent CPU availability during each cohort; it is
+not an I/O throughput baseline or an excuse for variation specific to I/O.
+The summary keeps raw wall and paired distributions visible beside the
+relative margins. The additional control samples add no Whitefoot pair or
+retry, and the job duration must still be qualified on the hosted runner.
+
+For same-head before/after evidence, dispatch `io-bench` with
+`compare_windows_workers=true`, or pass `-CompareWorkers` to
+`windows-bench.ps1`. That diagnostic runs only the Windows job. Each of the
+fifteen rounds shares one sequential reference and one reduced-count native
+control between full-count and reduced-count candidates. A four-treatment
+Williams order balances positions and immediate precedence every four
+rounds; fifteen rounds differ by one row. It
+uses the existing allowance of two candidate cohorts, with fewer reference
+children and no retries. The IO-only candidates repeat their unchanged
+configuration because they do not use `WF_WORKERS`. The table prints both
+policies' raw paired MAD/median and (p90-p10)/median; the full-count rows are
+diagnostic and `-Enforce` qualifies the reduced-count rows against the
+native-relative stability margins and unchanged speed bounds. `raw.tsv` records the policy's `worker_limit`, including
+on the shared reference; it is not a count of threads actually running.
+The [selection criterion](../../investigations/io-model/RESULTS.md#windows-hosted-worker-comparison-criterion-2026-09-11)
+records the measured worker-count tradeoff, its later failure, and the
+criterion and measured grounds for the native-relative protocol. On the
+recorded four-logical-processor guest, its first ordinary run passes every
+cohort in 6m18s including build; mixed-total still exceeds the old absolute
+spread bound. Neither a passing relative margin nor these finite samples
+guarantee the absence of host noise or identify every slow sample's cause.
 
 `linux` builds `linux.Dockerfile` and runs the whole pipeline inside one
 container, because the generated tree must sit on a container-local

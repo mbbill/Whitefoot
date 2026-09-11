@@ -1,7 +1,7 @@
-//! Opt-in compute-grain experiment. Remove only already-permitted offers of
+//! Compute offer selection. Remove only already-permitted offers of
 //! bounded straight-line scalar leaves; retain every original call and join
-//! boundary for the remaining members. Retire this control when its evidence
-//! selects a general actualization policy. No source name selects behavior.
+//! boundary for the remaining members. The CLI selects the provisional limit;
+//! no source name selects behavior and no acceptance judgment consumes it.
 
 use super::{IrFunction, IrInstruction, IrOperation, IrTerminator, IrType};
 

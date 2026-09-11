@@ -99,6 +99,10 @@ pub(crate) const PARALLEL_POOL_QUERY_DECLARATION: &str = "declare i32 @wf__par_p
 pub(crate) const PARALLEL_SPLIT_BUDGET_DECLARATION: &str =
     "declare i64 @wf__par_split_budget(i64, i64)\n";
 
+/// The fail-closed Windows declaration of the recursion budget query.
+pub(crate) const PARALLEL_RECURSION_BUDGET_DECLARATION: &str =
+    "declare i64 @wf__par_recursion_budget()\n";
+
 /// A non-Windows module's own definition of the lane protocol: acquire no lane,
 /// ever.
 ///
@@ -167,6 +171,17 @@ pub(crate) const PARALLEL_POOL_QUERY_FALLBACK: &str =
 pub(crate) const PARALLEL_SPLIT_BUDGET_FALLBACK: &str =
     "define weak i64 @wf__par_split_budget(i64 %span, i64 %weight) {\nentry:\n  ret i64 0\n}\n\n";
 
+/// The runtime's answer to "how many levels of this recursive component may
+/// still hand work out", and a non-Windows module's own weak answer of "none".
+///
+/// Carried by the optional-runtime path for the same reason as the allowance
+/// above: with no runtime linked there are no lanes, so the honest answer is
+/// zero and the component's ordinary entry descends straight into its
+/// sequential clone — the world a pool-less run wants anyway. Windows leaves
+/// the external query unresolved until native link.
+pub(crate) const PARALLEL_RECURSION_BUDGET_FALLBACK: &str =
+    "define weak i64 @wf__par_recursion_budget() {\nentry:\n  ret i64 0\n}\n\n";
+
 /// The symbol one function's sequential clone is emitted under.
 ///
 /// It lives in the same reserved `wf__par_` namespace as the runtime's own
@@ -202,10 +217,10 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// entirely, and was measured killing the scheduler it was meant to help: the
 /// shared word it needs costs two contended read-modify-writes per task, which
 /// took the fine-grain oracle cell from 0.4905 s to 0.9254 s. Nothing here reads
-/// a per-task signal. Under the default policy the two worlds never call each
-/// other; the opt-in refusal policy reuses an existing null branch, while the
-/// recursive frontier selects the sequential callee statically at its final
-/// private layer. Neither adds a runtime demand signal. Declining descendant compute permissions
+/// a per-task signal. A recursive component's budget-carrying variant enters
+/// its clone when the count it was handed reaches zero, and the opt-in refusal
+/// policy reuses an existing null branch. The budget is one process-level
+/// query at a component entry, not a signal read per task. Declining descendant compute permissions
 /// preserves [PAR-1] operations, arguments and the same-ABI result; the call
 /// still executes at the original join. May-suspend callees retain their
 /// ordinary fallback.
@@ -336,6 +351,9 @@ pub(crate) struct ParallelThunks {
     /// Whether any emitted function asked the runtime for a split allowance, so
     /// a module that splits no loop names that symbol nowhere.
     queries_split_budget: bool,
+    /// The same for the recursion budget: a module with no budgeted component
+    /// names that symbol nowhere either.
+    pub(super) queries_recursion_budget: bool,
 }
 
 impl ParallelThunks {
@@ -351,6 +369,10 @@ impl ParallelThunks {
 
     pub(crate) const fn queries_split_budget(&self) -> bool {
         self.queries_split_budget
+    }
+
+    pub(crate) const fn queries_recursion_budget(&self) -> bool {
+        self.queries_recursion_budget
     }
 
     /// Records one thunk body and returns the symbol that names it.
@@ -438,19 +460,33 @@ impl FunctionEmitter<'_, '_> {
         let result_type = llvm_type(self.program, ty)?;
         let result_field = field_types.len();
         field_types.push(result_type.clone());
-        let frame_type = format!("{{ {} }}", field_types.join(", "));
         let frame_layout = self
             .ordinary_lane_frames
             .get(&result)
             .copied()
             .ok_or(BackendFailure::InvalidIr)?;
 
-        let callee = self.callee_symbol(function, target.name());
+        // A callback that lands inside a budgeted component enters the
+        // callee's variant, so the budget its caller had left travels with the
+        // arguments: one more frame field, stored at the offer and read by the
+        // thunk. The field follows the result, which leaves every existing
+        // field at the offset it had.
+        let (callee, budget) = self.callee_target(function, target.name());
+        let budget = budget.map(str::to_owned);
+        let budget_field = budget.as_ref().map(|_| {
+            field_types.push("i64".to_owned());
+            field_types.len() - 1
+        });
+        let frame_type = format!("{{ {} }}", field_types.join(", "));
         let thunk = self.parallel.register(|symbol| {
             thunk_definition(
                 symbol,
-                &frame_type,
-                &field_types,
+                &ThunkFrame {
+                    ty: &frame_type,
+                    field_types: &field_types,
+                    result: result_field,
+                    budget: budget_field,
+                },
                 &abi,
                 &callee,
                 &result_type,
@@ -478,20 +514,34 @@ impl FunctionEmitter<'_, '_> {
             )
             .map_err(|_| BackendFailure::TextEmission)?;
         }
+        if let (Some(field), Some(budget)) = (budget_field, budget.as_ref()) {
+            let slot = format!("%{}", self.next_temporary()?);
+            writeln!(
+                self.output,
+                "  {slot} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {field}\n  store i64 {budget}, ptr {slot}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
         writeln!(
             self.output,
             "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  br label %{offered}\n{offered}:"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
+        // The refused edge runs the same call on this thread. The opt-in
+        // refusal control may send it to the clone instead, which is the
+        // source ABI and carries no budget.
+        let refused_to_clone =
+            self.refusal_clones.contains(&function) && !target.target_action().may_suspend();
+        if let (false, Some(budget)) = (refused_to_clone, budget.as_ref()) {
+            call_arguments.push(format!("i64 {budget}"));
+        }
         self.handed_out.push(HandedOut::Compute(ComputeHandedOut {
             result,
             result_abi: abi.result(),
             frame_type,
             frame,
             result_field,
-            callee: if self.refusal_clones.contains(&function)
-                && !target.target_action().may_suspend()
-            {
+            callee: if refused_to_clone {
                 sequential_clone_symbol(target.name())
             } else {
                 callee
@@ -757,15 +807,32 @@ pub(super) fn compute_join_order<T>(
     members
 }
 
+/// The lane frame one hand-out fills, as its thunk reads it back: the LLVM
+/// struct type, its field types in order, and which fields are not arguments.
+struct ThunkFrame<'site> {
+    ty: &'site str,
+    field_types: &'site [String],
+    /// The field the result is left in: the argument count.
+    result: usize,
+    /// The field carrying the callee variant's budget, where the callback
+    /// lands inside a budgeted component.
+    budget: Option<usize>,
+}
+
 /// One outlined call over its frame.
 fn thunk_definition(
     symbol: &str,
-    frame_type: &str,
-    field_types: &[String],
+    frame: &ThunkFrame<'_>,
     abi: &FunctionAbi,
     callee: &str,
     result_type: &str,
 ) -> String {
+    let ThunkFrame {
+        ty: frame_type,
+        field_types,
+        result: result_field,
+        budget: budget_field,
+    } = *frame;
     let mut body = format!("define internal void {symbol}(ptr %frame) {{\nentry:\n");
     let mut rendered = Vec::with_capacity(field_types.len() - 1);
     for (index, (field_type, parameter)) in field_types.iter().zip(abi.parameters()).enumerate() {
@@ -782,7 +849,17 @@ fn thunk_definition(
             rendered.push(format!("{field_type} %a{index}"));
         }
     }
-    let field = field_types.len() - 1;
+    // The budget the offering activation had left, where this callback lands
+    // in a budget-carrying variant: an ordinary trailing argument, read out of
+    // the frame like every other one.
+    if let Some(index) = budget_field {
+        let _ = writeln!(
+            body,
+            "  %pb = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {index}\n  %ab = load i64, ptr %pb"
+        );
+        rendered.push("i64 %ab".to_owned());
+    }
+    let field = result_field;
     if abi.result().uses_destination() {
         // Construct into the same result field the existing join path reads.
         // No pointer to worker-local or released storage becomes the result.

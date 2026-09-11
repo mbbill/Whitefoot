@@ -1358,9 +1358,8 @@ fn a_completion_window_before_a_block_join_names_its_join_block() {
 #[test]
 fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     let directory = test_directory();
-    // The staged tree keeps the repository's own two directories, because the
-    // completion header reaches the scheduler core by the relative path it
-    // uses in the tree: the completion record begins with a `wf_sched_record`.
+    // Keep the repository's directory layout so relative includes resolve as
+    // they do when the compiler stages these native units for linking.
     let units = [
         ("completion/contract.h", crate::COMPLETION_CONTRACT_HEADER),
         (

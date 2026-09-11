@@ -387,7 +387,7 @@ fn a_refused_connect_hands_its_permit_back_on_both_routes() {
     }
 }
 
-/// Generic suspended-WF fanout is retired. Four accepted connections must
+/// Generic suspended-WF fanout is deferred. Four accepted connections must
 /// still be served correctly under --par on native and helper routes, with
 /// peers speaking in acceptance order. The earlier reverse-order test was
 /// specifically a managed-stack concurrency requirement; this does not claim

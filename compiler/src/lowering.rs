@@ -1541,23 +1541,23 @@ pub enum OverlapLowering {
     Completion,
     /// Actualize completion operations and eligible compute groups.
     On,
-    /// Research control: specialize ordinary recursive components into private
-    /// call layers, then enter their existing same-ABI sequential clones.
-    OnWithRecursiveFrontier {
-        /// Number of component call levels that may offer compute work.
-        maximum_levels: std::num::NonZeroU8,
+    /// Control over the recursion budget every other `On` form derives from
+    /// the runtime: pin its starting value, or emit no budget family at all.
+    OnWithRecursionBudget {
+        /// Where one call into a recursive component starts counting.
+        budget: RecursionBudget,
         /// Optional scalar-leaf offer suppression.
         maximum_scalar_leaf_operations: Option<u32>,
         /// Also select sequential clones on refused compute offers.
         sequential_refusal: bool,
     },
-    /// Research control: an ungranted non-suspending compute call may enter
+    /// Optional control: an ungranted non-suspending compute call may enter
     /// its existing ordinary-ABI sequential clone at the original join.
     OnWithSequentialRefusal {
         /// Optional suppression of small scalar leaf offers, as in the leaf control.
         maximum_scalar_leaf_operations: Option<u32>,
     },
-    /// Research control: retain `On` except for offers of straight-line scalar
+    /// Retain `On` except for offers of straight-line scalar
     /// leaves with at most this many nonconstant IR operations. This is an
     /// actualization heuristic, not an acceptance bound or machine-cost claim.
     OnWithoutSmallScalarLeaves {
@@ -1566,28 +1566,36 @@ pub enum OverlapLowering {
     },
 }
 
-/// Independent code-generation choices applied after semantic checking.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LoweringOptions {
-    /// Which proved overlap permissions may be actualized.
-    pub overlap: OverlapLowering,
-    /// Permit compiler-generated vector operations, including wide byte probes.
-    pub vectorize: bool,
-}
-
-impl Default for LoweringOptions {
-    fn default() -> Self {
-        OverlapLowering::default().into()
-    }
-}
-
-impl From<OverlapLowering> for LoweringOptions {
-    fn from(overlap: OverlapLowering) -> Self {
-        Self {
-            overlap,
-            vectorize: true,
-        }
-    }
+/// Where one call into an ordinary cyclic call-graph component starts
+/// counting the levels that may still hand work out.
+///
+/// Every member of such a component gets one synthesized variant carrying this
+/// count as a hidden trailing parameter; inside the family a call spends one
+/// level, and a call made with nothing left enters the component's existing
+/// same-ABI sequential clone, the world with no scheduler test in it. The
+/// count therefore selects how much of an admitted program is actualized in
+/// parallel. It is read by the emitter and by no acceptance path: it is not a
+/// timeout, a fuel bound, a proof-work budget or an early failure, it cannot
+/// reject a program, and compiling the same source with any of these three
+/// forms accepts exactly the same programs and computes exactly the same
+/// values.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RecursionBudget {
+    /// Emit no budget family: every node of every recursive component offers.
+    ///
+    /// The control, and what every `--par` build did before the family
+    /// existed. On the compute scoreboard's quadrature kernel this is 35 to 40
+    /// percent behind the default at every measured width.
+    Off,
+    /// Ask the runtime once, at the component's ordinary entry. The answer
+    /// follows the pool width, which a compile-time constant cannot — and the
+    /// measured best fixed value is not the same value at two lanes and at
+    /// four, which is why the default is a query rather than a number.
+    #[default]
+    RuntimeDerived,
+    /// Start from this compile-time value instead of asking. The control the
+    /// measured depth sweep uses.
+    Pinned(std::num::NonZeroU8),
 }
 
 /// One group of pure sibling calls whose evaluations may be overlapped
@@ -1601,8 +1609,10 @@ impl From<OverlapLowering> for LoweringOptions {
 ///
 /// The group is a permission the target stage may take, never an obligation:
 /// a target that hands nothing out emits exactly the sequential code, because
-/// the handed-out call and the inline fallback call the same monomorphized
-/// function on the same arguments.
+/// the handed-out call and the default inline fallback call the same
+/// monomorphized function on the same arguments. Optional refusal/frontier
+/// controls may choose a same-ABI sequential clone that declines descendant
+/// offers; the original operations, arguments and join boundary remain.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrOverlap {
     members: Vec<IrValueId>,
@@ -2215,13 +2225,15 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     entry: IrEntry,
     actualization: Vec<String>,
     sequential_compute_refusal: bool,
-    recursive_compute_frontier: Option<std::num::NonZeroU8>,
+    recursion_budget: Option<RecursionBudget>,
 }
 
 impl IrProgram<'_, '_, '_> {
-    /// Opt-in private recursive call specialization; never an acceptance bound.
-    pub(crate) const fn recursive_compute_frontier(&self) -> Option<std::num::NonZeroU8> {
-        self.recursive_compute_frontier
+    /// How a compute-actualizing lowering fixes the recursion budget, or
+    /// `None` where this lowering actualizes no compute at all. Selects
+    /// emitted machine code; never an acceptance bound.
+    pub(crate) const fn recursion_budget(&self) -> Option<RecursionBudget> {
+        self.recursion_budget
     }
 
     /// Opt-in machine-code selection after a refused compute acquisition.

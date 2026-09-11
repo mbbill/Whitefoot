@@ -348,9 +348,6 @@ impl IrBuilder<'_> {
         header: crate::IrBlockId,
         carried_bindings: &[BindingId],
     ) -> Result<(), LoweringFailure> {
-        if !self.vectorize {
-            return Ok(());
-        }
         let declared_outside: HashSet<BindingId> = self.bindings.keys().copied().collect();
         let Some(walk) = recognize_byte_walk(loop_id, body, &declared_outside) else {
             return Ok(());

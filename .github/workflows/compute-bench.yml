@@ -1,495 +1,180 @@
-# Pure-compute calibration. Correctness remains in canonical research-tests;
-# these elapsed times never select source-language acceptance. The formal
-# runtime screen flags performance gaps; it is not full goal qualification.
+# Serves research/experiments/compute-bench: the compute scoreboard on hosted
+# runners. One question per leg -- for each kernel, at each width, is the
+# Whitefoot program built with plain `--par` the fastest thing in the row? --
+# answered on a real Linux host and on an ordinary Apple M1.
+#
+# It runs on demand, and automatically only when what it measures changes: the
+# scheduler runtime, the floor, the emitter and the lowering that decide what
+# `--par` actualizes, the compiler driver, or the bundle itself.
+#
+# FAILURE POLICY. The job fails on a `deps`, `build` or `verify` failure and on
+# nothing else. The `compare` step's exit status is the reducer's, and the
+# reducer fails only on a missing or malformed row. No ratio, no spread, no
+# ordering and no elapsed time selects a pass anywhere in this workflow. If a
+# later change wants a performance gate it belongs in a separate target the
+# repository gate does not run: selecting acceptance on measured time is
+# exactly what an earlier bundle's band-gating jobs did, and exactly why they
+# are not reused here. `timeout-minutes` below bounds a stuck runner; it
+# decides no result.
+#
+# Every table a batch relies on is copied by hand into
+# `research/investigations/compute-runtime/RESULTS.md` with its run id,
+# because job logs and artifacts expire.
 name: compute-bench
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'research/experiments/compute-runtime/**'
+      - 'research/experiments/compute-bench/**'
       - 'compiler/src/backend/sched/**'
-      - 'compiler/src/backend/completion/**'
-      - 'compiler/src/backend/windows_runtime.*'
-      - 'compiler/src/backend/wf_floor*'
-      - 'compiler/src/bin/whitefootc.rs'
+      - 'compiler/src/backend/wf_floor.c'
+      - 'compiler/src/backend/emitter/**'
+      - 'compiler/src/lowering/**'
       - 'compiler/src/driver.rs'
+      - 'compiler/src/bin/whitefootc.rs'
       - '.github/workflows/compute-bench.yml'
+
+# Every shell step runs under `bash -eo pipefail`, so a step that fails behind
+# a pipe fails the step. io-bench.yml carries the same default and records the
+# bug it fixes: a compiler rejection printed into the log while the step
+# stayed green, because the exit status of a pipeline is tee's unless pipefail
+# is set.
+defaults:
+  run:
+    shell: bash
 
 concurrency:
   group: compute-bench-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: never
+
 jobs:
-  pure-runtime-comparison:
-    name: pure-comparison (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: macos-14
-            target: aarch64-apple-darwin
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
+  bench:
+    name: bench (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Build common compiler and compare repaired historical runtimes
-        run: |
-          rustup default stable
-          rustc -vV | grep -Fx 'host: ${{ matrix.target }}'
-          export OUT="$RUNNER_TEMP/pure-runtime"
-          cargo build --locked --profile gate --bin whitefootc \
-            --manifest-path compiler/Cargo.toml --target-dir "$OUT/compiler"
-          export WFC="$OUT/compiler/gate/whitefootc"
-          export PURE_WIDTHS='1 2'
-          if test "$(getconf _NPROCESSORS_ONLN)" -ge 4; then PURE_WIDTHS='1 2 4'; fi
-          sh research/experiments/compute-runtime/pure-compare.sh build
-          sh research/experiments/compute-runtime/pure-compare.sh run
-      - name: Publish bounded comparison
-        if: always()
-        run: |
-          {
-            echo '## ${{ matrix.target }}: old / recovered pure compute'
-            echo 'Common WF object, scalar arithmetic; explicit correctness repairs to both frozen inputs. Old vs research matches steal counters; research-off isolates disabling them. Replica is byte-identical to research.'
-            echo 'Whole-process ratios include startup, computation and correctness checks. Above one favors stats-on research. Raw FIR logs retain per-call core/cycle timings; this panel does not select a production runtime or establish top-tier performance.'
-            echo '```text'
-            cat "$RUNNER_TEMP/pure-runtime/pure-compare/summary.tsv"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: pure-comparison-${{ matrix.target }}
-          path: ${{ runner.temp }}/pure-runtime/pure-compare
-
-  mandelbrot-command:
-    name: ordinary-command (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: macos-14
-            target: aarch64-apple-darwin
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Build native compiler and qualify ordinary commands
-        run: |
-          rustup default stable
-          rustc -vV | grep -Fx 'host: ${{ matrix.target }}'
-          scratch="$RUNNER_TEMP/mandelbrot-command"
-          suffix=
-          cc=/usr/bin/clang
-          cxx=/usr/bin/clang++
-          if command -v cygpath >/dev/null; then
-            scratch="$(cygpath -u "$RUNNER_TEMP")/mandelbrot-command"
-            suffix=.exe
-            cc=clang
-            cxx=clang++
-          fi
-          cargo build --locked --profile gate --bin whitefootc \
-            --manifest-path compiler/Cargo.toml --target-dir "$scratch/compiler"
-          # Keep the maintained compiler before the rejected counter and
-          # POSIX x86-64 spin-hint changes as the ordinary-path reference.
-          baseline=4fabd26448eddc9316499f5c58e66c556d9ca7cb
-          mkdir -p "$scratch/previous-source"
-          git archive "$baseline" compiler spec | tar -x -C "$scratch/previous-source"
-          cargo build --locked --profile gate --bin whitefootc \
-            --manifest-path "$scratch/previous-source/compiler/Cargo.toml" \
-            --target-dir "$scratch/previous-compiler"
-          export BASE_REV="$baseline" BASE_WFC="$scratch/previous-compiler/gate/whitefootc$suffix"
-          export OUT="$scratch" WFC="$scratch/compiler/gate/whitefootc$suffix" CC="$cc" CXX="$cxx"
-          sh research/experiments/compute-runtime/mandelbrot-command.sh build
-          sh research/experiments/compute-runtime/mandelbrot-command.sh check
-          sh research/experiments/compute-runtime/mandelbrot-command.sh diagnose
-      - name: Measure whole commands against matched scalar native controls
-        run: |
-          scratch="$RUNNER_TEMP/mandelbrot-command"
-          suffix=
-          if command -v cygpath >/dev/null; then
-            scratch="$(cygpath -u "$RUNNER_TEMP")/mandelbrot-command"
-            suffix=.exe
-          fi
-          export OUT="$scratch" WFC="$scratch/compiler/gate/whitefootc$suffix"
-          sh research/experiments/compute-runtime/mandelbrot-command.sh screen
-      - name: Publish ordinary-command comparisons
-        if: always()
-        run: |
-          {
-            echo '## ${{ matrix.target }}: scalar Mandelbrot ordinary CLI'
-            echo 'Whole-process wall, CPU and peak memory; five paired processes per cell. Ratios above one favor the reference.'
-            echo 'A gap means all five ratios exceed 1.05 with all wall A/A ratios inside [0.95, 1.05]. Noisy cells remain open; a clean screen is not full goal qualification.'
-            echo 'WF_SPLIT_WORK controls share the exact par image. Tuning against native controls is diagnostic; default WF/native and same-policy current/previous compiler gaps fail this screen.'
-            echo 'The work120000 comparison has its own byte-identical, same-policy A/A pair; default comparisons use par/replica.'
-            echo 'Static partitions are a regular-work control, not a skew scheduling ceiling. CPU includes native spinning; memory is descriptive.'
-            echo '```text'
-            cat "$RUNNER_TEMP/mandelbrot-command/mandelbrot-command/screen/summary.tsv"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Attribute Linux command CPU and scheduling gaps
-        if: always() && runner.os == 'Linux'
-        run: |
-          export OUT="$RUNNER_TEMP/mandelbrot-command"
-          export WFC="$OUT/compiler/gate/whitefootc"
-          profile="$OUT/mandelbrot-command/profile"
-          mkdir -p "$profile"
-          # Optional observations follow the unmodified timing panel. A
-          # missing tool/trace facility is recorded, never a zero cost.
-          if test ! -x "$OUT/mandelbrot-command/par"; then
-            echo 'ordinary command was not built' > "$profile/availability.txt"
-            exit 0
-          fi
-          {
-            sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
-              -o Dir::Etc::sourceparts=- install -y --no-install-recommends linux-tools-generic || true
-            sysctl kernel.perf_event_paranoid
-            sudo sysctl -w kernel.perf_event_paranoid=-1 || true
-          } > "$profile/setup.txt" 2>&1
-          if test -d /usr/lib/linux-tools; then
-            export PERF="$(find -L /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)"
-          fi
-          sh research/experiments/compute-runtime/mandelbrot-command.sh profile
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ordinary-command-${{ matrix.target }}
-          path: ${{ runner.temp }}/mandelbrot-command/mandelbrot-command
-
-  formal-runtime-posix:
-    name: formal-runtime (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - os: macos-14
-            target: aarch64-apple-darwin
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Verify native target and fetch compiler dependencies
-        run: |
-          rustup default stable
-          rustc -vV | grep -Fx 'host: ${{ matrix.target }}'
-          test -x /usr/bin/clang
-          cargo fetch --locked --manifest-path compiler/Cargo.toml
-      - name: Exercise native deque reuse and live counters
-        run: |
-          make -C compiler sched-deque-test CC=/usr/bin/clang \
-            COMPLETION_TMP="$RUNNER_TEMP/formal-deque"
-      - name: Compare the compute runtime with repaired historical and research controls
-        env:
-          OUT: ${{ runner.temp }}/formal-runtime
-        run: make -C research/experiments/compute-runtime formal-screen OUT="$OUT"
-      - name: Attribute Linux full-call CPU on the measured images
-        if: always() && runner.os == 'Linux'
-        run: |
-          export OUT="$RUNNER_TEMP/formal-runtime"
-          profile="$OUT/formal-screen/profile"
-          mkdir -p "$profile"
-          if test ! -s "$OUT/formal-screen/manifest.sha256"; then
-            echo 'formal screen did not finish; no CPU profile' > "$profile/availability.txt"
-            exit 0
-          fi
-          profile_kptr=$(sysctl -n kernel.kptr_restrict)
-          trap 'sudo sysctl -w kernel.kptr_restrict="$profile_kptr"' EXIT
-          {
-            sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
-              -o Dir::Etc::sourceparts=- install -y --no-install-recommends linux-tools-generic || true
-            sysctl kernel.perf_event_paranoid
-            sudo sysctl -w kernel.perf_event_paranoid=-1 || true
-            sysctl kernel.kptr_restrict
-            sudo sysctl -w kernel.kptr_restrict=0 || true
-          } > "$profile/setup.txt" 2>&1
-          if test -d /usr/lib/linux-tools; then
-            export PERF="$(find -L /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)"
-          fi
-          sh research/experiments/compute-runtime/formal-screen.sh profile
-      - name: Publish per-cell wall-time screen
-        if: always()
-        run: |
-          {
-            echo '## ${{ matrix.target }}: initial FIR runtime screen'
-            echo 'Same WF object; normal CLI correctness also checked. Broader workloads, CPU acceptance, and CLI timing remain open.'
-            echo '```text'
-            echo 'Long batches'
-            cat "$RUNNER_TEMP/formal-runtime/formal-screen/summary.tsv"
-            echo 'First 64 calls of the same processes (overlapping short view)'
-            cat "$RUNNER_TEMP/formal-runtime/formal-screen/short-summary.tsv"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: formal-runtime-${{ matrix.target }}
-          path: ${{ runner.temp }}/formal-runtime/formal-screen
-
-  formal-runtime-windows:
-    name: formal-runtime (x86_64-pc-windows-msvc)
-    runs-on: windows-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Build the native compiler
-        run: |
-          rustup default stable
-          rustc -vV | grep -Fx 'host: x86_64-pc-windows-msvc'
-          clang --version
-          cargo build --locked --profile gate --bin whitefootc \
-            --manifest-path compiler/Cargo.toml --target-dir "$RUNNER_TEMP/formal-runtime/compiler"
-      - name: Compare the compute runtime with its repaired historical Windows control
-        run: |
-          OUT="$(cygpath -u "$RUNNER_TEMP")/formal-runtime" \
-            WFC="$(cygpath -u "$RUNNER_TEMP")/formal-runtime/compiler/gate/whitefootc.exe" \
-            CC=clang sh research/experiments/compute-runtime/formal-screen.sh
-      - name: Publish per-cell wall-time screen
-        if: always()
-        run: |
-          {
-            echo '## x86_64-pc-windows-msvc: initial FIR runtime screen'
-            echo 'Same WF object; normal CLI correctness checked. Repaired historical compute and identical-image controls; strong native parallel references, broader workloads, CPU acceptance and CLI timing remain open.'
-            echo '```text'
-            echo 'Long batches'
-            cat "$RUNNER_TEMP/formal-runtime/formal-screen/summary.tsv"
-            echo 'First 64 calls of the same processes (overlapping short view)'
-            cat "$RUNNER_TEMP/formal-runtime/formal-screen/short-summary.tsv"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: formal-runtime-x86_64-pc-windows-msvc
-          path: ${{ runner.temp }}/formal-runtime/formal-screen
-
-  compute-linux:
-    name: ${{ matrix.workload }}-linux
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - workload: fir
-            arch: -march=x86-64-v3
-            checks: check-fir check-bench
-            driver: fir-bench.sh
-          - workload: records
-            arch: -march=x86-64-v3
-            checks: check-records-events
-            driver: records-bench.sh
-          - workload: scheduler
-            arch: -march=x86-64-v3
-            checks: check-scheduler-events check-protocol-cost
-            driver: records-scheduler-bench.sh
-          - workload: mandelbrot
-            arch: -march=x86-64-v3
-            checks: check-mandelbrot
-            driver: mandelbrot-bench.sh
-          - workload: quadrature
-            arch: -march=x86-64-v3
-            checks: check-quadrature
-    runs-on: ubuntu-24.04
+    # Against a stated 15-minute target for a cold leg. It bounds a stuck
+    # runner and nothing else.
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
     steps:
+      # No historical compiler is built here, so a shallow checkout is enough.
+      # The manifest records the revision from it.
       - uses: actions/checkout@v4
-      - name: Install and record compiler
+        with:
+          fetch-depth: 1
+
+      # The scratch root goes through GITHUB_ENV because the `runner` context
+      # is not available to a job-level `env`; a workflow that uses it there
+      # fails validation before any job starts.
+      - name: Record the Rust toolchain and set the scratch root
         run: |
-          # These tools come from Ubuntu. Unrelated preinstalled browser
-          # repositories must not make compiler qualification depend on them.
-          test -s /etc/apt/sources.list.d/ubuntu.sources
-          apt_sources=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=-)
-          sudo apt-get "${apt_sources[@]}" update
-          sudo apt-get "${apt_sources[@]}" install -y --no-install-recommends clang cmake
           rustup default stable
-          cargo fetch --locked --manifest-path compiler/Cargo.toml
-          /usr/bin/clang --version
-      - name: Fetch pinned native schedulers
-        if: matrix.workload == 'scheduler' || matrix.workload == 'mandelbrot' || matrix.workload == 'quadrature'
-        env:
-          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
-        run: make -C research/experiments/compute-runtime scheduler-fetch OUT="$OUT"
-      - name: Prepare optional regional performance counters
-        if: matrix.workload == 'quadrature'
-        env:
-          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
+          rustc -vV
+          cargo --version
+          echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/scratch" >> "$GITHUB_ENV"
+
+      # The OS prefix is load-bearing. Keyed on the three hashes alone, both
+      # legs compute the same key, so whichever leg saved first would hand the
+      # other its `compiler/target` and its foreign oneTBB build -- a Linux
+      # libtbb.so restored into a macOS leg, or the reverse -- and the failure
+      # is a link error in a job that never touched the library, or worse, a
+      # silently stale binary. `runner.os` and `matrix.os` are both prefixed
+      # because the matrix may one day carry two images of the same OS.
+      #
+      # The restore-keys prefix is load-bearing too: with an exact key that
+      # changes only when a lockfile changes, the cache is written once and
+      # never refreshed, so an unchanged-lockfile run that added new
+      # dependencies would rebuild everything. The prefix restores the most
+      # recent same-OS entry and the run saves an updated one.
+      #
+      # The cache is not optional: a miss pays the compiler build and the
+      # oneTBB build together, and that is most of a cold leg.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            compiler/target
+            ${{ runner.temp }}/scratch/whitefoot-compute-deps
+          key: ${{ runner.os }}-${{ matrix.os }}-computebench-${{ hashFiles('compiler/Cargo.lock', 'research/experiments/compute-bench/rayon/Cargo.lock', 'research/experiments/compute-bench/deps.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.os }}-computebench-
+
+      # Pinned to the image's own sources. A preinstalled browser repository
+      # once returned a hash-sum mismatch and failed a run for a reason that
+      # had nothing to do with what was being measured.
+      - name: Install the host toolchain (Linux)
+        if: runner.os == 'Linux'
         run: |
+          test -f /etc/apt/sources.list.d/ubuntu.sources
           sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
-            -o Dir::Etc::sourceparts=- install -y --no-install-recommends linux-tools-generic
-          mkdir -p "$OUT/quadrature"
-          # This is an ephemeral hosted runner. Record the permission change;
-          # a VM without a PMU still reports hardware events as unavailable.
-          {
-            sysctl kernel.perf_event_paranoid
-            if ! sudo sysctl -w kernel.perf_event_paranoid=-1; then
-              echo 'perf permission adjustment unavailable'
-            fi
-            perf_tool=$(find -L /usr/lib/linux-tools -type f -name perf | sort -V | tail -1)
-            test -n "$perf_tool"
-            "$perf_tool" version
-            echo "PERF=$perf_tool" >> "$GITHUB_ENV"
-          } > "$OUT/quadrature/perf-setup.txt" 2>&1
-      - name: Qualify sources and actual timing objects
-        env:
-          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
+                       -o Dir::Etc::sourceparts=- update
+          sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
+                       -o Dir::Etc::sourceparts=- install -y --no-install-recommends clang cmake
+          test -x /usr/bin/clang
+          test -x /usr/bin/clang++
+          /usr/bin/clang --version
+          cmake --version
+
+      - name: Record the host toolchain (macOS)
+        if: runner.os == 'macOS'
         run: |
-          set -o pipefail
-          make -C research/experiments/compute-runtime ${{ matrix.checks }} \
-            OUT="$OUT" BENCH_ARCH=${{ matrix.arch }} 2>&1 | tee "$RUNNER_TEMP/compute-${{ matrix.workload }}-build.log"
-      - name: Calibrate sequentially on one recorded CPU mask
-        env:
-          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
+          test -x /usr/bin/clang
+          test -x /usr/bin/clang++
+          /usr/bin/clang --version
+          /usr/bin/clang++ --version
+          command -v cmake
+          cmake --version
+
+      # So the bundle's `cargo build --locked --offline` works.
+      - name: Fetch the recorded crate dependencies
+        run: cargo fetch --locked --manifest-path compiler/Cargo.toml
+
+      # The only network step in the bundle. Everything after it is offline.
+      - name: Build the pinned schedulers
+        run: make -C research/experiments/compute-bench deps
+
+      - name: Build the kernel images
+        run: make -C research/experiments/compute-bench build
+
+      - name: Verify every form at every emitted width
+        run: make -C research/experiments/compute-bench verify
+
+      # The reducer's exit status is this step's. It fails only on a missing
+      # or malformed row, never on a measurement.
+      - name: Run the timed passes and print the table
         run: |
-          # Restrict the experiment to at most four available logical CPUs.
-          # Children inherit this mask; topology/SMT/quota remain in the record.
-          mask=$(awk '/Cpus_allowed_list/ {print $2}' /proc/self/status)
-          selected=$(awk -v list="$mask" 'BEGIN {
-            n=split(list,parts,","); count=0;
-            for(i=1;i<=n && count<4;i++) {
-              m=split(parts[i],range,"-"); last=(m==1?range[1]:range[2]);
-              for(cpu=range[1];cpu<=last && count<4;cpu++) {
-                printf "%s%d", count?",":"",cpu; count++
-              }
-            }
-          }')
-          test -n "$selected"
-          if test '${{ matrix.workload }}' = quadrature; then
-            taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-worker-profile \
-              OUT="$OUT" RESULTS="$OUT/quadrature/worker-profile"
-            taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-calibrate \
-              OUT="$OUT" RESULTS="$OUT/calibration"
-            taskset -c "$selected" make -C research/experiments/compute-runtime quadrature-batch-calibrate \
-              OUT="$OUT" RESULTS="$OUT/quadrature/batch-calibration"
-            taskset -c "$selected" env OUT="$OUT" RESULTS="$OUT/quadrature/formal-calibration" \
-              sh research/experiments/compute-runtime/quadrature-batch.sh formal-calibrate
-          else
-            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/calibration" \
-              sh research/experiments/compute-runtime/${{ matrix.driver }} calibrate
-          fi
-          if test '${{ matrix.workload }}' = mandelbrot; then
-            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/grain-calibration" \
-              sh research/experiments/compute-runtime/mandelbrot-bench.sh grain-calibrate
-            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/split-calibration" \
-              sh research/experiments/compute-runtime/mandelbrot-bench.sh split-calibrate
-            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/allocation-calibration" \
-              sh research/experiments/compute-runtime/mandelbrot-bench.sh allocation-calibrate
-          fi
-          if test '${{ matrix.workload }}' = records; then
-            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/budget-calibration" \
-              sh research/experiments/compute-runtime/records-bench.sh budget-calibrate
-            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/record-events-calibration" \
-              sh research/experiments/compute-runtime/records-bench.sh events-calibrate
-          fi
-          if test '${{ matrix.workload }}' = scheduler; then
-            taskset -c "$selected" make -C research/experiments/compute-runtime protocol-cost-calibrate \
-              OUT="$OUT" RESULTS="$OUT/protocol-cost/calibration"
-            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/layout-calibration" \
-              sh research/experiments/compute-runtime/records-scheduler-bench.sh layout
-            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/trace-calibration" \
-              sh research/experiments/compute-runtime/records-scheduler-trace.sh calibrate
-            taskset -c "$selected" env ROUNDS=5 RESULTS="$OUT/events-calibration" \
-              sh research/experiments/compute-runtime/records-scheduler-trace.sh events-calibrate
-          fi
-      - name: Publish calibration location and scope
+          make -C research/experiments/compute-bench compare \
+            PASSES=5 RESULTS="$RUNNER_TEMP/results"
+
+      - name: Publish the table
         if: always()
-        env:
-          OUT: ${{ runner.temp }}/compute-${{ matrix.workload }}
         run: |
           {
-            echo '## ${{ matrix.workload }} compute calibration'
-            echo 'Same-host raw calls, per-process warm means/ranges and exact objects are in the artifact.'
-            echo 'This screen is not held-out confirmation or a fastest-runtime claim.'
-            if test -f "$OUT/calibration/summary.tsv"; then
-              echo "Retained process rows: $(awk 'END {print NR-1}' "$OUT/calibration/summary.tsv")"
-            fi
-            if test -f "$OUT/quadrature/formal-calibration/parity.tsv"; then
-              echo 'Maintained/recovered quadrature parity (wall and process CPU)'
-              echo '```text'
-              cat "$OUT/quadrature/formal-calibration/parity.tsv"
-              echo '```'
-            fi
-            if test -f "$OUT/quadrature/batch-calibration/summary.tsv"; then
-              echo "Sustained batch rows: $(awk 'END {print NR-1}' "$OUT/quadrature/batch-calibration/summary.tsv")"
-              cat "$OUT/quadrature/batch-calibration/availability.tsv"
-              echo 'Regional counters include batch-boundary overhead and all worker CPU work; unavailable events are not zero.'
-            fi
-            if test -f "$OUT/budget-calibration/summary.tsv"; then
-              echo "Cost, chunk cap and input-check cadence rows: $(awk 'END {print NR-1}' "$OUT/budget-calibration/summary.tsv")"
-              echo 'Same-image policies retain full per-call output checks; input-check cadence changes memory traffic and worker opportunity together.'
-            fi
-            if test -f "$OUT/record-events-calibration/summary.tsv"; then
-              echo "Real WF event diagnostic rows: $(awk 'END {print NR-1}' "$OUT/record-events-calibration/summary.tsv")"
-              echo 'Four lane banks per call qualify published-job conservation; search and wake counters are asynchronous snapshots, not CPU costs.'
-            fi
-            if test -f "$OUT/layout-calibration/summary.tsv"; then
-              echo "Shared-image layout process rows: $(awk 'END {print NR-1}' "$OUT/layout-calibration/summary.tsv")"
-              echo 'This control shares leaf/callback addresses and adds common indirect dispatch plus loaded libraries.'
-            fi
-            if test -f "$OUT/trace-calibration/summary.tsv"; then
-              echo "Callback diagnostic process rows: $(awk 'END {print NR-1}' "$OUT/trace-calibration/summary.tsv")"
-              echo 'Plain/identity/timeline compare observation perturbation; callback wall intervals are not CPU utilization or runtime job counts.'
-            fi
-            if test -f "$OUT/events-calibration/summary.tsv"; then
-              echo "Runtime event/control process rows: $(awk 'END {print NR-1}' "$OUT/events-calibration/summary.tsv")"
-              echo 'WF and Rayon join counters qualify queued-job conservation; runtime events are distinct from OS context switches.'
-            fi
+            echo "## compute-bench (${{ matrix.os }})"
+            echo
+            echo '```text'
+            cat "$RUNNER_TEMP/results/manifest.txt" 2>/dev/null \
+              || echo "the manifest was not written"
+            echo
+            cat "$RUNNER_TEMP/results/table.txt" 2>/dev/null \
+              || echo "the table was not written"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: compute-${{ matrix.workload }}-linux
-          # The scheduler manifest hashes Cargo's hidden build fingerprints.
-          # These paths contain generated experiment output, not source caches.
-          include-hidden-files: true
+          name: compute-bench-${{ matrix.os }}
+          if-no-files-found: warn
           path: |
-            ${{ runner.temp }}/compute-${{ matrix.workload }}-build.log
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/compiler/gate/whitefootc
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/calibration/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/grain-calibration/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/split-calibration/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/allocation-calibration/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/budget-calibration/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/record-events-calibration/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/layout-calibration/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/trace-calibration/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/events-calibration/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/protocol-cost/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/quadrature/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/*check-*/
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/bench-*
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/fir*
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/records*
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/scheduler-*
-            ${{ runner.temp }}/compute-${{ matrix.workload }}/mandelbrot*
+            ${{ runner.temp }}/results/manifest.txt
+            ${{ runner.temp }}/results/raw.tsv
+            ${{ runner.temp }}/results/table.txt
+            ${{ runner.temp }}/results/logs/

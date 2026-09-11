@@ -89,13 +89,9 @@ ssize_t wf_completion_test_pread(
     return pread(descriptor, buffer, count, offset);
 }
 
-/* The one publication, which the bridge supplies in a delivered program.
- *
- * This probe links no bridge on purpose, so it owns the scheduler core the
- * record protocol runs over.  Nothing here parks a stack or registers a
- * waiter, so `wf_sched_complete` stores COMPLETING and then DONE and touches
- * nothing else. */
-
+/* The bridge supplies this entry point in a delivered program. This adapter
+ * probe has no waiting caller, so it publishes the result with the contract's
+ * release store and needs neither the bridge nor a compute scheduler. */
 
 void wf_completion_record_complete(wf_completion_record *record) {
     wf_completion_record_publish(record);

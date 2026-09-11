@@ -15,7 +15,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # `approval-history-integrity` and `spec-archive-integrity` were retired with
 # the approval ledger they both read.
 CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	conformance compiler research-tests conformance-run snapshot-run
+	conformance compiler research-tests bench-programs conformance-run snapshot-run
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -122,10 +122,6 @@ compiler:
 # not current tests; their directory README states that boundary explicitly.
 research-tests:
 	@mkdir -p "$(RESEARCH_TEST_TMP)/frequency" "$(RESEARCH_TEST_TMP)/ripgrep" "$(RESEARCH_CARGO_TARGET)"
-	# Share this revision's ordinary compiler with the later container tests.
-	# A second target directory rebuilt the same compiler and exhausted CI time.
-	cargo build --manifest-path compiler/Cargo.toml --profile gate --bin whitefootc --locked --offline
-	$(MAKE) -C research/experiments/compute-runtime check OUT="$(RESEARCH_TEST_TMP)/compute-runtime" WFC="$(CURDIR)/compiler/target/gate/whitefootc"
 	$(MAKE) -C research/experiments/container-representation check
 	TMPDIR="$(RESEARCH_TEST_TMP)/frequency" $(MAKE) -C research/experiments/frequency-study check PYTHON=python3 CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/frequency"
 	$(MAKE) -C research/experiments/ripgrep test PYTHON=python3 SCRATCH_ROOT="$(RESEARCH_TEST_TMP)/ripgrep"
@@ -135,6 +131,14 @@ research-tests:
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/harness/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
+
+# The programs of the I/O measurement bundle compile with the current
+# compiler. The bundle's protocols are measurements and stay out of the gate;
+# this only compiles, so a language change that leaves a bench program behind
+# fails here instead of emptying a table on the bench runner.
+bench-programs:
+	$(MAKE) -C research/experiments/io-completion-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
+	$(MAKE) -C research/experiments/compute-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 
 # Enumerate every declared case through the native adapter. Every non-pending
 # case reaches an actual compiler verdict; run cases are linked and
@@ -165,4 +169,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests conformance-run snapshot-run install-hooks
+.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests bench-programs conformance-run snapshot-run install-hooks

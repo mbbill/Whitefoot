@@ -1,8 +1,6 @@
 ## Change
 
 <!-- Explain the problem, resulting behavior and material tradeoffs briefly.
-State the user's entry point and observable change. For an experiment-only
-delivery, identify that scope and any integration still missing.
 For spec/conformance changes, include what changed and its selection ground
 under AGENTS.md rule 4. -->
 

@@ -59,11 +59,12 @@ pub use completion::{
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_STACK_BYTES;
 pub use floor::{FLOOR_RUNTIME_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE};
-pub(crate) use frontier::is_recursive_frontier_symbol;
-use frontier::{Layer, RecursiveFrontiers};
+pub(crate) use frontier::is_recursion_budget_symbol;
+use frontier::{Grain, RecursiveFrontiers, recursion_budget_symbol};
 pub use parallel::module_requires_parallel_runtime;
 use parallel::{
     HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_DECLARATION, PARALLEL_POOL_QUERY_FALLBACK,
+    PARALLEL_RECURSION_BUDGET_DECLARATION, PARALLEL_RECURSION_BUDGET_FALLBACK,
     PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK, PARALLEL_SPLIT_BUDGET_DECLARATION,
     PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, compute_join_order, par_done_label,
     sequential_clone_set, sequential_clone_symbol,
@@ -100,12 +101,26 @@ pub enum BackendFailure {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LlvmModule {
     text: String,
+    ledger: Vec<String>,
 }
 
 impl LlvmModule {
     #[must_use]
     pub fn into_string(self) -> String {
         self.text
+    }
+
+    /// The non-normative report of what this emission actualized that lowering
+    /// could not report for it, in the order `--par-ledger` prints it.
+    ///
+    /// The recursion budget reads the call graph after the clone sets are
+    /// known, which happens here and not in lowering, so its lines reach the
+    /// ledger through this channel rather than through a second analysis. It
+    /// says nothing about acceptance: a module with an empty report and a
+    /// module with a full one are both programs the checker already admitted.
+    #[must_use]
+    pub fn actualization_ledger(&self) -> &[String] {
+        &self.ledger
     }
 }
 
@@ -155,7 +170,10 @@ fn emit_llvm_for(
     } else {
         HashSet::new()
     };
-    let mut frontier_clones = if program.recursive_compute_frontier().is_some() {
+    // Every compute-actualizing lowering asks the question, because every one
+    // of them carries a recursion budget; the set is what decides which
+    // components can answer it, since a family's cut lands in a clone.
+    let mut frontier_clones = if program.recursion_budget().is_some() {
         sequential_clone_set(program)
     } else {
         HashSet::new()
@@ -166,6 +184,18 @@ fn emit_llvm_for(
     let frontiers = RecursiveFrontiers::new(program, &frontier_clones);
     let mut functions = String::new();
     for (ordinal, function) in program.functions().iter().enumerate() {
+        // A member of a budgeted component keeps its ordinary symbol and its
+        // ordinary signature, and that symbol obtains the initial budget and
+        // enters the family. The body itself is emitted once, below.
+        if frontiers.grain(ordinal).is_some() {
+            functions.push_str(&emit_recursion_budget_entry(
+                program,
+                function,
+                &frontiers,
+                &mut thunks,
+            )?);
+            continue;
+        }
         let emitter = FunctionEmitter::new(
             program,
             &qualification,
@@ -178,35 +208,37 @@ fn emit_llvm_for(
                 sequential_clones: None,
                 refusal_clones: &refusal_clones,
                 frontiers: &frontiers,
-                frontier_layer: frontiers.layer(ordinal, 0),
+                grain: None,
             },
         )?;
         functions.push_str(&emitter.emit()?);
     }
-    for level in 1..frontiers.levels() {
-        for (ordinal, function) in program.functions().iter().enumerate() {
-            let Some(layer) = frontiers.layer(ordinal, level) else {
-                continue;
-            };
-            functions.push_str(
-                &FunctionEmitter::new(
-                    program,
-                    &qualification,
-                    target,
-                    function,
-                    ModuleState {
-                        intrinsics: &mut intrinsics,
-                        parallel: &mut thunks,
-                        completion_used: &mut completion_used,
-                        sequential_clones: None,
-                        refusal_clones: &refusal_clones,
-                        frontiers: &frontiers,
-                        frontier_layer: Some(layer),
-                    },
-                )?
-                .emit()?,
-            );
-        }
+    // The budget-carrying half of each family: one variant per member, the
+    // same emitter over the same IR as every other function of this module,
+    // differing only in the trailing budget it tests and in naming its
+    // siblings' variants.
+    for (ordinal, function) in program.functions().iter().enumerate() {
+        let Some(grain) = frontiers.grain(ordinal) else {
+            continue;
+        };
+        functions.push_str(
+            &FunctionEmitter::new(
+                program,
+                &qualification,
+                target,
+                function,
+                ModuleState {
+                    intrinsics: &mut intrinsics,
+                    parallel: &mut thunks,
+                    completion_used: &mut completion_used,
+                    sequential_clones: None,
+                    refusal_clones: &refusal_clones,
+                    frontiers: &frontiers,
+                    grain: Some(grain),
+                },
+            )?
+            .emit()?,
+        );
     }
     // The second world. It exists only where the first one actualizes
     // something, so a build that hands nothing out — every default build among
@@ -243,7 +275,7 @@ fn emit_llvm_for(
                         sequential_clones: Some(&clones),
                         refusal_clones: &refusal_clones,
                         frontiers: &frontiers,
-                        frontier_layer: None,
+                        grain: None,
                     },
                 )?
                 .emit()?,
@@ -436,7 +468,23 @@ fn emit_llvm_for(
                 PARALLEL_SPLIT_BUDGET_FALLBACK
             });
         }
+        if thunks.queries_recursion_budget() {
+            text.push_str(if system_target.is_windows() {
+                PARALLEL_RECURSION_BUDGET_DECLARATION
+            } else {
+                PARALLEL_RECURSION_BUDGET_FALLBACK
+            });
+        }
         text.push_str(thunks.definitions());
+    } else if thunks.queries_recursion_budget() {
+        // A family whose every offer was declined for its frame still asks
+        // for its budget, and the symbol it names must be answered.
+        text.push('\n');
+        text.push_str(if system_target.is_windows() {
+            PARALLEL_RECURSION_BUDGET_DECLARATION
+        } else {
+            PARALLEL_RECURSION_BUDGET_FALLBACK
+        });
     }
     if completion_used {
         text.push('\n');
@@ -485,6 +533,7 @@ fn emit_llvm_for(
     text.push_str(&entry);
     Ok(LlvmModule {
         text: attach_stack_probe(&text, target),
+        ledger: frontiers.ledger().to_vec(),
     })
 }
 
@@ -496,6 +545,117 @@ fn emit_llvm_for(
 /// because an allocation the host refused is the trusted computing base
 /// reaching its limit, not a source proof obligation.
 const HEAP_RECORD: &str = "{\"resource\":\"heap\"}\n";
+
+/// One call's arguments, in the emitting function's own parameters: what a
+/// same-signature forward to a clone or a variant passes on.
+fn ordinary_call_arguments(
+    program: &IrProgram<'_, '_, '_>,
+    function: &IrFunction,
+    abi: &FunctionAbi,
+) -> Result<String, BackendFailure> {
+    let mut arguments = Vec::with_capacity(abi.parameters().len() + 1);
+    if abi.result().uses_destination() {
+        arguments.push("ptr %wf.result".to_owned());
+    }
+    for ((value, _), parameter) in function.parameters().iter().zip(abi.parameters()) {
+        arguments.push(if parameter.is_indirect() {
+            format!("ptr %wf.arg.v{}", value.ordinal())
+        } else {
+            format!(
+                "{} {}",
+                llvm_type(program, parameter.ty())?,
+                value_name(*value)
+            )
+        });
+    }
+    Ok(arguments.join(", "))
+}
+
+/// A budgeted component's ordinary entry: obtain the initial budget and enter
+/// the family with it.
+///
+/// This is the only place a budget comes from outside the family, and it is
+/// asked once per call into the component rather than once per node. The
+/// runtime's answer follows the pool width, which is why it is a query and not
+/// a constant: the measured best cut is not the same cut at two lanes and at
+/// four. A pinned budget — the A/B control — starts from a compile-time value
+/// instead, and then this entry names no runtime symbol at all.
+///
+/// The member keeps its ordinary symbol, signature and result ABI, so nothing
+/// outside the component sees the family; what changes is that the body it
+/// forwards to is emitted once, with the budget as a trailing parameter.
+fn emit_recursion_budget_entry(
+    program: &IrProgram<'_, '_, '_>,
+    function: &IrFunction,
+    frontiers: &RecursiveFrontiers,
+    thunks: &mut ParallelThunks,
+) -> Result<String, BackendFailure> {
+    let abi = FunctionAbi::build(program, function)?;
+    let mut output = String::new();
+    write!(
+        output,
+        "define internal {} @{}(",
+        if abi.result().uses_destination() {
+            "void".to_owned()
+        } else {
+            llvm_type(program, abi.result().ty())?
+        },
+        source_symbol(function.name())
+    )
+    .map_err(|_| BackendFailure::TextEmission)?;
+    let mut parameters = Vec::with_capacity(abi.parameters().len() + 1);
+    if abi.result().uses_destination() {
+        parameters.push("ptr %wf.result".to_owned());
+    }
+    for ((value, _), parameter) in function.parameters().iter().zip(abi.parameters()) {
+        parameters.push(if parameter.is_indirect() {
+            format!("ptr %wf.arg.v{}", value.ordinal())
+        } else {
+            format!(
+                "{} {}",
+                llvm_type(program, parameter.ty())?,
+                value_name(*value)
+            )
+        });
+    }
+    output.push_str(&parameters.join(", "));
+    output.push_str(") {\nentry:\n");
+    let budget = match frontiers.initial().ok_or(BackendFailure::InvalidIr)? {
+        crate::RecursionBudget::Off => return Err(BackendFailure::InvalidIr),
+        crate::RecursionBudget::Pinned(levels) => levels.get().to_string(),
+        crate::RecursionBudget::RuntimeDerived => {
+            output.push_str("  %wf.budget = call i64 @wf__par_recursion_budget()\n");
+            thunks.queries_recursion_budget = true;
+            "%wf.budget".to_owned()
+        }
+    };
+    let mut arguments = ordinary_call_arguments(program, function, &abi)?;
+    if !arguments.is_empty() {
+        arguments.push_str(", ");
+    }
+    write!(arguments, "i64 {budget}").map_err(|_| BackendFailure::TextEmission)?;
+    let callee = recursion_budget_symbol(function.name());
+    if abi.result().uses_destination() {
+        write!(
+            output,
+            "  call void @{callee}({arguments})\n  ret void\n}}\n\n"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    } else {
+        let result = llvm_type(program, abi.result().ty())?;
+        write!(
+            output,
+            "  %wf.entry = call {result} @{callee}({arguments})\n  ret {result} %wf.entry\n}}\n\n"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+    }
+    Ok(output)
+}
+
+/// The block a budgeted world tests its remaining levels in, and the block it
+/// leaves for the sequential clone from.
+const GRAIN_ENTRY_LABEL: &str = "par.grain";
+const GRAIN_SPENT_LABEL: &str = "par.grain.spent";
 
 /// The attribute group every generated definition carries.
 const STACK_PROBE_GROUP: &str = "#0";
@@ -1234,7 +1394,12 @@ struct FunctionEmitter<'program, 'state> {
     /// Existing clones callable from the opt-in refused-compute edge.
     refusal_clones: &'state HashSet<u32>,
     frontiers: &'state RecursiveFrontiers,
-    frontier_layer: Option<Layer>,
+    /// The budgeted world this emission renders, or `None` for a function no
+    /// family holds — which is every function of a default build.
+    grain: Option<Grain>,
+    /// The caller's remaining budget, as an operand: the value a call that
+    /// stays inside this component carries. Fixed for the whole emission.
+    grain_next: Option<String>,
 }
 
 /// What one function's emission shares with the rest of its module, and the
@@ -1255,7 +1420,7 @@ struct ModuleState<'state> {
     /// Existing clones callable from the opt-in refused-compute edge.
     refusal_clones: &'state HashSet<u32>,
     frontiers: &'state RecursiveFrontiers,
-    frontier_layer: Option<Layer>,
+    grain: Option<Grain>,
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
@@ -1273,7 +1438,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             sequential_clones,
             refusal_clones,
             frontiers,
-            frontier_layer,
+            grain,
         } = module;
         // A sequential clone suppresses compute hand-outs only. Target
         // completion is independent of the compute-pool choice and remains
@@ -1330,6 +1495,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     function,
                     overlap,
                     &completion_steps,
+                    &|callee| grain.is_some_and(|grain| frontiers.spends(callee, grain)),
                 )?
                 else {
                     continue;
@@ -1436,7 +1602,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             sequential_clones,
             refusal_clones,
             frontiers,
-            frontier_layer,
+            grain,
+            grain_next: None,
         })
     }
 
@@ -1444,26 +1611,86 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.overlap_join_sites.contains(&value)
     }
 
-    /// The symbol one call names.
+    /// The symbol one call names, and the budget operand it carries.
     ///
     /// In the clone world a call to a function that also has a clone names the
     /// clone, which is what keeps a clone's whole dynamic extent inside the
-    /// world the entry selected. Everything else — including every callee with
-    /// no hand-out anywhere below it — is the one copy both worlds share.
-    pub(super) fn callee_symbol(&self, ordinal: u32, name: &str) -> String {
-        match (self.sequential_clones, self.frontier_layer) {
-            (Some(clones), _) if clones.contains(&ordinal) => sequential_clone_symbol(name),
-            (None, Some(layer)) => self.frontiers.callee(ordinal, name, layer),
-            _ => source_symbol(name),
+    /// sequential world. Inside a budgeted world a call that stays in the
+    /// component names the callee's variant and spends one level; a call that
+    /// leaves it enters that callee's ordinary symbol, which obtains a budget
+    /// of its own. Other calls use the shared original.
+    pub(super) fn callee_target(&self, ordinal: u32, name: &str) -> (String, Option<&str>) {
+        match (self.sequential_clones, self.grain) {
+            (Some(clones), _) if clones.contains(&ordinal) => (sequential_clone_symbol(name), None),
+            (None, Some(grain)) => {
+                let (symbol, spends) = self.frontiers.callee(ordinal, name, grain);
+                (
+                    symbol,
+                    spends.then_some(self.grain_next.as_deref()).flatten(),
+                )
+            }
+            _ => (source_symbol(name), None),
         }
+    }
+
+    pub(super) fn callee_symbol(&self, ordinal: u32, name: &str) -> String {
+        self.callee_target(ordinal, name).0
+    }
+
+    /// The budget-carrying variant's entry: test the levels this activation
+    /// was handed, and enter the sequential clone where none are left.
+    ///
+    /// One compare and one branch per activation above the cut, and nothing at
+    /// all below it — the clone is the world this module already carries for a
+    /// run with no pool, so no node under the cut pays a scheduler test, a
+    /// null branch or a phi.
+    ///
+    /// Returns where the frame prelude belongs, which is this block when there
+    /// is one: an `alloca` is promotable only in the entry block.
+    fn emit_grain_entry(&mut self, abi: &FunctionAbi) -> Result<Option<usize>, BackendFailure> {
+        if self.grain.is_none() {
+            return Ok(None);
+        }
+        // A branch into the body needs the body to be enterable from one more
+        // place. It always is: an IR entry block that were a jump target would
+        // already carry phis in an LLVM entry block, which is malformed.
+        if self.incoming.first().is_some_and(|edges| !edges.is_empty()) {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let arguments = ordinary_call_arguments(self.program, self.function, abi)?;
+        let spent = RecursiveFrontiers::exhausted(self.function.name());
+        let body = block_label(IrBlockId::from_index(0).map_err(|_| BackendFailure::InvalidIr)?);
+        writeln!(self.output, "{GRAIN_ENTRY_LABEL}:").map_err(|_| BackendFailure::TextEmission)?;
+        let anchor = self.output.len();
+        writeln!(
+            self.output,
+            "  %wf.budget.next = sub i64 %wf.budget, 1\n  \
+             %wf.grain = icmp sgt i64 %wf.budget, 0\n  \
+             br i1 %wf.grain, label %{body}, label %{GRAIN_SPENT_LABEL}\n\
+             {GRAIN_SPENT_LABEL}:"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        if abi.result().uses_destination() {
+            writeln!(self.output, "  call void @{spent}({arguments})\n  ret void")
+                .map_err(|_| BackendFailure::TextEmission)?;
+        } else {
+            let result = llvm_type(self.program, abi.result().ty())?;
+            writeln!(
+                self.output,
+                "  %wf.spent = call {result} @{spent}({arguments})\n  ret {result} %wf.spent"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        self.grain_next = Some("%wf.budget.next".to_owned());
+        Ok(Some(anchor))
     }
 
     fn emit(mut self) -> Result<String, BackendFailure> {
         self.incoming = self.collect_incoming()?;
         let abi = FunctionAbi::build(self.program, self.function)?;
-        let symbol = match (self.sequential_clones, self.frontier_layer) {
+        let symbol = match (self.sequential_clones, self.grain) {
             (Some(_), _) => sequential_clone_symbol(self.function.name()),
-            (None, Some(layer)) => RecursiveFrontiers::definition(self.function.name(), layer),
+            (None, Some(_)) => recursion_budget_symbol(self.function.name()),
             (None, None) => source_symbol(self.function.name()),
         };
         write!(
@@ -1503,15 +1730,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             )
             .map_err(|_| BackendFailure::TextEmission)?;
         }
+        // The variant's hidden trailing budget. Legal because this definition
+        // is synthesized and is named by no source call: a writer's own
+        // signature is the entry's, which is emitted unchanged.
+        if self.grain.is_some() {
+            if !self.function.parameters().is_empty() || result_address {
+                self.output.push_str(", ");
+            }
+            self.output.push_str("i64 %wf.budget");
+        }
         self.output.push_str(") {\n");
-        let mut prelude_anchor = None;
+        let mut prelude_anchor = self.emit_grain_entry(&abi)?;
         for (index, block) in self.function.blocks().iter().enumerate() {
             self.materialized.clear();
             let block_id =
                 IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
             writeln!(self.output, "{}:", block_label(block_id))
                 .map_err(|_| BackendFailure::TextEmission)?;
-            if index == 0 {
+            if index == 0 && prelude_anchor.is_none() {
                 prelude_anchor = Some(self.output.len());
             }
             self.emit_block_parameters(block_id, block)?;
@@ -2343,6 +2579,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 /// keeps the synchronous ABI of the sequential world (design section 8). An
 /// ordinary call additionally has to fit the runtime lane slot as one
 /// complete `{ arguments..., result }` aggregate.
+#[allow(clippy::too_many_arguments)]
 fn ordinary_overlap_lane_frames(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
@@ -2350,6 +2587,7 @@ fn ordinary_overlap_lane_frames(
     function: &IrFunction,
     overlap: &IrOverlap,
     completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+    carries_budget: &dyn Fn(u32) -> bool,
 ) -> Result<Option<Vec<(IrValueId, TargetAggregateLayout)>>, BackendFailure> {
     // A submitting completion member carries the typed completion protocol and
     // takes no lane frame at all, so it is the one member allowed to suspend.
@@ -2390,20 +2628,27 @@ fn ordinary_overlap_lane_frames(
             continue;
         }
         let Some(IrOperation::Call {
-            function: callee, ..
+            function: ordinal, ..
         }) = definition_operation(function, *member)
         else {
             return Ok(None);
         };
+        let ordinal = *ordinal;
         let callee = program
             .functions()
-            .get(*callee as usize)
+            .get(ordinal as usize)
             .ok_or(BackendFailure::InvalidIr)?;
         if callee.target_action().may_suspend() {
             return Ok(None);
         }
-        let Some(layout) = parallel_lane_frame_layout(target, qualification, program, callee)
-            .map_err(BackendFailure::TargetLayout)?
+        let Some(layout) = parallel_lane_frame_layout(
+            target,
+            qualification,
+            program,
+            callee,
+            carries_budget(ordinal),
+        )
+        .map_err(BackendFailure::TargetLayout)?
         else {
             return Ok(None);
         };
