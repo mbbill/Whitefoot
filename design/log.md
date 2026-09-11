@@ -3,6 +3,13 @@
 Newest first. One entry per approved tree change. Format:
 `skill/templates/log-entry.md`.
 
+## 2026-09-11 State the real reasons for optional optimizer facts
+
+Nodes: ~tree
+Origin: discussion
+Summary: The owner questioned the root decision that optional optimizer facts never change acceptance or semantics; its migrated reason restated the rule instead of justifying it. The recorded rationale was recovered from the 2026-07 bootstrap plan, where a facts-off fixpoint was frozen as the oracle for the facts-on compiler, and from the fact-channels and parallelism nodes. The decision is now two lines with the four actual reasons: acceptance must not depend on an optimizer's version, target, or pass order; an emitted attribute is trusted by the backend without re-checking, so only a correct facts-off reference can expose a wrong one; each fact family's gain is attributed against that reference; and a behavioral difference between facts-on and facts-off would reintroduce the debug-versus-release split. The owner confirmed the decision stays. The near-duplicate sentence in the parallelism memory node is to be dropped when that subtree migrates, per normalize-upward.
+Code: none; this change touches only the design tree.
+
 ## 2026-09-11 Migrate the root and the checks-and-proofs subtree
 
 Nodes: +tree, +tree/checks-and-proofs, +tree/checks-and-proofs/obligation-discharge, +tree/checks-and-proofs/obligation-discharge/goal-decomposition, +tree/checks-and-proofs/obligation-discharge/loop-fact-retention, +tree/checks-and-proofs/obligation-discharge/writer-trap-surface, +tree/checks-and-proofs/certificate-fold, +tree/checks-and-proofs/requires-entry-contract, +tree/checks-and-proofs/requires-entry-contract/requirement-enforcement
