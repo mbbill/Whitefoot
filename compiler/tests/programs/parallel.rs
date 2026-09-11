@@ -32,6 +32,10 @@ use whitefoot::{CompilationFailureKind, module_requires_parallel_runtime};
 /// an outlined thunk, a lane offer, and a join. `@wf_measure_band` is the
 /// negative control for erasure: its source-only boundary reasoning emits
 /// neither a runtime proof-failure path nor a parallel-runtime call.
+///
+/// Each fold is recursive, so `--par` gives its component a budget-carrying
+/// family and the body is emitted under the variant's symbol. The entry keeps
+/// the writer's own signature and obtains the budget the family descends with.
 #[test]
 fn both_folds_are_handed_out() {
     let llvm = compile_program_with_overlap("par_layout.wf");
@@ -40,8 +44,20 @@ fn both_folds_are_handed_out() {
         "a module with an eligible site must ask for the runtime"
     );
 
-    for symbol in ["@wf_layout", "@wf_layout_banded"] {
+    for name in ["layout", "layout_banded"] {
+        let entry = function_body(&llvm, &format!("@wf_{name}"));
+        assert!(
+            entry.contains("= call i64 @wf__par_recursion_budget()")
+                && entry.contains(&format!("call double @wf__par_budget_{name}(")),
+            "wf_{name} must obtain a budget and enter its family:\n{entry}"
+        );
+        let symbol = format!("@wf__par_budget_{name}");
+        let symbol = symbol.as_str();
         let fold = function_body(&llvm, symbol);
+        assert!(
+            fold.contains(&format!("@wf__par_seq_{name}(")),
+            "{symbol} must enter its sequential clone with its budget spent:\n{fold}"
+        );
         assert!(
             fold.contains("= call ptr @wf__par_acquire_lane(i64 "),
             "{symbol} must acquire a lane for its first child call:\n{fold}"
