@@ -25,10 +25,11 @@
 //! maps the same way, and the combine is `wrapping_add` on both sides, which is
 //! exactly associative, so no schedule can move a bit.
 //!
-//! usage: paired-layout MODE SHAPE DEPTH WORDS REPS [THREADS]
+//! usage: paired-layout MODE SHAPE DEPTH WORDS REPS [THREADS] [BATCHES]
 //!   MODE     seq | rayon | rayoncut | nodes
 //!   SHAPE    bal | skew | grid
 //!   THREADS  a count, or `default` for rayon's own global pool
+//!   BATCHES  repeat the layout with reset seeds inside one pool (default 1)
 
 use std::env;
 
@@ -427,7 +428,7 @@ fn make_words(n: u64) -> Vec<f64> {
 fn main() {
     let argv: Vec<String> = env::args().collect();
     if argv.len() < 6 {
-        eprintln!("usage: paired-layout MODE SHAPE DEPTH WORDS REPS [THREADS]");
+        eprintln!("usage: paired-layout MODE SHAPE DEPTH WORDS REPS [THREADS] [BATCHES]");
         std::process::exit(2);
     }
     let mode = argv[1].clone();
@@ -448,6 +449,11 @@ fn main() {
     } else {
         Some(1)
     };
+    let batches: u64 = argv
+        .get(7)
+        .map_or(1, |value| value.parse().expect("BATCHES"));
+    assert!(batches > 0, "BATCHES must be positive");
+    assert!(shape != "grid" || batches == 1, "grid supports one batch");
 
     if shape == "grid" {
         let depth = depth as u32;
@@ -514,15 +520,24 @@ fn main() {
         last
     };
 
+    // Keep reset-seed batches observable to the optimizer while retaining one
+    // initialized pool. Every batch must publish the same final fold bits.
+    let run_batches = |tree: &mut Box<LNode>| {
+        let mut last = 0.0;
+        for _ in 0..batches {
+            last = std::hint::black_box(run(tree));
+        }
+        last
+    };
     let last = match (mode.as_str(), threads) {
-        ("seq", _) => run(&mut tree),
-        (_, None) => run(&mut tree),
+        ("seq", _) => run_batches(&mut tree),
+        (_, None) => run_batches(&mut tree),
         (_, Some(n)) => {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(n)
                 .build()
                 .expect("rayon pool");
-            pool.install(|| run(&mut tree))
+            pool.install(|| run_batches(&mut tree))
         }
     };
 
