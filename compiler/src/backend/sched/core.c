@@ -11,25 +11,86 @@
 #define WF_PAR_FRAME_BYTES WF_SCHED_FRAME_BYTES
 #define WF_PAR_LANE_SLOTS WF_SCHED_LANE_SLOTS
 #define WF_PAR_CACHE_LINE 128
-/* How long a lane with nothing to run stays hot before it parks, as a count of
- * misses rather than a time. A lane should not pay for a sleep in order to save
- * less than the sleep costs, so the count is only meaningful against what a
- * round costs and what a park costs, and both are measured by
- * wake_probe.c on the host the choice is made for. On the four-CPU Linux
- * development host that probe reads a park-and-wake of 16.3 us -- the median of
- * seven runs of 2,000 alternating parks through this file's own wf__par_signal
- * and wf_prim_wait_sleep -- and one wf__par_find round at 18.9 ns uncontended at
- * four lanes, so 1,024 rounds is a window of about 19.4 us. That is the nearest
- * of {256, 1024, 4096} to the wake cost, and the compute scoreboard swept all
- * three: 256, a window of 4.8 us, regresses quadrature's W=4 wall ratio from
- * 1.013/0.925 to 1.182 with none of five paired passes lower, while 1,024
- * regresses no kernel's ratio beyond its own MAD at any width and improves fir
- * at all three parallel widths, records at W=4 and mandelbrot at W=8
- * (research/investigations/compute-runtime/RESULTS.md, the spin bound sized to
- * a measured park-and-wake). Re-measure both numbers before moving this: a
- * change that makes a round cheaper shortens this window by the same factor and
- * is not a separate variable. */
+/* How long a lane with nothing to run stays hot before it parks. Two numbers
+ * answer that: how often the lane may reconsider, and how long it goes on
+ * reconsidering.
+ *
+ * HOW OFTEN is a count of misses, and it is unchanged. A lane should not pay
+ * for a sleep in order to save less than the sleep costs, so the count is only
+ * meaningful against what a round costs and what a park costs, and both are
+ * measured by wake_probe.c on the host the choice is made for. On the four-CPU
+ * Linux development host that probe reads a park-and-wake of 16.3 us -- the
+ * median of seven runs of 2,000 alternating parks through this file's own
+ * wf__par_signal and wf_prim_wait_sleep -- and one wf__par_find round at
+ * 18.9 ns uncontended at four lanes, so 1,024 rounds is about 19.4 us. A
+ * monotonic clock read costs far more than a round, so the window below is
+ * sampled once per 1,024 rounds and this count is now the window's resolution
+ * rather than the whole of a lane's patience. Re-measure both numbers before
+ * moving it: a change that makes a round cheaper shortens the sampling
+ * interval by the same factor and is not a separate variable.
+ *
+ * HOW LONG is a time, and it depends on whether the pool fits the machine.
+ * On the hosted ubuntu-24.04 runners -- two cores, two SMT siblings each, four
+ * online CPUs -- a lane that parks on a condvar and is woken by a publisher
+ * comes back slow. The per-call evidence is in the raw.tsv of run 34631106340.
+ * Fir at W=2, each call against the fastest call of its own pass: the first
+ * call reads 1.31 to 2.21, and in three of the five passes calls one through
+ * four are still 1.06 to 1.98. Its first pass spends 8.5, 7.6 and 6.5 ms on
+ * the first three calls against 3.8 ms on the last, while process CPU rises
+ * 2.04 times against the wall's 2.21 -- so the extra wall is two lanes running
+ * slowly, not one lane waiting. The `static` reference, whose helpers busy-wait
+ * and never sleep, reads 1.21 to 1.24 on its first call and 1.00 to 1.04 on
+ * every call after, in every pass. The reading is that the woken lane is
+ * placed next to its waker until the load balancer separates them; what is
+ * measured is that it costs the first few calls of every process, tens of
+ * milliseconds, and that the arm which never sleeps does not pay it.
+ *
+ * Two twins measured what a longer window is worth. Lanes that never park
+ * (spin bound 10^9, run 34631106340) took mandelbrot's W=4 paired wall to
+ * 0.922 of the shipped runtime with four of five pairs lower and fir's W=2 to
+ * 0.934 with four of five, and collapsed once the pool no longer fit: at eight
+ * lanes on four CPUs they read 2.699, 2.945, 3.487 and 6.702. A 16,384-round
+ * bound (run 34632558439) kept the saving in CPU where the pool did fit --
+ * paired CPU 0.934 at fir W=2, 0.952 at fir W=4, 0.963 and 0.970 at records --
+ * and still cost 1.158 to 1.304 in paired wall at W=8 on three of the four
+ * kernels. So a long idle window is right when the pool is not oversubscribed
+ * and wrong when it is, which is the rule below: lanes at pool start against
+ * the CPUs this process may run on
+ * (research/investigations/compute-runtime/RESULTS.md, run 34631106340 with
+ * the A/B control -DWF_PAR_SPIN_ROUNDS=1000000000, and run 34632558439 with
+ * the A/B control -DWF_PAR_SPIN_ROUNDS=16384; the per-call series that the
+ * placement evidence is read off are in each run's raw.tsv).
+ *
+ * 1,000 us is not a swept value and nothing here selects it. It is two orders
+ * of magnitude above the park-and-wake this file's own probe measures and an
+ * order of magnitude below the tens of milliseconds the hosted per-call series
+ * takes to settle, so it is long enough to cover a wake and short enough that
+ * a lane no longer needed stops burning a CPU within a millisecond. The guard
+ * is what lets the compute scoreboard build its A/B twin at another value
+ * through WF_RUNTIME_CONTROL_FLAGS and measure it against the shipped runtime
+ * inside one set of passes.
+ *
+ * The scheduler probes compile this file with WF_SCHED_TEST and hold native
+ * threads at the park protocol's own race windows -- wf_sched_test_before_wait
+ * fires from inside the sleep loop, and a coordinator thread waits on what it
+ * publishes. Those probes assert the protocol, not this policy, and a window
+ * would make when a lane arrives at that hook depend on a wall clock rather
+ * than on a fixed number of misses. Under WF_SCHED_TEST the window is
+ * therefore compile-time zero: the loops then take exactly the fixed bound
+ * below, which is the arrival those hooks were written against.
+ *
+ * This selects how an already admitted program waits. It is not a timeout, a
+ * fuel bound or a proof-work budget; no acceptance path reads it, it cannot
+ * reject a program, and with the window at zero the loops behave as they did
+ * before it existed. */
 #define WF_PAR_SPIN_ROUNDS 1024
+#if defined(WF_SCHED_TEST)
+#undef WF_PAR_IDLE_WINDOW_US
+#define WF_PAR_IDLE_WINDOW_US 0
+#endif
+#ifndef WF_PAR_IDLE_WINDOW_US
+#define WF_PAR_IDLE_WINDOW_US 1000
+#endif
 /* Yields are cheap next to a park and the sweep gave no reason to move them. */
 #define WF_PAR_YIELD_ROUNDS 16
 /* How many chunks an independent map may be split into, as a multiple of the
@@ -142,6 +203,11 @@ static int wf__par_lane_count;
 static unsigned wf__par_started;
 
 _Alignas(WF_PAR_CACHE_LINE) static unsigned long long wf__par_idle;
+
+/* The idle window this pool runs with, in microseconds, or zero for the fixed
+ * round bound alone. Written once by wf__par_start before any worker thread
+ * exists and read-only afterwards, so no lane can observe it changing. */
+static uint64_t wf__par_idle_window_us;
 
 static _Thread_local struct wf__par_lane *wf__par_self;
 
@@ -332,11 +398,73 @@ static void wf__par_execute(struct wf__par_slot *slot) {
 #endif
 }
 
+/* One lane's idle stretch: misses since the last unit of work, and the clock
+ * reading taken when those misses first reached the spin bound. `entered` is
+ * zero until that first crossing, and zero is also what a host with no
+ * monotonic clock answers, which is why the window is skipped on a zero
+ * reading rather than treating it as an origin. */
+struct wf__par_idling {
+    int rounds;
+    uint64_t entered;
+};
+
+/* A lane that has just run something is no longer idle. */
+static void wf__par_idling_reset(struct wf__par_idling *idling) {
+    idling->rounds = 0;
+    idling->entered = 0;
+}
+
+/* One idle step, shared by both wait loops so they cannot drift apart.
+ *
+ * Returns 1 when the lane stayed hot and the caller must re-check its own work
+ * and exit conditions -- every call performs at most one spin hint or one
+ * yield, so those checks stay reachable on every round and a pool shutting
+ * down is never waited out -- and 0 when the lane has exhausted spinning and
+ * yielding and must park.
+ *
+ * Both loops take the window. The worker idle loop is the parked-helper case
+ * the placement evidence is about, and the join wait is the lane that owns the
+ * frame and can help; the CPU the 16,384-round twin saved at W=2 and W=4 came
+ * from both loops parking and re-waking less often inside one call, and a rule
+ * that held for only one of them would leave the other parking on the same
+ * host for the same reason. Neither loop has a reason of its own to differ,
+ * and the probes that drive the park protocol run with the window at zero. */
+static int wf__par_stay_hot(struct wf__par_idling *idling) {
+    if (idling->rounds < WF_PAR_SPIN_ROUNDS) {
+        idling->rounds += 1;
+        wf_prim_spin_hint();
+        return 1;
+    }
+    if (idling->rounds == WF_PAR_SPIN_ROUNDS && wf__par_idle_window_us != 0) {
+        /* One clock read per spin bound, never per round. The window runs from
+         * the first crossing, so a lane stays hot for the window plus the one
+         * bound that opened it. */
+        uint64_t now = wf_prim_monotonic_us();
+        if (now != 0) {
+            if (idling->entered == 0) {
+                idling->entered = now;
+            }
+            if (now - idling->entered < wf__par_idle_window_us) {
+                idling->rounds = 0;
+                wf_prim_spin_hint();
+                return 1;
+            }
+        }
+    }
+    if (idling->rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
+        idling->rounds += 1;
+        wf_prim_yield();
+        return 1;
+    }
+    return 0;
+}
+
 /* Nested helping is safe for structured compute calls: no I/O continuation
  * can strand this stack. Register the waiter before the final SC DONE check;
  * signal takes the same native lock as sleep, so no wake can be lost. */
 static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target) {
-    int rounds = 0;
+    struct wf__par_idling idling;
+    wf__par_idling_reset(&idling);
     for (;;) {
         struct wf__par_slot *slot;
         if (__atomic_load_n(&target->state, __ATOMIC_ACQUIRE) == WF_PAR_SLOT_DONE) {
@@ -349,17 +477,10 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
         }
         if (slot != NULL) {
             wf__par_execute(slot);
-            rounds = 0;
+            wf__par_idling_reset(&idling);
             continue;
         }
-        if (rounds < WF_PAR_SPIN_ROUNDS) {
-            rounds += 1;
-            wf_prim_spin_hint();
-            continue;
-        }
-        if (rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
-            rounds += 1;
-            wf_prim_yield();
+        if (wf__par_stay_hot(&idling)) {
             continue;
         }
 
@@ -380,7 +501,8 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
 
 static void wf__par_worker_main(void *opaque) {
     struct wf__par_lane *lane = (struct wf__par_lane *)opaque;
-    int rounds = 0;
+    struct wf__par_idling idling;
+    wf__par_idling_reset(&idling);
     wf__par_self = lane;
     wf__par_attached = 1;
     wf_prim_floor_attach();
@@ -392,17 +514,10 @@ static void wf__par_worker_main(void *opaque) {
         slot = wf__par_find(lane);
         if (slot != NULL) {
             wf__par_execute(slot);
-            rounds = 0;
+            wf__par_idling_reset(&idling);
             continue;
         }
-        if (rounds < WF_PAR_SPIN_ROUNDS) {
-            rounds += 1;
-            wf_prim_spin_hint();
-            continue;
-        }
-        if (rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
-            rounds += 1;
-            wf_prim_yield();
+        if (wf__par_stay_hot(&idling)) {
             continue;
         }
 
@@ -414,7 +529,7 @@ static void wf__par_worker_main(void *opaque) {
             __atomic_fetch_and(&wf__par_idle, ~(1ull << (lane - wf__par_lanes)),
                                __ATOMIC_ACQ_REL);
             wf__par_execute(slot);
-            rounds = 0;
+            wf__par_idling_reset(&idling);
             continue;
         }
         wf_prim_wait_lock(&lane->wait);
@@ -425,7 +540,7 @@ static void wf__par_worker_main(void *opaque) {
         lane->posted = 0;
         wf_prim_wait_unlock(&lane->wait);
         __atomic_fetch_and(&wf__par_idle, ~(1ull << (lane - wf__par_lanes)), __ATOMIC_ACQ_REL);
-        rounds = 0;
+        wf__par_idling_reset(&idling);
     }
 
 }
@@ -448,8 +563,23 @@ static void wf__par_prepare(struct wf__par_lane *lane, int index) {
 
 static void wf__par_start(void) {
     int requested = wf__sched_lanes();
+    unsigned cpus;
     int started = 0;
     if (requested < 2) return;
+    /* The oversubscription test, answered once, here, because it is a property
+     * of the pool and not of a lane's current state: the lanes this pool is
+     * about to run against the CPUs this process may actually use. Lanes at or
+     * below that count take the idle window; more lanes than CPUs keep the
+     * fixed round bound, which is what the never-park twin's 2.7x to 6.7x at
+     * eight lanes on four CPUs says to do. An unknown CPU count -- zero from
+     * the primitive -- also keeps the fixed bound, since a window would then
+     * rest on an assumption nothing checked. `requested` is the count asked
+     * for; a partial startup can only leave fewer lanes than that, so this
+     * never turns the window on for a pool that is oversubscribed. Written
+     * before the first worker thread exists, and never written again. */
+    cpus = wf_prim_online_cpus();
+    wf__par_idle_window_us =
+        (cpus != 0u && (unsigned)requested <= cpus) ? (uint64_t)WF_PAR_IDLE_WINDOW_US : 0u;
     /* Prepare every deque before publishing a scan bound. Initialize the
      * owner's wait before any worker exists; preserve started workers on
      * later failure, and never destroy a station a worker may reach. */

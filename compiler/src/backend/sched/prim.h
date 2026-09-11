@@ -30,6 +30,12 @@ int wf_prim_thread_start(wf_prim_thread *thread, void (*entry)(void *), void *ar
 void wf_prim_floor_attach(void);
 void wf_prim_yield(void);
 unsigned wf_prim_online_cpus(void);
+/* Monotonic microseconds from an unspecified fixed origin, so only
+ * differences between two readings mean anything. Zero is reserved: it is
+ * what a host with no usable monotonic clock answers, and a caller that reads
+ * zero must fall back to behaviour that needs no clock rather than treat the
+ * difference as elapsed time. */
+uint64_t wf_prim_monotonic_us(void);
 #define WF_PRIM_SETTING_BYTES 64u
 int wf_prim_setting_text(const char *name, char *buffer, size_t capacity);
 #endif

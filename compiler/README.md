@@ -300,10 +300,20 @@ possible future extensions; this path does not imply those capabilities.
 The compute runtime uses persistent native threads and their ordinary stacks.
 An unstolen join target executes on the joining thread; a stolen target allows
 that thread to run other compute tasks and steal work before its bounded
-spin/yield/condition-wait slow path. Task storage belongs to the offering lane
-until join, result access, and release finish. Deque cells and ownership claims
-are atomic; local execution avoids the completion runtime. Resource exhaustion
-retains the ordinary-call fallback and the native stack-exhaustion floor.
+spin/yield/condition-wait slow path. How long a lane with no work stays hot
+before that park is an idle window in time, not a round count: a pool whose
+lanes at pool start are at or below the CPUs the process may run on spins for
+`WF_PAR_IDLE_WINDOW_US` microseconds, sampled once per spin bound off
+`wf_prim_monotonic_us`, and an oversubscribed pool keeps the fixed round bound.
+The lane count and the CPU count come from `wf_prim_online_cpus`, which reads
+the affinity mask where that is cheap. Both are ordinary prim-layer
+declarations in [`sched/prim.h`](src/backend/sched/prim.h) with a host and a
+Windows definition, and [`sched/core.c`](src/backend/sched/core.c) records the
+measurements the window is sized against. Task storage belongs to the offering
+lane until join, result access, and release finish. Deque cells and ownership
+claims are atomic; local execution avoids the completion runtime. Resource
+exhaustion retains the ordinary-call fallback and the native stack-exhaustion
+floor.
 
 Direct typed I/O retains one submit-then-join lowering path. A may-suspend user
 call executes on the caller's ordinary stack and is not published to a compute
