@@ -11,7 +11,26 @@
 #define WF_PAR_FRAME_BYTES WF_SCHED_FRAME_BYTES
 #define WF_PAR_LANE_SLOTS WF_SCHED_LANE_SLOTS
 #define WF_PAR_CACHE_LINE 128
-#define WF_PAR_SPIN_ROUNDS 4096
+/* How long a lane with nothing to run stays hot before it parks, as a count of
+ * misses rather than a time. A lane should not pay for a sleep in order to save
+ * less than the sleep costs, so the count is only meaningful against what a
+ * round costs and what a park costs, and both are measured by
+ * wake_probe.c on the host the choice is made for. On the four-CPU Linux
+ * development host that probe reads a park-and-wake of 16.3 us -- the median of
+ * seven runs of 2,000 alternating parks through this file's own wf__par_signal
+ * and wf_prim_wait_sleep -- and one wf__par_find round at 18.9 ns uncontended at
+ * four lanes, so 1,024 rounds is a window of about 19.4 us. That is the nearest
+ * of {256, 1024, 4096} to the wake cost, and the compute scoreboard swept all
+ * three: 256, a window of 4.8 us, regresses quadrature's W=4 wall ratio from
+ * 1.013/0.925 to 1.182 with none of five paired passes lower, while 1,024
+ * regresses no kernel's ratio beyond its own MAD at any width and improves fir
+ * at all three parallel widths, records at W=4 and mandelbrot at W=8
+ * (research/investigations/compute-runtime/RESULTS.md, the spin bound sized to
+ * a measured park-and-wake). Re-measure both numbers before moving this: a
+ * change that makes a round cheaper shortens this window by the same factor and
+ * is not a separate variable. */
+#define WF_PAR_SPIN_ROUNDS 1024
+/* Yields are cheap next to a park and the sweep gave no reason to move them. */
 #define WF_PAR_YIELD_ROUNDS 16
 #define WF_PAR_SPLIT_OVERSUBSCRIBE 16
 /* Sequential leaves a recursive component is cut into, per lane, by
