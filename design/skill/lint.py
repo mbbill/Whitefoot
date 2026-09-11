@@ -10,6 +10,7 @@ DECISION_MARKERS = (" because ", " instead of ")
 LOG_ENTRY = re.compile(r"^## \d{4}-\d{2}-\d{2} \S")
 LOG_REQUIRED = ("Nodes:", "Summary:")
 FORBIDDEN_HEADINGS = ("## Facts", "## Moves")
+TREES = ("language", "compiler")
 DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
 REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
 FIELDS = ("Decision:", "Rejected:")
@@ -29,12 +30,16 @@ class Lint:
     # ---- discovery -----------------------------------------------------
 
     def discover(self):
-        tree_md = os.path.join(self.root, "tree.md")
-        tree_dir = os.path.join(self.root, "tree")
+        for tree in TREES:
+            self.discover_tree(tree)
+
+    def discover_tree(self, tree):
+        tree_md = os.path.join(self.root, tree + ".md")
+        tree_dir = os.path.join(self.root, tree)
         if not os.path.isfile(tree_md):
             self.err(tree_md, "missing root node")
             return
-        self.nodes["tree"] = self.read(tree_md)
+        self.nodes[tree] = self.read(tree_md)
         if not os.path.isdir(tree_dir):
             return
         for dirpath, dirnames, filenames in os.walk(tree_dir):
@@ -46,7 +51,7 @@ class Lint:
                 path = os.path.join(dirpath, name)
                 rel = os.path.relpath(path, self.root)
                 if not name.endswith(".md"):
-                    self.err(rel, "only node files (.md) belong under tree/")
+                    self.err(rel, "only node files (.md) belong under a tree")
                     continue
                 self.nodes[rel[:-3]] = self.read(path)
             dirnames.sort()
@@ -168,7 +173,7 @@ class Lint:
         changed = []
         for name in names:
             rel = name[len(prefix):] if name.startswith(prefix) else name
-            if rel == "tree.md" or rel.startswith("tree/"):
+            if any(rel == tree + ".md" or rel.startswith(tree + "/") for tree in TREES):
                 if rel.endswith(".md"):
                     changed.append(rel[:-3])
         if not changed:
@@ -192,8 +197,8 @@ class Lint:
         per_subtree = {}
         for path in self.nodes:
             parts = path.split("/")
-            if len(parts) >= 2:
-                per_subtree[parts[1]] = per_subtree.get(parts[1], 0) + 1
+            key = parts[0] if len(parts) == 1 else "/".join(parts[:2])
+            per_subtree[key] = per_subtree.get(key, 0) + 1
         print(f"nodes: {len(self.nodes)}  depth: {depth}  decisions: {self.decisions}  rejected: {self.rejected}")
         for name, count in sorted(per_subtree.items()):
             print(f"  {name}: {count}")

@@ -33,7 +33,8 @@ orientation and nothing more.
 
 It is deliberately outside the working loop. A selected direction is worked in
 `research/investigations/<name>/`, where its design, measurements and rejected
-alternatives live, and what is settled by it is written to `mcts_mem/`. Neither
+alternatives live, and what is settled by it is written to the design tree
+under `design/`. Neither
 this file nor those records grants or withholds permission to work on a branch
 or adds a merge condition beyond the four rules in `CLAUDE.md`. A project can
 expose a missing capability, but cannot by itself change the language or

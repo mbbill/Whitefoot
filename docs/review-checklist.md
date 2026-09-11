@@ -66,7 +66,7 @@ or self-description merely to satisfy this table.
 | `docs/roadmap.md` | Long-range reference directions | Required task sequencing, approval, an authoritative current capability inventory; routine work does not require updating it |
 | `docs/ongoing/` | Existing, bounded implementation notes for their named subsystem | A new per-task reporting system, a second project-wide status inventory |
 | `spec/derivation/` | Current rule-to-ground index with classified support and review state; retained historical derivations | A second detailed decision record, silent language changes, historical status treated as current support, task authorization |
-| `mcts_mem/` | Current design choices, sourced evidence and actual rejected alternatives, in skill-defined form | Module inventories, implementation transcripts, task progress or tree-maintenance bookkeeping |
+| `design/` | Live design decisions with their reasons and refused alternatives, one log entry per approved tree change, and the procedure that maintains them | Module inventories, implementation transcripts, task progress, history |
 | PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
 
 Citation boundaries:
@@ -75,16 +75,16 @@ Citation boundaries:
   specification, source/cases, a relevant design, or reproducible evidence.
   The linked passage must support the claim, not merely discuss the topic.
 - The constitution, specification, compiler guide, writer patterns and
-  explanatory essays must be usable without consulting internal decision
-  memory. Do not link to `mcts_mem/` from those documents or use it as their
+  explanatory essays must be usable without consulting the design trees.
+  Do not link to `design/` from those documents or use it as their
   authority. State the relevant principle or explanation in the document and
   cite direct technical evidence when needed.
 - Maintainer navigation (README, agent instructions, practice, research index)
-  may point to the memory directory. Research records, derivation evidence,
+  may point to the design trees. Research records, derivation evidence,
   and PRs may refer to relevant decisions as historical rationale, not as
-  language definitions or proof of an empirical claim. Memory may point to
-  specifications, designs and evidence. Prefer the directory for navigation;
-  node paths can move when decisions are replaced.
+  language definitions or proof of an empirical claim. A tree node may cite
+  specifications, designs and evidence in its reason. Prefer the directory
+  for navigation; node paths can move when decisions are replaced.
 - Historical references may name their historical versions and conditions.
   Current guidance uses the active specification's stable path. Frozen
   archives keep their historical content; do not rewrite them to look current.
@@ -189,7 +189,7 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
 Source: [decision practice](practice.md#decision-work). These are checks on
 observable artifacts, not a claim to know an agent's internal reasoning or
 a second design review. A routine fix under unchanged design can skip this
-group; absence of a new memory file does not establish that the group is
+group; absence of a tree diff does not establish that the group is
 inapplicable.
 
 - [ ] **R1 — Stated ground.** A material choice has a retrievable explanation
@@ -212,10 +212,9 @@ inapplicable.
   rules, cited sources, or evidence meeting a reopening condition, use the diff
   and direct references to check the named affected set. The explanation says
   which choices still stand, stand on different grounds, or need replacement.
-  Their current owners and memory agree. Remaining questions have a concrete
-  source and affected `revisit` rows; appending a Fact or marking the index
-  does not supersede contradictory standing guidance. Do not require an
-  unrelated project-wide sweep.
+  Their current owners and the design tree agree. Remaining questions have a
+  concrete source; a log entry does not supersede contradictory standing
+  guidance. Do not require an unrelated project-wide sweep.
 - [ ] **R4 — Maintained index.** Added/changed/retired rules and changed or
   moved grounds have corresponding current-index updates. Linked sources
   resolve and support the stated scope, including relevant constitutional
@@ -225,29 +224,18 @@ inapplicable.
   rows may remain visible for gradual migration. Integrity success is not
   proof that a cited argument is true.
 
-## M. Decision memory — changed decisions or memory nodes
+## M. Design tree — changed decisions or tree nodes
 
-Use the `mcts-mem-use` skill; this section does not replace its grammar.
+Use `design/skill/SKILL.md`; this section does not replace it.
 
-- [ ] **M1 — Current decision.** If the work changes a recorded design choice,
-  its affected live Items and standing guidance match the result. A routine
-  fix or refactor need not manufacture a decision entry. Read from the root
-  into the relevant subsystem and alternatives; do not judge isolated search
-  hits as the current tree.
-- [ ] **M2 — Integrity.** Verify that tree edits were checked according to the
-  current `mcts-mem-use` skill and inspect the actual results, including any
-  limitation or fallback. For changed replacements, also check that both links name the
-  actual paired nodes and their reasons match verbatim. Compare Facts/Moves
-  with the task base to catch rewritten history even after a commit. Do not
-  alter committed history or weaken lint merely to obtain a green result.
-  For a documented legacy format repair, compare every changed entry against
-  the identified original revision under decision practice; a clean lint on
-  the new HEAD does not validate that repair.
-- [ ] **M3 — Evidence.** New facts have the skill's provenance and an actual
-  source; guesses and historical results are labeled accurately. Items state
-  current choices, Facts record evidence, and Moves record actual re-decisions.
-  No invented rival, activity log, or duplicated rationale is used to fill a
-  section. Lint does not establish that evidence is true or code agrees.
+- [ ] **M1 — Tree before code.** A change that makes or revises a design
+  decision carries its tree diff and log entry, approved before the
+  implementation it governs. Every decision the agent made on its own is in
+  the tree diff for the owner to approve or reject; none is only in code.
+- [ ] **M2 — Correspondence.** The procedure's correspondence checks ran over
+  the pull request's tree diff and its code or specification diff, and every
+  finding is resolved or listed.
+- [ ] **M3 — Form.** `make design-lint` passes on the head revision.
 
 ## V. Validation and handoff — every change
 

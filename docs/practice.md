@@ -109,9 +109,9 @@ requirement to load every rule for every task.
 Run `make -C compiler spec` after index changes. It checks unique active-rule
 coverage, recognized basis/state fields, and a source reference in each row.
 It does not assess the truth or sufficiency of the reason. Check reference
-targets and meaning in the affected set at completion. After memory edits,
-follow the current `mcts-mem-use` skill's verification, provenance, and history
-instructions. Checker setup and invocation belong to the skill.
+targets and meaning in the affected set at completion. After design-tree edits,
+run `make design-lint`; the procedure in `design/skill/SKILL.md` owns the
+checks that read the tree.
 Do not use an index status as a source acceptance rule or an extra approval
 condition; an unresolved safety objection still requires substantive resolution.
 
@@ -245,7 +245,7 @@ worth reopening and preserve the failure it must address. Improved agents can
 change an authoring-cost result; they do not invalidate a counterexample to
 soundness. A result on a retired compiler or a different workload remains
 evidence about those conditions until reproduced on the new ones. The
-relevant [decision memory](../mcts_mem/) records choices and their reasons;
+relevant [design tree](../design/) records choices and their reasons;
 the experiment or design remains the source of the technical evidence.
 
 - State exact commands, inputs, outputs, counts, and exit codes. Read an exit

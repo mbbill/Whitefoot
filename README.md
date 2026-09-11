@@ -39,7 +39,7 @@ Read the material that owns the question you are working on:
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md); [CLAUDE.md](CLAUDE.md) is the identical alternate entry |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
 | How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
-| Why was a design chosen? | [Decision memory](mcts_mem/), with evidence links |
+| Why was a design chosen? | [Design trees](design/), with reasons and refused alternatives |
 | Which long-range directions have been considered? | [Reference roadmap](docs/roadmap.md) |
 
 The roadmap is outside the working loop and may be stale. It is not an
@@ -59,7 +59,8 @@ authority rules are in [AGENTS.md](AGENTS.md#authority-and-reading).
   reference material.
 - [research/](research/README.md): investigations and experiments with their
   designs, measurements, and rejected alternatives.
-- [mcts_mem/](mcts_mem/): settled decisions and their reasons.
+- [mcts_mem/](mcts_mem/): frozen historical decision record, being moved into
+  `design/` and deleted when that is complete.
 - [design/](design/): live design decisions with their reasons, and the
   procedure that maintains them.
 - [governance/](governance/): archive-protection hooks and specification-change
@@ -67,6 +68,21 @@ authority rules are in [AGENTS.md](AGENTS.md#authority-and-reading).
 - [.github/](.github/): CI and the pull-request template.
 - [archive/](archive/): frozen historical material. Active source, builds,
   tests, and tools do not depend on it.
+
+## Running the compiler
+
+From `compiler/`:
+
+```sh
+cargo run --bin whitefootc -- source.wf -o program
+cargo run --bin whitefootc -- --emit-llvm source.wf
+cargo run --bin whitefootc -- --par source.wf -o program
+```
+
+`whitefootc` accepts an ordered bundle of source files. `--no-overlap` selects
+the exact sequential reference lowering and cannot be combined with `--par`.
+`--par-ledger` and `--stack-ledger` print their reports; name the LLVM output
+with `-o` when a report and emitted LLVM would otherwise share stdout.
 
 ## Verification
 

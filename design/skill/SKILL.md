@@ -12,8 +12,11 @@ history and the change log holds the reasons for each change.
 
 Three parts:
 
-- `design/tree.md` and `design/tree/`: the live tree. One file per node; a
-  node's children live in the directory with the node's name.
+- `design/language.md` with `design/language/`, and `design/compiler.md`
+  with `design/compiler/`: the two live trees, one for language decisions
+  and one for compiler decisions. One file per node; a node's children live
+  in the directory with the node's name. A language decision is checked
+  against the specification, a compiler decision against the code.
 - `design/log.md`: one entry per approved tree change, newest first. It
   carries the discussion summary and the reasons. Nobody reads it routinely;
   it answers "why" when a node is questioned.
@@ -65,7 +68,8 @@ Every tree diff review reports node count, depth, and net change.
 ## Log format
 
 Each entry is a `## <date> <title>` heading, a `Nodes:` line listing the
-path of every node the change touched, and a `Summary:` paragraph with the
+path of every node the change touched, such as `language/checks-and-proofs`,
+and a `Summary:` paragraph with the
 discussion's conclusion and reasons. Whether a node was added, changed, or
 removed, and which commits implemented the entry, are found through git.
 

@@ -46,7 +46,8 @@ probably not the next work.
 
 - Work is not planned in a document up front. A selected direction goes to
   `research/investigations/<name>/` for its design, measurements, and rejected
-  alternatives, and the reasoning that survives it is written to `mcts_mem/`.
+  alternatives, and the decision that survives it is written to the design
+  tree under `design/`.
 - `docs/roadmap.md` is a reference map of long-range directions and candidate
   projects. It is not part of this loop: nothing waits on it, no step updates
   it, and it grants or withholds nothing. Read it for orientation; do not treat
@@ -65,14 +66,15 @@ probably not the next work.
   `docs/practice.md` explains engineering and evidence techniques without
   adding approval or merge requirements. README is navigation, not a second
   specification or implementation inventory.
-- `mcts_mem/` is where decisions are recorded: what was tried, what was
-  concluded, why a form was chosen, and which implementations it replaced.
-  Write there when a question is settled, not when a batch ends. Maintain it
-  with the current `mcts-mem-use` skill and follow its verification instructions
-  after tree edits. The skill owns checker setup and invocation; do not duplicate
-  those instructions or pin its tool version in repository guidance or CI.
-  The skill owns node structure, provenance, replacement pairs, and append-only
-  history; lint checks integrity, not the truth of the recorded evidence.
+- `design/` holds the live design trees: `design/language` for language
+  decisions and `design/compiler` for compiler decisions, each decision with
+  its reason and its refused alternatives, and `design/log.md` with one entry
+  per approved tree change. `design/skill/SKILL.md` owns the procedure: a
+  tree diff is written and approved before the implementation it governs,
+  and a pull request is checked for correspondence between its tree diff and
+  its code or specification diff. `mcts_mem/` is a frozen historical record
+  that is not written to; its content is being moved into the trees and it
+  is deleted when that is complete.
 - Architecture dossiers, `archive/done/`, and
   `archive/governance/decision-log.md` preserve historical evidence and
   rationale. `archive/done/` is the retired per-batch record: frozen, not
@@ -99,7 +101,8 @@ Follow the four occasions in [decision practice](docs/practice.md#decision-work)
 2. **Choose:** state why a material choice fits its requirements and evidence;
    record a discriminating experiment's criterion before using it to choose.
 3. **Update:** when a conclusion or its grounds change, update current guidance,
-   memory, affected rule-index entries, and material dependents in the same work.
+   the design tree, affected rule-index entries, and material dependents in the
+   same work.
 4. **Finish:** run applicable checks and another agent's
    [completion review](docs/review-checklist.md), fix findings, and publish the
    result. This is the single review checkpoint; no separate review record or
