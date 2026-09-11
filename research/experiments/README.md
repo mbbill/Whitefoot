@@ -55,6 +55,17 @@ high-level sequencing; plans do not grant or withhold branch permission.
   comparators, two real source trees, one large-text corpus, nine equal-weight
   end-to-end cases, correctness oracles, statistics, and the future 2x rule
   before comparative timing.
+- `compute-bench/` — the compute scoreboard: for each of four kernels
+  (adaptive-Simpson recursion, UTF-8 record batches, a flat FIR map, a skewed
+  Mandelbrot map), at each width, is the Whitefoot program built by this
+  tree's `whitefootc` with plain `--par` the fastest thing in the row? One
+  uniform harness, one scheduler boundary, bit-for-bit equality against an
+  independent oracle per call, and native references built on oneTBB,
+  ParlayLib, Rayon, a static pthread pool and a serial loop at fixed grain
+  policies. Nothing in it fails on a ratio, a spread or an elapsed time;
+  `make check` runs only its compile-only `programs-check`. No table
+  recorded yet — the first goes to
+  [`compute-runtime/RESULTS.md`](../investigations/compute-runtime/RESULTS.md).
 
 ## Completed current-compiler bounded research
 
