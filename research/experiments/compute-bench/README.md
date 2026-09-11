@@ -209,7 +209,8 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   `ratio` as a column rather than in `note` because it is the number the
   process-CPU target is read off, and a reader comparing it with the wall ratio
   should not have to cross the row to do it; the two extra columns take a data
-  row to about 130 characters, well inside the width the legend below was
+  row to at most 141 characters -- the widest a run has printed, the `static`
+  row carrying its own mark -- well inside the width the legend below was
   introduced to protect.
 - **`lower`** is how many of the paired passes had WF lower, because a median
   can hide adverse pairs — a wall ratio of 0.999 with three of five pairs lower
