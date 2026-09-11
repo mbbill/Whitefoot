@@ -50,7 +50,8 @@ question from "is `--par` the fastest".
 
 ### The two A/B handles, and why neither appears in a recorded table
 
-`WF_PAR_CONTROL_FLAGS` is appended to the `--par` emission and is **empty by
+`WF_PAR_CONTROL_FLAGS` is appended to the `--par` emission of the **twin image**
+described in the next subsection, and is **empty by
 default**. It exists so that one tree can answer "what would this compiler
 control be worth here" — two images differing in exactly that flag, built from
 one tree, measured in one `compare` run so the reference rows are shared:
@@ -86,18 +87,91 @@ make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/uni
      WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_SPLIT_WORK_UNIT=300000
 ```
 
-It is **empty by default**, kept in its own stamp file that the four runtime
-object rules depend on — so setting it or clearing it recompiles and relinks
-every image rather than re-timing the one the last run left — recorded in
+It is **empty by default**, kept in its own stamp file that the twin's four
+runtime object rules depend on — so setting it or clearing it recompiles and
+relinks the twin rather than re-timing the one the last run left — recorded in
 `manifest.txt` on every run, and announced in the table header as a
 `WF runtime control flags=` line when it is not empty. **A table recorded in
 `RESULTS.md` is always taken with both variables empty**, for the same reason:
 the `wf` row of a recorded table is the program plain `--par` produces linked
 with the runtime this tree ships. It reaches no reference, no oracle and not
 the harness, because none of those is the Whitefoot runtime; the harness asks
-the linked runtime for the work unit at run time instead of carrying a copy, so
-the `note` column's chunk count and the two split verify fixtures follow the
-image they describe.
+the linked runtime for the split at run time instead of carrying a copy of the
+rule, so the `note` column's chunk count and the two split verify fixtures
+follow the image they describe — under a changed work unit and under a changed
+oversubscription cap alike.
+
+### The A/B twin: what the controls actually build, and how to read it
+
+Neither control moves the plain image. Setting either one — or setting `WF_AB=1`
+with neither — builds a **second image per kernel**, `$(BUILD)/<kernel>-b`, from
+the same sources with the controls applied, and times it in the same passes as
+the form **`wf-b`**. `$(BUILD)/<kernel>` is always built with both controls
+empty.
+
+**Why a twin and not a second run.** On a host whose run-to-run spread is wider
+than the effect being looked for, two separate `compare` runs cannot select
+between two candidates, and this bundle's development host is such a host: six
+runs of *byte-identical* images read the quadrature W=4 ratio anywhere from
+0.916 to 1.035 — thirteen percent — while records and fir W=4 spread 8.5 and 8.8
+percent over the same six. The reducer already solved this for the references.
+Within each pass every form runs as its own process in a rotated, alternating
+order, and the `wf` row's `ratio` is the median of **within-pass matched pairs**
+rather than a quotient of two run medians. The twin puts a second Whitefoot
+image into those same passes, so the two arms of an A/B are separated by
+minutes of one machine's own schedule instead of by two runs.
+
+```sh
+# the oversubscription cap and the work unit, one candidate against the shipped
+# runtime, in one set of passes
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/cap-256 \
+     PASSES=5 CALLS=5 \
+     WF_RUNTIME_CONTROL_FLAGS='-DWF_PAR_SPLIT_OVERSUBSCRIBE=256 -DWF_PAR_SPLIT_WORK_UNIT=75000'
+
+# the instrument's own null check: a twin that differs in nothing
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/null \
+     PASSES=2 WF_AB=1
+```
+
+**What is doubled and what is shared.** The twin gets its own emitted module
+(`<kernel>-par-b.ll`), its own object from it, its own kernel object with the
+weight read out of *that* module (`$(BUILD)/b/<kernel>_split.h`), and its own
+four Whitefoot runtime objects (`floor-b.o`, `sched_core-b.o`,
+`sched_prim_host-b.o`, `sched_entry-b.o`). It shares `harness.o`, every
+`backend_*.o` and the `--no-overlap` control object with the plain image,
+because no control reaches those and a second copy of the same bytes under
+another name would move code placement, which is this bundle's largest
+confound. The two link-time assertions described just below are applied to the
+twin exactly as to the plain image: a twin that silently lost the scheduler
+would read as a runtime constant worth a great deal.
+
+**How the table reads.** `wf-b` gets a row in every block, with its own
+`ratio`, `cpu_r`, `lower`, `steals` and `note`, computed against the best
+reference of each pass exactly as `wf`'s are — neither Whitefoot row is ever a
+reference for the other, so `wf`'s ratio is the number it would have been with
+no twin in the run. Under each block, one line gives the twin verdict directly:
+
+```
+mandelbrot   4 A/B  wf-b/wf  wall 0.981 [0.96-1.01]  lower 4/5  cpu 1.002
+```
+
+`wall` is the **median of the within-pass paired ratios** of `wf-b` to `wf` with
+its `[min-max]`, `lower` is how many of those pairs had the twin faster, and
+`cpu` is the same pairing over process CPU. It is printed at every width the
+block carries, width one included, because "the twin changed nothing at width
+one" is a thing an A/B run has to be able to say. `BEST REFERENCE`, `FASTEST`
+and `WF fastest` skip the twin: they answer whether the program *this tree*
+produces is the fastest thing in its row, and a twin built from a control flag
+is not a thing this tree produces.
+
+**A recorded table never contains a `wf-b` row.** The twin is an instrument, not
+a result: the tables copied into `RESULTS.md` as the record of what this tree
+produces are taken with both controls empty and `WF_AB` unset, which builds no
+twin, runs no extra process and leaves the bundle exactly as it was. An A/B run
+is recorded as the *arms of an experiment*, with the control flags in its
+heading and the `A/B` lines quoted in its reading. The hosted workflow sets
+neither variable and therefore never builds a twin, and `programs-check` — the
+one target the repository's `make check` runs — reads none of the three.
 
 Two link-time assertions make a `wf` row a `wf` row. The emitted module carries
 **weak no-op stubs for every `wf__par_*` symbol**, so a link that loses the
@@ -106,7 +180,10 @@ be silently sequential. The harness therefore references `wf__par_grants()`
 and `wf__sched_split_work()`, neither of which has a weak stub, and the
 Makefile requires a strong definition of `wf__par_publish`,
 `wf__par_split_budget` and `wf__par_recursion_budget` in every image after the
-link.
+link — the twin's image included. `wf__par_split_budget`, which the harness
+also calls for the `note` column's chunk count, *does* have a weak stub, so it
+is that post-link strong-binding assertion and not the reference that keeps the
+count from being a stub's zero.
 
 ## Running it
 

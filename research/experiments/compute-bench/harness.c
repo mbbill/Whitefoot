@@ -235,22 +235,37 @@ static void require_form(const wfb_kernel *k, const char *form) {
     wfb_fail("this kernel has no such form");
 }
 
-/* The emitted chunk count, as compiler/src/backend/sched/core.c computes it:
-   chunks = 2^floor(log2(min(16 * lanes, span / ceil(split_work / weight)))).
-   Reported so the table's `note` column prints what was actually compared,
-   and used by a kernel to size a verify fixture above the admission floor.
-   It is a report, never an input: nothing here selects a chunk count, and
-   there is no environment override for the split budget -- harness.c's main
-   unsets WF_SPLIT_WORK precisely so this default cannot be moved under a
-   recorded row.
+/* The emitted chunk count. Reported so the table's `note` column prints what
+   was actually compared, and used by a kernel to size a verify fixture above
+   the admission floor. It is a report, never an input: nothing here selects a
+   chunk count, and there is no environment override for the split budget --
+   harness.c's main unsets WF_SPLIT_WORK precisely so this default cannot be
+   moved under a recorded row.
 
-   The work unit is ASKED OF THE LINKED RUNTIME rather than copied here. A
-   second copy of that constant would be a note column that quietly disagreed
-   with the image it labels the moment the runtime was built at another value
-   -- which the Makefile's WF_RUNTIME_CONTROL_FLAGS makes an ordinary thing to
-   do -- and it would mis-size the two split verify fixtures by the same
-   factor. wf__sched_split_work() answers its compiled default here because
-   main has already unset the one environment variable that could move it. */
+   IT IS ASKED OF THE LINKED RUNTIME AND NOT RE-DERIVED HERE.
+   `wf__par_split_budget` is the same function the compiled program calls at
+   the loop's entry, so `note` reports the split the image will really take
+   rather than a copy of the rule that was true when this file was last
+   edited. A copy would have disagreed with its own image twice over: once
+   when the work unit moved, and again when the oversubscription cap did --
+   both of which the Makefile's WF_RUNTIME_CONTROL_FLAGS and its A/B twin make
+   an ordinary thing to do, and the twin puts two differently built runtimes in
+   one table where a single copied rule can only describe one of them.
+
+   The runtime answers for its own lane count rather than for the `width`
+   argument, and those are the same number: parse_width above requires
+   WF_WORKERS to equal WIDTH, and WF_WORKERS is what the scheduler sizes its
+   lanes from. The argument is kept because the width-one answer is this
+   function's own -- the runtime has no pool there to ask. It is called with no
+   work outstanding on the calling thread, which is the state the budget is a
+   statement about; the harness calls it before the first timed call and the
+   two split fixtures call it after a completed join.
+
+   The admission floor below is the work term alone -- 2 * ceil(work / weight),
+   the smallest span the splitter can afford two chunks of -- so it reads the
+   work unit directly. The oversubscription cap cannot lower it: a cap is a
+   minimum against the affordable count and never raises the span a split
+   needs. */
 
 static size_t split_divisor(size_t weight) {
     size_t work = (size_t)wf__sched_split_work();
@@ -266,13 +281,11 @@ size_t wfb_split_floor(size_t weight) {
 }
 
 size_t wfb_split_chunks(size_t span, size_t weight, unsigned width) {
-    size_t divisor = split_divisor(weight), affordable, want, bound, chunks = 1;
-    if (!span || !divisor || width < 2) return 0;
-    affordable = span / divisor;
-    want = (size_t)16 * width;
-    bound = affordable < want ? affordable : want;
-    while (chunks * 2 <= bound) chunks *= 2;
-    return bound == 0 ? 0 : chunks;
+    uint64_t budget;
+    if (!span || !weight || width < 2) return 0;
+    budget = wf__par_split_budget((uint64_t)span, (uint64_t)weight);
+    if (!budget || budget >= (uint64_t)(sizeof(size_t) * 8)) return 0;
+    return (size_t)1 << budget;
 }
 
 static size_t wfb_chunks(const wfb_kernel *k, unsigned width) {

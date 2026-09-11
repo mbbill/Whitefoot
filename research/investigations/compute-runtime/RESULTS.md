@@ -6,7 +6,7 @@
 
 # Compute scoreboard results
 
-Status: **thirty-one tables recorded**, in the dated sections at the end of this
+Status: **thirty-two tables recorded**, in the dated sections at the end of this
 file: a baseline at compiler `33ed2c00` on the local four-logical-CPU Linux
 host, then the first hosted run, `34574271919` at `5dd1eb7b`, one section per
 leg of the bundle's workflow — `macos-14` (three CPUs, recorded block W=2) and
@@ -31,7 +31,11 @@ a refusal measured in two runs per arm; the spin bound sized to a measured
 park-and-wake at the same revision, where `WF_PAR_SPIN_ROUNDS` moves from 4,096
 to 1,024; and the split work unit swept against the Mandelbrot grain, a second
 refusal, where three control runs of the same bytes spread further than the
-effect the sweep was cutting for and the constant does not move.
+effect the sweep was cutting for and the constant does not move. That refusal
+is why the section after it is an instrument rather than a table: the bundle
+gained an **A/B twin**, a second Whitefoot image timed inside the same passes as
+the first, and its own null check over byte-identical images says what a
+within-pass pair is worth at two passes on this host.
 Each run that matters is added the same way, newest last.
 
 The question every table here answers is the bundle's: for each kernel, at each
@@ -86,6 +90,12 @@ block is the recorded one and confirm the sizing window held: the `wf-seq`
 median inside [5 ms, 60 ms], the `wf` median above 1 ms at the recorded width,
 and `steals > 0` on the `wf` row at every parallel width. Say what moved and why
 if a size constant had to change. Newest section last.
+
+A run that carries a `wf-b` row is an A/B instrument and is never recorded as a
+table of what this tree produces: record it as the arms of an experiment, with
+the control flags in the heading and the `A/B  wf-b/wf` lines quoted in the
+reading, and say in the host block that no width block of it is a candidate
+record. See the compute-bench README, "The A/B twin".
 
 <!-- Sections begin here. Template, kept for the next run and never filled in
      with numbers that were not measured:
@@ -7295,4 +7305,387 @@ fir          4 wf                   7316.8   2.8 7108.8..8509.7            27384
 fir          8 wf                   7683.2   2.9 7333.4..8220.4            28094.3 0.920 [0.89-0.97]  0.871   5/5      18 64 chunks
 fir          1 wf-seq              27687.0   2.3 26858.1..28364.0          27682.9                                        
 fir          1 wf                  27889.7   0.4 27458.1..27995.9          27884.7                                        
+```
+
+## 2026-09-11 — local host (Linux x86_64, 4 logical CPUs), the A/B twin and its null check
+
+**This is the instrument, not a result.** The compute scoreboard now builds an
+optional **second Whitefoot image per kernel** and times it inside the same
+passes as the first, so two runtimes or two compiler controls can be compared
+without comparing two separate runs. The run below is that instrument measured
+against itself: the twin was built with `-DWF_PAR_SPLIT_WORK_UNIT=1200000`,
+which is the value the runtime already compiles, and **every twin image came out
+byte-identical to its plain image** — the manifest records both hashes and each
+pair matches. So every `A/B` line here is this host's own within-pass paired
+spread over identical bytes at two passes, and nothing else.
+
+**Why the twin exists.** The section before this one could not select between
+four values of the splitter's work unit because the host's run-to-run spread was
+wider than the effect: quadrature's W=4 ratio spread 13.0 percent over six runs
+of a decomposition that never changed, and records and fir W=4 spread 8.5 and
+8.8 percent at an unchanged 64 chunks. The reducer already answers that for the
+references — within each pass every form runs as its own process in a rotated,
+alternating order, and the `wf` row's `ratio` is the median of within-pass
+matched pairs rather than a quotient of two run medians. What was missing was a
+second Whitefoot image in those same passes. `wf-b` is that image: the same cell
+list, the same rotation and reversal, its own process, its own row with its own
+`ratio`/`cpu_r`/`lower` against the best reference of each pass, and one line
+per block pairing it with `wf` pass by pass.
+
+**What the null check says.** Eleven of the sixteen `A/B` lines read within 1.6
+percent of 1.000, and the `lower` counts are mixed as they should be over
+identical bytes — 1/2 on nine lines, 2/2 on four, 0/2 on three:
+
+```text
+mandelbrot   2 A/B  wf-b/wf  wall 0.998 [1.00-1.00]  lower 1/2  cpu 1.002
+mandelbrot   4 A/B  wf-b/wf  wall 1.004 [0.97-1.04]  lower 1/2  cpu 0.994
+mandelbrot   8 A/B  wf-b/wf  wall 0.976 [0.96-0.99]  lower 2/2  cpu 1.023
+mandelbrot   1 A/B  wf-b/wf  wall 1.004 [0.99-1.01]  lower 1/2  cpu 1.004
+quadrature   2 A/B  wf-b/wf  wall 1.042 [1.02-1.07]  lower 0/2  cpu 1.056
+quadrature   4 A/B  wf-b/wf  wall 1.014 [0.98-1.05]  lower 1/2  cpu 1.086
+quadrature   8 A/B  wf-b/wf  wall 1.016 [0.99-1.04]  lower 1/2  cpu 0.922
+quadrature   1 A/B  wf-b/wf  wall 1.048 [1.03-1.07]  lower 0/2  cpu 1.048
+records      2 A/B  wf-b/wf  wall 0.935 [0.87-1.00]  lower 1/2  cpu 0.957
+records      4 A/B  wf-b/wf  wall 0.998 [0.97-1.02]  lower 1/2  cpu 0.989
+records      8 A/B  wf-b/wf  wall 0.974 [0.94-1.01]  lower 1/2  cpu 0.974
+records      1 A/B  wf-b/wf  wall 0.978 [0.97-0.99]  lower 2/2  cpu 0.978
+fir          2 A/B  wf-b/wf  wall 0.996 [0.99-1.00]  lower 2/2  cpu 1.007
+fir          4 A/B  wf-b/wf  wall 0.880 [0.74-1.02]  lower 1/2  cpu 0.987
+fir          8 A/B  wf-b/wf  wall 1.014 [1.01-1.02]  lower 0/2  cpu 1.019
+fir          1 A/B  wf-b/wf  wall 1.004 [1.00-1.01]  lower 1/2  cpu 1.004
+```
+
+**And it says what the instrument's resolution is at two passes, which is the
+more useful half.** Five lines are further out than 1.6 percent, and each one
+has a visible cause in the rows above it rather than a difference between the
+arms, because there is no difference between the arms:
+
+- **fir W=4 reads 0.880 [0.74-1.02]** because one of the two `wf` processes was
+  disturbed: that row's MAD is **18.5 percent** with a p10..p90 of
+  7,342.7..10,673.8 us against the twin's 2.6 percent and 7,494.6..7,888.0. One
+  excursion in one process moves a median of two pairs by twelve percent. The
+  bundle retains excursions and discards no process, here as everywhere.
+- **records W=2 reads 0.935 [0.87-1.00]** the same way, from a `wf` row with a
+  6.2 percent MAD and a 18,440.9..20,891.1 spread.
+- **quadrature W=1 1.048 (0/2) and W=2 1.042 (0/2)** are the only pair of lines
+  that lean one way in both passes; quadrature is also the kernel with no
+  independent-map split at all, so the two arms there are the same code taking
+  the same path, and its W=1 row is the longest-running single-threaded cell in
+  the run.
+
+So the twin does not remove this host's spread; it removes the part of it that
+lies *between runs*, and what remains is what a single disturbed process is
+worth inside a pass. **At two passes that is a few percent, not a fraction of
+one**, and an experiment that needs to resolve five percent should read five
+paired passes and the `lower` count together rather than the wall median alone.
+
+- host: `Linux vm 6.18.44-fc-v24 #1 SMP PREEMPT_DYNAMIC @0 x86_64 x86_64 x86_64 GNU/Linux`
+- logical CPUs: 4   inherited mask: `0-3` (as recorded; `cgroup_cpu_max` and
+  `cpuset.cpus.effective` both absent and recorded as unqualified)
+- recorded block: none — **this run is not a candidate record.** It carries a
+  `wf-b` row, so it is an A/B instrument by construction and its `wf` rows are
+  read here only as the other half of a pair. W=4 is this host's highest
+  non-oversubscribed block and W=8 is oversubscribed, as in every section above.
+- compiler revision: `a3fef4b65b74d5b1264405904e720e8828c2d11e`
+- clang: Ubuntu clang version 18.1.3 (1ubuntu1)   clang++: Ubuntu clang version
+  18.1.3 (1ubuntu1)   rustc: rustc 1.94.1 (e408947bf 2026-03-25)   cargo: cargo
+  1.94.1 (29ea6fb6a 2026-03-24)   cmake: cmake version 3.28.3
+- pins: oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0
+- BENCH_ARCH: `-march=x86-64-v3`
+- sizes and emitted chunk counts: unchanged — mandelbrot 98,304 points at limit
+  256, shape `trailing`, **16 chunks** at W=2, W=4 and W=8; records 131,072 at
+  `max_length` 255, **32 / 64 / 64**; fir K=64 over N=524,288, **32 / 64 / 64**;
+  quadrature M=64 at tolerance `0x1p-54`, depth 24, `chunks=na`. The `wf-b` rows
+  report the same counts, which is the first thing the twin had to get right:
+  the harness asks the linked runtime for the split rather than re-deriving it,
+  so an image built at another work unit or another oversubscription cap labels
+  itself correctly.
+- `--par` control flags: none; `WF_PAR_CONTROL_FLAGS` empty
+- runtime control flags: `WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_SPLIT_WORK_UNIT=1200000`,
+  the compiled default, reaching the twin only. `WF_AB_TWIN: yes` in the
+  manifest, and the table header carries the twin's disclosure line.
+- image identity: every twin image is byte-identical to its plain image —
+  `mandelbrot` and `mandelbrot-b` both `e546b37823fa5472…`, `quadrature`
+  `efabfb8d95808395…`, `records` `2d468d594e628e59…`, `fir`
+  `505fd6772508ee12…` — and each `-par-b.ll` matches its `-par.ll`
+  (`f07c190e…`, `dc6aeaf3…`, `9ceebaed…`, `e0af1ed0…`, the same four modules as
+  every section since `53359d73`).
+- workflow run: `local`
+- sizing window: every `wf-seq` median at W=1 inside [5 ms, 60 ms] — mandelbrot
+  26.546, quadrature 16.607, records 36.410, fir 28.453 ms; every `wf` median at
+  W=4 above 1 ms; `steals > 0` on the `wf` row at every parallel width, and on
+  every `wf-b` row too, so no row carries `no-lanes`.
+- passes: 2, calls: 5
+
+```text
+compute-bench  host=Linux x86_64  cpus=4  mask=pid 11272's current affinity list: 0-3  date=2026-09-11T14:55:02Z
+run=local  compiler=a3fef4b65b74d5b1264405904e720e8828c2d11e  clang=Ubuntu clang version 18.1.3 (1ubuntu1)  rustc=rustc 1.94.1 (e408947bf 2026-03-25)
+reference flags=-std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic -pthread -falign-loops=32 -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto -march=x86-64-v3
+      (identical for every reference implementation of every kernel)
+WF flags=-std=c11 -pthread -O2 -Wno-override-module
+      (module and runtime, as whitefootc links them: no -march, no loop
+      alignment -- see README)
+WF runtime control flags=-DWF_PAR_SPLIT_WORK_UNIT=1200000
+      (appended to the compile of the `wf-b` TWIN's Whitefoot runtime only:
+      `wf` above is still the runtime this tree ships. A table with a wf-b row
+      is an A/B instrument and must not be recorded as a plain table -- see
+      README)
+pins: oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0
+sizes: mandelbrot   points=98304 limit=256 shape=trailing seed=828219
+sizes: quadrature   integrations=64 tolerance=0x1p-54 depth=24
+sizes: records      records=131072 max_length=255 shape=unicode seed=812381
+sizes: fir          taps=64 outputs=524288 seed=92821
+passes=2 calls=5
+
+kernel       w form              median_us  mad% p10..p90_us                cpu_us ratio              cpu_r lower  steals note
+mandelbrot   2 tbb                 13251.3   0.2 13224.7..13277.9          26488.7                                        
+mandelbrot   2 rayon-iter          13340.8   0.0 13337.1..13344.6          26413.7                                        
+mandelbrot   2 rayon-join          13437.9   0.1 13428.8..13447.0          26725.2                                        
+mandelbrot   2 parlay              13556.2   0.4 13498.2..13614.3          26625.9                                        
+mandelbrot   2 wf-b                13617.6   0.9 13490.8..13744.5          26710.4 1.028 [1.02-1.04]  1.008   0/2       3 16 chunks
+mandelbrot   2 wf                  13638.4   1.1 13486.1..13790.7          26650.5 1.029 [1.02-1.04]  1.006   0/2       3 16 chunks
+mandelbrot   2 static              26136.7   0.2 26080.6..26192.7          52237.8                                        excursions retained
+mandelbrot   2 BEST REFERENCE = tbb          FASTEST = tbb          WF fastest: no
+mandelbrot   2 A/B  wf-b/wf  wall 0.998 [1.00-1.00]  lower 1/2  cpu 1.002
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  rayon-iter: rayon 1.12.0 parallel iterator, its own adaptive splitting
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  wf-b: compiler-chosen
+  wf: compiler-chosen
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+
+mandelbrot   4 tbb                  6782.6   0.6 6743.0..6822.2            25817.8                                        
+mandelbrot   4 wf                   7088.1   1.2 7004.2..7172.0            26949.1 1.045 [1.03-1.06]  1.044   0/2       5 16 chunks
+mandelbrot   4 parlay               7105.1   1.4 7003.8..7206.5            27442.9                                        
+mandelbrot   4 wf-b                 7111.2   2.7 6921.3..7301.1            26776.5 1.048 [1.03-1.07]  1.037   0/2       6 16 chunks
+mandelbrot   4 rayon-join           7123.5   0.3 7103.5..7143.4            27448.8                                        
+mandelbrot   4 rayon-iter           7149.2   0.6 7107.7..7190.6            27320.0                                        
+mandelbrot   4 static              26224.6   0.7 26049.7..26399.6         103952.6                                        excursions retained
+mandelbrot   4 BEST REFERENCE = tbb          FASTEST = tbb          WF fastest: no
+mandelbrot   4 A/B  wf-b/wf  wall 1.004 [0.97-1.04]  lower 1/2  cpu 0.994
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  wf: compiler-chosen
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  wf-b: compiler-chosen
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  rayon-iter: rayon 1.12.0 parallel iterator, its own adaptive splitting
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+
+mandelbrot   8 tbb                  6985.2   0.5 6948.1..7022.4            27489.0                                        
+mandelbrot   8 wf-b                 7028.6   0.6 6988.1..7069.1            26913.1 1.006 [1.00-1.02]  0.979   1/2       8 16 chunks
+mandelbrot   8 rayon-join           7093.5   0.2 7080.2..7106.8            27585.0                                        
+mandelbrot   8 parlay               7100.5   0.2 7089.7..7111.3            27655.3                                        
+mandelbrot   8 rayon-iter           7116.3   1.2 7030.6..7202.0            27511.8                                        
+mandelbrot   8 wf                   7201.3   0.9 7137.4..7265.1            26328.6 1.031 [1.03-1.03]  0.958   0/2       8 16 chunks
+mandelbrot   8 static              31521.0   0.1 31496.5..31545.6         127371.6                                        excursions retained
+mandelbrot   8 BEST REFERENCE = tbb          FASTEST = tbb          WF fastest: n/a (oversubscribed)
+mandelbrot   8 A/B  wf-b/wf  wall 0.976 [0.96-0.99]  lower 2/2  cpu 1.023
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  wf-b: compiler-chosen
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  rayon-iter: rayon 1.12.0 parallel iterator, its own adaptive splitting
+  wf: compiler-chosen
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+
+mandelbrot   1 serial              26309.8   0.4 26202.6..26417.0          26300.5                                        
+mandelbrot   1 wf-seq              26545.8   0.5 26424.6..26666.9          26543.6                                        
+mandelbrot   1 wf                  26662.0   0.0 26649.5..26674.6          26658.5                                        
+mandelbrot   1 wf-b                26760.7   0.9 26511.0..27010.4          26758.0                                        
+mandelbrot   1 A/B  wf-b/wf  wall 1.004 [0.99-1.01]  lower 1/2  cpu 1.004
+  serial: none: one thread, a loop over all callbacks
+  wf-seq: control
+  wf: compiler-chosen
+  wf-b: compiler-chosen
+
+quadrature   2 wf                   8634.6   2.0 8461.9..8807.4            16779.1 0.972 [0.97-0.97]  0.945   2/2     420 
+quadrature   2 rayon-join           8884.5   2.2 8687.2..9081.9            17767.0                                        
+quadrature   2 wf-b                 8998.3   4.5 8593.2..9403.3            17716.6 1.012 [0.99-1.04]  0.997   1/2     398 
+quadrature   2 rayon-join-left      9083.4   1.6 8940.1..9226.7            18160.8                                        
+quadrature   2 static               9865.3   0.1 9857.1..9873.5            18567.4                                        excursions retained
+quadrature   2 tbb                 10262.4   1.0 10161.8..10363.0          19960.5                                        
+quadrature   2 parlay              10508.0   5.0 9981.6..11034.3           18442.9                                        
+quadrature   2 parlay-left         14264.5   9.2 12946.1..15582.8          21244.4                                        
+quadrature   2 BEST REFERENCE = rayon-join   FASTEST = wf           WF fastest: yes
+quadrature   2 A/B  wf-b/wf  wall 1.042 [1.02-1.07]  lower 0/2  cpu 1.056
+  wf: compiler-chosen
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  wf-b: compiler-chosen
+  rayon-join-left: rayon 1.12.0 join, bisect the chunk range to one callback, left-offer fork
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  parlay-left: ParlayLib native scheduler, parallel_for granularity 1, left-offer fork
+
+quadrature   4 wf                   5129.5   4.0 4923.1..5336.0            17172.1 0.991 [0.96-1.03]  0.843   1/2    1005 
+quadrature   4 rayon-join           5174.4   0.5 5148.1..5200.7            20362.2                                        
+quadrature   4 wf-b                 5208.0   7.2 4834.6..5581.3            18670.5 1.006 [0.94-1.07]  0.916   1/2    1026 
+quadrature   4 rayon-join-left      5600.4   3.5 5403.5..5797.4            21776.7                                        
+quadrature   4 static               6415.7   8.5 5870.9..6960.6            30321.0                                        excursions retained
+quadrature   4 tbb                  6631.7   2.4 6474.4..6788.9            26067.9                                        
+quadrature   4 parlay               7360.1   4.0 7065.7..7654.5            23124.0                                        
+quadrature   4 parlay-left          9502.1   2.5 9260.9..9743.2            26119.8                                        
+quadrature   4 BEST REFERENCE = rayon-join   FASTEST = wf           WF fastest: yes
+quadrature   4 A/B  wf-b/wf  wall 1.014 [0.98-1.05]  lower 1/2  cpu 1.086
+  wf: compiler-chosen
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  wf-b: compiler-chosen
+  rayon-join-left: rayon 1.12.0 join, bisect the chunk range to one callback, left-offer fork
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  parlay-left: ParlayLib native scheduler, parallel_for granularity 1, left-offer fork
+
+quadrature   8 wf                   5041.4   0.8 5002.7..5080.1            19095.0 0.999 [0.94-1.06]  1.015   1/2    1164 
+quadrature   8 wf-b                 5119.0   1.5 5044.5..5193.5            17477.1 1.016 [0.93-1.10]  0.941   1/2    1141 
+quadrature   8 parlay               5392.9  12.7 4709.6..6076.1            18262.4                                        
+quadrature   8 rayon-join           5468.3   0.7 5432.6..5503.9            21690.6                                        
+quadrature   8 tbb                  6408.3   1.5 6312.4..6504.2            25230.7                                        
+quadrature   8 rayon-join-left      7276.4   6.3 6815.2..7737.6            26592.8                                        
+quadrature   8 parlay-left          7430.1   1.0 7352.6..7507.6            23446.3                                        
+quadrature   8 static             524001.8   0.8 520008.5..527995.0      2084017.6                                        excursions retained
+quadrature   8 BEST REFERENCE = rayon-join   FASTEST = wf           WF fastest: n/a (oversubscribed)
+quadrature   8 A/B  wf-b/wf  wall 1.016 [0.99-1.04]  lower 1/2  cpu 0.922
+  wf: compiler-chosen
+  wf-b: compiler-chosen
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  rayon-join-left: rayon 1.12.0 join, bisect the chunk range to one callback, left-offer fork
+  parlay-left: ParlayLib native scheduler, parallel_for granularity 1, left-offer fork
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+
+quadrature   1 serial              15612.1   0.1 15601.5..15622.7          15610.6                                        
+quadrature   1 wf                  15751.2   1.1 15579.1..15923.2          15749.6                                        
+quadrature   1 wf-b                16496.0   0.9 16341.6..16650.4          16494.7                                        
+quadrature   1 wf-seq              16606.8   0.6 16504.2..16709.4          16603.9                                        
+quadrature   1 A/B  wf-b/wf  wall 1.048 [1.03-1.07]  lower 0/2  cpu 1.048
+  serial: none: one thread, a loop over all callbacks
+  wf: compiler-chosen
+  wf-b: compiler-chosen
+  wf-seq: control
+
+records      2 tbb                 16467.9   0.0 16466.7..16469.2          32322.0                                        
+records      2 rayon-join          16847.2   0.2 16818.8..16875.5          33268.1                                        
+records      2 parlay              17090.7   0.5 17008.4..17173.1          32197.2                                        
+records      2 static              17813.0   6.8 16593.2..19032.8          33789.0                                        excursions retained
+records      2 wf-b                18308.3   1.2 18093.2..18523.4          36329.7 1.112 [1.10-1.12]  1.124   0/2       1 32 chunks
+records      2 rayon-iter          18646.0   3.6 17969.1..19323.0          36208.4                                        
+records      2 wf                  19666.0   6.2 18440.9..20891.1          38114.7 1.194 [1.12-1.27]  1.180   0/2       1 32 chunks
+records      2 BEST REFERENCE = tbb          FASTEST = tbb          WF fastest: no
+records      2 A/B  wf-b/wf  wall 0.935 [0.87-1.00]  lower 1/2  cpu 0.957
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+  wf-b: compiler-chosen
+  rayon-iter: rayon 1.12.0 parallel iterator, its own adaptive splitting
+  wf: compiler-chosen
+
+records      4 rayon-join           8323.8   0.2 8306.3..8341.3            32653.4                                        
+records      4 static               8418.2   1.3 8307.8..8528.6            32365.2                                        excursions retained
+records      4 parlay               8655.2   3.1 8388.5..8921.9            28714.4                                        
+records      4 rayon-iter           8783.0   2.6 8550.4..9015.5            33038.6                                        
+records      4 tbb                  9450.0   9.6 8544.8..10355.3           33521.5                                        
+records      4 wf-b                 9689.7   1.9 9503.7..9875.8            36458.9 1.164 [1.14-1.18]  1.117   0/2       9 64 chunks
+records      4 wf                   9710.4   0.7 9643.5..9777.3            36878.8 1.167 [1.16-1.18]  1.129   0/2       7 64 chunks
+records      4 BEST REFERENCE = rayon-join   FASTEST = rayon-join   WF fastest: no
+records      4 A/B  wf-b/wf  wall 0.998 [0.97-1.02]  lower 1/2  cpu 0.989
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  rayon-iter: rayon 1.12.0 parallel iterator, its own adaptive splitting
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  wf-b: compiler-chosen
+  wf: compiler-chosen
+
+records      8 parlay               8573.9   0.6 8523.5..8624.2            33892.7                                        
+records      8 rayon-join           8655.7   1.7 8511.7..8799.6            33535.3                                        
+records      8 tbb                  8940.9   3.0 8674.1..9207.7            34248.1                                        
+records      8 rayon-iter           9377.1   6.9 8730.3..10023.8           35182.5                                        
+records      8 wf-b                10014.2   1.5 9866.4..10162.0           37386.9 1.176 [1.16-1.19]  1.121   0/2      18 64 chunks
+records      8 wf                  10285.6   2.2 10061.2..10510.0          38437.8 1.208 [1.18-1.23]  1.152   0/2      18 64 chunks
+records      8 static              16005.9   1.1 15833.6..16178.1          63424.7                                        excursions retained
+records      8 BEST REFERENCE = rayon-join   FASTEST = parlay       WF fastest: n/a (oversubscribed)
+records      8 A/B  wf-b/wf  wall 0.974 [0.94-1.01]  lower 1/2  cpu 0.974
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  rayon-iter: rayon 1.12.0 parallel iterator, its own adaptive splitting
+  wf-b: compiler-chosen
+  wf: compiler-chosen
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+
+records      1 serial              32870.3   2.0 32219.6..33521.0          32859.2                                        
+records      1 wf-seq              36410.3   1.7 35777.1..37043.6          36406.1                                        
+records      1 wf-b                36727.9   1.4 36220.4..37235.4          36723.3                                        
+records      1 wf                  37557.5   2.1 36771.6..38343.4          37553.1                                        
+records      1 A/B  wf-b/wf  wall 0.978 [0.97-0.99]  lower 2/2  cpu 0.978
+  serial: none: one thread, a loop over all callbacks
+  wf-seq: control
+  wf-b: compiler-chosen
+  wf: compiler-chosen
+
+fir          2 wf-b                14446.1   1.1 14288.4..14603.9          27832.5 0.901 [0.88-0.92]  0.886   2/2       1 32 chunks
+fir          2 wf                  14503.6   0.8 14385.6..14621.6          27631.1 0.905 [0.88-0.93]  0.880   2/2       1 32 chunks
+fir          2 rayon-join          16135.7   3.6 15549.9..16721.4          31657.0                                        
+fir          2 rayon-iter          16383.8   0.9 16240.3..16527.3          31976.8                                        
+fir          2 parlay              16509.9   3.6 15912.5..17107.4          32043.3                                        
+fir          2 static              16542.5   0.0 16542.4..16542.7          32537.9                                        excursions retained
+fir          2 tbb                 16845.9   1.4 16604.9..17087.0          32788.5                                        
+fir          2 BEST REFERENCE = rayon-iter   FASTEST = wf           WF fastest: yes
+fir          2 A/B  wf-b/wf  wall 0.996 [0.99-1.00]  lower 2/2  cpu 1.007
+  wf-b: compiler-chosen
+  wf: compiler-chosen
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  rayon-iter: rayon 1.12.0 parallel iterator, its own adaptive splitting
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+
+fir          4 wf-b                 7691.3   2.6 7494.6..7888.0            27641.6 0.949 [0.93-0.97]  0.887   2/2      11 64 chunks
+fir          4 parlay               8266.9   2.6 8054.2..8479.6            31660.8                                        
+fir          4 rayon-join           8295.3   1.7 8157.4..8433.2            31535.1                                        
+fir          4 tbb                  8675.3   3.0 8416.6..8934.1            31353.9                                        
+fir          4 static               8821.9   0.3 8796.0..8847.7            32516.6                                        excursions retained
+fir          4 rayon-iter           8935.1   3.3 8637.5..9232.7            33113.0                                        
+fir          4 wf                   9008.3  18.5 7342.7..10673.8           27993.7 1.110 [0.91-1.31]  0.899   1/2      12 64 chunks
+fir          4 BEST REFERENCE = rayon-join   FASTEST = parlay       WF fastest: no
+fir          4 A/B  wf-b/wf  wall 0.880 [0.74-1.02]  lower 1/2  cpu 0.987
+  wf-b: compiler-chosen
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+  rayon-iter: rayon 1.12.0 parallel iterator, its own adaptive splitting
+  wf: compiler-chosen
+
+fir          8 wf                   7572.3   1.4 7462.6..7682.1            27582.4 0.942 [0.94-0.94]  0.897   2/2      18 64 chunks
+fir          8 wf-b                 7675.8   0.6 7627.2..7724.4            28095.4 0.955 [0.94-0.97]  0.913   2/2      20 64 chunks
+fir          8 tbb                  8042.5   1.8 7897.9..8187.1            30775.0                                        
+fir          8 parlay               8484.4   1.3 8373.4..8595.3            33041.1                                        
+fir          8 rayon-iter           8551.7   0.6 8501.4..8602.0            32424.1                                        
+fir          8 rayon-join           8736.8   1.3 8619.0..8854.5            33594.9                                        
+fir          8 static              15571.7  19.9 12471.9..18671.6          63152.8                                        excursions retained
+fir          8 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: n/a (oversubscribed)
+fir          8 A/B  wf-b/wf  wall 1.014 [1.01-1.02]  lower 0/2  cpu 1.019
+  wf: compiler-chosen
+  wf-b: compiler-chosen
+  tbb: oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1
+  parlay: ParlayLib native scheduler, parallel_for granularity 1, right-offer fork
+  rayon-iter: rayon 1.12.0 parallel iterator, its own adaptive splitting
+  rayon-join: rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork
+  static: equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew
+
+fir          1 wf                  27219.3   0.2 27168.1..27270.4          27207.6                                        
+fir          1 wf-b                27337.3   0.8 27117.1..27557.4          27327.2                                        
+fir          1 wf-seq              28452.7   0.4 28328.5..28576.8          28447.8                                        
+fir          1 serial              35179.1   8.2 32288.6..38069.7          35145.0                                        
+fir          1 A/B  wf-b/wf  wall 1.004 [1.00-1.01]  lower 1/2  cpu 1.004
+  wf: compiler-chosen
+  wf-b: compiler-chosen
+  wf-seq: control
+  serial: none: one thread, a loop over all callbacks
+
 ```
