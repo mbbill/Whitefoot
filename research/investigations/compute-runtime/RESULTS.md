@@ -39,7 +39,7 @@ within-pass pair is worth at two passes on this host. The section after it
 carries that twin's first experiment in three tables, the oversubscription cap
 raised with the work unit in three pairs: a third refusal, where the twin's own
 null arm moved as far as the effect it was built to select and
-`WF_PAR_SPLIT_OVERSUBSCRIBE` stays at 16. The last three sections take that
+`WF_PAR_SPLIT_OVERSUBSCRIBE` stays at 16. Three sections then take that
 refusal's cause as their subject rather than its symptom, and are read together:
 a null arm that is **identical in behaviour and shifted in placement** — a
 never-called 587-byte function under `#ifdef WF_PLACEMENT_PAD`, which nothing
@@ -51,7 +51,7 @@ remedy's own A/B, alignment on the Whitefoot side of the link against the flags
 `whitefootc` passes clang, holds every one of its sixteen lines inside
 [0.954, 1.010]. **So the compiler driver is unchanged**: the flags cost nothing
 and buy less than this host can resolve, and the sensitivity they were meant to
-remove is not the kind of thing they reach. The last two sections carry that
+remove is not the kind of thing they reach. Two sections then carry that
 same null check off the development host and onto the hosted runners, run
 `34626670962` at `7c18d3e6`, `ubuntu-24.04` then `macos-14`, both arms built at
 the work unit the runtime already compiles: they are A/B instruments and neither
@@ -61,11 +61,12 @@ of 1.000 with two of them leaning that percent in all five passes, so **this
 runner class resolves about one percent at five passes**; on the Apple runner
 the twelve lines spread from 0.862 to 1.263 over identical emitted modules, so
 **no macOS reading of a control smaller than roughly twenty percent is a
-result**. With that instrument characterised on both hosted legs, the last ten
-sections are five hosted A/B runs with both legs each, `ubuntu-24.04` then
-`macos-14`, and **none of them is counted among the tables above**: every one
-carries a `wf-b` row. Two of them sweep the splitter's grain against the same
-tree's shipped runtime — run `34628390507` at a work unit of 150,000 with the
+result**. With that instrument characterised on both hosted legs, ten further
+sections carry five hosted A/B runs with both legs each, `ubuntu-24.04` then
+`macos-14` — runs `34628390507`, `34630112178`, `34631106340`, `34632558439`
+and `34633767263` — and **none of them is counted among the tables above**:
+every one carries a `wf-b` row. Two of them sweep the splitter's grain against
+the same tree's shipped runtime — run `34628390507` at a work unit of 150,000 with the
 oversubscription cap at 32, and run `34630112178` at a work unit of 300,000
 with the cap unchanged — and together they refuse to move either constant: the
 finer grain pays 6.4 percent on mandelbrot W=4 on a runner whose own rows say
@@ -10251,6 +10252,7 @@ fir          1 A/B  wf-b/wf  wall 0.999 [1.00-1.01]  lower 3/5  cpu 1.000
   wf-b: compiler-chosen
   wf: compiler-chosen
   serial: none: one thread, a loop over all callbacks
+
 ```
 
 ## 2026-09-11 — macos-14 (Darwin arm64, 3 logical CPUs), run 34626670962 at `7c18d3e6`, the A/B twin's hosted null check
@@ -10304,8 +10306,12 @@ fir          1 A/B  wf-b/wf  wall 1.027 [0.89-1.44]  lower 1/5  cpu 1.026
 That is a 40-point span on the wall median where the Linux leg of the same run,
 at the same five passes and over byte-identical images, spanned 1.9 points. The
 rows behind it agree: the `wf` and `wf-b` MADs run from 0.5 percent (quadrature
-W=1) to 34.4 percent (quadrature W=4's twin), and every line further than five
-percent from 1.000 sits on rows with MADs between about 8 and 34 percent. The
+W=1) to 34.4 percent (quadrature W=4's twin), and four of the six lines further
+than five percent from 1.000 sit on rows with MADs between 8.1 and 23.6 percent
+— mandelbrot W=2 and W=4, records W=4 and fir W=4. The other two do not, and
+are worth naming: mandelbrot W=1 reads 0.948 on rows of 3.6 and 4.7 percent,
+and quadrature W=4 reads 1.210 with a 34.4 percent twin row but a 3.4 percent
+plain row, so a wide line here does not always have a wide row behind it. The
 paired intervals are wider still — quadrature W=2 reads [0.52-9.38] and records
 W=4 reads [0.23-1.47] — so single passes here differ from each other by
 factors, not percentages. The clearest single statement of the problem is fir
@@ -10317,9 +10323,10 @@ points.
 
 **So no macOS reading of a control smaller than roughly twenty percent is a
 result**, and that bound is the useful output of this leg. It applies to the
-paired `A/B` line as much as to a row median: the instrument is unbiased here —
-six lines lean each way — and too imprecise at five passes for anything the
-scoreboard is currently trying to select. A macOS A/B arm is worth running only
+paired `A/B` line as much as to a row median: the instrument is close to
+unbiased here — five of the twelve lines sit below 1.000 and seven above — and
+too imprecise at five passes for anything the scoreboard is currently trying to
+select. A macOS A/B arm is worth running only
 for an effect large enough to clear that, or at a pass count this workflow does
 not currently use.
 
@@ -10573,6 +10580,7 @@ fir          1 A/B  wf-b/wf  wall 1.027 [0.89-1.44]  lower 1/5  cpu 1.026
   wf-seq: control
   serial: none: one thread, a loop over all callbacks
   wf-b: compiler-chosen
+
 ```
 
 ## 2026-09-11 — ubuntu-24.04 (Linux x86_64, 4 logical CPUs), run 34628390507 at `7c18d3e6`, the split work unit at 150,000 with the cap at 32
@@ -11256,9 +11264,12 @@ emitted modules are again byte-identical between the arms (`f07c190e…`,
 | fir | 32 / 64 / 64 | 32 / 64 / 128 |
 | quadrature | `chunks=na` | `chunks=na` |
 
-At W=2, and at W=4 for records and fir, **both arms emit the same
-decomposition**, so those lines are null pairs of this run — the same code
-cutting the same pieces, differing only in a constant that did not bind.
+Records and fir emit **the same decomposition in both arms at W=2 and at W=4**,
+and quadrature takes no split call at any width, so seven of this run's twelve
+parallel-width lines are null pairs — the same code cutting the same pieces,
+differing only in a constant that did not bind. Counting the four W=1 lines,
+where nothing is split either, eleven of the sixteen are. Mandelbrot is cut
+finer at every width, 16 chunks against 32, 64 and 64.
 
 **This runner did not co-locate its lanes, and is otherwise unclassified.** The
 test the previous section used says nothing here: fir at W=2 spends 19,322.2 us
@@ -11629,7 +11640,7 @@ lines span **0.835 to 1.467**, and the two furthest from 1.000 are mandelbrot
 W=4 at 1.467 [0.36-2.12] and fir W=2 at 0.835 [0.71-1.15] — the second of those
 over an identical decomposition in both arms. Against the hosted null check's
 finding that no macOS reading of a control smaller than roughly twenty percent
-is a result, a 47 percent line on a kernel whose `wf` row carries a 10.3 percent
+is a result, a 47 percent line on a kernel whose `wf` row carries a 19.3 percent
 MAD says nothing about the work unit. This leg is also a slower machine than
 the macOS leg of run `34628390507` — mandelbrot W=2 `wf` 23,546.7 us against
 13,448.5 there — and nothing is pooled between them. The table is recorded
@@ -11918,8 +11929,9 @@ static  1      4897 /  8651   4103 /  8101   3985 /  7983   4010 /  8007   3968 
 ```
 
 Read the `wf` rows first. In pass 0 the first three calls run at 8,474, 7,587
-and 6,473 us and the last three at 3,897, 3,889 and 3,836 — **1.6 to 2.3 times
-the wall of the later calls in the same process** — and the CPU column doubles
+and 6,473 us and the last three at 3,897, 3,889 and 3,836 — **1.7 to 2.2 times
+the wall of the later calls in the same process**, 8,474/3,836 = 2.21 at the
+widest and 6,473/3,889 = 1.66 at the narrowest — and the CPU column doubles
 with the wall rather than staying flat: 15,555 us of CPU on the slow call
 against 7,684 on the fast one, for the same 524,288 outputs. In pass 1 the
 effect lasts all six calls, from 9,630 down to 5,950, and never fully recovers.
@@ -11933,8 +11945,10 @@ of them onto the other core.
 with `pause` and never sleep — `research/experiments/compute-bench/backend_static.c`
 — so its threads are continuously runnable from the moment they start, and the
 scheduler places them apart and leaves them there: 4,776 us for the `first`
-call and then 3,972, 3,948, 3,937, 3,915, 3,895, flat to a tenth of a percent,
-in every pass. Same machine, same work, same two-way partition, no slow start.
+call and then 3,972, 3,948, 3,937, 3,915, 3,895 — a two percent spread with no
+slow start and no recovery, against a row MAD of 1.2 percent, and every other
+pass the same shape. Same machine, same work, same two-way partition. What
+`static` never does is begin a process at twice its own floor.
 
 **The difference between them is the wait path.** The shipped runtime spins
 `WF_PAR_SPIN_ROUNDS` = 1,024 rounds and then yields 16 times before parking on
@@ -11948,15 +11962,19 @@ there are many of them. The twin's never-parking lanes do improve on this: its
 pass 0 recovers by call 2 rather than call 3, and its pass 1 sits well under
 the plain arm's throughout.
 
-**What the sixteen lines say.** At the recorded widths the twin is even or
-ahead, and it pays in CPU:
+**What the sixteen lines say.** Of the eight lines at the recorded widths the
+twin gains on two, costs on one, and is level on the other five, and it pays in
+CPU almost everywhere:
 
 - **mandelbrot W=4 0.922 [0.91-1.03], four of five lower, `cpu` 1.030** — the
   largest wall gain in the run, bought with three percent more CPU.
 - **fir W=2 0.934 [0.52-1.05], four of five lower, `cpu` 0.982** — the line the
   per-call block above is a picture of.
-- fir W=4 0.998 with `cpu` 1.077; records W=4 1.026 with `cpu` 1.034; records
-  W=2 1.000 with `cpu` 1.049; mandelbrot W=2 1.007 with `cpu` 1.078.
+- **records W=4 costs: 1.026 with `cpu` 1.034**, which is above the one percent
+  this runner class resolves and is the one recorded-width regression of the
+  three spin runs. Never parking is not free even where the pool fits.
+- fir W=4 0.998 with `cpu` 1.077; records W=2 1.000 with `cpu` 1.049;
+  mandelbrot W=2 1.007 with `cpu` 1.078.
 - **W=8, where the pool is oversubscribed, collapses**: mandelbrot 2.699,
   records 2.945, fir 3.487, quadrature 6.702, every one of them 0/5 lower and
   with `cpu_r` tracking the wall. Eight never-parking lanes on four logical
@@ -12017,10 +12035,11 @@ quantity to change is **when** a lane parks, not whether it does.
   quadrature 447/1,031/1,175, records 1/5/18, fir 1/5/18 at W=2/4/8 — and on
   every `wf-b` row too — mandelbrot 3/7/6, quadrature 446/1,042/1,198,
   records 1/3/16, fir 1/3/18 — so no row carries `no-lanes`.
-- this is the fastest of today's hosted ubuntu runners: its mandelbrot W=4
-  `tbb` median is 3,805.5 us, against 5,118.8, 5,669.4, 5,672.9, 5,943.4
-  and 6,292.3 on the other five (the hosted null check included). Nothing is
-  pooled across them.
+- this is the fastest of today's six hosted ubuntu A/B legs: its mandelbrot W=4
+  `tbb` median is 3,805.5 us, against 5,118.8, 5,669.4, 5,672.9, 5,943.4 and
+  6,292.3 on the other five (the hosted null check included). The three plain
+  hosted ubuntu sections dated today read 4,899.5, 5,125.2 and 5,667.8 on the
+  same marker. Nothing is pooled across any of them.
 - passes: 5, calls: 5
 
 ```text
@@ -13233,11 +13252,16 @@ still gains.
   over.
 
 **Reading across runs 34631106340, 34632558439 and 34633767263.** A longer
-bounded spin **never costs wall time at the recorded widths** on any of the
-three runners — the twenty-four recorded-width lines across the three runs run
-from 0.922 to 1.026 — and it **gains one to eight percent where lanes would
-otherwise be parked and re-woken inside a call**, most on mandelbrot W=4 and fir
-W=2, least on the kernels that publish one long piece per lane. Its CPU cost
+**bounded** spin — 16,384 or 131,072 rounds — never costs wall time at the
+recorded widths: the sixteen W=2 and W=4 lines of runs `34632558439` and
+`34633767263` run from **0.957 to 1.005**. The unbounded probe is where a
+recorded-width cost appears alongside the gains: run `34631106340`'s eight
+recorded-width lines span **0.922 to 1.026**, the 1.026 being records W=4 with
+paired CPU 1.034. Across all three the change **gains up to eight percent where
+lanes would otherwise be parked and re-woken inside a call** — 0.922 on
+mandelbrot W=4 with parking removed, 0.978 on the same line at 131,072
+rounds — most on mandelbrot W=4 and fir W=2, least on the kernels that publish
+one long piece per lane. Its CPU cost
 is not constant: the same change reads `cpu` 0.934 on fir W=2 at 16,384 rounds
 and 1.078 on mandelbrot W=2 at a billion, so **the CPU price of a longer spin
 ranges from about seven percent saved to about eight percent spent, depending
