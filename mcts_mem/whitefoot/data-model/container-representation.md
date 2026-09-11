@@ -333,3 +333,22 @@
   the first slice into a universal storage proof framework. Reopen the owning
   layer if the checked ordinary form breaks the frozen contract, rather than
   hiding the gap with a guard, hard cap, extra scan, or extra allocation. (sourced)
+
+- 2026-09-11 measurement: a received chunk can stay owned across a nested send's
+  waits. In the elided C++ coroutine echo engine, a move-only lease over an
+  owner-local pool node was carried into the nested send, so a blocked send
+  suspends with the lease live, no unsent suffix is copied, and an unused node
+  is returned before a receive wait. Against per-connection private storage the
+  lease wins all five large-message pairs — rate 1.1431 (1.1001..1.1904),
+  CPU/trip 0.8730, peak-RSS ratio 0.5150, the CPU difference almost entirely
+  system time (0.63 against 0.55 seconds) — while against shared scratch reuse
+  it only ties in rate (0.9991 against shared C++, 0.9959 against manual epoll)
+  and loses every large p99 pair, one pass reaching 3,753 against 1,171
+  microseconds. The representation is not free: root frame 184 bytes against
+  168, pool node 65,552 bytes for 65,536 of capacity, linked text 9,923 bytes
+  against 9,532 shared and 8,413 manual. This is an input to a possible
+  ownership contract for received chunks; it selects no container or source
+  API, does not prove suspension can borrow one exclusive pool, and does not
+  qualify retiring a completion-backend destination before its terminal
+  completion. `research/investigations/io-model/SCHEDULER-FINDINGS.md`,
+  experiment 67, from codex/io-chunk-lease@878b6ae7. (sourced)
