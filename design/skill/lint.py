@@ -22,6 +22,8 @@ ORIGINS = {"discussion", "agent", "migration"}
 FORBIDDEN_HEADINGS = ("## Facts", "## Moves")
 DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
 LINK = re.compile(r"\[\[([^\]]+)\]\]")
+REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
+FIELDS = ("Decision:", "Scope:", "Instances:", "Applies-to:", "Rejected:")
 
 
 class Lint:
@@ -92,13 +94,32 @@ class Lint:
         section = None
         instances = []
         rejected = []
+        prev = "start"  # start | title | blank | field | item
+        seen_field = False
         for number, line in enumerate(lines, 1):
             loc = f"{where}:{number}"
             if not line.strip():
                 section = None
+                prev = "blank"
                 continue
             if line.startswith("# "):
+                prev = "title"
                 continue
+            is_field = line.startswith(FIELDS)
+            is_item = line.startswith("- ")
+            if is_field:
+                if prev not in ("blank", "title"):
+                    self.err(loc, "a field must be separated from the previous line by a blank line")
+                if not seen_field and not line.startswith("Scope:"):
+                    self.err(loc, "Scope: must be the first field after the title")
+                seen_field = True
+                prev = "field"
+            elif is_item:
+                if prev not in ("field", "item"):
+                    self.err(loc, "a list item must directly follow its header or the previous item")
+                prev = "item"
+            else:
+                prev = "other"
             if line.startswith("Decision:"):
                 decisions += 1
                 low = line.lower()
@@ -137,8 +158,8 @@ class Lint:
                         instances.append(name)
                     continue
                 if section == "rejected":
-                    if ": " not in body or not body.split(": ", 1)[1].strip():
-                        self.err(loc, "rejected entry needs '<alternative>: <reason>'")
+                    if not REJECTED_ITEM.match(line):
+                        self.err(loc, "rejected entry needs '- <alternative>: rejected because <reason>'")
                     rejected.append(body)
                     continue
                 self.err(loc, "list item outside Instances: or Rejected:")

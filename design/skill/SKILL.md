@@ -23,33 +23,38 @@ Three parts:
 
 ## Node format
 
-See `templates/node.md`. A node has a title, one or more `Decision:` lines,
-one `Scope:` line, optional `Instances:` and `Applies-to:` lines, and an
-optional `Rejected:` list. Nothing else: no dates, no facts, no measurements,
-no task progress. A measurement belongs in its results record; a node may
-cite it in its reason. Every field is one line; the lint rejects anything
-outside the template.
+See `templates/node.md`. A node has a title, one `Scope:` line directly
+under it, one or more `Decision:` lines, optional `Instances:` and
+`Applies-to:` lines, and an optional `Rejected:` list. Nothing else: no
+dates, no facts, no measurements, no task progress. A measurement belongs in
+its results record; a node may cite it in its reason. Every field is one
+line, every field is separated from the next by a blank line so it renders
+as its own paragraph, and a list follows its header line directly. The lint
+rejects anything outside the template.
+
+`Scope:` comes first because it says what the node governs: which code and
+which concepts a reviewer must look at beyond the diff when the node
+changes. A scope beginning with `all ` marks a universal rule over a
+concept's instances; it must then list `Instances:` with one status each:
+`applied`, `pending`, or `exempt (reason)`. A universal rule that governs
+only future code says `all <concept> (new code only)` and lists nothing. A
+language-wide or concept-wide rule with no enumerable instances does not
+begin its scope with `all `.
 
 A decision line states the choice, its reason after `because`, and the
 alternative after `instead of`. At least one of the two must be present. A
 line with neither is a description, not a decision, and does not belong in
 the tree.
 
-`Scope:` names what the node governs. A scope beginning with `all ` marks a
-universal rule over a concept's instances; it must then list `Instances:`
-with one status each: `applied`, `pending`, or `exempt (reason)`. A universal
-rule that governs only future code says `all <concept> (new code only)` and
-lists nothing. A language-wide or concept-wide rule with no enumerable
-instances does not begin its scope with `all `.
-
 `Applies-to:` links other nodes as `[[node-name]]` when this decision
 constrains them and the hierarchy does not already say so. Links resolve by
 node name, which must be unique across the tree.
 
 `Rejected:` lists alternatives that were considered and refused, one per
-line: `- <alternative>: <reason>`, optionally ending with `; lapses when
-<condition>`. A later session must not re-propose a rejected alternative
-without naming a lapsed reason.
+line: `- <alternative>: rejected because <reason>`, optionally ending with
+`; lapses when <condition>`. A refusal without a reason is not recorded. A
+later session must not re-propose a rejected alternative without naming a
+lapsed reason.
 
 ## Keeping the tree lean
 
@@ -114,9 +119,10 @@ Their findings are review input, never acceptance authority.
 ## Lint
 
 `lint.py` checks form, not meaning, and is the one check that cannot be
-skipped: run it from the gate. It verifies node structure, decision markers,
-universal-scope instance lists, link resolution, name uniqueness, ASCII-only
-text, absence of history sections, log-entry structure, and, with
+skipped: run it from the gate. It verifies node structure and field order, blank-line separation, decision
+and rejection markers, universal-scope instance lists, link resolution, name
+uniqueness, ASCII-only text, absence of history sections, log-entry
+structure, and, with
 `--base <ref>`, that every tree change since `<ref>` is listed in a new log
 entry. It reports node count, depth, and per-subtree counts.
 

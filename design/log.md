@@ -3,6 +3,13 @@
 Newest first. One entry per approved tree change. Format:
 `skill/templates/log-entry.md`.
 
+## 2026-09-11 Node layout: scope first, blank lines between fields, reasoned rejections
+
+Nodes: ~tree, ~tree/checks-and-proofs, ~tree/checks-and-proofs/obligation-discharge, ~tree/checks-and-proofs/obligation-discharge/goal-decomposition, ~tree/checks-and-proofs/obligation-discharge/loop-fact-retention, ~tree/checks-and-proofs/obligation-discharge/writer-trap-surface, ~tree/checks-and-proofs/certificate-fold, ~tree/checks-and-proofs/requires-entry-contract, ~tree/checks-and-proofs/requires-entry-contract/requirement-enforcement
+Origin: discussion
+Summary: Format only; no decision content changed. The owner asked for three things after reading the rendered tree: fields separated by blank lines so each renders as its own paragraph; `Scope:` placed directly under the title because it says what the node governs and the reviewer needs it before the decisions; and every `Rejected:` line carrying its reason behind the same `because` marker a decision uses, since a refusal without a reason is not a record. The template, procedure, check prompt G1, and the lint were updated together and every node was converted mechanically.
+Code: none; this change touches only the design tree and its skill.
+
 ## 2026-09-11 Name what the acceptance half of the optimizer-facts rule constrains
 
 Nodes: ~tree

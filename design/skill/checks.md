@@ -7,8 +7,10 @@ never accepts or rejects a program.
 ## Design gate: run on a tree diff before implementation
 
 G1. Decision test. For each added or changed node: does every `Decision:`
-line name a choice and either a reason or a refused alternative? Report
-lines that describe without deciding.
+line name a choice and either a reason or a refused alternative, and does
+every `Rejected:` line give a reason that would actually rule the
+alternative out? Report lines that describe without deciding and refusals
+whose reason is a restatement.
 
 G2. Scope test. For each node whose scope begins with `all `: is every
 instance the concept currently has listed with a status? Report instances
