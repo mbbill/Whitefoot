@@ -70,6 +70,37 @@
  * through WF_RUNTIME_CONTROL_FLAGS and measure it against the shipped runtime
  * inside one set of passes.
  *
+ * The rule was then measured as shipped, against a control built at
+ * WF_PAR_IDLE_WINDOW_US=0 on the same SMT runner class (run 34638747514,
+ * whose machine is a slow one of that class -- mandelbrot W=4 reads 5,676 us
+ * on oneTBB). Read as control over windowed, so above 1.000 is the window
+ * ahead: mandelbrot 1.005 / 1.007 / 0.986 at W=2/4/8, fir 1.000 / 1.006 /
+ * 0.975 (five of five lower at W=8), quadrature 1.016 / 0.995 / 1.003,
+ * records 1.014 / 0.955 / 1.029. Three things in that: the oversubscription
+ * guard holds -- W=8 does not collapse the way the never-park twin did -- the
+ * window buys half a percent to one and a half on mandelbrot and fir at the
+ * fitted widths, and it is NOT free. The paired CPU column reads 0.972 and
+ * 0.958 at mandelbrot W=2/W=4 and 0.977 and 0.956 at fir, so the window
+ * spends three to four percent more process CPU than the control for that
+ * wall, and records W=4 loses 4.5 percent of wall outright with the control
+ * lower in four of five pairs.
+ *
+ * That cost is what the publish epoch below answers, and the reason is stated
+ * beside it: a lane spinning out the window called wf__par_find every round,
+ * and that reads two lines per other lane -- the lines a working lane writes
+ * on every push and pop. Records is memory-bound and crosses 64 chunk
+ * boundaries a call, which is why it pays most. An idle lane past the first
+ * spin bound now reads one counter instead, and scans only when it moves.
+ *
+ * One thing the spin loop does NOT do, recorded here because it bounds what
+ * any of this can be worth: wf_prim_spin_hint() is YieldProcessor() on
+ * Windows -- _mm_pause, the pause instruction, on x86 and x64, and a store
+ * barrier plus the yield instruction on arm -- and an EMPTY function body on
+ * every other host. A POSIX spin round therefore emits no pause
+ * at all, which is exactly the instruction an SMT sibling needs its partner to
+ * issue. Left alone here deliberately; it is a separate change with its own
+ * measurement.
+ *
  * The scheduler probes compile this file with WF_SCHED_TEST and hold native
  * threads at the park protocol's own race windows -- wf_sched_test_before_wait
  * fires from inside the sleep loop, and a coordinator thread waits on what it
@@ -77,7 +108,11 @@
  * would make when a lane arrives at that hook depend on a wall clock rather
  * than on a fixed number of misses. Under WF_SCHED_TEST the window is
  * therefore compile-time zero: the loops then take exactly the fixed bound
- * below, which is the arrival those hooks were written against.
+ * below, which is the arrival those hooks were written against. The epoch
+ * shortcut needs no separate switch for the same reason -- it is gated on the
+ * window having opened, so a zero window leaves every round a full scan and
+ * the enumerating probes reach wf__par_find, wf__par_steal and their hooks on
+ * exactly the rounds they always did.
  *
  * This selects how an already admitted program waits. It is not a timeout, a
  * fuel bound or a proof-work budget; no acceptance path reads it, it cannot
@@ -213,6 +248,45 @@ _Alignas(WF_PAR_CACHE_LINE) static unsigned long long wf__par_idle;
  * exists and read-only afterwards, so no lane can observe it changing. */
 static uint64_t wf__par_idle_window_us;
 
+/* The publish epoch: one counter, on a line of its own, that advances at every
+ * transition which can make a deque's stealable content differ from what a
+ * scan just saw. It exists so that a lane spinning out a long idle window does
+ * not have to read every other lane's deque to learn that nothing changed.
+ *
+ * wf__par_find loads each victim's `top` and `bottom` -- two lines per lane,
+ * and exactly the lines a working lane writes on every push and pop. Three
+ * idle lanes doing that every round at the tail of a call take those lines
+ * away from the one lane still working, on its SMT sibling above all. The
+ * hosted A/B of the window against a WF_PAR_IDLE_WINDOW_US=0 control (run
+ * 34638747514) measures the bill: the control's process CPU is 0.956 to 0.977
+ * of the windowed runtime's at fir W=2 and W=4 and 0.958 to 0.972 at
+ * mandelbrot -- the window spends three to four percent more CPU for its wall
+ * -- and records W=4, which is memory-bound and crosses 64 chunk boundaries a
+ * call, loses 4.5 percent of wall outright (0.955, control lower in four of
+ * five pairs). An idle lane inside the window now reads ONE shared line per
+ * round instead of two per other lane, and scans only when that line changes.
+ *
+ * The counter is padded to a full line because it is written on every push and
+ * every successful steal: sharing a line with anything else would hand that
+ * neighbour the invalidation traffic this exists to concentrate. */
+struct wf__par_epoch_cell {
+    _Alignas(WF_PAR_CACHE_LINE) uint64_t value;
+    unsigned char padding[WF_PAR_CACHE_LINE - sizeof(uint64_t)];
+};
+static struct wf__par_epoch_cell wf__par_epoch;
+
+/* Release, so that everything this thread wrote before the bump -- the ring
+ * cell and the published `bottom` above all -- is visible to a lane that
+ * acquire-reads the new value. */
+static void wf__par_epoch_bump(void) {
+    (void)__atomic_add_fetch(&wf__par_epoch.value, UINT64_C(1), __ATOMIC_RELEASE);
+}
+
+/* Acquire, the other half of that pair. */
+static uint64_t wf__par_epoch_read(void) {
+    return __atomic_load_n(&wf__par_epoch.value, __ATOMIC_ACQUIRE);
+}
+
 static _Thread_local struct wf__par_lane *wf__par_self;
 
 static _Thread_local int wf__par_attached;
@@ -267,6 +341,15 @@ __attribute__((noinline)) uint64_t wf__par_placement_pad(uint64_t seed) {
 static void wf__par_signal(struct wf__par_lane *lane) {
     wf_prim_wait_lock(&lane->wait);
     lane->posted = 1;
+    /* BUMP SITE. This is the one path that makes a lane's wait satisfiable
+     * without a push: wf__par_wake_one reaches it from wf__par_publish, and
+     * wf__par_execute reaches it when a finished callback notifies a
+     * registered waiter. A registered waiter is always already parked, so no
+     * lane spinning on the epoch can be waiting on this today; the bump is
+     * here so the epoch stays a superset of "something a non-running lane
+     * could care about" if a waiter ever registers before it parks. It costs
+     * nothing measurable: this path already takes the station's lock. */
+    wf__par_epoch_bump();
 #if defined(WF_SCHED_TEST)
     wf_sched_test_signal_locked();
 #endif
@@ -295,6 +378,12 @@ static void wf__par_push(struct wf__par_lane *lane, struct wf__par_slot *slot) {
     unsigned long long bottom = lane->bottom;
     __atomic_store_n(&lane->buffer[bottom & (WF_PAR_LANE_SLOTS - 1)], slot, __ATOMIC_RELAXED);
     __atomic_store_n(&lane->bottom, bottom + 1, __ATOMIC_SEQ_CST);
+    /* BUMP SITE, and the only one where a slot becomes stealable. It is after
+     * the publication above and not before: the release bump orders the ring
+     * cell and this `bottom` ahead of itself, so a lane that acquire-reads the
+     * new epoch and then scans sees the item. wf__par_publish is this
+     * function's only caller. */
+    wf__par_epoch_bump();
 }
 
 static struct wf__par_slot *wf__par_pop(struct wf__par_lane *lane) {
@@ -343,6 +432,16 @@ static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
 #endif
         return NULL;
     }
+    /* BUMP SITE, and the one that closes the epoch's only hole. A thief that
+     * loses this CAS gives up on that victim for the rest of its scan and can
+     * finish the scan empty-handed while the victim still holds work. The
+     * winner's CAS is strictly between the loser's `top` read and the loser's
+     * own CAS, so it is strictly after the loser read the epoch, so this bump
+     * makes the loser's next epoch load differ and sends it back for another
+     * scan. Without it a loser could idle on an unchanged epoch until the next
+     * push -- never losing the work, which the victim's owner pops at its own
+     * join, but declining to help. */
+    wf__par_epoch_bump();
 #if defined(WF_SCHED_TEST)
     wf_sched_test_after_steal(1);
 #endif
@@ -402,29 +501,81 @@ static void wf__par_execute(struct wf__par_slot *slot) {
 #endif
 }
 
-/* One lane's idle stretch: misses since the last unit of work, and the clock
- * reading taken when those misses first reached the spin bound. `entered` is
+/* One lane's idle stretch: misses since the last unit of work, the clock
+ * reading taken when those misses first reached the spin bound, and the
+ * publish epoch as it stood when this lane last began a scan. `entered` is
  * zero until that first crossing, and zero is also what a host with no
  * monotonic clock answers, which is why the window is skipped on a zero
  * reading rather than treating it as an origin. */
 struct wf__par_idling {
     int rounds;
     uint64_t entered;
+    uint64_t seen;
 };
 
 /* A lane that has just run something is no longer idle. */
 static void wf__par_idling_reset(struct wf__par_idling *idling) {
     idling->rounds = 0;
     idling->entered = 0;
+    idling->seen = 0;
+}
+
+/* Whether this round scans the deques at all.
+ *
+ * Three regimes, and only the third is new:
+ *
+ *   - No window (an oversubscribed pool, a host with no CPU count, or any
+ *     build with WF_PAR_IDLE_WINDOW_US at zero, which includes every
+ *     WF_SCHED_TEST build). Scan every round and never touch the epoch: this
+ *     is the loop exactly as it was, down to the loads it performs.
+ *   - Inside the window, first spin bound. `entered` is still zero, so scan
+ *     every round and keep the fast path for work that arrives immediately.
+ *     The epoch is read before each of those scans, which is what makes the
+ *     first gated round compare against a value that was current BEFORE the
+ *     last full scan began rather than after it.
+ *   - Inside the window, past the first spin bound. Read the epoch; scan only
+ *     when it differs from the value read before the previous scan.
+ *
+ * WHY THE EPOCH CANNOT BE MISSED. Say this lane read epoch v, scanned, and
+ * found nothing, and some slot is stealable afterwards. For each victim the
+ * scan either saw an empty deque or lost the claim CAS. If it saw empty and
+ * the victim is not empty now, a push happened after that observation, and
+ * the push's release bump therefore produced a value above v. If it lost the
+ * CAS, the winner's CAS lay between this lane's SEQ_CST `top` read and its own
+ * CAS -- both after the epoch read -- so the winner's bump also produced a
+ * value above v. Either way the next acquire load differs from v and the lane
+ * scans again, and because that load acquires what the bump released, the
+ * rescan sees the ring cell and the `bottom` the push wrote. The counter only
+ * ever increases, so no bump can be cancelled by another, and reading it
+ * BEFORE the scan rather than after is what makes "scanned at v" mean "the
+ * scan began no earlier than v was current". */
+static int wf__par_should_scan(struct wf__par_idling *idling) {
+    uint64_t now;
+    if (wf__par_idle_window_us == 0) {
+        return 1;
+    }
+    if (idling->entered == 0) {
+        idling->seen = wf__par_epoch_read();
+        return 1;
+    }
+    now = wf__par_epoch_read();
+    if (now == idling->seen) {
+        return 0;
+    }
+    idling->seen = now;
+    return 1;
 }
 
 /* One idle step, shared by both wait loops so they cannot drift apart.
  *
  * Returns 1 when the lane stayed hot and the caller must re-check its own work
  * and exit conditions -- every call performs at most one spin hint or one
- * yield, so those checks stay reachable on every round and a pool shutting
- * down is never waited out -- and 0 when the lane has exhausted spinning and
- * yielding and must park.
+ * yield, so the top of each loop is reached on every round -- and 0 when the
+ * lane has exhausted spinning and yielding and must park. What each loop
+ * re-checks there is its own: the join wait loads its target's state on every
+ * round, separately from wf__par_should_scan and never gated by the epoch, so
+ * a completion it is waiting for is seen as promptly as before; the worker
+ * loop has no exit of its own, since its lanes live until the process does.
  *
  * Both loops take the window. The worker idle loop is the parked-helper case
  * the placement evidence is about, and the join wait is the lane that owns the
@@ -470,19 +621,25 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
     struct wf__par_idling idling;
     wf__par_idling_reset(&idling);
     for (;;) {
-        struct wf__par_slot *slot;
+        /* Every round, and never behind the epoch gate: this is the lane's own
+         * completion flag. It shares a line with its neighbouring slots in the
+         * owner's slot array, but its writer is the thief that will finish the
+         * very task being waited on, which is the one line this lane has to
+         * watch. */
         if (__atomic_load_n(&target->state, __ATOMIC_ACQUIRE) == WF_PAR_SLOT_DONE) {
             return;
         }
 
-        slot = wf__par_pop(lane);
-        if (slot == NULL) {
-            slot = wf__par_find(lane);
-        }
-        if (slot != NULL) {
-            wf__par_execute(slot);
-            wf__par_idling_reset(&idling);
-            continue;
+        if (wf__par_should_scan(&idling)) {
+            struct wf__par_slot *slot = wf__par_pop(lane);
+            if (slot == NULL) {
+                slot = wf__par_find(lane);
+            }
+            if (slot != NULL) {
+                wf__par_execute(slot);
+                wf__par_idling_reset(&idling);
+                continue;
+            }
         }
         if (wf__par_stay_hot(&idling)) {
             continue;
@@ -515,11 +672,13 @@ static void wf__par_worker_main(void *opaque) {
 
     for (;;) {
         struct wf__par_slot *slot;
-        slot = wf__par_find(lane);
-        if (slot != NULL) {
-            wf__par_execute(slot);
-            wf__par_idling_reset(&idling);
-            continue;
+        if (wf__par_should_scan(&idling)) {
+            slot = wf__par_find(lane);
+            if (slot != NULL) {
+                wf__par_execute(slot);
+                wf__par_idling_reset(&idling);
+                continue;
+            }
         }
         if (wf__par_stay_hot(&idling)) {
             continue;
