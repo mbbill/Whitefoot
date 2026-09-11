@@ -1611,10 +1611,11 @@ runtime layouts are unchanged. At `87a1462d`, this investigation recorded the
 owning-array and contained-state gate failures as separate blockers. The later
 owner-routing experiments above restore the owning-array witnesses and bounded
 container operations; general contained-state routing remains incomplete.
-The complete gate is still not green: the current endpoint checkpoint's new
-loop fixture is rejected for an invalid invariant equality before its intended
-assertions execute. Neither this loan-endpoint result nor those later repairs
-complete the broader container scenario and performance requirements.
+At checkpoint `19771851`, a new loop fixture was rejected for an invalid header
+invariant equality before its intended assertions executed. `8482c0cb` rewrote
+that header as the two admitted inequalities. That historical gate failure is
+not a current language limit. The loan-endpoint result and those repairs do not
+by themselves complete the broader container scenario and performance requirements.
 
 ### Exclusive two-state run contracts
 

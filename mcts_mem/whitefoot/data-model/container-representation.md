@@ -8,6 +8,8 @@
   independently of parameter and result representation. Compiler-synthesized
   functions carry no invented source signature. These modes alone supply no loan
   origin, lifetime, or input/result aliasing permission.
+- Mutable run boundaries use [[exclusive-run-contracts]]; owning value transfer
+  remains available for construction, conversion and actual ownership delivery.
 - Select executable storage-release variants after semantic acceptance. Keep
   declaration obligations, proof summaries and parallel permissions canonical;
   specialize the complete owning type graph by the actual stores' finite release
