@@ -199,15 +199,42 @@ When one function contains two staged loops, both deliberately remain ordinary.
 Wider control flow, operation families, and multi-loop selection remain
 possible future extensions; this path does not imply those capabilities.
 
-With `--par`, an admitted may-suspend user call bound by `let` can drive a
-bounded lane batch. Issue-local values needed by the remainder or cleanup are
-carried per slot. An addressed owner retains its address over distinct backing
-for each in-flight iteration; its contents are read after join, including
-mutations made by the callee. The complete caller frame is planned and checked
-before emission. Joined aggregate results reach caller backing before the lane
-frame is released, and each iteration's remainder and checked cleanup finish
-before its pipeline slot is reused. These representations consume the existing
-source permission judgment and do not add an I/O or scheduling protocol.
+The compute runtime uses persistent native threads and their ordinary stacks.
+An unstolen join target executes on the joining thread; a stolen target allows
+that thread to run other compute tasks and steal work before its bounded
+spin/yield/condition-wait slow path. Task storage belongs to the offering lane
+until join, result access, and release finish. Deque cells and ownership claims
+are atomic; local execution avoids the completion runtime. Resource exhaustion
+retains the ordinary-call fallback and the native stack-exhaustion floor.
+
+Direct typed I/O retains one submit-then-join lowering path. A may-suspend user
+call executes on the caller's ordinary stack and is not published to a compute
+worker. At an I/O join, that caller progresses completion and then waits through
+the native backend if necessary; it does not switch stacks or help compute
+tasks from that join. Other compute workers can finish already-published work.
+
+Connection-level concurrency through independent suspended user calls is a
+temporary unsupported capability. A loop that accepts and serves connections
+in source order completes the current handler before entering the next one.
+If that handler waits for a silent peer, later connections do not make progress
+through their WF handlers. Opening 1024 connections does not create 1024
+independently resumable handlers. The source remains accepted and uses ordinary
+calls; no mechanism for restoring this concurrency has been chosen. The direct
+typed-I/O batch above does not supply general connection-handler concurrency.
+
+`WF_STACKS` is inert: the runtime neither reads nor validates it and has no
+switchable-stack pool. It cannot increase I/O concurrency or native worker
+stack capacity. `WF_WORKERS` continues to select compute participation.
+
+The managed-stack scheduler enumerator was retired with the state machine it
+modeled. `make -C compiler sched-deque-test` stresses deque reuse and task
+lifetime on native threads, with counters enabled and disabled;
+`sched-deque-tsan` adds ThreadSanitizer to that same probe. It can detect data
+races in the observed executions, but does not exhaustively enumerate schedules
+or prove weak-memory ordering, liveness, completion wakeups, or stack-exhaustion
+handling. Separate startup, join, completion, and exhaustion tests cover those
+boundaries. This is a change in verification coverage, not an equivalent
+replacement for exhaustive enumeration.
 
 The completion runtime uses bounded, generation-checked operation storage and
 separate exactly-once result-ready, loan-released, and terminal milestones.
@@ -227,14 +254,13 @@ zero eligible fallback. Synchronous-success operations publish inline only
 after the runtime has disabled their completion packets; pending operations
 publish through the IOCP worker.
 
-Every emitted Windows `--par` module requires the compiler-owned compute pool
-through hard external ABI obligations. A missing runtime fails to link, and an
-invalid worker configuration or partial startup fails at the host boundary
-instead of selecting sequential execution. The native gate requires a
-non-owner worker to execute and steal source work while preserving the
-sequential build's exact bytes. A fixed-host paired gate qualifies compute,
-warm IOCP, and mixed compute-plus-IOCP execution against matched controls on
-the same revision.
+An emitted Windows module with compute offers requires the compiler-owned
+runtime through external ABI obligations. A missing runtime fails to link and
+an invalid worker configuration fails before the program body. Partial startup
+retains available workers; complete startup refusal uses the parallel body's
+ordinary-call fallback. Each native worker installs its own exhaustion floor.
+The native gate checks non-owner execution, steals, and preservation of the
+sequential build's bytes. These checks do not establish performance parity.
 
 `--par-ledger` prints the permission and actualization explanation for compiler
 development. `--stack-ledger` reports selected-host frame costs. Neither report

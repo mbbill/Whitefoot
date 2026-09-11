@@ -101,7 +101,7 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
   define room = len_of(deref(scratch));
   requires 65536_u64 <= room;
 } {
-  doc "Takes one connection from the listener and returns every chunk the peer sends until the peer stops sending, then releases the pair [SYS-17, SYS-18]. The chunk loop is this connection's own sequential loop; the caller's fixed-trip loop keeps one of these in flight per connection.";
+  doc "Takes one connection from the listener and returns every chunk the peer sends until the peer stops sending, then releases the pair [SYS-17, SYS-18]. The caller's fixed-trip loop waits for this connection's sequential exchange to finish before entering the next handler.";
   let outcome = 0_u8;
   region {
     match tcp_accept(permit: move permit, listener: listener) {
@@ -151,7 +151,7 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
 }
 
 command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles) {
-  doc "The Whitefoot line of the TCP echo workload: listens on the loopback port named by the first argument, serves exactly the number of connections named by the second in a fixed-trip loop the staged permission admits, echoing every byte each peer sends until that peer stops, and exits zero once every connection has closed [PAR-3, SYS-17, SYS-18]. Each iteration owns its scratch and takes its own permit before its accept, so every connection's accept and its whole exchange are in flight at once, one parked callee per connection.";
+  doc "The Whitefoot line of the TCP echo workload: listens on the loopback port named by the first argument, serves exactly the number of connections named by the second in a fixed-trip loop, echoes every byte each peer sends until that peer stops, and exits zero once every connection has closed [PAR-3, SYS-17, SYS-18]. Under the current-stack runtime each handler runs on the caller's ordinary stack and completes before the next iteration accepts a peer. Each iteration owns its scratch and permit; a silent peer can hold up later handlers because connection-level concurrency is temporarily unsupported.";
   let arguments = 0_u64;
   region {
     set arguments = args_count(args: &args);

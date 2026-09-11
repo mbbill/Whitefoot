@@ -59,9 +59,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         })
         .collect::<Result<Vec<_>, _>>()?;
     // Each function's compiler-owned suspension summary, indexed the same way.
-    // A staged loop whose cut is a user call needs it: whether that call may
-    // suspend is the callee's declared contract, not something a call site can
-    // read off its own shape.
+    // Whether a user call may suspend follows its declared contract; only
+    // compute calls can be handed to another compute worker.
     let function_actions = checked
         .data
         .functions
@@ -514,8 +513,7 @@ struct IrBuilder<'program> {
     /// for a borrow of addressed content [OWN-2, TYPE-7].
     function_results: &'program [IrType],
     /// Every function's compiler-owned suspension summary, indexed the same
-    /// way, so a staged cut that is a user call can be recognized by the
-    /// callee's declared contract rather than by its shape.
+    /// way, so compute publication respects the callee's declared contract.
     function_actions: &'program [crate::TargetAction],
     /// For each statement holding exactly one named-function call in call
     /// position — a `let` right-hand side or a `match` scrutinee — the block
@@ -943,8 +941,14 @@ impl<'program> IrBuilder<'program> {
                     .binding
                     .is_some_and(|binding| self.addressed_bindings.contains(&binding));
                 members.push(value);
-                if addressed {
+                if addressed
+                    || (self.call_may_suspend(value) && !self.direct_may_suspend_system_call(value))
+                {
                     // This member must be the group's last, so it ends it.
+                    // A may-suspend call runs on the caller's ordinary stack;
+                    // compute workers never execute a potentially blocking
+                    // WF activation. Direct operations can still use the
+                    // independent typed completion schedule below.
                     break;
                 }
             }
@@ -1035,19 +1039,16 @@ impl<'program> IrBuilder<'program> {
         // single finite step.  The `driver_ready` gate is what prevents a
         // permission-only descriptor from changing emitted execution.
         //
-        // The cut may be a may-suspend user call rather than a system
-        // operation. That is the same schedule with a lane frame in the slot
-        // instead of a completion record, so it is the same step: what the
-        // backend puts in the slot is the backend's choice over one accepted
-        // program, exactly as the choice between a typed adapter and a
-        // qualified wrapper is.
+        // Only a direct typed system operation materializes this driver.
+        // A may-suspend user call remains an ordinary call on the caller's
+        // stack; its internal typed operations submit and join there.
         if self
             .completion_pipeline
             .as_ref()
             .is_some_and(IrCompletionPipeline::driver_ready)
             && let Some(cut) = self.staged_cut.as_ref()
             && let Some((_, result)) = self.call_results.get(cut).copied()
-            && self.may_suspend_staged_call(result)
+            && self.call_may_suspend(result)
         {
             if let Some(step) = lowered.iter_mut().find(|step| step.call == result) {
                 step.submit = true;
@@ -1100,15 +1101,9 @@ impl<'program> IrBuilder<'program> {
         })
     }
 
-    /// Whether this value is a may-suspend call of either kind.
-    ///
-    /// A staged cut is a call the checker judged may suspend, and that is a
-    /// property of the operation for a system call and of the callee's
-    /// declared contract for a user call. Both reach the same schedule: the
-    /// system call is submitted to the completion runtime, the user call is
-    /// handed to a compute lane, and the pipeline holds one address per
-    /// in-flight iteration either way.
-    fn may_suspend_staged_call(&self, value: IrValueId) -> bool {
+    /// Suspension follows the operation or callee contract. Typed system calls
+    /// use completion records; may-suspend user calls stay ordinary calls.
+    fn call_may_suspend(&self, value: IrValueId) -> bool {
         self.blocks.iter().any(|block| {
             block
                 .instructions

@@ -4,6 +4,9 @@
 - Arguments and paths preserve target host bytes with explicit conversion. Range-bearing operations expose their exact window and result relations in the specification.
 - System names belong to a compiler-owned declaration domain ([[declaration-home]]). Target qualification binds semantic operations to supported host implementations without granting writer-program proof authority.
 - compiler/README.md owns the implemented command, file, directory, stream, and network coverage. The dated slices below explain how those boundaries evolved.
+- Compute tasks run on ordinary native thread stacks; I/O uses submit-then-join completion independently of compute helping. Potentially suspending user calls stay on their caller's stack.
+- Connection-level concurrency through suspended user-call fanout is temporarily unsupported. A source-order server loop waits for its current handler before entering the next; a silent peer can hold up later connections. No restoration mechanism has been chosen.
+- There is no switchable-stack pool; the former stack-count setting (WF_STACKS) is inert.
 
 ## Facts
 
@@ -15,9 +18,13 @@
 - 2026-09-06 measurement: the TCP echo control test in `research/experiments/io-completion-bench/` (one load generator, medians of three passes, io_uring and epoll references) reads 1.26 of the io_uring reference at one connection, 0.76 at 64, 0.64 at 1024 and 0.82 on the 64 KiB payload on the development host, from 0.54, 0.11, 0.08 and 0.31 at the first reading. Three single-variable series in `research/investigations/io-model/RESULTS.md` (batch 0108 section) say what moved it: a progress pass that reaps sixty-four completions instead of one, a transfer the host answers at once completing on the submitting thread, and `IORING_SETUP_COOP_TASKRUN`. (sourced)
 - 2026-09-06 rejected: a ring per scheduler thread, a kernel submission thread (`IORING_SETUP_SQPOLL`), and one armed multishot `POLL_ADD` per receive half with the reaper moving the bytes were each built and measured on the same test and left the rate where it was; the ring is not where the time goes. `perf` on the development host puts the remaining margin in the scheduler's shape, one ready list and one lock for every connection and the context switches that follow, with the reference's threads each owning one connection. The design that answers it, a connection that stays on the thread that reaped it with a per-thread ready list and a steal only from an idle thread, is a core change the enumerator has to cover and is the next work on this line; the armed-receive design is written out in `research/investigations/io-model/RESULTS.md` for the day a thousand connections is the target. (sourced)
 
+- 2026-09-10 boundary: the 2026-09-06 TCP measurements and proposed reaper-local scheduling above describe the superseded unified scheduler. They do not qualify connection concurrency in the ordinary-call implementation; compiler/README.md states its current limits. (code)
+
 ## Moves
 
 - 2026-08-05 (8f7055fc) replaced [[raw-fd-syscall-source]]: raw syscalls and integer fds in source expose forgeable identities, an implicit global fd table, manual close, weak effect precision, poor Windows portability, and an unchecked pointer wall; they remain permitted only inside compiler-owned target code (sourced)
 - 2026-08-05 (8f7055fc) replaced [[ambient-system-functions]]: ambient system functions hide access and create inter-function channels against FN-7's no-global rationale; system use invisible in signatures cannot be narrowed, tested, or parallelized by ownership (sourced)
 - 2026-08-05 (8f7055fc) replaced [[affine-process-object]]: one permanently retained affine Process object makes every operation contend for the same unique holder, falsely serializing files, output, networking, clocks, and workers; making it shared would need a central lock or hidden aliasing (sourced)
 - 2026-08-05 (8f7055fc) replaced [[wasi-source-contract]]: a literal WASI source contract imports Unicode-only paths, no guaranteed caller-buffer or zero-copy route, async tied to Component Model costs, and an incomplete threads and process surface chosen for cross-language components rather than Whitefoot ownership; WASI remains a possible target implementation for operations it can supply (sourced)
+
+- 2026-09-10 dropped: suspended user-call fanout, temporarily: the owner selected ordinary-stack compute execution independently of I/O scheduling, retaining typed submit-then-join I/O while deferring connection concurrency without choosing a restoration mechanism. Source: the owner's runtime-only split direction and compiler/README.md. (sourced)
