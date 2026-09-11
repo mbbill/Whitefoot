@@ -2612,3 +2612,74 @@ CPU availability; it does not establish the identity of competing work.
 If the comparison identifies a different cause, stop for owner review.
 Native relative controls and ABOVE_NORMAL priority remain unselected trials;
 an observed failure does not authorize changing the thresholds.
+
+### Worker-count result and selection
+
+The ordinary W=3 qualification at `268f3705`, run
+[34556567464](https://github.com/mbbill/Whitefoot/actions/runs/34556567464),
+passed all five cohorts on their first attempt. Its Windows job took 6m14s
+including the build, on an Intel Xeon 6973P-C guest reporting two cores and
+four logical processors. Its paired spreads were 5.09%, 6.85%, 1.49%, 2.05%,
+and 3.56%, in the standing cohort order. The Windows job completed and its
+artifact was retained before the remaining Linux/macOS jobs in that older
+workflow were cancelled to release the branch's comparison slot.
+
+The same-head, same-VM comparison at `dcfb85c9`, run
+[34557079832](https://github.com/mbbill/Whitefoot/actions/runs/34557079832),
+used an EPYC 7763 guest reporting two cores and four logical processors, mask
+0xf, normal child priority, Windows Server 2025 build 26100, image
+20260907.229.1, clang 20.1.8, and Rust 1.98.1. Both policies' recorded ratios
+and spreads meet all five cohorts' bounds; enforcement selects W=3. The job
+took 6m31s including the build. All recorded children
+passed the unchanged exact stdout, empty stderr and exit-status checks. The
+required-IOCP check passed on every line that enables it, and the untimed
+observed link reported `grants=1024`.
+
+These are the unadjusted paired-ratio statistics. Spread is
+`(p90-p10)/median`, with the script's existing nearest-index quantiles; MAD
+is also divided by the median. Neither is a standard deviation.
+
+| Cohort | W=4 MAD | W=4 spread | W=3 MAD | W=3 spread |
+|---|---:|---:|---:|---:|
+| compute | 0.51% | 7.43% | 0.26% | 3.07% |
+| io-warm | 1.15% | 5.01% | 0.75% | 4.84% |
+| mixed-iocp | 0.35% | 1.26% | 0.16% | 1.07% |
+| mixed-full | 0.47% | 5.86% | 0.33% | 1.59% |
+| mixed-total | 1.28% | 5.04% | 0.52% | 1.40% |
+
+For clarity, the candidate's raw wall-time distribution, before dividing by
+its serial reference, is separately reported below. The IO-only rows repeat
+the same candidate configuration: changing the policy limit does not add
+compute workers to those programs.
+
+| Cohort | W=4 wall MAD | W=4 wall spread | W=3 wall MAD | W=3 wall spread |
+|---|---:|---:|---:|---:|
+| compute | 0.27% | 7.13% | 0.29% | 5.98% |
+| io-warm | 0.97% | 3.72% | 0.61% | 3.58% |
+| mixed-iocp | 0.18% | 0.61% | 0.12% | 0.41% |
+| mixed-full | 0.31% | 6.03% | 0.35% | 1.19% |
+| mixed-total | 1.07% | 4.97% | 0.37% | 1.37% |
+
+The compute median increases from 1685.936 to 1992.699 ms, an 18.2% cost for
+using three workers; its paired ratio to sequential is still 0.4177 against
+the unchanged 0.90 ceiling. Its process-CPU median decreases from 6515.625 to
+5906.250 ms. Mixed-full medians decrease from 162.346 to 158.928 ms, and
+mixed-total from 163.569 to 158.983 ms. Every speed and stability threshold
+remains numerically and definitionally unchanged.
+
+Select W=3 for the four-logical-processor qualification: it satisfies the
+existing bounds on both measured CPU families, keeps the job below eight
+minutes, and narrows the three parallel cohorts' spreads in the matched
+comparison. This is a qualification resource choice, not a runtime speedup.
+The W=4 comparison also passed, so this run does not reproduce the old failed
+cohorts or identify their cause. The proposed host-contention explanation
+remains unconfirmed; there is no contrary cause identified by this trial.
+No relative native-noise adjustment or priority change is needed to obtain
+these results. Reopen this policy if W=3 still fails the unchanged bounds on
+a later runner; retain raw wall and paired-ratio distributions before
+attributing that failure to the host or runtime.
+
+The affected implementation and standing guidance are the Windows benchmark
+script, its workflow entry, this bundle's README, and the parallelism memory.
+This selection changes no compiler, runtime, language rule, conformance case,
+or ordinary program's default worker count.

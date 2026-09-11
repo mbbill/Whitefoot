@@ -407,8 +407,8 @@ startups. Ordinary argument-free corpus runs still execute one batch.
 
 Each cohort records fifteen candidate/reference ratios, alternating order in
 each pair, after two unrecorded warm-up pairs. A cohort with ratio MAD above
-5% or p10-to-p90 width above 10% is repeated once and fails as an invalid
-measurement environment if still unstable. The production bounds are compute
+5% or p10-to-p90 width above 10% is repeated once and fails qualification if
+still unstable; that result alone does not identify the cause. The production bounds are compute
 at most 0.90, warm IOCP at most 1.10, and full mixed at most 0.95 relative to
 both its IOCP-only control and the fully sequential program. These are
 same-host runtime qualifications. The host,
@@ -439,7 +439,8 @@ diagnostic and `-Enforce` qualifies the reduced-count rows against the same
 absolute bounds. `raw.tsv` records the policy's `worker_limit`, including
 on the shared reference; it is not a count of threads actually running.
 The [selection criterion](../../investigations/io-model/RESULTS.md#windows-hosted-worker-comparison-criterion-2026-09-11)
-records the open host-contention hypothesis before the comparison.
+records the prior criterion, measured worker-count tradeoff, and remaining
+uncertainty about the earlier failures' cause.
 
 `linux` builds `linux.Dockerfile` and runs the whole pipeline inside one
 container, because the generated tree must sit on a container-local

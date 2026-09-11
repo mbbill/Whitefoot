@@ -714,7 +714,7 @@ if ($Enforce) {
     $ByName = @{}
     foreach ($result in $Results) {
         if ($result.WorkerLimit -eq $Workers) {
-            if ($result.MadFraction -gt 0.05 -or $result.SpreadFraction -gt 0.10) {
+            if (-not ($result.MadFraction -le 0.05 -and $result.SpreadFraction -le 0.10)) {
                 throw "$($result.Name) failed stability at W=$Workers"
             }
             $ByName[$result.Name] = $result
