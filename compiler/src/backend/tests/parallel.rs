@@ -9,8 +9,8 @@
 //! actually overlapped.
 //!
 //! Actualization is compile-time opt-in, so every case that expects a hand-out
-//! emits through [`emit_with_overlap`], which is what `whitefootc --par`
-//! compiles. Plain [`emit`] is the default compilation, and
+//! emits through [`emit_with_overlap`], the unfiltered `--par-scalar-leaf-limit off`
+//! form of `whitefootc --par`. Plain [`emit`] is the default compilation, and
 //! `the_default_compilation_hands_nothing_out` is the case that pins what it
 //! leaves out.
 
@@ -399,8 +399,8 @@ fn ordinary_lane_frame_limits_match_the_runtime_slot() {
         crate::LANE_FRAME_BYTES
     );
     assert!(
-        core.contains(&format!(
-            "_Alignas({PARALLEL_LANE_FRAME_ALIGNMENT}) unsigned char frame[WF_SCHED_FRAME_BYTES];"
+        crate::SCHED_CORE_SOURCE.contains(&format!(
+            "_Alignas({PARALLEL_LANE_FRAME_ALIGNMENT}) unsigned char frame[WF_PAR_FRAME_BYTES];"
         )),
         "the core slot must provide the alignment target layout relies on"
     );
@@ -1350,7 +1350,9 @@ fn the_sequential_clone_is_the_sequential_lowering() {
     }
 }
 
-/// The two worlds never call each other, and which one runs is decided once.
+/// Under the default policy the two worlds never call each other, and which
+/// one runs is decided once. Optional refusal/frontier controls have their own
+/// cases for entering sequential clones without a new runtime demand query.
 ///
 /// Both halves matter and they fail differently. A clone that called back into
 /// the overlapped world would re-enter the lowering it exists to avoid, and
@@ -1429,14 +1431,13 @@ fn the_bootstrap_selects_one_world_once() {
     );
 }
 
-/// A Windows `--par` module carries unresolved lane-protocol obligations
-/// instead of the sequential weak definitions used by the POSIX
+/// A Windows module with compute offers carries unresolved lane-protocol
+/// obligations instead of the sequential weak definitions used by the POSIX
 /// optional-runtime path.  Consequently, omitting the scheduler core is a link
 /// error and can never turn a requested Windows backend into the sequential
-/// world.  The runtime that resolves them is now `sched/entry.c` over
-/// `sched/core.c`, the same one every other target links; what this fail-closed
-/// choice selects is a staging predicate rather than a second implementation
-/// (design section 7).
+/// world. The shared `sched/core.c` protocol, `sched/entry.c` configuration and
+/// platform primitives resolve them. Runtime resource exhaustion may still
+/// refuse an offer and execute its ordinary-call fallback.
 #[test]
 fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
     let windows = SystemTarget::for_triple("x86_64-pc-windows-msvc")
@@ -1795,7 +1796,7 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     let directory = test_directory();
 
     // "The pool started" is read from the core's own count of the pool
-    // threads it started, which the observer prints on the `sched:` line
+    // threads it started, which the observer prints on the `compute:` line
     // after the grant line. It is not read from the grant count: a grant is a
     // steal, and a steal is a scheduling event that needs a pool thread to be
     // given a CPU while the offering lane still holds the work. The
@@ -1841,23 +1842,24 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     // before the program body, so no byte of the program's own output can
     // appear, and the one line it writes names the setting and the ceiling.
     for setting in ["abc", "-1", "65"] {
-        let (_, refused) = counted.run(Some(setting));
-        assert_ne!(
+        let refused = Command::new(&counted.executable)
+            .env("WF_WORKERS", setting)
+            .env("WF_SCHED_REPORT", "1")
+            .output()
+            .expect("run the invalid configuration");
+        assert_eq!(
             refused.status.code(),
-            Some(0),
+            Some(1),
             "WF_WORKERS={setting} is a configuration error and must not run"
         );
         assert!(
             refused.stdout.is_empty(),
             "a refused configuration must reach no program output"
         );
-        // The observer this fixture links reports the grant count from an
-        // exit handler, so it writes a line of its own after the refusal's.
-        // The refusal is the first line and the whole of what the runtime
-        // wrote before it stopped.
+        // Incomplete startup cannot run observers that query the runtime.
         assert_eq!(
-            String::from_utf8_lossy(&refused.stderr).lines().next(),
-            Some("whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64"),
+            String::from_utf8_lossy(&refused.stderr),
+            "whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64\n",
             "the refusal must name the setting and its ceiling"
         );
     }
@@ -1901,6 +1903,32 @@ fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
     identical(&runs).expect("overlapping must not move one byte of the result");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+#[test]
+fn recursive_frontier_preserves_exclusive_tree_borrows_and_owned_constructors() {
+    let reference = compile_and_run(&emit(OVERLAPPING_FOLD));
+    assert!(reference.status.success());
+    let module = super::emit_lowered(
+        OVERLAPPING_FOLD,
+        crate::OverlapLowering::OnWithRecursiveFrontier {
+            maximum_levels: std::num::NonZeroU8::new(2).unwrap(),
+            maximum_scalar_leaf_operations: None,
+            sequential_refusal: false,
+        },
+    );
+    assert!(module.contains("@wf__par_frontier_1_fold("));
+    let directory = test_directory();
+    let executable = build_executable(&module, &directory);
+    for workers in ["1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(output.stdout, reference.stdout);
+    }
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 /// Overlap lowering is compile-time opt-in: the default compilation of a
@@ -2167,7 +2195,7 @@ impl CountedProgram {
     /// done with the fixture.
     pub(super) fn link(module: &str, directory: &Path) -> Self {
         Self {
-            executable: link_counting_grants(module, directory),
+            executable: link_counting_grants(module, directory, GRANT_OBSERVER),
         }
     }
 
@@ -2220,17 +2248,20 @@ impl CountedProgram {
 /// Links one module against the runtime and the observer, and returns the
 /// executable. Linking is the expensive half, so a case that wants several runs
 /// of one module pays for it once.
-fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
+pub(super) fn link_counting_grants(
+    module: &str,
+    directory: &Path,
+    observation: &str,
+) -> std::path::PathBuf {
     let assembly = directory.join("counted.ll");
     let floor = directory.join("counted_floor.c");
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&assembly, module).expect("write the module");
-    // The floor joins every link the driver makes, it runs the entry on a pool
-    // stack when the core is linked, and a worker's per-thread arm lives in
-    // it, so this harness links what a shipped program links.
+    // The floor protects the entry and each ordinary worker stack. This
+    // harness links the same runtime sources as a shipped program.
     std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
-    std::fs::write(&observer, GRANT_OBSERVER).expect("write the observer");
+    std::fs::write(&observer, observation).expect("write the observer");
     let mut command = Command::new("/usr/bin/clang");
     command
         .arg("-std=c11")
@@ -2281,13 +2312,13 @@ fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::
 }
 
 /// The number of pool threads the core started in one counted run, read from
-/// the `sched:` line the observer prints after the grant line when the run
+/// the `compute:` line the observer prints after the grant line when the run
 /// asks for the core's counters, which every counted run does.
 fn workers_started(output: &std::process::Output) -> u64 {
     let report = String::from_utf8_lossy(&output.stderr).into_owned();
     report
         .lines()
-        .find(|line| line.starts_with("sched: "))
+        .find(|line| line.starts_with("compute: "))
         .and_then(|line| {
             line.split_whitespace()
                 .find_map(|field| field.strip_prefix("workers_started="))
@@ -2484,48 +2515,15 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 }
 "#;
 
-/// The staged call of a permitted loop is offered to a lane, and the refused
-/// edge is the same call publishing the same bytes.
-///
-/// Both halves matter and they fail differently. The shape half says the
-/// hand-out is where the schedule needs it: the frame is acquired and
-/// published where the iteration is issued, and joined, read, and released in
-/// the exact drain — so the loop's back edge is crossed with the call still
-/// running, which is the whole of what [PAR-3] grants here. The observable
-/// half says taking that grant changes nothing: `WF_WORKERS=0` and `1` are the
-/// opt-out, so every iteration takes the refused edge and runs its own call
-/// where it is written, and `4` starts a pool that grants — and all of them
-/// publish the same status. The default compilation names no lane entry at
-/// all, because a hand-out exists only in the world that asked for one.
+/// Generic suspended user-call pipelines are deferred. Preserve
+/// the source loop, mutations, errors and cleanup using ordinary calls.
 #[test]
-fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes() {
+fn a_staged_may_suspend_call_stays_on_the_current_stack() {
     let overlapped = emit_with_overlap(STAGED_MAY_SUSPEND_CALL);
     let body = function_body(&overlapped, "@wf_main");
-    let acquisition = body
-        .find("= call ptr @wf__par_acquire_lane(i64 ")
-        .expect("the staged call must acquire a lane frame");
-    let publish = body
-        .find("call void @wf__par_publish(ptr")
-        .expect("the acquired frame must be given the outlined call");
-    let refused = body
-        .find("\npar.staged.inline.")
-        .expect("a refused acquisition must run the call where it is written");
-    let join = body
-        .find("call void @wf__par_join(ptr")
-        .expect("the drain must join the frame");
-    let release = body
-        .find("call void @wf__par_release(ptr")
-        .expect("the drain must give the frame back");
-    assert!(
-        acquisition < publish && publish < refused && refused < join && join < release,
-        "the offer is in the carrying block and the retirement in the drain:\n{body}"
-    );
-    // The retirement is in a different block from the offer, which is what
-    // says an iteration is carried across the loop's back edge.
-    assert!(
-        body[publish..join].contains("par.staged.offered."),
-        "the join must be reached only after the issue stage has left:\n{body}"
-    );
+    assert!(body.contains("@wf_probe("));
+    assert!(!body.contains("@wf__par_publish("));
+    assert!(!body.contains("par.staged."));
 
     let sequential = emit(STAGED_MAY_SUSPEND_CALL);
     for entry in [
@@ -2561,35 +2559,9 @@ fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes(
             output.status.code().unwrap_or(-1).to_le_bytes().to_vec(),
         ));
     }
-    identical(&runs).expect("a refused lane must publish the granted lane's bytes");
+    identical(&runs).expect("worker settings must preserve ordinary I/O results");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// The compile-time window ceiling of a staged lane hand-out is the runtime's
-/// own lane slot count.
-///
-/// Two numbers that have to agree and live in two languages: the lowering
-/// sizes the ring and states the ceiling from one, and the runtime refuses an
-/// acquisition past the other. A ceiling above the runtime's would buy a
-/// window whose extra iterations are refused a frame and run inline, which is
-/// depth the ring paid for and never got; a ceiling below it would leave depth
-/// the lane could have granted.
-#[test]
-fn the_staged_lane_window_ceiling_is_the_runtimes() {
-    let declared = crate::SCHED_CORE_HEADER
-        .lines()
-        .find_map(|line| line.strip_prefix("#define WF_SCHED_LANE_SLOTS "))
-        .expect("the core must state its lane slot count");
-    assert_eq!(
-        declared
-            .trim()
-            .trim_end_matches('u')
-            .parse::<u64>()
-            .expect("a decimal count"),
-        crate::LANE_SLOTS,
-        "the lowering's staged window ceiling has drifted from the runtime's"
-    );
 }
 
 /// The same staged loop shape with a submitted *system* operation at the cut,
@@ -2623,17 +2595,10 @@ const STAGED_SYSTEM_OPERATION_BOUND_BY_A_LET: &[u8] = br#"command fn main(comman
 }
 "#;
 
-/// The lane form is selected by the cut's kind, never by how the tail is
-/// written.
-///
-/// A submitted system operation has no lane frame, and its drain publishes its
-/// outcome at the block boundary — after every instruction of that block — so
-/// a remainder written after it in the same block would read a value that does
-/// not exist yet. The bound tail is therefore declined for it and the loop
-/// keeps the lowering it had, which is what this case pins: no lane entry, no
-/// staged block, and the same status at every worker count. Without the
-/// decline the sizing alone would move, since a lane hand-out's ring is
-/// `WF_SCHED_LANE_SLOTS` elements and a submitted operation's is two.
+/// This let-bound operation remains outside the bounded batch actualizer.
+/// Its result is consumed in the same block, so ordinary submit-then-join
+/// completion preserves the written dependency. No compute lane or staged
+/// user-call frame is introduced, and every worker count observes one status.
 #[test]
 fn a_system_operation_bound_by_a_let_is_not_the_lane_form() {
     let overlapped = emit_with_overlap(STAGED_SYSTEM_OPERATION_BOUND_BY_A_LET);
@@ -2645,14 +2610,6 @@ fn a_system_operation_bound_by_a_let_is_not_the_lane_form() {
         !overlapped.contains("par.staged."),
         "a submitted operation at the cut must open no staged block:\n{overlapped}"
     );
-    // The lane hand-out's ring is an array of frame addresses, one per slot;
-    // the shape is named whole because a host may emit an array of the same
-    // length for something else (Darwin's path buffers are `[1024 x i8]`).
-    assert!(
-        !overlapped.contains(&format!("[{} x ptr]", crate::LANE_SLOTS)),
-        "a submitted operation's ring is not the lane hand-out's:\n{overlapped}"
-    );
-
     let directory = test_directory();
     let executable = build_executable(&overlapped, &directory);
     let mut runs = Vec::new();
@@ -2791,29 +2748,16 @@ fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
 }
 
 #[test]
-fn owned_staged_results_and_cleanup_survive_retirement_and_forced_refusal() {
+fn owned_io_results_and_cleanup_survive_ordinary_calls() {
     let module = emit_with_overlap(STAGED_OWNED_RESULTS_AND_CLEANUP);
     let main = function_body(&module, "@wf_main");
-    let issued = main
-        .find("call void @wf__par_publish(ptr ")
-        .expect("the aggregate-returning user call must be handed out");
-    let retired = main
-        .find("call void @wf__par_join(ptr ")
-        .expect("the drain must retire that hand-out");
-    assert!(issued < retired);
-    assert!(main[issued..retired].contains("par.staged.offered."));
-    assert!(main.contains("\npar.staged.inline."));
-    assert!(main.contains("\npar.staged.refused."));
-    // Both selected representations really cross the staging boundary: a
-    // Report result, and the Scratch owner released only by the drain.
-    for nominal in ["%wf.t0", "%wf.t1"] {
-        assert!(main.contains(&format!("[{} x {nominal}]", crate::LANE_SLOTS)));
-    }
-    run_owned_lane_cases(STAGED_OWNED_RESULTS_AND_CLEANUP, &module, 32, 4, 9, 4, 2);
+    assert!(!main.contains("@wf__par_publish("));
+    assert!(!main.contains("par.staged."));
+    run_owned_lane_cases(STAGED_OWNED_RESULTS_AND_CLEANUP, &module, 32, 0, 9, 4, 0);
 }
 
 #[test]
-fn owned_staged_inline_places_keep_each_iterations_backing_until_retirement() {
+fn owned_io_calls_keep_each_iterations_backing_until_return() {
     let source = br#"struct Scratch {
   stamp: u64;
 }
@@ -2865,26 +2809,13 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 "#;
     let module = emit_with_overlap(source);
     let main = function_body(&module, "@wf_main");
-    assert!(main.contains("par.staged.offered."));
-    // Pin construction into the current iteration's backing, not merely a
-    // later copy into it. The native modes below then observe that same
-    // backing through deferred mutation, join and retirement.
-    let slot_projection = format!(
-        " = getelementptr inbounds [{} x %wf.t0], ptr ",
-        crate::LANE_SLOTS
-    );
-    assert!(main.lines().any(|line| {
-        let Some((address, _)) = line.trim().split_once(&slot_projection) else {
-            return false;
-        };
-        main.contains(&format!("store %wf.t0 zeroinitializer, ptr {address}\n"))
-    }));
-    assert!(!main.contains("load %wf.t0,"));
-    run_owned_lane_cases(source, &module, 0, 4, 1, 0, 2);
+    assert!(!main.contains("par.staged."));
+    assert!(!main.contains("@wf__par_publish("));
+    run_owned_lane_cases(source, &module, 0, 0, 1, 0, 0);
 }
 
 #[test]
-fn owned_match_headers_and_staged_results_observe_completed_scratch() {
+fn owned_match_headers_and_bound_io_results_observe_completed_scratch() {
     let source = std::str::from_utf8(STAGED_OWNED_RESULTS_AND_CLEANUP)
         .expect("the fixture is UTF-8")
         .replace(
@@ -2923,20 +2854,16 @@ fn owned_match_headers_and_staged_results_observe_completed_scratch() {
     }
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 
-    // The current staged optimizer selects user calls bound by let; direct
-    // user-call match headers above use ordinary completion. Exercise the
-    // actual staged path too, retaining the same enum result and arm access.
+    // Both match headers and let-bound I/O calls use ordinary completion.
     let staged = source.replace(
         "match probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index) {",
         "let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index);\n          match reported {",
     );
     let module = emit_with_overlap(staged.as_bytes());
     let main = function_body(&module, "@wf_main");
-    assert!(main.contains("call void @wf__par_publish(ptr "));
-    assert!(main.contains("\npar.staged.offered."));
-    // Deferred publication makes an early arm observe stale scratch, while
-    // the observer checks exact frame/source release and real overlap.
-    run_owned_lane_cases(staged.as_bytes(), &module, 48, 4, 5, 4, 2);
+    assert!(!main.contains("@wf__par_publish("));
+    assert!(!main.contains("par.staged."));
+    run_owned_lane_cases(staged.as_bytes(), &module, 48, 0, 5, 4, 0);
 }
 
 /// The native core still performs every real grant, publication, join and
@@ -3012,7 +2939,7 @@ fn run_owned_lane_cases(
         };
         assert_eq!(count("attempts"), attempts, "{report}");
         let granted = count("granted");
-        if *mode == "1" {
+        if *mode == "1" || attempts == 0 {
             assert_eq!(granted, 0, "the actual acquisition edge must refuse");
         } else {
             assert!(
@@ -3126,5 +3053,370 @@ __attribute__((destructor)) static void report(void) {
     fprintf(stderr, "attempts=%u granted=%u released=%u allocations=%u frees=%u spares=%u pending=%u peak=%u\n",
         atomic_load(&attempts), atomic_load(&granted), atomic_load(&released),
         atomic_load(&allocations), atomic_load(&frees), atomic_load(&spares), pending, peak);
+}
+"#;
+
+/// Omitting cheap offers must preserve the last join site and the ordinary
+/// evaluation of every removed member, including members inside a mixed run.
+#[test]
+fn scalar_leaf_control_keeps_mixed_chain_results_and_join_boundary() {
+    let source = br#"fn increment(x: own u64) -> result: own u64 pure {
+  return x +wrap 1_u64;
+}
+
+fn counted(x: own u64) -> result: own u64 pure {
+  let value = x;
+  for (i in 0_u64..17_u64) {
+    set value = value +wrap i;
+  }
+  return value;
+}
+
+fn mixed(x: own u64) -> result: own u64 pure {
+  let a = increment(x: x);
+  let b = counted(x: x);
+  let c = increment(x: x);
+  let d = counted(x: x);
+  let e = increment(x: x);
+  let first = a +wrap b;
+  let second = c +wrap d;
+  let partial = first +wrap second;
+  return partial +wrap e;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let result = mixed(x: 3_u64);
+  if result == 290_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    let all = super::emit_lowered(source, crate::OverlapLowering::On);
+    let filtered = super::emit_lowered(
+        source,
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 1,
+        },
+    );
+    assert_eq!(
+        function_body(&all, "@wf_mixed")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        4
+    );
+    assert_eq!(
+        function_body(&filtered, "@wf_mixed")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        2
+    );
+    assert_eq!(
+        function_body(&filtered, "@wf_mixed")
+            .matches("call void @wf__par_join(")
+            .count(),
+        2
+    );
+    for module in [&all, &filtered] {
+        let output = compile_and_run(module);
+        assert!(output.status.success(), "{output:?}");
+    }
+    let renamed = String::from_utf8(source.to_vec())
+        .unwrap()
+        .replace("increment", "renamed_leaf");
+    let renamed = super::emit_lowered(
+        renamed.as_bytes(),
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 1,
+        },
+    );
+    assert_eq!(
+        function_body(&renamed, "@wf_mixed")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn scalar_leaf_control_drops_all_small_offers_without_a_clone_or_runtime() {
+    let source = br#"fn twice(x: own u64) -> result: own u64 pure {
+  return x +wrap x;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = twice(x: 3_u64);
+  let b = twice(x: 4_u64);
+  let value = a +wrap b;
+  if value == 14_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    let filtered = super::emit_lowered(
+        source,
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 1,
+        },
+    );
+    let sequential = super::emit_lowered(source, crate::OverlapLowering::Off);
+    assert_eq!(
+        filtered, sequential,
+        "pruning every offer must recover the ordinary module"
+    );
+    let retained = super::emit_lowered(
+        source,
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 0,
+        },
+    );
+    assert!(module_requires_parallel_runtime(&retained));
+}
+
+/// Self/mutual recursive frontiers and rejecting a task must compute every leaf.
+/// Sequential clones remove descendant attempts without changing result storage.
+/// A deferred granted root also checks that its callback advances the frontier;
+/// resetting it would exceed the independently counted tree/spine opportunities.
+#[test]
+fn recursive_controls_preserve_scalar_and_destination_results() {
+    for mutual in [false, true] {
+        for aggregate in [false, true] {
+            let result = if aggregate { "Answer" } else { "u64" };
+            let declaration = if aggregate {
+                "struct Answer {\n  value: u64;\n}\n\n"
+            } else {
+                ""
+            };
+            let leaf = if aggregate {
+                "Answer(value: value)"
+            } else {
+                "value"
+            };
+            let sum = if aggregate {
+                "l.value +wrap r.value"
+            } else {
+                "l +wrap r"
+            };
+            let merged = if aggregate {
+                "Answer(value: combined)"
+            } else {
+                "combined"
+            };
+            let read = if aggregate { "answer.value" } else { "answer" };
+            let source = format!(
+                r#"{declaration}fn fold(depth: own u64, seed: &u64) -> result: own {result} reads(seed) contract {{
+  requires depth <= 5_u64;
+}} {{
+  if depth == 0_u64 {{
+    let value = deref(seed);
+    return {leaf};
+  }}
+  let next = depth - 1_u64;
+  let l = fold(depth: next, seed: seed);
+  let r = fold(depth: next, seed: seed);
+  let combined = {sum};
+  return {merged};
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  let seed = 2_u64;
+  region {{
+    let answer = fold(depth: 5_u64, seed: &seed);
+    if {read} == 64_u64 {{
+      return exit_status(code: 0_u8);
+    }}
+    return exit_status(code: 1_u8);
+  }}
+}}
+"#
+            );
+            let source = if mutual {
+                let (function, command) = source.split_once("command fn main").unwrap();
+                let alternate = function[function.find("fn fold(").unwrap()..].replacen(
+                    "fn fold(",
+                    "fn alternate(",
+                    1,
+                );
+                format!(
+                    "{}{alternate}command fn main{command}",
+                    function.replace("= fold(", "= alternate(")
+                )
+            } else {
+                source
+            };
+            for (sequential, frontier) in [
+                (false, None),
+                (true, None),
+                (false, Some(1_u8)),
+                (false, Some(3)),
+                (false, Some(6)),
+                (true, Some(3)),
+            ] {
+                let policy = if let Some(levels) = frontier {
+                    crate::OverlapLowering::OnWithRecursiveFrontier {
+                        maximum_levels: std::num::NonZeroU8::new(levels).unwrap(),
+                        maximum_scalar_leaf_operations: Some(16),
+                        sequential_refusal: sequential,
+                    }
+                } else if sequential {
+                    crate::OverlapLowering::OnWithSequentialRefusal {
+                        maximum_scalar_leaf_operations: Some(16),
+                    }
+                } else {
+                    crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+                        maximum_operations: 16,
+                    }
+                };
+                let module = super::emit_lowered(source.as_bytes(), policy);
+                let body = function_body(&module, "@wf_fold");
+                let target = if mutual { "alternate" } else { "fold" };
+                assert_eq!(
+                    body.contains(&format!("@wf__par_seq_{target}(")),
+                    sequential || frontier == Some(1)
+                );
+
+                assert!(
+                    !function_body(&module, "@wf__par_seq_fold").contains("@wf__par_acquire_lane(")
+                );
+                let mut observed = module
+                    .replace(
+                        "call ptr @wf__par_acquire_lane(",
+                        "call ptr @wf_test_acquire(",
+                    )
+                    .replace("call void @wf__par_publish(", "call void @wf_test_publish(")
+                    .replace("call void @wf__par_join(", "call void @wf_test_join(")
+                    .replace("call void @wf__par_release(", "call void @wf_test_release(")
+                    .replace(
+                        "call i32 @wf__par_pool_active()",
+                        "call i32 @wf_test_parallel_world()",
+                    );
+                observed.push_str("\ndeclare ptr @wf_test_acquire(i64)\ndeclare void @wf_test_publish(ptr, ptr)\ndeclare void @wf_test_join(ptr)\ndeclare void @wf_test_release(ptr)\ndeclare i32 @wf_test_parallel_world()\n");
+                let directory = test_directory();
+                let executable = build_linked_executable(
+                    &observed,
+                    Some(SEQUENTIAL_REFUSAL_OBSERVER),
+                    &[],
+                    &directory,
+                );
+                for granted in [false, true] {
+                    let output = Command::new(&executable)
+                        .env("WF_TEST_ONE_GRANT", if granted { "1" } else { "0" })
+                        .output()
+                        .expect("run deterministic refusal schedule");
+                    assert!(output.status.success(), "{output:?}");
+                    // Full binary tree: 31 internal calls. With no grants only
+                    // the right spine tries: 5. A granted root also runs the
+                    // left subtree's right spine: 5 + 4.
+                    let levels = u32::from(frontier.unwrap_or(5).min(5));
+                    let attempts = if sequential {
+                        if granted { levels + levels - 1 } else { levels }
+                    } else {
+                        (1 << levels) - 1
+                    };
+                    assert_eq!(
+                        String::from_utf8_lossy(&output.stderr),
+                        format!(
+                            "attempts={attempts} granted={} released={}\n",
+                            u8::from(granted),
+                            u8::from(granted)
+                        )
+                    );
+                }
+                std::fs::remove_dir_all(directory).expect("remove refusal artifacts");
+            }
+        }
+    }
+}
+
+#[test]
+fn recursive_controls_keep_leaf_calls_and_staged_completion_unchanged() {
+    // No descendant compute permission means no clone is needed at the call.
+    let source = br#"fn leaf(x: own u64) -> result: own u64 pure {
+  return x +wrap 1_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = leaf(x: 1_u64);
+  let b = leaf(x: 2_u64);
+  let sum = a +wrap b;
+  if sum == 5_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    for policy in [
+        crate::OverlapLowering::OnWithSequentialRefusal {
+            maximum_scalar_leaf_operations: None,
+        },
+        crate::OverlapLowering::OnWithRecursiveFrontier {
+            maximum_levels: std::num::NonZeroU8::new(3).unwrap(),
+            maximum_scalar_leaf_operations: None,
+            sequential_refusal: false,
+        },
+    ] {
+        let module = super::emit_lowered(source, policy);
+        assert_eq!(module, emit_with_overlap(source));
+        assert!(compile_and_run(&module).status.success());
+        let staged = super::emit_lowered(STAGED_MAY_SUSPEND_CALL, policy);
+        assert_eq!(staged, emit_with_overlap(STAGED_MAY_SUSPEND_CALL));
+    }
+}
+
+#[test]
+fn recursive_frontier_does_not_specialize_a_suspending_cycle_with_compute_offers() {
+    let original = std::str::from_utf8(STAGED_MAY_SUSPEND_CALL).unwrap();
+    let source = format!("fn increment(value: own u8) -> result: own u8 pure {{\n  return value +wrap 1_u8;\n}}\n\n{}",
+        original.replace("  let answer = mark;", "  if mark == 0_u8 {\n    return probe(root: root, permit: move permit, name: name, scratch: move scratch, mark: 1_u8);\n  }\n  let a = increment(value: mark);\n  let b = increment(value: mark);\n  let answer = a +wrap b;"));
+    let baseline = emit_with_overlap(source.as_bytes());
+    let body = function_body(&baseline, "@wf_probe");
+    assert!(
+        body.contains("@wf_probe("),
+        "the excluded component must be cyclic"
+    );
+    assert!(
+        body.contains("@wf__par_acquire_lane("),
+        "the cycle must reach compute offers"
+    );
+    let controlled = super::emit_lowered(
+        source.as_bytes(),
+        crate::OverlapLowering::OnWithRecursiveFrontier {
+            maximum_levels: std::num::NonZeroU8::new(3).unwrap(),
+            maximum_scalar_leaf_operations: None,
+            sequential_refusal: false,
+        },
+    );
+    assert_eq!(controlled, baseline);
+}
+
+const SEQUENTIAL_REFUSAL_OBSERVER: &str = r#"#include <stdio.h>
+#include <stdlib.h>
+#include <stdalign.h>
+static unsigned attempts, grants, releases;
+static alignas(16) unsigned char frame[512];
+static void (*callback)(void *);
+static int joined;
+static void require(int value) { if (!value) abort(); }
+static void report(void) {
+    require(grants == releases);
+    fprintf(stderr, "attempts=%u granted=%u released=%u\n", attempts, grants, releases);
+}
+int wf_test_parallel_world(void) { require(atexit(report) == 0); return 1; }
+void *wf_test_acquire(unsigned long bytes) {
+    require(bytes <= sizeof frame);
+    ++attempts;
+    const char *grant = getenv("WF_TEST_ONE_GRANT");
+    if (attempts == 1 && grant && grant[0] == '1') { ++grants; return frame; }
+    return NULL;
+}
+void wf_test_publish(void *p, void (*run)(void *)) {
+    require(p == frame && !callback); callback = run;
+}
+void wf_test_join(void *p) {
+    require(p == frame && callback && !joined); callback(p); joined = 1;
+}
+void wf_test_release(void *p) {
+    require(p == frame && joined && !releases); ++releases;
 }
 "#;

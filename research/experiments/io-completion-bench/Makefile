@@ -5,9 +5,12 @@
 #   S  the Whitefoot program built with --no-overlap, the sequential reference
 #   C  the Whitefoot program built the way it ships, with completion overlap
 #
-# This is a measurement bundle, not a gate. It is deliberately not reachable
-# from the repository's `make check`: it generates a large tree, runs for
-# minutes, and reports timings that no build should depend on.
+# This is a measurement bundle, not a gate. Its protocols are deliberately not
+# reachable from the repository's `make check`: they generate a large tree,
+# run for minutes, and report timings that no build should depend on. The one
+# target the gate does run is `programs-check`, which only compiles every
+# program here with the current compiler, so a language change that leaves a
+# program behind fails the gate instead of silently emptying a table.
 #
 #   make -C research/experiments/io-completion-bench verify   correctness only
 #   make -C research/experiments/io-completion-bench bench     the macOS table
@@ -96,7 +99,7 @@ READ_SETTLE_ATTEMPTS ?= 24
 READ_SETTLE_SECONDS ?= 15
 DOCKER_IMAGE ?= wf-io-bench:linux
 
-.PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean chain \
+.PHONY: programs-check build prepare compiler gen verify bench bench-pipe linux linux-image expected clean chain \
 	read-build read-gen read-uncache read-settle read-warm read-verify expected-read bench-read \
 	linux-read net-tools net-verify linux-net
 
@@ -135,6 +138,19 @@ $(BUILD)/pipe_producer: pipe_producer.c | prepare
 
 $(BUILD)/pipe_harness: pipe_harness.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+# Every program the bundle carries, compiled and nothing more. The gate runs
+# this; the protocols below run the programs. The compilations are independent,
+# so they run as many at a time as the host has processors.
+PROGRAMS := $(wildcard programs/*.wf)
+CHECKED := $(PROGRAMS:programs/%.wf=$(BUILD)/checked_%)
+JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+programs-check: compiler | prepare
+	$(MAKE) -j$(JOBS) $(CHECKED)
+
+$(BUILD)/checked_%: programs/%.wf | prepare
+	$(WFC) -o $@ $<
 
 # The C line and the S line are one source compiled two ways. Nothing else
 # differs between them, which is what makes the pair a statement about the

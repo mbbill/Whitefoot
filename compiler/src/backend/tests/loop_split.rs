@@ -689,6 +689,115 @@ fn a_split_loop_publishes_one_byte_sequence_at_every_worker_count() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
+/// A process policy changes the decomposition, never the fold's bytes. The
+/// observer queries the real entry API after bootstrap, so ignoring the
+/// setting cannot pass by merely producing a correct sequential result.
+#[test]
+fn split_work_setting_changes_budget_without_changing_the_fold() {
+    let module = emit_with_overlap(PERMITTED_FOLD);
+    let directory = test_directory();
+    let executable = super::parallel::link_counting_grants(
+        &module,
+        &directory,
+        r#"#include <stdio.h>
+#include <stdlib.h>
+extern unsigned long wf__par_split_budget(unsigned long, unsigned long);
+static void report(void) {
+    fprintf(stderr, "%lu %lu %lu %lu\n",
+        wf__par_split_budget(0ul, 219ul),
+        wf__par_split_budget(4096ul, 219ul),
+        wf__par_split_budget(65536ul, 219ul),
+        wf__par_split_budget(~0ul, ~0ul));
+}
+
+__attribute__((constructor)) static void observe(void) { atexit(report); }
+"#,
+    );
+    let mut runs = Vec::new();
+    for (setting, expected) in [
+        (None, "0 0 3 6\n"),
+        (Some(""), "0 0 3 6\n"),
+        (Some("0"), "0 0 0 0\n"),
+        (Some("1"), "0 6 6 6\n"),
+        (Some("60000"), "0 3 6 6\n"),
+        (Some("1200000"), "0 0 3 6\n"),
+        (Some("1000000000"), "0 0 0 6\n"),
+    ] {
+        let mut command = Command::new(&executable);
+        command.env("WF_WORKERS", "4").env_remove("WF_SPLIT_WORK");
+        if let Some(value) = setting {
+            command.env("WF_SPLIT_WORK", value);
+        }
+        let output = command.output().expect("run with split-work policy");
+        assert!(output.status.success(), "setting {setting:?}: {output:?}");
+        assert_eq!(output.stdout.len(), 8);
+        assert_eq!(String::from_utf8_lossy(&output.stderr), expected);
+        runs.push((format!("WF_SPLIT_WORK={setting:?}"), output.stdout));
+    }
+    identical(&runs).expect("split policy must preserve the fold's bytes");
+    for setting in ["-1", "no", "1000000001", "18446744073709551616"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", "4")
+            .env("WF_SPLIT_WORK", setting)
+            .output()
+            .expect("reject invalid split-work setting");
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty(), "the body must not run");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr).lines().next(),
+            Some("whitefoot scheduler: WF_SPLIT_WORK must be an integer from 0 through 1000000000")
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove split-work test");
+}
+
+#[test]
+fn ordinary_shared_runtime_can_report_without_an_observer() {
+    let directory = test_directory();
+    let executable = build_executable(&emit_with_overlap(PERMITTED_FOLD), &directory);
+    let mut runs = Vec::new();
+    for workers in ["1", "4"] {
+        for report in ["0", "1", "2"] {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers)
+                .env("WF_SPLIT_WORK", "60000")
+                .env("WF_SCHED_REPORT", report)
+                .output()
+                .expect("run ordinary shared runtime with report mode");
+            assert!(output.status.success(), "{output:?}");
+            assert_eq!(output.stdout.len(), 8);
+            if report == "2" {
+                let text = String::from_utf8_lossy(&output.stderr);
+                assert_eq!(text.lines().count(), 1, "{text}");
+                assert!(
+                    text.starts_with(&format!("compute: threads={workers} ")),
+                    "{text}"
+                );
+                let started = if workers == "1" { "0" } else { "3" };
+                assert!(
+                    text.contains(&format!("workers_started={started} ")),
+                    "{text}"
+                );
+            } else {
+                assert!(output.stderr.is_empty(), "{output:?}");
+            }
+            runs.push((format!("workers={workers} report={report}"), output.stdout));
+        }
+    }
+    identical(&runs).expect("diagnostics must not change the program output");
+    let rejected = Command::new(&executable)
+        .env("WF_SCHED_REPORT", "3")
+        .output()
+        .expect("reject an unsupported report mode");
+    assert_eq!(rejected.status.code(), Some(1));
+    assert!(rejected.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&rejected.stderr),
+        "whitefoot scheduler: WF_SCHED_REPORT must be an integer from 0 through 2\n"
+    );
+    std::fs::remove_dir_all(&directory).expect("remove report-mode test");
+}
+
 /// A split that carries captures and folds under a second admitted operation
 /// publishes what the unsplit lowering publishes, at every worker count.
 ///

@@ -58,14 +58,11 @@ COMPILER_STAGES := format lint test-partition test-unit test-sampling test-corpu
 	docs spec completion-test
 
 COMPLETION_DIR := src/backend/completion
-# The scheduler core is linked into every completion build: the completion
-# record begins with a `wf_sched_record` and every publication goes through
-# `wf_sched_complete` (design §7).
+# Completion builds use the same compute pool and process configuration as
+# ordinary compute programs; typed completion records own their own progress.
 SCHED_DIR := src/backend/sched
-# `entry.c` is the platform layer over the core: the one core instance every
-# unit that publishes or joins a record names, the startup policy, and the
-# emitted module's `wf__par_*` ABI. It is part of the core's own group, so a
-# link that carries `core.c` carries it (design §7's platform layer).
+# The core owns current-stack join/help/steal, entry.c owns configuration and
+# startup policy, and the native leaf supplies threads and per-lane waiting.
 SCHED_SOURCES := $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c $(SCHED_DIR)/entry.c
 COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
 COMPLETION_DEFINES := \
@@ -97,7 +94,8 @@ COMPLETION_CFLAGS := $(COMPLETION_BASE_CFLAGS) $(COMPLETION_DEFINES)
 COMPLETION_HARNESS_DEFINES := \
 	-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
 	-DWF_FILE_MONOTONIC_NS=wf_completion_test_monotonic_ns \
-	-DWF_FILE_OPENAT=wf_completion_test_openat
+	-DWF_FILE_OPENAT=wf_completion_test_openat \
+	-DWF_COMPLETION_WAIT_RETURN=wf_completion_test_wait_return
 COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) $(COMPLETION_HARNESS_DEFINES)
 COMPLETION_SOURCES := \
 	$(SCHED_SOURCES) \
@@ -239,8 +237,7 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test: completion-core-read-test completion-default-route-test sched-smoke \
-	sched-enumerate
+completion-test: completion-core-read-test completion-default-route-test sched-smoke sched-deque-test
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
 	@if $(NM) "$(COMPLETION_TMP)/harness" | \
@@ -310,65 +307,45 @@ completion-default-route-test:
 			"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"; \
 	fi
 
-# The scheduler core (src/backend/sched) on real threads, the real switch and
-# the real park: not the §11 gate, which is the enumerator, but the run that
-# has to pass before an enumeration is worth building.
+# Real current-stack nested execution and forced startup/lifetime races.
 sched-smoke:
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_BASE_CFLAGS) $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c \
-		$(SCHED_DIR)/smoke.c -o "$(COMPLETION_TMP)/sched-smoke"
-	"$(COMPLETION_TMP)/sched-smoke"
+	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_TEST $(SCHED_DIR)/smoke.c \
+		$(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c -o "$(COMPLETION_TMP)/sched-smoke"
+	@set -e; for mode in normal owner-fail worker-fail partial partial-three startup-delayed startup-partial; do \
+		WF_WORKERS=4 "$(COMPLETION_TMP)/sched-smoke" $$mode; \
+	done
+	WF_WORKERS=1 "$(COMPLETION_TMP)/sched-smoke"
 
-# The §11 gate: every interleaving of the core's primitive steps at the four
-# configurations §11 derives from §5's floor, (T=1,S=2), (T=1,S=3), (T=2,S=3)
-# and (T=2,S=4), with every invariant checked after every step rather than
-# once at the end. Two lane slots because I4's second half wants a power of two.
-#
-# The idle window's bounded spin is pinned here for the same reason the lane
-# slot count is: under `WF_SCHED_ENUMERATE` a spin round is not a delay but a
-# repetition of the window's looks, and every look is a primitive step the
-# search branches on. One spin round reaches both of the spin's arms -- a look
-# that hits during it, and the fall through it to the park -- and costs the
-# search 9.4 times the states at (2,4): 434 643 223 before the spin and
-# 4 086 519 269 with it, 47 seconds against 157. A second round costs 24 times
-# the states at (2,3) and is not worth what it adds.
-#
-# The yield rounds are pinned to zero, and that is a statement about the model
-# rather than about the spin. The enumerator makes a yield block until another
-# process has written shared state, which is the only way a spin can observe
-# anything in a sequential model; so a yield in front of the park forces every
-# device completion ahead of the park, and the one thread then never sleeps on
-# the primitive at all. S10a asserts that it does, and fails with "not covered:
-# the one thread never slept on the primitive" at one yield round with no spin
-# rounds at all; at (2,4) two spin rounds and one yield round fail seventeen
-# schedules with "thread 1 spins with nothing left to change what it spins on",
-# which is the same model fact from the other side -- a yield the search cannot
-# enable is a stopped thread. A yield is a delay, like the pause a spin round
-# takes; the looks around it are what section 11 judges, and one spin round
-# runs them.
-sched-enumerate:
+# Real concurrent deque reuse and counter observation, without custom stack
+# switching, so ThreadSanitizer can track every tested thread normally.
+sched-deque-test:
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_ENUMERATE -DWF_SCHED_LANE_SLOTS=2u \
-		-DWF_SCHED_MAX_THREADS=4u -DWF_SCHED_MAX_STACKS=8u \
-		-DWF_SCHED_IDLE_SPIN_ROUNDS=1u -DWF_SCHED_IDLE_YIELD_ROUNDS=0u \
-		$(SCHED_DIR)/core.c $(SCHED_DIR)/enumerate.c $(SCHED_DIR)/schedules.c \
-		-o "$(COMPLETION_TMP)/sched-enumerate"
-	@# The four sweeps are independent and the two-thread ones are long, so
-	@# they run together and the target fails if any of them does.
-	@status=0; pids=""; \
-	for configuration in "1 2" "1 3" "2 3" "2 4"; do \
-		set -- $$configuration; \
-		"$(COMPLETION_TMP)/sched-enumerate" --threads $$1 --stacks $$2 \
-			> "$(COMPLETION_TMP)/sched-enumerate-t$$1s$$2.log" 2>&1 & \
-		pids="$$pids $$!"; \
-	done; \
-	for pid in $$pids; do wait "$$pid" || status=1; done; \
-	for configuration in "1 2" "1 3" "2 3" "2 4"; do \
-		set -- $$configuration; \
-		grep -v '^enumerate: \.\.\.' "$(COMPLETION_TMP)/sched-enumerate-t$$1s$$2.log"; \
-	done; \
-	exit $$status
+	@set -e; for stats in 1 0; do \
+		suffix=; if test $$stats = 0; then suffix=-no-stats; fi; \
+		$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=$$stats \
+			$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c \
+			-o "$(COMPLETION_TMP)/sched-deque-probe$$suffix"; \
+		"$(COMPLETION_TMP)/sched-deque-probe$$suffix"; \
+	done
 
+sched-deque-tsan:
+	@mkdir -p "$(COMPLETION_TMP)"
+	@set -e; for stats in 1 0; do \
+		suffix=; if test $$stats = 0; then suffix=-no-stats; fi; \
+		$(CC) $(COMPLETION_BASE_CFLAGS) -fsanitize=thread -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=$$stats \
+			$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c \
+			-o "$(COMPLETION_TMP)/sched-deque-tsan$$suffix"; \
+		"$(COMPLETION_TMP)/sched-deque-tsan$$suffix"; \
+	done
+
+# The managed-stack enumerator is retired with its scheduler. Native compute
+# protocol tests above and completion wake tests below exercise the new boundary.
+# sched-deque-tsan checks observed concurrent deque reuse, task completion and
+# counter accesses on real threads. It does not enumerate all interleavings,
+# prove weak-memory ordering or liveness, or cover completion and stack-floor
+# protocols. Their focused tests remain separate; this is not equivalent to
+# the retired managed-stack state-space gate.
 completion-default-route-sanitize:
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread \
@@ -522,6 +499,7 @@ completion-windows-cross:
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
 		$(SCHED_DIR)/core.c \
 		$(SCHED_DIR)/prim_windows.c \
+		$(SCHED_DIR)/entry.c \
 		$(COMPLETION_DIR)/runtime.c \
 		$(COMPLETION_DIR)/wait_windows.c \
 		$(COMPLETION_DIR)/native_contract.c \
@@ -645,31 +623,8 @@ completion-windows-wine: completion-windows-cross
 	echo "completion Windows wine run: PASS (wine is not Windows)"
 
 
-# The measurements of design section 12 and of the plan's added choices, taken
-# with one method and recorded in
-# `research/experiments/park-on-miss-measurements/README.md`.
-#
-# This is a measurement and not a gate. It is deliberately outside `check`: it
-# builds the compiler, generates a tree, runs for many minutes, and reports
-# timings that no build may depend on. It is here rather than in the
-# experiment's own Makefile because everything it measures is built out of this
-# directory: every program it times is linked against this file's runtime, and
-# the lane-slot sweep is a define of `sched/core.h`. Slice 4b removed the
-# compile-time variants it swept, and with them the two sections that ran this
-# file's `format`, `lint` and `completion-test` once per variant, so what
-# remains measures the shipped form.
-#
-#   make -C compiler park-on-miss-measurements
-#   make -C compiler park-on-miss-measurements SECTIONS="park compute"
-#
-# It is removed when design section 12's remaining items are answered or
-# retired.
-PARK_ON_MISS_MEASUREMENTS := \
-	../research/experiments/park-on-miss-measurements/run.sh
-SECTIONS ?=
-
-park-on-miss-measurements:
-	sh $(PARK_ON_MISS_MEASUREMENTS) $(SECTIONS)
+# Managed-stack park-on-miss measurements are retired from this runtime.
+# Their dated evidence and reproduction revision remain in the investigation.
 .PHONY: check static format lint test test-unit test-sampling test-corpus \
 	test-partition docs spec completion-test \
 	completion-core-read-source-boundary completion-core-read-test \
@@ -677,5 +632,4 @@ park-on-miss-measurements:
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test \
 	completion-default-route-sanitize completion-default-route-tsan sched-smoke \
-	sched-enumerate completion-windows-cross completion-windows-wine \
-	park-on-miss-measurements
+	sched-deque-test sched-deque-tsan completion-windows-cross completion-windows-wine

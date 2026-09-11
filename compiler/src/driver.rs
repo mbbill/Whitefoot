@@ -296,9 +296,10 @@ pub fn compile_with_overlap(
 /// permission judgment allows overlapping the two statements and whether a
 /// permitted overlap is actualizable. It is developer output on the caller's
 /// own channel: it participates in no mandatory record, changes no accepted
-/// program, and selects no lowering — the same lines are reported whether or
-/// not this compilation actualizes any of them. `whitefootc --par-ledger` is
-/// its one caller outside tests.
+/// program, and selects no lowering. Permission verdicts are independent of
+/// the actualization policy; additional actualization lines describe that
+/// policy's choices, including omitted scalar-leaf offers. The compiler's
+/// `--par-ledger` switch is its caller outside tests.
 pub fn compile_with_permission_ledger(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,

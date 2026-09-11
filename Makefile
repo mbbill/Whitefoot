@@ -15,7 +15,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # `approval-history-integrity` and `spec-archive-integrity` were retired with
 # the approval ledger they both read.
 CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	design-lint conformance compiler research-tests conformance-run snapshot-run
+	design-lint conformance compiler research-tests bench-programs conformance-run snapshot-run
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -136,6 +136,13 @@ research-tests:
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
 
+# The programs of the I/O measurement bundle compile with the current
+# compiler. The bundle's protocols are measurements and stay out of the gate;
+# this only compiles, so a language change that leaves a bench program behind
+# fails here instead of emptying a table on the bench runner.
+bench-programs:
+	$(MAKE) -C research/experiments/io-completion-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
+
 # Enumerate every declared case through the native adapter. Every non-pending
 # case reaches an actual compiler verdict; run cases are linked and
 # executed, while the declared pending case is reported as Skip. `check`
@@ -165,4 +172,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests conformance-run snapshot-run install-hooks
+.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests bench-programs conformance-run snapshot-run install-hooks

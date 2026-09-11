@@ -1541,6 +1541,29 @@ pub enum OverlapLowering {
     Completion,
     /// Actualize completion operations and eligible compute groups.
     On,
+    /// Optional control: specialize ordinary recursive components into private
+    /// call layers, then enter their existing same-ABI sequential clones.
+    OnWithRecursiveFrontier {
+        /// Number of component call levels that may offer compute work.
+        maximum_levels: std::num::NonZeroU8,
+        /// Optional scalar-leaf offer suppression.
+        maximum_scalar_leaf_operations: Option<u32>,
+        /// Also select sequential clones on refused compute offers.
+        sequential_refusal: bool,
+    },
+    /// Optional control: an ungranted non-suspending compute call may enter
+    /// its existing ordinary-ABI sequential clone at the original join.
+    OnWithSequentialRefusal {
+        /// Optional suppression of small scalar leaf offers, as in the leaf control.
+        maximum_scalar_leaf_operations: Option<u32>,
+    },
+    /// Retain `On` except for offers of straight-line scalar
+    /// leaves with at most this many nonconstant IR operations. This is an
+    /// actualization heuristic, not an acceptance bound or machine-cost claim.
+    OnWithoutSmallScalarLeaves {
+        /// Maximum nonconstant operations in a scalar leaf whose offer is omitted.
+        maximum_operations: u32,
+    },
 }
 
 /// One group of pure sibling calls whose evaluations may be overlapped
@@ -1554,8 +1577,10 @@ pub enum OverlapLowering {
 ///
 /// The group is a permission the target stage may take, never an obligation:
 /// a target that hands nothing out emits exactly the sequential code, because
-/// the handed-out call and the inline fallback call the same monomorphized
-/// function on the same arguments.
+/// the handed-out call and the default inline fallback call the same
+/// monomorphized function on the same arguments. Optional refusal/frontier
+/// controls may choose a same-ABI sequential clone that declines descendant
+/// offers; the original operations, arguments and join boundary remain.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrOverlap {
     members: Vec<IrValueId>,
@@ -1733,29 +1758,6 @@ pub struct IrCompletionPipeline {
     /// The blocks a prologue gate leaves through when the batch still has
     /// operations in flight; each jumps into the drain before the exit runs.
     pending_exit_edges: Vec<IrBlockId>,
-    /// Whether the staged call is handed to a compute lane rather than
-    /// submitted to the completion runtime.
-    ///
-    /// The two forms differ only in what the slot holds for an iteration and
-    /// in how the drain consumes it: a completion operation's record block, or
-    /// a lane frame's address. Everything else about the schedule — the
-    /// window, the ring, the in-order retirement, the exact drain — is one
-    /// mechanism.
-    lane_handout: bool,
-    /// Values the issue stage defines and the drain reads back, one ring
-    /// element each.
-    ///
-    /// A carrying block is emitted once and reached once per iteration, so a
-    /// value the prologue defines is gone by the time the drain runs that
-    /// iteration's remainder. The pairs are `(origin, reload)`: `origin` is
-    /// the issue stage's own definition, and `reload` is the value the drain
-    /// binds instead. This is the same per-slot storage a submitted
-    /// operation's captured scalars take, named at the IR level because a
-    /// compiler-derived release rides one of them.
-    /// Addressed bindings carry their addresses, not snapshots of content a
-    /// callee may still be writing. The issue stage's places have separate
-    /// backing per slot until that slot's remainder and releases complete.
-    staged_carries: Vec<(IrValueId, IrValueId)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1788,8 +1790,6 @@ impl IrCompletionPipeline {
             slot_index: Vec::new(),
             window_value: None,
             pending_exit_edges: Vec::new(),
-            lane_handout: false,
-            staged_carries: Vec::new(),
         }
     }
 
@@ -1853,27 +1853,6 @@ impl IrCompletionPipeline {
             drain,
             result,
         });
-    }
-
-    /// Records that this batch's staged call is handed to a compute lane, and
-    /// the values its drain reads back per slot.
-    ///
-    /// Called only beside [`Self::plan_bounded_batch`], because the lane form
-    /// is the same bounded batch with a different thing in the slot.
-    pub(crate) fn plan_lane_handout(&mut self, staged_carries: Vec<(IrValueId, IrValueId)>) {
-        self.lane_handout = true;
-        self.staged_carries = staged_carries;
-    }
-
-    /// Whether the staged call is a lane hand-out rather than a submitted
-    /// system operation.
-    pub(crate) const fn lane_handout(&self) -> bool {
-        self.lane_handout
-    }
-
-    /// The `(origin, reload)` pairs the drain reads back from the ring.
-    pub(crate) fn staged_carries(&self) -> &[(IrValueId, IrValueId)] {
-        &self.staged_carries
     }
 
     pub(crate) const fn planned_batch_driver(&self) -> Option<IrCompletionBatchDriver> {
@@ -2028,23 +2007,6 @@ impl IrCompletionBatchDriver {
 /// numbers live in two languages and are pinned to each other by
 /// `the_compile_time_frame_bound_is_the_runtimes`.
 pub const LANE_FRAME_BYTES: u64 = 256;
-
-/// How many hand-outs one thread's lane can hold at once, and so the
-/// compiler's own ceiling on the window of a loop whose staged call is a lane
-/// hand-out.
-///
-/// Every iteration a staged loop carries in flight holds one frame slot of the
-/// offering thread's lane, so a window past this one is a window whose extra
-/// iterations are refused a frame and run inline. This restates
-/// `WF_SCHED_LANE_SLOTS` in `backend/sched/core.h` for the same reason
-/// `LANE_FRAME_BYTES` restates `WF_SCHED_FRAME_BYTES` — the ring is a static
-/// reservation the emitter makes long before a runtime exists — and the two
-/// numbers are pinned to each other by
-/// `the_staged_lane_window_ceiling_is_the_runtimes`. It is 1024 because that
-/// is the connection count the network control test keeps in flight, and a
-/// staged loop's ring in the frame is sized by it: one address, one answer
-/// and the iteration's own carries per slot.
-pub const LANE_SLOTS: u64 = 1024;
 
 /// Why a function exists, for the one consumer that has to tell the two worlds
 /// apart: a source function is emitted into both, while the two halves of a
@@ -2230,9 +2192,21 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     main: u32,
     entry: IrEntry,
     actualization: Vec<String>,
+    sequential_compute_refusal: bool,
+    recursive_compute_frontier: Option<std::num::NonZeroU8>,
 }
 
 impl IrProgram<'_, '_, '_> {
+    /// Opt-in private recursive call specialization; never an acceptance bound.
+    pub(crate) const fn recursive_compute_frontier(&self) -> Option<std::num::NonZeroU8> {
+        self.recursive_compute_frontier
+    }
+
+    /// Opt-in machine-code selection after a refused compute acquisition.
+    pub(crate) const fn sequential_compute_refusal(&self) -> bool {
+        self.sequential_compute_refusal
+    }
+
     pub fn nominals(&self) -> &[IrNominal] {
         &self.nominals
     }

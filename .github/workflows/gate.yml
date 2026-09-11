@@ -44,7 +44,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-14]
-        stage: [static, unit, sampling, corpus, conformance, research]
+        stage: [static, unit, sampling, corpus, conformance, research, bench-programs]
         include:
           # Everything that reads the tree without running a compiled program.
           - stage: static
@@ -66,6 +66,11 @@ jobs:
           # The maintained executable tests under `research/`.
           - stage: research
             run: make research-tests
+          # The I/O measurement bundle's programs, compiled with the current
+          # compiler and not run: the bench workflow runs them, and this is
+          # what keeps a language change from emptying its tables.
+          - stage: bench-programs
+            run: make bench-programs
     steps:
       - uses: actions/checkout@v4
         with:

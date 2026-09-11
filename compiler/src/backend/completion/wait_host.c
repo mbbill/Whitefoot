@@ -19,6 +19,10 @@
 #include <string.h>
 #include <time.h>
 
+#if defined(WF_COMPLETION_WAIT_RETURN)
+extern void WF_COMPLETION_WAIT_RETURN(wf_completion_wait *wait);
+#endif
+
 typedef struct wf_completion_wait_host {
     pthread_mutex_t lock;
     pthread_cond_t condition;
@@ -109,6 +113,10 @@ enum wf_completion_wait_result wf_completion_wait_sleep(
             &deadline
         );
     }
+#if defined(WF_COMPLETION_WAIT_RETURN)
+    /* Harness observation only, with the real condition lock reacquired. */
+    WF_COMPLETION_WAIT_RETURN(wait);
+#endif
     if (error == ETIMEDOUT) {
         return WF_COMPLETION_WAIT_TIMED_OUT;
     }
