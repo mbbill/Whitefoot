@@ -100,6 +100,17 @@ make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/uni
      WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_SPLIT_WORK_UNIT=300000
 ```
 
+Not every value it carries is a constant to sweep.
+`-DWF_PAR_IDLE_WINDOW_ON_ASYMMETRIC=1` is a twin knob rather than a number. The
+runtime withholds the idle window from a machine whose CPUs are not all of one
+performance level; this flag withdraws that test and nothing else, so on such a
+machine the twin arm is the older behaviour and the `wf` row is the current one,
+and `A/B  wf-b/wf  wall` above 1.000 reads the current rule ahead. On a machine
+whose CPUs are alike the flag changes nothing and the pair is a null. The Apple
+M1 Pro section at `8c296c91` in
+[`../../investigations/compute-runtime/RESULTS.md`](../../investigations/compute-runtime/RESULTS.md)
+is the table it was built for.
+
 It is **empty by default**, kept in its own stamp file that the twin's four
 runtime object rules depend on — so setting it or clearing it recompiles and
 relinks the twin rather than re-timing the one the last run left — recorded in

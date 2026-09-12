@@ -176,3 +176,63 @@ fn recursion_budget_follows_the_pool_width_and_stops_at_its_ceiling() {
     }
     std::fs::remove_dir_all(directory).expect("remove native probe");
 }
+
+/// What the idle window's admission test asks the host, and what it does with
+/// the answer.
+///
+/// The window opens only for a pool that fits the CPUs this process may run on
+/// AND only where those CPUs are alike, so the core reads `wf_prim_cpu_levels`
+/// once at pool start. The probe checks that the primitive answers at all — at
+/// least one level, and the same count twice — and then both directions of the
+/// rule, each conditioned on what the probe itself read rather than on the
+/// host: a window that opened did so on a fitting pool and on uniform CPUs, at
+/// the compiled length, and a fitting pool on CPUs read as one level did open
+/// it. That second direction is what a primitive calling a uniform machine
+/// asymmetric would fail, and it is the failure that would otherwise be
+/// silent. Nothing here depends on this host being uniform or asymmetric, and
+/// the oversubscribed arm is run beside the fitting one because the two
+/// admission tests are independent.
+///
+/// The second build is the A/B twin's arm, `WF_PAR_IDLE_WINDOW_ON_ASYMMETRIC`,
+/// which withdraws the machine test and nothing else: there a fitting pool must
+/// open the window whatever the levels are. The third builds the window's
+/// constant at zero, the shape `WF_SCHED_TEST` compiles the core into for the
+/// park-protocol probes above: no pool opens a window at all, which is the
+/// arrival those hooks are written against. It is reached here through the
+/// constant rather than through `WF_SCHED_TEST` itself, because this probe
+/// asserts the admission rule and not the protocol hooks.
+#[test]
+fn the_idle_window_asks_whether_this_hosts_cpus_are_alike() {
+    let directory = test_directory();
+    for (definitions, workers, expected) in [
+        (&[][..], "2", None),
+        (&[][..], "8", None),
+        (&["-DWF_PAR_IDLE_WINDOW_ON_ASYMMETRIC=1"][..], "2", None),
+        (&["-DWF_PAR_IDLE_WINDOW_ON_ASYMMETRIC=1"][..], "8", None),
+        (&["-DWF_PAR_IDLE_WINDOW_US=0"][..], "2", Some("window_us=0")),
+    ] {
+        let executable = build_probe(
+            &directory,
+            include_str!("../sched/cpu_levels_probe.c"),
+            definitions,
+        );
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run native cpu levels probe");
+        assert!(
+            output.status.success(),
+            "{definitions:?} workers={workers}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            report.contains("cpu levels probe: PASS"),
+            "{definitions:?} workers={workers}: {report}"
+        );
+        if let Some(text) = expected {
+            assert!(report.contains(text), "{definitions:?}: {report}");
+        }
+    }
+    std::fs::remove_dir_all(directory).expect("remove native probe");
+}
