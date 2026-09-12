@@ -376,14 +376,38 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   end-to-end Mandelbrot check behind this bundle's sizing spread 11.3 to 13.4 ms
   on a quiet four-CPU box at width four, which is about eighteen percent.
 - **`cpu_us`** is the same median of medians over **process CPU time** rather
-  than wall: `CLOCK_PROCESS_CPUTIME_ID` read around the same interval the wall
-  clock brackets, so it counts every thread the form started, spinning and
-  parked ones included. The wall clock stays the outermost pair and the two CPU
-  reads are nested inside it, so no CPU a call spends can fall outside the wall
-  interval; the nested reads cost tens of nanoseconds against per-call intervals
-  of milliseconds. A form whose wall time is bought by burning four lanes is
-  indistinguishable from one that is simply fast in `median_us` and is not in
-  `cpu_us`. It is a measurement, never a pass/fail input.
+  than wall, read around the same interval the wall clock brackets, so it counts
+  every thread the form started, spinning and parked ones included. The source
+  is chosen per host and the driver line of `raw.tsv` names the one that was
+  read as `cpu_clock=`: `CLOCK_PROCESS_CPUTIME_ID` on Linux, **`task_info` on
+  Darwin**, `getrusage(RUSAGE_SELF)` as the fallback anywhere the chosen source
+  is absent or refuses. Darwin is not on the POSIX clock because it answers that
+  clock from the task's accounting for threads that have already exited: a pool
+  whose workers are still alive contributes nothing, so the column read about
+  one lane's worth however many lanes ran, and the M1 Pro tables in `RESULTS.md`
+  recorded `tbb` spending 5,896 us of CPU for a 2,441 us wall on eight threads
+  beside a four-lane `static` row spending 2,904 us against a 2,866 us wall. The
+  Darwin source is therefore the task-level pair that does consult the live
+  threads when asked: `task_info(TASK_THREAD_TIMES_INFO)` for the threads that
+  still exist plus `task_info(TASK_BASIC_INFO)` for the ones that have exited,
+  each `time_value_t` seconds and microseconds, summed. That source is held on a
+  reading and not on its documentation: the hosted `macos-14` leg of run
+  34668036736, a three-CPU runner, printed `cpu_clock=task_info` on every driver
+  line and returned CPU that grows with the lanes and stops where the CPUs do —
+  mandelbrot `static` at W=4 read **107,878 us of CPU against a 36,495 us wall**
+  and `tbb` at W=4 **26,072 against 8,887**, 2.96 and 2.93 times their own walls
+  on three CPUs, while the four W=1 serial rows sat inside half a percent of
+  their own wall. `proc_pid_rusage` was tried between the two and rejected on
+  the same kind of evidence: on the hosted `macos-14` runner of run 34667394566
+  its figures read 0.02 to 0.07 times their own wall and hardly moved with the
+  work, which is not a CPU figure and is not a unit error either. The wall clock
+  stays the outermost pair and the two CPU reads are nested inside it, so no CPU
+  a call spends can fall outside the wall interval; the nested pair was timed at
+  757 ns on the Linux host where that was measured (`RESULTS.md`, 2026-09-11),
+  against per-call intervals of milliseconds. A form whose wall time is bought
+  by burning four lanes is indistinguishable from one that is simply fast in
+  `median_us` and is not in `cpu_us`. It is a measurement, never a pass/fail
+  input.
 - **`ratio`** is filled only on `wf` rows. It is the **median of within-pass
   matched pairs**: for each pass, WF's process median divided by the lowest
   process median among the parallel references at that same width, printed with
