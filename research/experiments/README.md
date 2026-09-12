@@ -62,6 +62,23 @@ completion criterion were refused.
   comparators, two real source trees, one large-text corpus, nine equal-weight
   end-to-end cases, correctness oracles, statistics, and the future 2x rule
   before comparative timing.
+- `compute-bench/` — the compute scoreboard: for each of four kernels
+  (adaptive-Simpson recursion, UTF-8 record batches, a flat FIR map, a skewed
+  Mandelbrot map), at each width, is the Whitefoot program built by this
+  tree's `whitefootc` with plain `--par` the fastest thing in the row? One
+  uniform harness, one scheduler boundary, bit-for-bit equality against an
+  independent oracle per call, and native references built on oneTBB,
+  ParlayLib, Rayon, a static pthread pool and a serial loop at fixed grain
+  policies. Nothing in it fails on a ratio, a spread or an elapsed time;
+  `make check` runs only its compile-only `programs-check`. Four tables are
+  recorded in
+  [`compute-runtime/RESULTS.md`](../investigations/compute-runtime/RESULTS.md):
+  two from a four-CPU local Linux host — a baseline at compiler `33ed2c00` and
+  the merged tree at `11d1e4a2` — and the first hosted run, `34574271919` at
+  `5dd1eb7b`, one section per leg. Which kernel's plain-`--par` program is the
+  fastest form in its block differs by host: FIR alone on the local host, none
+  at W=4 on the `ubuntu-24.04` runner, and records, FIR and Mandelbrot at W=2
+  on the three-CPU `macos-14` runner.
 
 ## Completed current-compiler bounded research
 
@@ -125,7 +142,14 @@ completion criterion were refused.
   shape is source width, not protocol cost: overlap groups are runs of
   consecutive calls in one basic block, so the natural one-file-per-iteration
   loop overlaps nothing. Table in
-  [`io-model/RESULTS.md`](../investigations/io-model/RESULTS.md).
+  [`io-model/RESULTS.md`](../investigations/io-model/RESULTS.md). The 68
+  scheduler experiments this bench later carried — the TCP packet-policy tail,
+  the client-width reversal, the storage and allocator negatives, the native
+  and Go references and the continuation lowering — are digested in
+  [`io-model/SCHEDULER-FINDINGS.md`](../investigations/io-model/SCHEDULER-FINDINGS.md),
+  and the prior compute bundle's grain panel, recursion-frontier evidence and
+  two-runtime comparison in
+  [`compute-runtime/PRIOR-BUNDLE.md`](../investigations/compute-runtime/PRIOR-BUNDLE.md).
 - `buffer-initialization-cost/` — the dossier §9.1 initialization-cost row,
   whose control §9.1 requires to be an *uninitialized* native read loop. A
   Whitefoot drain over a language-initialized reused buffer measures at

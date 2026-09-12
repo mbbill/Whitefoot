@@ -445,11 +445,15 @@ pub(super) const PARALLEL_LANE_FRAME_ALIGNMENT: u64 = 16;
 /// which is representable on the selected target but wider or more aligned
 /// than the lane slot. An address-domain failure remains a target-layout
 /// failure, and malformed IR remains a compiler failure.
+/// The lane frame one handed-out call needs: `{ arguments..., result }`, and
+/// one `u64` more where the published callback enters a budget-carrying
+/// variant and must carry that budget across the hand-out.
 pub(super) fn parallel_lane_frame_layout(
     target: TargetLayout,
     qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
     function: &IrFunction,
+    carries_budget: bool,
 ) -> Result<Option<TargetAggregateLayout>, TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
@@ -471,6 +475,16 @@ pub(super) fn parallel_lane_frame_layout(
             .layout(function.result())
             .map_err(|failure| as_object(failure, TargetObject::ParallelLaneFrame))?,
     );
+    if carries_budget {
+        fields.push(
+            layouts
+                .layout(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
+                .map_err(|failure| as_object(failure, TargetObject::ParallelLaneFrame))?,
+        );
+    }
     let layout = layouts.aggregate_layout(fields, TargetObject::ParallelLaneFrame)?;
     if layout.size > crate::LANE_FRAME_BYTES || layout.align > PARALLEL_LANE_FRAME_ALIGNMENT {
         return Ok(None);

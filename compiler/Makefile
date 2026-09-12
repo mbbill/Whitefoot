@@ -6,7 +6,7 @@ WINE ?= /usr/lib/wine/wine64
 WINEPREFIX ?= $(WHITEFOOT_SCRATCH_ROOT)/wineprefix
 WINDOWS_OBJDUMP ?= objdump
 WINDOWS_NM ?= x86_64-w64-mingw32-nm
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 
 # Every gate target that executes a compiled program runs it with the core
@@ -64,7 +64,7 @@ SCHED_DIR := src/backend/sched
 # The core owns current-stack join/help/steal, entry.c owns configuration and
 # startup policy, and the native leaf supplies threads and per-lane waiting.
 SCHED_SOURCES := $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c $(SCHED_DIR)/entry.c
-COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
+COMPLETION_TMP ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-completion-test
 COMPLETION_DEFINES := \
 	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
 	-DWF_COMPLETION_GETDENTS64=wf_completion_test_getdents64 \

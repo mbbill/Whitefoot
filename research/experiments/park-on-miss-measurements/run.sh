@@ -31,7 +31,7 @@ set -e
 # elsewhere.
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=${ROOT:-$(cd "$HERE/../../.." && pwd)}
-WHITEFOOT_SCRATCH_ROOT=${WHITEFOOT_SCRATCH_ROOT:-$HOME/do_not_scan}
+WHITEFOOT_SCRATCH_ROOT=${WHITEFOOT_SCRATCH_ROOT:-${TMPDIR:-/tmp}/whitefoot}
 WORK=${WORK:-$WHITEFOOT_SCRATCH_ROOT/whitefoot-park-on-miss-measurements}
 BUILD=$WORK/build
 TREE=$WORK/tree

@@ -5,7 +5,14 @@
 # file.
 
 PY := python3 -B
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+# Everything built or measured outside the checkout is written under this
+# root, and no path any developer's machine happens to have is encoded in it:
+# the default is the system temporary directory, which every supported host
+# already defines. macOS exports TMPDIR with a trailing slash, so the trailing
+# slash is stripped and the shell spellings elsewhere (`${TMPDIR:-/tmp}`) at
+# worst produce a harmless doubled separator. Set the variable to keep the
+# work somewhere durable: a temporary directory may be cleared on reboot.
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 RESEARCH_TEST_TMP := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-tmp
 RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-target
 
@@ -63,6 +70,22 @@ repository-invariants:
 	name_matches="$$(git ls-files | grep -F -e "$$mac_home" -e "$$linux_home" -e "$$encoded_home" -e "$$windows_home" || { status=$$?; test "$$status" -eq 1 || exit "$$status"; })" || exit 1; \
 	if test -n "$$matches$$name_matches"; then \
 		echo "repository invariants: tracked content or filenames contain a personal home path:" >&2; \
+		test -z "$$matches" || echo "$$matches" >&2; \
+		test -z "$$name_matches" || echo "$$name_matches" >&2; \
+		exit 1; \
+	fi
+# A personal home path is not the only way a developer's own machine leaks
+# into the tree: a bare directory name does it too, and reads as a convention
+# every reader is expected to have. The one that got in was a local
+# antivirus skip folder used as the default scratch root; the scratch root is
+# now the system temporary directory, which every host defines for itself.
+# The name is spelled here as a concatenation so this rule does not match
+# itself. `archive/` is frozen and keeps its historical text.
+	@local_dir="$$(printf '%s_%s_%s' do not scan)"; \
+	matches="$$(git grep -a -l -F -e "$$local_dir" -- . ':(exclude)archive' || { status=$$?; test "$$status" -eq 1 || exit "$$status"; })" || exit 1; \
+	name_matches="$$(git ls-files -- . ':(exclude)archive' | grep -F -e "$$local_dir" || { status=$$?; test "$$status" -eq 1 || exit "$$status"; })" || exit 1; \
+	if test -n "$$matches$$name_matches"; then \
+		echo "repository invariants: tracked content or filenames encode a local machine directory name; no directory of any developer's own machine belongs in the repository:" >&2; \
 		test -z "$$matches" || echo "$$matches" >&2; \
 		test -z "$$name_matches" || echo "$$name_matches" >&2; \
 		exit 1; \
@@ -129,6 +152,13 @@ research-tests:
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/harness/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
+# The compute regression rule, over crafted table fragments. The check it
+# decides -- `.github/workflows/compute-regression.yml`, which times two
+# builds against each other -- is deliberately not a stage of this gate. This
+# target measures nothing, links nothing and needs no compiler, so the rule
+# that fails a required pull-request check is itself checked on every run of
+# `make check`.
+	TMPDIR="$(RESEARCH_TEST_TMP)" $(MAKE) -C research/experiments/compute-bench verdict-test
 
 # The programs of the I/O measurement bundle compile with the current
 # compiler. The bundle's protocols are measurements and stay out of the gate;
@@ -136,6 +166,7 @@ research-tests:
 # fails here instead of emptying a table on the bench runner.
 bench-programs:
 	$(MAKE) -C research/experiments/io-completion-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
+	$(MAKE) -C research/experiments/compute-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 
 # Enumerate every declared case through the native adapter. Every non-pending
 # case reaches an actual compiler verdict; run cases are linked and

@@ -436,8 +436,9 @@ withdrawn):
 
 Mechanical check (process fix per the review): the decision rows above
 were checked for pairwise SELECT-set disjointness by a scratch script
-(do_not_scan, deleted after use) on 2026-08-07 — all seven decisions
-pass, and the two expr-critical positions of the rewritten [EX-1]
+(in the local scratch directory outside the repository, deleted after
+use) on 2026-08-07 — all seven decisions pass, and the two
+expr-critical positions of the rewritten [EX-1]
 (`match deref(p) +checked 2_i32 {` and `if ilt(x, 0_i32) {`) trace
 through the factored productions and parse. Re-run after the NEW-1
 production change: the dropped `infix` production appeared on no

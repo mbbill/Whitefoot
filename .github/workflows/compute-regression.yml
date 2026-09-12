@@ -1,0 +1,307 @@
+# Serves research/experiments/compute-bench: the compute performance
+# regression check on pull requests. One question, and it is not the scoreboard
+# workflow's:
+#
+#   Is the Whitefoot program this branch produces SLOWER than the one the
+#   branch started from?
+#
+# It answers it with the bundle's own A/B twin, handed different inputs. `wf`
+# is this tree's program; `wf-b` is built from the MERGE-BASE's scheduler
+# runtime, floor and `whitefootc`, exported into a worktree outside the
+# repository. Both are timed as separate processes inside the same five passes,
+# and reduce.awk pairs them pass by pass. A twin is how this bundle answers a
+# question its hosted runners cannot answer with two separate runs: the
+# ubuntu-24.04 pool is several machine classes, and a comparison across two
+# jobs measures the pool.
+#
+# WHAT IT DOES NOT TOUCH. `.github/workflows/compute-bench.yml` records what
+# this tree produces and fails on no measurement; this file changes nothing it
+# measures. The bundle gained one handle (the twin's source tree) and one
+# target (`verdict`); the record-only path sets neither, builds no twin, and
+# reads exactly the same numbers it read before.
+#
+# THE RULE, and what it excludes.
+#   FAIL when a block's paired `A/B wf-b/wf wall` median is below 0.97 and the
+#   baseline was the faster arm in at least four of the five pairs, at W in
+#   {1, 2, 4}.
+#   A paired CPU ratio below 0.90 under the same count is REPORTED and fails
+#   nothing.
+#   W=8 and above are excluded: four-CPU runners oversubscribe there and
+#   oversubscription rewards schedulers that yield.
+#   macOS is excluded entirely: that runner cannot resolve below about twenty
+#   percent, which is wider than anything worth catching.
+# The rule lives in `research/experiments/compute-bench/verdict.awk`, and its
+# unit test runs in the repository's `make check`. This job does not.
+#
+# NOT PART OF `make check`. `make check` is the merge gate and must stay a
+# property of the tree rather than of a runner's load; a timed comparison is
+# not that. This is a separate required pull-request check, and it never
+# re-runs itself: a re-run is a person's decision, because a job that retried
+# until it agreed would select its own result.
+name: compute-regression
+
+# Every pull request, with no `paths:` filter, because this is a REQUIRED
+# check. A workflow that filters on paths does not run at all on a pull request
+# touching none of them, so it never reports, and a required check that never
+# reports leaves that pull request waiting forever on a run nobody will start.
+# The path decision has not been dropped — it moved inside the job, where it
+# can be answered and still produce a passing report. See the `scope` step.
+on:
+  workflow_dispatch:
+  pull_request:
+
+# Every shell step runs under `bash -eo pipefail`, so a step that fails behind
+# a pipe fails the step, as in the other bench workflows.
+defaults:
+  run:
+    shell: bash
+
+# One run per pull request. An earlier run of an amended branch is measuring a
+# revision nobody will merge, and it is also competing for the runner pool.
+concurrency:
+  group: compute-regression-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  regression:
+    name: compute regression (ubuntu-24.04)
+    # Linux only, on purpose. See the macOS exclusion above.
+    runs-on: ubuntu-24.04
+    # Two compiler builds, the pinned schedulers, two images per kernel and
+    # five passes over both arms. It bounds a stuck runner and decides no
+    # result. A run that skips the measurement ends in well under a minute.
+    timeout-minutes: 35
+    steps:
+      # Full history: the merge base with the pull request's base branch is
+      # what the twin is built from, and what the scope step below diffs
+      # against. A shallow checkout has neither.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The one decision this job makes before it spends anything: is this pull
+      # request one whose two arms can move apart at all?
+      #
+      # The set is `compute-bench.yml`'s own automatic-run list, which is the
+      # repository's existing answer to "what changes what this table
+      # measures", plus this file.
+      #
+      # `compiler/src/**` wholesale was considered and rejected: the twin
+      # differs from the head arm only in the runtime sources and the emitter
+      # behind the `--par` module, so a parser, resolver or diagnostics change
+      # emits byte-identical modules and the job would spend a quarter of an
+      # hour reading this host's own spread on most compiler pull requests. A
+      # path that can move emission and is missing from this list is a defect
+      # in one list, fixed in both.
+      #
+      # The matching is git's own: a directory pathspec covers everything under
+      # it, and a file pathspec is that file. Nothing here re-implements a glob.
+      # A manual dispatch always measures — someone asked for the number.
+      - name: Decide whether this pull request is measured
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "measure=true" >> "$GITHUB_OUTPUT"
+            echo "$EVENT_NAME: measuring unconditionally."
+            exit 0
+          fi
+          base_ref="${BASE_REF:-main}"
+          git fetch --no-tags --prune origin "+refs/heads/$base_ref:refs/remotes/origin/$base_ref"
+          merge_base=$(git merge-base "origin/$base_ref" HEAD)
+          echo "merge base with origin/$base_ref: $merge_base"
+          changed=$(git diff --name-only "$merge_base" HEAD)
+          matched=$(git diff --name-only "$merge_base" HEAD -- \
+            compiler/src/backend \
+            compiler/src/lowering \
+            compiler/src/driver.rs \
+            compiler/src/bin/whitefootc.rs \
+            research/experiments/compute-bench \
+            .github/workflows/compute-regression.yml)
+          changed_count=$(printf '%s' "$changed" | grep -c . || true)
+          if [ -z "$matched" ]; then
+            echo "measure=false" >> "$GITHUB_OUTPUT"
+            summary="compute-regression: measurement skipped, no measured path changed in the $changed_count file(s) this branch touches."
+            echo "$summary"
+            echo "$summary" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "measure=true" >> "$GITHUB_OUTPUT"
+          echo "measured paths changed, so this branch is measured:"
+          echo "$matched"
+
+      # The scratch root goes through GITHUB_ENV because the `runner` context
+      # is not available to a job-level `env`; a workflow that uses it there
+      # fails validation before any job starts. Nothing is written inside the
+      # checkout by any step below.
+      - name: Record the Rust toolchain and set the scratch root
+        if: steps.scope.outputs.measure == 'true'
+        run: |
+          rustup default stable
+          rustc -vV
+          cargo --version
+          echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/whitefoot" >> "$GITHUB_ENV"
+
+      # The same cache shape compute-bench.yml uses and its reasons: the miss
+      # pays the compiler build and the oneTBB build together, and the
+      # restore-keys prefix is what keeps an entry from being written once and
+      # never refreshed. The key is this workflow's own, because the paths it
+      # covers are this workflow's scratch root rather than that one's.
+      - uses: actions/cache@v4
+        if: steps.scope.outputs.measure == 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            compiler/target
+            ${{ runner.temp }}/whitefoot/whitefoot-compute-deps
+          key: ${{ runner.os }}-computeregression-${{ hashFiles('compiler/Cargo.lock', 'research/experiments/compute-bench/rayon/Cargo.lock', 'research/experiments/compute-bench/deps.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-computeregression-
+
+      # Pinned to the image's own sources. A preinstalled browser repository
+      # once returned a hash-sum mismatch and failed a run for a reason that
+      # had nothing to do with what was being measured.
+      - name: Install the host toolchain
+        if: steps.scope.outputs.measure == 'true'
+        run: |
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
+                       -o Dir::Etc::sourceparts=- update
+          sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
+                       -o Dir::Etc::sourceparts=- install -y --no-install-recommends clang cmake
+          test -x /usr/bin/clang
+          test -x /usr/bin/clang++
+          /usr/bin/clang --version
+          cmake --version
+
+      # So both `cargo build --locked --offline` below work.
+      - name: Fetch the recorded crate dependencies
+        if: steps.scope.outputs.measure == 'true'
+        run: cargo fetch --locked --manifest-path compiler/Cargo.toml
+
+      # The baseline arm's source tree. It is exported under RUNNER_TEMP and
+      # never inside the checkout: the bundle compiles whatever
+      # WF_B_SCHED_DIR/WF_B_FLOOR name, and a second copy of the runtime inside
+      # the repository would be a tracked file that exists to be measured.
+      #
+      # The merge base rather than the base branch tip, because the branch is
+      # answerable for what it changed and not for what landed on main while it
+      # was open.
+      - name: Export the merge-base as a worktree outside the repository
+        if: steps.scope.outputs.measure == 'true'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base_ref="${BASE_REF:-main}"
+          git fetch --no-tags --prune origin "+refs/heads/$base_ref:refs/remotes/origin/$base_ref"
+          merge_base=$(git merge-base "origin/$base_ref" HEAD)
+          echo "merge base with origin/$base_ref: $merge_base"
+          git log --oneline -1 "$merge_base"
+          git worktree add --detach "$RUNNER_TEMP/baseline" "$merge_base"
+          if [ "$merge_base" = "$(git rev-parse HEAD)" ]; then
+            echo "::notice::the merge base is this revision, so both arms are the same tree: this run is the instrument's null check rather than a comparison"
+          fi
+          {
+            echo "WF_B_SOURCE=$merge_base"
+            echo "WF_B_SCHED_DIR=$RUNNER_TEMP/baseline/compiler/src/backend/sched"
+            echo "WF_B_FLOOR=$RUNNER_TEMP/baseline/compiler/src/backend/wf_floor.c"
+            echo "WF_B_WFC=$RUNNER_TEMP/baseline-target/gate/whitefootc"
+          } >> "$GITHUB_ENV"
+
+      # The twin's emission as well as its runtime. An emitter change that
+      # moved the chunk count or the shape of the published work would
+      # otherwise be invisible here, because both arms would have gone through
+      # this branch's compiler. `--profile gate` is what the bundle's own
+      # `compiler` target builds.
+      - name: Build the merge-base compiler
+        if: steps.scope.outputs.measure == 'true'
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/baseline-target
+        run: |
+          cargo build --manifest-path "$RUNNER_TEMP/baseline/compiler/Cargo.toml" \
+            --profile gate --bin whitefootc --locked --offline
+          test -x "$WF_B_WFC"
+
+      # The only network step in the bundle. Everything after it is offline.
+      - name: Build the pinned schedulers
+        if: steps.scope.outputs.measure == 'true'
+        run: make -C research/experiments/compute-bench deps
+
+      # WF_B_SCHED_DIR, WF_B_FLOOR and WF_B_WFC are in the environment, so the
+      # Makefile's `?=` defaults yield to them and the twin is the baseline's
+      # program. No control flag is set: the two arms differ in the tree they
+      # came from and in nothing else.
+      - name: Build both arms
+        if: steps.scope.outputs.measure == 'true'
+        run: make -C research/experiments/compute-bench build
+
+      # The baseline arm answers the same oracle bit for bit or it is not a
+      # control.
+      - name: Verify every form at every emitted width, both arms
+        if: steps.scope.outputs.measure == 'true'
+        run: make -C research/experiments/compute-bench verify
+
+      - name: Run the timed passes and print the table
+        if: steps.scope.outputs.measure == 'true'
+        run: |
+          make -C research/experiments/compute-bench compare \
+            PASSES=5 CALLS=5 RESULTS="$RUNNER_TEMP/results"
+
+      - name: Publish the table
+        if: always() && steps.scope.outputs.measure == 'true'
+        run: |
+          {
+            echo "## compute-regression (head vs merge-base twin)"
+            echo
+            echo '```text'
+            cat "$RUNNER_TEMP/results/manifest.txt" 2>/dev/null \
+              || echo "the manifest was not written"
+            echo
+            cat "$RUNNER_TEMP/results/table.txt" 2>/dev/null \
+              || echo "the table was not written"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Uploaded before the verdict runs, so a failing verdict still leaves the
+      # whole run readable: the raw stream is what a disputed reading is
+      # settled from.
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.scope.outputs.measure == 'true'
+        with:
+          name: compute-regression-ubuntu-24.04
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/results/manifest.txt
+            ${{ runner.temp }}/results/raw.tsv
+            ${{ runner.temp }}/results/table.txt
+            ${{ runner.temp }}/results/logs/
+
+      # The one step whose exit status is decided by a measured number. It
+      # refuses a table with no A/B line rather than passing vacuously, so a
+      # twin that was never built fails this check instead of silently
+      # retiring it.
+      # The verdict text goes into the job summary as well as the log, inside a
+      # fence that is closed whatever the rule decided: `set -e` would
+      # otherwise take the step out between the opening fence and the closing
+      # one and leave the summary unreadable on exactly the runs worth reading.
+      - name: Read the verdict
+        if: steps.scope.outputs.measure == 'true'
+        run: |
+          {
+            echo "### verdict"
+            echo
+            echo '```text'
+          } >> "$GITHUB_STEP_SUMMARY"
+          set +e
+          make -C research/experiments/compute-bench verdict \
+            RESULTS="$RUNNER_TEMP/results" | tee -a "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          set -e
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
