@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 system-interface 子树
+
+Nodes: language/system-interface, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/program-entry-form, language/checks-and-proofs/requires-entry-contract
+
+Summary: system-interface 树根的所有权决策应所有者要求加强：对语言来说每个系统对象都是普通的被拥有对象，不为表达系统状态发明任何语言机制，一个缺少某种能力的系统对象要重新设计成更好的所有权关系（比如一个发放被拥有资源的工厂），绝不用内部可变性或新特性打补丁，因为 agent 屡次试图用语言能力去修补接口的形状，而为一个接口添加的机制会成为所有权模型上的永久漏洞；它的四条否决项保留。效果行那条删去（effects 已经拥有它），io_uring 那条否决项删去（那是运行时测量，不是语言决策）。program-entry-form 的决策与 requires-entry-contract 携带的入口决策合并为这里的一条：唯一的、不带契约、不可调用的 `command fn main`，program-entry-form 连同其复述的否决项删除，requires-entry-contract 删去那条决策及其包装器否决项。declaration-home 的决策行缩短，三条否决项各自保留理由。directory-enumeration 删去复述第一条的否决项。至此 language 树审阅完毕。
+> 通俗解释：这一组最重要的改动是把"系统对象就是普通对象、走所有权、不许为它发明语言机制"写死，专门堵 agent 以前反复犯的那种错。其余是去重、合并入口相关的两条、缩短一句过长的话。语言树到此全部过完。
+
 ## 2026-09-12 与所有者一起审阅 surface-form 子树
 
 Nodes: language/surface-form, language/surface-form/binding-annotation, language/surface-form/borrow-lexicon, language/surface-form/construction-form, language/surface-form/iteration-forms, language/surface-form/match-form, language/surface-form/operation-spelling, language/surface-form/result-propagation

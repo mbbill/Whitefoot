@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review the system-interface subtree with the owner
+
+Nodes: language/system-interface, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/program-entry-form, language/checks-and-proofs/requires-entry-contract
+
+Summary: The system-interface root's ownership decision is strengthened at the owner's request: every system object is an ordinary owned object to the language, no language mechanism is invented to express system state, and a system object that lacks a capability is redesigned as a better ownership relation, such as a factory that hands out owned resources, never patched with interior mutability or a new feature, because agents have repeatedly tried to repair an interface's shape with language capabilities and a mechanism added for one interface becomes a permanent hole in the ownership model; its four rejected alternatives stay. The effect-row decision is dropped as effects already owns it, and the io_uring rejection is dropped as a runtime measurement that is not a language decision. program-entry-form's decision merges with the entry decision that requires-entry-contract carried into one decision here, the one uncontracted uncallable `command fn main`, and program-entry-form is deleted with its restating rejection; requires-entry-contract loses that decision and its wrapper rejection. declaration-home's decision line is shortened while its three rejected alternatives keep their own reasons. directory-enumeration loses the rejected item that restated its first decision. This completes the language tree review.
+
 ## 2026-09-12 Review the surface-form subtree with the owner
 
 Nodes: language/surface-form, language/surface-form/binding-annotation, language/surface-form/borrow-lexicon, language/surface-form/construction-form, language/surface-form/iteration-forms, language/surface-form/match-form, language/surface-form/operation-spelling, language/surface-form/result-propagation

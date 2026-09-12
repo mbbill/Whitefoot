@@ -8,9 +8,6 @@ Decision: Each requires clause is proved on its own at the call site in the call
 
 Decision: A function instance whose requirements contradict each other is legal and simply uncallable: the compiler still checks its structure, ownership, effects, and return shape, lowers an unreachable stub with the right calling convention in place of its body, and publishes no postcondition, because such an instance is harmless dead code that no call site can ever reach, while rejecting it would require the checker to detect every contradiction, which a deterministic no-search checker cannot promise, instead of rejecting such an instance as a source error.
 
-Decision: The sole command entry carries no contract and cannot be called from source, because with one uncallable entry, no foreign interface, and contracts forbidden on the entry, every requirement belongs to an internal call and an entry-only runtime exception would violate the no-trap boundary, instead of a checked process-entry wrapper.
-
 Rejected:
 - A single final requirement block with local bindings and one Boolean check: rejected because it was spelled like executable code so its erased status was invisible, an abbreviation used by both requires and ensures had to be written twice, and the result had no name.
 - Callee-entry prologue evaluating the requirement on every invocation: rejected because it let a helper hide a protected leaf behind a runtime trap and added the prologue's reads to the callee effect row.
-- Ordinary pre-transfer proof plus a checked process-entry wrapper: rejected because with one uncallable command entry and no foreign interface, the wrapper was an entry-only runtime exception that violated the no-trap boundary.
