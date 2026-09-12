@@ -283,14 +283,30 @@ it a different tree and it answers the question a regression check asks:
 > **Is the Whitefoot program this branch produces slower than the one the
 > branch started from?**
 
-That is `.github/workflows/compute-regression.yml`, a required check on pull
-requests touching the scheduler runtime, the floor, the emitter, the lowering,
-the driver or this bundle. It is **not** a stage of the repository's
-`make check` and never will be: `make check` is the merge gate and has to be a
-property of the tree rather than of a runner's load. The rule's own unit test
-is in `make check` — `verdict-test.sh`, through the root `research-tests`
-stage — so the logic that fails a pull request is itself checked on every gate
-run, on a host that measures nothing.
+That is `.github/workflows/compute-regression.yml`, a **required** check on
+pull requests. It runs on every one of them and carries no `paths:` filter,
+which is a consequence of being required rather than a change of mind about
+what is worth measuring: a workflow filtered on paths does not run at all on a
+pull request touching none of them, so it never reports, and a required check
+that never reports leaves that pull request waiting forever on a run nobody
+will start.
+
+The path decision moved inside the job instead. Its first step, after a
+full-history checkout, diffs the merge base with the base branch against `HEAD`
+and matches the result against the set that can move the two arms apart — the
+scheduler runtime, the floor, the emitter, the lowering, the driver, this
+bundle, and the workflow file itself. A pull request that touches none of them
+prints one line saying the measurement was skipped, and the job ends green in
+seconds: no dependencies, no cache, no build. A pull request that touches one
+of them is measured exactly as before. Either way it is one job and one check
+name, and it reports. A manual `workflow_dispatch` always measures.
+
+It is **not** a stage of the repository's `make check` and never will be:
+`make check` is the merge gate and has to be a property of the tree rather
+than of a runner's load. The rule's own unit test is in `make check` —
+`verdict-test.sh`, through the root `research-tests` stage — so the logic that
+fails a pull request is itself checked on every gate run, on a host that
+measures nothing.
 
 ### What it builds
 
