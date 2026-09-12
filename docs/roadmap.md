@@ -239,7 +239,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Missing / next:** reopen only for a selected effect optimization, embedded
   bound, or other concrete consumer; define the smallest fragment and its
   rejection boundary before implementation.
-- **Facts:** v0.17 `EFF-3` · [totality design decision](../design/compiler/derived-totality.md).
+- **Facts:** v0.17 `EFF-3`.
 
 ### outline:PROOF-6 — Proof-gated representation authority (historically D17)
 

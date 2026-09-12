@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review cleanup-traversal and derived-totality with the owner
+
+Nodes: compiler/cleanup-traversal, compiler/derived-totality
+
+Summary: cleanup-traversal keeps the owner's ruling on cyclic release graphs and its two rejected alternatives; its second decision, one generated release loop per buffer or run, described the code rather than deciding anything and is removed. derived-totality is deleted whole: its first decision was the optimizer-facts rule the owner has withdrawn, its second designed a totality fact that does not exist, and the one durable fact behind it, that `pure` is not termination so the compiler must never promise `willreturn`, is pinned by the emitted-attribute test and belongs to the language, to be checked under effects in the language pass. The roadmap's link to the deleted node is dropped.
+
 ## 2026-09-12 Review the compiler root with the owner
 
 Nodes: compiler, language

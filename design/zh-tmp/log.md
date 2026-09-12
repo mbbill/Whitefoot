@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 cleanup-traversal 与 derived-totality
+
+Nodes: compiler/cleanup-traversal, compiler/derived-totality
+
+Summary: cleanup-traversal 保留所有者关于释放图成环的裁决及其两条被否决方案；它的第二条决策（每个 buffer 或 run 一个生成的释放循环）只是在描述代码，没有做任何决定，已删除。derived-totality 整个删除：第一条是所有者已经撤回的优化器事实规则，第二条在设计一个并不存在的终止性事实，而它背后唯一站得住的事实（`pure` 不等于终止，所以编译器绝不能承诺 `willreturn`）已由发出属性的测试钉死，且属于语言层面，将在 language 审阅时在 effects 下核对。roadmap 里指向被删节点的链接已去掉。
+> 通俗解释：cleanup-traversal 留下了真正的裁决（类型释放成环时怎么处理），删掉了一条只是复述代码的话。derived-totality 整个节点都是围绕"事实开关"和一个没做出来的功能在空谈，所以删掉；真正要紧的那一点（不能向 LLVM 谎称函数一定会返回）已经有测试保证，以后放到语言树里去说。
+
 ## 2026-09-12 与所有者一起审阅 compiler 树根
 
 Nodes: compiler, language
