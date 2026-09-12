@@ -34,27 +34,25 @@ Scale the reasoning to uncertainty, impact, error cost, and reversibility.
 
 | Occasion | Action | Observable result / completion check |
 |---|---|---|
-| Start or resume | Read the requested outcome and scope, then the affected current owner: the specification for language behavior, the compiler design tree and code for implementation, or document role for prose. Newly found issues do not expand the task's scope. For a material choice, read the relevant constitutional clauses and follow the rule index to its reasons; read the relevant design subtree with its ancestors and refused alternatives. On resumption, verify the actual working tree and PR state. | The work follows the relevant requirements and accounts for prior objections. No reading log or task document. A1, D3, R1. |
+| Start or resume | Read the requested outcome and scope, then the affected current owner: the specification for language behavior, the compiler design tree and code for implementation, or document role for prose. Newly found issues do not expand the task's scope. For a material choice, read the relevant constitutional clauses and the relevant design subtree with its ancestors and refused alternatives. On resumption, verify the actual working tree and PR state. | The work follows the relevant requirements and accounts for prior objections. No reading log or task document. A1, D3, R1. |
 | Choose | State required properties, facts, assumptions, actual alternatives, the selection reason, and what could change it. Use deduction only for conclusions the stated premises entail; otherwise state the empirical or provisional ground. Before an experiment intended to select a design, record what result would distinguish the candidates; keep later exploration identifiable. | A concise reason in the existing investigation, or the PR for a small choice; experimental criteria and results at their source. R1, R2. |
-| Update | When a choice is settled or its grounds change, update the standing owner and the design tree; update index rows for affected language rules. Follow references and material dependencies into consumers, reconsidering each affected choice. Continue if its conclusion or grounds change; stop at an unaffected dependency. Keep unresolved grounds explicit, with a concrete question and affected rows marked `revisit`. Do this when the conclusion is reached, including during long tasks. | Current guidance, recorded reasons, and the index agree. State the affected set and any unresolved reason in the existing explanation. R3, R4, M1–M3. |
+| Update | When a choice is settled or its grounds change, update the standing owner and the design tree. Follow references and material dependencies into consumers, reconsidering each affected choice. Continue if its conclusion or grounds change; stop at an unaffected dependency. Keep unresolved grounds explicit, with a concrete question and affected rows marked `revisit`. Do this when the conclusion is reached, including during long tasks. | Current guidance, recorded reasons, and the index agree. State the affected set and any unresolved reason in the existing explanation. R3, R4, M1–M3. |
 | Finish | Run applicable mechanical checks, give another agent the task constraints, full diff and actual results, and use the completion checklist. Fix findings and recheck affected items, then publish the reviewed changes and compact report to the existing PR. | Check results, findings and limitations at the review surface. No separate review file or additional approval stage. V1–V4. |
 
 For a choice without an existing rule or design node, use the nearest relevant
-owner and design subtree; do not require an index entry merely to begin.
+owner and design subtree.
 A recorded reason names its material premises and dependent rules or interfaces
 where known. Follow these links and search changed rule IDs or concepts to
 find consumers; a search supplements reading and cannot prove completeness.
 Choose where to write using the [document roles](review-checklist.md#document-roles).
-The design-tree procedure determines whether a node is warranted; the index
-covers language rules, not every task or engineering choice.
+The design-tree procedure determines whether a node is warranted; not every
+task or engineering choice needs one.
 
 The constitution supplies purpose, objectives, tradeoffs, and conditional
 principles. It does not supply a unique solution. The active specification
-defines the chosen language. MCTS-Mem owns concrete decisions and their
-reasons, evidence, and replacement history. The
-[rule-to-ground index](../spec/derivation/derivation-ledger.md#current-index)
-connects active rules to those reasons and their direct technical sources.
-This method governs their use; the checklist checks the resulting work.
+defines the chosen language. The design trees own concrete decisions with
+their reasons and refused alternatives. This method governs their use; the
+checklist checks the resulting work.
 
 **Compare against useful alternatives.** Assess major design directions
 against effective existing approaches, including Rust where relevant. State
@@ -76,44 +74,11 @@ cite a discussion proposal or an agent's default as a settled project decision.
 When grounds change, reconsider the dependent choice; keep it only on stated
 grounds that still hold, which may differ from its original reason.
 
-### Maintaining the rule index
+### Checking the design tree
 
-Keep one row per active rule in the existing ledger's current index. Its
-four columns are the rule ID, basis kinds, review state, and source links with
-their scope. Several rules can link to one shared decision. The linked reason
-owns the detailed argument, relevant constitutional aims, assumptions,
-alternatives, and reopening condition; the index is not a second decision
-record. Use `deduction`, `empirical`, or `provisional`, joined with `+` when
-needed. `current` means the ground has been assessed for the present question,
-not that the design is proved optimal or implemented correctly.
-
-During migration, use `unassessed` with `revisit` for legacy grounds that have
-not been reassessed. Preserve their actual source and open conditions; never
-translate `derived` or `derived_existence_only` mechanically into a claim of
-logical or empirical support. On the next material change to that rule or its
-reason, read the linked evidence, classify the supported claims, and replace
-the marker with an assessed ground or an explicit unresolved question. New
-rules need stated grounds; `unassessed` is not a shortcut for documenting a
-new choice. An ordinary implementation fix need not clear unrelated legacy
-markers.
-
-When a rule is added, amended, or retired, add, update, or remove its current
-row. Retain useful dated evidence. When a reason
-changes or moves, check rows that cite it and the directly affected standing
-guidance; changing an index row alone cannot repair a false source. Follow
-actual premise dependencies rather than treating every related link as an
-implication. Explain the affected set in the existing PR or investigation,
-including any unresolved `revisit` entries. There is no calendar sweep or
-requirement to load every rule for every task.
-
-Run `make -C compiler spec` after index changes. It checks unique active-rule
-coverage, recognized basis/state fields, and a source reference in each row.
-It does not assess the truth or sufficiency of the reason. Check reference
-targets and meaning in the affected set at completion. After design-tree edits,
-run `make design-lint`; the procedure in `design/skill/SKILL.md` owns the
-checks that read the tree.
-Do not use an index status as a source acceptance rule or an extra approval
-condition; an unresolved safety objection still requires substantive resolution.
+After design-tree edits, run `make design-lint`; the procedure in
+`design/skill/SKILL.md` owns the checks that read the tree. A lint success is
+not evidence that a recorded reason is true.
 
 Reconsider the method itself when a task exposes a missed dependency,
 unsupported conclusion, repeated owner correction, or upkeep that displaces

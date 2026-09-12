@@ -1,6 +1,6 @@
-# Kernel Specification v0.53
+# Kernel Specification v0.52
 
-Status: ACTIVE v0.53
+Status: ACTIVE v0.52
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -4272,7 +4272,7 @@ command fn main() -> status: own ExitStatus pure {
 ## 20. Spec meta-rules (CI-checked)
 
 [META-1] Spec-CI enforces the regularity invariants defined elsewhere: one spelling per construct [FORM-1] and a 1:1 production-to-core-tree-node mapping [GRAM-1].
-Its unique machine-checked content is that no rule ID is defined twice and every cross-reference resolves [META-4].
+Its unique machine-checked content is that no rule ID is defined twice and every cross-reference resolves [META-4, META-6].
 [META-2] No context-dependent spellings or rule variants: no rule's meaning depends on surrounding context; defaulting rules do not exist.
 [META-3] No rule carries an exception clause; conditional structure is expressed as total positive rules or table data.
 [META-4] Every normative fact is stated once; other mentions are rule-ID cross-references.
@@ -4280,3 +4280,7 @@ Its unique machine-checked content is that no rule ID is defined twice and every
 This document states the language and carries no commentary about its own versions: no delta declaration, no description of what a version changed, and no selection ground appear in these bytes, and a version's own such text is not retained here after it activates.
 `CLAUDE.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
 DEFERRED markers are tracked specification-delta obligations and do not create another approval point.
+[META-6] Every active rule has exactly one entry in the current index at `spec/derivation/derivation-ledger.md`, linking to its selection grounds.
+Grounds distinguish conditional deductions, empirical support, and provisional choices; unassessed legacy grounds and reasons requiring reconsideration are explicitly marked.
+The native `whitefoot-spec` gate checks unique active-rule coverage, recognized basis and review fields, and the presence of source references in that current index.
+Index classifications describe design evidence; they do not define writer acceptance or prove the cited arguments.

@@ -89,16 +89,10 @@ spec-append-only-staged:
 	fi
 	@echo "spec append-only: no released kernel specification was modified or removed"
 
-# The specification's own bytes are its identity, and the generated
-# build.rs derives them on every build that touches those bytes. Live prose quotes neither: a quoted digest or an "active vN" sentence
-# went stale at every activation and forced a six-file edit to keep in step
-# (found landed: the derivation ledger still described v0.28 as the installed
-# authority after the v0.29 activation; retired 2026-09-04 in favour of this
-# negative check). Frozen history — archive/done/, research records, archived
-# specifications, the approval record, and the derivation ledger's per-version
-# amendment bindings — legitimately quotes superseded identities; only the
-# ledger's "active authority" sentence is live prose, so the ledger is held to
-# the phrase check alone.
+# The specification's own bytes are its identity, and build.rs derives them
+# on every build that touches those bytes. Live prose quotes neither a digest
+# nor an "active vN" sentence: both went stale at every activation, so this
+# negative check keeps them out of the guidance files.
 spec-prose-integrity:
 	@failed=0; \
 	for file in README.md AGENTS.md CLAUDE.md docs/*.md; do \
@@ -106,7 +100,7 @@ spec-prose-integrity:
 			echo "spec prose integrity: $$file quotes a specification digest; the identity is derived from the specification's own bytes" >&2; failed=1; \
 		fi; \
 	done; \
-	for file in README.md AGENTS.md CLAUDE.md docs/*.md spec/derivation/derivation-ledger.md; do \
+	for file in README.md AGENTS.md CLAUDE.md docs/*.md; do \
 		if grep -nE 'Kernel specification v[0-9]+\.[0-9]+ is the active|[Aa]ctive language authority(:| is) v[0-9]+\.[0-9]+|active v[0-9]+\.[0-9]+ (guidance|authority)|the exact v[0-9]+\.[0-9]+ bytes' "$$file"; then \
 			echo "spec prose integrity: $$file names a version as the active authority; say 'the active specification at spec/kernel-spec.md' instead" >&2; failed=1; \
 		fi; \

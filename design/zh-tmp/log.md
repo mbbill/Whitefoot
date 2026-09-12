@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 退休 derivation ledger
+
+Nodes: language
+
+Summary: 规范修订为 v0.53：删除要求在 `spec/derivation/derivation-ledger.md` 维护规则到依据索引的 [META-6]，并归档 v0.52 的原始字节。账本及其 v0.2 前身删除，与它们同目录的 Featherweight-Rust 对照备忘录移到 `research/notes`。`whitefoot-spec` 门禁保留身份、规则编号唯一、交叉引用可解析的检查，去掉索引覆盖检查；META-6 的一致性清单行随规则一起删除。原先指向索引的指南改为指向设计树，language 树根记录这一裁定。选择依据：所有者裁定规范和设计树就是全部记录、二者必须自洽，第三份没人消费的记录只会漂移。
+> 通俗解释：spec 以前强制要求一本"每条规则的来历账本"，现在理由都在树里，账本删了，spec 版本号升到 0.53，检查 spec 的小程序只保留真正有用的那几项检查。
+
 ## 2026-09-12 与所有者一起审阅 system-interface 子树
 
 Nodes: language/system-interface, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/program-entry-form, language/checks-and-proofs/requires-entry-contract

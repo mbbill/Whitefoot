@@ -59,10 +59,9 @@ probably not the next work.
   Compiler behavior, tests, archived code, and design prose do not define the
   language.
 - `docs/constitution.md` owns purpose, chosen objectives, tradeoffs, and
-  conditional language-design principles. The current index in
-  `spec/derivation/derivation-ledger.md` connects active rules to selection
-  grounds; its historical derivations are evidence, not current authority.
-  Concrete choices need their own grounds, not just a constitutional ancestor.
+  conditional language-design principles; the design trees hold the concrete
+  decisions with their reasons. Concrete choices need their own grounds, not
+  just a constitutional ancestor.
   `docs/patterns.md` teaches writer forms without adding acceptance rules;
   `docs/practice.md` explains engineering and evidence techniques without
   adding approval or merge requirements. README is navigation, not a second
@@ -102,8 +101,7 @@ Follow the four occasions in [decision practice](docs/practice.md#decision-work)
 2. **Choose:** state why a material choice fits its requirements and evidence;
    record a discriminating experiment's criterion before using it to choose.
 3. **Update:** when a conclusion or its grounds change, update current guidance,
-   the design tree, affected rule-index entries, and material dependents in the
-   same work.
+   the design tree, and material dependents in the same work.
 4. **Finish:** run applicable checks and another agent's
    [completion review](docs/review-checklist.md), fix findings, and publish the
    result. This is the single review checkpoint; no separate review record or

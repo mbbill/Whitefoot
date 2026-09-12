@@ -802,7 +802,7 @@ requirements.
   names are free identifiers, the corpus, snapshot index, conformance
   manifest, and live documentation are respelled, and the writer trial that
   would select [FORM-8]'s position partition against its alternatives is
-  registered in `spec/derivation/derivation-ledger.md`.
+  was registered in the derivation ledger, since retired.
 - **Facts:** [sweep and rulings](../research/investigations/spelling-relief/SWEEP.md) ·
   [activation record](../governance/spec-evolution/comparison-symbols-v041-candidate.md).
 

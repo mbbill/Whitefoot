@@ -65,7 +65,6 @@ or self-description merely to satisfy this table.
 | `docs/ideas.md`; `docs/bargain.md`, `docs/why-whitefoot.md` | Candidate mechanisms; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
 | `docs/roadmap.md` | Long-range reference directions | Required task sequencing, approval, an authoritative current capability inventory; routine work does not require updating it |
 | `docs/ongoing/` | Existing, bounded implementation notes for their named subsystem | A new per-task reporting system, a second project-wide status inventory |
-| `spec/derivation/` | Current rule-to-ground index with classified support and review state; retained historical derivations | A second detailed decision record, silent language changes, historical status treated as current support, task authorization |
 | `design/` | Live design decisions with their reasons and refused alternatives, one log entry per approved tree change, and the procedure that maintains them | Module inventories, implementation transcripts, task progress, history |
 | PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
 
@@ -172,7 +171,7 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   follow the amendment. For changed rules or constitutional premises, apply
   R3–R4 below. For conformance changes,
   the PR explains the normative expectation and how the changed evidence tests
-  it. Do not require an unrelated full-ledger sweep. [META-5/6] are defined in the
+  it. [META-5] is defined in the
   [active specification](../spec/kernel-spec.md#20-spec-meta-rules-ci-checked).
 - [ ] **T2 — Preserved checks.** Every removed, skipped, narrowed, regenerated
   or weakened test/check has a technical reason consistent with the requested
@@ -215,14 +214,10 @@ inapplicable.
   Their current owners and the design tree agree. Remaining questions have a
   concrete source; a log entry does not supersede contradictory standing
   guidance. Do not require an unrelated project-wide sweep.
-- [ ] **R4 — Maintained index.** Added/changed/retired rules and changed or
-  moved grounds have corresponding current-index updates. Linked sources
-  resolve and support the stated scope, including relevant constitutional
-  aims and reopening conditions. The native spec check ran after index edits.
-  Historical rows or old `derived` labels have not been passed off as current
-  support. New choices have assessed grounds; unchanged legacy `unassessed`
-  rows may remain visible for gradual migration. Integrity success is not
-  proof that a cited argument is true.
+- [ ] **R4 — Maintained tree.** Added, changed, or retired rules and changed
+  grounds have corresponding design-tree updates under M1 to M3, and the
+  sources a decision cites resolve and support the stated scope. A log entry
+  or a lint success is not proof that a cited argument is true.
 
 ## M. Design tree — changed decisions or tree nodes
 

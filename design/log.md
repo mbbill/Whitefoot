@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Retire the derivation ledger
+
+Nodes: language
+
+Summary: The specification is amended to v0.53: [META-6], which required a rule-to-ground index at `spec/derivation/derivation-ledger.md`, is removed and the outgoing v0.52 bytes are archived. The ledger and its v0.2 predecessor are deleted, and the Featherweight-Rust reconciliation memo that shared their directory moves to `research/notes`. The `whitefoot-spec` gate keeps its identity, unique-rule-id, and cross-reference checks and drops the index coverage checks; the META-6 conformance manifest row goes with the rule. Guidance that pointed at the index now points at the design trees, and the language root records the ruling. Selection ground: the owner ruled that the specification and the design tree are the two records and must be consistent with each other, so a third record that nothing consumes only drifts.
+
 ## 2026-09-12 Review the system-interface subtree with the owner
 
 Nodes: language/system-interface, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/program-entry-form, language/checks-and-proofs/requires-entry-contract
