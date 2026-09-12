@@ -23,12 +23,22 @@ uint64_t wfb_now_ns(void);
 uint64_t wfb_clock_floor_ns(void);
 
 /* Process CPU time in nanoseconds: every thread of this process summed, user
-   plus system. CLOCK_PROCESS_CPUTIME_ID where the host defines it and
-   getrusage(RUSAGE_SELF) otherwise. It is the whole process and not one thread
-   deliberately: what this bundle wants to know is what a decomposition costs in
-   CPU across every lane or worker it started, which a spinning scheduler shows
-   in and a wall clock hides. Never wall time, and never a pass/fail input. */
+   plus system. The source is per host --- proc_pid_rusage on Darwin, where
+   CLOCK_PROCESS_CPUTIME_ID does not count threads that are still alive,
+   CLOCK_PROCESS_CPUTIME_ID where the host defines it and counts them, and
+   getrusage(RUSAGE_SELF) as the fallback. It is the whole process and not one
+   thread deliberately: what this bundle wants to know is what a decomposition
+   costs in CPU across every lane or worker it started, which a spinning
+   scheduler shows in and a wall clock hides. Never wall time, and never a
+   pass/fail input. */
 uint64_t wfb_cpu_ns(void);
+
+/* The name of the source wfb_cpu_ns is actually reading in this process, for
+   the `cpu_clock=` field of the driver header line. It is resolved by taking a
+   reading, so a run whose primary source refused reports the fallback it took
+   rather than the one it was built to prefer, and a reader of a table or a
+   raw.tsv can see which clock produced `cpu_us` on that host. */
+const char *wfb_cpu_clock_name(void);
 
 /* End the run with a message on stderr and a nonzero status. It reports a
    wrong result, a missing form or a bad invocation. It never reports a slow

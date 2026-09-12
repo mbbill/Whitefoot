@@ -46,22 +46,61 @@ uint64_t wfb_now_ns(void) {
     return (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
 }
 
-/* Process CPU time. CLOCK_PROCESS_CPUTIME_ID is POSIX and is what both hosted
-   legs have: Linux since 2.6.12 and Darwin since 10.12. getrusage is the
-   fallback for a host that defines neither, and it is coarser (microseconds),
-   which is why it is not the first choice on any host that has the clock. The
-   fallback sums user and system time, as the clock does. */
-#if defined(CLOCK_PROCESS_CPUTIME_ID)
-#define WFB_CPU_CLOCK_NAME "CLOCK_PROCESS_CPUTIME_ID"
-uint64_t wfb_cpu_ns(void) {
+/* Process CPU time: every thread of this process, user plus system. The source
+   is selected per host, the way the wall clock above is, because no single
+   call answers this question everywhere.
+
+   CLOCK_PROCESS_CPUTIME_ID is the POSIX answer and is what Linux gives. It is
+   NOT the answer on Darwin: there the clock is served from the task's basic
+   info, which carries the time of terminated threads, so a pool whose workers
+   are still alive at the read contributes nothing and the column reads about
+   one lane's worth however many lanes ran. That is a measured defect and not a
+   guess -- the M1 Pro tables recorded `tbb` at records W=8 spending 5,896 us
+   of CPU for a 2,441 us wall on eight threads, `static` at quadrature W=4
+   spending 2,904 us against a 2,866 us wall, and a Whitefoot row at quadrature
+   W=4 spending 3,081 us against a 3,033 us wall while stealing a thousand
+   chunks, where the same rows on Linux read about wall times threads.
+   proc_pid_rusage is Darwin's own process accounting: `ri_user_time` and
+   `ri_system_time` are nanoseconds already and cover live threads as well as
+   terminated ones, which is what this column is a statement about.
+
+   getrusage(RUSAGE_SELF) is the fallback for a host that has neither, and for
+   a host whose primary source refuses at run time. It is coarser
+   (microseconds), which is why it is nobody's first choice, and on Darwin it
+   has the same blindness the clock does, so falling back there trades a wrong
+   number for a wrong number and the name below says which was read.
+
+   The source is fixed by the first reading of the run and never changes after
+   it, so a `before` and an `after` bracketing one call can never come from two
+   different sources. wfb_cpu_clock_name() forces that first reading, and
+   do_time calls it while printing the header, which is before the first timed
+   call. */
+#include <sys/resource.h>
+#if defined(__APPLE__)
+#include <libproc.h>
+#define WFB_CPU_PRIMARY_NAME "proc_pid_rusage"
+static int wfb_cpu_primary_ns(uint64_t *out) {
+    struct rusage_info_v0 ri;
+    if (proc_pid_rusage(getpid(), RUSAGE_INFO_V0, (rusage_info_t *)&ri) != 0) return 0;
+    *out = (uint64_t)ri.ri_user_time + (uint64_t)ri.ri_system_time;
+    return 1;
+}
+#elif defined(CLOCK_PROCESS_CPUTIME_ID)
+#define WFB_CPU_PRIMARY_NAME "CLOCK_PROCESS_CPUTIME_ID"
+static int wfb_cpu_primary_ns(uint64_t *out) {
     struct timespec t;
-    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t) != 0) wfb_fail("CPU clock_gettime failed");
-    return (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t) != 0) return 0;
+    *out = (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
+    return 1;
 }
 #else
-#define WFB_CPU_CLOCK_NAME "getrusage(RUSAGE_SELF)"
-#include <sys/resource.h>
-uint64_t wfb_cpu_ns(void) {
+#define WFB_CPU_PRIMARY_NAME WFB_CPU_FALLBACK_NAME
+static int wfb_cpu_primary_ns(uint64_t *out) { (void)out; return 0; }
+#endif
+
+#define WFB_CPU_FALLBACK_NAME "getrusage(RUSAGE_SELF)"
+
+static uint64_t wfb_cpu_fallback_ns(void) {
     struct rusage r;
     uint64_t ns;
     if (getrusage(RUSAGE_SELF, &r) != 0) wfb_fail("getrusage failed");
@@ -71,7 +110,26 @@ uint64_t wfb_cpu_ns(void) {
        + (uint64_t)r.ru_stime.tv_usec * UINT64_C(1000);
     return ns;
 }
-#endif
+
+/* -1 before the first reading, 1 once the host's primary source has answered,
+   0 once the fallback has been taken. */
+static int wfb_cpu_primary_live = -1;
+
+uint64_t wfb_cpu_ns(void) {
+    uint64_t ns;
+    if (wfb_cpu_primary_live != 0 && wfb_cpu_primary_ns(&ns)) {
+        wfb_cpu_primary_live = 1;
+        return ns;
+    }
+    if (wfb_cpu_primary_live > 0) wfb_fail("the process CPU source failed after answering once");
+    wfb_cpu_primary_live = 0;
+    return wfb_cpu_fallback_ns();
+}
+
+const char *wfb_cpu_clock_name(void) {
+    if (wfb_cpu_primary_live < 0) (void)wfb_cpu_ns();
+    return wfb_cpu_primary_live == 1 ? WFB_CPU_PRIMARY_NAME : WFB_CPU_FALLBACK_NAME;
+}
 
 uint64_t wfb_clock_floor_ns(void) {
     static uint64_t floor_ns;
@@ -350,7 +408,7 @@ static int do_time(const wfb_kernel *k, const char *form, unsigned width,
                  k->name, form, form_grain(k, form), width, cpus,
                  width > cpus ? 1 : 0, calls, pass,
                  k->workload ? k->workload : "unknown", WFB_CLOCK_NAME,
-                 (unsigned long long)wfb_clock_floor_ns(), WFB_CPU_CLOCK_NAME,
+                 (unsigned long long)wfb_clock_floor_ns(), wfb_cpu_clock_name(),
                  form_note(k, form));
     print_chunks(k, form, width);
     (void)printf("\n");

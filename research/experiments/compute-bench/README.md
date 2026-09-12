@@ -376,14 +376,25 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   end-to-end Mandelbrot check behind this bundle's sizing spread 11.3 to 13.4 ms
   on a quiet four-CPU box at width four, which is about eighteen percent.
 - **`cpu_us`** is the same median of medians over **process CPU time** rather
-  than wall: `CLOCK_PROCESS_CPUTIME_ID` read around the same interval the wall
-  clock brackets, so it counts every thread the form started, spinning and
-  parked ones included. The wall clock stays the outermost pair and the two CPU
-  reads are nested inside it, so no CPU a call spends can fall outside the wall
-  interval; the nested reads cost tens of nanoseconds against per-call intervals
-  of milliseconds. A form whose wall time is bought by burning four lanes is
-  indistinguishable from one that is simply fast in `median_us` and is not in
-  `cpu_us`. It is a measurement, never a pass/fail input.
+  than wall, read around the same interval the wall clock brackets, so it counts
+  every thread the form started, spinning and parked ones included. The source
+  is chosen per host and the driver line of `raw.tsv` names the one that was
+  read as `cpu_clock=`: `CLOCK_PROCESS_CPUTIME_ID` on Linux,
+  **`proc_pid_rusage` on Darwin**, `getrusage(RUSAGE_SELF)` as the fallback
+  anywhere the chosen source is absent or refuses. Darwin is not on the POSIX
+  clock because it answers that clock from the task's terminated-thread
+  accounting: a pool whose workers are still alive contributes nothing, so the
+  column read about one lane's worth however many lanes ran, and the M1 Pro
+  tables in `RESULTS.md` recorded `tbb` spending 5,896 us of CPU for a 2,441 us
+  wall on eight threads beside a four-lane `static` row spending 2,904 us
+  against a 2,866 us wall. `proc_pid_rusage` reports `ri_user_time` and
+  `ri_system_time` in nanoseconds over live and terminated threads alike. The
+  wall clock stays the outermost pair and the two CPU reads are nested inside
+  it, so no CPU a call spends can fall outside the wall interval; the nested
+  reads cost tens of nanoseconds against per-call intervals of milliseconds. A
+  form whose wall time is bought by burning four lanes is indistinguishable from
+  one that is simply fast in `median_us` and is not in `cpu_us`. It is a
+  measurement, never a pass/fail input.
 - **`ratio`** is filled only on `wf` rows. It is the **median of within-pass
   matched pairs**: for each pass, WF's process median divided by the lowest
   process median among the parallel references at that same width, printed with
