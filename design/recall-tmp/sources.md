@@ -6,84 +6,157 @@ alternative, a stated rationale — might still be recorded, for a later pass
 to mine into `design/language` and `design/compiler`. Nothing here has been
 triaged or judged; it is a map of where to look and how much is there.
 
-## The one fact that governs how to read the git history
+## Correction (2026-09-12): the shallow clone, and the real history
 
-This repository's visible git history on `claude/code-space-constraints-mdagkl`
-has exactly **one root commit**: `65b3d24` (2026-08-28, "wip: TYPE-5 and OWN-10
-publish the two sides they compared"), which is a single 3,134-file,
-1,072,194-line bulk import of the *entire* pre-existing project tree —
-`archive/`, `mcts_mem/`, `research/`, the early `spec/kernel-spec-v0.*.md`
-archives, `docs/`, everything. It has no parent commit. Every date before
-2026-08-28 that appears anywhere in this repository (mcts_mem facts back to
-2026-07-02, `archive/governance/decisions/` back to 2026-07-01, `docs/bargain.md`
-compiled 2026-07-28, etc.) is **not** reachable through `git log`, `git blame`,
-or `git show` on any path — that entire span exists only as prose *inside* the
-imported files, never as individual commits. `git log` only has per-decision
-granularity from 2026-08-28 onward (439 further commits through 2026-09-12,
-about two weeks); GitHub pull requests only start the next day, 2026-08-29
-(47 PRs total, #1-#47). So:
+The first pass of this index was built from a **shallow clone** — a
+`.git/shallow` file recorded seven boundary commits, and the oldest one,
+`65b3d24` (2026-08-28), consequently showed as a parentless root importing
+3,134 files in one diff. That was purely a shallow-clone artifact, not a
+real bulk import: the clone has since been completed with `git fetch
+--unshallow origin`, and every claim in the previous pass that rested on
+"one root commit at 2026-08-28" or "git only helps for the last two weeks"
+is corrected below. The old, wrong framing has been rewritten in place
+throughout this file, not kept and struck through, and not merely appended
+to — a reader should not need to hold both versions in mind at once.
 
-- For anything dated **2026-08-28 or later**: `design/recall-tmp/sources/commits.md`
-  and `pull-requests.md` are first-class, fine-grained, mineable evidence.
-- For anything dated **before 2026-08-28**: the commit/PR log is silent, full
-  stop. The only surviving record is the prose already baked into
-  `archive/`, `mcts_mem/`, `research/`, and the early spec archives at the
-  time of the snapshot. Treat every "git-range" figure quoted below for a
-  path whose earliest touch is exactly 2026-08-28 as an import artifact, not
-  a creation date — the document's own internal dates (filenames, `Status:`
-  lines, dated bullets) are the only real chronology available.
+**The real shape of the history.** `HEAD` on
+`claude/code-space-constraints-mdagkl` has **2,376 commits**, with a real,
+parentless root at `7c1d7641` (2026-07-07, "Initial commit: xlang — an
+optimizer-first language for AI-written code"). **The project was originally
+named `xlang`**, with the compiler command `xlc` and source extension `.xl`;
+it was renamed **`xlang` → `Whitefoot`** in one deliberate commit,
+`601577c0` (2026-07-17, "chore: rename project xlang -> whitefoot"),
+immediately followed by `4b7d62af` ("rename compiler command xlc -> wfc and
+source extension .xl -> .wf") and `f45d67fc` ("standardize brand name as
+Whitefoot"). So the project has three eras by name only, not by substance:
+xlang (2026-07-07 – 2026-07-17, 10 days), then Whitefoot throughout. A
+second real (non-artifactual) reorganization landed on **2026-07-22**,
+commit `51a3e807` ("Restructure: from-scratch 9-folder layout, co-located
+gate scripts") — this is the point at which most of the current top-level
+layout (`docs/`, `research/`, `governance/`, the `mcts_mem/`-adjacent
+structure) took its present shape; material from before that date often
+lived under different, now-vanished paths (`optimizer-language-research/`
+has 257 historical commits touching it, for one example), so a **current**
+path's own `git log <path>` frequently starts at 2026-07-22 even though the
+underlying work is older — see the per-source notes below for which paths
+this affects. Commit bodies from the whole span, old paths included, are
+fully present in the regenerated `commits.md`; only a *path-scoped* history
+query undercounts, never the flat commit stream itself.
+
+**This changes the primary conclusion of the first pass.** Commit messages
+and bodies are **not** a two-week tail — they are a **complete, continuous,
+richly-detailed primary source running the full 2026-07-07 to 2026-09-12
+span** (verified by reading the root commit and its immediate successors:
+the same dense, rationale-and-evidence commit-body discipline is already
+present on day one). `commits.md` should be weighted as a primary source on
+a par with `mcts_mem/` for the whole project history, not treated as
+secondary to it for anything before an artificial cutoff.
+
+**One real (non-artifactual) divergence worth knowing.** `HEAD` and
+`origin/main` have themselves diverged: their common ancestor is `395042f4`
+(2026-09-10, "Merge pull request #33 from mbbill/codex/compiler-scheduling-controls").
+From there, `origin/main` went on to merge PRs #34 through #47 (90 commits
+not present on `HEAD`), while `HEAD` carries 37 commits of its own that
+`origin/main` does not have (this branch's own recent work, including this
+recovery effort). `commits.md` is `HEAD`'s history only, per the task's own
+instruction — for the finer commit-by-commit detail behind PRs #34-47 (as
+opposed to their squashed/merged PR-body narrative, which **is** fully
+captured in `pull-requests.md` regardless of branch), a reader would need
+`git log HEAD..origin/main` separately; that is not reproduced in this
+survey.
+
+**`git fetch --unshallow` also surfaced 133 remote branches** (`git branch
+-r`), most never seen before. 75 of them are not merged into `origin/main`
+— unmerged, and largely un-mined, work. See the new §15 below.
+
+**This branch is live and shared.** A concurrent module-audit effort (see
+`design/recall-tmp/audit/`, not this survey's concern) committed twice to
+`HEAD` while this correction was being written, which is why the commit
+count above is 2,376 rather than the 2,374 first reported by the
+coordinator — both are correct, at different, close-together moments.
+`commits.md` reflects `HEAD` as of this file's own last regeneration; a
+reader working later should expect a small further drift and can always
+regenerate it with the one-line command in §1.
+
+GitHub pull requests are unaffected by any of this (they were always fetched
+from GitHub's API, never derived from local git depth) — see the
+re-verification note in §2.
 
 ## At a glance
 
 | source | entries | date range | git-mineable? |
 |---|---|---|---|
-| `design/recall-tmp/sources/commits.md` | 440 commits | 2026-08-28 .. 2026-09-12 | yes, fully |
-| `design/recall-tmp/sources/pull-requests.md` | 47 PRs (#1-#47) | created 2026-08-29 .. 2026-09-12 | yes, fully |
-| `archive/governance/decision-log.md` + `decisions/` | 1 index + 15 dated volumes | 2026-07-01 .. 2026-07-22 | no (pre-import prose) |
-| `archive/done/` | 103 batch records (numbered 0001-0108, 5 gaps) | 2026-08-04 .. 2026-09-06 | partially (added in one 2026-09-06 commit) |
-| `archive/APPROVALS.md` | 125 dated ledger entries | 2026-07-18 .. 2026-09-05 | no (pre-import prose; file itself renamed 2026-09-06) |
-| `research/investigations/` | 30 topic directories | mostly 2026-08 .. 2026-09-11 (internal) | mixed |
-| `research/experiments/` | 25 topic directories | 2026-07-08 .. 2026-09-12 (internal) | mixed |
-| `research/notes/` | 9 files | 2026-07-08 .. 2026-08-03+ | no |
-| `governance/spec-evolution/` | 10 candidate documents | 2026-08-06 .. 2026-09-03 | partial |
-| `mcts_mem/` | 131 node files, 776 dated fact/move lines | 2026-07-02 .. 2026-09-11 | no |
-| `docs/{roadmap,bargain,ideas,why-whitefoot}.md` | 4 reference documents | content back to 2026-07-01; files added 2026-08-28/09-01 | no |
-| `spec/kernel-spec-v0.0.md` .. `v0.52.md` | 53 archived specs | 2026-07-02 .. (v0.52, undated one-liner) | no |
+| `design/recall-tmp/sources/commits.md` | **2,376 commits** | **2026-07-07 .. 2026-09-12** | yes, fully — the whole span |
+| `design/recall-tmp/sources/pull-requests.md` | 48 PRs (#1-#48) | created 2026-08-29 .. 2026-09-12 | yes, fully (GitHub-sourced, unaffected by the shallow clone; re-verified, see §2) |
+| `archive/governance/decision-log.md` + `decisions/` | 1 index + 15 dated volumes | 2026-07-01 .. 2026-07-22 | only from 2026-07-22 (the volumes' own commit date); pre-07-22 content is a one-time compiled snapshot, but the events it compiles are independently in `commits.md`'s 2026-07-01–07-22 span |
+| `archive/done/` | 103 batch records (numbered 0001-0108, 5 gaps) | 2026-08-04 .. 2026-09-06 | yes, richly — 223 commits under the pre-archive path `docs/done/`, 2026-08-05 .. 2026-09-06 |
+| `archive/APPROVALS.md` | 125 dated ledger entries | 2026-07-18 .. 2026-09-05 | **yes, richly** — 195 commits under its pre-rename path `governance/APPROVALS.md`, 2026-07-18 .. 2026-09-06 |
+| `research/investigations/` | 30 topic directories | mostly 2026-08 .. 2026-09-11 (internal) | yes from 2026-07-22 onward (314 commits); older investigation work lived under other, now-gone paths, findable by full-text search of `commits.md` |
+| `research/experiments/` | 25 topic directories | 2026-07-08 .. 2026-09-12 (internal) | yes from 2026-07-22 onward (97 commits); same caveat as investigations |
+| `research/notes/` | 9 files | 2026-07-08 .. 2026-08-03+ | mostly no — a one-shot 2026-07-22 snapshot (4 commits total); the originals it compiles are older and live in `commits.md`'s early span instead |
+| `governance/spec-evolution/` | 10 candidate documents | 2026-08-06 .. 2026-09-03 | yes from 2026-07-22 onward (88 commits) |
+| `mcts_mem/` | 131 node files, 776 dated fact/move lines | 2026-07-02 .. 2026-09-11 | **yes, richly** — 167 commits, from 2026-07-12 |
+| `docs/{roadmap,bargain,ideas,why-whitefoot}.md` | 4 reference documents | content back to 2026-07-01 | **yes, richly** — 316/12/11/25 commits respectively, `roadmap.md` from 2026-07-10 |
+| `spec/kernel-spec-v0.0.md` .. `v0.52.md` | 53 archived specs | 2026-07-08 .. (v0.52, undated one-liner) | yes — 200 commits under `spec/`, from the true root 2026-07-07; each version's own introduction is its own dated commit |
 | `compiler/src/**` doc comments | 10 "ruling", ~183 "owner" (comment lines), ~159 "measured", ~59 "rejected" | scattered, code-attached | yes, via git blame per line |
+| **§15 (new): remote branches not merged into `origin/main`** | 75 branches (60 collapse into one archived cluster) | tips 2026-08-25 .. 2026-09-12 | yes, fully (they're commits too) |
 
-Chat logs — the sessions in which most of the pre-2026-08-28 reasoning
-actually happened — are **not on this machine** at all; see the closing
-section.
+Chat logs — the interactive back-and-forth that produced these commits and
+PR bodies, as opposed to the resulting written artifact — are **not on this
+machine** at all, for the full 2026-07-07 to 2026-09-12 span; see the
+closing section.
 
 ---
 
-## 1. `design/recall-tmp/sources/commits.md`
+## 1. `design/recall-tmp/sources/commits.md` (regenerated from the unshallowed history)
 
 **Contents.** Every commit reachable from `HEAD` on this branch, oldest
 first, one `## <short-hash> <date> <subject>` heading per commit followed by
 its full body verbatim (nothing summarized, nothing skipped).
 
-**Entries / date range.** 440 commits, 2026-08-28 to 2026-09-12. 5,630 lines,
-295,209 bytes. The first entry is the root bulk-import commit described
-above; treat it as a boundary marker, not a decision record in itself (its
-own subject/body says nothing about the 3,134 files it added). Commits 2-440
-are the real incremental history.
+**Entries / date range.** **2,376 commits, 2026-07-07 to 2026-09-12.**
+29,295 lines, 1,508,468 bytes (~1.44 MB — much larger than the first pass's
+440-commit, 295KB file; this is now the largest single file in the survey).
+The first entry is the genuine root, `7c1d7641`, "Initial commit: xlang — an
+optimizer-first language for AI-written code" — not a bulk import, an
+ordinary first commit with an ordinary body describing what it contains
+(the constitution, kernel spec v0.4.1, a checker prototype, the "democ" demo
+compiler, and the early research corpus). Every one of the 2,376 commits is
+a real, individually-authored decision-sized unit; there is no artificial
+boundary anywhere in the file.
 
-**Evidence kind.** This is the single richest *rationale* source for the last
-two weeks of work: commit bodies in this project consistently state the
-owner ruling being implemented, the alternative it replaced, the measurement
-that selected it, and which spec rule or `mcts_mem` node it touches. Many
-bodies are multi-paragraph batch reports (this project's commit discipline
-is unusually verbose and decision-dense compared to typical repositories).
+**Evidence kind.** This is the single richest *rationale* source in the
+entire survey, for the *entire* project history, not just its last two
+weeks: commit bodies consistently state the owner ruling being implemented,
+the alternative it replaced, the measurement that selected it, and which
+spec rule or `mcts_mem` node it touches, from the very first day. The
+discipline does not degrade going backward: the root commit and its
+immediate successors (e.g. `e687100a`, 2026-07-08, "spec: v0.5 Tier-0
+errata + v0.6...", or `6d8c04e0`, 2026-07-08, "conformance: full 89/89 rule
+coverage...") are just as dense with rationale, evidence, and named
+findings as anything from September. Two eras worth knowing when reading:
+before `601577c0` (2026-07-17) the project is called `xlang`, its compiler
+`xlc`, its source extension `.xl` — searching for "Whitefoot" or `.wf` will
+silently miss the first ten days; and before `51a3e807` (2026-07-22) a good
+deal of content lived under paths that no longer exist (e.g.
+`optimizer-language-research/`, `docs/done/` before it became
+`archive/done/`), so a path-scoped `git log` on a *current* path can
+undercount where a full-text search of this file will not.
 
 **Fastest search.** It's flat text with one heading per commit, so plain
 `grep -B2 -A15` around a keyword works well:
 ```
-grep -n '^## ' design/recall-tmp/sources/commits.md   # jump table of all 440
+grep -n '^## ' design/recall-tmp/sources/commits.md   # jump table of all 2,376
 grep -B1 -A20 -i '<keyword>' design/recall-tmp/sources/commits.md
+
+# to regenerate against a later HEAD on a live branch:
+git log --reverse --date=short --format='## %h %ad %s%n%n%b' > design/recall-tmp/sources/commits.md
 ```
 Useful keywords already known to recur: `owner ruling`, `rejected`,
-`selection ground`, `measured`, `CANDIDATE`, `ACTIVE v0.`, `superseded`.
+`selection ground`, `measured`, `CANDIDATE`, `ACTIVE v0.`, `superseded`,
+and (for the xlang era specifically) `xlang`, `xlc`, `democ`. To jump
+straight to the two named eras: `grep -n '^## 601577c0\|^## 51a3e807'`
+finds the rename and the reorganization respectively.
 
 ---
 
@@ -95,18 +168,33 @@ paginated to exhaustion), oldest-created first: `## #<number> <title>`, a
 one-line metadata field (state, merge date if merged, head branch, base
 branch, created/closed dates), then the full description body verbatim.
 
-**Entries / date range.** 47 PRs, #1-#47 (pagination confirmed no PR exists
-past #47 — the task brief's "around 60" was an overestimate). Created
-2026-08-29 to 2026-09-12; 41 are closed (39 merged, 2 closed without
-merging — #2 and #24, both explicitly shelved research/refactor branches),
-**6 still open** at the time of the survey: #26, #28 (both draft/non-draft
-research on the compute/io runtime), #30 (container-foundation research,
-draft), #35 (draft — head branch `claude/code-space-constraints-mdagkl`,
-**this session's own branch**, titled "Add the design trees and their
-procedure, migrate mcts_mem, and retire the compiler README" — i.e. this
-very recovery effort already has an open PR upstream of it, worth reading
-before publishing new tree changes), #45 and #47 (both compute-bench
-follow-ups, #47 stacked on #45). 2,346 lines, 258,766 bytes.
+**Entries / date range.** **48 PRs, #1-#48** (pagination confirmed no PR
+exists past #48 at re-verification time — the task brief's "around 60" was
+an overestimate). Created 2026-08-29 to 2026-09-12; 43 are closed (41
+merged, 2 closed without merging — #2 and #24, both explicitly shelved
+research/refactor branches), **5 still open** at re-verification time: #26,
+#28 (both draft/non-draft research on the compute/io runtime), #30
+(container-foundation research, draft), #35 (draft — head branch
+`claude/code-space-constraints-mdagkl`, **this session's own branch**,
+titled "Add the design trees and their procedure, migrate mcts_mem, and
+retire the compiler README" — i.e. this very recovery effort already has an
+open PR upstream of it, worth reading before publishing new tree changes),
+and #48 (amends the #46 compute-regression gate so it can be made a
+required check). 2,360 lines, 260,759 bytes.
+
+**Re-verification (requested after the shallow-clone correction, since the
+PR set is fetched from GitHub and should be independent of local git
+depth).** Confirmed independent, but **not static**: re-fetching found #45
+and #47 — both open at the first fetch — had since been merged (2026-09-12,
+05:14 and 05:31), and a new PR, **#48**, had been opened in the interim
+(05:19). All three entries in this file now carry the re-verified data;
+#45's body text itself changed too (it gained a paragraph describing #47's
+trace instrument once #47 merged into it — PR bodies are living documents,
+not fixed at creation). Every other PR (#1-#44, #46) was re-checked by
+number/state and found unchanged since the first fetch. The practical
+lesson: **this file is a snapshot as of the stated fetch times, not a
+live view** — an open PR's state, and even a merged PR's body, can still
+move.
 
 **A data quirk worth knowing before mining this file:** the GitHub list
 endpoint's `merged` boolean was **wrong on every single row** (always
@@ -160,8 +248,14 @@ archived).
 repository and predates every other convention (`archive/done/`, `mcts_mem/`,
 `APPROVALS.md`'s later form) — a day-by-day session transcript style, dense
 with early rulings, rejected mechanisms and the reborrow/enum-equality
-investigations' approval trail. Not git-mineable (all pre-2026-08-28); read
-the files directly.
+investigations' approval trail. **Corrected:** these 15 volumes are
+themselves a compiled snapshot, git-touched only on 2026-07-22 (the day of
+the reorganization commit `51a3e807`) — but the individual events they
+compile were, at the time, committed day by day under other, now-superseded
+paths, and are fully present in `commits.md`'s 2026-07-01 – 2026-07-22
+span. Read the volumes directly for the compiled narrative; cross-check
+`commits.md` for the original, uncompiled commit-by-commit trail of the
+same fifteen days.
 
 **Fastest search.** `grep -rn -i '<keyword>' archive/governance/decisions/`
 across all 15 files at once; each file is long enough that `grep -B2 -A10`
@@ -186,9 +280,14 @@ Internal dates run 2026-08-04 (batch 0001, system-capability architecture
 selection) to 2026-09-06 (batch 0108, streams and TCP, closing out PR #13).
 All 103 files were added to `archive/done/` in a single commit on
 2026-09-06 (moved verbatim from a prior `docs/done/`, per
-`archive/README.md`), so git blame on the directory only tells you when the
-archival move happened, not when each batch actually closed — read each
-file's own `Status:`/date line instead.
+`archive/README.md`), so git blame on the *current* path only tells you
+when the archival move happened. **Corrected: this is not a dead end.**
+The pre-move path, `docs/done/`, has its own rich history independent of
+the move — **223 commits, 2026-08-05 to 2026-09-06** — which *is* the
+real, incremental, one-batch-closing-at-a-time commit trail behind these
+103 files; `git log -- docs/done` (or a full-text search of `commits.md`)
+recovers it. Read each file's own `Status:`/date line for a quick date, and
+`docs/done`'s git history for the actual sequence of edits behind it.
 
 **Evidence kind.** These are terse, structured **outcome** records rather
 than deliberation transcripts: what was decided, which dossier/investigation
@@ -218,7 +317,14 @@ modified/deleted/renamed), and — inconsistently across its life, but often —
 the selection ground.
 
 **Entries / date range.** 125 dated `## ` headers, 2026-07-18 to 2026-09-05;
-3,141 lines, 339,721 bytes.
+3,141 lines, 339,721 bytes. **Corrected: fully git-mineable.** Under its
+pre-rename path, `governance/APPROVALS.md`, this file has **195 commits**
+running 2026-07-18 (its very first entry's own commit) to 2026-09-06 (the
+retirement/rename commit `9bec22b`) — essentially one commit per entry (or
+close to it), so `git log -p -- governance/APPROVALS.md` (the path no
+longer exists at HEAD, but the history is real and complete) gives a
+near-diff-per-approval view of the ledger actually growing, which the
+static file alone does not.
 
 **Evidence kind.** This is probably the single highest-density **ruling +
 selection-ground** source in the repository for the v0.6 through v0.49 spec
@@ -246,45 +352,53 @@ General shape: a per-question research bundle, usually a `DESIGN.md` or
 text, explicitly marked "not yet a spec change"), `RESULTS.md`/`REPORT.md`
 (measured evidence), and probe/evidence subdirectories. This is where
 rejected alternatives and adversarial-review findings live in the most
-detail anywhere in the repository. The "git-range" column below is the
-directory's earliest/latest touch in *this repo's* history; per the
-warning at the top of this file, a range starting exactly 2026-08-28 means
-the true origin is earlier and is only recorded inside the document text
-(dated filenames, `Status:` lines, "batch NNNN" cross-references into
-`archive/done/`).
+detail anywhere in the repository. **Corrected:** the "git-range" column
+below is now recomputed against the complete (unshallowed) history — every
+row moved earlier than the first pass reported, several substantially (e.g.
+`system-capability-architecture` moved from an artifactual 2026-08-28 to
+its real 2026-08-05, matching `archive/done/0001`'s own date exactly). The
+one remaining caveat is real, not artifactual: `research/investigations/`
+as a *directory name* dates from the 2026-07-22 reorganization
+(`51a3e807`), so no row can show an earlier date than that regardless of
+when the underlying question was actually first explored — a few rows
+(`enum-equality-investigation`, `reborrow-investigation`) show exactly
+2026-07-22 for this reason and are older in substance than their range
+suggests (`reborrow-investigation` concerns the v0.7-era question, whose
+real 2026-07-18 discussion is in `archive/governance/decisions/v0.6-2026-07-18.md`
+and the matching span of `commits.md`, not in this directory's own history).
 
 | directory | subject | key documents | git-range |
 |---|---|---|---|
-| `arith-dissolution` | arithmetic-mode dissolution, v0.31 candidate | `SPEC-DELTA.md` | 2026-09-06 |
-| `attribution-inventory` | OWN-6/OP-5 rule-citation audit after v0.32 | `FINDINGS.md` (batch 0072) | 2026-08-28 |
+| `arith-dissolution` | arithmetic-mode dissolution, v0.31 candidate | `SPEC-DELTA.md` | 2026-08-17 .. 2026-09-04 |
+| `attribution-inventory` | OWN-6/OP-5 rule-citation audit after v0.32 | `FINDINGS.md` (batch 0072) | 2026-08-18 |
 | `binary-arithmetic` | binary arithmetic in the proof surface | `README.md`, `L2-SPELLING.md`, `PROOF-SURFACE.md` | 2026-09-05 .. 2026-09-06 |
-| `check-dissolution` | "check" construct dissolution, v0.32 candidate (PR #47 era) | `SPEC-DELTA.md`, `conformance-inventory.md` | 2026-08-28 |
-| `const-eval` | const-evaluation rule deltas for v0.31 | `INITIALIZATION.md`, `SPEC-DELTA.md` | 2026-08-28 .. 2026-09-09 |
-| `containers-and-resources` | containers/stores/resource-closed judgment (8 drafts; PR #12/#15/#18) | `DESIGN.md` (6,161 lines), `CONTAINERS.md`, `RESOURCES.md`, `EXTERNAL-WORKLOADS.md`, `REASSESSMENT.md`, two `EVIDENCE-*.md` | 2026-09-06 .. 2026-09-07 |
-| `contract-surface` | four competing contract-syntax proposals | `DESIGN-SPACE.md`, `PROPOSAL-{A,B,C,D}-*.md` | 2026-08-28 |
+| `check-dissolution` | "check" construct dissolution, v0.32 candidate (PR #47 era) | `SPEC-DELTA.md`, `conformance-inventory.md` | 2026-08-18 |
+| `const-eval` | const-evaluation rule deltas for v0.31 | `INITIALIZATION.md`, `SPEC-DELTA.md` | 2026-08-17 .. 2026-09-09 |
+| `containers-and-resources` | containers/stores/resource-closed judgment (8 drafts; PR #12/#15/#18) | `DESIGN.md` (6,161 lines), `CONTAINERS.md`, `RESOURCES.md`, `EXTERNAL-WORKLOADS.md`, `REASSESSMENT.md`, two `EVIDENCE-*.md` | 2026-09-03 .. 2026-09-07 |
+| `contract-surface` | four competing contract-syntax proposals | `DESIGN-SPACE.md`, `PROPOSAL-{A,B,C,D}-*.md` | 2026-08-18 .. 2026-08-25 |
 | `decision-workflow` | a decision workflow for sustained language research (feeds `docs/practice.md`) | `DESIGN.md`, `RULE-GROUNDS.md` | 2026-09-07 .. 2026-09-09 |
-| `declaration-provenance` | declaration-site provenance, v0.32-candidate draft | `SPEC-DELTA.md` | 2026-08-28 |
-| `division-dissolution` | division dissolution, v0.32 candidate | `GOAL-MATCHING-PROBE.md`, `OPEN-QUESTION.md`, `SPEC-DELTA.md` | 2026-09-06 |
-| `enum-equality-investigation` | enum equality (tag-only eeq/ene), v0.8 era | `DOSSIER.md`, `PACKET.md`, `V0.8-DELTA-DRAFT.md` | 2026-08-28 |
-| `exhaustion` | resource-exhaustion synthesis over six dossiers (2026-08-23 night) | `DESIGN.md` | 2026-08-28 |
-| `io-model` | the I/O model: completion design, park-on-miss, streams/TCP (PR #13, batches 0106-0108) | `DESIGN.md`, `FIRST-PRINCIPLES.md`, `IMPLEMENTATION-AUDIT.md`, `LOOP-PIPELINE.md`, `NETWORK.md`, `PARK-ON-MISS.md`, `RESULTS.md`, `reviews/` | 2026-08-28 .. 2026-09-10 |
-| `linux-enumeration` | Linux directory-enumeration disposition and delta | `SPEC-DELTA.md` | 2026-08-28 |
-| `move-on-copy` | adversarial investigation of move-on-copy semantics | `REPORT.md` | 2026-08-28 |
-| `o11-composition` | O11 signed Boolean-goal composition, candidate | `DESIGN.md`, `SPEC-DELTA.md`, two `probe-*.wf` | 2026-09-06 |
-| `obligation-discharge` | obligation-discharge semantics; trap as checker runtime backstop | `DOSSIER.md`, `ACCEPTANCE.md`, `CANDIDATE-REVIEW.md`, `CLAIM-RESIDUAL-CANONICALITY.md`, `PROBE-{CODEGEN,TAINT,W1}.md`, `SIMULATION.md`, `SYS-POSTCONDITIONS.md` | 2026-08-28 |
-| `proof-certificate-architecture` | certificate-based proof architecture | `PACKET.md`, `SOURCE-CHECKING.md` | 2026-08-28 .. 2026-09-09 |
-| `proof-derived-parallelism` | par/proof-derived parallelism v1 (batch 0074) | `DESIGN.md`, `PAL.md`, `RESULTS.md`, `bench/`, `debate/`, `loop/`, `probes/`, `gap-hunt-findings.md` | 2026-09-05 .. 2026-09-11 |
-| `reborrow-extension` | reborrow extension, v0.31-candidate draft | `SPEC-DELTA.md`, `chain-evidence.wf` | 2026-08-28 .. 2026-09-03 |
-| `reborrow-investigation` | the original no-reborrow investigation (v0.7) | `DOSSIER.md`, `MINIMAL-RULE.md`, `PACKET.md`, `V0.7-DELTA-DRAFT.md`, `modelcheck/` | 2026-08-28 |
-| `searching-wfgrep` | file-open-by-name, v0.33-candidate draft | `SPEC-DELTA.md` | 2026-08-28 |
-| `spec-ratchet` | "conciseness ratchet" measurement (batch 0070 W5) | `DELTA-DIAG1.md`, `DELTA-RATCHET.md`, `PASS-EVIDENCE.md` | 2026-08-28 |
-| `spec-representation` | how the spec should represent itself (header/version scheme) | `DOSSIER.md` | 2026-08-28 |
-| `spelling-relief` | FLOOR-5 spelling relief sweep (batches, feeds v0.41 comparison symbols) | `SWEEP.md` | 2026-08-28 .. 2026-09-03 |
-| `strict-clause-retirement` | strict-in-U clause retirement, v0.33 candidate | `SPEC-DELTA.md`, `probes/` | 2026-09-06 |
-| `system-capability-architecture` | the original system-capability architecture selection (batch 0001) | `DOSSIER.md`, `decisions.json` | 2026-08-28 |
-| `take-replace` | take/replace for affine places (batch 0070 W2) | `DESIGN.md` | 2026-08-28 |
-| `test-economy` | cost of duplicated conformance-case execution (batch 0070 W5) | `base64-dedup.md` | 2026-08-28 |
-| `wfgrep-traversal` | directory traversal, v0.32-candidate draft | `RECON.md`, `SPEC-DELTA.md` | 2026-08-28 |
+| `declaration-provenance` | declaration-site provenance, v0.32-candidate draft | `SPEC-DELTA.md` | 2026-08-18 |
+| `division-dissolution` | division dissolution, v0.32 candidate | `GOAL-MATCHING-PROBE.md`, `OPEN-QUESTION.md`, `SPEC-DELTA.md` | 2026-08-18 .. 2026-09-04 |
+| `enum-equality-investigation` | enum equality (tag-only eeq/ene), v0.8 era | `DOSSIER.md`, `PACKET.md`, `V0.8-DELTA-DRAFT.md` | 2026-07-22 |
+| `exhaustion` | resource-exhaustion synthesis over six dossiers (2026-08-23 night) | `DESIGN.md` | 2026-08-23 |
+| `io-model` | the I/O model: completion design, park-on-miss, streams/TCP (PR #13, batches 0106-0108) | `DESIGN.md`, `FIRST-PRINCIPLES.md`, `IMPLEMENTATION-AUDIT.md`, `LOOP-PIPELINE.md`, `NETWORK.md`, `PARK-ON-MISS.md`, `RESULTS.md`, `reviews/` | 2026-08-24 .. 2026-09-10 |
+| `linux-enumeration` | Linux directory-enumeration disposition and delta | `SPEC-DELTA.md` | 2026-08-18 .. 2026-08-28 |
+| `move-on-copy` | adversarial investigation of move-on-copy semantics | `REPORT.md` | 2026-08-08 .. 2026-08-25 |
+| `o11-composition` | O11 signed Boolean-goal composition, candidate | `DESIGN.md`, `SPEC-DELTA.md`, two `probe-*.wf` | 2026-08-17 .. 2026-09-04 |
+| `obligation-discharge` | obligation-discharge semantics; trap as checker runtime backstop | `DOSSIER.md`, `ACCEPTANCE.md`, `CANDIDATE-REVIEW.md`, `CLAIM-RESIDUAL-CANONICALITY.md`, `PROBE-{CODEGEN,TAINT,W1}.md`, `SIMULATION.md`, `SYS-POSTCONDITIONS.md` | 2026-08-06 .. 2026-08-25 |
+| `proof-certificate-architecture` | certificate-based proof architecture | `PACKET.md`, `SOURCE-CHECKING.md` | 2026-08-10 .. 2026-09-09 |
+| `proof-derived-parallelism` | par/proof-derived parallelism v1 (batch 0074) | `DESIGN.md`, `PAL.md`, `RESULTS.md`, `bench/`, `debate/`, `loop/`, `probes/`, `gap-hunt-findings.md` | 2026-08-21 .. 2026-09-11 |
+| `reborrow-extension` | reborrow extension, v0.31-candidate draft | `SPEC-DELTA.md`, `chain-evidence.wf` | 2026-08-17 .. 2026-09-03 |
+| `reborrow-investigation` | the original no-reborrow investigation (v0.7) | `DOSSIER.md`, `MINIMAL-RULE.md`, `PACKET.md`, `V0.7-DELTA-DRAFT.md`, `modelcheck/` | 2026-07-22 |
+| `searching-wfgrep` | file-open-by-name, v0.33-candidate draft | `SPEC-DELTA.md` | 2026-08-18 .. 2026-08-19 |
+| `spec-ratchet` | "conciseness ratchet" measurement (batch 0070 W5) | `DELTA-DIAG1.md`, `DELTA-RATCHET.md`, `PASS-EVIDENCE.md` | 2026-08-17 |
+| `spec-representation` | how the spec should represent itself (header/version scheme) | `DOSSIER.md` | 2026-08-16 .. 2026-08-25 |
+| `spelling-relief` | FLOOR-5 spelling relief sweep (batches, feeds v0.41 comparison symbols) | `SWEEP.md` | 2026-08-06 .. 2026-09-03 |
+| `strict-clause-retirement` | strict-in-U clause retirement, v0.33 candidate | `SPEC-DELTA.md`, `probes/` | 2026-08-18 .. 2026-09-04 |
+| `system-capability-architecture` | the original system-capability architecture selection (batch 0001) | `DOSSIER.md`, `decisions.json` | 2026-08-05 |
+| `take-replace` | take/replace for affine places (batch 0070 W2) | `DESIGN.md` | 2026-08-17 .. 2026-08-18 |
+| `test-economy` | cost of duplicated conformance-case execution (batch 0070 W5) | `base64-dedup.md` | 2026-08-17 |
+| `wfgrep-traversal` | directory traversal, v0.32-candidate draft | `RECON.md`, `SPEC-DELTA.md` | 2026-08-18 |
 
 **Evidence kind (whole directory).** The richest source of **rejected
 alternatives** in the repository — nearly every `DESIGN.md`/`DOSSIER.md`
@@ -316,34 +430,39 @@ paired with a `RESULTS.md`, plus raw driver code, benchmark harnesses, and a
 **measurement** evidence, not deliberation — it answers "what did we
 measure and under what protocol", with the resulting *decision* usually
 made and recorded elsewhere (a PR, `mcts_mem`, or an `archive/done/` batch).
+**Corrected:** the git-range column is recomputed against the complete
+history (same 2026-07-22 floor caveat as §6 above — several rows, e.g.
+`crc32-swap-in`, `data-layout-owning-sequence`, `raw-deflate-default-shape`,
+show exactly 2026-07-22 for the same reorganization reason, not because
+nothing happened before then).
 
 | directory | subject | key documents | git-range |
 |---|---|---|---|
-| `auto-parallelism-feasibility` | Study 3: can auto-parallelism be made to work at all | `RESULTS.md`, `SUMMARY.md` | 2026-08-28 |
-| `blind-writer` | can a writer with no compiler feedback still satisfy the checker (dated subdir `2026-08-28/` with programs/probes/ledger/`REPORT.md`) | `2026-08-28/README.md`, `2026-08-28/REPORT.md` | 2026-09-05 .. 2026-09-06 |
-| `buffer-initialization-cost` | cost of mandatory buffer initialization | `PROTOCOL.md`, `RESULTS.md` | 2026-09-05 |
-| `checked-law-channel` | Channel 3: checked-law reassociation (FN-4) | `RESULTS.md` | 2026-08-28 |
-| `codegen-vs-rust-c` | Whitefoot vs C/C++/Rust codegen/perf, general | `README.md`, `SUMMARY.md` | 2026-08-28 .. 2026-09-03 |
+| `auto-parallelism-feasibility` | Study 3: can auto-parallelism be made to work at all | `RESULTS.md`, `SUMMARY.md` | 2026-07-22 .. 2026-08-25 |
+| `blind-writer` | can a writer with no compiler feedback still satisfy the checker (dated subdir `2026-08-28/` with programs/probes/ledger/`REPORT.md`) | `2026-08-28/README.md`, `2026-08-28/REPORT.md` | 2026-08-28 .. 2026-09-06 |
+| `buffer-initialization-cost` | cost of mandatory buffer initialization | `PROTOCOL.md`, `RESULTS.md` | 2026-08-06 .. 2026-09-05 |
+| `checked-law-channel` | Channel 3: checked-law reassociation (FN-4) | `RESULTS.md` | 2026-07-22 .. 2026-08-25 |
+| `codegen-vs-rust-c` | Whitefoot vs C/C++/Rust codegen/perf, general | `README.md`, `SUMMARY.md` | 2026-07-22 .. 2026-09-03 |
 | `container-representation` | container representation experiments (authority/dense/lifecycle) | `README.md` | 2026-09-06 .. 2026-09-07 |
-| `crc32-swap-in` | swapping a checked CRC32 kernel in for a reference one | code + benches only, **no narrative doc** | 2026-08-28 |
-| `data-layout-owning-sequence` | E0.1: data layout and owning sequences (heavily hostile-reviewed) | `README.md`, `PROTOCOL.md`, `RESULTS.md`, `RESEARCH.md`/`RESEARCH_REPORT.md`, two `HOSTILE_REVIEW_*.md`, `OWNERSHIP_ROUTE_HOSTILE_REVIEW.md`, `REVIEW_RESPONSE.md`, `BASELINE.md` | 2026-08-28 |
-| `default-floor` | default-floor generation/replication protocol | `PROTOCOL.md`, `README.md`, `RESULTS.md` | 2026-08-28 |
-| `differential-fuzz` | differential fuzzing of overlap lowerings | `README.md` | 2026-08-28 .. 2026-09-06 |
-| `effect-attrs-channel` | Channel 2: effect rows -> LLVM function attributes (2026-07-09) | `RESULTS.md` | 2026-08-28 |
-| `frequency-study` | one-time Rust-opportunity frequency pilot | `README.md`, `RESULTS.md` | 2026-09-01 |
-| `io-completion-bench` | completion-I/O benchmark harness (linux/windows, uring/epoll refs) | `README.md`, `programs/` | 2026-08-28 .. 2026-09-10 |
-| `literal-line-floor` | WF-LITERAL-LINE floor protocol/results | `PROTOCOL.md`, `RESULTS.md`, `CODE_SHAPE.md` | 2026-08-28 .. 2026-09-03 |
+| `crc32-swap-in` | swapping a checked CRC32 kernel in for a reference one | code + benches only, **no narrative doc** | 2026-07-22 |
+| `data-layout-owning-sequence` | E0.1: data layout and owning sequences (heavily hostile-reviewed) | `README.md`, `PROTOCOL.md`, `RESULTS.md`, `RESEARCH.md`/`RESEARCH_REPORT.md`, two `HOSTILE_REVIEW_*.md`, `OWNERSHIP_ROUTE_HOSTILE_REVIEW.md`, `REVIEW_RESPONSE.md`, `BASELINE.md` | 2026-07-22 |
+| `default-floor` | default-floor generation/replication protocol | `PROTOCOL.md`, `README.md`, `RESULTS.md` | 2026-07-22 .. 2026-08-25 |
+| `differential-fuzz` | differential fuzzing of overlap lowerings | `README.md` | 2026-08-27 .. 2026-09-06 |
+| `effect-attrs-channel` | Channel 2: effect rows -> LLVM function attributes (2026-07-09) | `RESULTS.md` | 2026-07-22 .. 2026-08-25 |
+| `frequency-study` | one-time Rust-opportunity frequency pilot | `README.md`, `RESULTS.md` | 2026-07-22 .. 2026-09-01 |
+| `io-completion-bench` | completion-I/O benchmark harness (linux/windows, uring/epoll refs) | `README.md`, `programs/` | 2026-08-27 .. 2026-09-10 |
+| `literal-line-floor` | WF-LITERAL-LINE floor protocol/results | `PROTOCOL.md`, `RESULTS.md`, `CODE_SHAPE.md` | 2026-08-05 .. 2026-09-03 |
 | `park-on-miss-measurements` | measurements behind io-model design §12 | `README.md` | 2026-09-05 .. 2026-09-06 |
-| `park-on-miss-switch-cost` | cost of one stack switch | `RESULTS.md` | 2026-09-05 |
-| `port-study` | porting base64/wc/wc-chunk-summary/binary-trees kernels across languages | per-kernel `RESULTS.md` in `base64/`, `wc/`, `wc-chunk-summary/`, `binary-trees/` | 2026-08-28 .. 2026-09-03 |
-| `raw-deflate-default-shape` | raw DEFLATE default-shape experiment (LLM-authored-kernel study) | `README.md`, `PROTOCOL.md`, `task.md`, `teaching-pack.md` | 2026-08-28 |
-| `ripgrep` | RG-BASE protocol/results (feeds the ripgrep flagship frame) | `PROTOCOL.md`, `RESULTS.md` | 2026-08-28 |
-| `scoped-alias-channel` | Channel 1: scoped-alias metadata from ownership provenance (F003) | `RESULTS.md` | 2026-08-28 .. 2026-09-03 |
-| `wfgrep-baseline` | WFGREP-BASELINE protocol/results | `PROTOCOL.md`, `RESULTS.md` | 2026-08-28 .. 2026-09-03 |
-| `wfgrep-double-walk` | WFGREP-DOUBLE-WALK protocol/results | `PROTOCOL.md`, `RESULTS.md` | 2026-09-05 .. 2026-09-06 |
-| `wfgrep-scan-floor` | WF-SCAN-FLOOR protocol/results | `PROTOCOL.md`, `RESULTS.md` | 2026-08-28 .. 2026-09-03 |
-| `wide-scan-lowering` | WIDE-SCAN-LOWERING protocol/results | `PROTOCOL.md`, `RESULTS.md` | 2026-08-28 .. 2026-09-03 |
-| `zlib-core-kernels` | zlib core-kernel proof and lowering study | `README.md`, `RESULTS.md`, `DESIGN-HANDOFF.md`, `GUARDED-COMPILER-RESULTS.md`, `PERIODIC-COMPILER-RESULTS.md` | 2026-08-28 .. 2026-09-03 |
+| `park-on-miss-switch-cost` | cost of one stack switch | `RESULTS.md` | 2026-09-04 |
+| `port-study` | porting base64/wc/wc-chunk-summary/binary-trees kernels across languages | per-kernel `RESULTS.md` in `base64/`, `wc/`, `wc-chunk-summary/`, `binary-trees/` | 2026-07-22 .. 2026-09-03 |
+| `raw-deflate-default-shape` | raw DEFLATE default-shape experiment (LLM-authored-kernel study) | `README.md`, `PROTOCOL.md`, `task.md`, `teaching-pack.md` | 2026-07-22 |
+| `ripgrep` | RG-BASE protocol/results (feeds the ripgrep flagship frame) | `PROTOCOL.md`, `RESULTS.md` | 2026-08-04 .. 2026-08-25 |
+| `scoped-alias-channel` | Channel 1: scoped-alias metadata from ownership provenance (F003) | `RESULTS.md` | 2026-07-22 .. 2026-09-03 |
+| `wfgrep-baseline` | WFGREP-BASELINE protocol/results | `PROTOCOL.md`, `RESULTS.md` | 2026-08-06 .. 2026-09-03 |
+| `wfgrep-double-walk` | WFGREP-DOUBLE-WALK protocol/results | `PROTOCOL.md`, `RESULTS.md` | 2026-08-06 .. 2026-09-06 |
+| `wfgrep-scan-floor` | WF-SCAN-FLOOR protocol/results | `PROTOCOL.md`, `RESULTS.md` | 2026-08-05 .. 2026-09-03 |
+| `wide-scan-lowering` | WIDE-SCAN-LOWERING protocol/results | `PROTOCOL.md`, `RESULTS.md` | 2026-08-06 .. 2026-09-03 |
+| `zlib-core-kernels` | zlib core-kernel proof and lowering study | `README.md`, `RESULTS.md`, `DESIGN-HANDOFF.md`, `GUARDED-COMPILER-RESULTS.md`, `PERIODIC-COMPILER-RESULTS.md` | 2026-07-22 .. 2026-09-03 |
 
 **Evidence kind (whole directory).** Measurements and their protocols
 (pre-registration, method, raw numbers) — use these when a decision record
@@ -379,8 +498,13 @@ conclusions and skip raw driver code.
 | `ripgrep-flagship-frame.md` | 220 | the owner-selected umbrella target framing for the ripgrep experiments |
 
 **Entries / date range.** 9 files; internal dates 2026-07-08 through at least
-2026-08-03 (the shortlist's superseded-status date); all added in the
-2026-08-28 bulk import.
+2026-08-03 (the shortlist's superseded-status date). **Corrected:** this
+directory is a one-shot 2026-07-22 compiled snapshot (4 commits touch it
+total, all from the reorganization era), not a shallow-clone artifact — the
+files it compiles are older than the directory itself, and their original
+form (if it was ever committed separately rather than authored directly
+into these files) would be findable, if at all, in `commits.md`'s early
+span rather than in this path's own history.
 
 **Evidence kind.** Early rationale and rejected-direction material
 (especially `regions-effects-vs-safe-rust` and `headline-artifact-shortlist`,
@@ -415,6 +539,7 @@ one or more rule edits, generally pre-dating or paralleling the more formal
 | `v0.23-review-packet.md` | draft review packet ("what the owner is actually being shown") | pre-v0.23 |
 
 **Entries / date range.** 10 files, internal dates 2026-07-23 to 2026-09-03.
+Git-mineable from 2026-07-22 (88 commits touch this directory).
 
 **Evidence kind.** Rulings and selection grounds at the finest grain —
 several are literally the packet the owner reviewed before approving a
@@ -451,7 +576,11 @@ or both of:
 
 **Entries / date range.** **776 dated bullet lines** total (verified count,
 matching the task brief exactly) across the `## Facts` and `## Moves`
-sections combined, spanning 2026-07-02 to 2026-09-11. Of these, 589 end in
+sections combined, spanning 2026-07-02 to 2026-09-11. Git-mineable in its
+own right too — 167 commits touch `mcts_mem/`, from 2026-07-12 — so
+`git log -p -- mcts_mem` shows each dated bullet being added in something
+close to real time, which can help date-disambiguate an entry whose own
+text is vague. Of these, 589 end in
 the tag `(sourced)`, 155 end in `(code)`, and 32 have neither tag on the
 bulleted line itself (typically because the tag sits on a wrapped
 continuation line rather than the bullet's own last line — a formatting
@@ -523,13 +652,14 @@ each compiles or narrates real dated history:
   are not current.
 
 **Entries / date range.** 4 files; internal content dates back to project
-founding (early July 2026, per `bargain.md`'s citation list); the files
-themselves were added to this repository in the 2026-08-28 bulk import
-(`roadmap.md`) or the 2026-09-01 incremental history (`bargain.md`,
-`ideas.md`, `why-whitefoot.md` — the latter three's `git log --follow` does
-not detect a rename from an older path, so they may have been rewritten
-substantially at that point even though their content narrates much older
-material).
+founding (early July 2026, per `bargain.md`'s citation list). **Corrected:**
+all four have real, rich, continuous git history, not a one-shot import —
+`roadmap.md` 316 commits (from 2026-07-10), `why-whitefoot.md` 25 commits
+(from 2026-07-17), `bargain.md` 12 commits (from 2026-07-31, matching its
+own stated compilation date), `ideas.md` 11 commits (from 2026-07-17). Of
+the four, `roadmap.md` is by far the most git-mineable in its own right —
+`git log -p -- docs/roadmap.md` gives 316 dated snapshots of the project's
+own sense of its long-range direction, a genuine history in itself.
 
 **Evidence kind.** Compiled rationale and rejected-direction narrative at
 the broadest, most synthesized level — useful for recovering *why a whole
@@ -579,7 +709,11 @@ corresponding PR body (§2) and `mcts_mem/` entries.
 **Evidence kind.** For v0.0-v0.29: self-contained rationale, read the file
 directly. For v0.30-v0.52: the file itself is evidence only of *what the
 rules said*, not *why* — pair it with the matching `archive/APPROVALS.md`
-entry or PR.
+entry or PR. All of `spec/` is git-mineable in its own right too — 200
+commits, from the true root `7c1d7641` (2026-07-07) — and for the terse
+v0.33+ versions, the commit that introduces each archived file is itself
+worth reading even where the file's own `Status:` line says nothing: it is
+frequently the activation commit and carries a real body.
 
 **Fastest search.**
 ```
@@ -662,10 +796,14 @@ words, better than a re-description here would. In brief:
   park-on-miss, streams/TCP — the same work as PR #13 and
   `research/investigations/io-model/`), with three inline dated decision
   markers (`### Decided 2026-09-04:`, `### Decided 2026-09-05:`, `###
-  Recorded 2026-09-05, deferred...`). Largely duplicates evidence already
-  captured via PR #13 and `io-model/`, but the plan-document framing (rules
-  the owner stated for the work, deferred-boundary list) isn't quite
-  reproduced elsewhere.
+  Recorded 2026-09-05, deferred...`). **Corrected: this one is richly
+  git-mineable under its pre-archive path**, `docs/current-plan.md` — **115
+  commits, 2026-08-03 to 2026-09-06** — which is the rolling plan actually
+  being edited in place through several complete plan cycles, not just the
+  final I/O-model one visible in the frozen text; `git log -p -- docs/current-plan.md`
+  recovers the earlier plans that this same file held before being
+  overwritten in place for the next cycle (each overwritten version is a
+  real decision, generally not recorded anywhere else once superseded).
 - **`archive/research/`** (456 files) — the pre-corpus "evidence-first
   research era": multi-agent debates (`debates/`), source papers
   (`sources/`), feature matrices, synthesis notes; also
@@ -702,33 +840,116 @@ words, better than a re-description here would. In brief:
 - **`archive/HANDOVER-2026-07-17.md`** (950 lines) — the last competing
   handover document before single-plan consolidation.
 
-None of this is git-mineable (all pre-2026-08-28 content, frozen since the
-bulk import); read directly, guided by `archive/README.md`.
+**Corrected:** most of this material is git-mineable, but thinly — these
+are largely one-or-few-commit archival snapshots (`archive/research/` 7
+commits 2026-07-12..2026-08-25, `archive/experiments/` 4 commits, `archive/compiler/`
+2 commits, `archive/m3/` 2 commits, `archive/toolchains/` 1 commit,
+`archive/DECISION_SPRINT.md`/`ROADMAP.md` 2 commits each, `archive/HANDOVER-2026-07-17.md`
+1 commit, and the four undocumented Python-tooling directories 1-3 commits
+each, all from 2026-07-12 through 2026-07-22) — meaning most of these
+paths were moved wholesale a small number of times rather than edited
+incrementally, which is consistent with them being explicitly retired,
+frozen material rather than living documents. `docs/current-plan.md` (the
+pre-archive path of `archive/current-plan.md`, above) is the one clear
+exception, with real ongoing edit history. Read the files directly, guided
+by `archive/README.md`; consult `commits.md`'s full text, not these paths'
+own thin git logs, for the reasoning behind their content.
+
+---
+
+## 15. Remote branches not merged into `origin/main` (new source)
+
+`git fetch --unshallow` surfaced 133 remote branches (`git branch -r`) that
+the shallow clone never showed at all. **75 of them are not merged into
+`origin/main`** (`git branch -r --no-merged origin/main`) — real, unmerged
+work, most of it never landed and some of it never even opened as a PR, so
+it is not represented in `pull-requests.md` either. This is therefore a
+genuinely new source, not a reclassification of an existing one.
+
+**60 of the 75 collapse into one.** Every one of the 60 `codex/io-*`
+branches, plus `codex/compute-runtime`, is confirmed (`git merge-base
+--is-ancestor`, checked individually for all 60) to be an ancestor of a
+single branch, `origin/archive/codex-io-2026-09-11` (tip: "Archive of the
+codex/io-\* experiment branches and codex/compute-runtime, 2026-09-11").
+Their tips range 2026-08-25 to 2026-09-10. This looks like a deliberate
+end-of-life rollup of a large, long-running family of I/O-runtime
+experiment branches (io continuation, io-cpu-\*, io-client-\*, io-go-\*, and
+more) rather than 61 independent leads — read the archive branch itself
+first; the 60 individual branches likely add little beyond what it already
+contains, but remain individually inspectable
+(`git log origin/codex/io-<name>` or `git diff origin/main...origin/codex/io-<name>`)
+if the archive branch's own history compresses something a reader needs at
+finer grain.
+
+**The other 14 distinct tips**, sorted by tip date, with a cross-reference
+to `pull-requests.md` where one exists:
+
+| branch | tip date | tip subject | already in `pull-requests.md`? |
+|---|---|---|---|
+| `handoff/2026-08-28-cloud` | 2026-08-28 | handoff: keep the main boundary to its one sentence | no |
+| `batch/0104-streaming-paths-design` | 2026-08-28 | Design: streaming chunk loops, and bytes to path | no — and this is the branch behind the `0104` gap noted in §4: no `archive/done/0104-*.md` was ever written for it |
+| `batch/0106-claim-model-design` | 2026-08-29 | design: retire the "one flippable decision" count everywhere it was live | no (but subsumed — see next row) |
+| `batch/0111-proof-replaces-claim` | 2026-08-29 | design: repair the two split tables... mark the draft superseded | **yes, PR #2** (closed without merging; `0106` above is this branch's own ancestor) |
+| `batch/0116-containers-and-resources` | 2026-09-04 | Merge remote-tracking branch 'origin/main' into batch/0116-containers-and-resources | **yes, PR #12** (merged) |
+| `batch/0127-b3-parked` | 2026-09-04 | B3: the type-derived call transports, and the ordering they falsify | no |
+| `handover/io-model-2026-09-06` | 2026-09-06 | Handover: state the word ban without the words | no |
+| `batch/0127-containers` | 2026-09-06 | B7c4b: The fill helper's doc names the reason it is a helper... | no — a **second, independent** `0127` line: confirmed neither ancestor nor descendant of `batch/0127-b3-parked` above, i.e. two different forks reused the same batch number |
+| `codex/semantic-proof-probe` | 2026-09-09 | Research contracts for generalized test intent | no |
+| `archive/codex-io-2026-09-11` | 2026-09-11 | Archive of the codex/io-\* experiment branches... | no (it's the rollup itself, see above) |
+| `codex/container-foundation-research` | 2026-09-11 | fix(backend): omit unreachable loop continuation blocks | **yes, PR #30** (open, draft) |
+| `ci/compute-regression` | 2026-09-12 | ci: run the compute regression check on every pull request | **yes, PR #48** (open) |
+| `claude/code-space-constraints-mdagkl` | 2026-09-12 | Audit the resolution module against the design tree | **yes, PR #35** (open) — **this is this session's own branch**; fully covered by `commits.md` already, not additional material |
+| `compute/asymmetric-window` | 2026-09-12 | Name the revision the asymmetric-core window rule landed at | no |
+
+**Net new mining targets from this section**, after excluding what's
+already covered elsewhere (the 60+1 collapsed branches, the 5 rows with an
+existing PR, and this session's own branch): **7 branches genuinely
+outside every other source in this survey** —
+`handoff/2026-08-28-cloud`, `batch/0104-streaming-paths-design`,
+`batch/0106-claim-model-design` (ancestor of PR #2's branch, so mostly but
+not entirely redundant with it), `batch/0127-b3-parked`,
+`handover/io-model-2026-09-06`, `batch/0127-containers`,
+`codex/semantic-proof-probe`, and `compute/asymmetric-window` — plus the
+`archive/codex-io-2026-09-11` rollup itself as the entry point to the 60
+collapsed experiment branches.
+
+**Evidence kind.** Unknown until read — by construction, an unmerged
+branch is either abandoned, superseded, or still in flight, and this survey
+did not open any of their diffs or commit bodies (that is exactly the next
+pass's job). `git log origin/main..<branch>` on each gives its own commits
+in the same rich style as `commits.md`; `git diff origin/main...<branch>`
+gives the substantive change no PR body ever described.
+
+**Fastest search.**
+```
+git branch -r --no-merged origin/main             # the 75, recomputed any time
+git log origin/main..origin/<branch>              # a branch's own unmerged commits
+git diff origin/main...origin/<branch> --stat      # what it actually changes
+```
 
 ---
 
 ## What is not on this machine
 
-**Chat/session logs.** The vast majority of the actual deliberation that
-produced everything dated before 2026-08-28 — and a good deal of the
-reasoning behind even the post-2026-08-28 commits and PRs, which frequently
-compress a long back-and-forth into a terse "owner ruling" sentence — happened
-in chat sessions that left no trace on this filesystem beyond the documents
-they produced. Several PR bodies and commit messages reference a
-`https://claude.ai/code/session_...` URL; those sessions are not fetchable
-from here. If the owner can export or share transcripts, they would be the
-only remaining source for reasoning that none of the fourteen sources above
-captured in writing — in particular, the *deliberation* behind the many
-decisions that these sources record only as a flat, already-settled
-conclusion ("the owner ruled...", "the owner selected...") with no trace of
-what else was on the table before that sentence was written.
+**Chat/session logs.** Even with the full 2026-07-07–2026-09-12 commit
+history now recovered, what is on this machine is still only the *written
+artifact* of each decision — the commit, the PR body, the dated `mcts_mem`
+bullet — never the interactive back-and-forth that produced it, which
+frequently compresses a long deliberation into one terse sentence ("owner
+ruling", "the owner selected"). That reasoning happened in chat sessions
+that left no other trace on this filesystem. Several PR bodies and commit
+messages reference a `https://claude.ai/code/session_...` URL; those
+sessions are not fetchable from here. If the owner can export or share
+transcripts, they would be the only remaining source for the deliberation
+itself, as opposed to its recorded conclusion, behind any of the fifteen
+sources above.
 
 ---
 
-## File sizes (this survey's own output)
+## File sizes (this survey's own output, current as of the correction)
 
 | file | lines | bytes |
 |---|---:|---:|
-| `design/recall-tmp/sources/commits.md` | 5,630 | 295,209 |
-| `design/recall-tmp/sources/pull-requests.md` | 2,346 | 258,766 |
-| `design/recall-tmp/sources.md` (this file) | ~735 | ~45,500 (self-referential; see the task's final report for the exact number) |
+| `design/recall-tmp/sources/commits.md` | 29,295 | 1,508,468 |
+| `design/recall-tmp/sources/pull-requests.md` | 2,360 | 260,759 |
+| `design/recall-tmp/sources.md` (this file) | ~945 | ~62,000 (self-referential; see the task's final report for the exact number) |
