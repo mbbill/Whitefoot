@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 surface-form 子树
+
+Nodes: language/surface-form, language/surface-form/binding-annotation, language/surface-form/borrow-lexicon, language/surface-form/construction-form, language/surface-form/iteration-forms, language/surface-form/match-form, language/surface-form/operation-spelling, language/surface-form/result-propagation
+
+Summary: surface-form 树根删去两条证据政策决策（模型的习惯和内部语料计数不是依据），language 树根的"只看道理不看代价"已经陈述了它们；并吸收 binding-annotation 的唯一一条（函数体绑定的模式和类型由右侧推出、签名处仍要写）和 iteration-forms 的唯一一条（两种循环形式），这两个节点删除。子树里其余决策全部确认。只是复述决策的否决项从 borrow-lexicon、match-form、result-propagation 中删去，operation-spelling 只保留独立成立的四 token 前瞻那条；construction-form 的否决项去掉末尾一句关于该形式局限的观察，那不是理由。
+> 通俗解释：拼写这一组的决策都是真的，主要是清掉大量"决策里已经说过一遍"的否决项，把两个单条文件并进父节点，把两条已经升到树根的话删掉。
+
 ## 2026-09-12 与所有者一起审阅 parallelism 子树与 pattern-doctrine
 
 Nodes: language, language/parallelism, language/parallelism/loop-permission, language/parallelism/permission-judgment, language/pattern-doctrine

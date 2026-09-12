@@ -1,4 +1,0 @@
-Decision: Iteration has two source forms, an ordinary loop with an optional label and break, and an ascending unit-stride half-open counted loop over once-captured endpoints whose binder is compiler-updated and source-immutable, because the sole-form commitment made every bounded walk spell its own counter, guard, and increment, whose carried facts the loop head then discarded, and three real SHA-256 index walks plus three of four hostile writer probes independently selected the same ascending half-open counted shape, instead of loop-plus-break as the only iteration form.
-
-Rejected:
-- Loop-plus-break as the sole iteration form with every bounded traversal spelled as an explicit counter, guard, and increment: rejected because the loop head discarded the carried facts of every such walk; adding only the counted class removed four SHA-256 claims while leaving the unrelated ordinary loop unchanged.

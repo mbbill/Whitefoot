@@ -7,8 +7,4 @@ Decision: The six integer comparison symbols are integer-only rows exactly as `+
 Decision: A `use` cites one premise with its multiplicity written as `N times` before it, a relation premise always parenthesized and a named premise never, because spelling the multiplicity with `*` claimed a multiplication whose right operand is a relation, which was undecidable with two tokens of lookahead and forced a whitespace rule to carry a distinction the parser cannot see, instead of `use 3 * p`.
 
 Rejected:
-- All computation as mode-suffixed prefix table calls with no infix operators: rejected because three-address form admits exactly one operation per expression, so infix costs nothing and prefix was only ever minimality-selected.
-- A bare operator that traps, with exact operations requiring a matching total domain goal only as an alternative: rejected because a bare spelling that means trap gives partial arithmetic an implicit failure edge.
-- Named calls for the whole comparison class: rejected because the whole-class cancellation rested on the `<` collision, which a delimiter on call-site type application dissolves.
-- The Farkas multiplicity spelled with `*`: rejected because it claimed a multiplication whose right operand is a relation, made a term multiplicity undecidable in the parser's lookahead, and needed a whitespace rule the parser cannot see; `times` was chosen because the corpus's own doc strings already reached for the word in exactly this sense.
 - Strong four-token lookahead to keep `<` overloaded: rejected because it commits a comparison with a nested right operand to the call arm and turns two-token diagnostic attribution into a four-token case analysis.

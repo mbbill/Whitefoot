@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review the surface-form subtree with the owner
+
+Nodes: language/surface-form, language/surface-form/binding-annotation, language/surface-form/borrow-lexicon, language/surface-form/construction-form, language/surface-form/iteration-forms, language/surface-form/match-form, language/surface-form/operation-spelling, language/surface-form/result-propagation
+
+Summary: The surface-form root drops its two evidence-policy decisions, that a writer model's habits and internal corpus counts are not grounds, since the language root's merits-not-cost decision now states them, and absorbs the single decisions of binding-annotation, body binders derive their mode and type while signature positions stay written, and iteration-forms, the two loop forms; both nodes are deleted. Every other decision in the subtree was confirmed. Rejected lists that only restated their decision's refused alternative and reason are dropped from borrow-lexicon, match-form, and result-propagation, and from operation-spelling except the four-token lookahead alternative, which stands on its own; construction-form's rejected item loses a trailing observation about a limit of the form, which is not a reason.
+
 ## 2026-09-12 Review the parallelism subtree and pattern-doctrine with the owner
 
 Nodes: language, language/parallelism, language/parallelism/loop-permission, language/parallelism/permission-judgment, language/pattern-doctrine
