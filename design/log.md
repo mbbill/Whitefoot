@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Merge main's compute-runtime work and delete the inventory switches
+
+Nodes: compiler, compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime
+
+Summary: `main` merged the compute scoreboard, the recursion budget family, the wait-path and split-grain work, the idle window, and the compute regression check after this branch started, and the merge keeps the compiler README retired, so its new paragraphs are carried here. two-worlds replaces the `N`-layer recursive frontier with the budget-carrying clone family and the runtime-derived budget that is its default, `--par-recursive-frontier auto|N|off` being the one control over that starting value, keeps the refusal decision on its own, and records the `N`-layer frontier as rejected. parallel-lowering drops the frontier from its off-by-default decision and records the rejected alignment flags. parallel-runtime gains the idle window in time with the 1,024-round bound as its resolution, the split grain of 150,000 with the cap of 16, and the rejected wake-path change for the hosted runner class's cadence loss. The compiler root records two rejected alternatives from the owner's rulings of this day: hardening and re-verification inside this research compiler, and superseded system-inventory states kept behind compile-time switches, which the same change deletes from the resolver. The main-side entries are recovered from `mcts_mem/whitefoot/parallelism.md`.
+
 ## 2026-09-12 Retire the derivation ledger
 
 Nodes: language

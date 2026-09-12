@@ -8,3 +8,5 @@ Decision: A rejection names the numbered rule it violates and the location, one 
 
 Rejected:
 - A product-grade checked-artifact toolchain with stable crate boundaries, serialized artifacts, and replay: rejected because it multiplied crates and gates before a resolver or backend existed and imposed protocols that had no consumer.
+- Hardening the frontend against hostile input and re-verifying a previous stage's result inside the trusted path: rejected because this compiler exists to iterate the language and will be replaced by a self-hosted one, so defense in depth here is work that buys nothing, while ordinary engineering quality stays required for fast iteration.
+- Superseded system-inventory states kept reachable behind compile-time switches so that a differential test can show an earlier program's module unchanged: rejected because the compiler implements exactly one specification, the active one, so a switch that reconstructs a superseded inventory has no consumer and only adds code paths to maintain.

@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 合并 main 的计算运行时工作并删除清单开关
+
+Nodes: compiler, compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime
+
+Summary: 本分支开始之后，`main` 合入了计算记分板、递归预算克隆族、等待路径和切分粒度的工作、空闲窗口以及计算回归检查；这次合并保持编译器 README 已退役的状态，所以它新增的段落被搬到这里。two-worlds 用携带预算的克隆族及其默认的运行时推导预算取代 `N` 层递归前沿，`--par-recursive-frontier auto|N|off` 是对这个起始值的唯一控制，顺序拒绝的决策单独保留，`N` 层前沿记为被否决。parallel-lowering 从默认关闭的决策里去掉递归前沿，并记录被否决的对齐标志。parallel-runtime 新增以时间计的空闲窗口（1,024 轮上限作为它的分辨率）、150,000 的切分粒度和 16 的上限，以及为托管运行器节奏损失改唤醒路径的否决。编译器根记录所有者当天裁定的两个否决项：在这个研究编译器内部做加固和重复验证，以及放在编译期开关后面的已取代系统清单状态，后者在同一改动里从解析器中删除。main 一侧的条目从 `mcts_mem/whitefoot/parallelism.md` 恢复。
+> 通俗解释：main 上最近一批并行运行时的工作（递归预算、空闲窗口、切分粒度等）合进了本分支，相应的决策补进了编译器树；同时按所有者的意见，加上了"不在这个实验编译器上做纵深防御"和"删掉旧接口清单开关"两条否决。
+
 ## 2026-09-12 退休 derivation ledger
 
 Nodes: language

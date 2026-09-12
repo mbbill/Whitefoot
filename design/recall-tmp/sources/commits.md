@@ -1131,7 +1131,7 @@ the byte-pinned compiler object are untouched.
 
 An adversarial audit fixed three mechanical-rename defects: reverted 31
 files' over-replaced absolute on-disk paths (the working directory is still
-/Users/bytedance/Dev/xlang); reverted the frozen hash-pinned
+[home]/Dev/xlang); reverted the frozen hash-pinned
 experiments/default-floor/ D9a protocol wholesale (preserves SHA-256 pin
 integrity, "do not tune completed protocols"); swept 16 files
 "an whitefoot" -> "a whitefoot".
@@ -4745,7 +4745,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
 ## 20faa2cc 2026-08-07 docs: claim task 0039 spec identity integrity
 
-Owner exec-0039, workspace /Users/bytedance/do_not_scan/wf-0039 on branch
+Owner exec-0039, workspace [home]/[local-dir]/wf-0039 on branch
 task/0039-spec-identity-integrity, base a375dba.
 
 ## 11513c51 2026-08-07 compiler: remove two spec-identity checks that compared a value with itself
@@ -5130,7 +5130,7 @@ earlier assembly: the delta has moved from 31 rules at 61 sites to 34 rules at
 anchors, and added the three seventh-pattern sites [OP-4], [SYS-13], and
 [OWN-13].
 
-A scratch script (do_not_scan, deleted after use) applied 74 verbatim anchors
+A scratch script ([local-dir], deleted after use) applied 74 verbatim anchors
 implementing all 64 sites across all 34 rules, each asserted to occur exactly
 once; 74 rather than 64 because ten sites are one contiguous delta site spanning
 several sentences or table rows. Where the delta states a replacement as a

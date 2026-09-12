@@ -83,14 +83,15 @@ the exact sequential reference lowering and cannot be combined with `--par`.
 `--par-ledger` and `--stack-ledger` print their reports; name the LLVM output
 with `-o` when a report and emitted LLVM would otherwise share stdout.
 
-`--par` takes three opt-in grain controls. `--par-scalar-leaf-limit N|off`
-moves or removes the default threshold that keeps scalar leaves of at most 16
+`--par` takes three grain controls. `--par-scalar-leaf-limit N|off` moves or
+removes the default threshold that keeps scalar leaves of at most 16
 nonconstant operations out of compute offers; `--par-sequential-refusal` runs
-a refused offer's callee in its sequential clone; `--par-recursive-frontier N`,
-with `N` from 1 to 32, emits `N` parallel call levels of a recursive component
-before entering its sequential clones. `whitefootc --help` prints the full
-usage. At run time `WF_WORKERS` selects compute participation; `WF_STACKS` is
-inert.
+a refused offer's callee in its sequential clone; `--par-recursive-frontier
+auto|N|off` sets the starting budget of a recursive component's clone family,
+where `auto`, the default, asks the runtime, `N` from 1 to 32 pins it at
+compile time, and `off` emits no family so every node offers. `whitefootc
+--help` prints the full usage. At run time `WF_WORKERS` selects compute
+participation; `WF_STACKS` is inert.
 
 ## Verification
 

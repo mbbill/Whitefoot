@@ -953,3 +953,10 @@ sources above.
 | `design/recall-tmp/sources/commits.md` | 29,295 | 1,508,468 |
 | `design/recall-tmp/sources/pull-requests.md` | 2,360 | 260,759 |
 | `design/recall-tmp/sources.md` (this file) | ~945 | ~62,000 (self-referential; see the task's final report for the exact number) |
+
+## Redaction (2026-09-12)
+
+`sources/commits.md` is verbatim except for two tokens: a local machine
+directory name that appeared in two commit messages is written `[local-dir]`,
+and a personal home path that appeared in two others is written `[home]`,
+because the repository invariants refuse both anywhere outside `archive/`.
