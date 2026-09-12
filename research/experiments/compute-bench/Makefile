@@ -8,10 +8,19 @@
 #   make compare         the timed passes and the table, into a fresh RESULTS
 #   make programs-check  the cheap gate target: compile every program in the
 #                        two modes the table uses and assert what --par emits
+#   make verdict         the regression rule over one table's A/B lines
+#   make verdict-test    that rule's own test, over crafted fragments
 #
-# This is a measurement bundle, not a gate. `programs-check` is the one target
-# the repository's `make check` runs. Nothing here fails on an elapsed time,
-# a ratio, a spread or an ordering: no band, no threshold, no timeout.
+# This is a measurement bundle. Every table it prints still decides nothing:
+# no band, no threshold, no timeout and no heuristic anywhere selects a row, a
+# ranking or a ratio, and `compare` fails only on a missing or malformed row.
+#
+# The ONE number in this bundle that decides a pass/fail is `verdict`, and it
+# is not part of the repository's `make check`: it reads the A/B lines of a
+# BASELINE-TWIN run -- this tree's `wf` against the merge-base's `wf-b` -- and
+# `.github/workflows/compute-regression.yml` runs it as a separate required
+# pull-request check. `make check` runs `programs-check` and `verdict-test`,
+# and neither of those times anything.
 #
 # Generated trees, binaries and raw output stay in the scratch root. Nothing
 # is written inside the repository.
@@ -294,7 +303,8 @@ COMMON_OBJS := $(SHARED_OBJS) $(RUNTIME_OBJS)
 LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
              $(DEPS)/rayon/libwf_compute_bench_rayon.a -ldl -lm
 
-.PHONY: all compiler deps build images verify compare programs-check clean clean-deps FORCE
+.PHONY: all compiler deps build images verify compare programs-check verdict \
+        verdict-test clean clean-deps FORCE
 all: build
 
 # ---------------------------------------------------------------- compiler --
@@ -783,6 +793,42 @@ $(CHECK)/checked_%: programs/%.wf $(WFC)
 	grep -q 'call void @wf__par_publish(' $(CHECK)/$*-par.ll
 	! grep -q 'call void @wf__par_publish(' $(CHECK)/$*-seq.ll
 	touch $@
+
+# ---------------------------------------------------------------- verdict ---
+# The one target in this bundle whose exit status is decided by a measured
+# number, and it is NOT part of the repository's `make check`: it reads the
+# `A/B  wf-b/wf` lines of a table produced by a baseline-twin run and fails
+# when the merge-base was faster. `.github/workflows/compute-regression.yml`
+# runs it as a required PR check; `make check` runs `programs-check` and
+# `verdict-test` and neither of those times anything.
+#
+# RESULTS is expanded once per make invocation and defaults to a timestamped
+# directory, so `make compare && make verdict` as two invocations would look
+# in two different places. The table is therefore named explicitly, defaulting
+# to this invocation's RESULTS, and the message below says so rather than
+# leaving a bare awk error.
+VERDICT_TABLE  ?= $(RESULTS)/table.txt
+VERDICT_WIDTHS ?= 1 2 4
+VERDICT_WALL   ?= 0.97
+VERDICT_CPU    ?= 0.90
+VERDICT_LOWER  ?= 4
+VERDICT_PAIRS  ?= 5
+verdict:
+	@test -f "$(VERDICT_TABLE)" || { \
+	    echo 'compute-bench: no table at $(VERDICT_TABLE).' >&2; \
+	    echo "Pass the compare run's own directory: make verdict RESULTS=<that run>" >&2; \
+	    echo 'or name the file directly with VERDICT_TABLE=<path>/table.txt.' >&2; exit 1; }
+	@awk -f verdict.awk -v widths='$(VERDICT_WIDTHS)' -v wall=$(VERDICT_WALL) \
+	    -v cpu=$(VERDICT_CPU) -v lower=$(VERDICT_LOWER) -v pairs=$(VERDICT_PAIRS) \
+	    "$(VERDICT_TABLE)"
+
+# The verdict rule's own test, and the reason the rule can be in `make check`
+# while the gate cannot: it feeds verdict.awk crafted table fragments and
+# asserts the exit status and the verdict line, so the logic that decides a
+# required check is itself checked on every gate run, on a host that measures
+# nothing.
+verdict-test:
+	sh verdict-test.sh
 
 # ------------------------------------------------------------------ clean ---
 clean:

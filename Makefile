@@ -154,6 +154,13 @@ research-tests:
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/harness/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
+# The compute regression rule, over crafted table fragments. The check it
+# decides -- `.github/workflows/compute-regression.yml`, which times two
+# builds against each other -- is deliberately not a stage of this gate. This
+# target measures nothing, links nothing and needs no compiler, so the rule
+# that fails a required pull-request check is itself checked on every run of
+# `make check`.
+	TMPDIR="$(RESEARCH_TEST_TMP)" $(MAKE) -C research/experiments/compute-bench verdict-test
 
 # The programs of the I/O measurement bundle compile with the current
 # compiler. The bundle's protocols are measurements and stay out of the gate;
