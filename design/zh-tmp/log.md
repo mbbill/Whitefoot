@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 compiler 树剩余的叶子
+
+Nodes: compiler/resource-exhaustion-floor, compiler/tag-only-lowering, compiler/wide-probe-lowering
+
+Summary: 所有者确认这三个叶子都是有依据的真实决策：资源耗尽的中止记录与栈探测的选择、1 位与 32 位标签下沉及其测得的 34% 损失、以及宽探测快路径及其预注册的向量化器对照实验。资源耗尽那条因过长而改写措辞，并不再使用"可信计算基"一词，内容不变。至此 compiler 树审阅完毕：迁移产生的 10 个节点、35 条决策，现余 8 个节点、23 条决策。
+> 通俗解释：编译器树的最后三条都留下了，只把一句写得太长的话理顺。编译器这棵树整个过完了，砍掉的基本都是空话、历史包袱和重复。
+
 ## 2026-09-12 与所有者一起审阅 parallel-lowering 子树
 
 Nodes: compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/lane-stack

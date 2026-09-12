@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review the remaining compiler leaves with the owner
+
+Nodes: compiler/resource-exhaustion-floor, compiler/tag-only-lowering, compiler/wide-probe-lowering
+
+Summary: The owner confirmed all three leaves as real decisions with their evidence: the exhaustion abort record and the stack-probing choice, the one-bit and 32-bit tag lowering with its measured 34 percent penalty, and the wide-probe fast path with its preregistered vectorizer control. The exhaustion decision is reworded for length and no longer says trusted computing base; its content is unchanged. This completes the compiler tree review: 8 nodes and 23 decisions remain of the 10 nodes and 35 decisions the migration produced.
+
 ## 2026-09-12 Review the parallel-lowering subtree with the owner
 
 Nodes: compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/lane-stack
