@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 contracts、data-model、effects 与 name-resolution
+
+Nodes: language/contracts, language/data-model, language/data-model/container-representation, language/data-model/tag-only-equality, language/effects, language/name-resolution
+
+Summary: contracts 删去效果子类型那条否决项，它的理由只是复述决策；它的定律那条仍在讨论中。data-model 保留 struct-of-arrays 默认，把稳定身份改写为只声称只追加的契约存在，把搬迁规则一般化为任何在槽之间移动 owner 的操作而不再列举规范里没有的五种操作，删去树根已经陈述的语料证据那条，并吸收 container-representation 里两条属于数据模型的决策：数组状态，以及签名模式独立于表示；container-representation 删除，它的聚合表示那条是实现细节，库自选表示那条是对不存在之物的规划。tag-only-equality 去掉优化器事实的半句。effects 给精确性那条换上不依赖优化器事实的理由，并新增规范里有而树里缺的一条：`pure` 不承诺终止。name-resolution 不变。
+> 通俗解释：这一组主要是把"写得像已经存在其实没有"和"给未来做规划"的内容清掉，把一个只剩实现细节的文件并入父节点，另外补上了一条重要的语言事实：`pure` 不等于一定会返回。
+
 ## 2026-09-12 与所有者一起审阅 checks-and-proofs 的子节点
 
 Nodes: language/checks-and-proofs/certificate-fold, language/checks-and-proofs/obligation-discharge, language/checks-and-proofs/obligation-discharge/goal-decomposition, language/checks-and-proofs/obligation-discharge/loop-fact-retention, language/checks-and-proofs/obligation-discharge/writer-trap-surface, language/checks-and-proofs/requires-entry-contract, language/checks-and-proofs/requires-entry-contract/requirement-enforcement

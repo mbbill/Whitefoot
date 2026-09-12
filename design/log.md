@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review contracts, data-model, effects, and name-resolution with the owner
+
+Nodes: language/contracts, language/data-model, language/data-model/container-representation, language/data-model/tag-only-equality, language/effects, language/name-resolution
+
+Summary: contracts loses the effect-subtyping rejection, whose reason restated the decision; its law decision is still under discussion. data-model keeps the struct-of-arrays default, restates stable identity so that only the append-only contract is claimed to exist, generalizes the relocation rule to any operation that moves owners between slots instead of naming five operations the specification does not have, drops the corpus-as-evidence decision the root now states, and absorbs the two data-model decisions of container-representation, the array states and the independence of signature modes from representation; container-representation is deleted, its aggregate-representation decision being implementation and its library-representation decision a plan for something that does not exist. tag-only-equality loses its optimizer-fact clause. effects gives the exactness decision a reason that does not lean on optimizer facts and gains the decision that `pure` promises nothing about termination, which the specification states and the tree lacked. name-resolution is unchanged.
+
 ## 2026-09-12 Review the checks-and-proofs children with the owner
 
 Nodes: language/checks-and-proofs/certificate-fold, language/checks-and-proofs/obligation-discharge, language/checks-and-proofs/obligation-discharge/goal-decomposition, language/checks-and-proofs/obligation-discharge/loop-fact-retention, language/checks-and-proofs/obligation-discharge/writer-trap-surface, language/checks-and-proofs/requires-entry-contract, language/checks-and-proofs/requires-entry-contract/requirement-enforcement
