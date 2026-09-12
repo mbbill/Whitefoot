@@ -92,8 +92,9 @@ removed, and which commits implemented the entry, are found through git.
 5. Pull request. The lint and the gate run. The agent runs the consistency
    scan on every node the branch added or changed since the approved plan
    and the correspondence checks below over the pair of diffs, the tree
-   diff and the code diff. The owner reads first the decisions the
-   agent added on its own, each with the code that embodies it, then the
+   diff and the code diff. The owner reads the classification report: every
+   region the agent judged to need no decision, and every node the agent
+   added on its own with the code that embodies it, then the remaining
    findings, and approves or rejects each node; the agent changes code for
    every rejected one. Nothing merges with an unapproved node in the tree
    diff.
@@ -136,21 +137,23 @@ conflict, narrowing, or broken dependency found, naming both nodes.
 
 Inputs: the tree diff since the approved plan, the code diff of the pull
 request, and the existing tree nodes in the concept areas the code diff
-touches. For a language change the code is the specification.
+touches. For a language change the code is the specification. Every check
+is reading and judgment: nothing is compiled, deleted, or re-run for it, and
+CI owns the rest.
 
-C1. Justification. For each changed region of code (a new function, a
-changed hunk inside a function, a moved or split function): which node
-states the decision this change embodies? Report regions with no node.
+C1. Classification. For each changed region of code (a new function, a
+changed hunk inside a function, a moved or split function), report exactly
+one of two things. "No decision needed", with one line saying what was
+done: the region follows from a specification rule, from an existing node,
+or from ordinary engineering that any competent implementation would do the
+same way. Or "choice without a node", with the node the agent wrote for it.
+The owner reads every entry of both kinds; a "no decision needed" entry the
+owner questions becomes a choice and gets its node.
 
-C2. Delete test. For each region and the node it is matched to: if this
-region were removed, would the node still be fully implemented? If yes, the
-region is not justified by that node; report it as needing its own node or a
-more specific parent.
-
-C3. Orphaned support. For each deleted region: is the node it supported
+C2. Orphaned support. For each deleted region: is a node that it supported
 still present and still claiming to be implemented? Report each such node.
 
-C4. Unsupported node. For each node added or changed in the tree diff: which
+C3. Unsupported node. For each node added or changed in the tree diff: which
 code implements it? Report nodes with no supporting code.
 
 Also report: any deleted function whose disappearance retires an approach,
