@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 language 树根与 checks-and-proofs
+
+Nodes: language, language/checks-and-proofs
+
+Summary: language 树根保留四条决策。"一种行为"那条应所有者要求改为一般化表述：已接受的程序只有一种由语言固定的可观察行为，debug 与 release 只是例子；迁移成本那条也应所有者要求扩展为：语言选择只看本身的道理，不看迁移成本、不看现有语料里某件事出现的频率、也不看改动要花的工夫，因为语料是为锻炼编译器写的，不代表真实程序。checks-and-proofs 里，无 SMT 那条作为最重要的一条移到第一行；事实来源那条保留清单和否决项、去掉树根已经给出的理由；运行时回退那条作为树根的重复删除；第二条否决项改成直白的措辞。
+> 通俗解释：树根四条都留，其中两条按所有者的意思写得更一般：一是程序行为只能有一种，不限于 debug/release；二是设计语言不看改起来费不费事、也不拿测试用例当统计数据。checks-and-proofs 把最重要的"不用 SMT"挪到第一条，删了一条和树根重复的，其余精简措辞。
+
 ## 2026-09-12 与所有者一起审阅 compiler 树剩余的叶子
 
 Nodes: compiler/resource-exhaustion-floor, compiler/tag-only-lowering, compiler/wide-probe-lowering

@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review the language root and checks-and-proofs with the owner
+
+Nodes: language, language/checks-and-proofs
+
+Summary: The language root keeps its four decisions. The one-behavior decision is restated in general terms at the owner's request: an accepted program has one observable behavior fixed by the language, and debug against release is only the example; the migration-cost decision widens, also at the owner's request, into the rule that a language choice is made on its merits, never on migration cost, on how often the current corpus shows something, or on the effort a change would take, since the corpus was written to exercise the compiler and not to represent real programs. In checks-and-proofs the no-SMT decision moves to the first line as the most important one; the fact-source decision keeps its list and its refused alternative and drops the reason the root already gives; the runtime-fallback decision is removed as a restatement of the root; and the second rejected alternative is reworded plainly.
+
 ## 2026-09-12 Review the remaining compiler leaves with the owner
 
 Nodes: compiler/resource-exhaustion-floor, compiler/tag-only-lowering, compiler/wide-probe-lowering
