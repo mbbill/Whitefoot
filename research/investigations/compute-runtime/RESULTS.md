@@ -17683,26 +17683,29 @@ below 1.000 is the window behind:
 - **fir 0.963** [0.70-1.02], four of five.
 - **mandelbrot 0.982** [0.91-1.01], three of five.
 
-At the narrower widths the same twin is neutral to positive — records W=4
-**1.023**, fir W=4 **1.015**, mandelbrot W=4 **1.010**, quadrature W=4
-**0.988**, and at W=2 1.007, 1.012, 1.004 and 0.999. At the oversubscribed
-W=16, where sixteen lanes do not fit eight CPUs and the rule falls back to the
-fixed round bound, the four lines are 0.997, 1.116, 0.976 and 1.013: the
-oversubscription guard holds here as it does on the hosted runners. The W=1
-lines, where the twin's helper lanes never start and both arms run the same
-code on one thread, are 0.999, 0.999, 0.981 and 0.999.
+At the narrower widths the same twin is neutral to positive — records
+W=4 **1.023**, fir W=4 **1.015**, mandelbrot W=4 **1.010**, quadrature
+W=4 **0.988**, and the same four kernels at W=2 read 1.007, 1.012, 1.004
+and 0.999. At the oversubscribed W=16, where sixteen lanes do not fit
+eight CPUs and the rule falls back to the fixed round bound, the four lines
+are mandelbrot 0.997, quadrature 1.116, records 0.976 and fir 1.013: the
+oversubscription guard holds here as it does on the hosted runners. The
+W=1 lines, where the twin's helper lanes never start and both arms run
+the same code on one thread, are mandelbrot 0.999, quadrature 0.999,
+records 0.981 and fir 0.999.
 
 **This is recorded as OPEN, not as a refusal of the rule.** The likely
-mechanism is that this machine's cores are not alike: an M1 Pro with eight CPUs
-online is **six performance cores and two efficiency cores**, and eight hot
-lanes then compete for six fast cores, so the four lanes that would have parked
-under the shipped bound are now spinning on top of the lanes doing the work.
-The rule's admission test — lanes at most the online CPUs — **cannot see
-that**: it counts CPUs and every CPU here counts the same. Nothing in this tree changes
-on the strength of one local machine whose CPU column is also suspect (below).
-What would settle it is the same twin on a **heterogeneous x86 host**, where
-performance and efficiency cores are again unlike and the topology is legible
-from `/sys` — the owner's 8P+16E desktop — and the decision waits for that.
+mechanism is that this machine's cores are not alike: an M1 Pro with
+eight CPUs online is **six performance cores and two efficiency cores**,
+and eight hot lanes then compete for six fast cores, so a lane that would
+have parked under the shipped bound now spins on a core another lane is
+working on. The rule's admission test — lanes at most the online CPUs
+— **cannot see that**: it counts CPUs and every CPU here counts the
+same. Nothing in this tree changes on the strength of one local machine
+whose CPU column is also suspect (below). What would settle it is the same
+twin on a **heterogeneous x86 host**, where performance and efficiency
+cores are again unlike and the topology is legible from `/sys` — the
+owner's 8P+16E desktop — and the decision waits for that.
 
 **An instrument defect, and why no `cpu_r` is read above.** On Darwin the
 `cpu_us` of the reference rows in this table is not credible: `tbb` on records
