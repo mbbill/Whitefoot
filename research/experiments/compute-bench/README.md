@@ -88,6 +88,12 @@ make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/uni
      WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_SPLIT_WORK_UNIT=300000
 ```
 
+Not every value it carries is a constant to sweep. `-DWF_PAR_IDLE_WINDOW_ON_ASYMMETRIC=1`
+is a twin knob rather than a number: it restores the idle window on a machine
+whose CPUs are not all of one performance level, which the runtime now withholds
+it from, so the twin arm on such a machine is the old behaviour and the `wf` row
+is the new one.
+
 It is **empty by default**, kept in its own stamp file that the twin's four
 runtime object rules depend on — so setting it or clearing it recompiles and
 relinks the twin rather than re-timing the one the last run left — recorded in

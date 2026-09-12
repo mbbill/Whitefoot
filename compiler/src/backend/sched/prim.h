@@ -39,6 +39,15 @@ int wf_prim_thread_start(wf_prim_thread *thread, void (*entry)(void *), void *ar
 void wf_prim_floor_attach(void);
 void wf_prim_yield(void);
 unsigned wf_prim_online_cpus(void);
+/* How many distinct performance levels the CPUs this process may run on are
+ * drawn from. One means they are all alike, and one is also the answer when
+ * the host does not say, so a caller reading one behaves exactly as it did
+ * before this question could be asked. Above one is an asymmetric machine --
+ * Apple's performance and efficiency cores, Intel's hybrid parts, Arm
+ * big.LITTLE -- where two CPUs that wf_prim_online_cpus counts alike do not
+ * run at the same speed. Never zero: a count of levels has no unknown value
+ * distinct from "assume nothing", and one IS assuming nothing here. */
+unsigned wf_prim_cpu_levels(void);
 /* Monotonic microseconds from an unspecified fixed origin, so only
  * differences between two readings mean anything. Zero is reserved: it is
  * what a host with no usable monotonic clock answers, and a caller that reads

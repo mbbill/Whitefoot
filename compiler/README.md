@@ -302,14 +302,19 @@ An unstolen join target executes on the joining thread; a stolen target allows
 that thread to run other compute tasks and steal work before its bounded
 spin/yield/condition-wait slow path. How long a lane with no work stays hot
 before that park is an idle window in time, not a round count: a pool whose
-lanes at pool start are at or below the CPUs the process may run on spins for
+lanes at pool start are at or below the CPUs the process may run on, on a
+machine whose CPUs are all of one performance level, spins for
 `WF_PAR_IDLE_WINDOW_US` microseconds, sampled once per spin bound off
-`wf_prim_monotonic_us`, and an oversubscribed pool keeps the fixed round bound.
-The lane count and the CPU count come from `wf_prim_online_cpus`, which reads
-the affinity mask where that is cheap. Both are ordinary prim-layer
-declarations in [`sched/prim.h`](src/backend/sched/prim.h) with a host and a
-Windows definition, and [`sched/core.c`](src/backend/sched/core.c) records the
-measurements the window is sized against. Task storage belongs to the offering
+`wf_prim_monotonic_us`; an oversubscribed pool and an asymmetric machine both
+keep the fixed round bound. The CPU count comes from `wf_prim_online_cpus`,
+which reads the affinity mask where that is cheap, and the level count from
+`wf_prim_cpu_levels`, which reads `hw.nperflevels` on Darwin, `cpu_capacity`
+over the affinity mask on Linux and the CPU sets' efficiency classes on
+Windows, and answers one wherever the host does not say. All three are
+ordinary prim-layer declarations in
+[`sched/prim.h`](src/backend/sched/prim.h) with a host and a Windows
+definition, and [`sched/core.c`](src/backend/sched/core.c) records the
+measurements the window is sized against and the readings that withhold it. Task storage belongs to the offering
 lane until join, result access, and release finish. Deque cells and ownership
 claims are atomic; local execution avoids the completion runtime. Resource
 exhaustion retains the ordinary-call fallback and the native stack-exhaustion

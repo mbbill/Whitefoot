@@ -121,6 +121,48 @@
  * put lanes in a spin loop for a millisecond at a time, not because a reading
  * selected it.
  *
+ * THE MACHINE'S CORES HAVE TO BE ALIKE TOO, and the rule above cannot see
+ * whether they are. It counts CPUs, and a count treats every CPU as one unit
+ * of the same thing. The Apple M1 Pro sections of
+ * research/investigations/compute-runtime/RESULTS.md are where that assumption
+ * fails: eight online CPUs behind six performance cores and two efficiency
+ * cores, the lanes fitting the count exactly at W=8, and the zero-window
+ * control ahead of the window on every kernel that was measured there. "The
+ * idle window against a zero-window control at eight lanes", at `da4278dc`,
+ * reads `wf-b/wf` quadrature 0.847, records 0.915, fir 0.963 and mandelbrot
+ * 0.982 at W=8; "the idle window at a 2 ms call gap" and "the idle window at a
+ * 500 us call gap", both at `fd00c10c`, read mandelbrot 0.943 / 0.956,
+ * quadrature 0.771 / 0.802, records 0.961 / 0.928 and fir 0.925 / 0.926 at
+ * that width -- the control ahead on all four kernels at both call cadences,
+ * and the opposite sign from every Linux SMT runner above, where the same twin
+ * puts the window ahead or level. At W<=4 on that same machine the twin is
+ * flat, 0.98 to 1.02, and at the oversubscribed W=16 the rule above holds as
+ * it does everywhere else.
+ *
+ * THE READING, and it is a reading of those tables rather than a separate
+ * measurement: with the lanes exactly filling the CPU count, an idle lane
+ * staying hot on a performance core holds that core while a lane that has work
+ * to do sits on an efficiency one. The OS can move the working lane onto the
+ * fast core only once the idle lane parks, and the window is precisely the
+ * interval in which it does not. Four lanes on the same machine leave fast
+ * cores free whatever the idle ones do, which is why W<=4 reads flat, and an
+ * oversubscribed pool never opens the window at all. So the window asks the
+ * same kind of question of the machine that it already asks of the pool, and
+ * wf_prim_cpu_levels() answers it: more than one performance level among the
+ * CPUs this process may run on withholds the window exactly as more lanes than
+ * CPUs does. Neither test overrides the other; both must pass.
+ *
+ * The hosted evidence above is unchanged by construction -- every runner in it
+ * has CPUs of one level, so the new test answers one there and the window is
+ * still admitted on exactly the machines it was measured on. What this rule
+ * has NOT been measured as built code on is the machine it is for: the same
+ * M1 Pro twin, with WF_PAR_IDLE_WINDOW_ON_ASYMMETRIC defined on the twin arm
+ * so that arm keeps the window this rule now withholds, is what reads it back,
+ * and that arm is the whole reason the knob exists. Nothing that ships defines
+ * it. One more limit belongs beside the claim: wf_prim_cpu_levels does not see
+ * an Intel hybrid part on Linux, which publishes no capacity file; prim_host.c
+ * states that gap and what would close it rather than guessing at it.
+ *
  * The scheduler probes compile this file with WF_SCHED_TEST and hold native
  * threads at the park protocol's own race windows -- wf_sched_test_before_wait
  * fires from inside the sleep loop, and a coordinator thread waits on what it
@@ -777,6 +819,7 @@ static void wf__par_prepare(struct wf__par_lane *lane, int index) {
 static void wf__par_start(void) {
     int requested = wf__sched_lanes();
     unsigned cpus;
+    unsigned levels;
     int started = 0;
     if (requested < 2) return;
     /* The oversubscription test, answered once, here, because it is a property
@@ -791,8 +834,24 @@ static void wf__par_start(void) {
      * never turns the window on for a pool that is oversubscribed. Written
      * before the first worker thread exists, and never written again. */
     cpus = wf_prim_online_cpus();
+    /* And the machine-fact test, answered in the same place and for the same
+     * reason: whether the CPUs those lanes are counted against are alike. More
+     * than one performance level withholds the window, because on such a
+     * machine a hot idle lane holds a fast core that a working lane could be
+     * moved onto. An unknown answer is one -- uniform -- which keeps the
+     * behaviour the hosted evidence measured. */
+    levels = wf_prim_cpu_levels();
+#if defined(WF_PAR_IDLE_WINDOW_ON_ASYMMETRIC)
+    /* The twin's arm: take the window on an asymmetric machine too, which is
+     * the behaviour this test replaces, so the two can be timed in one set of
+     * passes on the machine that selected the test. Nothing that ships defines
+     * this. */
+    levels = 1u;
+#endif
     wf__par_idle_window_us =
-        (cpus != 0u && (unsigned)requested <= cpus) ? (uint64_t)WF_PAR_IDLE_WINDOW_US : 0u;
+        (cpus != 0u && (unsigned)requested <= cpus && levels <= 1u)
+            ? (uint64_t)WF_PAR_IDLE_WINDOW_US
+            : 0u;
     /* Prepare every deque before publishing a scan bound. Initialize the
      * owner's wait before any worker exists; preserve started workers on
      * later failure, and never destroy a station a worker may reach. */

@@ -17,7 +17,9 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "prim.h"
+#include <fcntl.h>
 #include <sched.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -87,6 +89,126 @@ unsigned wf_prim_online_cpus(void) {
 #endif
     online = sysconf(_SC_NPROCESSORS_ONLN);
     return online > 0 ? (unsigned)online : 0u;
+}
+
+/* The most distinct performance levels this probe will name before it stops
+ * distinguishing them. Four is already more than any shipping part has, and a
+ * machine that exceeds it is asymmetric several times over, so the ceiling is
+ * a bound on the work and never on the conclusion. */
+#define WF_PRIM_CPU_LEVEL_CEILING 4u
+
+#if defined(__linux__)
+/* One CPU's scheduler capacity, normalized by the kernel so the fastest CPU
+ * on the machine reads 1024. Zero return means the file was not there or did
+ * not parse, which is not the same as a capacity of zero. Fixed buffers, one
+ * open and one read: this runs once per process, at pool start. */
+static int wf_prim_cpu_capacity(unsigned cpu, unsigned long *capacity) {
+    char path[64];
+    char text[32];
+    int file;
+    ssize_t got;
+    char *end = NULL;
+    unsigned long value;
+    int written = snprintf(
+        path, sizeof path, "/sys/devices/system/cpu/cpu%u/cpu_capacity", cpu);
+    if (written < 0 || (size_t)written >= sizeof path) {
+        return 0;
+    }
+    file = open(path, O_RDONLY | O_CLOEXEC);
+    if (file < 0) {
+        return 0;
+    }
+    got = read(file, text, sizeof text - 1u);
+    (void)close(file);
+    if (got <= 0) {
+        return 0;
+    }
+    text[got] = '\0';
+    value = strtoul(text, &end, 10);
+    if (end == text || value == 0ul) {
+        return 0;
+    }
+    *capacity = value;
+    return 1;
+}
+#endif
+
+/* How many distinct performance levels the CPUs this process may run on are
+ * drawn from. One is both "they are alike" and "this host does not say", and
+ * the caller must treat those the same: it is the answer that assumes nothing.
+ *
+ * Darwin answers the question directly. `hw.nperflevels` is the number of
+ * levels the kernel groups this machine's cores into -- two on every Apple
+ * Silicon part that has efficiency cores, one on a part that does not -- and
+ * the name simply does not exist on Intel Macs or on macOS before 12, where
+ * the sysctl fails and one is the answer.
+ *
+ * Linux has no single name for it, and what it does have is per CPU: the
+ * scheduler's capacity of each CPU in `cpu_capacity`, normalized so the
+ * fastest CPU on the machine reads 1024. Counting the distinct values over
+ * the affinity mask -- the same set of CPUs wf_prim_online_cpus counts, read
+ * the same way -- answers the question wherever that file exists, which on
+ * the arm64 hosts that carry big.LITTLE is everywhere. A CPU in the mask
+ * whose capacity cannot be read makes the whole answer unknown rather than a
+ * count over the CPUs that did answer, because a count over a subset can
+ * report one level for a machine that has two.
+ *
+ * THE GAP, stated rather than guessed around: x86 Linux publishes no
+ * `cpu_capacity` at all -- capacity-aware scheduling is not wired to that
+ * topology -- so an Intel hybrid part with performance and efficiency cores
+ * reads no file here and this probe answers one for it. What would detect it
+ * is the per-CPU maximum frequency the `intel_pstate` driver publishes,
+ * `cpufreq/cpuinfo_max_freq` under each CPU, whose performance and efficiency
+ * values differ on a hybrid part; using it means first telling a hybrid part
+ * from a machine whose CPUs merely carry different boost ceilings, and that
+ * has not been measured on such a host. Until it is, x86 Linux counts as
+ * uniform and the caller keeps the behaviour it had before this probe
+ * existed. */
+unsigned wf_prim_cpu_levels(void) {
+#if defined(__APPLE__)
+    int levels = 0;
+    size_t width = sizeof levels;
+    if (sysctlbyname("hw.nperflevels", &levels, &width, NULL, 0) == 0
+        && levels > 0) {
+        return (unsigned)levels;
+    }
+    return 1u;
+#elif defined(__linux__)
+    cpu_set_t affinity;
+    unsigned long seen[WF_PRIM_CPU_LEVEL_CEILING];
+    unsigned levels = 0;
+    unsigned cpu;
+    CPU_ZERO(&affinity);
+    if (sched_getaffinity(0, sizeof affinity, &affinity) != 0) {
+        return 1u;
+    }
+    for (cpu = 0; cpu < (unsigned)CPU_SETSIZE; cpu += 1u) {
+        unsigned long capacity = 0ul;
+        unsigned index;
+        if (!CPU_ISSET((int)cpu, &affinity)) {
+            continue;
+        }
+        if (!wf_prim_cpu_capacity(cpu, &capacity)) {
+            return 1u;
+        }
+        for (index = 0; index < levels; index += 1u) {
+            if (seen[index] == capacity) {
+                break;
+            }
+        }
+        if (index < levels) {
+            continue;
+        }
+        if (levels == WF_PRIM_CPU_LEVEL_CEILING) {
+            return WF_PRIM_CPU_LEVEL_CEILING;
+        }
+        seen[levels] = capacity;
+        levels += 1u;
+    }
+    return levels > 0u ? levels : 1u;
+#else
+    return 1u;
+#endif
 }
 
 uint64_t wf_prim_monotonic_us(void) {
