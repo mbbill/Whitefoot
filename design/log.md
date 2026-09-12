@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review the parallel-lowering subtree with the owner
+
+Nodes: compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/lane-stack
+
+Summary: The owner ruled that the default-off decision for compute actualization does not belong in the tree: `--par` is an implementation choice that does not affect a program's correctness, and parallel lowering may become the default later, so the decision is removed. The Windows and startup decision is shortened to its content, fail loudly on a broken runtime or configuration while fewer workers than asked is not a broken configuration. In two-worlds the clone-set decision no longer repeats the root's rule-not-shape reason and states its own, that only functions able to reach a hand-out differ between the worlds. In parallel-runtime the I/O-join decision merges into the current-stack runtime decision it belonged to, and lane-stack's one decision and its rejected alternative move in as well, so lane-stack is deleted. Everything else in the subtree was confirmed as a real, measured decision.
+
 ## 2026-09-12 Review cleanup-traversal and derived-totality with the owner
 
 Nodes: compiler/cleanup-traversal, compiler/derived-totality

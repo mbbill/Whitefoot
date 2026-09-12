@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 parallel-lowering 子树
+
+Nodes: compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/lane-stack
+
+Summary: 所有者裁定"计算并行默认关闭"那条决策不属于这棵树：`--par` 是实现选择，不影响程序的正确性，并行下沉将来也可能成为默认，所以删除。Windows 与启动那条缩短为其实际内容：运行时或配置坏了要大声失败，而工作线程比请求的少不算坏掉的配置。two-worlds 里克隆集合那条不再重复树根的"按规则不按形状"，改为它自己的理由：只有能到达交付点的函数在两个世界里才不同。parallel-runtime 里 I/O 等待那条并入它本就所属的当前栈运行时决策，lane-stack 的唯一一条决策及其被否决方案也并入，因此 lane-stack 删除。子树里其余内容均确认为真实的、有测量的决策。
+> 通俗解释：这一组基本都是真决策，主要是精简：删掉了"并行默认关"这条（那只是个编译选项，不是设计决策），把 Windows 那条冗长的话缩成一句，把两条本来就是一回事的合并，把只有一条内容的 lane-stack 文件并进 parallel-runtime。
+
 ## 2026-09-12 与所有者一起审阅 cleanup-traversal 与 derived-totality
 
 Nodes: compiler/cleanup-traversal, compiler/derived-totality
