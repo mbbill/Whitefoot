@@ -2658,7 +2658,7 @@ fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
 fn system_index_helpers_agree_with_the_preorder_entity_map() {
     // The index helpers derive table positions arithmetically from the
     // [SYS-2] preorder; this pins them to `system_entity`, the authoritative
-    // ordinal-to-entity map, across every one of the 167 records.
+    // ordinal-to-entity map, across every one of the 307 records.
     use super::SystemDeclarationId;
     use super::catalog::{
         SYSTEM_NOMINALS, SystemEntity, system_constructor_declaration, system_constructor_index,
@@ -2666,61 +2666,52 @@ fn system_index_helpers_agree_with_the_preorder_entity_map() {
         system_operation_index, system_operations, system_release_row,
     };
 
-    // Every inventory state: a candidate's extra nominal types shift every
-    // constructor and operation ordinal, so the helpers must agree with the
-    // entity map under each state separately.
-    for surface in [
-        crate::Inventory::Base,
-        crate::Inventory::Traversal,
-        crate::Inventory::OpenByName,
-    ] {
-        let mut nominals = 0_usize;
-        let mut constructors = 0_usize;
-        let mut operations = 0_usize;
-        for ordinal in 0..=u16::from(u8::MAX) * 2 {
-            let id = SystemDeclarationId::new(ordinal);
-            match system_entity(id, surface) {
-                Some(SystemEntity::Nominal(nominal)) => {
-                    let index = system_nominal_index(id, surface).expect("nominal index");
-                    assert_eq!(
-                        system_nominals(surface)[usize::from(index)].spelling,
-                        nominal.spelling
-                    );
-                    assert!(system_constructor_index(id, surface).is_none());
-                    assert!(system_operation_index(id, surface).is_none());
-                    nominals += 1;
-                }
-                Some(SystemEntity::Constructor(constructor)) => {
-                    let index = system_constructor_index(id, surface).expect("constructor index");
-                    assert_eq!(
-                        system_constructors(surface)[usize::from(index)].spelling,
-                        constructor.spelling
-                    );
-                    assert_eq!(system_constructor_declaration(index, surface), Some(id));
-                    assert!(system_nominal_index(id, surface).is_none());
-                    assert!(system_operation_index(id, surface).is_none());
-                    constructors += 1;
-                }
-                Some(SystemEntity::Operation(operation)) => {
-                    let index = system_operation_index(id, surface).expect("operation index");
-                    assert_eq!(
-                        system_operations(surface)[usize::from(index)].spelling,
-                        operation.spelling
-                    );
-                    assert!(system_nominal_index(id, surface).is_none());
-                    assert!(system_constructor_index(id, surface).is_none());
-                    operations += 1;
-                }
-                None => {
-                    assert!(system_constructor_index(id, surface).is_none());
-                    assert!(system_operation_index(id, surface).is_none());
-                }
+    let mut nominals = 0_usize;
+    let mut constructors = 0_usize;
+    let mut operations = 0_usize;
+    for ordinal in 0..=u16::from(u8::MAX) * 2 {
+        let id = SystemDeclarationId::new(ordinal);
+        match system_entity(id) {
+            Some(SystemEntity::Nominal(nominal)) => {
+                let index = system_nominal_index(id).expect("nominal index");
+                assert_eq!(
+                    system_nominals()[usize::from(index)].spelling,
+                    nominal.spelling
+                );
+                assert!(system_constructor_index(id).is_none());
+                assert!(system_operation_index(id).is_none());
+                nominals += 1;
+            }
+            Some(SystemEntity::Constructor(constructor)) => {
+                let index = system_constructor_index(id).expect("constructor index");
+                assert_eq!(
+                    system_constructors()[usize::from(index)].spelling,
+                    constructor.spelling
+                );
+                assert_eq!(system_constructor_declaration(index), Some(id));
+                assert!(system_nominal_index(id).is_none());
+                assert!(system_operation_index(id).is_none());
+                constructors += 1;
+            }
+            Some(SystemEntity::Operation(operation)) => {
+                let index = system_operation_index(id).expect("operation index");
+                assert_eq!(
+                    system_operations()[usize::from(index)].spelling,
+                    operation.spelling
+                );
+                assert!(system_nominal_index(id).is_none());
+                assert!(system_constructor_index(id).is_none());
+                operations += 1;
+            }
+            None => {
+                assert!(system_constructor_index(id).is_none());
+                assert!(system_operation_index(id).is_none());
             }
         }
-        assert_eq!(nominals, system_nominals(surface).len());
-        assert_eq!(constructors, system_constructors(surface).len());
-        assert_eq!(operations, system_operations(surface).len());
     }
+    assert_eq!(nominals, system_nominals().len());
+    assert_eq!(constructors, system_constructors().len());
+    assert_eq!(operations, system_operations().len());
 
     // Exactly native resource closes may suspend; logical releases are inline.
     for (index, nominal) in SYSTEM_NOMINALS.iter().enumerate() {

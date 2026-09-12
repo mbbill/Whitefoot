@@ -1015,7 +1015,7 @@ fn system_nominal_ir_type(
         let IrNominalKind::Enum { variants } = nominal.kind() else {
             return Ok(false);
         };
-        let constructors = crate::system_constructors(crate::Inventory::ACTIVE)
+        let constructors = crate::system_constructors()
             .iter()
             .filter(|constructor| constructor.owner == index)
             .collect::<Vec<_>>();

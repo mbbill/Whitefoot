@@ -18,8 +18,6 @@ use whitefoot::{
     compile_with_overlap, compile_with_permission_ledger, module_requires_completion_runtime,
     module_requires_parallel_runtime,
 };
-// Read by the superseded-inventory rejection in the directory-walking cases.
-use whitefoot::{Inventory, compile_with_inventory};
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 
@@ -302,19 +300,6 @@ pub fn program_permission_ledger(name: &str) -> Vec<String> {
         compile_with_permission_ledger(&inputs, CompilerLimits::default(), OverlapLowering::Off)
             .expect("program corpus source must compile");
     ledger
-}
-
-/// Compiles one corpus program against a named superseded [SYS-2] inventory
-/// and returns its rejection. Current program execution always uses the
-/// complete active inventory.
-///
-pub fn compile_program_rejection_with(name: &str, inventory: Inventory) -> String {
-    let source = read_program(name);
-    let inputs = [SourceInput::new(name, &source)];
-    match compile_with_inventory(&inputs, CompilerLimits::default(), inventory) {
-        Ok(_) => panic!("source that must be rejected compiled"),
-        Err(failure) => failure.to_string(),
-    }
 }
 
 pub fn compile_sources(sources: &[(&str, &[u8])]) -> String {

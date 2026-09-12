@@ -19,7 +19,7 @@ use crate::{
     FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
     ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
     TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
-    emit_llvm, finalize, lex, lower_checked, parse, resolve_with_inventory,
+    emit_llvm, finalize, lex, lower_checked, parse, resolve,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -270,7 +270,8 @@ pub fn compile(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
 ) -> Result<String, CompilationFailure> {
-    compile_with_inventory(inputs, limits, crate::Inventory::ACTIVE)
+    compile_reporting(inputs, limits, crate::OverlapLowering::Completion)
+        .map(|reported| reported.module)
 }
 
 /// [`compile`] with the [PAR-1 candidate] overlap lowering named explicitly.
@@ -285,8 +286,7 @@ pub fn compile_with_overlap(
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
 ) -> Result<String, CompilationFailure> {
-    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
-        .map(|reported| reported.module)
+    compile_reporting(inputs, limits, overlap).map(|reported| reported.module)
 }
 
 /// [`compile_with_overlap`] plus the non-normative permission ledger for the
@@ -305,8 +305,7 @@ pub fn compile_with_permission_ledger(
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
 ) -> Result<(String, Vec<String>), CompilationFailure> {
-    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
-        .map(|reported| (reported.module, reported.ledger))
+    compile_reporting(inputs, limits, overlap).map(|reported| (reported.module, reported.ledger))
 }
 
 /// [`compile_with_overlap`] plus the permission-ledger lines an ordinary
@@ -327,30 +326,7 @@ pub fn compile_with_io_notices(
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
 ) -> Result<(String, Vec<String>), CompilationFailure> {
-    compile_reporting(inputs, limits, crate::Inventory::ACTIVE, overlap)
-        .map(|reported| (reported.module, reported.notices))
-}
-
-/// [`compile`] against one named [SYS-2] inventory state.
-///
-/// `inventory` selects which prefix of the [SYS-2] tables the compilation
-/// admits. It exists so an end-to-end test can compile and run a real program
-/// against an inventory before activation, and so the differential against an
-/// earlier inventory stays reachable afterward; the shipped compilation path
-/// reads [`crate::Inventory::ACTIVE`] and has exactly one inventory. Historical
-/// prefix states remain test-only differentials, never runtime switches.
-pub fn compile_with_inventory(
-    inputs: &[SourceInput<'_>],
-    limits: CompilerLimits,
-    inventory: crate::Inventory,
-) -> Result<String, CompilationFailure> {
-    compile_reporting(
-        inputs,
-        limits,
-        inventory,
-        crate::OverlapLowering::Completion,
-    )
-    .map(|reported| reported.module)
+    compile_reporting(inputs, limits, overlap).map(|reported| (reported.module, reported.notices))
 }
 
 /// One compilation's module and the developer-channel text it produced.
@@ -371,7 +347,6 @@ struct Reported {
 fn compile_reporting(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
-    inventory: crate::Inventory,
     overlap: crate::OverlapLowering,
 ) -> Result<Reported, CompilationFailure> {
     let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
@@ -513,7 +488,7 @@ fn compile_reporting(
             ));
         }
     };
-    let resolved = match resolve_with_inventory(canonical, inventory) {
+    let resolved = match resolve(canonical) {
         ResolutionOutcome::Complete(complete) => complete,
         ResolutionOutcome::SourceIssue { issue, .. } => {
             let coordinate = issue.origin().coordinate();

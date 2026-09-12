@@ -21,10 +21,8 @@ use std::path::Path;
 use std::process::Command;
 
 use super::support::{
-    CompiledProgram, build_program, close_path, compile_program, compile_program_rejection_with,
-    fixture_directory, reopen_path,
+    CompiledProgram, build_program, close_path, compile_program, fixture_directory, reopen_path,
 };
-use whitefoot::Inventory;
 
 /// The reusable input run length in `tests/programs/wfgrep.wf`.
 ///
@@ -433,30 +431,15 @@ fn an_enumerated_symbolic_link_is_not_followed() {
     assert_eq!(output.status.code(), Some(0));
 }
 
-/// Admission is decided by the inventory the specification declares, never by
-/// the compiler recognizing a source shape: the identical search source
-/// compiles against the complete active inventory and is an undeclared name
-/// against the pre-permit inventory.
+/// The search source compiles against the complete [SYS-2] inventory and
+/// resolves to exactly the approved implementations below, pinned by symbol
+/// rather than by any source name [QUAL-1].
 #[test]
-fn the_search_source_requires_the_complete_file_permit_inventory() {
+fn the_search_source_compiles_using_its_approved_system_implementations() {
     let llvm = compile_program("wfgrep.wf");
-    // The approved implementations, by symbol rather than by any source name
-    // [QUAL-1].
     assert!(llvm.contains("@wf.sys.open_file.v1"));
     assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
     assert!(llvm.contains("@wf.sys.directory_next.v1"));
     assert!(llvm.contains("@wf.sys.open_directory.v1"));
     assert!(llvm.contains("@wf.sys.read_at.v1"));
-
-    let failure = compile_program_rejection_with("wfgrep.wf", Inventory::OpenByName);
-    assert!(
-        failure.contains("UnresolvedUse")
-            && (failure.contains("HandleFactory") || failure.contains("reserve_handle")),
-        "the pre-permit inventory must reject explicit file authority: {failure}"
-    );
 }
-
-// The old traversal/open-by-name byte differential ended when the file-permit
-// amendment changed open signatures and added nominal types. It is not muted:
-// its premise no longer exists. The active-inventory program tests and catalog
-// count/ordinal tests now cover the two separate obligations.

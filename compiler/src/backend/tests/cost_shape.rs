@@ -83,7 +83,7 @@
 use std::sync::OnceLock;
 
 use super::deterministic_target::{HostScript, run_emitted_on_deterministic_host};
-use super::system::with_ir_for;
+use super::system::with_ir;
 use super::{host_optimized_module, optimized_main, optimized_main_wrapper};
 use crate::backend::emit_llvm;
 use crate::backend::emitter::emit_llvm_for_target;
@@ -103,7 +103,7 @@ const WFGREP: &[u8] = include_bytes!("../../../../tests/programs/wfgrep.wf");
 fn modules() -> &'static (String, String) {
     static MODULES: OnceLock<(String, String)> = OnceLock::new();
     MODULES.get_or_init(|| {
-        with_ir_for(WFGREP, crate::Inventory::FilePermits, |program| {
+        with_ir(WFGREP, |program| {
             (
                 emit_llvm(program)
                     .expect("lowered program must emit")

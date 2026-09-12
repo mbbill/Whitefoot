@@ -8239,21 +8239,13 @@ fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positiv
             include_bytes!("../../../../tests/programs/wfgrep.wf"),
         )],
     ];
-    // Every frozen source now names the active inventory. In particular,
-    // `wfgrep.wf` reserves a HandlePermit before each typed open, so the older
-    // pre-permit `OpenByName` inventory can no longer resolve that bundle.
-    let inventories = [
-        crate::Inventory::ACTIVE,
-        crate::Inventory::ACTIVE,
-        crate::Inventory::ACTIVE,
-    ];
     // Bundle 0 is `utf8parse.wf`, bundle 1 the raw DEFLATE chain, bundle 2
     // `wfgrep.wf`; the expectation is keyed on the bundle because B7c4b-1 gave
     // exactly one of the three mains a counted loop of its own — utf8parse's
     // output run is taken from a bump extent and filled by a counted `for`
     // where it was a `buffer_new` with an initial value.
-    for (bundle, (inputs, inventory)) in bundles.into_iter().zip(inventories).enumerate() {
-        super::with_semantics_inputs_for(inputs, inventory, |outcome| {
+    for (bundle, inputs) in bundles.into_iter().enumerate() {
+        super::with_semantics_inputs(inputs, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
                 panic!("frozen real source bundle must remain accepted: {outcome:?}");
             };

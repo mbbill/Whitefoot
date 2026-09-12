@@ -369,7 +369,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.parse_container_type(node, id, substitution);
                 }
                 ResolvedTarget::System(id) => {
-                    let index = crate::system_nominal_index(id, self.inventory())
+                    let index = crate::system_nominal_index(id)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     if targs.is_some() {
                         return self.issue_node(

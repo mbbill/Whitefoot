@@ -152,17 +152,6 @@ fn with_resolution<ResultValue>(
     run(resolve(canonical))
 }
 
-fn with_semantics_inputs<ResultValue>(
-    inputs: &[SourceInput<'_>],
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        SemanticOutcome<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
-) -> ResultValue {
-    with_semantics_inputs_for(inputs, crate::Inventory::ACTIVE, run)
-}
-
-/// [`with_semantics_inputs`] against one named [SYS-2] inventory state.
-///
 /// Asserts that one source is refused at the parse stage citing one rule.
 ///
 /// A grammar the tables cannot derive is refused before the checker sees it,
@@ -193,11 +182,8 @@ fn assert_parse_rule(source: &[u8], rule: crate::SyntaxRule) {
     assert_eq!(issue.rule(), rule);
 }
 
-/// A frozen real source may name the inventory that first declared an
-/// operation; every other caller takes the active one.
-fn with_semantics_inputs_for<ResultValue>(
+fn with_semantics_inputs<ResultValue>(
     inputs: &[SourceInput<'_>],
-    inventory: crate::Inventory,
     run: impl for<'classified, 'lexed, 'source> FnOnce(
         SemanticOutcome<'classified, 'lexed, 'source>,
     ) -> ResultValue,
@@ -226,7 +212,7 @@ fn with_semantics_inputs_for<ResultValue>(
     let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
         panic!("semantic test source must be canonical");
     };
-    let outcome = crate::resolve_with_inventory(canonical, inventory);
+    let outcome = crate::resolve(canonical);
     let ResolutionOutcome::Complete(resolved) = outcome else {
         panic!("semantic test source must resolve: {outcome:?}");
     };

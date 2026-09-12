@@ -429,7 +429,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         };
         Ok(matches!(
-            system_entity(id, self.inventory()),
+            system_entity(id),
             Some(SystemEntity::Nominal(entry)) if entry.spelling == nominal
         ))
     }

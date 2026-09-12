@@ -28,7 +28,7 @@ pub(super) fn with_ir<ResultValue>(
         &IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
-    with_ir_for(source, crate::Inventory::ACTIVE, run)
+    with_mutated_ir(source, |program| run(program))
 }
 
 pub(super) fn with_mutated_ir<ResultValue>(
@@ -37,32 +37,7 @@ pub(super) fn with_mutated_ir<ResultValue>(
         &mut IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
-    with_mutated_ir_for(source, crate::Inventory::ACTIVE, run)
-}
-
-/// [`with_ir`] against one named [SYS-2] inventory state.
-///
-/// The cost-shape anchor is a real corpus program, and that program now uses
-/// active `open_file` [SYS-11], so it names the inventory that declares it.
-/// Every other caller takes the active one.
-pub(super) fn with_ir_for<ResultValue>(
-    source: &[u8],
-    inventory: crate::Inventory,
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        &IrProgram<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
-) -> ResultValue {
-    with_mutated_ir_for(source, inventory, |program| run(program))
-}
-
-fn with_mutated_ir_for<ResultValue>(
-    source: &[u8],
-    inventory: crate::Inventory,
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        &mut IrProgram<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
-) -> ResultValue {
-    with_mutated_ir_for_overlap(source, inventory, OverlapLowering::Off, run)
+    with_mutated_ir_for_overlap(source, OverlapLowering::Off, run)
 }
 
 /// [`with_mutated_ir`] under the shipped completion lowering.
@@ -77,12 +52,7 @@ pub(super) fn with_mutated_completion_ir<ResultValue>(
         &mut IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
-    with_mutated_ir_for_overlap(
-        source,
-        crate::Inventory::ACTIVE,
-        OverlapLowering::Completion,
-        run,
-    )
+    with_mutated_ir_for_overlap(source, OverlapLowering::Completion, run)
 }
 
 /// [`with_ir`] under the opt-in compute overlap lowering.
@@ -96,17 +66,11 @@ pub(super) fn with_parallel_ir<ResultValue>(
         &IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
-    with_mutated_ir_for_overlap(
-        source,
-        crate::Inventory::ACTIVE,
-        OverlapLowering::On,
-        |program| run(program),
-    )
+    with_mutated_ir_for_overlap(source, OverlapLowering::On, |program| run(program))
 }
 
 fn with_mutated_ir_for_overlap<ResultValue>(
     source: &[u8],
-    inventory: crate::Inventory,
     overlap: OverlapLowering,
     run: impl for<'classified, 'lexed, 'source> FnOnce(
         &mut IrProgram<'classified, 'lexed, 'source>,
@@ -135,8 +99,7 @@ fn with_mutated_ir_for_overlap<ResultValue>(
     let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
         panic!("system test source must be canonical");
     };
-    let ResolutionOutcome::Complete(resolved) = crate::resolve_with_inventory(canonical, inventory)
-    else {
+    let ResolutionOutcome::Complete(resolved) = crate::resolve(canonical) else {
         panic!("system test source must resolve");
     };
     let checked = match check_semantics(resolved) {
