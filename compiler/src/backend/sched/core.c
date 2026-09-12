@@ -11,27 +11,147 @@
 #define WF_PAR_FRAME_BYTES WF_SCHED_FRAME_BYTES
 #define WF_PAR_LANE_SLOTS WF_SCHED_LANE_SLOTS
 #define WF_PAR_CACHE_LINE 128
-/* How long a lane with nothing to run stays hot before it parks, as a count of
- * misses rather than a time. A lane should not pay for a sleep in order to save
- * less than the sleep costs, so the count is only meaningful against what a
- * round costs and what a park costs, and both are measured by
- * wake_probe.c on the host the choice is made for. On the four-CPU Linux
- * development host that probe reads a park-and-wake of 16.3 us -- the median of
- * seven runs of 2,000 alternating parks through this file's own wf__par_signal
- * and wf_prim_wait_sleep -- and one wf__par_find round at 18.9 ns uncontended at
- * four lanes, so 1,024 rounds is a window of about 19.4 us. That is the nearest
- * of {256, 1024, 4096} to the wake cost, and the compute scoreboard swept all
- * three: 256, a window of 4.8 us, regresses quadrature's W=4 wall ratio from
- * 1.013/0.925 to 1.182 with none of five paired passes lower, while 1,024
- * regresses no kernel's ratio beyond its own MAD at any width and improves fir
- * at all three parallel widths, records at W=4 and mandelbrot at W=8
- * (research/investigations/compute-runtime/RESULTS.md, the spin bound sized to
- * a measured park-and-wake). Re-measure both numbers before moving this: a
- * change that makes a round cheaper shortens this window by the same factor and
- * is not a separate variable. */
+/* How long a lane with nothing to run stays hot before it parks. Two numbers
+ * answer that: how often the lane may reconsider, and how long it goes on
+ * reconsidering.
+ *
+ * HOW OFTEN is a count of misses, and it is unchanged. A lane should not pay
+ * for a sleep in order to save less than the sleep costs, so the count is only
+ * meaningful against what a round costs and what a park costs, and both are
+ * measured by wake_probe.c on the host the choice is made for. Re-measured at
+ * this revision on 2026-09-12, on a four-CPU Linux development host, that
+ * probe reads a park-and-wake of 10.3 us -- the median of seven runs of 2,000
+ * alternating parks through this file's own wf__par_signal and
+ * wf_prim_wait_sleep -- and a spin-round floor of 11.6 ns, the median of the
+ * same seven runs, uncontended at four lanes, so 1,024 rounds is about 11.9
+ * us. (The reading this comment carried before, taken on 2026-09-11 on another
+ * machine of that class, was 16.3 us and 18.9 ns, about 19.4 us for 1,024
+ * rounds. The probe is run per host rather than inherited for exactly that
+ * spread.)
+ *
+ * What the round figure is: the probe times wf__par_find alone, the FULL SCAN,
+ * which is the round of a lane that has not yet reached the first spin bound.
+ * It brackets a real round rather than equalling one. A real round also issues
+ * wf_prim_spin_hint(), which the probe does not, so an ungated round costs
+ * somewhat more than the floor; and past the first bound inside the window the
+ * publish epoch below replaces the scan with a single counter load, so a gated
+ * round costs less. Both regimes are far below a monotonic clock read, which is
+ * why the window below is sampled once per 1,024 rounds and this count is now
+ * the window's resolution rather than the whole of a lane's patience. It is
+ * also why a changed round cost is not a separate variable: the window is
+ * measured on the clock, so a cheaper or dearer round moves the sampling
+ * interval and not how long a lane stays hot. Re-measure both numbers before
+ * moving the count.
+ *
+ * HOW LONG is a time, and it depends on whether the pool fits the machine.
+ * On the hosted ubuntu-24.04 runners -- two cores, two SMT siblings each, four
+ * online CPUs -- a lane that parks on a condvar and is woken by a publisher
+ * comes back slow. The per-call evidence is in the raw.tsv of run 34631106340.
+ * Fir at W=2, each call against the fastest call of its own pass: the first
+ * call reads 1.31 to 2.21, and in three of the five passes calls one through
+ * four are still 1.06 to 1.98. Its first pass spends 8.5, 7.6 and 6.5 ms on
+ * the first three calls against 3.8 ms on the last, while process CPU rises
+ * 2.04 times against the wall's 2.21 -- so the extra wall is two lanes running
+ * slowly, not one lane waiting. The `static` reference, whose helpers busy-wait
+ * and never sleep, reads 1.21 to 1.24 on its first call and 1.00 to 1.04 on
+ * every call after, in every pass. The reading is that the woken lane is
+ * placed next to its waker until the load balancer separates them; what is
+ * measured is that it costs the first few calls of every process, tens of
+ * milliseconds, and that the arm which never sleeps does not pay it.
+ *
+ * Two twins measured what a longer window is worth. Lanes that never park
+ * (spin bound 10^9, run 34631106340) took mandelbrot's W=4 paired wall to
+ * 0.922 of the shipped runtime with four of five pairs lower and fir's W=2 to
+ * 0.934 with four of five, and collapsed once the pool no longer fit: at eight
+ * lanes on four CPUs they read 2.699, 2.945, 3.487 and 6.702. A 16,384-round
+ * bound (run 34632558439) kept the saving in CPU where the pool did fit --
+ * paired CPU 0.934 at fir W=2, 0.952 at fir W=4, 0.963 and 0.970 at records --
+ * and still cost 1.158 to 1.304 in paired wall at W=8 on three of the four
+ * kernels. So a long idle window is right when the pool is not oversubscribed
+ * and wrong when it is, which is the rule below: lanes at pool start against
+ * the CPUs this process may run on
+ * (research/investigations/compute-runtime/RESULTS.md, run 34631106340 with
+ * the A/B control -DWF_PAR_SPIN_ROUNDS=1000000000, and run 34632558439 with
+ * the A/B control -DWF_PAR_SPIN_ROUNDS=16384; the per-call series that the
+ * placement evidence is read off are in each run's raw.tsv).
+ *
+ * 1,000 us is not a swept value and nothing here selects it. It is two orders
+ * of magnitude above the park-and-wake this file's own probe measures and an
+ * order of magnitude below the tens of milliseconds the hosted per-call series
+ * takes to settle, so it is long enough to cover a wake and short enough that
+ * a lane no longer needed stops burning a CPU within a millisecond. The guard
+ * is what lets the compute scoreboard build its A/B twin at another value
+ * through WF_RUNTIME_CONTROL_FLAGS and measure it against the shipped runtime
+ * inside one set of passes.
+ *
+ * The rule was then measured as shipped, against a control built at
+ * WF_PAR_IDLE_WINDOW_US=0 on the same SMT runner class (run 34638747514,
+ * whose machine is a slow one of that class -- mandelbrot W=4 reads 5,676 us
+ * on oneTBB). Read as control over windowed, so above 1.000 is the window
+ * ahead: mandelbrot 1.005 / 1.007 / 0.986 at W=2/4/8, fir 1.000 / 1.006 /
+ * 0.975 (five of five lower at W=8), quadrature 1.016 / 0.995 / 1.003,
+ * records 1.014 / 0.955 / 1.029. Three things in that: the oversubscription
+ * guard holds -- W=8 does not collapse the way the never-park twin did -- the
+ * window buys half a percent to one and a half on mandelbrot and fir at the
+ * fitted widths, and it is NOT free. The paired CPU column reads 0.972 and
+ * 0.958 at mandelbrot W=2/W=4 and 0.977 and 0.956 at fir, so the window
+ * spends three to four percent more process CPU than the control for that
+ * wall, and records W=4 loses 4.5 percent of wall outright with the control
+ * lower in four of five pairs.
+ *
+ * That cost is what the publish epoch below answers, and the reason is stated
+ * beside it: a lane spinning out the window called wf__par_find every round,
+ * and that reads two lines per other lane -- the lines a working lane writes
+ * on every push and pop. Records is memory-bound and crosses 64 chunk
+ * boundaries a call, which is why it pays most. An idle lane past the first
+ * spin bound now reads one counter instead, and scans only when it moves.
+ *
+ * Each spin round also issues the hardware hint an SMT sibling needs from its
+ * partner: wf_prim_spin_hint() is YieldProcessor() on Windows -- _mm_pause on
+ * x86 and x64, a store barrier plus yield on arm -- and `pause` on x86 and
+ * `yield` on aarch64 for the POSIX hosts too (prim.h); before that a POSIX
+ * spin round emitted no pause at all, which is the tightest loop an SMT
+ * sibling can be asked to share a core with. That hint is REASONED AND
+ * UNMEASURED IN ISOLATION: no twin separates it from anything else, and the
+ * hosted evidence above measured the window, not the hint. What stands behind
+ * it is the structure of the host -- a lane spinning on one of these two-core,
+ * four-CPU SMT runners shares a core with a sibling that needs the spinning
+ * partner to release issue slots -- and the cost of being wrong is one
+ * instruction a round. It landed with the window because that is the work that
+ * put lanes in a spin loop for a millisecond at a time, not because a reading
+ * selected it.
+ *
+ * The scheduler probes compile this file with WF_SCHED_TEST and hold native
+ * threads at the park protocol's own race windows -- wf_sched_test_before_wait
+ * fires from inside the sleep loop, and a coordinator thread waits on what it
+ * publishes. Those probes assert the protocol, not this policy, and a window
+ * would make when a lane arrives at that hook depend on a wall clock rather
+ * than on a fixed number of misses. Under WF_SCHED_TEST the window is
+ * therefore compile-time zero: the loops then take exactly the fixed bound
+ * below, which is the arrival those hooks were written against. The epoch
+ * shortcut needs no separate switch for the same reason -- it is gated on the
+ * window having opened, so a zero window leaves every round a full scan and
+ * the enumerating probes reach wf__par_find, wf__par_steal and their hooks on
+ * exactly the rounds they always did.
+ *
+ * This selects how an already admitted program waits. It is not a timeout, a
+ * fuel bound or a proof-work budget; no acceptance path reads it, it cannot
+ * reject a program, and with the window at zero the loops behave as they did
+ * before it existed. */
+#ifndef WF_PAR_SPIN_ROUNDS
 #define WF_PAR_SPIN_ROUNDS 1024
+#endif
+#if defined(WF_SCHED_TEST)
+#undef WF_PAR_IDLE_WINDOW_US
+#define WF_PAR_IDLE_WINDOW_US 0
+#endif
+#ifndef WF_PAR_IDLE_WINDOW_US
+#define WF_PAR_IDLE_WINDOW_US 1000
+#endif
 /* Yields are cheap next to a park and the sweep gave no reason to move them. */
+#ifndef WF_PAR_YIELD_ROUNDS
 #define WF_PAR_YIELD_ROUNDS 16
+#endif
 /* How many chunks an independent map may be split into, as a multiple of the
  * lane count. `wf__par_split_budget` below combines this with the work term --
  * span / ceil(work unit / weight), the floor on chunk size entry.c owns -- by
@@ -39,28 +159,57 @@
  * size: a range too small to be worth splitting stays bounded by the work term
  * however much oversubscription this allows.
  *
- * What is known about 16, which arrived with the splitter: on the compute
- * scoreboard it is the BINDING term for two of the three map kernels at the
- * widths that host records. At weight 812 over
- * 131,072 records and weight 150 over 524,288 outputs the work term affords
- * far more chunks than `16 * lanes`, so records and fir read exactly 32 chunks
- * at two lanes and 64 at four -- the cap, not the grain -- which is why the
- * work unit's own sweep could not move either row at either width
+ * What is known about 16, which arrived with the splitter: at the work unit
+ * entry.c now carries, 150,000, it is the BINDING term for all three of the
+ * compute scoreboard's map kernels at the widths a four- or eight-CPU host
+ * records. The work term affords mandelbrot 143 chunks (weight 219 over 98,304
+ * points), records 708 (weight 812 over 131,072 records) and fir 524 (weight
+ * 150 over 524,288 outputs), so every one of them reads 32 chunks at two
+ * lanes, 64 at four and 128 at eight: the cap, not the grain. Past that the
+ * two large maps stay on the cap -- records and fir read 256 at sixteen lanes
+ * and 512 at thirty-two -- while mandelbrot's work term binds again from
+ * sixteen lanes up and holds it at 128. So for these sizes this cap IS the
+ * grain at the recorded widths, and it is no longer slack anywhere below
+ * sixteen lanes. (Until 2026-09-12 the work unit was 1,200,000, and the
+ * division was the other way: records and fir were cap-bound at 32 and 64
+ * while mandelbrot could afford only 17 chunks, so its 16 were the grain --
+ * which is why the work unit's own sweep could not move the records or fir row
+ * at either width. That remains a true statement about those runs
  * (research/investigations/compute-runtime/RESULTS.md, the split work unit
- * swept against the Mandelbrot grain). Mandelbrot is the opposite case: at
- * weight 219 over 98,304 points the work term affords 17, so its 16 chunks are
- * the grain and this cap is slack there; against it oneTBB's auto_partitioner
- * hands the same skewed map out as about 1,536 callbacks.
+ * swept against the Mandelbrot grain).) Against any of these counts oneTBB's
+ * auto_partitioner hands the same skewed mandelbrot map out as about 1,536
+ * callbacks.
  *
- * It was swept and it does not move. The compute scoreboard ran three
- * candidate pairs against the shipped runtime through its A/B twin -- the cap
- * and the work unit raised together, so mandelbrot's chunk count could pass its
- * own cap rather than stop at it -- one `compare PASSES=5 CALLS=5` each on the
- * four-CPU Linux development host, the plain image byte-identical in all three.
- * The chunk counts moved exactly as the rule predicts: (64, 300,000) gave
- * mandelbrot 64 chunks at every width with records and fir at 128/256/256,
- * (256, 75,000) gave 256 with 512/1024/1024, and (1024, 20,000) gave 1,024
- * with records 2048/4096/4096 and fir 2,048 at every width. The acceptance was
+ * What keeps the cap at 16 now that it is the binding term is the M1 Pro grain
+ * twin of 2026-09-11, the run that moved the work unit
+ * (research/investigations/compute-runtime/RESULTS.md, the M1 Pro grain twin;
+ * its `wf-b` arm was built -DWF_PAR_SPLIT_WORK_UNIT=150000
+ * -DWF_PAR_SPLIT_OVERSUBSCRIBE=32). That arm and the runtime now shipped agree
+ * on mandelbrot at W=8: a cap of 32 per lane wants 256 chunks there and only
+ * 143 are affordable, so both give 128, and the 0.692 [0.65-0.75] with five of
+ * five pairs lower that the twin read at W=8 is what the work unit alone now
+ * buys. Where they differ is W=4 -- 128 chunks against the 64 this cap allows
+ * -- and that is the width the twin charged for: paired CPU 1.189 on
+ * mandelbrot and 1.177 on fir to buy wall inside 1.5 percent either way (1.015
+ * and 0.998), three to four percent of process CPU for nothing at the width a
+ * four-CPU table records. The twin moved both terms at once, so those figures
+ * price the finer grain as a whole rather than the cap alone; what stands
+ * against 32 is that the only reading of a 32-per-lane build spends CPU at W=4
+ * and returns nothing at W=8 that a 16-per-lane build does not already return,
+ * while the hosted four-CPU twin that reached only the 64 chunks this cap
+ * allows (run 34630112178) read neutral at W=4. So the cap stays at 16 and the
+ * work unit is what moved.
+ *
+ * It was also swept directly, and that sweep selects nothing. The compute
+ * scoreboard ran three candidate pairs against the shipped runtime through its
+ * A/B twin -- the cap and the work unit raised together, so mandelbrot's chunk
+ * count could pass its own cap rather than stop at it -- one
+ * `compare PASSES=5 CALLS=5` each on the four-CPU Linux development host, the
+ * plain image byte-identical in all three. The chunk counts moved exactly as
+ * the rule predicts: (64, 300,000) gave mandelbrot 64 chunks at every width
+ * with records and fir at 128/256/256, (256, 75,000) gave 256 with
+ * 512/1024/1024, and (1024, 20,000) gave 1,024 with records 2048/4096/4096 and
+ * fir 2,048 at every width. The acceptance was
  * mandelbrot's W=4 `wf-b/wf` wall below 1.000 with at least four of five
  * paired passes lower, no kernel reproducibly worse at W=2 or W=4, W=4 paired
  * CPU no worse than 1.05, and W=1 unchanged. It read 0.999 (3/5), 0.992 (3/5)
@@ -72,10 +221,11 @@
  * a 0/5-lower reading, which is the one thing a within-pass twin cannot remove:
  * the two images differ in bytes and therefore in code placement, this bundle's
  * largest confound. (1024, 20,000) also took fir's W=2 pair to 1.053 with one
- * of five lower. So nothing here selects a cap, and 16 stands unmeasured rather
- * than measured-and-kept (research/investigations/compute-runtime/RESULTS.md,
- * the oversubscription cap measured with the A/B twin). Reopen on a host whose
- * null arm holds inside one percent, or on an eight-CPU host where W=8 is the
+ * of five lower. So nothing in THAT sweep selects a cap; what 16 stands on is
+ * the grain twin's W=4 CPU column above, not these three pairs
+ * (research/investigations/compute-runtime/RESULTS.md, the oversubscription
+ * cap measured with the A/B twin). Reopen on a host whose null arm holds
+ * inside one percent, or on an eight-CPU host where W=8 is the
  * recorded block -- at the oversubscribed W=8 here the middle candidate read
  * fir 0.909 with five of five lower and paired CPU 0.922.
  *
@@ -143,6 +293,50 @@ static unsigned wf__par_started;
 
 _Alignas(WF_PAR_CACHE_LINE) static unsigned long long wf__par_idle;
 
+/* The idle window this pool runs with, in microseconds, or zero for the fixed
+ * round bound alone. Written once by wf__par_start before any worker thread
+ * exists and read-only afterwards, so no lane can observe it changing. */
+static uint64_t wf__par_idle_window_us;
+
+/* The publish epoch: one counter, on a line of its own, that advances at every
+ * transition which can make a deque's stealable content differ from what a
+ * scan just saw. It exists so that a lane spinning out a long idle window does
+ * not have to read every other lane's deque to learn that nothing changed.
+ *
+ * wf__par_find loads each victim's `top` and `bottom` -- two lines per lane,
+ * and exactly the lines a working lane writes on every push and pop. Three
+ * idle lanes doing that every round at the tail of a call take those lines
+ * away from the one lane still working, on its SMT sibling above all. The
+ * hosted A/B of the window against a WF_PAR_IDLE_WINDOW_US=0 control (run
+ * 34638747514) measures the bill: the control's process CPU is 0.956 to 0.977
+ * of the windowed runtime's at fir W=2 and W=4 and 0.958 to 0.972 at
+ * mandelbrot -- the window spends three to four percent more CPU for its wall
+ * -- and records W=4, which is memory-bound and crosses 64 chunk boundaries a
+ * call, loses 4.5 percent of wall outright (0.955, control lower in four of
+ * five pairs). An idle lane inside the window now reads ONE shared line per
+ * round instead of two per other lane, and scans only when that line changes.
+ *
+ * The counter is padded to a full line because it is written on every push and
+ * every successful steal: sharing a line with anything else would hand that
+ * neighbour the invalidation traffic this exists to concentrate. */
+struct wf__par_epoch_cell {
+    _Alignas(WF_PAR_CACHE_LINE) uint64_t value;
+    unsigned char padding[WF_PAR_CACHE_LINE - sizeof(uint64_t)];
+};
+static struct wf__par_epoch_cell wf__par_epoch;
+
+/* Release, so that everything this thread wrote before the bump -- the ring
+ * cell and the published `bottom` above all -- is visible to a lane that
+ * acquire-reads the new value. */
+static void wf__par_epoch_bump(void) {
+    (void)__atomic_add_fetch(&wf__par_epoch.value, UINT64_C(1), __ATOMIC_RELEASE);
+}
+
+/* Acquire, the other half of that pair. */
+static uint64_t wf__par_epoch_read(void) {
+    return __atomic_load_n(&wf__par_epoch.value, __ATOMIC_ACQUIRE);
+}
+
 static _Thread_local struct wf__par_lane *wf__par_self;
 
 static _Thread_local int wf__par_attached;
@@ -197,6 +391,15 @@ __attribute__((noinline)) uint64_t wf__par_placement_pad(uint64_t seed) {
 static void wf__par_signal(struct wf__par_lane *lane) {
     wf_prim_wait_lock(&lane->wait);
     lane->posted = 1;
+    /* BUMP SITE. This is the one path that makes a lane's wait satisfiable
+     * without a push: wf__par_wake_one reaches it from wf__par_publish, and
+     * wf__par_execute reaches it when a finished callback notifies a
+     * registered waiter. A registered waiter is always already parked, so no
+     * lane spinning on the epoch can be waiting on this today; the bump is
+     * here so the epoch stays a superset of "something a non-running lane
+     * could care about" if a waiter ever registers before it parks. It costs
+     * nothing measurable: this path already takes the station's lock. */
+    wf__par_epoch_bump();
 #if defined(WF_SCHED_TEST)
     wf_sched_test_signal_locked();
 #endif
@@ -225,6 +428,12 @@ static void wf__par_push(struct wf__par_lane *lane, struct wf__par_slot *slot) {
     unsigned long long bottom = lane->bottom;
     __atomic_store_n(&lane->buffer[bottom & (WF_PAR_LANE_SLOTS - 1)], slot, __ATOMIC_RELAXED);
     __atomic_store_n(&lane->bottom, bottom + 1, __ATOMIC_SEQ_CST);
+    /* BUMP SITE, and the only one where a slot becomes stealable. It is after
+     * the publication above and not before: the release bump orders the ring
+     * cell and this `bottom` ahead of itself, so a lane that acquire-reads the
+     * new epoch and then scans sees the item. wf__par_publish is this
+     * function's only caller. */
+    wf__par_epoch_bump();
 }
 
 static struct wf__par_slot *wf__par_pop(struct wf__par_lane *lane) {
@@ -273,6 +482,16 @@ static struct wf__par_slot *wf__par_steal(struct wf__par_lane *victim) {
 #endif
         return NULL;
     }
+    /* BUMP SITE, and the one that closes the epoch's only hole. A thief that
+     * loses this CAS gives up on that victim for the rest of its scan and can
+     * finish the scan empty-handed while the victim still holds work. The
+     * winner's CAS is strictly between the loser's `top` read and the loser's
+     * own CAS, so it is strictly after the loser read the epoch, so this bump
+     * makes the loser's next epoch load differ and sends it back for another
+     * scan. Without it a loser could idle on an unchanged epoch until the next
+     * push -- never losing the work, which the victim's owner pops at its own
+     * join, but declining to help. */
+    wf__par_epoch_bump();
 #if defined(WF_SCHED_TEST)
     wf_sched_test_after_steal(1);
 #endif
@@ -332,34 +551,147 @@ static void wf__par_execute(struct wf__par_slot *slot) {
 #endif
 }
 
+/* One lane's idle stretch: misses since the last unit of work, the clock
+ * reading taken when those misses first reached the spin bound, and the
+ * publish epoch as it stood when this lane last began a scan. `entered` is
+ * zero until that first crossing, and zero is also what a host with no
+ * monotonic clock answers, which is why the window is skipped on a zero
+ * reading rather than treating it as an origin. */
+struct wf__par_idling {
+    int rounds;
+    uint64_t entered;
+    uint64_t seen;
+};
+
+/* A lane that has just run something is no longer idle. */
+static void wf__par_idling_reset(struct wf__par_idling *idling) {
+    idling->rounds = 0;
+    idling->entered = 0;
+    idling->seen = 0;
+}
+
+/* Whether this round scans the deques at all.
+ *
+ * Three regimes, and only the third is new:
+ *
+ *   - No window (an oversubscribed pool, a host with no CPU count, or any
+ *     build with WF_PAR_IDLE_WINDOW_US at zero, which includes every
+ *     WF_SCHED_TEST build). Scan every round and never touch the epoch: this
+ *     is the loop exactly as it was, down to the loads it performs.
+ *   - Inside the window, first spin bound. `entered` is still zero, so scan
+ *     every round and keep the fast path for work that arrives immediately.
+ *     The epoch is read before each of those scans, which is what makes the
+ *     first gated round compare against a value that was current BEFORE the
+ *     last full scan began rather than after it.
+ *   - Inside the window, past the first spin bound. Read the epoch; scan only
+ *     when it differs from the value read before the previous scan.
+ *
+ * WHY THE EPOCH CANNOT BE MISSED. Say this lane read epoch v, scanned, and
+ * found nothing, and some slot is stealable afterwards. For each victim the
+ * scan either saw an empty deque or lost the claim CAS. If it saw empty and
+ * the victim is not empty now, a push happened after that observation, and
+ * the push's release bump therefore produced a value above v. If it lost the
+ * CAS, the winner's CAS lay between this lane's SEQ_CST `top` read and its own
+ * CAS -- both after the epoch read -- so the winner's bump also produced a
+ * value above v. Either way the next acquire load differs from v and the lane
+ * scans again, and because that load acquires what the bump released, the
+ * rescan sees the ring cell and the `bottom` the push wrote. The counter only
+ * ever increases, so no bump can be cancelled by another, and reading it
+ * BEFORE the scan rather than after is what makes "scanned at v" mean "the
+ * scan began no earlier than v was current". */
+static int wf__par_should_scan(struct wf__par_idling *idling) {
+    uint64_t now;
+    if (wf__par_idle_window_us == 0) {
+        return 1;
+    }
+    if (idling->entered == 0) {
+        idling->seen = wf__par_epoch_read();
+        return 1;
+    }
+    now = wf__par_epoch_read();
+    if (now == idling->seen) {
+        return 0;
+    }
+    idling->seen = now;
+    return 1;
+}
+
+/* One idle step, shared by both wait loops so they cannot drift apart.
+ *
+ * Returns 1 when the lane stayed hot and the caller must re-check its own work
+ * and exit conditions -- every call performs at most one spin hint or one
+ * yield, so the top of each loop is reached on every round -- and 0 when the
+ * lane has exhausted spinning and yielding and must park. What each loop
+ * re-checks there is its own: the join wait loads its target's state on every
+ * round, separately from wf__par_should_scan and never gated by the epoch, so
+ * a completion it is waiting for is seen as promptly as before; the worker
+ * loop has no exit of its own, since its lanes live until the process does.
+ *
+ * Both loops take the window. The worker idle loop is the parked-helper case
+ * the placement evidence is about, and the join wait is the lane that owns the
+ * frame and can help; the CPU the 16,384-round twin saved at W=2 and W=4 came
+ * from both loops parking and re-waking less often inside one call, and a rule
+ * that held for only one of them would leave the other parking on the same
+ * host for the same reason. Neither loop has a reason of its own to differ,
+ * and the probes that drive the park protocol run with the window at zero. */
+static int wf__par_stay_hot(struct wf__par_idling *idling) {
+    if (idling->rounds < WF_PAR_SPIN_ROUNDS) {
+        idling->rounds += 1;
+        wf_prim_spin_hint();
+        return 1;
+    }
+    if (idling->rounds == WF_PAR_SPIN_ROUNDS && wf__par_idle_window_us != 0) {
+        /* One clock read per spin bound, never per round. The window runs from
+         * the first crossing, so a lane stays hot for the window plus the one
+         * bound that opened it. */
+        uint64_t now = wf_prim_monotonic_us();
+        if (now != 0) {
+            if (idling->entered == 0) {
+                idling->entered = now;
+            }
+            if (now - idling->entered < wf__par_idle_window_us) {
+                idling->rounds = 0;
+                wf_prim_spin_hint();
+                return 1;
+            }
+        }
+    }
+    if (idling->rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
+        idling->rounds += 1;
+        wf_prim_yield();
+        return 1;
+    }
+    return 0;
+}
+
 /* Nested helping is safe for structured compute calls: no I/O continuation
  * can strand this stack. Register the waiter before the final SC DONE check;
  * signal takes the same native lock as sleep, so no wake can be lost. */
 static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target) {
-    int rounds = 0;
+    struct wf__par_idling idling;
+    wf__par_idling_reset(&idling);
     for (;;) {
-        struct wf__par_slot *slot;
+        /* Every round, and never behind the epoch gate: this is the lane's own
+         * completion flag. It shares a line with its neighbouring slots in the
+         * owner's slot array, but its writer is the thief that will finish the
+         * very task being waited on, which is the one line this lane has to
+         * watch. */
         if (__atomic_load_n(&target->state, __ATOMIC_ACQUIRE) == WF_PAR_SLOT_DONE) {
             return;
         }
 
-        slot = wf__par_pop(lane);
-        if (slot == NULL) {
-            slot = wf__par_find(lane);
+        if (wf__par_should_scan(&idling)) {
+            struct wf__par_slot *slot = wf__par_pop(lane);
+            if (slot == NULL) {
+                slot = wf__par_find(lane);
+            }
+            if (slot != NULL) {
+                wf__par_execute(slot);
+                wf__par_idling_reset(&idling);
+                continue;
+            }
         }
-        if (slot != NULL) {
-            wf__par_execute(slot);
-            rounds = 0;
-            continue;
-        }
-        if (rounds < WF_PAR_SPIN_ROUNDS) {
-            rounds += 1;
-            wf_prim_spin_hint();
-            continue;
-        }
-        if (rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
-            rounds += 1;
-            wf_prim_yield();
+        if (wf__par_stay_hot(&idling)) {
             continue;
         }
 
@@ -380,7 +712,8 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
 
 static void wf__par_worker_main(void *opaque) {
     struct wf__par_lane *lane = (struct wf__par_lane *)opaque;
-    int rounds = 0;
+    struct wf__par_idling idling;
+    wf__par_idling_reset(&idling);
     wf__par_self = lane;
     wf__par_attached = 1;
     wf_prim_floor_attach();
@@ -389,20 +722,15 @@ static void wf__par_worker_main(void *opaque) {
 
     for (;;) {
         struct wf__par_slot *slot;
-        slot = wf__par_find(lane);
-        if (slot != NULL) {
-            wf__par_execute(slot);
-            rounds = 0;
-            continue;
+        if (wf__par_should_scan(&idling)) {
+            slot = wf__par_find(lane);
+            if (slot != NULL) {
+                wf__par_execute(slot);
+                wf__par_idling_reset(&idling);
+                continue;
+            }
         }
-        if (rounds < WF_PAR_SPIN_ROUNDS) {
-            rounds += 1;
-            wf_prim_spin_hint();
-            continue;
-        }
-        if (rounds < WF_PAR_SPIN_ROUNDS + WF_PAR_YIELD_ROUNDS) {
-            rounds += 1;
-            wf_prim_yield();
+        if (wf__par_stay_hot(&idling)) {
             continue;
         }
 
@@ -414,7 +742,7 @@ static void wf__par_worker_main(void *opaque) {
             __atomic_fetch_and(&wf__par_idle, ~(1ull << (lane - wf__par_lanes)),
                                __ATOMIC_ACQ_REL);
             wf__par_execute(slot);
-            rounds = 0;
+            wf__par_idling_reset(&idling);
             continue;
         }
         wf_prim_wait_lock(&lane->wait);
@@ -425,7 +753,7 @@ static void wf__par_worker_main(void *opaque) {
         lane->posted = 0;
         wf_prim_wait_unlock(&lane->wait);
         __atomic_fetch_and(&wf__par_idle, ~(1ull << (lane - wf__par_lanes)), __ATOMIC_ACQ_REL);
-        rounds = 0;
+        wf__par_idling_reset(&idling);
     }
 
 }
@@ -448,8 +776,23 @@ static void wf__par_prepare(struct wf__par_lane *lane, int index) {
 
 static void wf__par_start(void) {
     int requested = wf__sched_lanes();
+    unsigned cpus;
     int started = 0;
     if (requested < 2) return;
+    /* The oversubscription test, answered once, here, because it is a property
+     * of the pool and not of a lane's current state: the lanes this pool is
+     * about to run against the CPUs this process may actually use. Lanes at or
+     * below that count take the idle window; more lanes than CPUs keep the
+     * fixed round bound, which is what the never-park twin's 2.7x to 6.7x at
+     * eight lanes on four CPUs says to do. An unknown CPU count -- zero from
+     * the primitive -- also keeps the fixed bound, since a window would then
+     * rest on an assumption nothing checked. `requested` is the count asked
+     * for; a partial startup can only leave fewer lanes than that, so this
+     * never turns the window on for a pool that is oversubscribed. Written
+     * before the first worker thread exists, and never written again. */
+    cpus = wf_prim_online_cpus();
+    wf__par_idle_window_us =
+        (cpus != 0u && (unsigned)requested <= cpus) ? (uint64_t)WF_PAR_IDLE_WINDOW_US : 0u;
     /* Prepare every deque before publishing a scan bound. Initialize the
      * owner's wait before any worker exists; preserve started workers on
      * later failure, and never destroy a station a worker may reach. */

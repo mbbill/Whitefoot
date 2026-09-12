@@ -177,8 +177,13 @@ rayon_flags=${DEPS_RUSTFLAGS:-'-C no-vectorize-loops -C no-vectorize-slp -C lto=
 # the kept .ll, so rayon-binding.h is regenerated -- never inherited -- on
 # every invocation, and `make deps` stays idempotent. `make clean-deps`
 # removes this tree and rebuilds everything.
+# The kept build must also be the build of THESE sources: the stamp written
+# after every rebuild is the hash of the crate's three files, and a changed
+# adapter (the width ceiling moved once) rebuilds instead of being kept.
+rayon_sources=$($sha256 rayon/Cargo.toml rayon/Cargo.lock rayon/adapter.rs)
 rayon_modules=$(ls "$rayon"/target/release/deps/wf_compute_bench_rayon-*.ll 2>/dev/null | wc -l | tr -d "[:space:]")
 if test "$rayon_modules" -eq 1 &&
+        test "$(cat "$rayon/sources.sha256" 2>/dev/null)" = "$rayon_sources" &&
         test -f "$rayon/target/release/libwf_compute_bench_rayon.a" &&
         test -f "$rayon/libwf_compute_bench_rayon.a" &&
         test -f "$rayon/rayon-binding.h" && test -f "$prefix/rayon-binding.h"; then
@@ -189,6 +194,7 @@ else
     rm -f "$rayon"/target/release/deps/wf_compute_bench_rayon-*.ll
     RUSTFLAGS="$rayon_flags" cargo rustc --locked --offline --release \
         --manifest-path rayon/Cargo.toml --target-dir "$rayon/target" -- --emit=llvm-ir,link
+    printf '%s\n' "$rayon_sources" > "$rayon/sources.sha256"
 fi
 # CHANGE 8: recover two entry symbols, not one. v0 mangling writes the name
 # length before the name, so the two patterns are 3map and 5fork2; the

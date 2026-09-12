@@ -51,11 +51,15 @@
  * in the verify set.
  *
  * 131,072 records is the size constant. At the emitted weight 812 the work
- * divisor is ceil(1,200,000 / 812) = 1,478, so the affordable chunk count is
- * 131,072 / 1,478 = 88 and min(16 * lanes, 88) rounds down to 64 chunks at
- * width 4 and at width 8 -- eight chunks per lane at the highest width a table
- * records here. The next doubling would reach 128 chunks at width 8 but costs
- * about 62 ms of wf-seq and leaves the [5 ms, 60 ms] window.
+ * divisor is ceil(150,000 / 812) = 185, so the affordable chunk count is
+ * 131,072 / 185 = 708, and min(16 * lanes, 708) is the cap at every width a
+ * table records here: 32 chunks at width 2, 64 at width 4, 128 at width 8, 256
+ * at width 16 and 512 at width 32 -- 16 chunks per lane throughout. The
+ * scheduler's cap, not this size, is therefore what sets this row's chunk
+ * count, and a power-of-two step of this constant would not move it at any
+ * width a four- or eight-CPU host records. What fixes the constant is the
+ * [5 ms, 60 ms] wf-seq window alone: the next doubling costs about 62 ms of
+ * wf-seq and leaves it.
  *
  * RC_MAX_LENGTH is 255 rather than the specification's 256, and this is the
  * one place the difference matters. `summarize_records` carries

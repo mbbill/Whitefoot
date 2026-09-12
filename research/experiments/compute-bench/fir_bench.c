@@ -50,11 +50,12 @@
 #include <string.h>
 
 /* The timed fixture. At the emitted weight 150 the runtime's work divisor is
- * 8,000, so 524,288 outputs give 65 affordable chunks; min(16*lanes, 65) is
- * 64 at width 4 and 65 at width 8, and the budget rounds both down to 64
- * chunks. The next doubling would reach 128 chunks at width 8 but leaves the
- * [5 ms, 60 ms] wf-seq window, so this is the largest size the window admits
- * here: the window caps this row's chunk count, not the scheduler. */
+ * 1,000, so 524,288 outputs afford 524 chunks; min(16 * lanes, 524) is the cap
+ * at every width a table records here -- 32 chunks at width 2, 64 at width 4,
+ * 128 at width 8, 256 at width 16 and 512 at width 32. The scheduler's cap,
+ * not this size, is what sets this row's chunk count. The size stands on the
+ * [5 ms, 60 ms] wf-seq window instead, being the largest the window admits
+ * here. */
 #define FIR_TAPS ((size_t)64)
 #define FIR_OUTPUTS ((size_t)524288)
 #define FIR_SEED ((uint32_t)92821)

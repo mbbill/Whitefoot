@@ -715,8 +715,8 @@ __attribute__((constructor)) static void observe(void) { atexit(report); }
     );
     let mut runs = Vec::new();
     for (setting, expected) in [
-        (None, "0 0 3 6\n"),
-        (Some(""), "0 0 3 6\n"),
+        (None, "0 2 6 6\n"),
+        (Some(""), "0 2 6 6\n"),
         (Some("0"), "0 0 0 0\n"),
         (Some("1"), "0 6 6 6\n"),
         (Some("60000"), "0 3 6 6\n"),
