@@ -529,7 +529,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let ty = self.retained_operation_type_argument(node, function)?;
         let element = match self.buffer_element(ty)? {
             Some(_) => ty,
-            None if matches!(ty, CheckedType::Array { .. } | CheckedType::Buffer { .. }) => ty,
+            None if matches!(
+                ty,
+                CheckedType::Array { .. }
+                    | CheckedType::Buffer { .. }
+                    | CheckedType::FixedVector { .. }
+                    | CheckedType::Vector { .. }
+                    | CheckedType::Generic(_)
+            ) =>
+            {
+                ty
+            }
             None => {
                 return self.issue_node(
                     SemanticRule::Op1,
@@ -681,10 +691,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // expression shape; every concrete instance is checked again and
             // receives its exact ceiling. Int and Float are at most 64 bits.
             CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => primitive(8),
-            // An unbounded parameter has no buffer-storable bound. Retain an
-            // exact abstract upper observation for nested symbolic layout;
-            // operations that require a buffer element still reject the type
-            // before reaching this calculation.
+            // FN-2's symbolic pass retains an abstract upper observation for
+            // an opaque parameter. Allocation-fit predicates, including a
+            // direct buffer_fits::<T>, are checked again at every concrete
+            // instance with that instance's exact ceiling. This does not
+            // broaden the legacy buffer element domain.
             CheckedType::Generic(_) => Some(CheckedLayoutCeiling {
                 size: CheckedLayoutMagnitude::AboveU64,
                 align: 16,

@@ -4,6 +4,48 @@ use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, va
 use super::system::with_ir;
 use super::*;
 
+#[test]
+fn generic_allocation_fit_uses_each_concrete_element_ceiling() {
+    let source = br#"fn fits_element<T: linear>(count: own u64) -> result: own Bool pure {
+  let fits = buffer_fits::<T>(count);
+  return fits;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
+  let scalar_boundary = fits_element::<u64>(count: 2305843009213693951_u64);
+  if scalar_boundary {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let scalar_overflow = fits_element::<u64>(count: 2305843009213693952_u64);
+  if scalar_overflow {
+    return exit_status(code: 2_u8);
+  }
+  let inline_boundary = fits_element::<FixedVector<u64, 2>>(count: 576460752303423487_u64);
+  if inline_boundary {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let inline_overflow = fits_element::<FixedVector<u64, 2>>(count: 576460752303423488_u64);
+  if inline_overflow {
+    return exit_status(code: 4_u8);
+  }
+  let stored_boundary = fits_element::<Vector<u8>>(count: 576460752303423487_u64);
+  if stored_boundary {
+  } else {
+    return exit_status(code: 5_u8);
+  }
+  let stored_overflow = fits_element::<Vector<u8>>(count: 576460752303423488_u64);
+  if stored_overflow {
+    return exit_status(code: 6_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let output = compile_and_run(&compile(source));
+    assert!(output.status.success(), "{output:?}");
+}
+
 const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
     br#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {
   requires half <= 500_u64;
