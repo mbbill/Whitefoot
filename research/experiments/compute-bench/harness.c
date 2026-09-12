@@ -47,22 +47,98 @@ uint64_t wfb_now_ns(void) {
     return (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
 }
 
-/* Process CPU time. CLOCK_PROCESS_CPUTIME_ID is POSIX and is what both hosted
-   legs have: Linux since 2.6.12 and Darwin since 10.12. getrusage is the
-   fallback for a host that defines neither, and it is coarser (microseconds),
-   which is why it is not the first choice on any host that has the clock. The
-   fallback sums user and system time, as the clock does. */
-#if defined(CLOCK_PROCESS_CPUTIME_ID)
-#define WFB_CPU_CLOCK_NAME "CLOCK_PROCESS_CPUTIME_ID"
-uint64_t wfb_cpu_ns(void) {
+/* Process CPU time: every thread of this process, user plus system. The source
+   is selected per host, the way the wall clock above is, because no single
+   call answers this question everywhere.
+
+   CLOCK_PROCESS_CPUTIME_ID is the POSIX answer and is what Linux gives. It is
+   NOT the answer on Darwin: there the clock is served from the task's basic
+   info, which carries the time of THREADS THAT HAVE ALREADY EXITED, so a pool
+   whose workers are still alive at the read contributes nothing and the column
+   read about one lane's worth however many lanes ran. That is a measured
+   defect and not a guess -- the M1 Pro tables recorded `tbb` at records W=8
+   spending 5,896 us of CPU for a 2,441 us wall on eight threads, `static` at
+   quadrature W=4 spending 2,904 us against a 2,866 us wall, and a Whitefoot
+   row at quadrature W=4 spending 3,081 us against a 3,033 us wall while
+   stealing a thousand chunks, where the same rows on Linux read about wall
+   times threads.
+
+   What replaces it on Darwin is the task-level pair, which is the only reading
+   here that consults the LIVE threads when it is asked:
+   TASK_THREAD_TIMES_INFO sums the user and system time of the threads that
+   still exist, and TASK_BASIC_INFO carries the same totals for the ones that
+   have exited; a thread's time therefore moves from the first to the second
+   when it exits and is counted exactly once either way. Both halves are
+   `time_value_t`, seconds plus microseconds, and are converted here. That pair
+   is held on a READING and not on its documentation, which is what the rejected
+   attempt below cost: the hosted `macos-14` leg of run 34668036736, a
+   three-CPU runner, printed `cpu_clock=task_info` on every driver line and
+   returned CPU that grows with the lanes and stops where the CPUs do --
+   mandelbrot `static` at W=4 read 107,878 us of CPU against a 36,495 us wall,
+   2.96 times it, `tbb` at W=4 26,072 against 8,887, 2.93 times it, the W=2
+   rows about twice their wall, and the four W=1 serial rows inside half a
+   percent of their own wall. A refusal would have been visible rather than
+   silent, since the name printed is the source that answered.
+
+   `proc_pid_rusage(RUSAGE_INFO_V0)` was tried first and REJECTED ON EVIDENCE.
+   Its `ri_user_time + ri_system_time` are documented as nanoseconds over the
+   whole process, but on the hosted `macos-14` runner of run 34667394566 every
+   row read 0.02 to 0.07 times its own wall and barely moved with the work:
+   mandelbrot `wf` at W=2 read 540 to 570 us of CPU for walls from 11.7 to
+   36.2 ms, and `static` at W=4 read 2,363 us against a 35,089 us wall. That is
+   not a unit error -- a 24 MHz timebase tick would have put `static` near 1.6
+   times its wall -- and a figure that does not scale with the work is not a
+   CPU figure. Do not go back to it without a reading that tracks the work.
+
+   getrusage(RUSAGE_SELF) is the fallback for a host that has neither, and for
+   a host whose primary source refuses at run time. It is coarser
+   (microseconds), which is why it is nobody's first choice, and what it counts
+   on Darwin has not been read here, so a fallback taken on that host is a
+   figure of unknown standing. That is exactly why the name below reports the
+   source that answered rather than the one this file prefers.
+
+   The source is fixed by the first reading of the run and never changes after
+   it, so a `before` and an `after` bracketing one call can never come from two
+   different sources. wfb_cpu_clock_name() forces that first reading, and
+   do_time calls it while printing the header, which is before the first timed
+   call. */
+#include <sys/resource.h>
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#define WFB_CPU_PRIMARY_NAME "task_info"
+static uint64_t wfb_time_value_ns(time_value_t t) {
+    return (uint64_t)t.seconds * UINT64_C(1000000000)
+         + (uint64_t)t.microseconds * UINT64_C(1000);
+}
+static int wfb_cpu_primary_ns(uint64_t *out) {
+    task_thread_times_info_data_t live;
+    task_basic_info_data_t exited;
+    mach_msg_type_number_t live_count = TASK_THREAD_TIMES_INFO_COUNT;
+    mach_msg_type_number_t exited_count = TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_THREAD_TIMES_INFO,
+                  (task_info_t)&live, &live_count) != KERN_SUCCESS) return 0;
+    if (task_info(mach_task_self(), TASK_BASIC_INFO,
+                  (task_info_t)&exited, &exited_count) != KERN_SUCCESS) return 0;
+    *out = wfb_time_value_ns(live.user_time) + wfb_time_value_ns(live.system_time)
+         + wfb_time_value_ns(exited.user_time) + wfb_time_value_ns(exited.system_time);
+    return 1;
+}
+#elif defined(CLOCK_PROCESS_CPUTIME_ID)
+#define WFB_CPU_PRIMARY_NAME "CLOCK_PROCESS_CPUTIME_ID"
+static int wfb_cpu_primary_ns(uint64_t *out) {
     struct timespec t;
-    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t) != 0) wfb_fail("CPU clock_gettime failed");
-    return (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t) != 0) return 0;
+    *out = (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
+    return 1;
 }
 #else
-#define WFB_CPU_CLOCK_NAME "getrusage(RUSAGE_SELF)"
-#include <sys/resource.h>
-uint64_t wfb_cpu_ns(void) {
+#define WFB_CPU_PRIMARY_NAME WFB_CPU_FALLBACK_NAME
+static int wfb_cpu_primary_ns(uint64_t *out) { (void)out; return 0; }
+#endif
+
+#define WFB_CPU_FALLBACK_NAME "getrusage(RUSAGE_SELF)"
+
+static uint64_t wfb_cpu_fallback_ns(void) {
     struct rusage r;
     uint64_t ns;
     if (getrusage(RUSAGE_SELF, &r) != 0) wfb_fail("getrusage failed");
@@ -72,7 +148,26 @@ uint64_t wfb_cpu_ns(void) {
        + (uint64_t)r.ru_stime.tv_usec * UINT64_C(1000);
     return ns;
 }
-#endif
+
+/* -1 before the first reading, 1 once the host's primary source has answered,
+   0 once the fallback has been taken. */
+static int wfb_cpu_primary_live = -1;
+
+uint64_t wfb_cpu_ns(void) {
+    uint64_t ns;
+    if (wfb_cpu_primary_live != 0 && wfb_cpu_primary_ns(&ns)) {
+        wfb_cpu_primary_live = 1;
+        return ns;
+    }
+    if (wfb_cpu_primary_live > 0) wfb_fail("the process CPU source failed after answering once");
+    wfb_cpu_primary_live = 0;
+    return wfb_cpu_fallback_ns();
+}
+
+const char *wfb_cpu_clock_name(void) {
+    if (wfb_cpu_primary_live < 0) (void)wfb_cpu_ns();
+    return wfb_cpu_primary_live == 1 ? WFB_CPU_PRIMARY_NAME : WFB_CPU_FALLBACK_NAME;
+}
 
 uint64_t wfb_clock_floor_ns(void) {
     static uint64_t floor_ns;
@@ -415,7 +510,7 @@ static int do_time(const wfb_kernel *k, const char *form, unsigned width,
                  k->name, form, form_grain(k, form), width, cpus,
                  width > cpus ? 1 : 0, gap_us, calls, pass,
                  k->workload ? k->workload : "unknown", WFB_CLOCK_NAME,
-                 (unsigned long long)wfb_clock_floor_ns(), WFB_CPU_CLOCK_NAME,
+                 (unsigned long long)wfb_clock_floor_ns(), wfb_cpu_clock_name(),
                  form_note(k, form));
     print_chunks(k, form, width);
     (void)printf("\n");
@@ -431,12 +526,13 @@ static int do_time(const wfb_kernel *k, const char *form, unsigned width,
        two CPU clock reads and nothing else. The nesting is this way round on
        purpose: wall is the primary measurement and keeps the widest bracket, so
        no CPU the call spends can fall outside the wall interval, and the two
-       nested reads cost tens of nanoseconds against a per-call interval of
-       milliseconds -- three to four orders below this bundle's own MAD, and the
-       agreement of a before/after `compare` on one tree is what checks that
-       rather than the arithmetic. The CPU figure is a process figure, so it
-       counts every worker or lane thread the form started, spinning ones
-       included; that is the point of the column. */
+       nested reads cost 757 ns as a pair where that was timed, on the Linux
+       host of the 2026-09-11 agreement record, against a per-call interval of
+       milliseconds -- orders below this bundle's own MAD, and the agreement of a
+       before/after `compare` on one tree is what checks that rather than the
+       arithmetic. The CPU figure is a process figure, so it counts every
+       worker or lane thread the form started, spinning ones included; that is
+       the point of the column. */
     for (unsigned call = 0; call <= calls; ++call) {
         unsigned long before;
         uint64_t a, ca;

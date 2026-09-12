@@ -196,11 +196,18 @@ END {
         if (has_twin) printf "WF module control flags=%s\n      (appended to the compile of the `wf-b` TWIN's emitted module object and\n      its Whitefoot runtime only: `wf` above is still built at the WF flags\n      above. A table with a wf-b row is an A/B instrument and must not be\n      recorded as a plain table -- see README)\n", modulecontrol
         else printf "WF module control flags=%s\n      (an A/B control appended to the compile of the Whitefoot module and\n      runtime: this table is NOT built at the flags whitefootc passes clang and\n      must not be recorded as one -- see README)\n", modulecontrol
     }
-    # WF_AB=1 asks for the twin with no control set at all, which is the
-    # instrument's own null check: two images built from one tree that differ
-    # in nothing, so every `A/B` line below should read near 1.000 with mixed
-    # `lower` counts. Neither line above would print, so this one does.
-    if (has_twin && !parcontrol && !runtimecontrol && !modulecontrol) printf "WF A/B twin: `wf-b` is built from the same sources as `wf` with NO control\n      flag set (WF_AB=1), so the A/B lines below read this host's own\n      within-pass spread over identical behaviour -- see README\n"
+    # The fourth handle, and the only one that changes WHERE the twin's sources
+    # came from rather than what was appended to their build: a baseline twin,
+    # built from another tree's Whitefoot runtime and emission and timed against
+    # this tree's `wf` in the same passes. It is what
+    # `.github/workflows/compute-regression.yml` runs, and a table carrying this
+    # line is that comparison rather than a reading of this tree alone.
+    if (bsource) printf "WF A/B twin source=%s\n      (the `wf-b` rows are built from THAT tree's Whitefoot runtime and\n      emission, not this one's; `wf` above is still this tree's program. A\n      table with a wf-b row is an A/B instrument and must not be recorded as a\n      plain table -- see README)\n", bsource
+    # WF_AB=1 asks for the twin with no control set at all and no other tree
+    # named, which is the instrument's own null check: two images built from one
+    # tree that differ in nothing, so every `A/B` line below should read near
+    # 1.000 with mixed `lower` counts. No line above would print, so this does.
+    if (has_twin && !parcontrol && !runtimecontrol && !modulecontrol && !bsource) printf "WF A/B twin: `wf-b` is built from the same sources as `wf` with NO control\n      flag set (WF_AB=1), so the A/B lines below read this host's own\n      within-pass spread over identical behaviour -- see README\n"
     if (pins) printf "pins: %s\n", pins
     for (i = 1; i <= kernels; i++) printf "sizes: %-12s %s\n", kernel_at[i], workload[kernel_at[i]]
     # The same disclosure the three control lines above carry, for the fourth
