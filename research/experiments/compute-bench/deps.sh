@@ -14,7 +14,7 @@ set -eu
 cd "$(dirname "$0")"
 mode=${1:?fetch or build required}
 case "$mode" in fetch|build) ;; *) exit 1;; esac
-cache=${WHITEFOOT_SCRATCH_ROOT:-$HOME/do_not_scan}/whitefoot-compute-deps
+cache=${WHITEFOOT_SCRATCH_ROOT:-${TMPDIR:-/tmp}/whitefoot}/whitefoot-compute-deps
 tbb=${TBB_SOURCE:-$cache/onetbb-3046c8b0}
 parlay=${PARLAY_SOURCE:-$cache/parlay-51017699}
 tbb_pin=3046c8b0c29df995980003ea24f4d78c80ec0c8d

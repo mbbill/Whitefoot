@@ -1,7 +1,7 @@
 PYTHON ?= python3
 WORK_ROOT ?=
 RUN_ID ?=
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 SCRATCH_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-rg-base/work
 
 .PHONY: test gate select baseline require-work-root require-run-id

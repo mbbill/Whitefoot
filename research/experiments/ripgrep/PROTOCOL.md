@@ -104,8 +104,8 @@ freezing the Apple SDK, linker, and Command Line Tools.
 The process-spawning runner is also part of the measured apparatus. The gate
 fixes CPython 3.14.4, the resolved interpreter and framework-library digests,
 and a minimal workload environment containing only the frozen locale,
-timezone, PATH, and do_not_scan TMPDIR. Supplying a different Makefile PYTHON
-does not bypass this identity check.
+timezone, PATH, and a TMPDIR under the scratch root. Supplying a different
+Makefile PYTHON does not bypass this identity check.
 
 ## Target envelope
 
@@ -400,8 +400,8 @@ only favorable profiles after seeing baseline results.
   one selected-binary run of every frozen case without sudo. The launch target
   and argv are the selected executable and exact frozen case command. There is
   no after-the-fact profiler fallback: if Time Profiler cannot capture a case,
-  that profile is recorded as a blocker. Raw traces stay under do_not_scan;
-  committed evidence records trace digests and compact summaries.
+  that profile is recorded as a blocker. Raw traces stay under the scratch
+  root; committed evidence records trace digests and compact summaries.
 
 Attribution is limited to what the target exposes: startup/pattern compile,
 traversal/ignore, file I/O, matching, line/output work, scheduling/wait,
