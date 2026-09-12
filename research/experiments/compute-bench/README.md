@@ -439,6 +439,51 @@ A hosted run takes the gap as the `gap_us` input of
 `.github/workflows/compute-bench.yml`, beside the three control inputs, and a
 push sets none of the four.
 
+## The lane trace
+
+A gapped run says the compiled form loses lane time at the head of a call; it
+does not say where that time goes. `WF_PAR_TRACE` is the runtime's own answer:
+defined, `compiler/src/backend/sched/core.c` records a fixed per-lane ring of
+scheduler events and prints it to **stderr** at process exit, one line per
+event.
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/gap-2ms-trace \
+     PASSES=5 CALLS=5 \
+     WFB_GAP_US=2000 WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_TRACE=1
+```
+
+It is a runtime control like any other, so it reaches the **twin only**: the
+`wf-b` cells trace and the `wf` cells are the runtime this tree ships, and the
+`A/B wf-b/wf` line of the same table is what says whether carrying the
+instrument moved the reading. Nothing else changes. The events go to stderr,
+which `compare` already keeps per cell in
+`results/logs/<kernel>-wf-b-w<W>-p<pass>.log`, so the parsed stdout stream and
+`raw.tsv` are untouched and the workflow uploads the trace with the rest of
+`logs/`.
+
+```
+wf-trace lane=<n> ev=<kind> t_us=<monotonic us> cpu=<sched_getcpu> v=<payload>
+```
+
+| kind | when | `v` |
+| --- | --- | --- |
+| `call_head` | the splitter's entry query, once per top-level call | the idle mask then |
+| `root_publish_first` | the first publish of a burst that finds lanes parked | the idle mask |
+| `park` | entering the condvar wait, in either idle loop | spin/yield rounds done |
+| `wake` | returning from that wait | the publish epoch seen |
+| `steal_ok` | the lane's first successful steal after a wake or a call head | 0 |
+| `root_join_done` | the release that closes the call on the offering lane | 0 |
+
+Per call and per lane that gives wake latency (`wake` minus `call_head`), steal
+latency, how long the lane had been parked, and the CPU it parked on against
+the CPU it woke on and the offering lane's own. Lines are grouped by lane and
+ordered within a lane; sort by `t_us` to interleave them.
+
+It is a **measurement instrument**. No shipped build, gate target or test
+defines it, `whitefootc` never passes it, and with it undefined the scheduler
+core compiles to the same object bytes it did before the instrument existed.
+
 ## How to read the table
 
 ```
