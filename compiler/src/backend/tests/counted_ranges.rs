@@ -1,5 +1,53 @@
 use super::{compile, compile_and_run, emitted_function};
 
+#[test]
+fn return_only_loops_do_not_emit_unreachable_continuation_parameters() {
+    let source = br#"fn descend(value: own u64) -> result: own u64 pure {
+  let remaining = value;
+  loop {
+    if remaining == 0_u64 {
+      return remaining;
+    }
+    set remaining = remaining - 1_u64;
+  }
+  return remaining;
+}
+
+fn leave(value: own u64) -> result: own u64 pure {
+  let remaining = value;
+  loop {
+    if remaining == 0_u64 {
+      break;
+    }
+    set remaining = remaining - 1_u64;
+  }
+  return remaining;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let returned = descend(value: 9_u64);
+  let continued = leave(value: 7_u64);
+  if returned != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if continued != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [
+        super::OverlapLowering::Off,
+        super::OverlapLowering::On,
+        super::OverlapLowering::Completion,
+    ] {
+        let module = super::emit_lowered(source, overlap);
+        let output = super::compile_link_and_run(&module, None, &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
 /// The dedicated counted CFG executes empty, reversed, singleton, MAX-edge,
 /// captured-endpoint, shared-binder-borrow, nested-break, and enclosing-break
 /// paths through the normal native backend. `main` reports any result drift

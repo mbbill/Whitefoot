@@ -1472,7 +1472,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     }
 
     fn emit(mut self) -> Result<String, BackendFailure> {
-        self.incoming = self.collect_incoming()?;
+        let reachable = self.reachable_blocks()?;
+        self.incoming = self.collect_incoming(&reachable)?;
         let abi = FunctionAbi::build(self.program, self.function)?;
         let symbol = match self.sequential_clones {
             Some(_) => sequential_clone_symbol(self.function.name()),
@@ -1518,6 +1519,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.output.push_str(") {\n");
         let mut prelude_anchor = None;
         for (index, block) in self.function.blocks().iter().enumerate() {
+            if !reachable[index] {
+                continue;
+            }
             self.materialized.clear();
             let block_id =
                 IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
@@ -1589,9 +1593,48 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         Ok(self.output)
     }
 
-    fn collect_incoming(&self) -> Result<Vec<Vec<Incoming>>, BackendFailure> {
+    /// Source checking retains the conservative continuation of every loop
+    /// [FN-1]. An executable loop with no break has no edge to that block,
+    /// which may nevertheless carry lowered parameters and more dead CFG.
+    /// Emit only the entry-reachable graph: a predecessor-free phi is not
+    /// LLVM, and a dead cycle must not supply an incoming value to a live phi.
+    fn reachable_blocks(&self) -> Result<Vec<bool>, BackendFailure> {
+        let mut reachable = vec![false; self.function.blocks().len()];
+        let mut pending = vec![0_usize];
+        while let Some(index) = pending.pop() {
+            let visited = reachable.get_mut(index).ok_or(BackendFailure::InvalidIr)?;
+            if *visited {
+                continue;
+            }
+            *visited = true;
+            let block_id =
+                IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+            // This target emits the pending exit as `unreachable`, matching
+            // `emit_terminator`; it has no executable successor to traverse.
+            if !self.qualification.target().supports_posix_file_completion()
+                && self
+                    .pipeline
+                    .is_some_and(|pipeline| pipeline.pending_exit_edge(block_id))
+            {
+                continue;
+            }
+            match self.function.blocks()[index].terminator() {
+                IrTerminator::Jump { target, .. } => pending.push(target.index()),
+                IrTerminator::Match { targets, .. } => {
+                    pending.extend(targets.iter().map(|target| target.block().index()));
+                }
+                IrTerminator::Return { .. } | IrTerminator::Unreachable => {}
+            }
+        }
+        Ok(reachable)
+    }
+
+    fn collect_incoming(&self, reachable: &[bool]) -> Result<Vec<Vec<Incoming>>, BackendFailure> {
         let mut incoming = vec![Vec::new(); self.function.blocks().len()];
         for (index, block) in self.function.blocks().iter().enumerate() {
+            if !reachable[index] {
+                continue;
+            }
             if let IrTerminator::Jump {
                 target, arguments, ..
             } = block.terminator()
