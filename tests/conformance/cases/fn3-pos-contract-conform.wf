@@ -1,9 +1,9 @@
-contract Zeroed {
-  doc "A contract declares fn signatures [FN-3].";
+formal Zeroed {
+  doc "A formal declares function-kind signatures [FN-3].";
   fn zero() -> result: own i32 pure;
 }
 
-conform i32: Zeroed {
+actual First : Zeroed {
   zero = i32_zero;
 }
 

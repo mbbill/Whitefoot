@@ -488,6 +488,13 @@ pub(crate) enum DerivationNode {
         relation_ordinal: u32,
         parents: Vec<DerivationId>,
     },
+    /// Conditional premise of a function-kind parameter [FN-4], confined to
+    /// the discarded symbolic spelling pass. Concrete summaries come only
+    /// from verified implementation returns.
+    FunctionFormalContract {
+        block: NodePath,
+        relation_ordinal: u32,
+    },
     /// Caller-local S12 evidence for one instantiated earlier-component
     /// summary, held out of line by [`PostconditionCallDetail`].
     PostconditionCall {
@@ -674,6 +681,7 @@ impl DerivationNode {
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
+            | Self::FunctionFormalContract { .. }
             | Self::ImplicitBound { .. } => {}
         }
     }
@@ -726,6 +734,7 @@ impl DerivationNode {
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
+            | Self::FunctionFormalContract { .. }
             | Self::ImplicitBound { .. } => 0,
         }
     }
@@ -766,6 +775,7 @@ impl DerivationNode {
             Self::MaterializedContradiction { .. } => 22,
             Self::PostconditionExit { .. } => 23,
             Self::PostconditionAggregate { .. } => 24,
+            Self::FunctionFormalContract { .. } => 35,
             Self::PostconditionCall { .. } => 25,
             Self::PostconditionDirectResult { .. } => 26,
             Self::PostconditionDirectMatch { .. } => 27,
@@ -1383,7 +1393,8 @@ impl DerivationLedger {
                 .iter()
                 .filter_map(|node| match node {
                     DerivationNode::PostconditionExit { statement, .. } => Some(statement),
-                    DerivationNode::PostconditionAggregate { block, .. } => Some(block),
+                    DerivationNode::PostconditionAggregate { block, .. }
+                    | DerivationNode::FunctionFormalContract { block, .. } => Some(block),
                     DerivationNode::PostconditionCall { detail } => Some(&detail.call),
                     DerivationNode::PostconditionDirectMatch { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectResult { statement, .. }
@@ -1571,6 +1582,9 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         DerivationNode::PostconditionAggregate { parents, .. } => {
             parents.get(index).map(|parent| parent.0)
         }
+        DerivationNode::FunctionFormalContract {
+            relation_ordinal, ..
+        } => (index == 0).then_some(*relation_ordinal),
         DerivationNode::PostconditionCall { detail } => {
             let PostconditionCallDetail {
                 summary,
@@ -1797,6 +1811,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         | DerivationNode::SourceDistinct { .. }
         | DerivationNode::SourceGoal { .. }
         | DerivationNode::BooleanLiteral { .. }
+        | DerivationNode::FunctionFormalContract { .. }
         | DerivationNode::ImplicitBound { .. } => {}
     }
 }

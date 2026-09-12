@@ -140,36 +140,42 @@ selected non-escaping control-header boundary, and cannot escape.
 
 ## P5. Env-struct behavior parameterization (FN-5)
 
-Problem: callbacks / strategy objects / closures.
-Pattern status: DEFERRED in v0.17. The active specification defines static
-contract, complete-conformance, and checked-law validation, but it rejects
-source-contract generic bounds and defines no member-call operation that could
-select a conformance binding. Therefore contract-driven env-struct behavior is
-not currently a writable Whitefoot pattern. For a closed behavior set, use an
-enum and exhaustive `match`; otherwise use explicitly named direct functions
-and thread the environment struct by value or borrow.
-Candidate direction: a possible future specification form would keep the
-environment explicit and monomorphize a checked member call to a direct call, but v0.17
-does not provide that mechanism or its performance evidence.
-Would replace: closures capturing mutable environments, trait objects, and
-function pointers.
+Problem: write a map, queue or traversal once with user-supplied behavior.
+Declare a flat `formal Key<K: linear, E: linear>` containing the hash and
+equality signatures, each with its own row and source contract. Bind concrete
+functions with `actual SeedKey : Key<u64, Seed>`. A function writes
+`fn find<Key<K, E>>`, calls `Key::hash(env: env, key: key)`, and is
+instantiated as `find::<SeedKey>(...)`; a nominal writes `Map<'s, SeedKey>`.
+When two written Key applications are present, select
+`Key<K1, E1>::hash(...)` explicitly. Ordinary parameters carry the environment;
+the group itself has no value or storage.
 
-## P6. Checked-law reduction (FN-4)
+The formal row is the caller's boundary even when the actual reads fewer
+fields. Actual requirements and ensures match structurally; members state
+their own loan regions and instantiate them at each call. Actual header
+regions capture store brands in type arguments. A non-copy owned member
+result must be fresh, so ownership-returning conversions and pop helpers
+remain ordinary direct functions.
 
-Problem: custom folds/reductions that a compiler cannot legally reorder.
-Pattern status: validation-only in v0.17. State the admitted algebra
-(`law associative/commutative/identity`) in a contract and conform its
-ordinary top-level function. The compiler must discharge the law for source
-acceptance and refutes an invalid or unavailable law at compile time. The
-checked law is not yet optimizer authority, so v0.17 does not reassociate the
-sequential fold from that fact.
-Potential speed: the archived channel-3 experiment measured 3.3x over the
-serial shape. Shipping that transform requires one specification-fixed consumer
-of the originating checked fact and an exact permitted consequence. The
-originating semantic decision remains the only proof authority. Until then
-facts-off lowering is unchanged.
-Replaces: hand-written multi-accumulator loops resting on unchecked human
-algebra.
+The selected calls monomorphize to ordinary direct calls. No runtime
+dictionary, closure object, function pointer or dispatch is formed. The
+[behavior investigation](../research/investigations/containers-and-resources/BEHAVIOR.md)
+owns the worked forms and measurement evidence.
+
+## P6. Behavior laws are not safety premises (FN-4)
+
+Problem: a user-supplied equality or comparison may be inconsistent.
+Prove ownership, initialization, index bounds and cleanup from the container's
+own control flow and source contracts. Do not use reflexivity, transitivity,
+ordering consistency or agreement between hash and equality as implicit facts.
+An equality that always returns False can change which entries the map holds;
+it cannot justify an out-of-bounds access or an omitted release. Member
+contracts may bound a comparison's returned integer without asserting an
+ordering law.
+
+The former `law` declarations are retired. Behavior bindings authorize no
+reassociation or parallel reduction; a law-dependent optimization would need
+a separately defined proof and consumer.
 
 ## P7. Branchless classifier (i1 dataflow)
 

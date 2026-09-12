@@ -1903,8 +1903,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_ensures_bearing_conformance_binding_is_fn3_before_proof() {
-    let source = br#"contract Maker {
+fn an_actual_with_a_different_ensures_is_fn4_before_proof() {
+    let source = br#"formal Maker {
   fn make() -> result: own i32 pure;
 }
 
@@ -1914,7 +1914,7 @@ fn make() -> result: own i32 pure contract {
   return 1_i32;
 }
 
-conform i32: Maker {
+actual Made : Maker {
   make = make;
 }
 
@@ -1922,12 +1922,12 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_at(source, SemanticRule::Fn3, "make = make;");
+    assert_rule_at(source, SemanticRule::Fn4, "make = make;");
 }
 
 #[test]
-fn an_invalid_contract_precedes_the_postcondition_proof_boundary() {
-    let source = br#"contract Invalid<T: affine> {
+fn an_invalid_formal_header_precedes_the_postcondition_proof_boundary() {
+    let source = br#"formal Invalid<fn make() -> result: own u64 pure> {
 }
 
 fn identity(value: own i32) -> result: own i32 pure contract {
@@ -1943,12 +1943,15 @@ command fn main() -> status: own ExitStatus pure {
     assert_rule(
         source,
         SemanticRule::Fn3,
-        SemanticIssueKind::GenericContract,
+        SemanticIssueKind::type_mismatch(
+            "a formal header contains only flat type and const parameters",
+            "a nonmatching behavior argument",
+        ),
     );
 }
 
 #[test]
-fn an_invalid_contract_law_precedes_the_postcondition_proof_boundary() {
+fn retired_law_syntax_precedes_the_postcondition_proof_boundary() {
     let source = br#"contract InvalidLaw {
   fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law identity(combine, unit);
@@ -1964,11 +1967,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Fn4,
-        SemanticIssueKind::InvalidContractLaw,
-    );
+    // D7 retires the law mechanism. Preserve the old source as a grammar
+    // rejection; it cannot supply or bypass any postcondition proof.
+    super::assert_parse_rule(source, crate::SyntaxRule::Gram2);
 }
 
 #[test]

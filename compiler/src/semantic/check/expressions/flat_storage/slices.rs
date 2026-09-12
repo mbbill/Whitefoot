@@ -53,11 +53,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // carries no written argument: the region comes from the operand's own
         // borrow and the element from the place it views. A written argument
         // here is the rejection, not the supply.
-        if self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .is_some()
-        {
+        if self.tree.argument_list(node)?.is_some() {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         let atoms = self.operation_atoms(node, 1)?;

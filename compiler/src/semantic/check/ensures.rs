@@ -236,6 +236,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &mut self,
         items: &[NodeId],
     ) -> Result<(), CheckStop> {
+        self.collect_behavior_groups(items)?;
+        self.reject_instantiation_cycles(items)?;
         self.declare_nominals_for_postconditions(items)?;
         self.collect_constants_for_postconditions(items)?;
         self.collect_function_templates_for_postconditions(items)?;
@@ -267,6 +269,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &mut self,
         record: &PostconditionResolutionRecord,
     ) -> Result<Option<FunctionSignature>, CheckStop> {
+        if let Some(node) = self.tree.node_with_path(&record.function)
+            && self.tree.production(node)? == Production::FnSig
+        {
+            let declaration = self
+                .declaration_at(node, crate::DeclarationRole::FunctionParameter)?
+                .id();
+            return self.symbolic_behavior_signature(declaration).map(Some);
+        }
         let Some(template) = self
             .function_templates
             .iter()
@@ -303,14 +313,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// identities; no FunctionId, NominalId, or CheckedType crosses between
     /// them.
     fn eligible_postcondition_functions(&self) -> Result<Vec<FunctionId>, CheckStop> {
+        let group_functions = self
+            .behavior
+            .declaration_arguments
+            .iter()
+            .map(|argument| self.function_argument_instance(*argument))
+            .collect::<Result<Vec<_>, _>>()?;
         let mut eligible = self
             .signatures
             .iter()
             .filter(|signature| {
-                self.templates_by_declaration
-                    .get(&signature.declaration)
-                    .and_then(|index| self.function_templates.get(*index))
-                    .is_some_and(|template| template.generic_parameters.is_empty())
+                signature.formal_parameter.is_some()
+                    || group_functions.contains(&signature.id)
+                    || self
+                        .templates_by_declaration
+                        .get(&signature.declaration)
+                        .and_then(|index| self.function_templates.get(*index))
+                        .is_some_and(|template| template.generic_parameters.is_empty())
             })
             .map(|signature| signature.id)
             .collect::<Vec<_>>();
@@ -322,6 +341,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(eligible[cursor].0 as usize)
                 .cloned()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            for (_, argument) in caller.substitution.entries() {
+                if let GenericArgument::Function(argument) = argument {
+                    let target = self.function_argument_instance(*argument)?;
+                    if !eligible.contains(&target) {
+                        eligible.push(target);
+                    }
+                }
+            }
             for call in self.tree.descendants_with(caller.node, Production::Call)? {
                 if self.call_is_inside_postcondition(call)? {
                     continue;
@@ -453,7 +480,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
     ) -> Result<Vec<CheckedPostconditionSelector>, CheckStop> {
-        if signature.substitution.is_concrete(&self.elements.borrow()) {
+        if signature.formal_parameter.is_none()
+            && signature.substitution.is_concrete(&self.elements.borrow())
+        {
             return Ok(self
                 .postcondition_selectors
                 .iter()
@@ -461,6 +490,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .cloned()
                 .collect());
         }
+        self.postcondition_selectors_from_source(signature)
+    }
+
+    pub(super) fn postcondition_selectors_from_source(
+        &self,
+        signature: &FunctionSignature,
+    ) -> Result<Vec<CheckedPostconditionSelector>, CheckStop> {
         let function = self.tree.path(signature.node)?;
         let mut selectors = Vec::new();
         for record in self
@@ -469,7 +505,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .filter(|record| &record.function == function)
         {
-            let selector = self.admit_postcondition_selector(record, signature, true)?;
+            let selector = self.admit_postcondition_selector(
+                record,
+                signature,
+                !signature.substitution.is_concrete(&self.elements.borrow()),
+            )?;
             // An unbounded symbolic type has no concrete FN-2 fragment
             // judgment yet. Its selector is provisionally admitted for
             // resolution order, but clause typing and selected-return
@@ -490,6 +530,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         counters: &mut ControlCounters<'_>,
     ) -> Result<RelationTemplate, CheckStop> {
+        let expanded = self.expand_postcondition_clause(function, selector, bindings, counters)?;
+        let clause = self
+            .tree
+            .node_with_path(&selector.block)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let expression = self
+            .tree
+            .first_child_with(clause, Production::ClauseExpr)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        self.postcondition_relation(expression, expanded)
+    }
+
+    pub(super) fn expand_postcondition_clause(
+        &self,
+        function: &FunctionSignature,
+        selector: &CheckedPostconditionSelector,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        counters: &mut ControlCounters<'_>,
+    ) -> Result<ExpandedClauseExpression, CheckStop> {
         let record = self
             .resolved
             .postconditions()
@@ -586,8 +645,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bindings,
                 &expanded_bindings,
             )?;
-            let relation = self.postcondition_relation(expression, expanded)?;
-            Ok(relation)
+            Ok(expanded)
         })
     }
 
@@ -1024,7 +1082,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if function.substitution.is_concrete(&self.elements.borrow()) {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        if !matches!(selector.result_type, CheckedType::Integer(_))
+        // FN-9 already admits a clause naming only exclusive exit state
+        // regardless of result type (v0.56, FN-9). Such a clause supplies no
+        // result datum at all. Keep the integer-result gate for every other
+        // clause, and retain the integer-operand and selected-return proof
+        // checks below; this exception proves no relation by itself.
+        let exclusive_state_only = selector.variant.is_none()
+            && relation
+                .operands
+                .iter()
+                .all(|operand| !operand.contains_result())
+            && relation.operands.iter().any(|operand| {
+                matches!(
+                    &operand.datum,
+                    RelationDatum::Measure(_, PostconditionPlace {
+                        root: PostconditionPlaceRoot::ExitParameter { ordinal }, ..
+                    }) if function.parameters.get(*ordinal as usize)
+                        .is_some_and(|parameter| matches!(parameter.mode, CheckedMode::Unique(_)))
+                )
+            });
+        if (!matches!(selector.result_type, CheckedType::Integer(_)) && !exclusive_state_only)
             || relation
                 .operands
                 .iter()
@@ -1035,17 +1112,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let checked = self.build_checked_postcondition_inner(
             function, parameters, selector, relation, body, true,
         )?;
-        let fragment_returns = checked.selected_returns.iter().all(|selected| {
-            selected.values.iter().flatten().all(|value| match value {
-                PostconditionReturnDatum::Place(place) => {
-                    matches!(place.ty, CheckedType::Integer(_))
-                }
-                PostconditionReturnDatum::Literal { value, .. } => {
-                    matches!(value.ty(), CheckedType::Integer(_))
-                }
-                PostconditionReturnDatum::Measure(..) => true,
-            })
-        });
+        // A state-only clause has no selected-result operand to classify.
+        // Its return edges still enter the ordinary proof below; the value
+        // returned on those edges (for example unit) is not evidence for it.
+        let fragment_returns = exclusive_state_only
+            || checked.selected_returns.iter().all(|selected| {
+                selected.values.iter().flatten().all(|value| match value {
+                    PostconditionReturnDatum::Place(place) => {
+                        matches!(place.ty, CheckedType::Integer(_))
+                    }
+                    PostconditionReturnDatum::Literal { value, .. } => {
+                        matches!(value.ty(), CheckedType::Integer(_))
+                    }
+                    PostconditionReturnDatum::Measure(..) => true,
+                })
+            });
         Ok(fragment_returns.then_some(checked))
     }
 
@@ -1061,6 +1142,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut type_substitutions = Vec::new();
         let mut const_substitutions = Vec::new();
         for (declaration, argument) in function.substitution.entries() {
+            if matches!(argument, GenericArgument::Function(_)) {
+                continue;
+            }
+            let super::generics::GenericParameterKey::Source(declaration) = declaration else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
             match argument {
                 GenericArgument::Type(ty) if ty.is_concrete(&self.elements.borrow()) => {
                     type_substitutions.push((*declaration, *ty));

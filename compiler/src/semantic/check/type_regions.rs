@@ -88,7 +88,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let arguments = template
                         .generic_parameters
                         .iter()
-                        .filter_map(|parameter| substitution.type_argument(parameter.declaration()))
+                        .filter_map(|parameter| match parameter {
+                            super::generics::GenericParameter::Type { declaration, .. } => {
+                                substitution.type_argument(*declaration)
+                            }
+                            _ => None,
+                        })
                         .collect();
                     (
                         TypeConstructor::Nominal(template.declaration),
@@ -184,10 +189,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut sources = Vec::new();
         if let Some(source) = source {
             sources = self.tree.children_with(source, Production::Type)?;
-            if let Some(targs) = self.tree.first_child_with(source, Production::Targs)? {
+            if let Some(targs) = self.tree.argument_list(source)? {
                 for argument in self.tree.children_with(targs, Production::Targ)? {
                     if let Some(ty) = self.tree.first_child_with(argument, Production::Type)? {
-                        sources.push(ty);
+                        sources.extend(self.behavior_type_sources(ty)?);
                     }
                 }
             }

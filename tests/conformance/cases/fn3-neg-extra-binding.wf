@@ -1,8 +1,8 @@
-contract Single {
+formal Single {
   fn value() -> result: own i32 pure;
 }
 
-conform i32: Single {
+actual First : Single {
   value = make_value;
   extra = make_extra;
 }

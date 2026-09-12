@@ -220,7 +220,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for ty in self.nominal_type_descendants(node)? {
             self.ensure_nominal_type_head(ty, substitution)?;
         }
-        for construct in self.tree.descendants_with(node, Production::Construct)? {
+        for construct in self.tree.constructor_descendants(node)? {
             self.ensure_source_constructor_instance(construct, substitution)?;
         }
         self.ensure_implicit_prelude_nominals(node, substitution, false)?;
@@ -253,10 +253,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             self.ensure_nominal_type_head(ty, substitution)?;
         }
-        for construct in self
-            .tree
-            .descendants_with(function, Production::Construct)?
-        {
+        for construct in self.tree.constructor_descendants(function)? {
             if self.node_is_inside_postcondition(construct)? {
                 continue;
             }
@@ -338,6 +335,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn nominal_type_descendants(&self, node: NodeId) -> Result<Vec<NodeId>, CheckStop> {
         let mut nested = self.tree.descendants_with(node, Production::Type)?;
+        let mut uses = Vec::with_capacity(nested.len());
+        for ty in nested {
+            if self
+                .optional_declaration_at(ty, DeclarationRole::GenericType)?
+                .is_none()
+            {
+                uses.push(ty);
+            }
+        }
+        nested = uses;
         nested.sort_by(|left, right| {
             let left_depth = self
                 .tree
@@ -593,7 +600,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(error) = error else {
                 continue;
             };
-            let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            let Some(targs) = self.tree.argument_list(call)? else {
                 continue;
             };
             let arguments = self.tree.children_with(targs, Production::Targ)?;
@@ -621,7 +628,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return Ok(());
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
@@ -1081,7 +1088,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// The actual one formal region of a call denotes, or the region itself
     /// when this call substitutes nothing for it [FORM-8].
-    fn substituted_region(
+    pub(super) fn substituted_region(
         regions: &[(crate::DeclarationId, crate::DeclarationId)],
         region: crate::DeclarationId,
     ) -> crate::DeclarationId {
@@ -1256,6 +1263,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         super::generics::GenericArgument::Const(value) => {
                             super::generics::GenericArgument::Const(*value)
+                        }
+                        super::generics::GenericArgument::Function(value) => {
+                            let substituted =
+                                self.substitute_function_argument_regions(*value, regions)?;
+                            changed |= substituted != *value;
+                            super::generics::GenericArgument::Function(substituted)
                         }
                     },
                 ));
@@ -1616,6 +1629,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         pending.push((*left, *right));
                     }
                     (GenericArgument::Const(left), GenericArgument::Const(right))
+                        if left == right => {}
+                    (GenericArgument::Function(left), GenericArgument::Function(right))
                         if left == right => {}
                     _ => return Ok(false),
                 }

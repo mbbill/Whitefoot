@@ -412,7 +412,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// bytes: a `targs` child, a non-nominal target, or any other system
     /// nominal fails.
     fn resolves_to_system_nominal(&self, ty: NodeId, nominal: &str) -> Result<bool, CheckStop> {
-        if self.tree.first_child_with(ty, Production::Targs)?.is_some() {
+        if self.tree.argument_list(ty)?.is_some() {
             return Ok(false);
         }
         let Ok(usage) = self.use_at(ty, LexicalUseRole::Type) else {

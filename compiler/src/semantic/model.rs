@@ -4,12 +4,6 @@ use crate::{DeclarationId, NodePath, PreludeDeclarationId};
 pub(crate) struct FunctionId(pub(crate) u32);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ContractId(pub(crate) u32);
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ConformanceId(pub(crate) u32);
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct BindingId(pub(crate) u32);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1624,6 +1618,10 @@ pub(crate) enum CheckedExpression {
     },
     UserCall {
         function: FunctionId,
+        /// The authoritative function-formal row [FN-4, EFF-2], rebased to
+        /// the selected concrete callee's parameter declarations. It is
+        /// proof-only: lowering still calls `function` directly.
+        formal_effects: Option<Box<CheckedEffects>>,
         /// Result image instantiated before any exclusive-referent writeback.
         state_origins: Option<Box<CheckedStateOrigins>>,
         /// Exact source call occurrence and declared-order argument atoms.
@@ -2394,6 +2392,9 @@ pub(crate) struct CheckedStatePath {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedFunction {
+    /// A function-kind hypothesis exists only during symbolic template
+    /// checking. The concrete inventory and lowering contain none.
+    pub(crate) formal_hypothesis: bool,
     pub(crate) id: FunctionId,
     pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
@@ -2464,79 +2465,6 @@ pub(crate) struct CheckedEffects {
     /// entry; derived, never declared.
     pub(crate) allocates_heap: bool,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedContractParameter {
-    pub(crate) mode: CheckedMode,
-    pub(crate) ty: CheckedType,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedContractMember {
-    pub(crate) name: String,
-    pub(crate) region_parameters: Vec<DeclarationId>,
-    pub(crate) parameters: Vec<CheckedContractParameter>,
-    pub(crate) result_mode: CheckedMode,
-    pub(crate) result: CheckedType,
-    pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
-    pub(crate) effects: CheckedEffects,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedContractLawKind {
-    Associative,
-    Commutative,
-    Identity,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedLawIdentity {
-    Literal(CheckedValue),
-    Constant(CheckedConstantId),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedContractLaw {
-    pub(crate) node_path: NodePath,
-    pub(crate) kind: CheckedContractLawKind,
-    pub(crate) member: u32,
-    pub(crate) identity: Option<CheckedLawIdentity>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedContract {
-    pub(crate) id: ContractId,
-    pub(crate) declaration: DeclarationId,
-    pub(crate) name: String,
-    pub(crate) members: Vec<CheckedContractMember>,
-    pub(crate) laws: Vec<CheckedContractLaw>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedConformanceBinding {
-    pub(crate) member: u32,
-    pub(crate) function: FunctionId,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedConformance {
-    pub(crate) id: ConformanceId,
-    pub(crate) node_path: NodePath,
-    pub(crate) subject: CheckedType,
-    pub(crate) contract: ContractId,
-    pub(crate) bindings: Vec<CheckedConformanceBinding>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedLawDerivation {
-    pub(crate) conformance: ConformanceId,
-    pub(crate) contract_law: u32,
-    pub(crate) function: FunctionId,
-    pub(crate) operation: CheckedIntegerOperation,
-    pub(crate) domain: IntegerType,
-    pub(crate) law: CheckedContractLawKind,
-    pub(crate) identity: Option<CheckedLawIdentity>,
 }
 
 /// The [FN-7] entry form the checker admitted for one compilation unit.
@@ -2615,14 +2543,6 @@ pub(crate) struct CheckedProgramData {
     /// function inventory or executable lowering path.
     #[allow(dead_code)]
     pub(crate) generic_requirements: Vec<CheckedGenericRequirement>,
-    // Deliberately unread by ordinary lowering: FN-3/FN-4 metadata is
-    // source-acceptance evidence and grants no executable authority.
-    #[allow(dead_code)]
-    pub(crate) contracts: Vec<CheckedContract>,
-    #[allow(dead_code)]
-    pub(crate) conformances: Vec<CheckedConformance>,
-    #[allow(dead_code)]
-    pub(crate) law_derivations: Vec<CheckedLawDerivation>,
     pub(crate) main: FunctionId,
     pub(crate) entry: CheckedEntryForm,
     /// Read-only [PAR-1 candidate] permission table: which sibling call pairs

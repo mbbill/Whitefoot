@@ -957,8 +957,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 place_context,
                 ReborrowPosition::Forbidden,
             ),
+            Production::Call if self.tree.is_constructor_call(node)? => {
+                self.check_construct(function, node, bindings, loop_depth)
+            }
             Production::Call => self.check_call(function, node, bindings, loop_depth),
-            Production::Construct => self.check_construct(function, node, bindings, loop_depth),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
     }
@@ -2033,7 +2035,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if determined == 0 {
             return Ok(());
         }
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return Ok(());
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
@@ -2076,6 +2078,49 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let constructor_name = usage.spelling().to_owned();
+        // GRAM-5 factors constructor and qualified-member prefixes through
+        // one call node. Constructors still write nominal arguments directly
+        // after the TYPEID, and every field remains named [TYPE-5, GRAM-8].
+        if self
+            .tree
+            .first_child_with(node, Production::Targs)?
+            .is_some()
+        {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "constructor arguments immediately after its TYPEID",
+                    "function-style :: arguments",
+                ),
+            );
+        }
+        if self
+            .tree
+            .first_child_with(node, Production::AtomList)?
+            .is_some()
+        {
+            return self.issue_node(
+                SemanticRule::Gram8,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "named constructor fields in declaration order",
+                    "positional constructor arguments",
+                ),
+            );
+        }
+        if matches!(usage.target(), ResolvedTarget::Prelude(id) if !matches!(id.ordinal(), 5 | 6 | 11 | 13))
+            && self.tree.argument_list(node)?.is_some()
+        {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "a constructor with no nominal arguments",
+                    "written nominal arguments",
+                ),
+            );
+        }
         if let ResolvedTarget::Prelude(id) = usage.target()
             && matches!(id.ordinal(), 1 | 2)
         {

@@ -33,7 +33,10 @@ Its parts answer different questions:
   allocation/refusal controls. Intentional rejected forms distinguish source
   restrictions from the repaired nested-region substitution and Box replacement
   defects. Both former defect witnesses now execute in the ordinary check;
-  `families/RESULTS.md` states their coverage and remaining limits.
+  owning key-generic maps and element-generic queues exercise static behavior
+  groups, branded keys and hostile equality. Their retained-helper measurements
+  separate behavior binding from owning exchange and value/result ABI costs;
+  `families/RESULTS.md` states coverage, attribution and remaining limits.
 
 These small programs test specific capabilities and costs. They are not a
 representative corpus of real applications and supply no workload-frequency data.

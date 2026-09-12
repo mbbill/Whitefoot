@@ -153,6 +153,56 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         Ok(None)
     }
 
+    /// Uppercase callees without a member selector are constructions. The
+    /// grammar shares their prefix with qualified member calls (strong LL(2)).
+    pub(super) fn is_constructor_call(
+        &self,
+        node: NodeId,
+    ) -> Result<bool, SemanticCompilerFailure> {
+        if self.production(node)? != Production::Call {
+            return Ok(false);
+        }
+        let Some(callee) = self.first_child_with(node, Production::Callee)? else {
+            return Ok(false);
+        };
+        Ok(self
+            .first_child_with(callee, Production::PackUse)?
+            .is_some()
+            && self
+                .direct_token_with(callee, TerminalPredicate::Identifier)?
+                .is_none())
+    }
+
+    pub(super) fn argument_list(
+        &self,
+        node: NodeId,
+    ) -> Result<Option<NodeId>, SemanticCompilerFailure> {
+        if self.is_constructor_call(node)? {
+            let callee = self
+                .first_child_with(node, Production::Callee)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let head = self
+                .first_child_with(callee, Production::PackUse)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            self.first_child_with(head, Production::Targs)
+        } else {
+            self.first_child_with(node, Production::Targs)
+        }
+    }
+
+    pub(super) fn constructor_descendants(
+        &self,
+        node: NodeId,
+    ) -> Result<Vec<NodeId>, SemanticCompilerFailure> {
+        let mut result = Vec::new();
+        for call in self.descendants_with(node, Production::Call)? {
+            if self.is_constructor_call(call)? {
+                result.push(call);
+            }
+        }
+        Ok(result)
+    }
+
     pub(super) fn descendants_with(
         &self,
         node: NodeId,

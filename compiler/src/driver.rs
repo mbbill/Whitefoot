@@ -2087,13 +2087,13 @@ command fn main() -> status: own ExitStatus pure {{
     }
 
     #[test]
-    fn driver_lowers_static_contract_metadata_without_executable_artifacts() {
-        let source = b"contract Empty {\n}\n\nconform i32: Empty {\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    fn driver_erases_empty_formal_and_actual_groups_before_lowering() {
+        let source = b"formal Empty {\n}\n\nactual Selected : Empty {\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
         )
-        .expect("static contract metadata must use the ordinary lowering path");
+        .expect("group expansion must use the ordinary lowering path");
         assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
         assert!(!llvm.contains("Empty"));
     }

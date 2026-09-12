@@ -105,6 +105,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         role: LexicalUseRole,
     ) -> Result<&crate::LexicalUseRecord, CheckStop> {
+        if role == LexicalUseRole::Type {
+            return self.use_at_roles(node, &[LexicalUseRole::Type, LexicalUseRole::TypeArgument]);
+        }
         self.use_at_roles(node, &[role])
     }
 

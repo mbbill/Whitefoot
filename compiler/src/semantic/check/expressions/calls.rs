@@ -32,6 +32,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
+        if self.tree.is_constructor_call(node)? {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "a function or operation call in this statement position",
+                    "a construction",
+                ),
+            );
+        }
+        if let Some(key) = self.behavior_call_key(node)? {
+            return self.check_behavior_call(node, key, function, bindings, loop_depth);
+        }
         let callee = self
             .tree
             .first_child_with(node, Production::Callee)?
@@ -348,16 +361,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         function: &FunctionSignature,
     ) -> Result<[CheckedNumericType; 2], CheckStop> {
-        let targs = self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRule::Type5,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                )
-            })?;
+        let targs = self.tree.argument_list(node)?.ok_or_else(|| {
+            self.issue_value(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::InvalidOperation,
+            )
+        })?;
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         let [source, destination] = arguments.as_slice() else {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
@@ -405,7 +415,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // GRAM-11 named-argument rejection plus [STOR-5] on the written
         // content argument.
         self.reject_region_bearing_storage_operation_argument(node, "arena_new", function, 2, 1)?;
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
@@ -414,8 +424,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         if self
             .tree
-            .first_child_with(*region_argument, Production::Type)?
-            .is_some()
+            .direct_token_with(*region_argument, crate::TerminalPredicate::RegionIdentifier)?
+            .is_none()
         {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
@@ -659,11 +669,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        if self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .is_some()
-        {
+        if self.tree.argument_list(node)?.is_some() {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         Ok(())
@@ -677,16 +683,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         function: &FunctionSignature,
     ) -> Result<CheckedType, CheckStop> {
-        let targs = self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRule::Type5,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                )
-            })?;
+        let targs = self.tree.argument_list(node)?.ok_or_else(|| {
+            self.issue_value(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::InvalidOperation,
+            )
+        })?;
         let targs = self.tree.children_with(targs, Production::Targ)?;
         if targs.len() != 1 {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
@@ -746,7 +749,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let Some(arguments) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(arguments) = self.tree.argument_list(node)? else {
             return Ok(());
         };
         let arguments = self.tree.children_with(arguments, Production::Targ)?;

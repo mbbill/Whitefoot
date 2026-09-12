@@ -1,12 +1,12 @@
-contract Zeroed {
+formal Zeroed {
   fn zero() -> result: own i32 pure;
 }
 
-conform i32: Zeroed {
+actual First : Zeroed {
   zero = i32_zero_a;
 }
 
-conform i32: Zeroed {
+actual Second : Zeroed {
   zero = i32_zero_b;
 }
 

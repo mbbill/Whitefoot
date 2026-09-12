@@ -22,6 +22,75 @@ fn assert_complete(source: &str) {
     });
 }
 
+#[test]
+fn generic_unit_helper_publishes_only_proved_exclusive_state_relations() {
+    let source = r#"fn touch<T: affine>(values: &uniq FixedVector<T, 4>) -> result: own unit reads(values), writes(values) contract {
+  requires len_of(deref(values)) >= 1_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values)));
+} {
+  region {
+    let value = take_back(vector: &uniq deref(values));
+    place_back(vector: &uniq deref(values), value: move value);
+    return unit;
+  }
+}
+
+fn exercise<T: affine>(values: &uniq FixedVector<T, 4>) -> result: own unit reads(values), writes(values) contract {
+  requires len_of(deref(values)) >= 1_u64;
+} {
+  region {
+    touch::<T>(values: &uniq deref(values));
+    let value = take_back(vector: &uniq deref(values));
+    place_back(vector: &uniq deref(values), value: move value);
+    return unit;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = fixed_vector::<u64, 4>();
+  region {
+    place_back(vector: &uniq values, value: 7_u64);
+    exercise::<u64>(values: &uniq values);
+    return exit_status(code: 0_u8);
+  }
+}
+"#;
+    assert_complete(source);
+    // A return must still prove the promised state, and a call with no
+    // ensures must still lose the old length fact at its write boundary.
+    // Keep the complete pop/push body and make its promise false. This
+    // isolates return-proof checking; disposing an opaque affine T would
+    // instead test the independent PROV-6 capability-release restriction.
+    assert_rule(
+        source
+            .replace(
+                "ensures len_of(deref(values)) == len_of(deref(entry(values)));",
+                "ensures len_of(deref(values)) == len_of(deref(entry(values))) + 1_u64;",
+            )
+            .as_bytes(),
+        SemanticRule::Fn9,
+    );
+    assert_rule(
+        source
+            .replace(
+                "  ensures len_of(deref(values)) == len_of(deref(entry(values)));\n",
+                "",
+            )
+            .as_bytes(),
+        SemanticRule::Blk0,
+    );
+    // Unit is still not an admitted result datum.
+    assert_rule(
+        source
+            .replace(
+                "ensures len_of(deref(values)) == len_of(deref(entry(values)));",
+                "ensures result == unit;",
+            )
+            .as_bytes(),
+        SemanticRule::Fn9,
+    );
+}
+
 const PUSH: &str = r#"fn push(values: &uniq FixedVector<u64, 4>, value: own u64) -> result: own unit reads(values), writes(values) contract {
   requires room_of(deref(values)) > 0_u64;
   ensures len_of(deref(values)) == len_of(deref(entry(values))) + 1_u64;

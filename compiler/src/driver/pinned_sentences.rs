@@ -367,7 +367,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "FN-2",
         sentences: &[
-            r#"TypeMismatch { expected: "1 written type argument", found: "no type-argument list" }"#,
+            r#"TypeMismatch { expected: "1 written generic argument", found: "no explicit argument list" }"#,
         ],
     },
     // -------------------------------------------------------------------
@@ -387,7 +387,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            r#"TypeMismatch { expected: "1 written type argument", found: "no type-argument list" }"#,
+            r#"TypeMismatch { expected: "1 written generic argument", found: "no explicit argument list" }"#,
         ],
     },
     Probe {
@@ -404,7 +404,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            r#"TypeMismatch { expected: "1 written type argument", found: "2 written type arguments" }"#,
+            r#"TypeMismatch { expected: "1 written expanded generic argument", found: "2 written expanded generic arguments" }"#,
         ],
     },
     Probe {
@@ -421,7 +421,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            r#"TypeMismatch { expected: "a type in this type-argument position", found: "a const argument in a type-parameter position" }"#,
+            r#"TypeMismatch { expected: "a type argument occupies this parameter position", found: "a nonmatching behavior argument" }"#,
         ],
     },
     Probe {
@@ -437,7 +437,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            r#"TypeMismatch { expected: "a const argument in this type-argument position", found: "a type in a const-parameter position" }"#,
+            r#"TypeMismatch { expected: "a const argument occupies this parameter position", found: "a nonmatching behavior argument" }"#,
         ],
     },
     Probe {
@@ -453,7 +453,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            r#"TypeMismatch { expected: "no type arguments, because this form declares no generic parameters", found: "a written `<...>` type-argument list" }"#,
+            r#"TypeMismatch { expected: "0 written expanded generic arguments", found: "1 written expanded generic argument" }"#,
         ],
     },
     Probe {

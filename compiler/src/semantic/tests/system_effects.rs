@@ -1583,19 +1583,17 @@ fn a_release_on_one_match_arm_contributes_its_row() {
 }
 
 #[test]
-fn a_pure_contract_member_cannot_bind_a_release_effectful_function() {
-    // [FN-3] normalizes state identities and compares `external` and `blocks`
-    // by presence: a `pure` member cannot bind a function that exhibits a
-    // category only through release.
-    assert_rule(
-        b"contract Disposer {\n  fn release(file: own ReadFile) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  release = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Fn3,
-        SemanticIssueKind::IncompatibleConformanceFunction,
+fn a_pure_formal_member_cannot_bind_a_release_effectful_function() {
+    // FN-4 compares ordinary state paths after parameter normalization:
+    // the actual's derived release write is not covered by a pure formal.
+    assert_rule_kind(
+        b"formal Disposer {\n  fn release(file: own ReadFile) -> result: own unit pure;\n}\n\nactual Selected : Disposer {\n  release = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Fn4,
+        |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
-    // The same member row binds the same function when both declare the two
-    // categories, so the presence comparison admits as well as rejects.
+    // The same actual binds when the formal covers that ordinary write.
     assert_complete(
-        b"contract Disposer {\n  fn release(item: own ReadFile) -> result: own unit writes(item);\n}\n\nconform u64: Disposer {\n  release = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"formal Disposer {\n  fn release(item: own ReadFile) -> result: own unit writes(item);\n}\n\nactual Selected : Disposer {\n  release = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -1629,16 +1627,14 @@ fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     // The replacement keeps the same canonical-order and multiplicity
     // coverage over the live categories: reads, writes, and allocates.
     //
-    // `pure` combined with a second category is refused at the same rule but
-    // at the earlier stage: `effects := "pure" | effect ("," effect)*` cannot
-    // derive it, and regenerating the tables for [S23]'s `allocates` entry
-    // tightened the decision that used to admit the bytes and leave the
-    // refusal to the checker. The conformance corpus keeps its recorded
-    // `reject EFF-1` verdict for the same program either way; what moved is
-    // the stage, so this assertion moves with it.
+    // D7 permits a comma after a raw function-kind parameter's `fn_sig`,
+    // hence after its `effects`. Here the same comma cannot continue the
+    // enclosing top-level `fn_decl`: DIAG-1 assigns that grammar failure to
+    // GRAM-2. The source still rejects; nonempty-row order and multiplicity
+    // remain EFF-1 below. BEHAVIOR.md records the corpus citation migration.
     super::assert_parse_rule(
         b"fn probe(file: own ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        crate::SyntaxRule::Eff1,
+        crate::SyntaxRule::Gram2,
     );
     assert_rule_kind(
         b"fn probe(file: own ReadFile) -> result: own unit writes(file), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",

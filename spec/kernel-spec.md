@@ -1,6 +1,6 @@
-# Kernel Specification v0.56
+# Kernel Specification v0.57
 
-Status: ACTIVE v0.56
+Status: ACTIVE v0.57
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -49,17 +49,19 @@ The right-attachment set contains `)`, `]`, `>`, `,`, `;`, `.`, `:`, `(`, `<`, `
 Between two consecutive terminals on the same line, emit zero bytes when the left terminal is in the left-attachment set or the right terminal is in the right-attachment set; otherwise emit exactly one ASCII space.
 A `<` or `>` terminal selected by `compare_op` [GRAM-5] is rendered as a member of neither set, so a comparison is `a < b` while a type-argument list is `f::<T>(x)` and `buffer<u8>`; this stated spacing overrides the generic attachment of those two bytes exactly as the `for` header's stated space does below.
 Thus function headers are `fn f()`, `fn f<T>()`, and `fn f['r](x: &'r i32)`; subscripts are `p[i]`; a counted range is `lower..upper`; generic and square-bracket interiors are compact; `](`, `>(`, and `::<` are attached; and commas and colons attach to their left operand and have one space before the grammar-required following element.
-Examples include `Result<i32, Overflow>`, `f(x: a, y: b)`, `cvt::<u8, u32>(w)`, `a <= b`, `conform i32: Zeroed`, `['r, 's]`, and `[10_u8, 20_u8]`.
+The colon separating an `actual_decl` name from its formal application is rendered as a member of neither attachment set: `actual SeedKey : Key<u64, Seed>`. This declaration separator is distinct from parameter, field, and bound colons, which retain the rule above.
+Examples include `Result<i32, Overflow>`, `f(x: a, y: b)`, `cvt::<u8, u32>(w)`, `a <= b`, `actual SeedKey : Key<u64, Seed>`, `['r, 's]`, and `[10_u8, 20_u8]`.
 The same rules render an elided region [FORM-8] with no further sentence: a borrow mode is `&u8` or `&uniq Foo`, a borrow expression is `&p` or `&uniq p`, a region-free view type is `Slice<u8>` or `arena<T>`, an unnamed region block opens `region {`, and a call whose region arguments are all determined writes no `::` application at all.
 
 Every nonempty physical line begins with exactly two ASCII spaces for each enclosing brace block.
 A closing brace is rendered after reducing the depth for the block it closes.
 A match-arm header is therefore one level inside its match, and statements in the arm body are two levels inside it.
 
-The line-bearing simple productions are `field`, `variant`, `fn_sig`, `law`, `fn_bind`, `const_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `proof_use`, `break_stmt`, `give_stmt`, and `dispose_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs`, `propagate_let_rhs`, or `replace_let_rhs` and a `let_stmt` whose selected binder is a parenthesized binder list or a destructuring consume [GRAM-4, PROV-6].
+The line-bearing simple productions are `field`, `variant`, `fn_bind`, `const_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `proof_use`, `break_stmt`, `give_stmt`, and `dispose_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs`, `propagate_let_rhs`, or `replace_let_rhs` and a `let_stmt` whose selected binder is a parenthesized binder list or a destructuring consume [GRAM-4, PROV-6].
 Each renders completely on one line, including its final semicolon.
+A `fn_sig` renders its signature inline, with a result-list space after `->` just as a `fn_decl` does. Its optional `contract_block` uses the ordinary block layout. In a formal body each member starts a new line and the following semicolon attaches to the signature or its contract's closing brace. In a `gparam` the signature stays in the surrounding generic header; no member semicolon is inserted.
 
-The generically block-bearing productions are `struct_decl`, `enum_decl`, `contract_decl`, `conform_decl`, the body of `fn_decl`, `contract_block`, `region_stmt`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
+The generically block-bearing productions are `struct_decl`, `enum_decl`, `formal_decl`, `actual_decl`, the body of `fn_decl`, `contract_block`, `region_stmt`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
 Their introducer through `{` is one line; their children render on following lines at depth plus one; and `}` renders on its own line at the original depth.
 Empty blocks still use an opening line followed by a closing-brace line.
 An `invariant_stmt` ending in `;` renders completely on one line.
@@ -160,12 +162,12 @@ This substitution also preserves a legacy arena's extent and storage obligations
 Writing a determined region parameter, or omitting an undetermined one, is a hard error citing FORM-8 at the complete `call`.
 A retained-argument table operation still writes the region its row fixes, because no operand supplies it [TYPE-5, OP-1].
 
-A `construct` [GRAM-5] of a nominal carrying `region_params` writes, as the leading region members of its `targs` list — which a construct writes bare, without the `::` a call writes — exactly those of that nominal's region parameters that the declared type of no field of the constructor it names determines, in `region_params` order.
+A constructor `call` [GRAM-5] of a nominal carrying `region_params` writes, as the leading region members of its `targs` list — which a construct writes bare, without the `::` a call writes — exactly those of that nominal's region parameters that the declared type of no field of the constructor it names determines, in `region_params` order.
 A construct whose complete type application would then be empty writes no `targs` list at all.
 A field determines a region parameter exactly when its explicitly declared type has a region slot denoting that region, including an elided brand PROV-1 fixes to the enclosing nominal's sole region parameter — the same constructor-by-constructor correspondence a parameter position bears at a call, including all region arguments and nested explicit type arguments — and an enum's variants are decided one by one, because a construct names one variant and writes exactly that variant's fields.
 Every determined region parameter takes the region at its first corresponding actual position; every later occurrence, including one in the same field type, has the ordinary exact [TYPE-5] equality against the instance so determined and is never a second binding [PROV-1].
 An operand whose type does not match the declared type at a determining position is a [TYPE-5] mismatch at that operand; the ordinary stored-content rules still decide which field types are admitted [STOR-5].
-Writing a determined region parameter, or omitting an undetermined one, is a hard error citing FORM-8 at the complete `construct`, whose mechanical fix is `drop the region argument`.
+Writing a determined region parameter, or omitting an undetermined one, is a hard error citing FORM-8 at the complete constructor `call`, whose mechanical fix is `drop the region argument`.
 This uses the same structural correspondence as the call clause above: a field operand stands where a parameter position stands, and construction still consults no expected nominal type [TYPE-5]; complete stored field types retain exact equality and are not shortened by a loan-region meet.
 
 [LEX-1] Lexicon policy: surface names label checked invariants, stated in this document self-containedly.
@@ -214,14 +216,15 @@ Grammar derivation later tests the retained predicate sets against its `SELECT_2
 A grammar terminal is therefore a predicate over a token's shape kind and exact bytes, not a priority-selected replacement token kind.
 Exact-spelling and union predicates may overlap only when they do not compete at one grammar decision; every choice, optional, and repetition decision has pairwise-disjoint strong-LL(2) `SELECT_2` languages, so a parser selects exactly one arm with at most two tokens.
 In particular, a noncompeting overlap such as fixed `unit` with the `literal` union does not create an ambiguous parse, but no decision may use predicate priority to hide an overlap.
-Every production maps 1:1 to one core-tree node kind; there is no desugaring.
+Every production maps 1:1 to one source-tree node kind.
+The only abbreviation expansion is FN-3's hygienic expansion of formal and actual groups before semantic instantiation and IR; every expanded declaration and use retains its written source node and member position.
 `infix_tail` maps to the `infix` node kind: a selected tail forms one `infix` node spanning the complete `expr` — the atom and the tail — so the 1:1 production-to-node mapping is preserved by the factored recognition; its operator child is one `infix_op` or one `compare_op` node.
 
 [GRAM-2] Items:
 
 ```wf-ebnf GRAM-2
 program      := item*
-item         := fn_decl | struct_decl | enum_decl | contract_decl | conform_decl | const_decl
+item         := fn_decl | struct_decl | enum_decl | formal_decl | actual_decl | const_decl
 struct_decl  := "linear"? "struct" TYPEID generics? region_params? "{" doc? field* "}"
 field        := IDENT ":" type ";"
 enum_decl    := "linear"? "enum" TYPEID generics? region_params? "{" doc? variant* "}"
@@ -238,16 +241,19 @@ contract_define:= "define" IDENT "=" expr ";"
 requires_clause:= "requires" clause_expr ";"
 ensures_clause:= "ensures" ("when" result_route ":")? clause_expr ";"
 result_route:= (IDENT "is")? TYPEID "(" fieldbind ")"
-contract_decl:= "contract" TYPEID generics? "{" doc? fn_sig* law* "}"
-fn_sig       := "fn" IDENT region_params? "(" param_list? ")" "->" result_binding effects ";"
-law          := "law" IDENT "(" (law_arg ("," law_arg)*)? ")" ";"
-law_arg      := IDENT | literal
-conform_decl := "conform" type ":" TYPEID targs? "{" doc? fn_bind* "}"
+formal_decl  := "formal" TYPEID generics? "{" doc? (fn_sig ";")* "}"
+actual_decl  := "actual" TYPEID region_params? ":" pack_use "{" doc? fn_bind* "}"
+fn_sig       := "fn" IDENT region_params? "(" param_list? ")"
+                "->" (result_binding | "(" result_binding ("," result_binding)+ ")")
+                effects contract_block?
+pack_use     := TYPEID targs?
+function_arg := "fn" callee ("::" targs)?
 const_decl   := "const" IDENT ":" type "=" cvalue ";"
-fn_bind      := IDENT "=" IDENT ";"
+fn_bind      := IDENT "=" callee ("::" targs)? ";"
 doc          := "doc" STRING ";"
 generics     := "<" gparam ("," gparam)* ">"
-gparam       := TYPEID ":" (TYPEID | linearity_bound) | "const" IDENT ":" type
+gparam       := TYPEID ":" (TYPEID | linearity_bound)
+              | "const" IDENT ":" type | fn_sig | pack_use
 region_params:= "[" region_param ("," region_param)* "]"
 region_param := REGIONID (":" linearity_bound)?
 linearity_bound:= "copy" | "affine" | "linear"
@@ -267,7 +273,7 @@ type   := "i8"|"i16"|"i32"|"i64"|"u8"|"u16"|"u32"|"u64"|"f32"|"f64"|"unit"
 rtype  := mode type
 mode   := "own" | "&" REGIONID? | "&uniq" REGIONID?
 targs  := "<" targ ("," targ)* ">"
-targ   := type | REGIONID | const
+targ   := type | REGIONID | const | function_arg
 ```
 
 [GRAM-4] Statements:
@@ -302,7 +308,7 @@ proof_use   := "use" (("[0-9]+" | IDENT) "times")? use_premise ";"
 use_premise := IDENT | "(" affine_expr compare_op affine_expr ")"
 affine_expr := affine_term (affine_add_op affine_term)*
 affine_term := affine_factor ("*" affine_factor)?
-affine_factor := atom | call | construct | "(" affine_expr ")"
+affine_factor := atom | call | "(" affine_expr ")"
 affine_add_op := "+" | "-"
 break_stmt  := "break" LABEL? ";"
 region_stmt := "region" REGIONID? "{" stmt* "}"
@@ -318,7 +324,7 @@ fieldbind      := IDENT ":" IDENT
 [GRAM-5] Expressions and places:
 
 ```wf-ebnf GRAM-5
-expr           := atom infix_tail? | call | construct
+expr           := atom infix_tail? | call
 infix_tail     := (infix_op | compare_op) atom
 infix_op       := "+" | "+wrap" | "+defined" | "+checked" | "+sat"
                 | "-" | "-wrap" | "-defined" | "-checked" | "-sat"
@@ -328,8 +334,7 @@ infix_op       := "+" | "+wrap" | "+defined" | "+checked" | "+sat"
 compare_op     := "==" | "!=" | "<" | "<=" | ">" | ">="
 atom           := literal | "move" place | place | borrow_expr
 call           := callee ("::" targs)? "(" ( atom_list | fieldinit_list )? ")"
-callee         := IDENT | OPNAME
-construct      := TYPEID targs? "(" fieldinit_list? ")"
+callee         := IDENT | OPNAME | pack_use ("::" IDENT)?
 fieldinit_list := fieldinit ("," fieldinit)*
 fieldinit      := IDENT ":" atom
 borrow_expr    := "&" REGIONID? place | "&uniq" REGIONID? place
@@ -343,7 +348,7 @@ psuffix        := "." IDENT | "[" atom "]"
 ```
 
 [GRAM-6] There is no general operator syntax and no precedence: an `infix` expression is exactly one operation over two atoms [GRAM-5, GRAM-9], composition is by `let`, and no precedence, associativity, or parenthesization surface exists.
-The `compare_op` alternatives are the six integer comparisons of [OP-1] and form `infix` expressions exactly as the `infix_op` arithmetic does; a `call` writes its type and region arguments after the `::` delimiter, `cvt::<u8, u32>(w)`, so that `IDENT "<"` begins a comparison and never a type-argument list, while a `construct` and a `type` write theirs bare.
+The `compare_op` alternatives are the six integer comparisons of [OP-1] and form `infix` expressions exactly as the `infix_op` arithmetic does; a `call` writes its type and region arguments after the `::` delimiter, `cvt::<u8, u32>(w)`, so that `IDENT "<"` begins a comparison and never a type-argument list, while a constructor `call` and a `type` write theirs bare.
 There is no `while`.
 Conditional control is type-driven with one form per class: a Bool condition takes `if`/`else`, an enum scrutinee takes `match`, and each is the sole legal form for its class — a `match` whose scrutinee has type `Bool` is a hard error citing GRAM-6 at the scrutinee `expr` node (spell `if`).
 An `if` condition must have exact value mode and type `own Bool` under exactly the [OP-5] condition judgment, TYPE-7 exclusivity included; every other condition failure cites GRAM-6 at the condition `expr` node.
@@ -353,7 +358,7 @@ A conditional value is a `let`-initializer `match` or `if` [GRAM-7, GIVE-1].
 The only iteration forms are the ordinary `loop` plus `break`, and the counted ascending half-open `for` form whose complete semantics are [TYPE-5, TYPE-6, OWN-11, FN-1, ENT-2, ENT-3, ENT-5]; there is no step, reverse, iterator, or `continue` form.
 The subscript suffix is a place form (its sole home); bounds semantics are [OP-4].
 A `clause_expr` is the contract-clause shape and its sole home is a `requires_clause` and an `ensures_clause` [GRAM-2]: one `affine_expr`, or two around one `clause_op`.
-Its side is [GRAM-4]'s own `affine_expr` [INV-1] and its factor is an `atom`, a `call`, or a `construct`, which is what lets a contract clause name a measure of a place on either side of its comparison and displace it by an affine expression [MSR-5].
+Its side is [GRAM-4]'s own `affine_expr` [INV-1] and its factor is an `atom`, a `call`, or a constructor `call`, which is what lets a contract clause name a measure of a place on either side of its comparison and displace it by an affine expression [MSR-5].
 `+`, `-`, and `*` are consumed inside `affine_expr` and are never a `clause_op`, so the operator position carries exactly the Bool-valued rows of [OP-1] — the six comparisons and the five infix `defined` domain queries — and no alternative of the union derives two ways [GRAM-1].
 Every other position keeps [GRAM-9]'s one-operation-over-two-atoms shape and a nested call is still bound by its own `let`.
 
@@ -386,14 +391,14 @@ A literal, named const, const-generic constant, Z, counted capture, contract def
 Replace every occurrence of the delivered binding d with the receiver x (`d ↦ x`); no receiver fact is read and no inverse substitution is formed.
 
 [GRAM-8] Named construction.
-A `construct` of struct or enum-variant type K writes every declared field of K exactly once as `IDENT ":" atom`, the IDENTs equal to K's declared field names in declared order.
+A constructor `call` of struct or enum-variant type K writes every declared field of K exactly once as `IDENT ":" atom`, the IDENTs equal to K's declared field names in declared order.
 A missing, extra, repeated, misspelled, or out-of-order field name is a hard error citing GRAM-8 and K's declared field list.
 There is no positional construction form; a nullary K is written `K()`.
 Field names are redundant-explicit facts (the TYPE-5 class): checked, never chosen, never a reordering option (declared order is the one legal byte sequence).
 The name-only-when-two-same-typed-fields alternative is a context-dependent spelling and is rejected [META-2].
 
 [GRAM-9] Flat (three-address) computation.
-Every call argument, construct field value, infix operand, subscript offset, and lower or upper endpoint of a `for_stmt` is an `atom` [GRAM-5]; a `call` or `construct` in an atom position does not derive under the grammar and is a hard error citing GRAM-9.
+Every call argument, construct field value, infix operand, subscript offset, and lower or upper endpoint of a `for_stmt` is an `atom` [GRAM-5]; a `call` or constructor `call` in an atom position does not derive under the grammar and is a hard error citing GRAM-9.
 A computed value is forwarded to another operation only by binding it with a preceding `let` (whose mode and type are derived [TYPE-5]) and referencing the binding.
 Nesting and let-splitting are not two spellings of one computation; there is no expression-nesting alternative [FORM-1].
 `borrow_expr` is an `atom`, so borrows passed as arguments need no binding and OWN-6 is untouched.
@@ -431,7 +436,7 @@ Every value of one of the five is affine [OWN-1], and each is region-bearing und
 A `struct` or `enum` declaration may carry the `linear` modifier [GRAM-2], which states a logical must-consume obligation on values of that nominal in every scope and changes no component, layout, or construction route [PROV-6].
 A `struct` or `enum` declaration may also carry `region_params` [GRAM-2]: the declared regions are components of the nominal's type name, are invariant [OWN-12, TYPE-5], and are the regions [PROV-1]'s first brand-resolution clause reads at a stored position of that nominal.
 Being a component of the name is the whole of their meaning: an instance of such a nominal is fixed by its region arguments beside its type and const arguments, two instances of one declaration whose region arguments differ are two types under the exact identity [OWN-12] and [TYPE-5] already perform, and every position of the declaration that names a region parameter carries that instance's own argument — so a field of type `Vector<'s, T>` in an instance at `'a` has type `Vector<'a, T>` and takes the release class `'a`'s own declaration gives it [PROV-6].
-A nominal's region arguments are written as the leading members of its `targs` [GRAM-3], where the two runs and the two providers already write theirs, in `region_params` order, at every `type` position and at every `construct` [TYPE-5].
+A nominal's region arguments are written as the leading members of its `targs` [GRAM-3], where the two runs and the two providers already write theirs, in `region_params` order, at every `type` position and at every constructor `call` [TYPE-5].
 The opaque system types [SYS-2] are a distinct class: they are nominal, have no writer-visible component, and are constructed only by system operations and standard entry bindings.
 An `array<T, N>` owns exactly N initialized values of T in ascending index order, where T is any nameable type [TYPE-3], copy, affine, or linear [OWN-1, PROV-6], subject to the ordinary stored-content and generic-argument judgments [STOR-5, FN-2].
 It is a complete value, with no vacant element and no mutable window: its four measures are [MSR-1]'s type-fixed row, and its dense inline representation is [STOR-1]'s.
@@ -450,15 +455,16 @@ The exact partition and per-value semantics are [OP-6].
 Deliberate rounding is a separate DEFERRED float-round op family, never `cvt`.
 
 [TYPE-5] Statement-local typing; boundary-explicit facts.
+The factored `call` grammar denotes a construction exactly when its callee is an unqualified TYPEID application. A constructor writes any nominal arguments directly after that TYPEID, never with the function-call `::` introducer; writing the latter is a TYPE-5 error at the complete call. Its operands are named fields under GRAM-8, so a positional operand list is a GRAM-8 error there. Construction is an ordinary expression, not the callable occurrence required by an expression statement or a destructuring result-list let; either statement position rejects it under TYPE-5. These judgments preserve the constructor forms while sharing the strong-LL(2) prefix with qualified member calls.
 A `let` binder's mode and type are derived, never written: exactly the mode and type its selected right-hand side produces — an `ordinary_let_rhs` from its expression, which is always self-typed (operands are typed atoms, calls are typed by their [FN-1]/[OP-1]/[SYS-2] signatures, literals carry mandatory suffixes [FORM-5], constructions name their nominal and, when that nominal is generic, write its arguments); a `propagate_let_rhs` from the propagated Ok payload [ERR-3]; a `replace_let_rhs` at mode `own` from its target place's final selected type [SET-2]; a `value_match` or `value_if` from the derived common delivery type [GIVE-1], whose delivering `give`s are inside the same `let_stmt`, so the derivation stays statement-local; and a parenthesized binder list from its `call`'s declared result ordinals, binder i at result ordinal i's written mode and type [GRAM-4, FN-1, CALL-4].
 This is unique reconstruction, not inference: no binder's type depends on a later statement, an expected type, or any use site, and no two derivations can disagree [FORM-1].
 One form is excluded rather than reconstructed: a body `let` may not annotate a borrow with a region its right-hand side did not name, stating a destination the right-hand side satisfies by outlives [OWN-4] rather than equals, and a derived type is always the region the right-hand side itself produces.
-Call sites state explicitly exactly what their callee class requires: type and const arguments for user generics [FN-2]; the region arguments [FORM-8] leaves undetermined for a user generic or a system operation [SYS-2]; for a kernel-domain operation [BLK-0], each type, const, and region argument no operand of its row supplies, decided per argument rather than per callee; and, for exactly the retained-argument table operations — `cvt` and `reinterpret` (type pairs [OP-6, OP-8]), `array_new` (element type and const length [CONST-1]), `arena_new` (region and element type), `buffer_fits` and `buffer_vacant` (element type [OP-1, OP-9]), and `finf`/`fnan` (result type) — the written arguments their rows fix, because no operand can supply them.
-A `construct` of a generic nominal states that nominal's type and const arguments on the same ground and in every position, mandatorily: the source nominals under [FN-2], and the prelude generic nominals `Option<T>` and `Result<T, E>` through their variant constructors `None`, `Some`, `Ok`, and `Err`.
-A `construct` of a nominal carrying `region_params` states, as the leading members of the same list, exactly those of its region parameters that no field of the constructor it names determines [FORM-8], and on exactly that ground: construction consults no expected nominal type, so the field operands and the written members are the only supply there is, and a region argument is a component of the instance's name [TYPE-2].
-This is not a second region-spelling rule: [FORM-8] writes a REGIONID wherever this document does not otherwise fix the region denoted, and a `type` position fixes none of a nominal's region arguments while a `construct`'s own field operands fix exactly the ones their declared types name.
+Call sites state explicitly exactly what their callee class requires: type, const, and function arguments for user generics [FN-2], including group abbreviations; the region arguments [FORM-8] leaves undetermined for a user generic or a system operation [SYS-2]; for a kernel-domain operation [BLK-0], each type, const, and region argument no operand of its row supplies, decided per argument rather than per callee; and, for exactly the retained-argument table operations — `cvt` and `reinterpret` (type pairs [OP-6, OP-8]), `array_new` (element type and const length [CONST-1]), `arena_new` (region and element type), `buffer_fits` and `buffer_vacant` (element type [OP-1, OP-9]), and `finf`/`fnan` (result type) — the written arguments their rows fix, because no operand can supply them.
+A constructor `call` of a generic nominal states that nominal's type, const, and function arguments on the same ground and in every position, mandatorily: the source nominals under [FN-2], and the prelude generic nominals `Option<T>` and `Result<T, E>` through their variant constructors `None`, `Some`, `Ok`, and `Err`.
+A constructor `call` of a nominal carrying `region_params` states, as the leading members of the same list, exactly those of its region parameters that no field of the constructor it names determines [FORM-8], and on exactly that ground: construction consults no expected nominal type, so the field operands and the written members are the only supply there is, and a region argument is a component of the instance's name [TYPE-2].
+This is not a second region-spelling rule: [FORM-8] writes a REGIONID wherever this document does not otherwise fix the region denoted, and a `type` position fixes none of a nominal's region arguments while a constructor `call`'s own field operands fix exactly the ones their declared types name.
 A parameter type determines each formal region in its explicitly written type tree from the corresponding position of its actual [FORM-8], including every region argument of a multi-region nominal and regions in nested explicit type arguments; an opaque generic type parameter supplies no additional formal region positions.
-A nullary `None()` has no operand to supply anything, and construction never consults an expected nominal type [TYPE-6], so the written arguments are the only supply there is; their absence, or a count other than the named nominal's parameter list, is a hard error citing TYPE-5 at the complete `construct`.
+A nullary `None()` has no operand to supply anything, and construction never consults an expected nominal type [TYPE-6], so the written arguments are the only supply there is; their absence, or a count other than the named nominal's parameter list, is a hard error citing TYPE-5 at the complete constructor `call`.
 The non-generic prelude nominals — `Bool`, `Overflow`, `DivError`, `NarrowError` — have no parameters and write nothing.
 Every other table operation carries no written argument and derives its selected type from its operands [OP-2]; a written argument there is a hard error citing OP-1.
 Argument types match declared parameter types exactly.
@@ -471,7 +477,7 @@ A target list whose written value list has a different length from its target li
 Redundant-explicit facts remain mandatory at every trust boundary — signatures with full modes, types, and effect rows [FN-1], construction field names [GRAM-8], match binders [GRAM-10], call argument names [GRAM-11] — and are deleted exactly where reconstruction is unique and no transposition risk exists.
 A written region is such a fact where it names an invariant generic brand, relates two positions, or names a region the caller must choose; [FORM-8] deletes a lone input loan name, while preserving [PROV-1]'s distinction between a named generic brand and an elided concrete store.
 
-Every `fn_decl` and `fn_sig` has one mandatory `result_binding` whose written `rtype` fixes the callable result mode and type.
+Every result ordinal of a `fn_decl` or `fn_sig` has one mandatory `result_binding` whose written `rtype` fixes that callable result's mode and type.
 The result name is a proof-only boundary spelling: it denotes no runtime slot, does not enter callable signature equality, and is unavailable in a function body.
 An unrouted [FN-9] postcondition may admit it as that clause's symbolic whole-result datum; a routed postcondition instead derives its payload binder's type from the admitted `Result.Ok` payload and makes the whole-result name unavailable in that clause.
 
@@ -487,45 +493,45 @@ The grammar role, never an inferred type or expected result, selects the domain 
 
 | domain | declarations | admitted uses |
 |---|---|---|
-| lexical IDENT | top-level `fn_decl`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; `for_stmt` binder; arm `fieldbind` binders; `contract_define`; FN-9-owned result and route candidates; admitted system operations [SYS-1]; admitted kernel-domain operations [BLK-0] | a `callee` IDENT admits a top-level function, an admitted system operation, or an admitted kernel-domain operation; a `fn_bind` right IDENT admits only a top-level function; `const` IDENT admits only an in-scope const generic or earlier named const; `cvalue` IDENT admits only an earlier named const; `pbase` admits only an in-scope runtime value binding, contract definition, admitted symbolic result datum, named const, or in-scope const generic [MSR-6] |
-| nominal-type TYPEID | source `struct_decl` and `enum_decl` names; PRE-1 nominal types; admitted system nominal types [SYS-1]; the five compiler-owned container and provider nominals [TYPE-2]; lexical type `gparam`s overlay this domain while live | `type` TYPEID and the TYPEID suffix of a FORM-5 generic numeric literal admit a live type generic where that form requires one, otherwise a nominal type |
-| constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; admitted system constructors [SYS-1], classified as struct-constructor or enum-variant | the leading TYPEID of `construct` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
-| contract TYPEID | source `contract_decl` names and PRE-1 contract names, including `Int` and `Float` | the bound TYPEID of a type `gparam`, written where that mandatory bound is a marker rather than a linearity class [GRAM-2, PROV-6], and the contract TYPEID of `conform_decl` |
-| REGIONID | `region_params` of a `fn_decl`, a `fn_sig`, a `struct_decl`, or an `enum_decl`, and a named `region_stmt` | every written REGIONID in `type`, `mode`, `targ`, arena-allocation effects, and `borrow_expr` [FORM-8] |
+| lexical IDENT | top-level `fn_decl`; raw function-kind `gparam`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; `for_stmt` binder; arm `fieldbind` binders; `contract_define`; FN-9-owned result and route candidates; admitted system operations [SYS-1]; admitted kernel-domain operations [BLK-0] | a `callee` IDENT admits a top-level function, in-scope function parameter, admitted system operation, or admitted kernel-domain operation; an unqualified `function_arg` or `fn_bind` right side admits a source function or function parameter; `const` IDENT admits an in-scope const generic or earlier named const; `cvalue` IDENT admits an earlier named const; `pbase` admits an in-scope runtime value binding, contract definition, admitted symbolic result datum, named const, or in-scope const generic [MSR-6] |
+| nominal-type TYPEID | source `struct_decl` and `enum_decl` names; source formal and actual groups; PRE-1 nominal types; admitted system nominal types [SYS-1]; the five compiler-owned container and provider nominals [TYPE-2]; lexical type `gparam`s overlay this domain while live | a runtime `type` or generic-numeric suffix admits only its ordinary type class; an explicit `targ` additionally admits a formal or actual abbreviation; a `pack_use` admits a formal or actual group, with FN-3/FN-5 checking its position and member selection |
+| constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; admitted system constructors [SYS-1], classified as struct-constructor or enum-variant | the leading TYPEID of constructor `call` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
+| numeric-bound TYPEID | the two built-in bounds `Int` and `Float` [PRE-1] | the bound TYPEID of a type `gparam`; a linearity bound instead uses its fixed grammar spelling [GRAM-2, PROV-6] |
+| REGIONID | `region_params` of a `fn_decl`, `fn_sig`, `actual_decl`, `struct_decl`, or `enum_decl`, and a named `region_stmt` | every written REGIONID in `type`, `mode`, `targ`, arena-allocation effects, and `borrow_expr` [FORM-8]; an actual header captures only the store brands its formal type arguments name [FN-3] |
 | LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
 | invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the IDENT premise alternative of `use_premise` |
 
 A source struct contributes one declaration event that adds one nominal-type entry and one constructor entry with the same spelling.
-Those entries do not collide because the grammar distinguishes a `type` role from a `construct` or `arm` role.
+Those entries do not collide because the grammar distinguishes a `type` role from a constructor `call` or `arm` role.
 An enum declaration adds only its nominal type; each variant adds its constructor.
-Entries must be unique within, but not across, the nominal-type, constructor, and contract domains.
+Entries must be unique within, but not across, the nominal-type, constructor, and numeric-bound domains. Formal and actual group names share the nominal-type collision domain, but neither is a runtime type or a constructor.
 Constructor uniqueness is whole-unit and context-free, so construction and matching never consult an expected nominal type.
 
-PRE-1 contributes exactly twenty-four declaration records in this preorder: each enum nominal, then its type parameters in list order, then each variant and that variant's fields in list order, followed by the contracts in declaration order.
-They are six nominal enums, ten enum-variant constructors, three owner-local type parameters (`Option.T`, `Result.T`, and `Result.E`), three owner-table fields, and two contracts.
-Exactly the six nominals, ten constructors, and two contracts enter the source resolver's whole-unit lookup inventory and are visible throughout the closed unit.
+PRE-1 contributes exactly twenty-four declaration records in this preorder: each enum nominal, then its type parameters in list order, then each variant and that variant's fields in list order, followed by the built-in numeric bounds `Int` and `Float` in that order.
+They are six nominal enums, ten enum-variant constructors, three owner-local type parameters (`Option.T`, `Result.T`, and `Result.E`), three owner-table fields, and two numeric bounds.
+Exactly the six nominals, ten constructors, and two numeric bounds enter the source resolver's whole-unit lookup inventory and are visible throughout the closed unit.
 The three type parameters resolve only within their owning compiled PRE-1 declaration, the three fields enter only their owning variant table, and none of those six owner-local records is visible to source lookup.
 PRE-1 records have no source event or source node.
 Every top-level function signature is visible throughout the closed compilation unit after unit formation and before any semantic use is resolved [FN-1].
-A source nominal type or contract becomes visible immediately after its declaring TYPEID terminal.
+A source nominal type, formal group, or actual group becomes visible immediately after its declaring TYPEID terminal.
 A source struct constructor becomes visible at that same terminal; an enum-variant constructor becomes visible immediately after its variant TYPEID terminal.
 Each remains visible through the end of the unit.
 Whole-unit inventory checks uniqueness but grants no earlier visibility; a use before one of these declaration points is rejected even though inventory knows the later declaration exists.
 
 A generic TYPEID parameter becomes visible after its declaring terminal through the remainder of its declaration's generic, header, and body scope.
 It may not redeclare another parameter in the same generic list or shadow a live nominal type or enclosing generic type.
-Constructor and contract spellings are separate grammar-selected domains and do not participate in that comparison.
-A const generic becomes visible after its complete `gparam`.
-A region parameter becomes visible after its terminal through the remainder of its signature and body; for `fn_sig`, that scope ends at the signature terminator; for a `struct_decl` or an `enum_decl`, it is visible through the remainder of that declaration and nowhere else, and every written use of that nominal supplies one region argument per declared region parameter in declared order [TYPE-2, FN-2].
-Independently of visibility, OWN-3 requires every REGIONID declaration to be unique throughout its owning function declaration or contract-member signature, parameters included: a later region parameter or local region may not reuse an earlier region spelling even after the earlier region's lexical scope has ended.
+Constructor and numeric-bound spellings are separate grammar-selected domains and do not participate in that comparison. Formal and actual names do participate.
+A const generic becomes visible after its complete `gparam`. A raw function-kind parameter becomes visible after its complete `fn_sig` through the receiving declaration's remaining header and body; its own value parameters and proof candidates remain local to its signature. A formal-group member has a declaration identity but no unqualified lexical entry; FN-5 selects it through the written group application.
+A region parameter becomes visible after its terminal through the remainder of its signature and body; an actual's region parameters are visible through its formal application and bindings; for `fn_sig`, that scope ends at the signature terminator; for a `struct_decl` or an `enum_decl`, it is visible through the remainder of that declaration and nowhere else, and every written use of that nominal supplies one region argument per declared region parameter in declared order [TYPE-2, FN-2].
+Independently of visibility, OWN-3 requires every REGIONID declaration to be unique throughout its owning function declaration or function-formal signature, parameters included: a later region parameter or local region may not reuse an earlier region spelling even after the earlier region's lexical scope has ended.
 A `fn_decl` parameter becomes visible after its complete `param` through the function's optional `contract_block` and body.
-A `fn_sig` parameter becomes visible after its complete `param` through that signature's terminator; duplicate parameters in that signature are same-scope redeclarations even though there is no lexical value-use role in the remaining suffix.
+A `fn_sig` parameter becomes visible after its complete `param` through that signature's effects and optional contract block; duplicate parameters in that signature are same-scope redeclarations. It is not visible in a sibling member or the receiving function's body.
 A `let_stmt` binder becomes visible only after its complete initializer statement through the end of its lexical block.
 A `contract_define` binder becomes visible after its complete initializer through later definitions and every following requires or ensures clause of that one block, and nowhere in the body.
 Its initializer may therefore use parameters, named consts, live type or const parameters, and earlier definitions, never itself or a later definition.
 The IDENT of every `result_binding` is an FN-9-owned proof candidate rather than a runtime TYPE-6 value declaration.
-It participates in FORM-3 reservation and must differ from every parameter and definition in its function; in a `fn_sig` it has no use scope.
-In a `fn_decl`, FN-9 admits it as the one symbolic datum visible only in each unrouted ensures expression whose result shape is eligible.
+It participates in FORM-3 reservation and must differ from every parameter and definition in its function or function-formal signature.
+In a `fn_decl` or `fn_sig`, FN-9 admits each eligible ordinal as a symbolic datum visible only in that signature's ensures clauses under the same result-route rules.
 The second IDENT of a `result_route` fieldbind is an FN-9-owned payload candidate.
 After the route's leading constructor and field are admitted, that binder is visible only in the same `ensures_clause` expression and the header result binder is not visible there.
 It must differ from its paired field, every parameter, the result binder, and every live definition.
@@ -944,7 +950,7 @@ An instantiation whose argument's class does not satisfy the written bound is a 
 A type parameter bounded `linear` is linear at the one symbolic instance its body is checked at [FN-2], so a body that lets such a parameter's value reach a scope exit receives this rule's own not-consumed rejection there, naming the written bound in place of a `linear` declaration.
 The same check applies on the region axis: a region argument's class is `affine` when the store it names is a bump extent, whose reclamation is its own region reset, and `linear` when it names a general store, whose reclamation spends a provider capability [PROV-1]; an instantiation whose region argument's class is not the written bound is the same hard error at that instantiation's `call`, naming the region parameter, the bound, and the argument.
 A region argument that names no store — a loan region, or a region introduced by a `region_stmt` that no reserving occurrence names — has no store class and satisfies neither bound; an instantiation supplying one to a bounded region parameter is the same error.
-The bound is a linearity class and not a source contract: it satisfies no `contract` member, selects no behavior, and creates no bound-satisfaction judgment other than this one [FN-2, FN-3].
+The bound is a linearity class: it supplies no function-kind argument, selects no behavior, and creates no bound-satisfaction judgment other than this one [FN-2, FN-3].
 
 The checked program retains, before lowering [DIAG-2], each scope's linear set, each `dispose` statement's walk and the write it exhibits, each destructuring consume's binder list, and each declaration bound that was checked.
 
@@ -967,7 +973,7 @@ A user `fn` generic remains the other class and always writes its type and const
 
 A kernel-domain call writes its value arguments as a `fieldinit_list` [GRAM-5] whose IDENTs equal the declared parameter names in declared order, under exactly the discipline [GRAM-11] applies to a user function; positional operands are not admitted.
 Every declared value-parameter and result spelling of the inventory therefore satisfies [FORM-3]'s IDENT class: a spelling a fixed grammar atom already produces could not be written at a call and would make its row unreachable, so the inventory names the one provider operand of every acquiring row `store` and not after the store's own nominal.
-A kernel-domain operation is not a contract member, is not the right IDENT of an [FN-3] `fn_bind`, and never satisfies [FN-4]'s bound-function premise.
+A kernel-domain operation cannot be a function-kind argument or the right callee of an [FN-3] `fn_bind`; FN-4 binds only an explicitly instantiated source function or a forwarded function parameter.
 
 Every row is complete over every measure it writes, on every exit.
 A row whose effect row carries `writes(P)` for a measured place `P` publishes, for each measure of `P` [MSR-1], its exact new value where that measure's cell is exact and a two-sided bound where that cell is bounded, including the measures it did not change, and on every declared exit including a refusal.
@@ -1017,8 +1023,8 @@ An element type `T` may be copy, affine, or linear [OWN-1, PROV-6]: an element e
 A consuming representation conversion [BLK-3] instead transfers the complete initialized set and leaves no source run alive.
 A run whose element type is linear in a scope owns its elements, so a value of that run type is linear in that scope too and [PROV-6]'s release walk visits exactly its window.
 Neither run inherits [TYPE-2]'s buffer element restriction: a run's element type is any nameable type [TYPE-3], a measured type and a type parameter under any of its three bounds included [PROV-6], and a measure term over `P[i]` is the ordinary [MSR-1] term over that element place.
-Each of the five compiler-owned nominals [TYPE-2] contributes one nominal-type entry and one constructor entry of the same spelling [TYPE-6], exactly as a source `struct_decl` does, and the two do not collide because the grammar distinguishes a `type` role from a `construct` role.
-The constructor entry exists to be refused: no `construct` produces a run, a provider, or a store, so a `construct` [GRAM-8] admitting one of those five constructor entries is a hard error citing BLK-1 at the complete `construct`, with the restructuring `form the run with a formation operation, or receive the provider as a parameter`.
+Each of the five compiler-owned nominals [TYPE-2] contributes one nominal-type entry and one constructor entry of the same spelling [TYPE-6], exactly as a source `struct_decl` does, and the two do not collide because the grammar distinguishes a `type` role from a constructor `call` role.
+The constructor entry exists to be refused: no constructor `call` produces a run, a provider, or a store, so a constructor `call` [GRAM-8] admitting one of those five constructor entries is a hard error citing BLK-1 at the complete constructor `call`, with the restructuring `form the run with a formation operation, or receive the provider as a parameter`.
 
 [BLK-2] Formation, one row per placement and one per store.
 Six formation rows and one reservation row, in this preorder, each one complete signature record in the [GRAM-2] `fn_sig` shape extended by this domain's requirement and relation lists [BLK-0]:
@@ -1400,7 +1406,7 @@ A printed review list is non-authoritative and, when present, must equal the cor
 Each distinct complete spelling in the operation table declares one operation-family identity, even when more than one row carries that spelling; the two `cvt` rows therefore belong to one `cvt` family.
 An OPNAME callee resolves to its exactly spelled operation family.
 An `infix_op` or `compare_op` token resolves to its exactly spelled operation by the operator table row; infix resolution consults no name domain, and an operator token is never a declaration, callee IDENT, or OPNAME.
-An IDENT callee whose spelling belongs to `DotlessOperationNames` resolves to that operation family; every other IDENT callee admits a top-level source `fn_decl` or an admitted system operation [SYS-1].
+An IDENT callee whose spelling belongs to `DotlessOperationNames` resolves to that operation family; every other IDENT callee admits an in-scope raw function-kind parameter [FN-5], a top-level source `fn_decl`, or an admitted system operation [SYS-1].
 Absence from the selected operation-family, function, or system-operation inventory is a hard error citing OP-1.
 Later typed operation checking uses the operand domains and, for the retained-argument operations [TYPE-5], the written arguments, to select the applicable row within the resolved family.
 Operand types never select between an operation family, a system operation, and a function.
@@ -1409,7 +1415,7 @@ A bare `place` operand that a table-operation row reads without consuming — th
 No source declaration or FN-9 result-datum candidate in this closed list may use a member of `ReservedLowerNames`: the IDENT of `fn_decl`; the IDENT of `const_decl`; every `param` and `result_binding` IDENT; every `let_stmt` IDENT, including ordinary, propagate, value-match, and value-if lets; every `contract_define` IDENT; the second IDENT of any `fieldbind`, including a `result_route` payload binder; every `field` and `vfield` IDENT; and the IDENT-shaped interior of `region_params` and `region_stmt`.
 Such a reserved spelling is rejected citing exactly FORM-3 before freshness ownership is considered.
 Dependent field declarations participate in this pre-resolution reservation inventory even though their owner/member duplicates remain deferred.
-No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, and contract-member `fn_sig` IDENTs remain outside this prohibition.
+No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, and formal-member `fn_sig` IDENTs remain outside this prohibition.
 Dotted OPNAMEs cannot be declarations under the grammar.
 This reservation keeps operation-versus-function resolution context-free [META-2] and keeps a field-access place from maximal-munching as OPNAME [FORM-3].
 
@@ -1574,7 +1580,7 @@ The language defines no numeric frame limit, and `array_new` remains pure becaus
 [FN-1] A concrete function's callable boundary states everything ordinary callers need: parameter modes and types, the ordered result list's modes and types, one formal-path state-effect row, its region parameters and the unnamed regions of its remaining region positions [FORM-8], the ordered [FN-8] requirement GoalTemplates, the ordered verified [FN-9] normal-result RelationTemplates, one compiler-derived normal-exit state-routing summary, and one compiler-derived target summary.
 Every result binder's spelling is mandatory but ignored by callable-signature equality and denotes no runtime storage.
 
-A `fn_decl` writes one result or a parenthesized list of two or more [GRAM-2], and a `fn_sig` writes one.
+A `fn_decl` or `fn_sig` writes one result or a parenthesized list of two or more [GRAM-2].
 Each `result_binding` is one **result ordinal**, numbered from zero in written order; the list's binder spellings are distinct under [TYPE-6], and each ordinal receives every result judgment of this rule independently — an `own slice` ordinal has the same parameter-derived return-origin ceiling, and a borrow-mode ordinal the same signature-determined provenance.
 A declaration that writes a list hands its ordinals back together, and a caller names them again only through a destructuring `let` binder list or a `set` target list [GRAM-4, TYPE-5, CALL-4]; no expression position produces a result list, so a list-returning callee is bindable only by those two forms.
 This rule's remaining sentences are stated over a written result and read per ordinal where a declaration writes a list.
@@ -1586,8 +1592,8 @@ This summary describes value identity rather than borrow provenance: it neither 
 The target summary states `never-suspends` or `may-suspend` and, for each reachable suspending action, the applicable `result-ready` components, `loan-released(formal path)` facts, and `terminal`; a release with no writer result has no `result-ready` milestone.
 That summary is derived from exact system contracts and the finite concrete call graph, never written, inferred from a spelling, or weakened by a declaration. It describes suspension and ownership handoff only; it grants no access and supplies no concurrency or alias judgment.
 Strengthening a requirement GoalTemplate or RelationTemplate is a caller-visible interface change.
-A generic function carries the same boundary with its written type and const parameters, and each concrete [FN-2] instance substitutes them before its calls and body are re-checked.
-A `fn_sig` has neither kind of template.
+A generic function carries the same boundary with its written type, const, and function parameters, and each concrete [FN-2] instance substitutes them before its calls and body are re-checked.
+A `fn_sig` may carry the same requirement and postcondition templates; FN-4 checks their formation and structural equality at binding, and the selected actual's checked body supplies their proof. A function formal adds no routing ceiling: its non-copy owned results satisfy FN-4's fresh-result judgment.
 Function-signature visibility is the [TYPE-6] table.
 Every explicit `return e1, ..., en;` writes exactly as many expressions as the enclosing declaration writes results, and expression i must produce exactly result ordinal i's `rtype`; there is no result-mode or result-type conversion [TYPE-4].
 A written count other than the declared result count is a hard error citing FN-1 at the `return_stmt` node.
@@ -1613,7 +1619,7 @@ The provenance judgment applies to a result whose written type is region-free; a
 Two or more candidates, a same-region parameter of the other borrow kind, or any parameter whose type carries `'b` leaves the source undetermined and is a hard error citing FN-1 at the complete `rtype`, with `SourceCoordinate` equal to that production's complete checked half-open source extent and the restructuring `give the source parameter its own region so exactly one parameter shares the result's region and kind, or return the decision as a value and let the caller borrow from the source it names`.
 The declaration is the error and no call is required to reach it: [GRAM-9] admits a computed value only through a preceding `let`, so a result no caller can bind is unusable by construction.
 
-The signature-formation parts of these two slice-result judgments and of the borrow-result provenance judgment apply equally to a top-level `fn_decl` and a contract-member `fn_sig`: an `own slice` member has the same parameter-derived ceiling, a borrow-mode direct-slice member is rejected at that member's complete `rtype`, and a borrow-result member whose source its own parameters leave undetermined is rejected there too.
+The signature-formation parts of these two slice-result judgments and of the borrow-result provenance judgment apply equally to a top-level `fn_decl` and a function-formal `fn_sig`: an `own slice` member has the same parameter-derived ceiling, a borrow-mode direct-slice member is rejected at that member's complete `rtype`, and a borrow-result member whose source its own parameters leave undetermined is rejected there too.
 A `fn_sig` has no body returns to validate; any [FN-3] binding still requires its bound `fn_decl` to satisfy the complete body judgment independently.
 
 At a call, an `own slice` result's origin set is computed only from the callee's written signature.
@@ -1668,135 +1674,59 @@ A call with no termination proof or a loop does not satisfy the return requireme
 This complete structural graph, its statement reachability, and every source call and invariant-declaration identity are retained for source audit even when [FN-8] later proves one concrete instance uninhabited.
 That proof changes only its checked body disposition and lowering authority; it never erases a source node or narrows the written effect row.
 
-[FN-2] Function and nominal generics are monomorphization-only; type and const instantiation arguments are always explicit and region arguments are written exactly where [FORM-8] writes them; expansion is compiler-side, pre-IR; instantiations are re-checked as concrete code.
+[FN-2] Function and nominal generics are monomorphization-only; type, const, and function instantiation arguments are always explicit and region arguments are written exactly where [FORM-8] writes them. FN-3's named groups abbreviate those explicit parameter and argument vectors; expansion is compiler-side, pre-IR, and instantiations are re-checked as concrete code.
 Every contract definition and requirement or postcondition template is substituted separately for each concrete function instance.
 The [FN-8] uninhabited judgment is likewise instance-local and never propagates from one concrete substitution to its generic template or another instance.
 The region arguments one call determines — those its operands fix and those [FORM-8] makes it write — are substituted into every position of the callee's signature at that call, every output position exactly as much as every input position, and at any depth of each: through a PRE-1 nominal's arguments, into a source nominal instance's own region arguments [TYPE-2], into a run's element position [BLK-1], and into every ordinal of a declared result list [FN-1, CALL-4].
 A result therefore carries the region that call fixed and never the declaration's own formal region, so two calls of one declaration whose operands name two stores hand back two types under the exact identity [TYPE-5] performs [PROV-1]; a result that kept the formal region would let a run taken from one store be typed later as a run of another, which is the one thing that region is there to decide.
 Every explicit type argument supplied to a function, source nominal, or PRE-1 nominal generic parameter must be free of a loan-bearing and of a provider leaf: it may not contain `Slice<'r, T>`, `MutSlice<'r, T>`, `arena<'r, T>`, `Heap<'s>`, or `Arena<'s, bytes, align>` at any depth after substitution.
 Such an argument is a hard error citing FN-2 at that complete `targ`, with the restructuring `make the slice, arena, or provider a direct written parameter or result instead of a generic argument`; there is no generic substitution, storage, result, or call-summary rule for a hidden loan or provider leaf.
-A store-branded argument — one whose regions are all store regions [PROV-1], `Vector<'s, T>` and every type over it included — is admitted, and the position it lands in is confined to those regions by [STOR-5]'s exception; the declaration receiving it must itself name each of those regions, which for a source nominal is its `region_params` [GRAM-2] and for a function its region parameters.
+A store-branded argument — one whose regions are all store regions [PROV-1], `Vector<'s, T>` and every type over it included — is admitted, and the position it lands in is confined to those regions by [STOR-5]'s exception. Its complete opaque type identity retains every captured brand through function, nominal, and group substitution; a receiving declaration need not introduce redundant region parameters for brands hidden inside a type argument. Such hidden brands supply no additional FORM-8 inference positions, cannot be renamed to a different store, and do not extend any value's confinement or loan. A directly written branded type still writes and substitutes its ordinary region positions.
 Arguments this rule admits remain governed by the ordinary bound and substitution rules.
-The optional `generics` child admitted syntactically on a source `contract_decl` receives FN-3's explicit rejection and creates no contract template or contract monomorphization.
-A generic type parameter's written contract bound is admitted only when it resolves to the prelude `Int` or `Float` marker; a source-contract bound receives FN-3's explicit rejection and creates no bound-satisfaction or behavior-selection judgment.
-A written `copy`, `affine` or `linear` bound on a type parameter, and a written `affine` or `linear` bound on a region parameter, is not a contract bound at all: it is [PROV-6]'s linearity class, written and never inferred, read once at the declaration and checked at every instantiation by that rule, and it selects no behavior and admits no contract member.
+A generic type parameter's numeric bound is admitted only when it resolves to the built-in `Int` or `Float` bound [PRE-1]. A formal or actual group is not a numeric bound; it occupies its own explicit argument-list position [FN-3].
+A written `copy`, `affine` or `linear` bound on a type parameter, and a written `affine` or `linear` bound on a region parameter, is [PROV-6]'s linearity class, written and never inferred, read once at the declaration and checked at every instantiation by that rule. It selects no behavior; function-kind parameters supply behavior separately.
 Every type parameter of a function or of a nominal carries exactly one bound, written and never inferred, with no default: one marker TYPEID [FN-3] or one of the three linearity classes [GRAM-2, PROV-6]; a marker bound is a numeric row [OP-1] and implies the copy class.
 The template is the spelling authority: a generic body is checked once at the symbolic instance of its own parameters, under each parameter's written bound, and the concrete-instance recheck this rule performs does not re-judge the spellings [FORM-1] keys on a value's copy/affine class — `move p` against a bare `p` [OWN-1] and `replace` against `set` [SET-1, SET-2].
 At a concrete instance a `move` of a value whose parameter was bounded `affine` or `linear` denotes a copy where the argument is copy, and a `replace` of such a value denotes the same exchange; every other judgment of those rules is made at the instance, because each is a property of the instance and not of the written spelling.
 
-[FN-3] A source `contract` is a compile-time signature-and-law bundle.
-It has no `generics`; a contract declaration carrying that optional grammar child is a hard error citing FN-3.
-Its `fn_sig` members are ordered by declaration order and their names are unique within the contract; the later same-name member is an FN-3 rejection.
-Each member signature is checked under the ordinary mode, type, region, and effect rules.
-The optional `doc` contributes no member, law, or semantic authority.
-A contract with zero members and zero laws is a legal marker contract.
+[FN-3] A function-kind generic parameter is one `fn_sig`: an ordered ordinary callable signature with its own regions, effect row, requirements, and ensures. It is a compile-time parameter, never a value, field, receiver, or implicit argument.
+A `formal` declaration names one ordered parameter group. Its header declares type and const parameters with their ordinary bounds; its body declares the function-kind parameters in source order, with distinct member names. A formal header cannot contain another group or a function-kind parameter: groups are flat abbreviations, not functions that construct interfaces.
+A formal declaration has no header region parameters. Each member signature declares its own region parameters exactly as an ordinary function signature does, and each member call instantiates them under FORM-8 and the ordinary OWN rules. Actual-declaration regions instead capture store brands inside the formal's type arguments under FN-2; they are not member loan regions.
+A formal member's parameter, result, region, effect, requirement, and ensures formation follows the same rules as an ordinary callable declaration; it has no body or trusted proof. Its contracts constrain admissible actuals [FN-4] and may be used only after those bindings have been checked.
 
-A source `conform D : C { ... }` requires D to be one concrete type after ordinary constant evaluation and nominal instantiation.
-C resolves under [TYPE-6] to one nongeneric source contract and carries no `targs`; a conformance that names either prelude marker contract, carries contract arguments, or lacks a concrete subject is a hard error citing FN-3.
-Its key is `(D, source contract declaration)`.
-Concrete type identity in this key is exact: primitive and `unit` types equal only the same primitive or `unit`; compound types equal only when they use the same type constructor and their region, type, and evaluated-constant arguments equal recursively in position; and a nominal instance equals only an instance of the same nominal declaration identity—the same source nominal declaration or the same PRE-1 nominal declaration—with equal concrete arguments.
-Layout equality, member equality, spelling equality across distinct declarations, and implicit conversion never establish type identity.
-Across the complete closed compilation unit, at most one source conformance may have one key; source-record paths and item order do not create another coherence domain.
+A `pack_use` in a function or nominal generic parameter list names a formal declaration and writes one fresh type or const binder for each header parameter, in order. For example, `fn find<Key<K, E>>` declares the two written binders with Key's respective bounds, followed by one distinct function-kind parameter for each Key member. The same formal may be used more than once with distinct written applications.
+A forwarding `pack_use` names those already declared binders and their function-kind parameters; it declares nothing. `Key<K, E>` in a call's or nominal's argument list forwards the complete expanded vector. No expected type or argument omission supplies a behavior.
+Generated member identities are indexed by the receiving declaration, its written pack application, and the member ordinal. They are hygienic: they neither introduce an unqualified lexical name nor capture a local spelling such as `hash`.
+The abbreviation names do not survive in type identity: two nominal applications with the same expanded type, const, function, and captured-brand vectors are the same instance, even when their actual group names differ.
 
-For each contract member in declaration order, the conformance contains exactly one `fn_bind` in that same position.
-The binding's left IDENT equals that member name, and its right IDENT resolves under [TYPE-6] to one top-level source function.
-A contract with no members therefore has an empty conformance body apart from its optional leading `doc`.
-A missing, extra, repeated, unknown, or out-of-order binding is an FN-3 rejection; no member is inferred from a function name or signature.
+An `actual` declaration names one ordered argument group for its explicitly written formal application. Its optional region parameters retain the exact store brands written in that application; every use supplies them explicitly. It declares no type, value, conformance, or implementation attached to a type.
+For each formal member in source order it writes exactly one `fn_bind` in that order, with the matching left name and an explicitly selected right function. Missing, extra, repeated, unknown, or out-of-order members reject under FN-3 at the offending binding or the complete actual declaration for a missing member. No function is selected by name similarity, signature search, expected result, or a type-owned implementation.
+All bindings are checked together at the declaration by FN-4; no partial group is published. A zero-member formal and matching empty actual are legal abbreviations.
+`find::<SeedKey>` and `Map<'s, SeedKey>` expand the named actual's complete argument vector in their written position. A raw function-kind argument is `fn seed_hash`, or `fn helper::<T, n>` with every type, const, and function argument supplied. It must denote a fully instantiated source function or an in-scope function-kind parameter, never a table operation, constructor, system operation, runtime expression, or partially applied generic function.
+An actual group's member may be forwarded by its explicitly qualified name. Its dependency graph must be acyclic; a cycle is an FN-3 error naming that cycle, rather than an attempt to evaluate a group.
 
-The bound function has no `generics` child or `contract_block`.
-Region parameters are permitted and are not a `generics` child.
-Its callable signature equals the member signature exactly: the two signatures have the same number of region parameters and value parameters; corresponding parameter modes and types, result mode and type, and normalized effect rows are equal after replacing every occurrence of the member's first, second, and later declared region parameters with the bound function's region parameters at those same zero-based ordinals.
-The two mandatory result-binder spellings are ignored by that equality.
-This replacement applies inside modes, types, and arena-allocation payloads; type components then use the preceding exact concrete-type identity recursively.
-After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to three components: the set of declared read paths, the set of declared write paths, and the allocation set whose members are the declared allocation paths under the same ordinal identity this rule fixes for a path and each alpha-mapped `arena` region; `pure` is three empty components.
-An effect path uses its root parameter's zero-based ordinal followed by its static source-struct field ordinals. Parameter and field spellings do not create signature identity.
-Equality requires all three components to be equal.
-A `fn_sig` has no body and no compiler-derived release, so it declares these components without an EFF-2 judgment of its own; the bound `fn_decl` must exhibit exactly the member's declared row under [EFF-2], including a path the bound function contributes only through release.
-The compiler-derived target summary is not a writer declaration and does not participate in source contract equality. After a conformance selects a concrete bound function, ordinary closed-world propagation uses that function's derived summary at every call.
-Source occurrence order and repeated occurrences do not affect this equality, but no path or allocation component may be omitted or added; there is no effect subtyping or semantic implication.
-Parameter identifiers and region identifiers themselves need not have equal spellings.
-There is no parameter or result variance, mode coercion, effect subtyping, omitted effect, default, receiver, implicit subject parameter, or `Self` substitution.
-Any mismatch is an FN-3 rejection.
-A valid conformance is one complete source-ordered binding vector; no partial conformance or member result is published.
+[FN-4] Every function-kind binding is checked against the instantiated formal signature before use. Named groups check all members at declaration; raw arguments receive the same check at their written argument.
+Parameter and result counts, modes, and exact types must agree in order, with formal loan regions alpha-renamed by their ordinary signature positions [FORM-8]; parameter and result binder spellings are not signature identity. Captured store brands retain exact identity. An actual's region parameters fixed by those explicitly supplied branded types are substituted before the remaining universally quantified loan regions are compared. Corresponding unbound member regions have identical PROV-6 bounds, including the absence of a bound; a captured actual store region must satisfy its declared bound before substitution. An implementation cannot add a hidden region-domain restriction to a formal.
+Each actual read, write, or allocation path must be covered by a formal path in that same category: after parameter-ordinal and field-ordinal normalization, the formal path must be a prefix of the actual path. Arena-allocation regions must agree after the same region substitution. The actual's own declaration must independently satisfy EFF-1 and exhibit exactly its own row under EFF-2.
+Ordered requirements and ordered ensures, including their result selectors, must be structurally equal after type, const, function, parameter, result, and region substitution and expansion of local `define` bindings. This is structural matching of the written contract terms, not an implication solver, a logical-law assumption, or permission to reorder clauses. Each actual's requirements are checked ordinarily and its ensures must independently pass FN-9.
 
-The prelude marker contracts `Int` and `Float` [PRE-1] retain their built-in closed conformer sets (`Int`: i8 i16 i32 i64 u8 u16 u32 u64; `Float`: f32 f64), not user `conform` declarations.
-A generic type parameter bound by `Int` or `Float` admits exactly its built-in set and makes the corresponding operation-table rows [OP-1] and identity literals `0_T`/`1_T` [FORM-5] available, monomorphized to the concrete type's operations.
-A generic type parameter naming a source contract as its bound is a hard error citing FN-3 after that bound has resolved successfully.
-This specification defines no source-contract bound-satisfaction, implication, inheritance, blanket conformance, structural conformance, inference, overlap choice, specialization, negative conformance, or conformance supplied by a function signature.
+Each non-copy owned result ordinal of a function formal denotes fresh owned state. Every ordinary owned state leaf in the actual's normal-exit routing component for that ordinal must be fresh under FN-1; any route from an input leaf, or an unresolved route that does not establish freshness, rejects the binding under FN-4 at that binding. Constructing a new outer aggregate does not hide an input route in a contained owned leaf. Copy results have ordinary fresh observation identity. Slice and borrow result provenance continue to obey FN-1 and grant no new loan or lifetime.
+This restriction applies to function-kind formals, not to ordinary source functions or their direct calls: an ordinary conversion, pop, or ownership-returning helper keeps its existing normal-exit routing.
+Exclusive-referent exit components keep the selected actual's FN-1 summary. Every concrete containing instance must still exhibit its fixed declared row; a binding whose later owner routing makes that instance exhibit a different row is rejected under EFF-2. No finite routing ceiling is inferred for a function formal, and no actual-specific row replaces a generic declaration's written row.
+A mismatch names the member or raw argument, the differing signature, row, contract, or result ordinal, and the restructuring `supply an explicitly matching function or change the formal interface`.
+No reflexivity, transitivity, ordering consistency, hash/equality compatibility, or other algebraic law follows from a binding. Ownership, range proofs, initialization and cleanup must hold even for inconsistent supplied behavior.
 
-Contracts, conformances, binding vectors, and the base law records required by [FN-4] are compile-time checked-program metadata.
-They have no source-visible runtime value, storage, address, ABI component, initialization, destruction, effect, vtable, dictionary, function pointer, indirect call, target object, or lowering operation.
-A bound function remains one ordinary directly named top-level function and is compiled only through its normal function path.
-Every contract law is first checked as a declaration under [FN-4]; a contract without a conformance is a legal outstanding obligation.
-For every validated conformance of a law-bearing contract, every law must then obtain FN-4's complete mandatory discharge before semantic success.
-A law-free conformance needs no law record.
+[FN-5] There are no function values, methods, receivers, implicit Self, dictionaries, or dynamic dispatch. Closed-set runtime dispatch is `match`.
+An unqualified IDENT call may name an in-scope raw function-kind parameter. `Key::hash(...)` names the corresponding member of the unique in-scope application of formal Key; when two applications of Key are present it is rejected at the callee and the source must write the full application, for example `Key<K1, E1>::hash(...)`. Selection uses distinct written applications before substitution, even if their eventual concrete types coincide. Two identically written applications require separately named raw function-kind parameters rather than a pack alias.
+At a member call, named value arguments use the formal signature's parameter names in declared order, not the actual implementation's parameter names. The selected function's type, const, and function arguments were supplied explicitly at binding or group instantiation under FN-2; the already bound member accepts no further specialization. Its per-call regions follow FORM-8. Requirements, ensures, and effect attribution use the instantiated formal interface. Bare exclusive measures in ensures denote the exit state, and `entry(parameter)` denotes the entry state [MSR-3]; CALL-6 kills overlapping formal-row support before publishing the verified relations.
+Every concrete function binding resolves to one source function instance before IR. Lowering emits a direct call to that instance with the ordinary ABI, preserving the selected target summary and release behavior; group expansion emits no adapter call, storage, dispatch, dependency, or runtime proof check.
+Bodies retain FN-2's symbolic spelling check and FN-2/FN-9's concrete-instance rechecks. Symbolic routing used only for template spelling is never published as concrete acceptance evidence. A concrete instance uses formal contracts and the authoritative formal row at each bound call while independently checking the selected actual and its result freshness.
 
-[FN-4] A law of a source conformance is admitted only through the mandatory closed discharge below.
-A successful discharge is source-acceptance evidence, not optimizer authority.
-For a domain D, totality means every application to values in D terminates without trapping and returns a value in D.
-A law-table row also defines its result-equivalence relation `≡D`.
-The checked equations are `f(f(x, y), z) ≡D f(x, f(y, z))` for `associative`, `f(x, y) ≡D f(y, x)` for `commutative`, and both `f(e, x) ≡D x` and `f(x, e) ≡D x` for `identity`, universally quantified over D.
-`pure` alone proves neither totality nor an equation [EFF-3].
-
-For FN-4 only, the following law-discharge relation is complete.
-Source-law discharge starts from one whole conformance already validated under [FN-3], where D is one concrete integer type and the conformance names exactly the enclosing source contract that owns the law.
-The law's `f` role equals the name of exactly one `fn_sig` in that contract, and the conformance's complete binding vector selects that member's one bound top-level function.
-D, both `fn_sig` parameter types and its return type, and both `fn_decl` parameter types and its return type are the same concrete integer type.
-Both signatures have exactly two `own D` parameters in corresponding ordinal positions, `own D` return, no region parameters, and effect `pure`; their parameter identifiers need not be equal.
-The bound function is nongeneric and has no `contract_block`.
-A law/member/domain/signature premise missing from this stricter relation is a hard error citing FN-4 and publishes no accepted law.
-FN-3 already owns whole-conformance identity, completeness, binding, and signature validity; FN-4 neither weakens nor repeats that authority.
-
-After an optional leading `doc`, the bound function's body must contain exactly one statement, `return p0 +sat p1;`.
-In this metanotation, `p0` and `p1` mean the exact identifiers declared by the bound function's first and second parameters; they are not required source spellings.
-Each is used as one bare place, once and in declaration order, and the operation's operand-derived selected type equals D.
-No alias, field, dereference, `move`, reordered argument, extra statement, second operation, user call, or semantically equivalent body matches this discharge shape.
-
-The law table is closed:
-
-| resolved table operation | complete domain D and `≡D` | total | associative | commutative | identity |
-|---|---|---|---|---|---|
-| `+sat` for T in `u8 u16 u32 u64` | every integer in `[0, 2^K-1]`; same integer value | yes | holds | holds | zero of T |
-| `+sat` for T in `i8 i16 i32 i64` | every integer in `[-2^(K-1), 2^(K-1)-1]`; same integer value | yes | refuted | holds | zero of T |
-
-Here K is T's bit width.
-An `identity` argument matches the row exactly when it is a same-typed [FORM-5] literal denoting T's zero or an IDENT naming an earlier same-typed [CONST-2] value whose substitution result is that zero.
-Unsigned saturating addition is `min(2^K-1, x+y)`, which makes the three `holds` cells valid over the complete unsigned domain.
-The signed associativity cell is refuted for every listed width by taking x as `MAX`, y as `1`, and z as `-1`: the left association is `MAX-1` and the right association is `MAX`.
-Every operation, domain, law, or identity absent from a `holds` cell is unavailable for source discharge; a `refuted` or unavailable requested law, or a member function outside the exact discharge shape, is a hard error citing FN-4.
-This deliberately bounded calculus is part of language acceptance and is identical in every conforming compiler; a compiler's optional prover strength cannot accept more source.
-Each successfully discharged `(contract-law node, concrete-conformance node)` pair contributes exactly one checked law fact and its base diagnostic derivation to the checked program [DIAG-2].
-They reference the conformance, contract law, bound function, operation row, concrete domain, law, and optional identity; no pair is omitted, shared, or deduplicated.
-Source acceptance is the result of that originating semantic check itself.
-The checked fact may be consumed later, while its diagnostic derivation only explains that originating semantic decision and grants no independent authority.
-
-A checked law fact may affect optimization only through a specification-fixed transformation rule that binds the exact checked-program instance, target, backend, proposition, and authorized consequence.
-That rule checks whether the current transformation site has the required IR and target shape, then consumes the law fact produced by the source semantic check; it does not independently rederive the contract/member/body/table/identity relation.
-For a gated law, the checked fact also carries the exact ledger-entry identity and scope required by [LEDGER-1].
-Absence of the checked fact, an inapplicable transformation site, or resource failure leaves source acceptance, semantic identity, explicit checks, and facts-off lowering unchanged.
-A pre-approved opaque gated-family signature may separately contribute a checked law fact through its soundness-obligation ledger [LEDGER-1], but that proposition is not a source `conform` discharge and reaches an optimizer only through the same fixed transformation-applicability boundary.
-Additional operation rows and other complete-domain source proof calculi are DEFERRED specification additions.
-Sampling, bounded testing, runtime enumeration, and the non-normative law-test harness may prioritize a future gate review but never license optimizer use.
-
-The grammar accepts an IDENT law name and zero or more `law_arg` nodes so that syntax formation does not encode a semantic name, arity, or argument-role table.
-The checker then requires the name, arity, and argument roles to equal exactly one row of this closed declaration table: `associative(f)`, `commutative(f)`, or `identity(f, e)`.
-An `f` role is an IDENT resolving to one `fn_sig` declared in the enclosing contract; that signature has effect row `pure`, has exactly two parameters, and gives both parameters and its return the same mode and type.
-An `e` role is a literal of that type or an IDENT resolving under the ordinary declaration-before-use rule to a named const of that type, and it must be usable at the operation's mode under the ordinary typing and ownership rules.
-An unknown law name, wrong arity, wrong argument kind, unresolved role, a non-pure signature, a signature that lacks this exact same-mode/same-type binary shape, or role type/mode mismatch is a hard error citing FN-4.
-A well-formed law in a contract with no concrete conformance is a legal stated obligation and emits no accepted-law evidence.
-For each validated FN-3 conformance, the resolved member must obtain the complete mandatory discharge above before its law obligation is accepted or its accepted-law record is emitted.
-
-[FN-5] There are no function values and no dynamic dispatch in the kernel.
-Closed-set dispatch is `match`.
-This specification has no source grammar or semantic operation that calls a contract member, selects a bound function through a generic parameter, or turns a validated conformance into callable behavior.
-In particular, a contract member is not a `callee`, source-contract bounds are not admitted, and FN-3 metadata cannot select an ordinary user call.
-Env-struct behavior parameterization, its explicit member-call form, source-contract bounds, substitution and direct-call proof, and their exact diagnostics are DEFERRED constructs with recorded deltas.
-When such a form is proposed, monomorphized direct calls rather than function-pointer or dictionary dispatch remain the performance candidate to test; this specification does not define that unavailable mechanism.
-
-[FN-6] Recursion is permitted.
-Polymorphic recursion is rejected by a syntactic rule: in any call cycle among generic functions, every call instantiates the callee at exactly the caller's own type parameters.
-This criterion is DELIBERATELY stronger than finiteness requires (it rejects some finite permutation cycles): predictable, locally explainable rejection per OWN-8's reject-and-restructure posture; the diagnostic must name the cycle and the restructuring.
-Rejection-rate measurement is a registered experiment.
+[FN-6] Recursion is permitted. Instantiation is finite by a structural rule over the finite written dependency graph, not by executing compile-time code or by a work, depth, or time budget.
+The graph contains source function and source nominal templates; its edges include calls, instantiated nominal uses in signatures and fields, function arguments, and calls through function-kind parameters after their finite explicit bindings are resolved. Group abbreviations are expanded before the graph is checked. All edges and their complete type, const, and function argument vectors are retained.
+Within every recursive component, each edge must forward the caller's complete parameter vector unchanged in position and kind, modulo alpha-renaming of region parameters. Constructing, specializing, dropping, adding, or permuting an argument on a cycle rejects under FN-6 at that dependency. This includes a growing nominal such as `Grow<T>` containing `box<Grow<box<T>>>`, and a call that wraps a function argument in a new specialized function on each traversal.
+The diagnostic names the function/nominal cycle and the changed argument, with the restructuring `forward the complete generic argument vector unchanged on the cycle, or move the changing instantiation off the cycle`.
+This criterion deliberately rejects some finite permutation cycles. Acyclic expansion is finite and a cycle creates no new instance key; deterministic checking visits each admitted instance. It assumes no behavior laws and uses no fuel.
 
 [FN-7] Exactly one top-level `fn_decl` named `main` must exist in the compilation unit.
 That declaration is the unit's sole entry and must carry the exact fixed `command` program-kind marker.
@@ -1845,7 +1775,7 @@ A missing entry is an FN-7 rejection at `BundleRoot` [DIAG-1].
 A duplicate `main` spelling remains the later-source [TYPE-6] duplicate.
 Every other FN-7 rejection uses `SourceNode` with the complete checked extent of the named node: a missing command marker or contract-bearing main at the `fn_decl`; a `program_kind` on another declaration at that node; an unknown, repeated, or out-of-order label or one outside main at the `input_label`; a wrong mode/type or unlabelled main parameter at the `param`; a wrong result at the `rtype`; a wrong effect row at `effects`; generic or region parameters at their child; and a source call to main at the `call`.
 
-[FN-8] Every non-entry source `fn_decl`, generic or nongeneric, may carry one optional `contract_block`; [FN-7] forbids it on main and `fn_sig` has no such production.
+[FN-8] Every non-entry source `fn_decl`, generic or nongeneric, and every `fn_sig` may carry one optional `contract_block`; [FN-7] forbids it on main. A function formal's block has the same formation rules and constrains bindings under FN-4; only a checked actual's ordinary body supplies its proof.
 A present block must contain at least one `requires_clause` or `ensures_clause`; an empty or define-only block is an FN-8 rejection at `contract_block`.
 Grammar fixes all definitions before all requirements and all requirements before all postconditions.
 
@@ -1964,7 +1894,7 @@ Every successful selected-return proof and caller establishment extends [DIAG-2]
 Postconditions add no runtime operation, hidden check, assume, optimizer license, alternate lowering path, or ABI field.
 
 [MSR-5] A contract clause is the relation an invariant already is, over a wider operand set.
-A `requires_clause` and an `ensures_clause` take a `clause_expr` [GRAM-2, GRAM-5]: one `affine_expr`, or two around one `clause_op`, where an `affine_factor` is an `atom`, a `call`, or a `construct` [GRAM-4].
+A `requires_clause` and an `ensures_clause` take a `clause_expr` [GRAM-2, GRAM-5]: one `affine_expr`, or two around one `clause_op`, where an `affine_factor` is an `atom`, a `call`, or a constructor `call` [GRAM-4].
 The operand set is the whole of this rule: [GRAM-5]'s `atom` has no `call` alternative, so before this version a measure of a place derived nowhere in a clause and `len_of(source) <= len_of(out)` was a GRAM-5 parse rejection at the comparison, while the same fact written through one `contract_define` per operand was admitted — one semantics with two spellings, one of which cost a definition per measure.
 A clause side is that same `affine_expr`, so `ensures len_of(rest) <= len_of(vector) + 1_u64;` states in one clause the relation a `header_invariant` states in one invariant, and the two placements of one relation share one production rather than one spelling each.
 The `+`, `-`, and `*` of a clause side denote the mathematical integer expression [INV-1] fixes and perform no [OP-1] operation, so a clause side creates no [OP-2] domain obligation and admits no runtime value it could overflow; a `clause_op` is exactly the Bool-valued rows of [OP-1], the six comparisons and the five infix `defined` queries, and the arithmetic operators are consumed inside the side.
@@ -1977,7 +1907,7 @@ A clause operand is also an in-scope const generic [MSR-6], which is a constant 
 A clause operand that is neither an [ENT-2] term nor a constant stays an ordinary pure total operand contributing no L0 projection; clause position makes nothing a term.
 
 The written affine surface carries the same four formers.
-The `affine_factor` production of [GRAM-4] admits an `atom`, a `call`, and a `construct`, and [INV-1] admits there exactly the four measure formers over an admitted measure place and the bare integer literal and live own integer local it has always admitted, so a `header_invariant`, an `invariant_stmt`, and a `proof_use` state a relation over a measure in the spelling this rule already gives a clause.
+The `affine_factor` production of [GRAM-4] admits an `atom`, a `call`, and a constructor `call`, and [INV-1] admits there exactly the four measure formers over an admitted measure place and the bare integer literal and live own integer local it has always admitted, so a `header_invariant`, an `invariant_stmt`, and a `proof_use` state a relation over a measure in the spelling this rule already gives a clause.
 One production carries both placements and each rule states its own admitted factors; a factor [INV-1] does not admit is a hard error citing INV-1 at that factor and never a parse rejection.
 The affine domain of [ENT-6] is unchanged by that: it carries one compiler-owned atom per live measure term either way, so what the widened production adds is the writer's ability to *state* the relation, never a new derivation.
 Before this version the production was not widened, so `invariant grown: len_of(built) >= at` was a GRAM-4 rejection at the former and the invariant placement of this rule's own relation admitted no measure at all.
@@ -2045,6 +1975,7 @@ The release contribution is defined below and has no syntactic occurrence anywhe
 A `for_stmt` endpoint and body contribute their ordinary source occurrences under these same clauses, and its body-exit cleanup contributes under the release rule below.
 Its compiler-owned captures, binder initialization, header comparison, and representable hidden update contribute no read, write, or allocation effect.
 Function-body attribution and call-boundary projection are separate judgments.
+At a function-kind parameter or named member call [FN-5], the instantiated formal's written row is the authoritative callable boundary. Its paths undergo the same resolved-place projection and ENT-5 support kill as ordinary callee paths; the selected actual's narrower covered row never substitutes for that boundary. Generic spelling checking retains the formal-rooted contributions under the written bounds, including an owned parameter that later has a copy instance. Concrete rechecking verifies the fixed containing declaration's row under the same formal interface and independently checks each actual against FN-4 and its own EFF-2 row. No adapter, dummy read, widened runtime access, or law supplies an exhibited path.
 
 While one function body is checked, every exhibited read or write is attributed after ordinary place resolution, holder resolution, and [OWN-5] slice-view provenance.
 An access to a borrowed referent, direct slice backing, or incoming owned state contributes the most precise formal-rooted static struct path [EFF-1] admits for that state. A dynamic element or range access maps to its nearest statically nameable enclosing path because [EFF-1] admits no dynamic selector.
@@ -2182,7 +2113,7 @@ A record boundary and an empty record remain part of the bound source identity e
 
 Top-level declaration order is source ordinal followed by source-local item order.
 Name visibility is exactly the [TYPE-6] table.
-Global uniqueness, the prelude, `main`, conformances, call graphs, strongly connected components, concrete instances, and reports range over the entire closed compilation unit.
+Global uniqueness, the prelude, `main`, formal and actual declarations, call graphs, strongly connected components, concrete instances, and reports range over the entire closed compilation unit.
 Logical paths and record boundaries introduce no namespace, scope, import, or lookup key.
 
 ## 12. Diagnostics and checked compilation (toolchain floor)
@@ -2259,7 +2190,7 @@ An allowed suffix would already be one maximal OPNAME token, while a field place
 This bounded diagnostic window may include already recognized tokens, performs no operation-table or name lookup, consumes nothing, and does not enlarge recognition's two-token lookahead.
 2.
 If source-EBNF provenance reaches or would next enter an `atom` occurrence in `atom_list`, `fieldinit`, an `infix` operand, the subscript offset, or either endpoint of a `for_stmt`, and the two actual tokens at the start of that occurrence are `(IDENT, "(")`, `(IDENT, "::")`, `(OPNAME, "(")`, `(OPNAME, "::")`, `(TYPEID, "(")`, or `(TYPEID, "<")`, the rejection cites [GRAM-9]; in an infix-operand occurrence, a two-token start whose second token is an `infix_op` or `compare_op` token — the forbidden nested-infix start — likewise cites [GRAM-9].
-These are exactly the `call` and `construct` starts forbidden in an atom-only position; no name lookup participates.
+These are exactly the `call` and constructor `call` starts forbidden in an atom-only position; no name lookup participates.
 Its coordinate is the complete interval from the first through the second token of that forbidden call or construct start.
 3.
 If the boundary token has the raw shape admitted by an expected external predicate before that predicate's explicit spelling restrictions, and fails only those restrictions, the rejection cites that predicate's owner.
@@ -2274,7 +2205,7 @@ Every direction that recursively reaches a boundary-name candidate contributes a
 A path stops at any source `|` or at any nonnullable terminal before its candidate.
 A name-slot mismatch exists only when at least one transparent path exists and every transparent path ends in the same name predicate.
 It cites [FORM-3].
-Thus traversal reaches a direct name, a name inside a consuming list arm, or a name after one or more skipped nullable prefixes such as `doc?`, but cannot tunnel through structural choices such as `item`, `stmt`, `expr`, `atom`, `callee`, `pbase`, `targ`, `law_arg`, `contract_define`, `requires_clause`, `ensures_clause`, `result_route`, or `atom_list | fieldinit_list`.
+Thus traversal reaches a direct name, a name inside a consuming list arm, or a name after one or more skipped nullable prefixes such as `doc?`, but cannot tunnel through structural choices such as `item`, `stmt`, `expr`, `atom`, `callee`, `pbase`, `targ`, `contract_define`, `requires_clause`, `ensures_clause`, `result_route`, or `atom_list | fieldinit_list`.
 If several external predicates qualify under the first sentence, their owners rank by first rule occurrence in this specification.
 4.
 At the `program` `item*` or `item` entry, any `stmt*` or `stmt` entry, or any of the three repeated-entry frontiers inside `contract_block`, an IDENT-headed lookahead accepted by no complete construct row cites [FORM-1] as an unknown construct.
@@ -2317,13 +2248,13 @@ A semantic role is owned by the lowest production node whose selected right-hand
 A referenced child production means a child production node, not an external terminal predicate such as `literal`.
 A semantic role may occupy a complete name terminal, a complete literal terminal, or the exact TYPEID suffix of a FORM-5 generic numeric literal `0_T` or `1_T`.
 The suffix role's spelling excludes `_`, and its coordinate is exactly the suffix byte interval.
-One token may carry more than one role: for example, a law argument `0_T` has one deferred law-argument role on the complete literal and one lexical generic-type use on `T`.
+A generic numeric literal carries its lexical generic-type use on the suffix; its numeric value remains the literal judgment, not a second deferred role.
 A struct TYPEID remains one declaration event producing two domain entries, not two events.
 
 Within one owner node, distinct direct grammar-role carriers are ordered left to right by their complete carrier coordinates; distinct carriers with identical complete coordinates use the closed class order declaration, result-reservation, lexical-use, deferred-use.
 The zero-based carrier index is `role_ordinal`.
 `subtoken_ordinal` is zero for a role covering its complete carrier; embedded semantic name roles are numbered from one in byte order.
-The only multi-role carrier is X09/U18, where the class tie does not reorder the embedded role: a law-argument `0_T` gives its complete deferred argument `(role_ordinal, 0)` and its embedded generic-type use `(role_ordinal, 1)`.
+No current production gives one carrier both a complete-token role and an embedded role; the generic-numeric suffix retains subtoken ordinal one.
 Every role has exactly one owner, class, role ordinal, and subtoken ordinal.
 Every declaration event, FN-9 result-reservation event, lexical-use event, and deferred-use event has canonical key `(source_ordinal, byte_start, byte_end, NodePath, role_ordinal, subtoken_ordinal)`.
 Numeric fields compare ascending.
@@ -2336,7 +2267,7 @@ Traversal order, allocation identity, map order, logical path, and inferred type
 Declaration inventory and FN-9 result reservation create candidates under this closed rank:
 
 1. a FORM-3 reserved-name violation defined by OP-1's derived set;
-2. an OWN-3 repeated REGIONID declaration within one function declaration or contract-member signature, parameters included;
+2. an OWN-3 repeated REGIONID declaration within one function declaration or function-formal signature, parameters included;
 3. a GRAM-10 match-binder freshness violation;
 4. a declaration collision with PRE-1;
 5. a declaration collision with an admitted system declaration [SYS-1];
@@ -2359,7 +2290,7 @@ Earlier binders and arm-entry origins are ordered by declaration-event key.
 That binder does not also create a TYPE-6 duplicate or shadow candidate.
 
 A declaration collision payload is `(spelling, ordered_nonempty_conflicts)`; it cites INV-1 when the later declaration is an invariant name and TYPE-6 for every other declaration domain.
-Conflict domains use the fixed order lexical-IDENT, nominal-type, constructor, contract, REGIONID, LABEL, invariant.
+Conflict domains use the fixed order lexical-IDENT, nominal-type, constructor, numeric-bound, REGIONID, LABEL, invariant.
 Each conflict contains its domain, declaration class, and `conflicting_origin`; conflicts within one domain use PRE-1 declaration ordinal first, then system declaration ordinal, then source declaration-event key.
 A source origin is `(NodePath, SourceCoordinate, role_ordinal, subtoken_ordinal)`; a PRE-1 origin is `(PRE-1, declaration_ordinal)`, where `declaration_ordinal` is the zero-based twenty-four-record preorder fixed by TYPE-6; a system origin is `(System, system_declaration_ordinal)`, where `system_declaration_ordinal` is the zero-based preorder fixed by [SYS-2] and appears in every unit [SYS-3]. A kernel origin is `(Kernel, container_declaration_ordinal)`, where `container_declaration_ordinal` is the zero-based preorder fixed by [BLK-0] and appears in every unit [SYS-3].
 A struct event may report both nominal-type and constructor conflicts in that order.
@@ -2375,12 +2306,12 @@ If inventory succeeds, every lexical use admitted by TYPE-6, OP-1, INV-1, or PRF
 The generic-numeric suffix admits a live generic TYPEID parameter; FN-3 and FORM-5, not lexical resolution, later require its numeric bound.
 Lexical resolution fixes only the declaration or operation-family target.
 
-The closed declaration-class order is function, named-const, const-generic, value, generic-type, nominal-type, struct-constructor, enum-variant, contract, region, label, invariant, operation-family.
+The closed declaration-class order is function, function-parameter, named-const, const-generic, value, generic-type, nominal-type, struct-constructor, enum-variant, numeric-bound, formal, actual, region, label, invariant, operation-family.
 TYPE-6, OP-1, INV-1, and PRF-1 fix each lexical role's ordered admissible subset.
 A use's exact-spelling candidate universe contains all compilation-root entries in its grammar-selected domain and, for non-root declarations, only entries belonging to its declaration-owner chain.
 All sibling or expired lexical scopes within the same `fn_decl` owner participate so that an out-of-scope same-function declaration can be distinguished from absence.
-A contract-member signature admits declarations of that signature and its enclosing contract ancestry but not declarations owned only by a sibling member signature.
-A struct, enum, contract, or function generic belongs only to that declaration and its descendants.
+A function-formal signature admits declarations of that signature and its enclosing declaration ancestry but not declarations owned only by a sibling member signature.
+A struct, enum, formal, or function generic belongs only to that declaration and its descendants.
 No local, generic, parameter, region, or label owned solely by an unrelated top-level declaration or function participates.
 PRE-1 owner-local type parameters and fields never participate in source lookup.
 LABEL uses instead follow the separate current-function rule below.
@@ -2394,15 +2325,15 @@ For one lexical-use event the closed lookup rank is:
 | lexical-use role | rule cited by rank 1 or rank 3 |
 |---|---|
 | `type` TYPEID | TYPE-5 |
-| contract bound or `conform_decl` contract TYPEID | FN-3 |
-| `construct` constructor TYPEID, enum-variant-only `arm` TYPEID, or `result_route` TYPEID | TYPE-6 |
+| numeric-bound TYPEID or the group TYPEID of `pack_use` | FN-3 |
+| constructor `call` constructor TYPEID, enum-variant-only `arm` TYPEID, or `result_route` TYPEID | TYPE-6 |
 | REGIONID use | OWN-3 |
 | LABEL use | TYPE-6 |
 | `const` IDENT | CONST-1 |
 | `cvalue` IDENT | CONST-2 |
 | `pbase` IDENT | TYPE-5 |
 | IDENT or OPNAME `callee` | OP-1 |
-| `fn_bind` right IDENT | FN-3 |
+| unqualified `fn_bind` or `function_arg` callee IDENT | FN-3 |
 | FORM-5 generic-numeric TYPEID suffix | FORM-5 |
 | affine IDENT in a `header_invariant` or `invariant_stmt` target | INV-1 |
 | affine IDENT in a relation-form `use_premise` | PRF-1 |
@@ -2418,10 +2349,10 @@ This is declaration-kind resolution, not type checking.
 Across use events the minimum event key wins.
 Every resolution rejection uses `SourceNode` at the use role and has no expected-terminal set.
 
-The dependent-declaration carriers are exactly the `field` and `vfield` declarations and the member declaration of `fn_sig`.
+The dependent-declaration carriers are exactly the `field` and `vfield` declarations. A `fn_sig` instead contributes a function-parameter declaration with the scope and qualified-member disposition stated by TYPE-6 and FN-3.
 Each is a declaration-class carrier that produces one dependent-declaration record and one declaration event for later typed owner/member checking, but none enters a resolver lookup inventory.
-The two field carriers participate in FORM-3's reservation inventory; the contract-member carrier does not.
-The deferred-use carriers are exactly the `law` name and each complete law argument, the left IDENT of `fn_bind`, the first IDENT of an arm `fieldbind`, each `fieldinit` IDENT, and each `psuffix` IDENT.
+The two field carriers participate in FORM-3's reservation inventory; a function-parameter name has the ordinary function-name reservation judgment.
+The deferred-use carriers are the left IDENT of `fn_bind`, the member IDENT of a qualified `callee`, the first IDENT of an arm `fieldbind`, each `fieldinit` IDENT, each `psuffix` IDENT, and each field selected below an effect-path root.
 Each produces one deferred-use record for later typed owner/member checking.
 The `result_binding` IDENT and the second IDENT of a `result_route` fieldbind are FN-9-owned result-datum carriers.
 The header candidate produces one reservation event with `role_ordinal` zero in its `result_binding`.
@@ -2435,7 +2366,7 @@ Each produces one record for later [FN-7] table checking; none produces a declar
 The name of every `header_invariant` and `invariant_stmt` produces one proof-only invariant declaration record that uses TYPE-6's inventory and scope machinery; [INV-1] owns collision and lookup failure in this domain.
 An IDENT premise of `use_premise` produces one lexical-use record querying only that domain; it can never resolve to a value declaration that happens to have the same spelling. A `proof_use`'s own IDENT is the named multiplicity and queries the value domain instead, so the two positions never compete for one spelling.
 These records have no runtime declaration or value identity, but they participate in FORM-3 reservation and deterministic lexical resolution exactly at their stated scopes.
-The lexical generic suffix inside a deferred literal law argument additionally receives its ordinary lexical-use record; this X09/U18 pair is the only same-token overlap and produces two distinct role records.
+The retired law-name and law-argument roles produce no records. A function-formal expansion retains its written declaration and application identities rather than fabricating a second lexical spelling.
 In an `arm` or `result_route`, the leading TYPEID first resolves globally to an enum variant.
 Later typed checking compares that variant's owner with the scrutinee enum for an arm; a foreign arm variant cites TYPE-6.
 FN-9 separately requires the route's successfully resolved variant and owner to be exactly PRE-1 `Result.Ok`.
@@ -2444,7 +2375,7 @@ The resolver does not otherwise accept or reject a dependent role's owner/member
 A missing whole-unit requirement is not fabricated as an inventory or lookup event.
 Missing `main` remains an FN-7 rejection at `BundleRoot`.
 Duplicate `main` names are the later-source TYPE-6 duplicate; one unique but wrong-signature `main` is a later FN-7 rejection at its source declaration.
-Missing or duplicate contract members, field labels, conform bindings, and law roles remain typed-dependent rejections.
+Missing or duplicate formal members, field labels, and actual bindings remain typed-dependent rejections under FN-3 and the ordinary field-owner rules.
 
 Apart from FN-9's explicitly interleaved selector-admission subjudgment above, after complete lexical resolution succeeds, source semantic checking covers the complete closed unit and precedes every target-dependent check or lowering action.
 A source-semantic rejection cites one numbered rule whose rejection premise the checker has established.
@@ -2469,19 +2400,15 @@ Target-layout checking under [STOR-6] occurs only after that publication and pro
 Target-stage failures are outside source-language rejection ordering.
 Backend, linker, runtime-environment, and external-tool failures remain non-language failures [DIAG-1].
 
-After complete lexical resolution succeeds, FN-3 validates the complete source-ordered contract table before any FN-4 discharge.
-A source contract carrying a `generics` child rejects with `SourceNode` at that child and its complete extent; unresolved names inside that child instead retain their earlier resolver-owned rejection because FN-3 is not reached.
-A repeated contract member rejects at the later `fn_sig` node and its complete extent.
-A nonconcrete conformance subject rejects at the selected `type` child and its complete extent.
-A successfully resolved prelude contract reference rejects with `SourceNode` at the `conform_decl` and a coordinate equal to that contract TYPEID token.
-Contract arguments reject at the `targs` child and its complete extent.
-A duplicate exact conformance key rejects at the later `conform_decl` and its complete extent.
-An unresolved name inside the subject or contract arguments retains its earlier resolver-owned rejection.
-An unknown, repeated, extra, out-of-order, function-`generics`, contract-bearing, or signature-incompatible binding rejects at the offending `fn_bind` and its complete extent.
-A missing binding rejects at the `conform_decl` node with the coordinate of its closing `}` token.
-A generic type-parameter bound that successfully resolves to a source contract rejects with `SourceNode` at its owning `gparam` and a coordinate equal to that bound TYPEID token; an unresolved bound retains its earlier resolver-owned FN-3 rejection at the same lexical-use role.
-The post-resolution order among independent FN-3 candidates remains the implementation-defined deterministic order above.
-No FN-4 law discharge runs for an invalid conformance, and an FN-3 failure publishes neither partial contract metadata nor a partial binding vector.
+After complete lexical resolution succeeds, FN-3 validates the complete source-ordered formal and actual tables before FN-4 publishes any binding.
+A repeated formal member rejects at the later `fn_sig` and its complete extent.
+A malformed formal application, wrong-kind argument, or actual expansion cycle rejects under FN-3 at the application or binding that supplies the failed premise; the cycle diagnostic names its declarations.
+An unknown, repeated, extra, or out-of-order binding rejects at the offending `fn_bind` and its complete extent.
+A missing binding rejects at the complete `actual_decl`.
+A signature, region-bound, effect-coverage, structural-contract, or fresh-result mismatch rejects under FN-4 at the offending `fn_bind`, or at the raw function argument when no named group is involved.
+Unresolved names retain their earlier resolver-owned rejections; no binding check guesses their meaning.
+The post-resolution order among independent candidates remains the implementation-defined deterministic order above.
+An invalid group publishes neither a partial interface nor a partial binding vector.
 
 For a call to a callee class that carries written arguments — a user-generic `fn` [FN-2], a system operation's region arguments [SYS-2], or a retained-argument table operation [TYPE-5] — a missing, wrong-kind, wrong-count, or wrong-domain argument, or a missing operand, uses `SourceNode` at the `call` node and that node's complete source extent.
 For an operation spelled infix, a wrong operand domain or a missing operand uses `SourceNode` at the `infix` node and its complete extent.
@@ -2600,10 +2527,8 @@ This preserves A0 and S12 atomicity and makes the derivation DAG an explanation 
 For every `for_stmt`, the checked program additionally represents its optional source label and mandatory binder, the two source endpoint atoms in evaluation order, the two immutable compiler-owned captures with their identities, binder initialization, the pure header comparison, both header edges, the exact normal-body cleanup and update order, every no-update exit edge, the distinct header and continuation carried-binding sets, every hidden scope kill, and the complete [ENT-4] derivation of each S11 fact.
 These are checked semantic operations and facts, not a source desugaring or an optimizer reconstruction.
 
-The checked program also retains one complete source-ordered contract table, one validated conformance record per source `conform_decl`, each conformance's member-order binding vector, and every FN-4 base law derivation.
-Those records are semantic evidence, not executable operations.
-Ordinary lowering consumes the same checked functions and operations it would consume if those metadata tables were empty; it emits no contract or conformance object and obtains no dispatch target, check elimination, reassociation, or other optimization consequence from either a written law or a base derivation.
-Any future law-driven transformation remains subject to FN-4's checked-fact and fixed transformation-applicability boundary, and to facts-off identity.
+Function-kind instantiation retains the source identity of each written parameter, group application and member, its complete concrete substitution, the selected ordinary function instance, and its FN-4 signature, row, contract and fresh-result checks. Every bound call has one direct target and its instantiated formal interface; lowering emits no group object or adapter.
+A symbolic template may use a `FunctionFormalContract` hypothesis while checking its written spelling. That source-local hypothesis records the formal contract and relation ordinal, is never a proof of an actual body, and is never published in a concrete checked program or its derivation DAG. Concrete calls use only their selected actual's independently verified FN-9 summaries. No algebraic-law metadata or law-derived optimization authority exists.
 
 The checked-program representation is private compiler state.
 Its Rust layout, allocation strategy, dense identities, instruction grouping, and internal ordering where this specification defines no semantic order are implementation-defined.
@@ -2774,12 +2699,9 @@ enum NarrowError {
   NarrowError();
 }
 
-contract Int {
-}
-
-contract Float {
-}
 ```
+
+The two built-in numeric bounds `Int` and `Float` follow those enum records in the PRE-1 inventory. They admit exactly the integer and floating-point domains of OP-1, respectively, and imply `copy` under PROV-6. They are not source declarations, formal groups, implicit behaviors, or logical-law bundles; a source actual cannot bind or extend either bound.
 
 ## 16. System declaration domain (normative, counted)
 
@@ -2993,7 +2915,7 @@ Ordinary effect paths and loans describe interference independently [EFF-2, EFF-
 Every system operation is nongeneric: it declares no type parameter and no const parameter, so no `targ` in a system-operation call is a `type` or a `const`.
 A call whose callee resolves to a system operation writes its region arguments as `targs` after the `::` delimiter [GRAM-5] in declared region-parameter order and its value arguments as a `fieldinit_list` [GRAM-5] whose IDENTs equal the declared parameter names in declared order, under the same discipline [GRAM-11] applies to a user function.
 Positional operands are not admitted.
-A system operation is not a contract member, is not the right IDENT of an [FN-3] `fn_bind`, and never satisfies [FN-4]'s bound-function premise; a conformance binds only a top-level source function.
+A system operation cannot be a function-kind argument or the right callee of an [FN-3] `fn_bind`; FN-4 binds only an explicitly instantiated source function or a forwarded function parameter.
 
 The inventory contributes exactly three hundred and seven declaration records in this preorder: each nominal type in table order, and immediately after a struct nominal type's own row each of its declared fields in declared order; then each constructor in table order, and within one constructor each of its fields in declared order; then each operation in table order, and within one operation each of its region parameters in declared order followed by each of its value parameters in declared order.
 Exactly the nominal types, the constructors, and the operations enter the source resolver's whole-unit lookup inventory of a system-admitted unit [SYS-1]; a struct nominal type contributes no constructor entry, so no source expression constructs one.
@@ -3624,7 +3546,7 @@ The complete placement table is:
 |   position of a run                                                   |                             |   the commit writes          |
 | the DISPLACED value of one [SET-2] `replace`                          | the place the `replace`     | the binder that receives the |
 |                                                                       |   writes, before it writes  |   displaced value            |
-| the CONSTRUCT: one field operand of a `construct` that is a bare use  | that place                  | that field of the            |
+| the CONSTRUCT: one field operand of a constructor `call` that is a bare use  | that place                  | that field of the            |
 |   of one measured place                                               |                             |   constructed value          |
 | the DESTRUCTURING: one binder of a destructuring consume [GRAM-4]     | that field of the operand   | the binder                   |
 |   whose operand is a bare use of one measured nominal place           |                             |                              |

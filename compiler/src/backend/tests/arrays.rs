@@ -51,8 +51,8 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
         }
         let spilled = Spilled<4>(values: move run);
         region {
-          let actual = read::<4>(bytes: &spilled);
-          if actual != 228_u64 {
+          let observed = read::<4>(bytes: &spilled);
+          if observed != 228_u64 {
             return exit_status(code: 1_u8);
           }
         }
@@ -90,9 +90,9 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
             let rotated = move rest;
             let small = Inline<'a, 4>(values: move rotated);
             region {
-              let actual = read::<4>(bytes: &spilled);
+              let observed = read::<4>(bytes: &spilled);
               let local = read::<4>(bytes: &small);
-              if actual != 420_u64 {
+              if observed != 420_u64 {
                 return exit_status(code: 2_u8);
               }
               if local != 732_u64 {

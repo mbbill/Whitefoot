@@ -558,13 +558,15 @@ n: Slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
 enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
 linear struct Lease { doc "lease"; slot: u8; }
 linear enum Ticket { doc "ticket"; Open(value: u8); }
-contract Contract<T: affine> {
-doc "contract";
+formal Behavior<T: affine> {
+doc "formal";
 fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(x);
-law associative(member);
-law identity(member, 0_i32);
 }
-conform Name<T>: Contract<T> { doc "binding"; member = implementation; }
+actual Selected : Behavior<Name<T>> { doc "binding"; member = implementation::<fn other>; }
+fn forwarded<Behavior<K>, fn operation(value: own K) -> result: own K pure>() -> result: own unit pure {
+Behavior<K>::member(x: unit);
+return unit;
+}
 const zero: i32 = 0_i32;
 const alias: i32 = zero;
 const table: array<i32, 2> =[0_i32, zero];
@@ -645,7 +647,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 89);
+    assert_eq!(productions().len(), 88);
     assert_eq!(
         parsed
             .tree

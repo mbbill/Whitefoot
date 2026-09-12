@@ -1197,3 +1197,122 @@ Fresh measurements remain in `.build`; checks never overwrite the retained CSV.
 The source, observer, ABI instrument and cost harness serve this owning-map
 comparison and should be superseded together when its contract or representation
 changes; they are not a second runtime or public FFI.
+
+## Static behavior parameterization (D7)
+
+These witnesses implement the selected [formal/actual interface](../../../investigations/containers-and-resources/BEHAVIOR.md)
+over ordinary values. [The map](owning-behavior.wf) shares one key-generic
+insertion, lookup and growth implementation; [the queue](priority-behavior.wf)
+shares one element-generic implementation. Every mutation helper takes its run
+through `&uniq`. Function arguments resolve before lowering, with no dictionary,
+indirect call, behavior adapter or executable proof check.
+
+### Executed contracts
+
+The map retains D5's collision/replacement/tombstone/reuse/growth/refusal and
+cleanup protocol and its native control. Empty-environment scalar keys run that
+entire protocol. Stateful seeded hashing, an owning store-branded key, and
+deliberately non-reflexive equality are additional instances. A rejected insert
+returns its offered key and payload; replacement returns the complete old slot,
+so the generic implementation never silently discards an owning key.
+The hostile instance may retain two equal-looking keys and miss both on lookup;
+bounds, ownership and the exact release ledger still hold.
+
+Each of default, `--par` and `--no-overlap` passes 1,808 matched map executions,
+including 1,504 injected refusals, 2,736 resource releases and 1,808 backing
+releases. Each mode also runs 12 behavior-instance executions: successful
+stateful, branded and hostile scenarios, and refusal at every allocation
+position. The observer checks allocation sizes, key/payload contents,
+individual releases and quarantine, including both key boxes in the branded
+case. The queue executes an empty-environment u64 ordering and a stateful
+descending Item ordering; the matched trace retains D5's seeds, 16-element
+capacity and sorting oracle.
+
+### Measurement and attribution
+
+Collected on 2026-09-12 PDT, arm64 macOS 26.6.2, Apple Clang 21.0.0 and Rust
+1.98.1, with the v0.57 compiler/witness change. This is one non-exclusive host,
+without CPU affinity. No CPU-heavy checks ran alongside the timing cohorts.
+Measurements are descriptive; no host-speed threshold selects acceptance.
+
+[Map samples](behavior-map-measurements.csv) contain 3,024 observations.
+The existing harness uses 18 samples with the first four discarded, three
+capacities, three operations and rotating WF/interleaved/split order. Two
+outer cohorts reverse both implementation and retained/inlined ordering.
+Medians below average the middle two observations. At capacity 4,096, lookup
+and insertion are ns/operation, and rehash is ns/complete doubling:
+
+| Boundary | Operation | D5 WF | Generic WF | C interleaved, D5/generic cohort | C split, D5/generic cohort |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Retained | lookup | 2.875 | 3.184 | 2.699 / 2.681 | 2.742 / 2.729 |
+| Retained | insert | 3.375 | 4.555 | 2.927 / 2.843 | 3.110 / 3.024 |
+| Retained | rehash | 15729 | 15719 | 13479 / 13448 | 9974 / 9953 |
+| Inlined | lookup | 2.521 | 2.392 | 2.150 / 2.157 | 2.158 / 2.165 |
+| Inlined | insert | 3.754 | 4.110 | 2.187 / 2.187 | 2.426 / 2.416 |
+| Inlined | rehash | 13073 | 12927 | 9104 / 9104 | 7011 / 7031 |
+
+The scalar-key instantiation has the same 24-byte enum-slot stride and
+32-byte requested capacity unit as D5; interleaved C is 24 and split C is 17
+bytes per unit. The two WF implementations therefore have the same layout
+and allocator ceiling. Both retained bridges copy **zero receiver-descriptor
+bytes**. Both growth implementations retain one 24-byte transfer of ordinary
+progress coordinates, not a run round trip; installing the genuinely new
+backing still writes its descriptor.
+
+The generic map is not at D5 parity for every retained helper: lookup is about
+11% slower, insertion 35% slower, and growth equal within these observations.
+The optimized scalar `key_find` receives the queried key by address; D5's
+concrete helper receives a u64. Generic `key_put` returns a complete owning
+slot/key outcome where D5 returns only its payload outcome. These are direct
+calls with different value/result ABIs, not dispatch or receiver copying.
+For lookup the generic-minus-D5 gap changes from +0.309 ns retained to
+-0.129 ns inlined. For insertion it changes from +1.180 to +0.356 ns.
+The difference-of-differences associates 0.438 ns and 0.824 ns respectively
+with retaining those boundaries and the optimizer's response. It does not
+isolate a single instruction latency. The remaining insertion difference
+belongs to the more general owning result and probe/control shape; it is
+not evidence for projected storage. No stronger component attribution is
+claimed. The ordinary layout and cleanup costs against C remain from D5.
+
+[Priority samples](behavior-priority-measurements.csv) contain 280 observations:
+two opposite-order cohorts, five source/boundary forms, WF/C, one/sixteen
+rounds and seven samples of 4,096 traces. Mutation helpers remain `noinline`;
+the independent sorting oracle checks 320 inputs per binary.
+
+| Rounds | D5 WF retained | Generic WF | Direct expansion WF | C retained, generic cohort |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 275.513 | 421.997 | 421.997 | 269.409 |
+| 16 | 4409.420 | 6830.445 | 6853.640 | 4319.700 |
+
+[The direct expansion control](priority-behavior-direct.wf) fixes u64 and the
+empty environment, replaces member selection with ordinary calls, and retains
+the generic witness's exact exchange/control algorithm. SET-2 requires its
+concrete copy replacements to be spelled as read followed by `set`, and OWN-1
+omits `move` on those scalars. Its exact ordinary EFF-2 row omits the empty
+environment read. These are proof/spelling changes; the values exchanged,
+tail detour and helper boundaries remain the same. It is a maintained control
+in `check` and `check-interface`, to be retired when a replacement owning
+exchange supersedes this question.
+
+Generic versus direct-expansion timings are equal within observed variation.
+Both are about 55% slower than the concrete D5 copy heap. The owning witness
+exchanges through take-back, up to three single-place replacements, and
+place-back; D5 swaps two copied scalars. This cost remains after removing all
+behavior parameterization. All retained queue helpers have zero aggregate
+copy intrinsics, vector-transfer bytes and heap allocations. D7 establishes
+direct-call behavior binding without measured extra cost in this control;
+it does not establish that the current general owning exchange is the fastest
+queue implementation. Choosing a better owning exchange/container algorithm
+is subsequent library work, not a hidden change to this interface decision.
+
+Reproduce with the current compiler through the maintained family targets:
+
+```sh
+make -C research/experiments/container-representation/families check
+make -C research/experiments/container-representation/families measure-interface
+make -C research/experiments/container-representation/families measure-behavior-costs
+```
+
+The two measurement targets write fresh files under `.build`; `check` never
+overwrites the dated CSVs. Native controls, seeds and result/refusal comparison
+remain unchanged from D5.

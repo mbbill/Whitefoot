@@ -156,10 +156,12 @@ pub enum SemanticRule {
     Fn1,
     /// Explicit generic-instantiation argument presence.
     Fn2,
-    /// Generic bounds and source-contract conformance.
+    /// Numeric bounds and named parameter/argument group formation.
     Fn3,
-    /// Closed source-law declaration and discharge.
+    /// Function-kind signature, effect, contract and fresh-result matching.
     Fn4,
+    /// Explicit static member selection from a formal parameter group.
+    Fn5,
     /// Polymorphic recursion in a call cycle among generic functions.
     Fn6,
     /// Closed-program `main` contract.
@@ -257,6 +259,7 @@ impl SemanticRule {
             Self::Fn2 => "FN-2",
             Self::Fn3 => "FN-3",
             Self::Fn4 => "FN-4",
+            Self::Fn5 => "FN-5",
             Self::Fn6 => "FN-6",
             Self::Fn7 => "FN-7",
             Self::Fn8 => "FN-8",
@@ -346,7 +349,8 @@ impl SemanticRule {
             Self::Fn1 => Self::Fn2,
             Self::Fn2 => Self::Fn3,
             Self::Fn3 => Self::Fn4,
-            Self::Fn4 => Self::Fn6,
+            Self::Fn4 => Self::Fn5,
+            Self::Fn5 => Self::Fn6,
             Self::Fn6 => Self::Fn7,
             Self::Fn7 => Self::Fn8,
             Self::Fn8 => Self::Fn9,
@@ -424,22 +428,23 @@ impl SemanticRule {
             Self::Fn2 => 44,
             Self::Fn3 => 45,
             Self::Fn4 => 46,
-            Self::Fn6 => 47,
-            Self::Fn7 => 48,
-            Self::Fn8 => 49,
-            Self::Fn9 => 50,
-            Self::Call4 => 51,
-            Self::Eff1 => 52,
-            Self::Eff2 => 53,
-            Self::Err2 => 54,
-            Self::Err3 => 55,
-            Self::Sys2 => 56,
-            Self::Sys8 => 57,
-            Self::Ent2 => 58,
-            Self::Msr3 => 59,
-            Self::Call6 => 60,
-            Self::Inv1 => 61,
-            Self::Prf1 => 62,
+            Self::Fn5 => 47,
+            Self::Fn6 => 48,
+            Self::Fn7 => 49,
+            Self::Fn8 => 50,
+            Self::Fn9 => 51,
+            Self::Call4 => 52,
+            Self::Eff1 => 53,
+            Self::Eff2 => 54,
+            Self::Err2 => 55,
+            Self::Err3 => 56,
+            Self::Sys2 => 57,
+            Self::Sys8 => 58,
+            Self::Ent2 => 59,
+            Self::Msr3 => 60,
+            Self::Call6 => 61,
+            Self::Inv1 => 62,
+            Self::Prf1 => 63,
         }
     }
 }
@@ -1187,39 +1192,8 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by EFF-2.
         mechanical_fix: &'static str,
     },
-    /// A source contract carried the syntactically admitted generic list.
-    GenericContract,
-    /// Two members of one source contract have the same name.
-    DuplicateContractMember {
-        /// Repeated member name.
-        member: String,
-    },
-    /// A conformance subject is not one concrete type.
-    NonConcreteConformanceSubject,
-    /// A conformance named a prelude marker instead of a source contract.
-    InvalidConformanceContract,
-    /// A conformance supplied contract arguments.
-    ConformanceContractArguments,
-    /// A later conformance repeated an exact `(type, contract)` key.
-    DuplicateConformance,
-    /// A conformance binding did not exactly match the next contract member.
-    InvalidConformanceBinding {
-        /// Member required at this source position, if one remains.
-        expected_member: Option<String>,
-    },
-    /// A conformance ended before binding every contract member.
-    MissingConformanceBinding {
-        /// First member with no binding.
-        member: String,
-    },
-    /// A bound function was generic, had requirements, or had a different signature.
-    IncompatibleConformanceFunction,
     /// A generic type parameter named a source contract as its bound.
     SourceContractGenericBound,
-    /// A law declaration does not match FN-4's closed declaration table.
-    InvalidContractLaw,
-    /// A valid law declaration cannot be discharged for one conformance.
-    UndischargedContractLaw,
 }
 
 /// A written-argument count and the noun it agrees with, as `1 written type

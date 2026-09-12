@@ -216,7 +216,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // that is not a region is still SYS-2's, judged at that member: the
         // two rules establish different premises at different nodes, and only
         // the complete written application is FORM-8's.
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return Ok(vec![None; operation.regions.len()]);
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;

@@ -1221,6 +1221,22 @@ impl Analyzer<'_, '_> {
         relation_ordinal: u32,
         parents: Option<Vec<DerivationId>>,
     ) -> PostconditionAggregate {
+        if self.function.formal_hypothesis {
+            let node =
+                self.derivations
+                    .intern(super::state::DerivationNode::FunctionFormalContract {
+                        block: block.clone(),
+                        relation_ordinal,
+                    });
+            self.derivations.add_root(
+                DerivationRootKind::PostconditionAggregate { relation_ordinal },
+                node,
+            );
+            return PostconditionAggregate {
+                discharged: true,
+                derivation: Some(node),
+            };
+        }
         let Some(parents) = parents.filter(|parents| !parents.is_empty()) else {
             return PostconditionAggregate {
                 discharged: false,
@@ -6047,6 +6063,7 @@ impl Analyzer<'_, '_> {
                 function,
                 call,
                 arguments,
+                formal_effects,
                 ..
             } => {
                 let callee = self.context.callee(*function);
@@ -6054,7 +6071,20 @@ impl Analyzer<'_, '_> {
                     self.collect_expression_kills(argument, events);
                 }
                 for (index, argument) in arguments.iter().enumerate() {
-                    let Some(writes) = callee.and_then(|callee| callee.parameter_writes.get(index))
+                    let boundary_writes = formal_effects.as_ref().and_then(|effects| {
+                        let declaration = callee?.parameter_declarations.get(index)?;
+                        Some(
+                            effects
+                                .writes
+                                .iter()
+                                .filter(|path| path.root == *declaration)
+                                .map(|path| path.fields.clone())
+                                .collect::<Vec<_>>(),
+                        )
+                    });
+                    let Some(writes) = boundary_writes
+                        .as_ref()
+                        .or_else(|| callee.and_then(|callee| callee.parameter_writes.get(index)))
                     else {
                         continue;
                     };

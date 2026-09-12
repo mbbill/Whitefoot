@@ -323,16 +323,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [DIAG-1] a table operation cites the rule [OP-2] selects, never FN-2,
         // which belongs to a user-generic call; [TYPE-5] mandates `array_new`'s
         // element and length, so their absence is its violation.
-        let targs = self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRule::Type5,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                )
-            })?;
+        let targs = self.tree.argument_list(node)?.ok_or_else(|| {
+            self.issue_value(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::InvalidOperation,
+            )
+        })?;
         let targs = self.tree.children_with(targs, Production::Targ)?;
         let [element_arg, length_arg] = targs.as_slice() else {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);

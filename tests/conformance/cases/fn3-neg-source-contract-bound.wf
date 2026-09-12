@@ -1,4 +1,4 @@
-contract SourceBound {
+formal SourceBound {
 }
 
 fn identity<T: SourceBound>(value: own T) -> result: own T pure {

@@ -237,6 +237,7 @@ fn system_admissible(role: LexicalUseRole) -> bool {
     matches!(
         role,
         LexicalUseRole::Type
+            | LexicalUseRole::TypeArgument
             | LexicalUseRole::Construct
             | LexicalUseRole::ArmVariant
             | LexicalUseRole::EnsuresVariant
@@ -247,8 +248,15 @@ fn system_admissible(role: LexicalUseRole) -> bool {
 fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationClass> {
     match role {
         LexicalUseRole::Type => vec![DeclarationClass::GenericType, DeclarationClass::NominalType],
-        LexicalUseRole::GenericBound | LexicalUseRole::ConformanceContract => {
-            vec![DeclarationClass::Contract]
+        LexicalUseRole::TypeArgument => vec![
+            DeclarationClass::GenericType,
+            DeclarationClass::NominalType,
+            DeclarationClass::Formal,
+            DeclarationClass::Actual,
+        ],
+        LexicalUseRole::FormalGroup => vec![DeclarationClass::Formal, DeclarationClass::Actual],
+        LexicalUseRole::GenericBound => {
+            vec![DeclarationClass::NumericBound]
         }
         LexicalUseRole::Construct => vec![
             DeclarationClass::StructConstructor,
@@ -283,11 +291,17 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
             if operation_id(spelling).is_some() {
                 vec![DeclarationClass::OperationFamily]
             } else {
-                vec![DeclarationClass::Function]
+                vec![
+                    DeclarationClass::Function,
+                    DeclarationClass::FunctionParameter,
+                ]
             }
         }
         LexicalUseRole::OperationCallee => vec![DeclarationClass::OperationFamily],
-        LexicalUseRole::FunctionBinding => vec![DeclarationClass::Function],
+        LexicalUseRole::FunctionBinding => vec![
+            DeclarationClass::Function,
+            DeclarationClass::FunctionParameter,
+        ],
         LexicalUseRole::GenericNumericSuffix => vec![DeclarationClass::GenericType],
         // [MSR-6, INV-1] an affine atom is one bare place whose `pbase` is an
         // IDENT, and an in-scope const generic is a value in exactly that
@@ -314,8 +328,14 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         LexicalUseRole::Type | LexicalUseRole::GenericNumericSuffix => {
             vec![DeclarationClass::GenericType, DeclarationClass::NominalType]
         }
-        LexicalUseRole::GenericBound | LexicalUseRole::ConformanceContract => {
-            vec![DeclarationClass::Contract]
+        LexicalUseRole::TypeArgument | LexicalUseRole::FormalGroup => vec![
+            DeclarationClass::GenericType,
+            DeclarationClass::NominalType,
+            DeclarationClass::Formal,
+            DeclarationClass::Actual,
+        ],
+        LexicalUseRole::GenericBound => {
+            vec![DeclarationClass::NumericBound]
         }
         LexicalUseRole::Construct | LexicalUseRole::ArmVariant | LexicalUseRole::EnsuresVariant => {
             vec![
@@ -335,12 +355,14 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         | LexicalUseRole::PlaceBase
         | LexicalUseRole::FunctionBinding => vec![
             DeclarationClass::Function,
+            DeclarationClass::FunctionParameter,
             DeclarationClass::NamedConst,
             DeclarationClass::ConstGeneric,
             DeclarationClass::Value,
         ],
         LexicalUseRole::IdentifierCallee => vec![
             DeclarationClass::Function,
+            DeclarationClass::FunctionParameter,
             DeclarationClass::NamedConst,
             DeclarationClass::ConstGeneric,
             DeclarationClass::Value,
@@ -364,8 +386,10 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
 
 fn use_rule(role: LexicalUseRole) -> ResolutionRule {
     match role {
-        LexicalUseRole::Type | LexicalUseRole::PlaceBase => ResolutionRule::Type5,
-        LexicalUseRole::GenericBound | LexicalUseRole::ConformanceContract => ResolutionRule::Fn3,
+        LexicalUseRole::Type | LexicalUseRole::TypeArgument | LexicalUseRole::PlaceBase => {
+            ResolutionRule::Type5
+        }
+        LexicalUseRole::GenericBound | LexicalUseRole::FormalGroup => ResolutionRule::Fn3,
         LexicalUseRole::Construct
         | LexicalUseRole::ArmVariant
         | LexicalUseRole::EnsuresVariant

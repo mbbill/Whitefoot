@@ -85,8 +85,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("define", "Define"),
         ("when", "When"),
         ("is", "Is"),
-        ("law", "Law"),
-        ("conform", "Conform"),
         ("const", "Const"),
         ("=", "Equal"),
         ("doc", "Doc"),
@@ -183,6 +181,8 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("dispose", "Dispose"),
         // v0.48 [PRF-1]: the cited-premise multiplicity atom.
         ("times", "Times"),
+        ("formal", "Formal"),
+        ("actual", "Actual"),
     ];
     if spelling == "[0-9]+" {
         return Pred::Digits;

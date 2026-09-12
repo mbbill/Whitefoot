@@ -21,6 +21,8 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum FixedTerminal {
+    /// `linear`.
+    Linear,
     /// `struct`.
     Struct,
     /// `{`.
@@ -43,18 +45,30 @@ pub enum FixedTerminal {
     Fn,
     /// `->`.
     ThinArrow,
-    /// `requires`.
-    Requires,
+    /// `command`.
+    Command,
     /// `contract`.
     Contract,
-    /// `law`.
-    Law,
-    /// `conform`.
-    Conform,
-    /// `const`.
-    Const,
+    /// `define`.
+    Define,
     /// `=`.
     Equal,
+    /// `requires`.
+    Requires,
+    /// `ensures`.
+    Ensures,
+    /// `when`.
+    When,
+    /// `is`.
+    Is,
+    /// `formal`.
+    Formal,
+    /// `actual`.
+    Actual,
+    /// `::`.
+    ColonColon,
+    /// `const`.
+    Const,
     /// `doc`.
     Doc,
     /// `<`.
@@ -65,6 +79,14 @@ pub enum FixedTerminal {
     LeftBracket,
     /// `]`.
     RightBracket,
+    /// `copy`.
+    Copy,
+    /// `affine`.
+    Affine,
+    /// `.`.
+    Dot,
+    /// `as`.
+    As,
     /// `i8`.
     I8,
     /// `i16`.
@@ -91,6 +113,8 @@ pub enum FixedTerminal {
     Array,
     /// `Slice`, S35's capitalized view spelling.
     Slice,
+    /// `MutSlice`, the second view S6 and S35 name.
+    MutSlice,
     /// `box`.
     Box,
     /// `arena`.
@@ -105,108 +129,88 @@ pub enum FixedTerminal {
     Uniq,
     /// `let`.
     Let,
+    /// `move`.
+    Move,
+    /// `if`.
+    If,
+    /// `else`.
+    Else,
     /// `propagate`.
     Propagate,
+    /// `replace`.
+    Replace,
     /// `set`.
     Set,
     /// `return`.
     Return,
     /// `loop`.
     Loop,
-    /// `break`.
-    Break,
-    /// `region`.
-    Region,
-    /// `define`.
-    Define,
-    /// `else`.
-    Else,
-    /// `when`.
-    When,
-    /// `give`.
-    Give,
-    /// `match`.
-    Match,
-    /// `=>`.
-    FatArrow,
-    /// `move`.
-    Move,
-    /// `deref`.
-    Deref,
-    /// `entry`.
-    Entry,
-    /// `.`.
-    Dot,
-    /// `pure`.
-    Pure,
-    /// `reads`.
-    Reads,
-    /// `writes`.
-    Writes,
-    /// `allocates`.
-    Allocates,
-    /// `as`.
-    As,
-    /// `if`.
-    If,
-    /// `+`.
-    Plus,
-    /// `+wrap`.
-    PlusWrap,
-    /// `+checked`.
-    PlusChecked,
-    /// `+sat`.
-    PlusSat,
-    /// `-`.
-    Minus,
-    /// `-wrap`.
-    MinusWrap,
-    /// `-checked`.
-    MinusChecked,
-    /// `-sat`.
-    MinusSat,
-    /// `*`.
-    Star,
-    /// `*wrap`.
-    StarWrap,
-    /// `*checked`.
-    StarChecked,
-    /// `*sat`.
-    StarSat,
-    /// `/`.
-    Slash,
-    /// `/checked`.
-    SlashChecked,
-    /// `%`.
-    Percent,
-    /// `%checked`.
-    PercentChecked,
     /// `for`.
     For,
     /// `in`.
     In,
     /// `..`.
     DotDot,
-    /// `ensures`.
-    Ensures,
-    /// `replace`.
-    Replace,
-    /// `command`.
-    Command,
-    /// `+defined`.
-    PlusDefined,
-    /// `-defined`.
-    MinusDefined,
-    /// `*defined`.
-    StarDefined,
-    /// `/defined`.
-    SlashDefined,
-    /// `%defined`.
-    PercentDefined,
     /// `invariant`.
     Invariant,
     /// `use`.
     Use,
+    /// `times`, the multiplicity of one cited proof premise [PRF-1].
+    Times,
+    /// `*`.
+    Star,
+    /// `+`.
+    Plus,
+    /// `-`.
+    Minus,
+    /// `break`.
+    Break,
+    /// `region`.
+    Region,
+    /// `give`.
+    Give,
+    /// `dispose`.
+    Dispose,
+    /// `match`.
+    Match,
+    /// `=>`.
+    FatArrow,
+    /// `+wrap`.
+    PlusWrap,
+    /// `+defined`.
+    PlusDefined,
+    /// `+checked`.
+    PlusChecked,
+    /// `+sat`.
+    PlusSat,
+    /// `-wrap`.
+    MinusWrap,
+    /// `-defined`.
+    MinusDefined,
+    /// `-checked`.
+    MinusChecked,
+    /// `-sat`.
+    MinusSat,
+    /// `*wrap`.
+    StarWrap,
+    /// `*defined`.
+    StarDefined,
+    /// `*checked`.
+    StarChecked,
+    /// `*sat`.
+    StarSat,
+    /// `/`.
+    Slash,
+    /// `/defined`.
+    SlashDefined,
+    /// `/checked`.
+    SlashChecked,
+    /// `%`.
+    Percent,
+    /// `%defined`.
+    PercentDefined,
+    /// `%checked`.
+    PercentChecked,
     /// `==`.
     EqualEqual,
     /// `!=`.
@@ -215,22 +219,18 @@ pub enum FixedTerminal {
     LessEqual,
     /// `>=`.
     GreaterEqual,
-    /// `::`.
-    ColonColon,
-    /// `is`.
-    Is,
-    /// `linear`.
-    Linear,
-    /// `affine`.
-    Affine,
-    /// `copy`.
-    Copy,
-    /// `dispose`.
-    Dispose,
-    /// `MutSlice`, the second view S6 and S35 name.
-    MutSlice,
-    /// `times`, the multiplicity of one cited proof premise [PRF-1].
-    Times,
+    /// `deref`.
+    Deref,
+    /// `entry`.
+    Entry,
+    /// `pure`.
+    Pure,
+    /// `reads`.
+    Reads,
+    /// `writes`.
+    Writes,
+    /// `allocates`.
+    Allocates,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
@@ -255,8 +255,9 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 105] = [
     FixedTerminal::Ensures,
     FixedTerminal::When,
     FixedTerminal::Is,
-    FixedTerminal::Law,
-    FixedTerminal::Conform,
+    FixedTerminal::Formal,
+    FixedTerminal::Actual,
+    FixedTerminal::ColonColon,
     FixedTerminal::Const,
     FixedTerminal::Doc,
     FixedTerminal::LeftAngle,
@@ -333,7 +334,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 105] = [
     FixedTerminal::BangEqual,
     FixedTerminal::LessEqual,
     FixedTerminal::GreaterEqual,
-    FixedTerminal::ColonColon,
     FixedTerminal::Deref,
     FixedTerminal::Entry,
     FixedTerminal::Pure,
@@ -365,8 +365,8 @@ impl FixedTerminal {
             Self::ThinArrow => "->",
             Self::Requires => "requires",
             Self::Contract => "contract",
-            Self::Law => "law",
-            Self::Conform => "conform",
+            Self::Formal => "formal",
+            Self::Actual => "actual",
             Self::Const => "const",
             Self::Equal => "=",
             Self::Doc => "doc",
@@ -850,28 +850,23 @@ mod tests {
                 Some(terminal)
             );
         }
-        assert_eq!(FixedTerminal::PercentChecked as u8, 79);
-        assert_eq!(FixedTerminal::For as u8, 80);
-        assert_eq!(FixedTerminal::In as u8, 81);
-        assert_eq!(FixedTerminal::DotDot as u8, 82);
-        assert_eq!(FixedTerminal::Ensures as u8, 83);
-        assert_eq!(FixedTerminal::Replace as u8, 84);
-        assert_eq!(FixedTerminal::Invariant as u8, 91);
-        assert_eq!(FixedTerminal::Use as u8, 92);
-        assert_eq!(FixedTerminal::Is as u8, 98);
-        // [PROV-6, S37] the four linearity atoms take four consecutive
-        // discriminants after `is`. [S23] the retired `heap` allocation atom
-        // stood before all of them, so every discriminant after it moved one
-        // place down.
-        assert_eq!(FixedTerminal::Linear as u8, 99);
-        assert_eq!(FixedTerminal::Affine as u8, 100);
-        assert_eq!(FixedTerminal::Copy as u8, 101);
-        assert_eq!(FixedTerminal::Dispose as u8, 102);
-        // [S6, S35] `MutSlice` is the atom v0.45 appends and [PRF-1] `times`
-        // the atom v0.48 appends, so they take the enum's last two
-        // discriminants and the external predicates start after them.
-        assert_eq!(FixedTerminal::MutSlice as u8, 103);
-        assert_eq!(FixedTerminal::Times as u8, 104);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 94);
+        assert_eq!(FixedTerminal::For as u8, 62);
+        assert_eq!(FixedTerminal::In as u8, 63);
+        assert_eq!(FixedTerminal::DotDot as u8, 64);
+        assert_eq!(FixedTerminal::Ensures as u8, 17);
+        assert_eq!(FixedTerminal::Replace as u8, 58);
+        assert_eq!(FixedTerminal::Invariant as u8, 65);
+        assert_eq!(FixedTerminal::Use as u8, 66);
+        assert_eq!(FixedTerminal::Is as u8, 19);
+        // D7 uses first grammar occurrence for the fixed-terminal inventory;
+        // function signatures and member applications move several keywords.
+        assert_eq!(FixedTerminal::Linear as u8, 0);
+        assert_eq!(FixedTerminal::Affine as u8, 30);
+        assert_eq!(FixedTerminal::Copy as u8, 29);
+        assert_eq!(FixedTerminal::Dispose as u8, 74);
+        assert_eq!(FixedTerminal::MutSlice as u8, 46);
+        assert_eq!(FixedTerminal::Times as u8, 67);
         assert_eq!(TerminalPredicate::Identifier.index(), 105);
         assert_eq!(TerminalPredicate::Digits.index(), 112);
     }

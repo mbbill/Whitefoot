@@ -336,6 +336,41 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
     OriginAnalyzer<'a, 'b, 'unit, 'classified, 'lexed, 'source>
 {
     fn analyze(&self) -> Result<OriginSummary, CheckStop> {
+        // A function-kind parameter has no executable body. Its owned
+        // result is fresh [FN-4]; writes through exclusive formals do not
+        // promise to preserve the old owner. These hypotheses exist only in
+        // the symbolic spelling pass, never in a concrete call summary.
+        if let Some(signature) = self.checker.signatures.get(self.function.id.0 as usize)
+            && signature.formal_parameter.is_some()
+        {
+            let mut borrowed = Vec::new();
+            for (ordinal, parameter) in self.function.parameters.iter().enumerate() {
+                if matches!(parameter.mode, CheckedMode::Unique(_))
+                    && self.checker.type_carries_identity(parameter.ty)?
+                {
+                    let written = signature
+                        .declared_effects
+                        .writes
+                        .iter()
+                        .any(|path| path.root == parameter.declaration);
+                    let ordinal = u32::try_from(ordinal)
+                        .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
+                    let origin = if written {
+                        OriginSet::Unknown
+                    } else {
+                        OriginSet::formal_leaves(
+                            ordinal,
+                            self.checker.type_state_leaf_paths(parameter.ty)?,
+                        )
+                    };
+                    borrowed.push((ordinal, origin));
+                }
+            }
+            return Ok(OriginSummary {
+                result: OriginSet::fresh(),
+                borrowed,
+            });
+        }
         let mut environment = OriginEnvironment::new();
         for (ordinal, parameter) in self.function.parameters.iter().enumerate() {
             let leaves = self.checker.type_state_leaf_paths(parameter.ty)?;

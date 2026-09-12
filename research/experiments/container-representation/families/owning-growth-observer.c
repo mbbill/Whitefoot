@@ -19,6 +19,9 @@ void wf_observe_release(void *pointer);
 #undef malloc
 
 extern uint64_t wf_map_contract(void *, uint64_t, uint64_t, uint64_t);
+#ifdef BEHAVIOR_DEMOS
+extern uint8_t wf_behavior_contract(void *, uint64_t);
+#endif
 
 typedef struct {
     void *pointer;
@@ -73,6 +76,12 @@ void wf_observe_release(void *pointer) {
                 require(resource.data[word] == resource.id * 17 + word,
                         "resource identity or contents changed");
         }
+#ifdef BEHAVIOR_DEMOS
+        if (entry->bytes == sizeof(uint64_t)) {
+            memcpy(&entry->id, pointer, sizeof entry->id);
+            require(entry->id == 9, "branded key identity or contents changed");
+        }
+#endif
         entry->released = true;
         ++observation.released;
         observation.live -= (size_t)entry->bytes;
@@ -271,6 +280,38 @@ static void compare(uint64_t seed, uint64_t scenario, size_t budget, size_t fail
     ++compared_runs;
 }
 
+#ifdef BEHAVIOR_DEMOS
+static void check_behavior_demos(void) {
+    /* OP-9 request ceilings, independently stated by source layout:
+     * scalar Slot 32, Slot containing Branded<Box<u64>> 48; payload 40.
+     * Actual LLVM slot strides are not substituted for allocation ceilings. */
+    const uint64_t extents[3][4] = {{128, 40, 0, 0}, {192, 8, 8, 40}, {64, 40, 40, 0}};
+    const uint64_t owners[3][4] = {{0, 81, 0, 0}, {0, 9, 9, 81}, {0, 81, 82, 0}};
+    const size_t counts[3] = {2, 4, 3};
+    size_t executions = 0;
+    for (size_t variant = 0; variant < 3; ++variant) {
+        for (size_t failure = 0; failure <= counts[variant]; ++failure) {
+            observation_reset(failure, 0, true);
+            expected_request_count = counts[variant];
+            memcpy(expected_requests, extents[variant], sizeof extents[variant]);
+            uint8_t result = wf_behavior_contract(NULL, variant);
+            Observation done = completed_observation();
+            require(result == (failure ? 70 : 0), "behavior result or refusal mismatch");
+            require(done.requests == (failure ? failure : counts[variant]),
+                    "behavior allocation path changed");
+            require(done.allocated == (failure ? failure - 1 : counts[variant]),
+                    "behavior did not return every earlier owner");
+            for (size_t i = 0; i < done.allocated; ++i)
+                require(done.allocations[i].id == owners[variant][i],
+                        "behavior exact release ledger changed");
+            ++executions;
+        }
+    }
+    observation_reset(0, 0, false);
+    printf("behavior: %zu stateful, branded-key and hostile-equality executions; every refusal and release checked\n", executions);
+}
+#endif
+
 int main(void) {
     for (uint64_t seed = 0; seed < 16; ++seed) {
         for (uint64_t scenario = 0; scenario < 5; ++scenario) {
@@ -287,5 +328,8 @@ int main(void) {
     observation_reset(0, 0, false);
     printf("owning-growth: %zu matched executions; %zu resource releases; %zu backing releases\n",
            compared_runs, compared_owners, compared_backings);
+#ifdef BEHAVIOR_DEMOS
+    check_behavior_demos();
+#endif
     return 0;
 }

@@ -26,8 +26,8 @@ pub(crate) const PRELUDE_DECLARATIONS: [PreludeDeclarationRecord; 24] = [
     prelude(19, "DivOverflow", Some(DeclarationClass::EnumVariant)),
     prelude(20, "NarrowError", Some(DeclarationClass::NominalType)),
     prelude(21, "NarrowError", Some(DeclarationClass::EnumVariant)),
-    prelude(22, "Int", Some(DeclarationClass::Contract)),
-    prelude(23, "Float", Some(DeclarationClass::Contract)),
+    prelude(22, "Int", Some(DeclarationClass::NumericBound)),
+    prelude(23, "Float", Some(DeclarationClass::NumericBound)),
 ];
 
 const fn prelude(
@@ -2681,13 +2681,12 @@ mod tests {
     }
 
     fn extract_prelude_records(spec: &str) -> Vec<(String, Option<DeclarationClass>)> {
-        let block = spec
+        let (block, after) = spec
             .split_once("[PRE-1] The prelude is exactly:\n\n```\n")
             .expect("exact PRE-1 opening")
             .1
             .split_once("\n```\n")
-            .expect("exact PRE-1 closing")
-            .0;
+            .expect("exact PRE-1 closing");
         let mut records = Vec::new();
         let mut in_enum = false;
         for line in block.lines() {
@@ -2728,15 +2727,21 @@ mod tests {
                         (name.trim().to_owned(), None)
                     }));
                 }
-            } else if let Some(contract) = trimmed.strip_prefix("contract ") {
-                records.push((
-                    contract
-                        .strip_suffix(" {")
-                        .expect("PRE-1 contract header")
-                        .to_owned(),
-                    Some(DeclarationClass::Contract),
-                ));
             }
+        }
+        let bounds = after
+            .split_once("The two built-in numeric bounds ")
+            .expect("PRE-1 numeric bound inventory")
+            .1
+            .split_once(" follow those enum records")
+            .expect("PRE-1 numeric bound order")
+            .0;
+        for bound in bounds.split(" and ") {
+            let spelling = bound
+                .strip_prefix('`')
+                .and_then(|text| text.strip_suffix('`'))
+                .expect("PRE-1 quoted numeric bound");
+            records.push((spelling.to_owned(), Some(DeclarationClass::NumericBound)));
         }
         records
     }

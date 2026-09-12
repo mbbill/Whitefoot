@@ -291,7 +291,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         let targ = self
             .tree
-            .first_child_with(node, Production::Targs)?
+            .argument_list(node)?
             .map(|targs| self.tree.children_with(targs, Production::Targ))
             .transpose()?
             .and_then(|arguments| arguments.last().copied())
@@ -389,7 +389,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if record.row != KernelRow::ArenaFrame {
             return Ok(false);
         }
-        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(call)? else {
             return Ok(false);
         };
         let Some(last) = self
@@ -428,7 +428,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .filter(|generic| !generic.supplied)
             .collect();
-        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+        let arguments = match self.tree.argument_list(node)? {
             Some(targs) => self.tree.children_with(targs, Production::Targ)?,
             None => Vec::new(),
         };
@@ -479,12 +479,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 KernelGenericKind::Region => {
                     if self
                         .tree
-                        .first_child_with(argument, Production::Type)?
-                        .is_some()
-                        || self
-                            .tree
-                            .first_child_with(argument, Production::Const)?
-                            .is_some()
+                        .direct_token_with(argument, crate::TerminalPredicate::RegionIdentifier)?
+                        .is_none()
                     {
                         return self.issue_node(
                             SemanticRule::Blk0,

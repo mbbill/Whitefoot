@@ -26,8 +26,8 @@ command fn main() -> status: own ExitStatus pure {
       let value = Phantom<'inner, 'outer>(tag: 17_u64);
       let wrapped = Wrapped(value: move value);
       region {
-        let actual = read(value: &wrapped);
-        if actual == 17_u64 {
+        let observed = read(value: &wrapped);
+        if observed == 17_u64 {
           return exit_status(code: 0_u8);
         }
       }
@@ -539,12 +539,9 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The one generic cycle that still stops: [FN-6]'s syntactic rule speaks of
-/// *type* parameters, so it does not refuse a call that derives its const
-/// argument from the caller's own const parameter. Each such call mints a
-/// second instance, which mints a third, and the instantiation worklist does
-/// not terminate. That is an unimplemented capability of this compiler and is
-/// reported as one, never as a source rejection.
+/// D7's complete-vector FN-6 rule refuses const growth before enumerating
+/// instances. The previous type-only rule left this as a compiler capability
+/// gap; the changed verdict follows the explicit specification amendment.
 #[test]
 fn a_generic_cycle_varying_a_const_argument_stops_before_instance_enumeration() {
     let source = br#"fn grow<const n: u64>(at: own u64) -> total: own u64 pure {
@@ -562,19 +559,25 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_unsupported(source, UnsupportedSemanticFeature::Generics);
+    // D7 extends FN-6 from type-only forwarding to the complete parameter
+    // vector, so changing n is now a specified source rejection.
+    assert_rule(
+        source,
+        SemanticRule::Fn6,
+        SemanticIssueKind::PolymorphicRecursion {
+            cycle: "grow -> grow".to_owned(),
+            mechanical_fix: "forward the complete type, const and function argument vector unchanged on the cycle, or move the changing instantiation off the cycle",
+        },
+    );
 }
 
-/// [FN-6] recursion is permitted; polymorphic recursion is rejected by a
-/// syntactic rule. A green run here establishes only that these three written
-/// shapes are attributed to FN-6 at the offending call with the cycle named;
-/// it says nothing about monomorphizing the cycles FN-6 permits, which the
-/// control above still reports as unimplemented.
+/// FN-6 refuses changed, constructed and permuted arguments with the cycle
+/// named. The separate same-vector control executes ordinary finite discovery.
 #[test]
 fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_parameters() {
     let fixed_type = SemanticIssueKind::PolymorphicRecursion {
         cycle: "poly -> poly".to_owned(),
-        mechanical_fix: "instantiate every call on the cycle at exactly the caller's own type parameters, or move the differently instantiated call off the cycle",
+        mechanical_fix: "forward the complete type, const and function argument vector unchanged on the cycle, or move the changing instantiation off the cycle",
     };
     // The conformance corpus's own case bytes: the recursive call instantiates
     // the callee at a fixed `i32` instead of the caller's `T`.
@@ -618,18 +621,15 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Fn6,
         SemanticIssueKind::PolymorphicRecursion {
             cycle: "left -> right -> left".to_owned(),
-            mechanical_fix: "instantiate every call on the cycle at exactly the caller's own type parameters, or move the differently instantiated call off the cycle",
+            mechanical_fix: "forward the complete type, const and function argument vector unchanged on the cycle, or move the changing instantiation off the cycle",
         },
     );
 }
 
-/// A cycle through a nongeneric participant is not a cycle *among generic
-/// functions*, and it cannot diverge: a nongeneric caller has no type
-/// parameter to write, so its written argument is fixed and the instance set
-/// is finite. FN-6 therefore forms no candidate, and the stop stays the
-/// unimplemented-capability report.
+/// This finite cycle drops its parameter vector at a nongeneric participant.
+/// D7 deliberately refuses it under FN-6's stronger unchanged-vector rule.
 #[test]
-fn a_cycle_through_a_nongeneric_caller_is_not_polymorphic_recursion() {
+fn a_cycle_cannot_drop_the_generic_vector_at_a_nongeneric_trampoline() {
     let source = br#"fn poly<T: affine>(x: own T) -> result: own T pure {
   let back = trampoline();
   return x;
@@ -644,7 +644,16 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_unsupported(source, UnsupportedSemanticFeature::Generics);
+    // D7's whole-component rule includes the edge that drops T. No instance
+    // enumeration or capability refusal substitutes for this FN-6 judgment.
+    assert_rule(
+        source,
+        SemanticRule::Fn6,
+        SemanticIssueKind::PolymorphicRecursion {
+            cycle: "poly -> trampoline -> poly".to_owned(),
+            mechanical_fix: "forward the complete type, const and function argument vector unchanged on the cycle, or move the changing instantiation off the cycle",
+        },
+    );
 }
 
 #[test]

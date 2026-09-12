@@ -1,4 +1,4 @@
-contract CheckedMember {
+formal CheckedMember {
   fn apply(x: own i32) -> result: own i32 pure;
 }
 
@@ -9,7 +9,7 @@ fn checked_apply(x: own i32) -> result: own i32 pure contract {
   return x;
 }
 
-conform i32: CheckedMember {
+actual First : CheckedMember {
   apply = checked_apply;
 }
 

@@ -1423,6 +1423,9 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 ));
                 conclusion
             }
+            DerivationNode::FunctionFormalContract { .. } => {
+                panic!("a conditional formal hypothesis must not reach a concrete proof inventory");
+            }
             DerivationNode::PostconditionAggregate { parents, .. } => {
                 assert!(!parents.is_empty());
                 let statements = parents

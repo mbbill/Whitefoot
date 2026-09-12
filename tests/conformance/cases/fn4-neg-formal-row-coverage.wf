@@ -1,4 +1,4 @@
-contract PureMember {
+formal PureMember {
   fn apply(store: &uniq Heap, x: own i32) -> result: own i32 reads(store);
 }
 
@@ -15,7 +15,7 @@ fn allocating_apply(store: &uniq Heap, x: own i32) -> result: own i32 reads(stor
   }
 }
 
-conform i32: PureMember {
+actual First : PureMember {
   apply = allocating_apply;
 }
 

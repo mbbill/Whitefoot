@@ -204,6 +204,8 @@ impl OperationFamilyId {
 pub enum DeclarationClass {
     /// Top-level source function.
     Function,
+    /// A compile-time function-kind parameter, never a runtime value.
+    FunctionParameter,
     /// Top-level immutable named constant.
     NamedConst,
     /// Lexical const generic.
@@ -218,8 +220,12 @@ pub enum DeclarationClass {
     StructConstructor,
     /// Source or prelude enum variant.
     EnumVariant,
-    /// Source or prelude contract.
-    Contract,
+    /// One built-in numeric bound: Int or Float.
+    NumericBound,
+    /// A named parameter-group abbreviation.
+    Formal,
+    /// A named argument-group abbreviation.
+    Actual,
     /// Region parameter or local region.
     Region,
     /// Loop label.
@@ -239,8 +245,8 @@ pub enum DeclarationDomain {
     NominalType,
     /// Struct constructors and enum variants.
     Constructor,
-    /// Contracts.
-    Contract,
+    /// Built-in numeric bounds.
+    NumericBound,
     /// Region parameters and local regions.
     Region,
     /// Loop labels.
@@ -255,7 +261,7 @@ impl DeclarationDomain {
             Self::LexicalIdentifier => 0,
             Self::NominalType => 1,
             Self::Constructor => 2,
-            Self::Contract => 3,
+            Self::NumericBound => 3,
             Self::Region => 4,
             Self::Label => 5,
             Self::Invariant => 6,
@@ -274,8 +280,12 @@ pub enum DeclarationRole {
     Enum,
     /// D04: source enum variant.
     Variant,
-    /// D05: source contract.
-    Contract,
+    /// A named parameter-group declaration.
+    Formal,
+    /// A named argument-group declaration.
+    Actual,
+    /// A raw function-kind generic parameter.
+    FunctionParameter,
     /// D06: named constant.
     NamedConst,
     /// D07: type generic.
@@ -307,8 +317,8 @@ pub enum DependentDeclarationRole {
     Field,
     /// X02: source enum-variant field.
     VariantField,
-    /// X03: contract member signature.
-    ContractMember,
+    /// One function-kind member of a named parameter group.
+    FunctionMember,
 }
 
 /// Lexical-use roles retained by name resolution.
@@ -316,10 +326,12 @@ pub enum DependentDeclarationRole {
 pub enum LexicalUseRole {
     /// U01: nominal or generic type.
     Type,
-    /// U02: type-generic contract bound.
+    /// U02: built-in numeric bound.
     GenericBound,
-    /// U03: conformance contract.
-    ConformanceContract,
+    /// A formal group in a header or forwarding/member application.
+    FormalGroup,
+    /// An explicit argument name, admitting a type or group abbreviation.
+    TypeArgument,
     /// U04: struct or enum construction.
     Construct,
     /// U05: enum-variant match arm.
@@ -350,7 +362,7 @@ pub enum LexicalUseRole {
     IdentifierCallee,
     /// U16: dotted operation callee.
     OperationCallee,
-    /// U17: concrete function bound to a contract member.
+    /// A source function or function parameter used as an explicit argument.
     FunctionBinding,
     /// U18: generic suffix in `0_T` or `1_T`.
     GenericNumericSuffix,
@@ -371,12 +383,10 @@ pub enum DeferredUseRole {
     MatchField,
     /// X06: projected field.
     ProjectedField,
-    /// X07: contract member side of a conformance binding.
-    ContractBinding,
-    /// X08: closed law name.
-    LawName,
-    /// X09: complete law argument.
-    LawArgument,
+    /// The member name on the left side of an actual binding.
+    FunctionBinding,
+    /// The member selected by a qualified group call.
+    FunctionMember,
     /// A statically selected field after an effect-path root.
     EffectField,
 }

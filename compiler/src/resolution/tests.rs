@@ -992,19 +992,19 @@ fn a_prelude_collision_keeps_rank_four_ahead_of_the_global_system_domain() {
 }
 
 #[test]
-fn a_system_operation_never_satisfies_a_conformance_binding() {
+fn a_system_operation_never_satisfies_a_function_binding() {
     // [SYS-2]: a system operation is not the right IDENT of an FN-3
-    // `fn_bind`; a conformance binds only a top-level source function. The
+    // `fn_bind`; an actual binds only an explicit source function. The
     // visible system entry still surfaces through the available classes.
     let source = br#"command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-contract Task {
+formal Task {
   fn run(value: own u64) -> result: own u64 pure;
 }
 
-conform u64: Task {
+actual Selected : Task {
   run = args_count;
 }
 "#;
@@ -1975,17 +1975,15 @@ fn complete_role_fixture_materializes_every_d_u_and_x_family() {
     // spelling that produces it is the region-keyed `allocates(arena 'r)`
     // entry, which has no path form on the container surface and retires with
     // `arena<'r, T>` itself.
-    let source = br#"contract Bound {
+    let source = br#"formal Bound {
   fn member(value: &i32) -> result: own i32 reads(value);
-  law identity(member, 0_i32);
 }
 
-contract Numeric<T: Int> {
+formal Numeric<T: Int> {
   fn zero() -> result: own T pure;
-  law identity(zero, 0_T);
 }
 
-struct Package<T: Bound, const n: i32> {
+struct Package<T: affine, const n: i32> {
   items: FixedVector<T, n>;
 }
 
@@ -2002,12 +2000,17 @@ fn implementation(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-conform Package<i32, one>: Bound {
+actual Implementation : Bound {
   member = implementation;
 }
 
-fn user<T: Bound, const n: i32>['call](arg: &'call T) -> result: &'call T reads(arg) {
+fn user<T: affine, const n: i32>['call](arg: &'call T) -> result: &'call T reads(arg) {
   return arg;
+}
+
+fn grouped<Bound>() -> result: own i32 pure {
+  let called = Bound::member(value: 1_i32);
+  return called;
 }
 
 fn viewer['v](values: own Slice<'v, i32>, capability: own Args) -> result: own unit reads(values, capability), allocates(arena 'v) {
@@ -2065,7 +2068,9 @@ fn probe() -> result: own unit pure {
             DeclarationRole::Struct,
             DeclarationRole::Enum,
             DeclarationRole::Variant,
-            DeclarationRole::Contract,
+            DeclarationRole::Formal,
+            DeclarationRole::Actual,
+            DeclarationRole::FunctionParameter,
             DeclarationRole::NamedConst,
             DeclarationRole::GenericType,
             DeclarationRole::ConstGeneric,
@@ -2091,7 +2096,6 @@ fn probe() -> result: own unit pure {
         for role in [
             DependentDeclarationRole::Field,
             DependentDeclarationRole::VariantField,
-            DependentDeclarationRole::ContractMember,
         ] {
             assert!(
                 dependent_roles.contains(&role),
@@ -2107,7 +2111,7 @@ fn probe() -> result: own unit pure {
         for role in [
             LexicalUseRole::Type,
             LexicalUseRole::GenericBound,
-            LexicalUseRole::ConformanceContract,
+            LexicalUseRole::FormalGroup,
             LexicalUseRole::Construct,
             LexicalUseRole::ArmVariant,
             LexicalUseRole::TypeRegion,
@@ -2140,9 +2144,8 @@ fn probe() -> result: own unit pure {
             DeferredUseRole::FieldInitializer,
             DeferredUseRole::MatchField,
             DeferredUseRole::ProjectedField,
-            DeferredUseRole::ContractBinding,
-            DeferredUseRole::LawName,
-            DeferredUseRole::LawArgument,
+            DeferredUseRole::FunctionBinding,
+            DeferredUseRole::FunctionMember,
         ] {
             assert!(
                 deferred_roles.contains(&role),
@@ -2150,25 +2153,14 @@ fn probe() -> result: own unit pure {
             );
         }
 
-        let shared_argument = resolved
-            .deferred_uses()
-            .iter()
-            .find(|usage| usage.spelling() == "0_T")
-            .expect("generic law argument must be retained");
-        let shared_suffix = resolved
+        // D7 retires law arguments; numeric literals retain their own
+        // suffix use, and qualified calls add the deferred member use above.
+        let suffix = resolved
             .lexical_uses()
             .iter()
-            .find(|usage| {
-                usage.role() == LexicalUseRole::GenericNumericSuffix
-                    && usage.origin().node() == shared_argument.origin().node()
-            })
-            .expect("generic law argument suffix must resolve");
-        assert_eq!(
-            shared_argument.origin().role_ordinal(),
-            shared_suffix.origin().role_ordinal()
-        );
-        assert_eq!(shared_argument.origin().subtoken_ordinal(), 0);
-        assert_eq!(shared_suffix.origin().subtoken_ordinal(), 1);
+            .find(|usage| usage.role() == LexicalUseRole::GenericNumericSuffix)
+            .expect("generic literal suffix must resolve");
+        assert_eq!(suffix.origin().subtoken_ordinal(), 1);
     });
 }
 
@@ -2321,8 +2313,8 @@ fn future() -> result: own unit pure {
 }
 
 #[test]
-fn sibling_contract_signatures_do_not_share_region_parameters() {
-    let source = br#"contract Separate {
+fn sibling_formal_signatures_do_not_share_region_parameters() {
+    let source = br#"formal Separate {
   fn first(value: &i32) -> result: own unit pure;
   fn second() -> result: own Slice<'r, i32> pure;
 }

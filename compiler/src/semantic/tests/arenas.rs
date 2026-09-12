@@ -44,12 +44,12 @@ fn arena_results_reject_citing_stor4_before_missing_main() {
     );
 }
 
-/// A contract member signature is judged at the same callable boundary, so an
+/// A formal member signature is judged at the same callable boundary, so an
 /// arena member result is the same STOR-4 rejection.
 #[test]
-fn contract_member_arena_results_reject_citing_stor4() {
+fn formal_member_arena_results_reject_citing_stor4() {
     assert_rule(
-        br#"contract Maker {
+        br#"formal Maker {
   fn make['r]() -> result: own arena<'r, i32> allocates(arena 'r);
 }
 

@@ -700,10 +700,13 @@ type constant, and the two cell rows carry none, taking no count.
 parameter**, the instance being keyed on the const argument while the region is
 substituted positionally from the call's own operands, and **a generic call
 cycle that instantiates the callee at exactly the caller's own parameters
-monomorphizes** — [FN-6] permits it and the call mints no second instance. A
-cycle that derives a *const* argument from the caller's own const parameter has
-an unbounded instance set and still stops as an explicit unsupported capability;
-[FN-6]'s syntactic rule is written over type parameters and does not refuse it.
+monomorphizes** — [FN-6] permits it and the call mints no second instance. Every
+edge on a function or nominal instantiation cycle must forward the complete
+type, const and function parameter vector unchanged in order and kind. A
+derived const, growing nominal, permuted argument or newly specialized
+function argument on that cycle is an FN-6 rejection naming the cycle. This
+finite structural check does not bound acyclic expansion cost or runtime
+recursion depth.
 
 [MSR-3]'s placements are per placement and not per depth: a measured value keeps
 its measures across a `let` binder, a `set` target, a construct's field, a
@@ -953,10 +956,26 @@ measured result had no return datum, the checker skipped that selected return
 and could publish a false summary from other, proved returns. Binding a recursive
 result fixes its datum shape but does not supply its postcondition: FN-9 keeps
 all same-component summaries unavailable during verification.
-Contracts are not a general specification language for
-aggregate results or mutable data-structure invariants. A contract-member
-`fn_sig` cannot carry a function `contract_block`. Verification is over the
-closed source bundle; independent module checking remains future work.
+Contracts are not a general specification language for aggregate results or
+mutable data-structure invariants. A function-kind parameter's `fn_sig` carries
+the same requirement and ensures vocabulary. FN-4 compares the supplied
+function's contract structurally and checks its signature, region bounds,
+effect coverage and fresh owned results before the binding can be used.
+Verification is over the closed source bundle; independent module checking
+remains future work.
+
+Behavior parameters are explicit, monomorphized function-kind arguments.
+`formal` groups name parameter vectors and `actual` groups name argument
+vectors; both expand hygienically before lowering. A member call uses the
+formal's authoritative effect row and contract and emits a direct call to the
+selected source instance. Members declare their own per-call regions; actual
+header regions retain store brands in their type arguments. No group object,
+function value, dictionary, adapter call or logical law is introduced. The
+FN-6 dependency graph checks function, nominal and function-argument cycles
+before instance discovery, including the FN-9 selector preflight and the
+missing-entry diagnostic path. Implementation owners are
+[behavior.rs](src/semantic/check/behavior.rs) and
+[finiteness.rs](src/semantic/check/generics/finiteness.rs).
 
 ## Finding the implementation
 

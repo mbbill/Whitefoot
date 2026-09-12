@@ -153,6 +153,49 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .signatures
             .get(target.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.check_selected_user_call(node, signature, None, function, bindings, loop_depth)
+    }
+
+    pub(in crate::semantic::check) fn check_behavior_call(
+        &self,
+        node: NodeId,
+        key: crate::semantic::check::generics::GenericParameterKey,
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        let argument = function
+            .substitution
+            .function_argument(key)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let target = self.function_argument_instance(argument)?;
+        let actual = self
+            .signatures
+            .get(target.0 as usize)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let formal = self.formal_signature(key, &function.substitution, target)?;
+        let binding_site = self.behavior_binding_site(node, key, &function.substitution)?;
+        let effective = self.behavior_call_signature(binding_site, &formal, actual)?;
+        let effects = Some(super::super::super::super::model::CheckedEffects {
+            reads: effective.declared_effects.reads.clone(),
+            writes: effective.declared_effects.writes.clone(),
+            allocates: effective.declared_effects.allocates.clone(),
+            allocates_heap: effective.declared_effects.allocates_heap,
+            allocates_arenas: effective.declared_effects.allocates_arenas.clone(),
+        });
+        self.check_selected_user_call(node, &effective, effects, function, bindings, loop_depth)
+    }
+
+    fn check_selected_user_call(
+        &self,
+        node: NodeId,
+        signature: &FunctionSignature,
+        formal_effects: Option<super::super::super::super::model::CheckedEffects>,
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<TypedExpression, CheckStop> {
+        let target = signature.id;
         let mut region_bindings = self.call_region_arguments(node, signature)?;
         let mut loan_observations = Vec::new();
         let mut parameter_atoms = Vec::new();
@@ -452,6 +495,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
+                formal_effects: formal_effects.map(Box::new),
                 state_origins: result_origins.map(Box::new),
                 call,
                 argument_nodes,
@@ -799,23 +843,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         signature: &FunctionSignature,
     ) -> Result<Vec<RegionBinding>, CheckStop> {
-        let generic_count = signature.substitution.len();
         let chosen = self.caller_chosen_regions(signature)?;
-        let written = match self.tree.first_child_with(node, Production::Targs)? {
+        let written = match self.tree.argument_list(node)? {
             Some(targs) => {
                 let arguments = self.tree.children_with(targs, Production::Targ)?;
                 let leading_regions = self.user_call_region_prefix(&arguments)?;
-                if arguments.len() - leading_regions != generic_count {
+                // Type, const and function arguments were checked by FN-2
+                // after group expansion. A selected function formal is fully
+                // bound already and may supply only its remaining regions.
+                if self.behavior_call_key(node)?.is_some() && arguments.len() != leading_regions {
                     return self.issue_node(
                         SemanticRule::Fn2,
                         node,
                         SemanticIssueKind::type_mismatch(
-                            crate::semantic::written_count(
-                                generic_count
-                                    .checked_add(chosen.len())
-                                    .ok_or(SemanticCompilerFailure::CounterOverflow)?,
-                                "type and region argument",
-                            ),
+                            "only the function formal's caller-chosen regions",
                             crate::semantic::written_count(arguments.len(), "argument"),
                         ),
                     );
@@ -825,24 +866,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .take(leading_regions)
                     .collect::<Vec<_>>()
             }
-            None => {
-                if generic_count > 0 {
-                    return self.issue_node(
-                        SemanticRule::Fn2,
-                        node,
-                        SemanticIssueKind::type_mismatch(
-                            crate::semantic::written_count(
-                                generic_count
-                                    .checked_add(chosen.len())
-                                    .ok_or(SemanticCompilerFailure::CounterOverflow)?,
-                                "type and region argument",
-                            ),
-                            "no type-argument list",
-                        ),
-                    );
-                }
-                Vec::new()
-            }
+            None => Vec::new(),
         };
         if written.len() != chosen.len() {
             return self.issue_node(

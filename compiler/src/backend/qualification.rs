@@ -398,7 +398,11 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // but no SYS-2 operation identity, host wrapper, opaque resource layout,
 // release action, command entry mapping, or suspension milestone changes.
 // Those qualified target rows therefore retain their existing mappings.
-const REVIEWED_FOR: &str = "v0.56";
+// v0.57 qualification review: function arguments and formal/actual groups
+// expand before IR into ordinary monomorphized direct calls. Their effect
+// boundaries and contracts are erased proof metadata; no system operation,
+// target ABI, resource representation, release or suspension rule changes.
+const REVIEWED_FOR: &str = "v0.57";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

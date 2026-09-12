@@ -45,11 +45,33 @@ fn fields<'a>(module: &'a str, ty: &str) -> &'a str {
 fn optimized_function<'a>(module: &'a str, name: &str) -> &'a str {
     let header = module
         .lines()
-        .find(|line| line.starts_with("define ") && line.contains(&format!("@{name}(")))
+        .find(|line| emitted_name(line) == Some(name))
         .expect("optimized function definition");
     let begin = module.find(header).unwrap();
     let end = module[begin..].find("\n}\n").expect("function end") + begin + 3;
     &module[begin..end]
+}
+
+fn emitted_name(line: &str) -> Option<&str> {
+    line.strip_prefix("define ")?;
+    Some(line.split_once('@')?.1.split_once('(')?.0.trim_matches('"'))
+}
+
+fn calls(body: &str, name: &str) -> bool {
+    body.lines().any(|line| {
+        line.contains("call ")
+            && (line.contains(&format!("@{name}(")) || line.contains(&format!("@\"{name}\"(")))
+    })
+}
+
+fn behavior_names(module: &str, helper: &str) -> Vec<String> {
+    let prefix = format!("wf_key_{helper}$instance$");
+    module
+        .lines()
+        .filter_map(emitted_name)
+        .filter(|name| name.starts_with(&prefix))
+        .map(str::to_owned)
+        .collect()
 }
 
 fn descriptor_writes(body: &str) -> u64 {
@@ -149,7 +171,7 @@ mod tests {
     }
 }
 
-fn inspect(paths: &[String]) {
+fn inspect(paths: &[String], behavior: bool) {
     for (variant, path) in ["normal", "retained", "inlined"].iter().zip(paths) {
         let module = fs::read_to_string(path).expect("read optimized module");
         let probe = optimized_function(&module, "wf_map_heap_probe");
@@ -166,11 +188,26 @@ fn inspect(paths: &[String]) {
             ("wf_map_grow_bridge", "wf_rehash_all"),
         ] {
             let body = optimized_function(&module, bridge);
-            let calls_helper = body.contains(&format!("@{helper}("));
+            let names = if behavior {
+                behavior_names(&module, helper.strip_prefix("wf_").unwrap())
+            } else {
+                vec![helper.to_owned()]
+            };
+            let calls_helper = names.iter().any(|name| calls(body, name));
             if *variant == "retained" {
                 assert!(calls_helper, "retained helper call disappeared");
             }
             if *variant == "inlined" {
+                for name in module
+                    .lines()
+                    .filter_map(emitted_name)
+                    .filter(|name| name.starts_with("wf_key_"))
+                {
+                    assert!(
+                        !calls(body, name),
+                        "instantiated core helper did not inline"
+                    );
+                }
                 for name in [
                     "wf_put",
                     "wf_find",
@@ -210,8 +247,25 @@ fn inspect(paths: &[String]) {
             );
         }
         if *variant == "retained" {
-            assert!(optimized_function(&module, "wf_rehash_all").contains("@wf_advance("));
-            for helper in ["wf_rehash_all", "wf_advance"] {
+            let grows = if behavior {
+                behavior_names(&module, "rehash_all")
+            } else {
+                vec!["wf_rehash_all".to_owned()]
+            };
+            let advances = if behavior {
+                behavior_names(&module, "advance")
+            } else {
+                vec!["wf_advance".to_owned()]
+            };
+            assert!(!grows.is_empty() && !advances.is_empty());
+            for grow in &grows {
+                assert!(
+                    advances
+                        .iter()
+                        .any(|advance| calls(optimized_function(&module, grow), advance))
+                );
+            }
+            for helper in grows.iter().chain(&advances) {
                 for line in optimized_function(&module, helper).lines().filter(|line| {
                     line.contains("call ")
                         && (line.contains("@llvm.memcpy") || line.contains("@llvm.memmove"))
@@ -233,13 +287,16 @@ fn inspect(paths: &[String]) {
 
 fn main() {
     let args: Vec<_> = env::args().collect();
-    if args.get(1).map(String::as_str) == Some("--inspect") {
+    if matches!(
+        args.get(1).map(String::as_str),
+        Some("--inspect" | "--inspect-behavior")
+    ) {
         assert_eq!(
             args.len(),
             5,
             "usage: owning-growth-abi --inspect NORMAL RETAINED INLINED"
         );
-        inspect(&args[2..]);
+        inspect(&args[2..], args[1] == "--inspect-behavior");
         return;
     }
     assert_eq!(
@@ -248,6 +305,7 @@ fn main() {
         "usage: owning-growth-abi INPUT OUTPUT normal|retained|inlined"
     );
     let input = fs::read_to_string(&args[1]).expect("read compiler module");
+    let behavior = !behavior_names(&input, "put").is_empty();
     let variant = args[3].as_str();
     assert!(matches!(variant, "normal" | "retained" | "inlined"));
     let put = result_type(&input, "wf_put");
@@ -294,10 +352,14 @@ fn main() {
         "wf_fingerprint",
         "wf_probe_index",
     ];
-    let selected: &[&str] = match variant {
-        "retained" => &retained,
-        "inlined" => &inlined,
-        _ => &[],
+    let selected: &[&str] = if behavior {
+        &[]
+    } else {
+        match variant {
+            "retained" => &retained,
+            "inlined" => &inlined,
+            _ => &[],
+        }
     };
     for name in selected {
         let header = output
@@ -315,6 +377,42 @@ fn main() {
         let changed = header.replace(" #0 {", &format!(" {attribute} #0 {{"));
         assert_ne!(header, changed);
         output = output.replacen(&header, &changed, 1);
+    }
+    if behavior && variant != "normal" {
+        let mut retained_core = std::collections::BTreeSet::new();
+        for header in input
+            .lines()
+            .filter(|line| line.starts_with("define internal "))
+        {
+            let name = emitted_name(header).unwrap();
+            let core = name
+                .strip_prefix("wf_key_")
+                .and_then(|name| name.split_once("$instance$"))
+                .map(|(name, _)| name);
+            let boundary = matches!(core, Some("put" | "find" | "rehash_all" | "advance"));
+            let adapter = retained.contains(&name);
+            let attribute = if variant == "retained" && boundary {
+                retained_core.insert(core.unwrap());
+                Some("noinline")
+            } else if adapter
+                || (variant == "inlined" && (core.is_some() || inlined.contains(&name)))
+            {
+                Some("alwaysinline")
+            } else {
+                None
+            };
+            if let Some(attribute) = attribute {
+                let changed = header.replace(" #0 {", &format!(" {attribute} #0 {{"));
+                assert_ne!(header, changed);
+                output = output.replacen(header, &changed, 1);
+            }
+        }
+        if variant == "retained" {
+            assert_eq!(
+                retained_core,
+                std::collections::BTreeSet::from(["put", "find", "rehash_all", "advance"])
+            );
+        }
     }
     output.push_str(&format!(
         r#"

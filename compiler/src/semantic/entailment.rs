@@ -175,6 +175,7 @@ impl CallTransport {
 /// write reaches [CALL-1, CALL-2, CALL-3].
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EntailmentCallee {
+    pub(crate) parameter_declarations: Vec<crate::DeclarationId>,
     pub(crate) parameter_modes: Vec<CheckedMode>,
     pub(crate) parameter_writes: Vec<Vec<Vec<u32>>>,
     pub(crate) parameter_transports: Vec<CallTransport>,
@@ -193,6 +194,10 @@ impl EntailmentCallee {
     ) -> Self {
         let parameters = parameters.collect::<Vec<_>>();
         Self {
+            parameter_declarations: parameters
+                .iter()
+                .map(|(declaration, _, _)| *declaration)
+                .collect(),
             parameter_writes: parameters
                 .iter()
                 .map(|(declaration, _, _)| {

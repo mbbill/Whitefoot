@@ -182,11 +182,11 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::ContractDecl => add_single(
+        Production::FormalDecl => add_single(
             classified,
             owner,
             &names,
-            RawRoleKind::Declaration(DeclarationRole::Contract),
+            RawRoleKind::Declaration(DeclarationRole::Formal),
             roles,
             complete_counts,
         )?,
@@ -199,6 +199,9 @@ fn classify_node(
             complete_counts,
         )?,
         Production::Gparam => {
+            if names.is_empty() {
+                return Ok(());
+            }
             let Some(first) = names.first().copied() else {
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             };
@@ -458,7 +461,7 @@ fn classify_node(
             classified,
             owner,
             &names,
-            RawRoleKind::DependentDeclaration(DependentDeclarationRole::ContractMember),
+            RawRoleKind::Declaration(DeclarationRole::FunctionParameter),
             roles,
             complete_counts,
         )?,
@@ -579,33 +582,73 @@ fn classify_node(
                 complete_counts,
             )?;
         }
+        Production::Type if group_binder(topology, owner) && names.is_empty() => {}
+        Production::Type if group_binder(topology, owner) => add_all(
+            classified,
+            owner,
+            &names,
+            RawRoleKind::Declaration(DeclarationRole::GenericType),
+            roles,
+            complete_counts,
+        )?,
         Production::Type => add_names_by_predicate(
             classified,
             owner,
             &names,
             TerminalPredicate::TypeIdentifier,
-            RawRoleKind::LexicalUse(LexicalUseRole::Type),
+            RawRoleKind::LexicalUse(
+                if parent_production(topology, owner) == Some(Production::Targ) {
+                    LexicalUseRole::TypeArgument
+                } else {
+                    LexicalUseRole::Type
+                },
+            ),
             TerminalPredicate::RegionIdentifier,
             RawRoleKind::LexicalUse(LexicalUseRole::TypeRegion),
             roles,
             complete_counts,
         )?,
-        Production::ConformDecl => add_single(
+        Production::ActualDecl => add_single(
             classified,
             owner,
             &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::ConformanceContract),
+            RawRoleKind::Declaration(DeclarationRole::Actual),
             roles,
             complete_counts,
         )?,
-        Production::Construct => add_single(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::Construct),
-            roles,
-            complete_counts,
-        )?,
+        Production::PackUse => {
+            let parent = topology
+                .node(owner)
+                .and_then(|record| record.parent)
+                .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+            let constructor = parent_production(topology, owner) == Some(Production::Callee)
+                && topology
+                    .node(parent)
+                    .and_then(|record| record.last_terminal())
+                    .and_then(|ordinal| usize::try_from(ordinal).ok())
+                    .is_some_and(|index| {
+                        name_predicate(classified, index) != Some(TerminalPredicate::Identifier)
+                    });
+            let (carrier, role) = if constructor {
+                (
+                    topology
+                        .node(parent)
+                        .and_then(|record| record.parent)
+                        .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?,
+                    LexicalUseRole::Construct,
+                )
+            } else {
+                (owner, LexicalUseRole::FormalGroup)
+            };
+            add_single(
+                classified,
+                carrier,
+                &names,
+                RawRoleKind::LexicalUse(role),
+                roles,
+                complete_counts,
+            )?;
+        }
         Production::Arm => add_single(
             classified,
             owner,
@@ -711,7 +754,11 @@ fn classify_node(
             classified,
             owner,
             &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::Const),
+            if group_binder(topology, owner) {
+                RawRoleKind::Declaration(DeclarationRole::ConstGeneric)
+            } else {
+                RawRoleKind::LexicalUse(LexicalUseRole::Const)
+            },
             roles,
             complete_counts,
         )?,
@@ -765,11 +812,39 @@ fn classify_node(
             }
         }
         Production::Callee => {
+            if topology.node_children(owner).is_some_and(|children| {
+                children.iter().any(|child| {
+                    topology
+                        .node(*child)
+                        .is_some_and(|record| record.production == Production::PackUse)
+                })
+            }) {
+                if !names.is_empty() {
+                    add_single(
+                        classified,
+                        owner,
+                        &names,
+                        RawRoleKind::DeferredUse(DeferredUseRole::FunctionMember),
+                        roles,
+                        complete_counts,
+                    )?;
+                }
+                return Ok(());
+            }
             let [callee] = names.as_slice() else {
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             };
             let use_role = match name_predicate(classified, *callee) {
-                Some(TerminalPredicate::Identifier) => LexicalUseRole::IdentifierCallee,
+                Some(TerminalPredicate::Identifier) => {
+                    if matches!(
+                        parent_production(topology, owner),
+                        Some(Production::FunctionArg | Production::FnBind)
+                    ) {
+                        LexicalUseRole::FunctionBinding
+                    } else {
+                        LexicalUseRole::IdentifierCallee
+                    }
+                }
                 Some(TerminalPredicate::OperationName) => LexicalUseRole::OperationCallee,
                 _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
             };
@@ -783,20 +858,12 @@ fn classify_node(
             )?;
         }
         Production::FnBind => {
-            if let [member, function] = names.as_slice() {
+            if let [member] = names.as_slice() {
                 add_complete(
                     classified,
                     owner,
                     *member,
-                    RawRoleKind::DeferredUse(DeferredUseRole::ContractBinding),
-                    roles,
-                    complete_counts,
-                )?;
-                add_complete(
-                    classified,
-                    owner,
-                    *function,
-                    RawRoleKind::LexicalUse(LexicalUseRole::FunctionBinding),
+                    RawRoleKind::DeferredUse(DeferredUseRole::FunctionBinding),
                     roles,
                     complete_counts,
                 )?;
@@ -812,53 +879,58 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::Psuffix => {
+        Production::Psuffix if !names.is_empty() => {
             // The field alternative owns exactly one projected-field name; the
             // subscript alternative owns only bracket punctuation, and its
             // offset atom classifies through the atom's own productions.
-            if !names.is_empty() {
-                add_single(
-                    classified,
-                    owner,
-                    &names,
-                    RawRoleKind::DeferredUse(DeferredUseRole::ProjectedField),
-                    roles,
-                    complete_counts,
-                )?;
-            }
-        }
-        Production::Law => add_single(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::DeferredUse(DeferredUseRole::LawName),
-            roles,
-            complete_counts,
-        )?,
-        Production::LawArg => {
-            let [argument] = direct else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            };
-            add_complete(
+            add_single(
                 classified,
                 owner,
-                *argument,
-                RawRoleKind::DeferredUse(DeferredUseRole::LawArgument),
+                &names,
+                RawRoleKind::DeferredUse(DeferredUseRole::ProjectedField),
                 roles,
                 complete_counts,
             )?;
         }
         _ => {}
     }
-    if matches!(
-        production,
-        Production::Atom | Production::Cvalue | Production::LawArg
-    ) {
+    if matches!(production, Production::Atom | Production::Cvalue) {
         for terminal in direct {
             add_generic_suffix(classified, owner, *terminal, roles)?;
         }
     }
     Ok(())
+}
+
+fn parent_production(topology: &FinalizedTopology, node: NodeId) -> Option<Production> {
+    topology
+        .node(node)?
+        .parent
+        .and_then(|parent| topology.node(parent))
+        .map(|record| record.production)
+}
+
+/// The direct arguments of a parameter-group application declare names.
+/// Nested applications remain uses and receive FN-3's flat-binder judgment.
+fn group_binder(topology: &FinalizedTopology, mut node: NodeId) -> bool {
+    for expected in [
+        Production::Targ,
+        Production::Targs,
+        Production::PackUse,
+        Production::Gparam,
+    ] {
+        let Some(parent) = topology.node(node).and_then(|record| record.parent) else {
+            return false;
+        };
+        if topology
+            .node(parent)
+            .is_none_or(|record| record.production != expected)
+        {
+            return false;
+        }
+        node = parent;
+    }
+    true
 }
 
 /// The role one `pbase` IDENT takes [GRAM-4, GRAM-5].

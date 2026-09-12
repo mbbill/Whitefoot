@@ -1,0 +1,15 @@
+formal Inspect {
+  fn length['s: linear](values: &Vector<'s, u64>) -> result: own u64 reads(values);
+}
+
+fn shorter['t: affine](values: &Vector<'t, u64>) -> result: own u64 reads(values) {
+  return len_of(deref(values));
+}
+
+actual Narrow : Inspect {
+  length = shorter;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

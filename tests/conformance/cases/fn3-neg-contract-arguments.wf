@@ -1,7 +1,7 @@
-contract Marker {
+formal Marker {
 }
 
-conform i32: Marker<i32> {
+actual First : Marker<i32> {
 }
 
 command fn main() -> status: own ExitStatus pure {

@@ -141,9 +141,10 @@ choose the verdict.
 
 **Claim boundary:** sections 3–6 explain historical fact-channel experiments.
 The current compiler uses statically proved requirements and structural facts
-to discharge its finite safety obligations. It checks effect rows, borrows,
-and FN-4 laws but does not yet emit effect/alias attributes or reassociate
-reductions from them. The measurements remain evidence for separately selected
+to discharge its finite safety obligations. It checks effect rows and borrows.
+D7 replaces the former FN-4 law table with checked function-kind bindings;
+those bindings imply no algebraic laws or reduction transformations. The
+measurements remain evidence for separately selected
 optimizer consumers, not a claim that every historical consumer ships today.
 Their listings preserve the exact retired source—including the old
 `loop @label {` spelling—and are evidence, not current writer examples.
@@ -417,8 +418,11 @@ A compiler may not reassociate your reduction. Floating-point and saturating ope
 
 Rust experts know the workaround, a hand-written multi-accumulator loop. That workaround hides an assertion. The human claims the operation is associative, and nothing checks the claim.
 
-Current Whitefoot makes the law a checked, declared fact for source acceptance.
+The former law table made the law a checked, declared fact for source acceptance.
 The retired optimizer experiment additionally consumed it for reassociation.
+D7 removes that source syntax and assumes no laws of supplied behavior. The
+following listing and measurement are historical evidence for a possible
+future proof consumer, not an active writer form or compiler capability.
 The committed historical kernel:
 
 ```
@@ -732,7 +736,7 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Effect rows: 1.47 s → 0.00 s across opaque boundary; Rust no-LTO 1.49 s; fat LTO ties | `research/experiments/effect-attrs-channel/RESULTS.md`, `main_attr.s`, `main_plain.s`, `kernel.wf` |
 | Naive C vs borrow-derived noalias; ≈22x additive variant; Rust parity | `research/experiments/codegen-vs-rust-c/SUMMARY.md`, `asm/kernelB_c.s`, `asm/kernelB_xl_acc.s` |
 | Vectorization: 0 guards/121 lines vs 29 guards/2,132 lines; short-trip 2.0x; long-trip tie; 16-column scaling | `research/experiments/scoped-alias-channel/RESULTS.md`, `kernel.wf`, `kernel_facts.s`, `rust_kernels.rs`, `rust_kernels.s` |
-| Checked laws: 3.3x over obvious fold; ties expert; signed-law refuted at compile time | `research/experiments/checked-law-channel/RESULTS.md`, `kernel.wf`, `kernel.s`, `rust_reduce.rs`; conformance case `fn4-neg-law-refuted-signedness` |
+| Historical checked laws: 3.3x over obvious fold; ties expert; signed-law refuted by the retired table | `research/experiments/checked-law-channel/RESULTS.md`, `kernel.wf`, `kernel.s`, `rust_reduce.rs`; D7 retirement reasons in `research/investigations/containers-and-resources/BEHAVIOR.md` |
 | Boolean dataflow: width 16 vs 2×4; 1.6-1.8x closed to parity | `research/experiments/port-study/wc-chunk-summary/RESULTS.md`, `chunk_wc.wf`, `chunk_wc.s` |
 | Shipped-library floor: 1.653x [1.631, 1.667] vs `percent-encoding` 2.3.2; 1.098x [1.085, 1.145] vs `utf8parse` 0.2.2; bounds retained | `research/experiments/default-floor/RESULTS.md` |
 | Kernel-shape dry runs (C mockups vs `Vec`/hashbrown; bands) | `archive/research/systems-performance-coverage/m3a-kernel-dryrun/RESULTS.md` |

@@ -255,7 +255,21 @@ fn build_tables(
                 RawRoleKind::Declaration(declaration_role) => {
                     let id = DeclarationId::from_index(declarations.len())
                         .ok_or(ResolutionCompilerFailure::CounterOverflow)?;
-                    let entries = declaration_classes(declaration_role);
+                    // A named formal's members have stable function-parameter
+                    // identities, but FN-3 introduces no unqualified lexical
+                    // names. Only a raw function binder enters that domain.
+                    // Member distinctness is the formal table's FN-3 judgment.
+                    let grouped_member = declaration_role == DeclarationRole::FunctionParameter
+                        && role
+                            .owner_chain
+                            .get(1)
+                            .and_then(|owner| topology.node(*owner))
+                            .is_some_and(|record| record.production == Production::FormalDecl);
+                    let entries = if grouped_member {
+                        Vec::new()
+                    } else {
+                        declaration_classes(declaration_role)
+                    };
                     let record_index = declarations.len();
                     declarations.push(DeclarationRecord {
                         id,
@@ -270,7 +284,19 @@ fn build_tables(
                         role_index,
                         record_index,
                         scope: declarations[record_index].scope,
-                        owner: role.owner_chain.first().copied(),
+                        owner: if declaration_role == DeclarationRole::FunctionParameter {
+                            // The callable binder belongs to the receiving
+                            // generic declaration; its own parameters and
+                            // regions remain owned by the nested FnSig.
+                            Some(
+                                *role
+                                    .owner_chain
+                                    .get(1)
+                                    .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?,
+                            )
+                        } else {
+                            role.owner_chain.first().copied()
+                        },
                         region_owner: region_scope_owner(topology, role.owner),
                         visibility: declaration_visibility(topology, role, declaration_role)?,
                         entries,
@@ -496,7 +522,7 @@ fn build_postcondition_records(
 
     let mut out = Vec::with_capacity(blocks.len());
     for block in blocks {
-        let function = ancestor_with_production(topology, block, Production::FnDecl)
+        let function = function_owner(topology, block)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
         // [GRAM-2] the declaration writes one result or an ordered result
         // list; every ordinal's binder is a candidate a clause may name
@@ -790,7 +816,8 @@ fn owner_chain(
                 | Production::FnDecl
                 | Production::StructDecl
                 | Production::EnumDecl
-                | Production::ContractDecl
+                | Production::FormalDecl
+                | Production::ActualDecl
         ) {
             owners.push(node);
         }
@@ -827,7 +854,12 @@ fn region_scope_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<
         let record = topology.node(node)?;
         if matches!(
             record.production,
-            Production::FnDecl | Production::FnSig | Production::StructDecl | Production::EnumDecl
+            Production::FnDecl
+                | Production::FnSig
+                | Production::StructDecl
+                | Production::EnumDecl
+                | Production::FormalDecl
+                | Production::ActualDecl
         ) {
             return Some(node);
         }
@@ -838,13 +870,15 @@ fn region_scope_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<
 fn declaration_classes(role: DeclarationRole) -> Vec<DeclarationClass> {
     match role {
         DeclarationRole::Function => vec![DeclarationClass::Function],
+        DeclarationRole::FunctionParameter => vec![DeclarationClass::FunctionParameter],
         DeclarationRole::Struct => vec![
             DeclarationClass::NominalType,
             DeclarationClass::StructConstructor,
         ],
         DeclarationRole::Enum => vec![DeclarationClass::NominalType],
         DeclarationRole::Variant => vec![DeclarationClass::EnumVariant],
-        DeclarationRole::Contract => vec![DeclarationClass::Contract],
+        DeclarationRole::Formal => vec![DeclarationClass::Formal],
+        DeclarationRole::Actual => vec![DeclarationClass::Actual],
         DeclarationRole::NamedConst => vec![DeclarationClass::NamedConst],
         DeclarationRole::GenericType => vec![DeclarationClass::GenericType],
         DeclarationRole::ConstGeneric => vec![DeclarationClass::ConstGeneric],
@@ -888,6 +922,7 @@ fn declaration_visibility(
     let byte = match declaration_role {
         DeclarationRole::NamedConst
         | DeclarationRole::ConstGeneric
+        | DeclarationRole::FunctionParameter
         | DeclarationRole::Parameter
         | DeclarationRole::CountedBinder
         | DeclarationRole::Invariant => node_end(topology, role.owner)?.value(),
@@ -964,16 +999,18 @@ fn is_visible(
 fn declaration_domain(class: DeclarationClass) -> Option<DeclarationDomain> {
     match class {
         DeclarationClass::Function
+        | DeclarationClass::FunctionParameter
         | DeclarationClass::NamedConst
         | DeclarationClass::ConstGeneric
         | DeclarationClass::Value => Some(DeclarationDomain::LexicalIdentifier),
-        DeclarationClass::GenericType | DeclarationClass::NominalType => {
-            Some(DeclarationDomain::NominalType)
-        }
+        DeclarationClass::GenericType
+        | DeclarationClass::NominalType
+        | DeclarationClass::Formal
+        | DeclarationClass::Actual => Some(DeclarationDomain::NominalType),
         DeclarationClass::StructConstructor | DeclarationClass::EnumVariant => {
             Some(DeclarationDomain::Constructor)
         }
-        DeclarationClass::Contract => Some(DeclarationDomain::Contract),
+        DeclarationClass::NumericBound => Some(DeclarationDomain::NumericBound),
         DeclarationClass::Region => Some(DeclarationDomain::Region),
         DeclarationClass::Label => Some(DeclarationDomain::Label),
         DeclarationClass::Invariant => Some(DeclarationDomain::Invariant),

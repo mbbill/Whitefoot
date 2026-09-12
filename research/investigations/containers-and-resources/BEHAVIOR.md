@@ -1,9 +1,56 @@
-# Behavior parameterization: D6b comparison
+# Behavior parameterization: selected D7 design
 
-Proposal against [v0.56](../../../spec/kernel-spec.md), not a language change.
-Supersedes rejected D6. Criterion: function-centric, fixed interfaces with
-minimal mechanisms and synchronized declarations, serving the constitution's
-[delegation/performance objectives](../../../docs/constitution.md).
+The owner selected D6b option A, with `formal` and `actual` as the two group
+keywords, a formal-authoritative effect row, structurally matched contracts,
+and fresh non-copy owned function-formal results. The
+[specification](../../../spec/kernel-spec.md) defines that interface; the
+executable evidence and its cost limits are linked below. D6's protocol/conform design,
+D6b's routing ceiling, and a compile-cost admission prerequisite are not selected.
+The selection serves the constitution's
+[delegation/performance objectives](../../../docs/constitution.md): ordinary
+explicit free-function interfaces, reusable parameter/argument groups, and no
+runtime dispatch or unchecked behavior laws.
+
+The executable D7 evidence is in the family
+[behavior measurements](../../experiments/container-representation/families/RESULTS.md#static-behavior-parameterization-d7).
+The owning exchange matches its non-generic expansion control but is slower
+than D5's scalar-copy exchange; the map has no run transfer, with remaining
+retained value/result ABI costs. These limits do not become language rules.
+
+## D7 selection ground
+
+The selected core is a function-kind parameter with an ordinary callable
+signature; `formal` and `actual` only abbreviate explicit vectors. This fits
+the language's explicit trust boundaries and native-performance objective:
+binding is checked before use and each instantiated call has one direct
+target. The explicit environment remains an ordinary value or loan. Flat
+groups avoid a second module evaluator, type-owned lookup, inference and
+overlap rules. Int and Float remain built-in numeric bounds; no behavior law
+is inferred from an actual. Ownership and bounds are the container's proof
+obligations even under hostile equality or comparison.
+
+The formal row remains authoritative because an author needs one visible
+boundary; actual paths must fit it by category and prefix. Exact signatures,
+including corresponding region bounds, and structural source-contract
+matching avoid an added implication calculus. Captured store brands are
+substituted before per-call member regions; a formal has no header regions.
+Fresh non-copy function-formal results avoid an invented routing ceiling.
+Ordinary direct functions keep their existing owner-return routes.
+
+The owner-selected `actual SeedKey : Key<...>` spelling has a spaced
+declaration separator, now stated explicitly in FORM-2; ordinary field,
+parameter and bound colons retain left attachment. OP-1's closed reserved-name
+inventory is unchanged. A raw function parameter does not shadow a dotless
+operation in ordinary call position; its explicit function-argument role and
+group-qualified members use the separate FN-5 resolution forms.
+
+FN-6 checks the complete type/const/function dependency vector before any
+instance discovery. Unchanged cycles reuse an existing key; acyclic expansion
+is finite. This conservatively refuses finite permutations and says nothing
+about practical cost of large acyclic expansions. Compile cost remains an
+open question, not a fuel limit or a new admission prerequisite. The families
+runner compares the selected witnesses with D5 and the retained C controls;
+measurements and completion status belong to the evidence below.
 
 ## Evidence from seven families
 
@@ -63,15 +110,19 @@ shows the interaction costs of retrofitting existing interfaces. [7]
 
 ## Three options on identical code
 
-Complete, separate proposed-source units: [A: baseline](behavior-baseline.wf),
-[B: nominal-as-shape](behavior-nominal.wf), [C: expanded/comptime](behavior-expanded.wf).
-Each contains identical enum-slot owning-Box `find`/`put` and owning-element
-priority `push`/`pop`, complete helpers/contracts and explicit instantiations.
-Only parameter expansion, qualification and naming differ. These source
-appendices replace neither executable D2 growth nor D5 timing controls; replace
-them with the selected executable witnesses after implementation.
+The three proposed-source appendices compared identical enum-slot owning-Box
+`find`/`put` and owning-element priority `push`/`pop`, changing only parameter
+expansion, qualification and naming. Their dated source is retained in
+[the D6b comparison revision](https://github.com/mbbill/Whitefoot/tree/cd3e946817af5eaea9a80efcefd828e39b94d015/research/investigations/containers-and-resources).
+The selected A appendix is now the executable
+[owning map](../../experiments/container-representation/families/owning-behavior.wf)
+and [priority queue](../../experiments/container-representation/families/priority-behavior.wf)
+in the families runner. The map extends the selected source to the complete
+D2 growth/refusal contract; D5 and C controls remain independent comparators.
+The three superseded proposed-source files are removed; their alternatives
+and selection grounds remain in this table.
 
-| Constraint / cost | A: shape + group | B: nominal + group | C: function-kind only |
+| Constraint / cost | A: formal + actual | B: nominal + actual | C: function-kind only |
 | --- | --- | --- | --- |
 | Free functions; no Self or dispatch | Yes | Parameter projection only | Yes |
 | One semantic core; direct call | Function substitution | Same | Same |
@@ -85,8 +136,8 @@ them with the selected executable witnesses after implementation.
 | Laws / termination / region safety | None assumed; rules below | Same | Same; no arbitrary CTFE |
 | Likely growth pressure | Group nesting, defaults | Fake types, header extraction, type projection | Signature aliases, inferred requirements |
 
-**A** uses the owner's `shape Key<K: linear,E: linear>`,
-`group SeedKey : Key<u64,Seed>`, `fn find<Key<K,E>>`, `Key::hash`, and
+**A** uses the owner's `formal Key<K: linear,E: linear>`,
+`actual SeedKey : Key<u64,Seed>`, `fn find<Key<K,E>>`, `Key::hash`, and
 `find::<SeedKey>`. `Key<K,E>` forwards the whole group; the full
 `Key<K1,E1>::hash` disambiguates distinct written applications before
 substitution, even if their final types coincide. Two identically written
@@ -101,7 +152,7 @@ cannot capture `put`'s local `hash`.
 imports its generic header, and `Map::hash` selects a formal, never a method.
 `Map<'s,Map<K,E>>` explicitly forwards that header into a nominal instance;
 header projection excludes the storage fields and nominal region list.
-This saves `shape` but makes unrelated algorithms depend on a storage
+This saves `formal` but makes unrelated algorithms depend on a storage
 abstraction or invent a fieldless struct. Types gain a second meaning.
 
 **C** writes `fn hash(...) ...` inside every generic parameter list and passes
@@ -133,21 +184,19 @@ If “exact” instead requires re-derived concrete-body equality, the baseline'
 subset binding cannot meet it; require equality instead, losing narrower
 implementations.
 
-**Rows alone are insufficient.** Both identity and fresh-constant implementations
-can match `fn f(x: own Item) -> y: own Item pure`; reading `y.rank` later
-attributes to incoming x only for identity. Propose one additional FN-1 rule:
-non-copy results get a finite ceiling of compatible owned input roots,
-transferable unique roots overlapped by declared writes, and fresh state.
-Unwritten exclusive exits retain entry routing; written exits also admit entry
-routing, transfers and fresh state. Returned copies are fresh; writing copy fields
-preserves storage identity. Compatibility uses signature types, with opaque T
-conservative. Exclude shared roots and allocator-to-allocation ancestry.
-This bounds existing routing, not owner identity. Template effect
-attribution uses that fixed ceiling; checked actual routing must refine it.
-This unimplemented, unvalidated rule sacrifices field precision/independence.
-Using actual routing instead is
-smaller, but rejects otherwise matching functions whenever the wrapper's fixed
-row differs. Hash/equality/comparison examples alone would miss this cost.
+**Rows alone are insufficient.** Identity and fresh construction can match the
+same ordinary owned signature, but only identity carries an input owner's state
+into the result. The owner selected a fresh-result rule for function formals:
+every non-copy owned result ordinal, including contained owned leaves, must
+route only fresh state. An input route or unresolved route refuses the binding.
+Ordinary direct functions keep their existing ownership routing; conversions
+and ownership-returning operations remain writable through those interfaces.
+Copy results are fresh observations; shared/view results retain FN-1's existing
+loan-origin bounds. Written exclusive exits use the selected actual's ordinary
+routing and the containing instance must still exhibit its fixed declared row.
+The earlier proposal's finite routing ceiling is dropped, not implemented.
+This trades the ability to parameterize an owned identity operation for one
+fixed callable boundary without adding a second ownership-summary calculus.
 
 Keep FN-2/FN-9 instance checks for ownership/proofs, actual FN-1 target summaries
 and recursive-summary withholding; use only formal proof contracts. FN-8 proves
@@ -155,12 +204,19 @@ requires, FN-9 verifies actual ensures, CALL-6 kills overlapping fixed-row suppo
 before publication. `&uniq` bare/`entry(p)` measures denote exit/entry, including
 fields and multiple results. Shared/view outputs keep FN-1 loan-origin bounds;
 FORM-8 alpha-matches quantified formal loan regions, never extends loans.
-Captured brands remain exact: `group G['s] : Key<Box<'s,Resource>,Seed> ...`.
+A formal declaration has no header region parameters. Each member declares
+its own regions as an ordinary function signature does; every call instantiates
+those loan regions under FORM-8 and the OWN rules. The owner selected this
+scope over a group-wide region argument, which would add a different
+quantification and forwarding mechanism without a requirement from the two
+witnesses. Actual declarations keep their region parameters solely for store
+brands inside the formal's type arguments under FN-2.
+Captured brands remain exact: `actual G['s] : Key<Box<'s,Resource>,Seed> ...`.
 
 All options expose FN-2's existing arbitrary-type limit: receivers must name
 every store brand hidden in K. To support arbitrarily many such brands, propose
 retaining K's complete opaque branded identity and STOR-5 confinement without
-requiring redundant receiver binders. This is a proposed FN-2 delta, not current support. Hidden loans/providers remain excluded;
+requiring redundant receiver binders. This is the selected FN-2 delta; its executable branded-key witness is part of D7 validation. Hidden loans/providers remain excluded;
 ordinary directly written loan/provider parameters, owned results and multiple
 results are available on function formals. No higher-rank type-polymorphic
 function actuals, implicit environment capture or behavior construction code.
@@ -174,14 +230,15 @@ This also rejects `Grow<T>` containing `box<Grow<box<T>>>`; TYPE-2 alone
 does not ensure finite nominal expansion. Acyclic source/header expansion is
 finite; cycles create no new instance keys. No CTFE or fuel. This proves
 termination only: acyclic fan-out can still be exponential under existing FN-2.
-All three options need a bounded-cost admission/proof-reuse design to meet the
-constitution; that shared prerequisite is unresolved, not discharged by timing.
+Acyclic compile cost is recorded as an open engineering question; the owner
+explicitly did not make a new cost-admission mechanism part of D7. Timing cannot
+prove an asymptotic bound, and no fuel or timeout selects source acceptance.
 
 **Grammar inventory** (new production counts, not net counts; reused names count
 as modifications): new binder forms are function-kind (all) and pack (A/B).
 All options add `function_arg`, modify `gparam`, `targ`
 and `fn_sig`; `fn_sig` gains fn_decl's result list/contract and loses its trailing
-semicolon. A adds `shape_decl`, `group_decl`, `pack_use`; B adds only the latter
+semicolon. A adds `formal_decl`, `actual_decl`, `pack_use`; B adds only the latter
 two. A/B also modify `item`, `fn_bind`, `callee`; type syntax already parses
 pack applications, with a kind check before expansion. C needs no such changes.
 The exact new right-hand sides are:
@@ -189,33 +246,36 @@ The exact new right-hand sides are:
 ```text
 function_arg := "fn" callee ("::" targs)?
 pack_use := TYPEID targs?
-shape_decl := "shape" TYPEID generics? region_params? "{" doc? (fn_sig ";")* "}"
-group_decl := "group" TYPEID region_params? ":" pack_use "{" doc? fn_bind* "}"
+formal_decl := "formal" TYPEID generics? "{" doc? (fn_sig ";")* "}"
+actual_decl := "actual" TYPEID region_params? ":" pack_use "{" doc? fn_bind* "}"
 ```
 
 `gparam` adds `fn_sig` (A/B also `pack_use`); `targ` adds `function_arg`.
 A/B's `callee` adds `pack_use "::" IDENT`; `fn_bind` becomes
-`IDENT "=" callee ("::" targs)? ";"`. Only `shape`/`group` are new keywords.
+`IDENT "=" callee ("::" targs)? ";"`. Only `formal`/`actual` are new keywords.
 Remove `contract_decl`, `conform_decl`, `law`, `law_arg`; C also removes unused
 `fn_bind`. Keep `contract` for proof blocks; Int/Float become built-in bounds.
 Rules: GRAM-1 permits abbreviation expansion with retained source nodes;
 GRAM-2/3/5 and TYPE-5/6 cover syntax/kinds/resolution;
-FN-1 adds the formal routing ceiling; FN-2–6 cover binding/checking/termination
+FN-1 retains ordinary function routing; FN-2–6 cover binding/checking/termination
 and retire source laws;
 EFF-1/2 fix formal attribution; FN-8/9, CALL-6, MSR-3 and FORM-8 reuse the above
 contract/region judgments; PRE-1/section 15 retain numeric bounds.
 Strong-LL(2) selector generation remains a required implementation check.
 
-**Recommendation: A**, conditional on fixed formal rows and resolution of the
-shared compile-cost prerequisite. It requires the FN-1 ceiling, not just
-desugaring, but removes synchronized signatures without type-owned functions;
+**Selected: A**, with authoritative formal rows and the fresh-result restriction
+at function-formal bindings. It removes synchronized signatures without
+type-owned functions; compile cost remains an open engineering question;
 B saves one declaration kind at a lasting conceptual cost, C saves syntax by
 moving that cost to every library layer. Initially keep groups flat, with no
 inheritance, defaults, inference, overload choice or group-producing functions.
-Zero dispatch/ABI overhead is predicted, native parity unmeasured: broad
-rows can lose parallel independence; single-place heap exchanges cost extra
-moves. Next: expansion IR, retained-helper timings, adversarial behaviors,
-branded keys and two-state mutation; D5 scalar results do not cover these.
+The executable D7 witnesses now cover expansion, retained-helper timings,
+adversarial equality, branded keys and two-state mutation. The generic queue
+matches its ordinary-function expansion control; its owning exchange still
+costs more than D5's scalar-copy exchange. The map retains value/result ABI
+costs despite zero run transfer. Broad formal rows can also lose parallel
+independence. The linked measurements bound these claims rather than asserting
+universal native parity.
 
 ## Sources
 
@@ -228,3 +288,92 @@ Primary sources checked 2026-09-11; no cross-language timings.
 [5] C++ draft [template parameters](https://eel.is/c++draft/temp.param), [constraints](https://eel.is/c++draft/temp.constr), [implementation limits](https://eel.is/c++draft/implimits), [contracts](https://eel.is/c++draft/dcl.contract).
 [6] Odin official [overview](https://odin-lang.org/docs/overview/), [history/FAQ](https://odin-lang.org/docs/faq/).
 [7] Go [specification](https://go.dev/ref/spec), [instantiation-cycle checker](https://go.dev/src/go/types/mono.go), [Go 1.18 dictionary design](https://go.googlesource.com/proposal/+/master/design/generics-implementation-dictionaries-go1.18.md), [Go 1.20 comparable change](https://go.dev/blog/comparable).
+
+## D7 source migration and retirement
+
+These dispositions follow the owner's selected semantics, before gate results.
+An old expected verdict is not changed to accommodate a compiler failure.
+The five retired law sources are preserved verbatim in the compiler's
+`retired_closed_law_table_has_no_remaining_acceptance_path` grammar regression;
+their former law-acceptance obligations no longer exist in v0.57.
+
+| Previous source ID | Current source ID or disposition | Rule and reason |
+| --- | --- | --- |
+| `fn3-neg-source-contract-bound` | `fn3-neg-source-contract-bound` | Only Int and Float occupy the numeric-bound TYPEID position. A named formal group occupies its own generic-list position and is refused as a numeric bound under FN-3. |
+| `fn4-neg-bad-lawname` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
+| `fn3-pos-empty-marker-conformance` | `fn3-pos-empty-marker-conformance` | A zero-member formal admits a matching empty named actual; expansion creates no runtime function or group object. |
+| `fn3-pos-normalized-region-effects` | `fn3-pos-normalized-region-effects` | Formal and actual loan regions alpha-match by parameter position and effect paths normalize by parameter ordinal; reversed read-set order preserves the boundary. |
+| `fn3-neg-generic-contract` | `fn3-pos-generic-formal` | D7 admits flat type/const parameters on a formal header; this replaces the retired source-contract-template refusal. |
+| `fn3-neg-out-of-order-binding` | `fn3-neg-out-of-order-binding` | A complete set of actual bindings in a different order from the formal member declarations rejects under FN-3. |
+| `fn3-neg-two-conformances` | `fn3-pos-two-explicit-actuals` | D7 removes implicit type/conformance uniqueness. Two differently named actual groups may bind the same formal application; selection is explicit. |
+| `reject-syseff-pure-member-binds-release` | `fn4-neg-pure-member-binds-release` | An actual's ordinary derived release writes its incoming owner. D7 FN-4 refuses that effect at a pure formal boundary; resources use ordinary objects and effects. |
+| `fn4-pos-law-discharged` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
+| `fn4-neg-law-undischarged` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
+| `fn3-neg-missing-binding` | `fn3-neg-missing-binding` | An actual must bind every formal member exactly once in source order. FN-3 refuses the complete incomplete actual declaration before publishing a group. |
+| `fn3-neg-signature-effect-mismatch` | `fn4-neg-formal-row-coverage` | D7 FN-4 requires every actual effect path to be covered in the same category by the formal row. An allocating actual exceeds a reads-only formal. |
+| `fn3-neg-requires-member` | `fn4-neg-requires-mismatch` | D7 FN-4 requires ordered structural contract equality. A requires-bearing actual cannot bind a formal with no requirement. |
+| `fn1-pos-result-provenance-zero-candidate` | `fn1-pos-result-provenance-zero-candidate` | A formal member with a borrowed result and no candidate input obeys FN-1's zero-candidate rule; only named const storage can supply it. |
+| `fn4-pos-law-in-contract` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
+| `fn3-neg-contract-arguments` | `fn3-neg-contract-arguments` | An actual applies a zero-header-parameter formal to one type argument; FN-3 refuses the arity mismatch. |
+| `fn3-pos-contract-conform` | `fn3-pos-contract-conform` | A formal declares function-kind signatures and a named actual supplies the complete ordered function argument group (D7 FN-3); no implementation is attached to a type. |
+| `fn3-neg-extra-binding` | `fn3-neg-extra-binding` | An actual has an extra binding beyond its formal's complete member table; FN-3 refuses the extra member. |
+| `fn1-neg-contract-borrowed-slice-result` | `fn1-neg-contract-borrowed-slice-result` | The ordinary borrow-mode direct-slice result refusal applies to a formal member's signature formation before any actual can bind it. |
+| `fn4-neg-law-refuted-signedness` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
+| `checked-law-channel/kernel.wf`, `kernel_lib.wf` | Historical experiment, retired from active language claims | D7 removes law declarations and any implicit law authority. Retained measurements describe their historical toolchain only; neither file is a current check target. |
+
+The unchanged `x-eff-pure-combined-with-allocation` source still rejects. Its
+diagnostic owner changes from EFF-1 to GRAM-2: a raw function-kind `gparam`
+makes a comma a valid FOLLOW token after the `effects` alternative `pure`.
+At a top-level function that comma instead fails the enclosing `fn_decl`
+continuation. DIAG-1 assigns the failure to that production. The unit probe
+`live_effect_categories_keep_eff1_canonical_order_and_multiplicity` migrates
+the same citation; duplicate and reversed nonempty rows still reject EFF-1.
+Neither source bytes nor accepted-program status change.
+
+The separate S37 case `gram2-neg-a-type-parameter-writes-no-bound` becomes
+`fn3-neg-bare-type-parameter-has-no-formal-group`. Its executable source still
+writes `fn pass<T>(...)`; only its explanatory docs change. With `pack_use`
+admitted in `gparam`, bare `T` now parses as a formal application and TYPE-6
+performs group lookup in the shared nominal-type domain. There is no such declaration, so the
+rejection is FN-3 rather than the former GRAM-2. This does not admit an
+unbounded type parameter or infer a bound. The diagnostic migration follows
+the selected grammar and namespace, not a relaxation of the expected result.
+
+## D7 implementation review evidence
+
+The independent completion reviewer rebuilt an isolated CLI and checked the
+replacement FN-6 graph before every instance-discovery entrance: ordinary
+checking, FN-9 selector preflight, and missing-main diagnostic salvage. The last
+path initially bypassed the guard; its repair now rejects the growing nominal
+with and without a main or selector, and is retained as
+`missing_entry_diagnostic_salvage_checks_instantiation_before_discovery`.
+
+The owner authorized deletion of twelve old helpers after both a repository-wide
+call search and the independent Rust build reported no active callers:
+`reject_generic_call_cycles`, `first_polymorphic_recursion`,
+`call_instantiates_caller_parameters`, `targ_names_type_parameter`,
+`type_parameters`, `render_call_cycle`, `generic_call_edges`,
+`generic_cycle_analysis`, `generic_cycle_components`,
+`call_repeats_caller_generic_arguments`, `targ_names_const_parameter`, and
+`graph_reaches`. They only called one another. The live guard is
+[`generics/finiteness.rs`](../../../compiler/src/semantic/check/generics/finiteness.rs);
+`const_generic_type` and both postcondition-membership helpers remain in
+`generics.rs`. This deletion removes no active termination judgment.
+
+The subsequent review closed four grammar/instantiation boundary defects.
+Per-call member regions must have equal PROV-6 bounds, and an actual's captured
+regions must satisfy that declaration's own bound at each application.
+Region argument readers now test for a REGIONID directly; a function-kind
+argument in that position is an ordinary wrong-kind source diagnostic, never
+an internal resolution failure. Raw binding diagnostics retain their written
+argument provenance separately from instance identity, including nominal-only
+uses and shared instances.
+
+FN-6 also checks resolved member-call edges as complete-vector projections.
+The selected target's specialization is a proper finite subterm of one caller
+function argument; it cannot equal the entire caller vector without an infinite
+self-containing argument. Such calls are allowed off cycles and refused on
+written recursive components. The finite `first<second<stop>>` counterexample
+is deliberately refused by this selected structural rule, while its acyclic
+variant is admitted. This is a rule-compliance repair, not evidence that that
+particular program would instantiate forever.

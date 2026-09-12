@@ -555,6 +555,7 @@ struct Candidate<'check> {
 /// Both project the same boundary, so both build it from this and neither
 /// grows a second copy of the projection.
 pub(super) struct CallProjection<'check> {
+    pub(super) formal_effects: Option<&'check super::model::CheckedEffects>,
     pub(super) call: &'check NodePath,
     pub(super) target: CallTarget,
     pub(super) arguments: &'check [CheckedExpression],
@@ -578,8 +579,10 @@ pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjectio
             argument_nodes,
             arguments,
             goal_regions,
+            formal_effects,
             ..
         } => Some(CallProjection {
+            formal_effects: formal_effects.as_deref(),
             call,
             target: CallTarget::User(*function),
             arguments,
@@ -594,6 +597,7 @@ pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjectio
             arguments,
             ..
         } => Some(CallProjection {
+            formal_effects: None,
             call,
             target: CallTarget::System(*operation),
             arguments,
@@ -1342,7 +1346,12 @@ impl<'check> Program<'check> {
 
         // An `allocates(arena 'r)` row appends to the caller region's
         // allocation list, which is written storage with no actual of its own.
-        for formal in &signature.allocates_arenas {
+        for formal in candidate
+            .formal_effects
+            .map_or(&signature.allocates_arenas, |effects| {
+                &effects.allocates_arenas
+            })
+        {
             match signature
                 .region_parameters
                 .iter()
@@ -1401,7 +1410,13 @@ impl<'check> Program<'check> {
             }
         }
 
-        for (written, declared) in [(false, &signature.reads), (true, &signature.writes)] {
+        let reads = candidate
+            .formal_effects
+            .map_or(&signature.reads, |effects| &effects.reads);
+        let writes = candidate
+            .formal_effects
+            .map_or(&signature.writes, |effects| &effects.writes);
+        for (written, declared) in [(false, reads), (true, writes)] {
             for path in declared {
                 let Some(index) = callee
                     .parameters

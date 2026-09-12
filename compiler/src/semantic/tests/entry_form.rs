@@ -310,7 +310,7 @@ fn an_input_label_outside_the_entry_is_rejected_at_its_own_node() {
     );
     // In a `fn_sig`, which [FN-7] names separately.
     assert_rule_at(
-        b"contract Sink {\n  fn emit(command.stdout as value: own i32) -> result: own unit pure;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"formal Sink {\n  fn emit(command.stdout as value: own i32) -> result: own unit pure;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::StandardInputLabelOutsideEntry {
             label: "command.stdout".to_owned(),

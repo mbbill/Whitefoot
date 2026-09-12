@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+mod finiteness;
+
 use crate::syntax::NodeId;
-use crate::syntax::terminal::TerminalPredicate;
 use crate::{
     DeclarationClass, DeclarationId, DeclarationRole, FixedTerminal, LexicalUseRole,
     PreludeDeclarationId, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
@@ -47,12 +48,31 @@ pub(super) enum GenericParameter {
         declaration: DeclarationId,
         ty: IntegerType,
     },
+    /// A raw function parameter, or one hygienically expanded group member.
+    Function {
+        key: GenericParameterKey,
+        signature: NodeId,
+    },
+}
+
+/// Group members retain both written identities. Reusing one formal twice
+/// never merges its function arguments or introduces lexical member names.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum GenericParameterKey {
+    Source(DeclarationId),
+    Member {
+        application: NodeId,
+        member: DeclarationId,
+    },
 }
 
 impl GenericParameter {
-    pub(super) const fn declaration(self) -> DeclarationId {
+    pub(super) const fn key(self) -> GenericParameterKey {
         match self {
-            Self::Type { declaration, .. } | Self::Const { declaration, .. } => declaration,
+            Self::Type { declaration, .. } | Self::Const { declaration, .. } => {
+                GenericParameterKey::Source(declaration)
+            }
+            Self::Function { key, .. } => key,
         }
     }
 }
@@ -61,11 +81,12 @@ impl GenericParameter {
 pub(super) enum GenericArgument {
     Type(CheckedType),
     Const(CheckedConst),
+    Function(super::behavior::FunctionArgument),
 }
 
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub(super) struct GenericSubstitution {
-    bindings: Vec<(DeclarationId, GenericArgument)>,
+    bindings: Vec<(GenericParameterKey, GenericArgument)>,
     /// [S20, PROV-1] the region axis of one nominal instance: each
     /// `region_params` member of the owning declaration bound to the actual
     /// region this instance names.
@@ -83,8 +104,8 @@ pub(super) struct GenericSubstitution {
 /// while replaying generic source bodies. Replay intentionally runs in a
 /// scratch nominal suffix; only this structural form crosses its rollback.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct StableGenericSubstitution {
-    bindings: Vec<(DeclarationId, StableGenericArgument)>,
+pub(super) struct StableGenericSubstitution {
+    bindings: Vec<(GenericParameterKey, StableGenericArgument)>,
     regions: Vec<(DeclarationId, DeclarationId)>,
 }
 
@@ -92,6 +113,7 @@ struct StableGenericSubstitution {
 enum StableGenericArgument {
     Type(StableCheckedType),
     Const(CheckedConst),
+    Function(super::behavior::FunctionArgument),
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -183,7 +205,7 @@ enum StablePreludeType {
 
 impl GenericSubstitution {
     pub(super) fn from_bindings(
-        bindings: Vec<(DeclarationId, GenericArgument)>,
+        bindings: Vec<(GenericParameterKey, GenericArgument)>,
     ) -> Result<Self, SemanticCompilerFailure> {
         for (index, (declaration, _)) in bindings.iter().enumerate() {
             if bindings[..index]
@@ -224,20 +246,24 @@ impl GenericSubstitution {
     pub(super) fn type_argument(&self, declaration: DeclarationId) -> Option<CheckedType> {
         self.bindings
             .iter()
-            .find_map(|(candidate, argument)| (*candidate == declaration).then_some(argument))
+            .find_map(|(candidate, argument)| {
+                (*candidate == GenericParameterKey::Source(declaration)).then_some(argument)
+            })
             .and_then(|argument| match argument {
                 GenericArgument::Type(ty) => Some(*ty),
-                GenericArgument::Const(_) => None,
+                GenericArgument::Const(_) | GenericArgument::Function(_) => None,
             })
     }
 
     pub(super) fn const_argument(&self, declaration: DeclarationId) -> Option<CheckedConst> {
         self.bindings
             .iter()
-            .find_map(|(candidate, argument)| (*candidate == declaration).then_some(argument))
+            .find_map(|(candidate, argument)| {
+                (*candidate == GenericParameterKey::Source(declaration)).then_some(argument)
+            })
             .and_then(|argument| match argument {
                 GenericArgument::Const(value) => Some(*value),
-                GenericArgument::Type(_) => None,
+                GenericArgument::Type(_) | GenericArgument::Function(_) => None,
             })
     }
 
@@ -255,8 +281,14 @@ impl GenericSubstitution {
                         CheckedType::Generic(bound)
                         | CheckedType::GenericInt(bound)
                         | CheckedType::GenericFloat(bound),
-                    ) => bound == declaration,
-                    GenericArgument::Const(CheckedConst::Parameter(bound)) => bound == declaration,
+                    ) => GenericParameterKey::Source(*bound) == *declaration,
+                    GenericArgument::Const(CheckedConst::Parameter(bound)) => {
+                        GenericParameterKey::Source(*bound) == *declaration
+                    }
+                    GenericArgument::Function(super::behavior::FunctionArgument::Parameter(
+                        key,
+                    )) => key == declaration,
+                    GenericArgument::Function(_) => false,
                     GenericArgument::Type(_) | GenericArgument::Const(_) => false,
                 })
     }
@@ -265,18 +297,126 @@ impl GenericSubstitution {
         self.bindings.iter().all(|(_, argument)| match argument {
             GenericArgument::Type(ty) => ty.is_concrete(elements),
             GenericArgument::Const(value) => value.is_concrete(),
+            GenericArgument::Function(value) => value.is_concrete(),
         })
     }
 
-    pub(super) fn entries(&self) -> &[(DeclarationId, GenericArgument)] {
+    pub(super) fn entries(&self) -> &[(GenericParameterKey, GenericArgument)] {
         &self.bindings
+    }
+
+    pub(super) fn function_argument(
+        &self,
+        key: GenericParameterKey,
+    ) -> Option<super::behavior::FunctionArgument> {
+        self.bindings.iter().find_map(|(candidate, argument)| {
+            if *candidate != key {
+                return None;
+            }
+            match argument {
+                GenericArgument::Function(value) => Some(*value),
+                _ => None,
+            }
+        })
     }
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Substitute captured brands without reintroducing scratch nominal IDs
+    /// into the structural identity of a function argument.
+    pub(super) fn substitute_stable_regions(
+        &self,
+        substitution: &mut StableGenericSubstitution,
+        regions: &[(DeclarationId, DeclarationId)],
+    ) -> Result<(), CheckStop> {
+        for (_, actual) in &mut substitution.regions {
+            *actual = Self::substituted_region(regions, *actual);
+        }
+        for (_, argument) in &mut substitution.bindings {
+            match argument {
+                StableGenericArgument::Type(ty) => {
+                    self.substitute_stable_type_regions(ty, regions)?
+                }
+                StableGenericArgument::Function(value) => {
+                    *value = self.substitute_function_argument_regions(*value, regions)?
+                }
+                StableGenericArgument::Const(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn substitute_stable_type_regions(
+        &self,
+        ty: &mut StableCheckedType,
+        regions: &[(DeclarationId, DeclarationId)],
+    ) -> Result<(), CheckStop> {
+        match ty {
+            StableCheckedType::Scalar(_) | StableCheckedType::System(_) => {}
+            StableCheckedType::SourceNominal { substitution, .. } => {
+                self.substitute_stable_regions(substitution, regions)?
+            }
+            StableCheckedType::Prelude(prelude) => match prelude {
+                StablePreludeType::Option(value) => {
+                    self.substitute_stable_type_regions(value, regions)?
+                }
+                StablePreludeType::Result(value, error) => {
+                    self.substitute_stable_type_regions(value, regions)?;
+                    self.substitute_stable_type_regions(error, regions)?;
+                }
+                StablePreludeType::Overflow
+                | StablePreludeType::DivError
+                | StablePreludeType::NarrowError => {}
+            },
+            StableCheckedType::Boxed { region, referent } => {
+                if let Some(region) = region {
+                    *region = Self::substituted_region(regions, *region);
+                }
+                self.substitute_stable_type_regions(referent, regions)?;
+            }
+            StableCheckedType::Arena { region, content } => {
+                *region = Self::substituted_region(regions, *region);
+                self.substitute_stable_type_regions(content, regions)?;
+            }
+            StableCheckedType::Array { element, .. }
+            | StableCheckedType::FixedVector { element, .. } => {
+                self.substitute_stable_type_regions(&mut element.0, regions)?
+            }
+            StableCheckedType::Vector { region, element } => {
+                *region = Self::substituted_region(regions, *region);
+                self.substitute_stable_type_regions(&mut element.0, regions)?;
+            }
+            StableCheckedType::Slice {
+                region, element, ..
+            } => {
+                *region = Self::substituted_region(regions, *region);
+                self.substitute_stable_element_regions(element, regions)?;
+            }
+            StableCheckedType::Buffer { element } => {
+                self.substitute_stable_element_regions(element, regions)?
+            }
+            StableCheckedType::Heap { region } | StableCheckedType::Extent { region, .. } => {
+                *region = Self::substituted_region(regions, *region)
+            }
+        }
+        Ok(())
+    }
+
+    fn substitute_stable_element_regions(
+        &self,
+        element: &mut StableFlatElement,
+        regions: &[(DeclarationId, DeclarationId)],
+    ) -> Result<(), CheckStop> {
+        match element {
+            StableFlatElement::TagOnlyNominal(ty) | StableFlatElement::Nominal(ty) => {
+                self.substitute_stable_type_regions(ty, regions)
+            }
+            _ => Ok(()),
+        }
+    }
+
     pub(super) fn collect_function_templates(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         self.collect_function_template_inventory(items)?;
-        self.reject_generic_call_cycles()?;
         Ok(())
     }
 
@@ -304,17 +444,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.mark_postcondition_unavailable(declaration);
                 }
                 Err(stop) => return Err(stop),
-            }
-        }
-        let (unavailable, _) = self.generic_cycle_analysis()?;
-        for (index, is_unavailable) in unavailable.into_iter().enumerate() {
-            if is_unavailable {
-                let declaration = self
-                    .function_templates
-                    .get(index)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                    .declaration;
-                self.mark_postcondition_unavailable(declaration);
             }
         }
         Ok(())
@@ -411,6 +540,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
+        self.materialize_actual_groups(tolerate_source_failure)?;
         self.discover_called_function_signatures(true, tolerate_source_failure)
     }
 
@@ -420,13 +550,68 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         tolerate_source_failure: bool,
     ) -> Result<(), CheckStop> {
         let mut cursor = 0_usize;
-        while cursor < self.signatures.len() {
+        let mut nominal_cursor = 0_usize;
+        while cursor < self.signatures.len() || nominal_cursor < self.source_nominal_instances.len()
+        {
+            // A function argument is checked at every instantiation boundary,
+            // including a nominal used only in a signature. Those bindings
+            // can themselves name functions with further nominal instances.
+            while nominal_cursor < self.source_nominal_instances.len() {
+                let instance = self.source_nominal_instances[nominal_cursor].clone();
+                nominal_cursor += 1;
+                let Some((_, substitution)) = instance else {
+                    continue;
+                };
+                if require_concrete && !substitution.is_concrete(&self.elements.borrow()) {
+                    continue;
+                }
+                for (key, argument) in substitution.entries() {
+                    let GenericArgument::Function(argument) = argument else {
+                        continue;
+                    };
+                    self.ensure_formal_nominals(*key, &substitution)?;
+                    self.materialize_function_argument(*argument)?;
+                    // Only stable concrete declaration roots outlive the
+                    // source-schema scratch inventory. Symbolic hypotheses
+                    // are already reached through its signature arguments.
+                    if argument.is_concrete()
+                        && !self.behavior.declaration_arguments.contains(argument)
+                    {
+                        self.behavior.declaration_arguments.push(*argument);
+                    }
+                }
+            }
+            if cursor == self.signatures.len() {
+                continue;
+            }
             let signature = self.signatures[cursor].clone();
+            for (key, argument) in signature.substitution.entries() {
+                if let GenericArgument::Function(argument) = argument {
+                    if require_concrete && !argument.is_concrete() {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    }
+                    self.ensure_formal_nominals(*key, &signature.substitution)?;
+                    self.materialize_function_argument(*argument)?;
+                }
+            }
+            if signature.formal_parameter.is_some() {
+                cursor += 1;
+                continue;
+            }
             for call in self
                 .tree
                 .descendants_with(signature.node, Production::Call)?
             {
                 if self.call_is_inside_postcondition(call)? {
+                    continue;
+                }
+                if let Some(key) = self.behavior_call_key(call)? {
+                    let argument = signature
+                        .substitution
+                        .function_argument(key)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    self.ensure_formal_nominals(key, &signature.substitution)?;
+                    self.materialize_function_argument(argument)?;
                     continue;
                 }
                 let Some((template_index, template)) = self.called_function_template(call)? else {
@@ -443,9 +628,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if tolerate_source_failure && !self.postcondition_call_arguments_have_links(call)? {
                     continue;
                 }
-                if tolerate_source_failure
-                    && let Some(targs) = self.tree.first_child_with(call, Production::Targs)?
-                {
+                if tolerate_source_failure && let Some(targs) = self.tree.argument_list(call)? {
                     let checkpoint = self.nominal_checkpoint();
                     match self.ensure_nominals_in_node(targs, &signature.substitution) {
                         Ok(()) => {}
@@ -519,7 +702,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         call: NodeId,
     ) -> Result<bool, CheckStop> {
-        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(call)? else {
             return Ok(true);
         };
         let owner = self.tree.path(targs)?.components();
@@ -554,7 +737,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 let path = self.tree.path(ty)?;
                 if !self.resolved.lexical_uses().iter().any(|usage| {
-                    usage.role() == LexicalUseRole::Type && usage.origin().node() == path
+                    matches!(
+                        usage.role(),
+                        LexicalUseRole::Type | LexicalUseRole::TypeArgument
+                    ) && usage.origin().node() == path
                 }) {
                     return Ok(false);
                 }
@@ -596,6 +782,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(argument, Production::Const)?
                     .is_some()
+                || self
+                    .tree
+                    .first_child_with(argument, Production::FunctionArg)?
+                    .is_some()
             {
                 continue;
             }
@@ -628,6 +818,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 declaration,
                 class: DeclarationClass::Function,
             } => declaration,
+            // Function parameters are selected through behavior substitution.
+            // They have no ordinary source template; FN-6 checks their edges
+            // in the finite function-target graph before discovery.
+            ResolvedTarget::Source {
+                class: DeclarationClass::FunctionParameter,
+                ..
+            } => return Ok(None),
             // A system operation and a kernel-domain row [BLK-0] are not user
             // function templates; recursion through either is impossible, so
             // neither contributes a cycle edge.
@@ -680,7 +877,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
-    fn instantiate_function_signature(
+    pub(super) fn instantiate_function_signature(
         &mut self,
         template_index: usize,
         substitution: GenericSubstitution,
@@ -784,7 +981,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 {
                     let path = self.tree.path(ty)?;
                     if !self.resolved.lexical_uses().iter().any(|usage| {
-                        usage.role() == LexicalUseRole::Type && usage.origin().node() == path
+                        matches!(
+                            usage.role(),
+                            LexicalUseRole::Type | LexicalUseRole::TypeArgument
+                        ) && usage.origin().node() == path
                     }) {
                         return Ok(false);
                     }
@@ -976,6 +1176,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             slice_return_ceiling,
             effects_node: effects,
             declared_effects,
+            formal_parameter: None,
             substitution,
         })
     }
@@ -1019,6 +1220,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 canonical_generic_signatures.push((signature_index, template.declaration));
             }
         }
+        self.materialize_actual_groups(false)?;
         self.discover_called_function_signatures(false, false)?;
         // Concrete selectors are keyed by the dense FunctionId inventory.
         // Schema validation uses a separate scratch inventory starting at
@@ -1127,7 +1329,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if callee.generic_parameters.is_empty() {
                         continue;
                     }
-                    if let Some(targs) = self.tree.first_child_with(call, Production::Targs)? {
+                    if let Some(targs) = self.tree.argument_list(call)? {
                         self.ensure_nominals_in_node(targs, &caller_substitution)?;
                     }
                     let substitution =
@@ -1214,6 +1416,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return Ok(None);
                     };
                     StableGenericArgument::Const(CheckedConst::Value(value))
+                }
+                GenericArgument::Function(value) => {
+                    if !value.is_concrete() {
+                        return Ok(None);
+                    }
+                    StableGenericArgument::Function(*value)
                 }
             };
             bindings.push((*declaration, stable));
@@ -1444,7 +1652,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(stable))
     }
 
-    fn stabilize_substitution_with_visiting(
+    pub(super) fn stabilize_substitution_with_visiting(
         &self,
         substitution: &GenericSubstitution,
         nominal_checkpoint: usize,
@@ -1467,6 +1675,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return Ok(None);
                     }
                     StableGenericArgument::Const(*value)
+                }
+                GenericArgument::Function(value) => {
+                    if !allow_symbolic && !value.is_concrete() {
+                        return Ok(None);
+                    }
+                    StableGenericArgument::Function(*value)
                 }
             };
             bindings.push((*declaration, stable));
@@ -1564,7 +1778,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    fn reify_concrete_substitution(
+    pub(super) fn reify_concrete_substitution(
         &mut self,
         substitution: &StableGenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
@@ -1575,6 +1789,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     GenericArgument::Type(self.reify_concrete_type(ty)?)
                 }
                 StableGenericArgument::Const(value) => GenericArgument::Const(*value),
+                StableGenericArgument::Function(value) => GenericArgument::Function(*value),
             };
             bindings.push((*declaration, argument));
         }
@@ -1786,8 +2001,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     GenericParameter::Const { declaration, .. } => {
                         GenericArgument::Const(CheckedConst::Parameter(declaration))
                     }
+                    GenericParameter::Function { key, .. } => {
+                        GenericArgument::Function(super::behavior::FunctionArgument::Parameter(key))
+                    }
                 };
-                (parameter.declaration(), argument)
+                (parameter.key(), argument)
             })
             .collect();
         GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
@@ -1812,138 +2030,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ))
     }
 
-    fn reject_generic_call_cycles(&self) -> Result<(), CheckStop> {
-        let edges = self.generic_call_edges()?;
-        // [FN-6] recursion is permitted, and polymorphic recursion is rejected
-        // by a syntactic rule. That source judgment is asked before the
-        // capability report below so that a program the language rejects is
-        // never reported as an unimplemented capability instead.
-        if let Some((call, cycle)) = self.first_polymorphic_recursion(&edges)? {
-            return self.issue_node(
-                SemanticRule::Fn6,
-                call,
-                SemanticIssueKind::PolymorphicRecursion {
-                    cycle,
-                    mechanical_fix:
-                        "instantiate every call on the cycle at exactly the caller's own type parameters, or move the differently instantiated call off the cycle",
-                },
-            );
-        }
-        if let Some(call) = self.generic_cycle_components(&edges)?.1 {
-            return self.unsupported(UnsupportedSemanticFeature::Generics, call);
-        }
-        Ok(())
-    }
-
-    /// The first [FN-6] polymorphic-recursion violation in call order, with
-    /// the cycle the rule requires the diagnostic to name.
-    ///
-    /// FN-6 constrains a call cycle *among generic functions*, so an edge is
-    /// judged when its caller and callee are both generic and the callee
-    /// reaches the caller again. A cycle through a nongeneric participant is
-    /// left to the ordinary path: a nongeneric caller has no type parameter to
-    /// write, so every argument it writes is fixed and the cycle's instance
-    /// set is finite by construction.
-    fn first_polymorphic_recursion(
-        &self,
-        edges: &[Vec<(usize, NodeId)>],
-    ) -> Result<Option<(NodeId, String)>, CheckStop> {
-        for (caller, outgoing) in edges.iter().enumerate() {
-            let caller_parameters = Self::type_parameters(&self.function_templates[caller]);
-            if caller_parameters.is_empty() {
-                continue;
-            }
-            for (callee, call) in outgoing {
-                let callee_parameters = &self.function_templates[*callee].generic_parameters;
-                if callee_parameters.is_empty() || !Self::graph_reaches(*callee, caller, edges) {
-                    continue;
-                }
-                if self.call_instantiates_caller_parameters(
-                    *call,
-                    &caller_parameters,
-                    callee_parameters,
-                )? {
-                    continue;
-                }
-                return Ok(Some((
-                    *call,
-                    self.render_call_cycle(caller, *callee, edges),
-                )));
-            }
-        }
-        Ok(None)
-    }
-
-    /// Whether one call writes exactly the caller's own type parameters, in
-    /// order, at the callee's type-parameter positions [FN-6].
-    ///
-    /// The judgment is syntactic, as FN-6 states it is: a written `targ`
-    /// satisfies it only as a bare TYPEID carrying no arguments of its own
-    /// that resolves to the caller's type parameter at the same position, and
-    /// the two type-parameter counts must agree for the lists to be equal at
-    /// all. An absent or short argument list is [FN-2]'s violation rather than
-    /// this rule's, so it is not attributed here.
-    fn call_instantiates_caller_parameters(
-        &self,
-        call: NodeId,
-        caller_parameters: &[DeclarationId],
-        callee_parameters: &[GenericParameter],
-    ) -> Result<bool, CheckStop> {
-        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
-            return Ok(true);
-        };
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        let arguments = &arguments[self.user_call_region_prefix(&arguments)?..];
-        if arguments.len() < callee_parameters.len() {
-            return Ok(true);
-        }
-        let mut position = 0;
-        for (parameter, argument) in callee_parameters.iter().zip(arguments) {
-            if !matches!(parameter, GenericParameter::Type { .. }) {
-                continue;
-            }
-            let Some(expected) = caller_parameters.get(position) else {
-                return Ok(false);
-            };
-            position += 1;
-            if !self.targ_names_type_parameter(*argument, *expected)? {
-                return Ok(false);
-            }
-        }
-        Ok(position == caller_parameters.len())
-    }
-
-    /// Whether one `targ` is written as exactly the named type parameter.
-    fn targ_names_type_parameter(
-        &self,
-        argument: NodeId,
-        expected: DeclarationId,
-    ) -> Result<bool, CheckStop> {
-        let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
-            return Ok(false);
-        };
-        if self
-            .tree
-            .direct_token_with(ty, TerminalPredicate::TypeIdentifier)?
-            .is_none()
-            || self.tree.first_child_with(ty, Production::Targs)?.is_some()
-        {
-            return Ok(false);
-        }
-        let path = self.tree.path(ty)?;
-        Ok(self.resolved.lexical_uses().iter().any(|usage| {
-            usage.role() == LexicalUseRole::Type
-                && usage.origin().node() == path
-                && matches!(
-                    usage.target(),
-                    ResolvedTarget::Source {
-                        declaration,
-                        class: DeclarationClass::GenericType,
-                    } if declaration == expected
-                )
-        }))
-    }
-
     /// The written integer type of one const `gparam` [MSR-6].
     ///
     /// A const generic is declared by exactly one function or nominal
@@ -1961,6 +2047,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .iter()
                     .flat_map(|template| template.generic_parameters.iter()),
             )
+            .chain(
+                self.behavior
+                    .formals
+                    .values()
+                    .flat_map(|formal| formal.parameters.iter()),
+            )
             .find_map(|parameter| match parameter {
                 GenericParameter::Const {
                     declaration: candidate,
@@ -1969,230 +2061,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => None,
             })
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
-    }
-
-    fn type_parameters(template: &FunctionTemplate) -> Vec<DeclarationId> {
-        template
-            .generic_parameters
-            .iter()
-            .filter_map(|parameter| match parameter {
-                GenericParameter::Type { declaration, .. } => Some(*declaration),
-                GenericParameter::Const { .. } => None,
-            })
-            .collect()
-    }
-
-    /// The cycle FN-6 requires the diagnostic to name: the caller, the
-    /// shortest call path from this call's callee back to it, and the caller
-    /// again, so the reader sees where the offending instantiation sits.
-    fn render_call_cycle(
-        &self,
-        caller: usize,
-        callee: usize,
-        edges: &[Vec<(usize, NodeId)>],
-    ) -> String {
-        let mut previous = vec![None; edges.len()];
-        let mut seen = vec![false; edges.len()];
-        let mut pending = std::collections::VecDeque::from([callee]);
-        seen[callee] = true;
-        while let Some(node) = pending.pop_front() {
-            if node == caller {
-                break;
-            }
-            for (next, _) in &edges[node] {
-                if !seen[*next] {
-                    seen[*next] = true;
-                    previous[*next] = Some(node);
-                    pending.push_back(*next);
-                }
-            }
-        }
-        // The predecessor chain runs backwards from the caller to the callee,
-        // so the rendered cycle reverses it and closes on the caller.
-        let mut chain = vec![caller];
-        let mut cursor = caller;
-        while let Some(node) = previous[cursor] {
-            chain.push(node);
-            cursor = node;
-        }
-        let mut names = vec![self.function_templates[caller].name.clone()];
-        names.extend(
-            chain
-                .into_iter()
-                .rev()
-                .map(|index| self.function_templates[index].name.clone()),
-        );
-        names.join(" -> ")
-    }
-
-    fn generic_call_edges(&self) -> Result<Vec<Vec<(usize, NodeId)>>, CheckStop> {
-        let mut edges = vec![Vec::new(); self.function_templates.len()];
-        for (caller, template) in self.function_templates.iter().enumerate() {
-            for call in self
-                .tree
-                .descendants_with(template.node, Production::Call)?
-            {
-                if self.call_is_inside_postcondition(call)? {
-                    continue;
-                }
-                let Some((callee, _)) = self.called_function_template(call)? else {
-                    continue;
-                };
-                edges[caller].push((callee, call));
-            }
-        }
-        Ok(edges)
-    }
-
-    fn generic_cycle_analysis(&self) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
-        let edges = self.generic_call_edges()?;
-        self.generic_cycle_components(&edges)
-    }
-
-    /// The generic call cycles whose instance set this compiler cannot
-    /// enumerate, and the first call that makes one of them so.
-    ///
-    /// [FN-6] has already refused every cycle whose call writes anything but
-    /// the caller's own *type* parameters, so what survives it is a cycle each
-    /// of whose calls repeats the caller's type parameters. That leaves the
-    /// const arguments, which FN-6 does not speak about: a call writing a
-    /// const argument derived from the caller's own const parameter mints a
-    /// second instance, which mints a third, and the worklist does not
-    /// terminate. Such a cycle is an explicit unsupported capability.
-    ///
-    /// A call that repeats the caller's complete parameter list — every type
-    /// parameter and every const parameter, in position — is the caller's own
-    /// instance and mints nothing, so its cycle is finite and is compiled.
-    fn generic_cycle_components(
-        &self,
-        edges: &[Vec<(usize, NodeId)>],
-    ) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
-        let mut unavailable = vec![false; self.function_templates.len()];
-        let mut first = None;
-        for (caller, outgoing) in edges.iter().enumerate() {
-            for (callee, call) in outgoing {
-                if !Self::graph_reaches(*callee, caller, edges) {
-                    continue;
-                }
-                if self.call_repeats_caller_generic_arguments(*call, caller, *callee)? {
-                    continue;
-                }
-                let generic_component = (0..self.function_templates.len()).any(|candidate| {
-                    Self::graph_reaches(caller, candidate, edges)
-                        && Self::graph_reaches(candidate, caller, edges)
-                        && !self.function_templates[candidate]
-                            .generic_parameters
-                            .is_empty()
-                });
-                if generic_component {
-                    if first.is_none() {
-                        first = Some(*call);
-                    }
-                    for (candidate, slot) in unavailable.iter_mut().enumerate() {
-                        if Self::graph_reaches(caller, candidate, edges)
-                            && Self::graph_reaches(candidate, caller, edges)
-                        {
-                            *slot = true;
-                        }
-                    }
-                }
-            }
-        }
-        Ok((unavailable, first))
-    }
-
-    /// Whether one call writes exactly its caller's own generic parameters,
-    /// in order, at every one of the callee's generic-parameter positions.
-    ///
-    /// The judgment is syntactic, as [FN-6]'s own is: a type position is
-    /// satisfied by a bare TYPEID carrying no arguments that resolves to the
-    /// caller's type parameter there, and a const position by a bare
-    /// identifier — no literal, no operator — that resolves to the caller's
-    /// const parameter there. A callee with a different parameter shape, or a
-    /// call writing no argument list at all, satisfies neither.
-    fn call_repeats_caller_generic_arguments(
-        &self,
-        call: NodeId,
-        caller: usize,
-        callee: usize,
-    ) -> Result<bool, CheckStop> {
-        let caller_parameters = &self.function_templates[caller].generic_parameters;
-        let callee_parameters = &self.function_templates[callee].generic_parameters;
-        if caller_parameters.is_empty() || caller_parameters.len() != callee_parameters.len() {
-            return Ok(caller_parameters.is_empty() && callee_parameters.is_empty());
-        }
-        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
-            return Ok(false);
-        };
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        let arguments = &arguments[self.user_call_region_prefix(&arguments)?..];
-        if arguments.len() != callee_parameters.len() {
-            return Ok(false);
-        }
-        for ((caller_parameter, callee_parameter), argument) in caller_parameters
-            .iter()
-            .zip(callee_parameters)
-            .zip(arguments)
-        {
-            let repeats = match (caller_parameter, callee_parameter) {
-                (
-                    GenericParameter::Type {
-                        declaration: expected,
-                        ..
-                    },
-                    GenericParameter::Type { .. },
-                ) => self.targ_names_type_parameter(*argument, *expected)?,
-                (
-                    GenericParameter::Const {
-                        declaration: expected,
-                        ..
-                    },
-                    GenericParameter::Const { .. },
-                ) => self.targ_names_const_parameter(*argument, *expected)?,
-                _ => false,
-            };
-            if !repeats {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    /// Whether one `targ` is written as exactly the named const parameter.
-    fn targ_names_const_parameter(
-        &self,
-        argument: NodeId,
-        expected: DeclarationId,
-    ) -> Result<bool, CheckStop> {
-        let Some(value) = self.tree.first_child_with(argument, Production::Const)? else {
-            return Ok(false);
-        };
-        if self
-            .tree
-            .first_child_with(value, Production::InfixOp)?
-            .is_some()
-            || !self
-                .tree
-                .direct_tokens_matching(value, &[TerminalPredicate::Digits])?
-                .is_empty()
-        {
-            return Ok(false);
-        }
-        let [_] = self.tree.direct_identifiers(value)?.as_slice() else {
-            return Ok(false);
-        };
-        let path = self.tree.path(value)?;
-        Ok(self.resolved.lexical_uses().iter().any(|usage| {
-            usage.role() == LexicalUseRole::Const
-                && usage.origin().node() == path
-                && matches!(
-                    usage.target(),
-                    ResolvedTarget::Source {
-                        declaration,
-                        class: DeclarationClass::ConstGeneric,
-                    } if declaration == expected
-                )
-        }))
     }
 
     pub(super) fn call_is_inside_postcondition(&self, call: NodeId) -> Result<bool, CheckStop> {
@@ -2207,22 +2075,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }))
     }
 
-    fn graph_reaches(start: usize, target: usize, edges: &[Vec<(usize, NodeId)>]) -> bool {
-        let mut seen = vec![false; edges.len()];
-        let mut pending = vec![start];
-        while let Some(node) = pending.pop() {
-            if node == target {
-                return true;
-            }
-            if seen[node] {
-                continue;
-            }
-            seen[node] = true;
-            pending.extend(edges[node].iter().rev().map(|(callee, _)| *callee));
-        }
-        false
-    }
-
     pub(super) fn parse_generic_parameters(
         &self,
         declaration: NodeId,
@@ -2235,6 +2087,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let mut parameters = Vec::new();
         for node in self.tree.children_with(generics, Production::Gparam)? {
+            if let Some(signature) = self.tree.first_child_with(node, Production::FnSig)? {
+                let declaration = self
+                    .declaration_at(signature, DeclarationRole::FunctionParameter)?
+                    .id();
+                parameters.push(GenericParameter::Function {
+                    key: GenericParameterKey::Source(declaration),
+                    signature,
+                });
+                continue;
+            }
+            if let Some(application) = self.tree.first_child_with(node, Production::PackUse)? {
+                parameters.extend(self.expand_formal_parameters(application)?);
+                continue;
+            }
             if self.has_fixed(node, FixedTerminal::Const)? {
                 let declaration = self
                     .declaration_at(node, DeclarationRole::ConstGeneric)?
@@ -2282,7 +2148,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Some((
                     ResolvedTarget::Source {
-                        class: DeclarationClass::Contract,
+                        class: DeclarationClass::NumericBound,
                         ..
                     },
                     coordinate,
@@ -2307,7 +2173,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         template: &FunctionTemplate,
         caller: &GenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
-        let leading_regions = match self.tree.first_child_with(node, Production::Targs)? {
+        let leading_regions = match self.tree.argument_list(node)? {
             Some(targs) => {
                 self.user_call_region_prefix(&self.tree.children_with(targs, Production::Targ)?)?
             }
@@ -2337,6 +2203,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 || self
                     .tree
                     .first_child_with(*argument, Production::Const)?
+                    .is_some()
+                || self
+                    .tree
+                    .first_child_with(*argument, Production::FunctionArg)?
                     .is_some()
             {
                 break;
@@ -2427,7 +2297,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if region_parameters.is_empty() {
             return Ok(Vec::new());
         }
-        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+        let arguments = match self.tree.argument_list(node)? {
             Some(targs) => self.tree.children_with(targs, Production::Targ)?,
             None => Vec::new(),
         };
@@ -2445,12 +2315,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for (formal, argument) in region_parameters.iter().copied().zip(arguments) {
             if self
                 .tree
-                .first_child_with(argument, Production::Type)?
-                .is_some()
-                || self
-                    .tree
-                    .first_child_with(argument, Production::Const)?
-                    .is_some()
+                .direct_token_with(argument, crate::TerminalPredicate::RegionIdentifier)?
+                .is_none()
             {
                 return self.issue_node(
                     SemanticRule::Type5,
@@ -2490,7 +2356,7 @@ region parameter for",
     /// user-generic call cites FN-2, a generic nominal's construct cites
     /// TYPE-5. The rule therefore arrives from the caller that knows its own
     /// class, instead of being chosen here from the shape of the failure.
-    fn generic_substitution(
+    pub(super) fn generic_substitution(
         &self,
         node: NodeId,
         parameters: &[GenericParameter],
@@ -2498,154 +2364,133 @@ region parameter for",
         argument_rule: SemanticRule,
         leading_regions: usize,
     ) -> Result<GenericSubstitution, CheckStop> {
-        if parameters.is_empty() {
-            if leading_regions == 0
-                && self
-                    .tree
-                    .first_child_with(node, Production::Targs)?
-                    .is_some()
-            {
+        let written = match self.tree.argument_list(node)? {
+            Some(list) => self.tree.children_with(list, Production::Targ)?,
+            None if parameters.is_empty() && leading_regions == 0 => {
+                return Ok(GenericSubstitution::default());
+            }
+            None => {
                 return self.issue_node(
                     argument_rule,
                     node,
                     SemanticIssueKind::type_mismatch(
-                        "no type arguments, because this form declares no generic parameters",
-                        "a written `<...>` type-argument list",
+                        crate::semantic::written_count(
+                            parameters.len() + leading_regions,
+                            "generic argument",
+                        ),
+                        "no explicit argument list",
                     ),
                 );
             }
-            // A nominal that declares only region parameters writes exactly
-            // those and nothing else [S20, TYPE-5].
-            if leading_regions > 0 {
-                let written = match self.tree.first_child_with(node, Production::Targs)? {
-                    Some(targs) => self.tree.children_with(targs, Production::Targ)?.len(),
-                    None => 0,
-                };
-                if written != leading_regions {
-                    return self.issue_node(
-                        argument_rule,
-                        node,
-                        SemanticIssueKind::type_mismatch(
-                            crate::semantic::written_count(leading_regions, "region argument"),
-                            crate::semantic::written_count(written, "type argument"),
-                        ),
-                    );
-                }
-            }
-            return Ok(GenericSubstitution::default());
-        }
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
-            return self.issue_node(
-                argument_rule,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(parameters.len(), "type argument"),
-                    "no type-argument list",
-                ),
-            );
         };
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        let expected = parameters.len().saturating_add(leading_regions);
-        if arguments.len() != expected {
+        if written.len() < leading_regions {
+            return self.behavior_mismatch(
+                argument_rule,
+                node,
+                "write every undetermined region before the generic arguments",
+            );
+        }
+        let arguments = self.expand_written_arguments(&written[leading_regions..], caller)?;
+        if arguments.len() != parameters.len() {
             return self.issue_node(
                 argument_rule,
                 node,
                 SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(expected, "type argument"),
-                    crate::semantic::written_count(arguments.len(), "type argument"),
+                    crate::semantic::written_count(parameters.len(), "expanded generic argument"),
+                    crate::semantic::written_count(arguments.len(), "expanded generic argument"),
                 ),
             );
-        }
-        // [FORM-8] the leading region members are checked by the callee
-        // class's own nominal/call region judgment, separately from these
-        // type and const arguments.
-        let arguments = arguments
-            .into_iter()
-            .skip(leading_regions)
-            .collect::<Vec<_>>();
-        for argument in arguments.iter().take(parameters.len()) {
-            self.reject_region_bearing_generic_argument(*argument, caller)?;
         }
         let mut bindings = Vec::with_capacity(parameters.len());
+        let mut binding_sites = Vec::new();
         for (parameter, argument) in parameters.iter().copied().zip(arguments) {
-            let value = match parameter {
-                GenericParameter::Type { bound, declaration } => {
-                    let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
-                        return self.issue_node(
-                            argument_rule,
-                            argument,
-                            SemanticIssueKind::type_mismatch(
-                                "a type in this type-argument position",
-                                "a const argument in a type-parameter position",
-                            ),
-                        );
-                    };
-                    let ty = self.parse_type_with(ty, caller)?;
-                    // A marker bound is a numeric row and carries the
-                    // requirement's own words; a linearity bound is checked by
-                    // [PROV-6] below and prints that rule's sentence instead.
+            let source = argument.source();
+            let value = match argument {
+                super::behavior::WrittenArgument::Expanded { value, .. } => value,
+                super::behavior::WrittenArgument::Source(source) => match parameter {
+                    GenericParameter::Type { .. } => {
+                        let Some(ty) = self.tree.first_child_with(source, Production::Type)? else {
+                            return self.behavior_mismatch(
+                                argument_rule,
+                                source,
+                                "a type argument occupies this parameter position",
+                            );
+                        };
+                        self.reject_region_bearing_generic_argument(source, caller)?;
+                        GenericArgument::Type(self.parse_type_with(ty, caller)?)
+                    }
+                    GenericParameter::Const { .. } => {
+                        let Some(value) = self.tree.first_child_with(source, Production::Const)?
+                        else {
+                            return self.behavior_mismatch(
+                                argument_rule,
+                                source,
+                                "a const argument occupies this parameter position",
+                            );
+                        };
+                        GenericArgument::Const(self.parse_const_expression_with(value, caller)?)
+                    }
+                    GenericParameter::Function { .. } => {
+                        GenericArgument::Function(self.parse_function_argument(source, caller)?)
+                    }
+                },
+            };
+            match (parameter, value) {
+                (GenericParameter::Type { declaration, bound }, GenericArgument::Type(ty)) => {
+                    if self.checked_type_is_region_bearing(ty)? {
+                        return self.issue_node(SemanticRule::Fn2, source, SemanticIssueKind::RegionBearingGenericArgument {
+                            mechanical_fix: "make the slice or arena a direct written parameter or result instead of a generic argument",
+                        });
+                    }
                     let requirement = match bound {
-                        GenericBound::Class(_) => None,
-                        GenericBound::Int => {
+                        GenericBound::Int
+                            if !matches!(
+                                ty,
+                                CheckedType::Integer(_) | CheckedType::GenericInt(_)
+                            ) =>
+                        {
                             Some("an integer type, which the parameter's `Int` bound requires")
                         }
-                        GenericBound::Float => {
+                        GenericBound::Float
+                            if !matches!(
+                                ty,
+                                CheckedType::Float(_) | CheckedType::GenericFloat(_)
+                            ) =>
+                        {
                             Some("a float type, which the parameter's `Float` bound requires")
                         }
+                        _ => None,
                     };
-                    let satisfies_bound = match bound {
-                        GenericBound::Class(_) => true,
-                        GenericBound::Int => {
-                            matches!(ty, CheckedType::Integer(_) | CheckedType::GenericInt(_))
-                        }
-                        GenericBound::Float => {
-                            matches!(ty, CheckedType::Float(_) | CheckedType::GenericFloat(_))
-                        }
-                    };
-                    if let Some(required) = requirement
-                        && !satisfies_bound
-                    {
+                    if let Some(required) = requirement {
                         return self.issue_node(
                             SemanticRule::Fn3,
-                            argument,
+                            source,
                             SemanticIssueKind::type_mismatch(required, self.checked_type_name(ty)?),
                         );
                     }
-                    // [PROV-6, S37] the bound is checked at every
-                    // instantiation, against the class the argument's own
-                    // release graph gives it in this scope, and satisfaction
-                    // is the chain `copy < affine < linear` read left to
-                    // right. A marker bound implies `copy` and is admitted by
-                    // its own numeric requirement above.
                     if let GenericBound::Class(required) = bound {
-                        let spelling = self
-                            .resolved
-                            .declarations()
-                            .iter()
-                            .find(|candidate| candidate.id() == declaration)
-                            .map_or_else(String::new, |candidate| candidate.spelling().to_owned());
-                        self.check_linearity_bound(&spelling, required, ty, argument)?;
+                        let spelling = self.declaration_spelling(declaration)?;
+                        self.check_linearity_bound(&spelling, required, ty, source)?;
                     }
-                    GenericArgument::Type(ty)
                 }
-                GenericParameter::Const { .. } => {
-                    let Some(value) = self.tree.first_child_with(argument, Production::Const)?
-                    else {
-                        return self.issue_node(
-                            argument_rule,
-                            argument,
-                            SemanticIssueKind::type_mismatch(
-                                "a const argument in this type-argument position",
-                                "a type in a const-parameter position",
-                            ),
-                        );
-                    };
-                    GenericArgument::Const(self.parse_const_expression_with(value, caller)?)
+                (GenericParameter::Const { .. }, GenericArgument::Const(_))
+                | (GenericParameter::Function { .. }, GenericArgument::Function(_)) => {}
+                _ => {
+                    return self.behavior_mismatch(
+                        argument_rule,
+                        source,
+                        "the expanded argument kind matches its formal parameter",
+                    );
                 }
-            };
-            bindings.push((parameter.declaration(), value));
+            }
+            if matches!(value, GenericArgument::Function(_)) {
+                binding_sites.push((parameter.key(), source));
+            }
+            bindings.push((parameter.key(), value));
         }
-        GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
+        let substitution = GenericSubstitution::from_bindings(bindings)?;
+        self.record_behavior_binding_sites(&substitution, &binding_sites)?;
+        Ok(substitution)
     }
 }
 

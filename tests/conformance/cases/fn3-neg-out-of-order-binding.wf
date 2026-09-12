@@ -1,9 +1,9 @@
-contract OrderedPair {
+formal OrderedPair {
   fn first() -> result: own i32 pure;
   fn second() -> result: own i32 pure;
 }
 
-conform i32: OrderedPair {
+actual First : OrderedPair {
   second = make_second;
   first = make_first;
 }

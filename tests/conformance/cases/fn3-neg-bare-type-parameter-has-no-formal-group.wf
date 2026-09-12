@@ -1,0 +1,9 @@
+fn pass<T>(value: own T) -> back: own T pure {
+  doc "A bare generic-header name has no declared formal group.";
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "FN-3, TYPE-6: a bare generic-header TYPEID is a formal application, not an inferred unbounded type parameter. T names no formal group. Ordinary type parameters still write their S37 bound.";
+  return exit_status(code: 0_u8);
+}

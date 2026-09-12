@@ -994,6 +994,13 @@ so the block is written `region { ... }`",
             let Some(callee) = self.tree.first_child_with(call, Production::Callee)? else {
                 continue;
             };
+            if self
+                .tree
+                .first_child_with(callee, Production::PackUse)?
+                .is_some()
+            {
+                continue;
+            }
             let usage = self.use_at_roles(
                 callee,
                 &[
@@ -1007,7 +1014,7 @@ so the block is written `region { ... }`",
             if crate::operation_family_spelling(operation) != Some("arena_new") {
                 continue;
             }
-            let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            let Some(targs) = self.tree.argument_list(call)? else {
                 continue;
             };
             let Some(first) = self

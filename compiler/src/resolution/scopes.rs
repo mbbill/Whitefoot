@@ -43,21 +43,26 @@ impl ScopeBuild {
 
             let mut child_scopes = vec![current_scope; children.len()];
             match node.production {
-                Production::StructDecl | Production::EnumDecl | Production::ContractDecl => {
+                Production::StructDecl
+                | Production::EnumDecl
+                | Production::FormalDecl
+                | Production::ActualDecl => {
                     // [S20] a nominal declares its own region parameters, and
                     // they are its own: [OWN-3] scopes a region identifier to
                     // the declaration that introduces it, so two nominals may
                     // each write `'s`. Without this the parameters landed in
                     // the compilation unit's scope and the second nominal was
                     // a [TYPE-6] redeclaration of the first's region.
-                    if children.iter().any(|child| {
-                        topology.node(*child).is_some_and(|record| {
-                            matches!(
-                                record.production,
-                                Production::Generics | Production::RegionParams
-                            )
+                    if node.production == Production::FormalDecl
+                        || children.iter().any(|child| {
+                            topology.node(*child).is_some_and(|record| {
+                                matches!(
+                                    record.production,
+                                    Production::Generics | Production::RegionParams
+                                )
+                            })
                         })
-                    }) {
+                    {
                         let generic = build.push_scope(
                             Some(current_scope),
                             ScopeKind::DeclarationGenerics,
@@ -111,6 +116,18 @@ impl ScopeBuild {
                         path.clone(),
                     )?;
                     child_scopes.fill(signature);
+                    for (index, child) in children.iter().enumerate() {
+                        if topology
+                            .node(*child)
+                            .is_some_and(|record| record.production == Production::ContractBlock)
+                        {
+                            child_scopes[index] = build.push_scope(
+                                Some(signature),
+                                ScopeKind::ContractBlock,
+                                path.clone(),
+                            )?;
+                        }
+                    }
                 }
                 Production::LoopStmt => {
                     let label = build.push_scope(

@@ -1,4 +1,4 @@
-contract BorrowedSliceResult {
+formal BorrowedSliceResult {
   fn borrowed['descriptor, 'data](value: &uniq 'descriptor Slice<'data, u8>) -> result: &uniq 'descriptor Slice<'data, u8> pure;
 }
 

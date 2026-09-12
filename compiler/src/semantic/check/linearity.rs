@@ -477,6 +477,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .node_with_path(record.origin().node())
             .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+        if self.tree.production(node)? == Production::Type {
+            let mut application = node;
+            while self.tree.production(application)? != Production::PackUse {
+                application = self
+                    .tree
+                    .parent(application)?
+                    .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+            }
+            for parameter in self.expand_formal_parameters(application)? {
+                if let super::generics::GenericParameter::Type {
+                    declaration: candidate,
+                    bound,
+                } = parameter
+                    && candidate == declaration
+                {
+                    return Ok(match bound {
+                        super::generics::GenericBound::Class(class) => class,
+                        super::generics::GenericBound::Int
+                        | super::generics::GenericBound::Float => LinearityClass::Copy,
+                    });
+                }
+            }
+            return Err(crate::SemanticCompilerFailure::InvalidResolution.into());
+        }
         Ok(self
             .written_linearity_bound(node)?
             .unwrap_or(LinearityClass::Copy))

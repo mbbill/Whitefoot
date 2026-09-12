@@ -147,7 +147,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<CheckedType, CheckStop> {
-        let targs = self.tree.first_child_with(node, Production::Targs)?;
+        let targs = self.tree.argument_list(node)?;
         if let Some(ty) = self.integer_type(node)? {
             if targs.is_some() {
                 return self.issue_node(
@@ -567,7 +567,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(CheckedType, CheckedType), CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return self.issue_node(
                 SemanticRule::Type5,
                 node,
@@ -632,7 +632,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(crate::DeclarationId, CheckedType), CheckStop> {
-        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+        let arguments = match self.tree.argument_list(node)? {
             Some(targs) => self.tree.children_with(targs, Production::Targ)?,
             None => Vec::new(),
         };
@@ -641,12 +641,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let Some(first) = arguments.first()
             && self
                 .tree
-                .first_child_with(*first, Production::Type)?
-                .is_none()
-            && self
-                .tree
-                .first_child_with(*first, Production::Const)?
-                .is_none()
+                .direct_token_with(*first, crate::TerminalPredicate::RegionIdentifier)?
+                .is_some()
         {
             let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
             let ResolvedTarget::Source {
@@ -699,7 +695,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let shape = crate::container_nominal(id)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?
             .shape;
-        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+        let arguments = match self.tree.argument_list(node)? {
             Some(targs) => self.tree.children_with(targs, Production::Targ)?,
             None => Vec::new(),
         };
@@ -708,12 +704,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let Some(first) = arguments.first()
             && self
                 .tree
-                .first_child_with(*first, Production::Type)?
-                .is_none()
-            && self
-                .tree
-                .first_child_with(*first, Production::Const)?
-                .is_none()
+                .direct_token_with(*first, crate::TerminalPredicate::RegionIdentifier)?
+                .is_some()
         {
             let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
             let ResolvedTarget::Source {
@@ -885,7 +877,7 @@ extent's region is one the caller must choose, so it is written at every positio
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<CheckedType, CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return self.issue_node(
                 SemanticRule::Type5,
                 node,
@@ -1988,11 +1980,7 @@ extent's region is one the caller must choose, so it is written at every positio
         // implemented yet: valid under the candidate's eligibility relation
         // only through concrete instances, which this version does not intern
         // from a cvalue.
-        if self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .is_some()
-        {
+        if self.tree.argument_list(node)?.is_some() {
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
         }
         let CheckedType::Nominal(id) = expected else {
@@ -2166,7 +2154,7 @@ extent's region is one the caller must choose, so it is written at every positio
             current = if self.has_fixed(node, FixedTerminal::Array)? {
                 self.tree.first_child_with(node, Production::Type)?
             } else if self.written_type_is_fixed_vector(node)? {
-                match self.tree.first_child_with(node, Production::Targs)? {
+                match self.tree.argument_list(node)? {
                     Some(targs) => {
                         match self.tree.children_with(targs, Production::Targ)?.first() {
                             Some(argument) => {

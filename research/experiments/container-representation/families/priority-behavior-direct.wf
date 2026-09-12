@@ -1,0 +1,225 @@
+struct Ascending {
+}
+
+struct Queue {
+  heap: FixedVector<u64, 16>;
+}
+
+fn exchange_at(heap: &uniq FixedVector<u64, 16>, left: own u64, right: own u64) -> result: own unit reads(heap), writes(heap) contract {
+  requires left < len_of(deref(heap));
+  requires right < len_of(deref(heap));
+  requires head_of(deref(heap)) <= 0_u64;
+  ensures len_of(deref(heap)) == len_of(deref(entry(heap)));
+  ensures room_of(deref(heap)) == room_of(deref(entry(heap)));
+  ensures head_of(deref(heap)) <= 0_u64;
+} {
+  if left == right {
+    return unit;
+  }
+  region {
+    let tail = take_back(vector: &uniq deref(heap));
+    let end = len_of(deref(heap));
+    if left == end {
+      let previous = deref(heap)[right];
+      set deref(heap)[right] = tail;
+      place_back(vector: &uniq deref(heap), value: previous);
+      return unit;
+    }
+    if right == end {
+      let previous = deref(heap)[left];
+      set deref(heap)[left] = tail;
+      place_back(vector: &uniq deref(heap), value: previous);
+      return unit;
+    }
+    let left_value = deref(heap)[left];
+    set deref(heap)[left] = tail;
+    let right_value = deref(heap)[right];
+    set deref(heap)[right] = left_value;
+    let saved_tail = deref(heap)[left];
+    set deref(heap)[left] = right_value;
+    place_back(vector: &uniq deref(heap), value: saved_tail);
+    return unit;
+  }
+}
+
+fn sift_rise(queue: &uniq Queue, count: own u64, env: &Ascending) -> result: own unit reads(queue.heap), writes(queue.heap) contract {
+  requires len_of(deref(queue).heap) == count;
+  requires count >= 1_u64;
+  requires head_of(deref(queue).heap) <= 0_u64;
+  ensures len_of(deref(queue).heap) == count;
+  ensures room_of(deref(queue).heap) == room_of(deref(entry(queue)).heap);
+  ensures head_of(deref(queue).heap) <= 0_u64;
+} {
+  let spare = room_of(deref(queue).heap);
+  region {
+    let at = count - 1_u64;
+    loop @rise (
+      invariant live: at < count,
+      invariant count_low: len_of(deref(queue).heap) >= count,
+      invariant count_high: len_of(deref(queue).heap) <= count,
+      invariant room_low: room_of(deref(queue).heap) >= spare,
+      invariant room_high: room_of(deref(queue).heap) <= spare,
+      invariant origin: head_of(deref(queue).heap) <= 0_u64
+    ) {
+      if at == 0_u64 {
+        return unit;
+      }
+      let before = at - 1_u64;
+      let parent = before / 2_u64;
+      let order = word_compare(env: env, left: &deref(queue).heap[parent], right: &deref(queue).heap[at]);
+      if order <= 0_i32 {
+        return unit;
+      }
+      exchange_at(heap: &uniq deref(queue).heap, left: parent, right: at);
+      set at = parent;
+    }
+    return unit;
+  }
+}
+
+fn sift_sink(queue: &uniq Queue, count: own u64, env: &Ascending) -> result: own unit reads(queue.heap), writes(queue.heap) contract {
+  requires len_of(deref(queue).heap) == count;
+  requires count >= 1_u64;
+  requires head_of(deref(queue).heap) <= 0_u64;
+  ensures len_of(deref(queue).heap) == count;
+  ensures room_of(deref(queue).heap) == room_of(deref(entry(queue)).heap);
+  ensures head_of(deref(queue).heap) <= 0_u64;
+} {
+  let spare = room_of(deref(queue).heap);
+  region {
+    let at = 0_u64;
+    loop @sink (
+      invariant live: at < count,
+      invariant count_low: len_of(deref(queue).heap) >= count,
+      invariant count_high: len_of(deref(queue).heap) <= count,
+      invariant room_low: room_of(deref(queue).heap) >= spare,
+      invariant room_high: room_of(deref(queue).heap) <= spare,
+      invariant origin: head_of(deref(queue).heap) <= 0_u64
+    ) {
+      let doubled = at * 2_u64;
+      let left = doubled + 1_u64;
+      if left >= count {
+        return unit;
+      }
+      let best = left;
+      let right = left + 1_u64;
+      if right < count {
+        let sibling_order = word_compare(env: env, left: &deref(queue).heap[right], right: &deref(queue).heap[left]);
+        if sibling_order < 0_i32 {
+          set best = right;
+        }
+      }
+      let order = word_compare(env: env, left: &deref(queue).heap[at], right: &deref(queue).heap[best]);
+      if order <= 0_i32 {
+        return unit;
+      }
+      exchange_at(heap: &uniq deref(queue).heap, left: at, right: best);
+      set at = best;
+    }
+    return unit;
+  }
+}
+
+fn push(queue: &uniq Queue, value: own u64, env: &Ascending) -> result: own unit reads(queue.heap), writes(queue.heap) contract {
+  requires room_of(deref(queue).heap) >= 1_u64;
+  requires head_of(deref(queue).heap) <= 0_u64;
+  ensures len_of(deref(queue).heap) == len_of(deref(entry(queue)).heap) + 1_u64;
+  ensures room_of(deref(queue).heap) == room_of(deref(entry(queue)).heap) - 1_u64;
+  ensures head_of(deref(queue).heap) <= 0_u64;
+} {
+  region {
+    let entering = len_of(deref(queue).heap);
+    let count = entering + 1_u64;
+    place_back(vector: &uniq deref(queue).heap, value: value);
+    sift_rise(queue: &uniq deref(queue), count: count, env: env);
+    return unit;
+  }
+}
+
+fn pop(queue: &uniq Queue, env: &Ascending) -> minimum: own u64 reads(queue.heap), writes(queue.heap) contract {
+  requires len_of(deref(queue).heap) >= 1_u64;
+  requires head_of(deref(queue).heap) <= 0_u64;
+  ensures len_of(deref(queue).heap) == len_of(deref(entry(queue)).heap) - 1_u64;
+  ensures head_of(deref(queue).heap) <= 0_u64;
+} {
+  region {
+    let last = take_back(vector: &uniq deref(queue).heap);
+    let count = len_of(deref(queue).heap);
+    if count == 0_u64 {
+      return last;
+    }
+    let minimum = deref(queue).heap[0_u64];
+    set deref(queue).heap[0_u64] = last;
+    sift_sink(queue: &uniq deref(queue), count: count, env: env);
+    return minimum;
+  }
+}
+
+fn word_compare(env: &Ascending, left: &u64, right: &u64) -> order: own i32 reads(left, right) contract {
+  ensures order >= -1_i32;
+  ensures order <= 1_i32;
+} {
+  if deref(left) < deref(right) {
+    return -1_i32;
+  }
+  if deref(left) > deref(right) {
+    return 1_i32;
+  }
+  return 0_i32;
+}
+
+fn empty_heap() -> heap: own FixedVector<u64, 16> pure contract {
+  ensures len_of(heap) == 0_u64;
+  ensures head_of(heap) <= 0_u64;
+} {
+  let heap = fixed_vector::<u64, 16>();
+  return move heap;
+}
+
+fn priority_round(seed: own u64, entering: own u64) -> (checksum: own u64, next_state: own u64) pure {
+  let checksum = entering;
+  let state = seed;
+  let heap = empty_heap();
+  let queue = Queue(heap: move heap);
+  let env = Ascending();
+  region {
+    for (
+      index in 0_u64..16_u64,
+      invariant grown: len_of(queue.heap) >= index,
+      invariant spare: room_of(queue.heap) + index >= 16_u64,
+      invariant flat: head_of(queue.heap) <= 0_u64
+    ) {
+      let product = state *wrap 6364136223846793005_u64;
+      set state = product +wrap 1442695040888963407_u64;
+      let value = state % 97_u64;
+      push(queue: &uniq queue, value: value, env: &env);
+    }
+    for (
+      index in 0_u64..16_u64,
+      invariant remaining: len_of(queue.heap) + index >= 16_u64,
+      invariant flat: head_of(queue.heap) <= 0_u64
+    ) {
+      let value = pop(queue: &uniq queue, env: &env);
+      let product = checksum *wrap 1099511628211_u64;
+      set checksum = product +wrap value;
+    }
+    return checksum, state;
+  }
+}
+
+fn priority_trace(seed: own u64, rounds: own u64) -> checksum: own u64 pure {
+  let checksum = 0_u64;
+  let state = seed;
+  for (round in 0_u64..rounds) {
+    set (checksum, state) = priority_round(seed: state, entering: checksum);
+  }
+  return checksum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let trace = priority_trace(seed: 1_u64, rounds: 1_u64);
+  if trace != 16743229412097926756_u64 {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}
