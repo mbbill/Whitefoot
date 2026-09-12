@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review the parallelism subtree and pattern-doctrine with the owner
+
+Nodes: language, language/parallelism, language/parallelism/loop-permission, language/parallelism/permission-judgment, language/pattern-doctrine
+
+Summary: parallelism keeps permission-from-proofs with a reason that no longer leans on optimizer facts, keeps the separation of permission from actualization, drops the no-scheduling-edge decision as a restatement of the root's erasure rule, and drops the decision that automatic discovery of parallelism is not a direction, which the owner ruled out of date, together with its duplicate rejection. loop-permission's one language-level sentence, that a counted loop is a permission site in its own right, moves into parallelism; its remaining reasons were about how the specification text reads, so the node is deleted. permission-judgment is unchanged. pattern-doctrine keeps the closed catalog, the accessible-alternative rule, and the performance-first revision rule; its writer-trial decision folds into the language root's merits-not-cost decision, and its rejected alternative, a duplicate of the first decision's refused alternative, is dropped.
+
 ## 2026-09-12 Review the law decision and the ownership subtree with the owner
 
 Nodes: language/contracts, language/ownership, language/ownership/affine-replacement, language/ownership/copy-classification, language/ownership/no-reborrow, language/ownership/no-reborrow/control-header-temporary-loans, language/ownership/slice-result-provenance

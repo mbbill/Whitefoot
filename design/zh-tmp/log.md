@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 parallelism 子树与 pattern-doctrine
+
+Nodes: language, language/parallelism, language/parallelism/loop-permission, language/parallelism/permission-judgment, language/pattern-doctrine
+
+Summary: parallelism 保留从证明推导许可那条并换上不依赖优化器事实的理由，保留许可与实化分离，删去无调度边那条（树根擦除规则的重复），并按所有者的裁定删去"自动发现并行不是方向"那条已过时的决策及其重复的否决项。loop-permission 唯一属于语言层面的一句（计数循环本身就是许可判定点）并入 parallelism，其余理由讲的是规范条文怎么排版，节点删除。permission-judgment 不变。pattern-doctrine 保留封闭目录、可达替代方案规则和性能优先的修订规则；模型试验那条并入 language 树根的"只看道理不看代价"决策，与第一条 instead of 重复的否决项删去。
+> 通俗解释：并行那组砍掉了两条重复或过时的话，把一个只有一句有用内容的小文件并进父节点；pattern-doctrine 留下真正的设计哲学，把"模型写得费劲不算语言上限"并进了树根那条"只看道理"。
+
 ## 2026-09-12 与所有者一起审阅定律决策与 ownership 子树
 
 Nodes: language/contracts, language/ownership, language/ownership/affine-replacement, language/ownership/copy-classification, language/ownership/no-reborrow, language/ownership/no-reborrow/control-header-temporary-loans, language/ownership/slice-result-provenance
