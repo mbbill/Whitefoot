@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review the checks-and-proofs children with the owner
+
+Nodes: language/checks-and-proofs/certificate-fold, language/checks-and-proofs/obligation-discharge, language/checks-and-proofs/obligation-discharge/goal-decomposition, language/checks-and-proofs/obligation-discharge/loop-fact-retention, language/checks-and-proofs/obligation-discharge/writer-trap-surface, language/checks-and-proofs/requires-entry-contract, language/checks-and-proofs/requires-entry-contract/requirement-enforcement
+
+Summary: certificate-fold keeps its four decisions and loses two rejected alternatives, a compiler-internal dead end and a duplicate of the unsigned-multiplicity decision. obligation-discharge loses the compile-time-rejection decision and the assume-without-check rejection, both restatements of the roots, and absorbs writer-trap-surface's two decisions, the typed-outcome rule against impossible-case branches and the host-resource boundary; writer-trap-surface is deleted with its four claim-era rejected alternatives, which the language root's no-trap rule already covers. goal-decomposition and loop-fact-retention are unchanged. requires-entry-contract's contradictory-requirements decision gets the owner's reason: such an instance is harmless dead code, and rejecting it would require the checker to detect every contradiction, which it cannot promise, whereas allowing it keeps the checker simple. It absorbs requirement-enforcement: call-site proof with no callee prologue merges into the call-site clause decision, the uncontracted entry becomes its own decision, the future-foreign-boundary decision is dropped as design for something that does not exist, and both rejected alternatives move over; requirement-enforcement is deleted. The base64 recognizer rejection goes, covered by the compiler root's rule-not-shape decision.
+
 ## 2026-09-12 Review the language root and checks-and-proofs with the owner
 
 Nodes: language, language/checks-and-proofs

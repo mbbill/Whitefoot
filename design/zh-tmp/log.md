@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 checks-and-proofs 的子节点
+
+Nodes: language/checks-and-proofs/certificate-fold, language/checks-and-proofs/obligation-discharge, language/checks-and-proofs/obligation-discharge/goal-decomposition, language/checks-and-proofs/obligation-discharge/loop-fact-retention, language/checks-and-proofs/obligation-discharge/writer-trap-surface, language/checks-and-proofs/requires-entry-contract, language/checks-and-proofs/requires-entry-contract/requirement-enforcement
+
+Summary: certificate-fold 保留四条决策，删去两条否决项：一条是编译器内部的死胡同，一条与无符号倍数那条决策重复。obligation-discharge 删去编译期拒绝那条决策和 assume-without-check 那条否决项（都是两棵树根的重复），并吸收 writer-trap-surface 的两条决策：反对不可能到达分支的类型化结果规则，以及宿主资源边界；writer-trap-surface 连同它四条 claim 时代的否决项一起删除，language 树根的无陷阱规则已经覆盖它们。goal-decomposition 与 loop-fact-retention 不变。requires-entry-contract 里矛盾要求那条得到了所有者的理由：这样的实例是无害的死代码，而要拒绝它就得要求检查器识别出所有矛盾，这是无法承诺的，允许它反而让检查器保持简单。它吸收了 requirement-enforcement：调用点证明、无被调用者序言并入调用点子句那条，无契约的入口成为一条独立决策，未来外部边界那条作为对不存在之物的设计删除，两条否决项一并移入；requirement-enforcement 删除。base64 识别器那条否决项删去，编译器树根的按规则不按形状已覆盖。
+> 通俗解释：这一组的内容基本都是真规则，改动是去重和合并：删掉和树根重复的、删掉当年 claim 语句的历史、把两个只有几条内容的小文件并进父节点。唯一的实质补充是"前置条件自相矛盾的函数算死代码不报错"这条终于有了真理由：检查器不可能保证认出所有矛盾。
+
 ## 2026-09-12 与所有者一起审阅 language 树根与 checks-and-proofs
 
 Nodes: language, language/checks-and-proofs

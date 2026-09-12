@@ -8,6 +8,4 @@ Decision: A product operand may itself be a product and each fold removes one fi
 
 Rejected:
 - Fold by the operand's known value: rejected because `let stride = width + padding;` gives the product and the certificate different arithmetic at the fold, so nothing matched except a bare parameter stride.
-- Handle equality published as an ordinary fact: rejected because the residual is discharged by the direct route, which does not consult published affine facts, so the equality was present, true, and unreachable.
 - Opaque handle as the binding's representation for every reader: rejected because it closed the fold and broke ordinary premises about the binding, relocating the failures without changing the accepted set.
-- Signed multiplicities: rejected because they need a nonnegativity obligation at the scaling step.
