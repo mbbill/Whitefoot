@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review the law decision and the ownership subtree with the owner
+
+Nodes: language/contracts, language/ownership, language/ownership/affine-replacement, language/ownership/copy-classification, language/ownership/no-reborrow, language/ownership/no-reborrow/control-header-temporary-loans, language/ownership/slice-result-provenance
+
+Summary: The contracts law decision now says what it meant: a conformance that carries laws must discharge every law before the source is accepted, and a law is used only where a specification rule names it, such as the permission for a parallel reduction, because a law proved anywhere else would be a second proof path outside the checker. The ownership subtree was confirmed as real, measured decisions throughout; affine-replacement's slice-and-arena decision loses its clause about a future slice-rebinding design, and control-header-temporary-loans, one decision with one rejected alternative, folds into no-reborrow and is deleted. The shared reason between no-reborrow's call-result provenance and slice-result-provenance stays in both, since they govern different constructs.
+
 ## 2026-09-12 Review contracts, data-model, effects, and name-resolution with the owner
 
 Nodes: language/contracts, language/data-model, language/data-model/container-representation, language/data-model/tag-only-equality, language/effects, language/name-resolution

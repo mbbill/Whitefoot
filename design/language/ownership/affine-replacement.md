@@ -2,7 +2,7 @@ Decision: `replace` is a let-only form in which the replacement value enters and
 
 Decision: Element-level vacancy is a value, an Option-shaped element checked by ordinary match, and never a checker state, because per-place flow-sensitive type states are exactly what the simplified ownership calculus excludes and vacancy would otherwise leak into every boundary signature, instead of typed holes tracked across program points.
 
-Decision: Whole-binding replace of slice- and arena-typed places is rejected, because it would break the static origin sets and confinement those types carry, and a future need for slice rebinding is a separate origin-set design rather than a relaxation, instead of admitting replace on every affine place.
+Decision: Whole-binding replace of slice- and arena-typed places is rejected, because it would break the static origin sets and confinement those types carry, instead of admitting replace on every affine place.
 
 Rejected:
 - A bare take that is legal when the checker proves the hole is refilled before scope end: rejected because a hole open across statements needs per-place vacancy flow, prohibition or repair of every scope-leaving edge in the window, and a meaning for an exclusive borrow over a vacant referent, buying only a use-then-refill window neither consumer needs.

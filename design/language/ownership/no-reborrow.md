@@ -4,5 +4,8 @@ Decision: A bounded family of reborrows is admitted, a statement-scoped child as
 
 Decision: A call result may be bound as a borrow holder only when the signature alone determines its provenance, exactly one parameter of the result's kind naming the result's region, because a summary derived from the callee's body would make callable contracts depend on implementations and need fixed points over recursive call groups, instead of body-derived provenance.
 
+Decision: A completed owned-enum match header or exact owned-Boolean conditional header ends only the call-scoped temporary loans that header created, before the selected arm or branch, because retaining them for the whole statement blocked sequential typed acquisition through a retained unique provider after the owned header value had completed, while non-escape and completed-access checks permit the narrower endpoint without weakening exclusivity, instead of whole-statement retention of header loans.
+
 Rejected:
 - Strict no-reborrow, with exclusive access flowing only by linear threading or restructuring: rejected because about a thousand sites that hand a borrow through to a callee forced the compiler into threading owned values in place of borrows, a shape the language does not teach, while the bounded child form preserves the no-alias facts; harder reborrow forms remain deferred rather than admitted.
+- Every header-created child reborrow living through the complete enclosing statement including every arm: rejected because it blocked sequential typed acquisition through a retained unique provider after the header value had completed.

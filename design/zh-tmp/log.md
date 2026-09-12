@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅定律决策与 ownership 子树
+
+Nodes: language/contracts, language/ownership, language/ownership/affine-replacement, language/ownership/copy-classification, language/ownership/no-reborrow, language/ownership/no-reborrow/control-header-temporary-loans, language/ownership/slice-result-provenance
+
+Summary: contracts 的定律决策现在说的是它本来的意思：带定律的 conformance 必须证明每一条定律源码才被接受，而定律只在规范规则指名的地方使用，例如并行归约的许可，因为在别处证明的定律是检查器之外的第二条证明路径。ownership 子树全部确认为真实的、有测量的决策；affine-replacement 的 slice 与 arena 那条去掉了关于未来 slice 重绑定设计的半句，control-header-temporary-loans 只有一条决策和一条否决项，并入 no-reborrow 后删除。no-reborrow 的调用结果来源与 slice-result-provenance 共用的理由两处都保留，因为它们管的是不同的构造。
+> 通俗解释：定律那条改成了大白话能看懂的版本；ownership 这一组质量最高，只删了一句"将来再说"的话、把一个单条文件并入父节点。
+
 ## 2026-09-12 与所有者一起审阅 contracts、data-model、effects 与 name-resolution
 
 Nodes: language/contracts, language/data-model, language/data-model/container-representation, language/data-model/tag-only-equality, language/effects, language/name-resolution
