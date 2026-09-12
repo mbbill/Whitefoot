@@ -162,6 +162,74 @@ $(MODULE_CONTROL): FORCE
 	@cmp -s $@.new $@ || mv -f $@.new $@
 	@rm -f $@.new
 
+# ------------------------------------------------- the twin's own sources --
+# The fourth handle, and the only one that changes WHERE the twin's Whitefoot
+# side comes from rather than what is appended to its build. The three control
+# variables above answer "what would this flag be worth here" from one tree;
+# these three answer "what would the tree this branch started from read here",
+# which is the question a regression check asks. They name the twin's four
+# Whitefoot runtime sources and the compiler that emits its `--par` module:
+#
+#   WF_B_SCHED_DIR  the directory holding core.c, prim_host.c and entry.c
+#   WF_B_FLOOR      the wf_floor.c translation unit
+#   WF_B_WFC        the whitefootc binary that emits the twin's module
+#
+# Each DEFAULTS TO THIS TREE'S OWN, so a bundle that sets none of them is the
+# bundle that was here before: the twin is built from the same sources as the
+# plain image and only a control flag can separate them. Pointing any of the
+# three at another checkout -- a worktree of the merge-base, exported outside
+# the repository -- builds the twin from that tree's runtime and that tree's
+# emission and times it against this tree's `wf` in the same passes, which is
+# what `.github/workflows/compute-regression.yml` runs. The plain image reads
+# none of them: `wf` is always this tree's program.
+#
+# This is ONE BUILD PATH, not a second one. The baseline twin is the twin the
+# controls already built, handed different inputs; every rule, link line and
+# assertion below is the same rule, link line and assertion.
+WF_B_SCHED_DIR ?= $(SCHED)
+WF_B_FLOOR     ?= $(FLOOR)
+WF_B_WFC       ?= $(WFC)
+
+# What the twin was built from, for manifest.txt: the merge-base revision on a
+# regression run, and the words below when the twin's sources are this tree's.
+# It is a label and reaches no compile, so changing it re-emits nothing.
+WF_B_SOURCE ?=
+
+# Set when any of the three points somewhere other than this tree. It joins
+# the three control flags in $(AB) below, so naming a baseline is by itself
+# enough to ask for the twin -- a regression run sets no control flag and must
+# still get a second image.
+BASELINE := $(if $(filter-out $(SCHED),$(WF_B_SCHED_DIR)),1,)$(if $(filter-out $(FLOOR),$(WF_B_FLOOR)),1,)$(if $(filter-out $(WFC),$(WF_B_WFC)),1,)
+
+# The stamp that makes a changed baseline rebuild the twin, exactly as the
+# three control stamps make a changed flag rebuild it. A path alone would not
+# do it: two runs can name the same directory with different bytes in it -- a
+# second regression run against a moved merge-base is precisely that -- and
+# make would compare timestamps against sources it had never seen. So the
+# stamp carries the CONTENT HASH of the twin's inputs, and the twin's module
+# and its four runtime objects depend on it: different baseline bytes,
+# different stamp, re-emitted module and recompiled runtime. Identical bytes
+# under another path rebuild nothing, which is right -- that is the same build.
+#
+# It hashes every `.c` and `.h` of the scheduler directory rather than the
+# three units the link takes, because those three include the directory's
+# headers and a header is exactly what a rule listing source files alone would
+# miss. The probe and smoke units are hashed too and compile into nothing; the
+# cost of that over-approximation is a twin rebuilt when it need not have been,
+# which is the side of this trade to be wrong on.
+BASELINE_STAMP := $(BUILD)/baseline-source.txt
+$(BASELINE_STAMP): FORCE
+	@mkdir -p $(BUILD)
+	@test -f $(WF_B_SCHED_DIR)/core.c && test -f $(WF_B_SCHED_DIR)/prim_host.c \
+	  && test -f $(WF_B_SCHED_DIR)/entry.c && test -f $(WF_B_FLOOR) \
+	  && test -x $(WF_B_WFC) || { \
+	    echo 'compute-bench: the twin sources named by WF_B_SCHED_DIR, WF_B_FLOOR and' >&2; \
+	    echo 'WF_B_WFC must all exist; the defaults are this tree'"'"'s own.' >&2; exit 1; }
+	@$(SHA256) $(WF_B_SCHED_DIR)/*.c $(WF_B_SCHED_DIR)/*.h $(WF_B_FLOOR) $(WF_B_WFC) \
+	  | awk '{ print $$1 }' > $@.new
+	@cmp -s $@.new $@ || mv -f $@.new $@
+	@rm -f $@.new
+
 # ---------------------------------------------------------------- the twin --
 # The A/B instrument. Either control above answers "what would this be worth
 # here", and on a host whose run-to-run spread is wider than the effect being
@@ -186,11 +254,16 @@ $(MODULE_CONTROL): FORCE
 # exactly what the controls say.
 #
 # A table with a `wf-b` row is an A/B instrument and is NEVER recorded as a
-# plain table; the hosted workflow sets none of the three variables and
-# therefore never builds a twin. Leaving all three empty leaves the bundle as it
+# plain table; the record-only workflow sets none of these variables and
+# therefore never builds a twin. Leaving them all empty leaves the bundle as it
 # was: one image per kernel, one `wf` row, no extra build and no extra process.
+#
+# $(BASELINE) is in the list because naming another tree's runtime or compiler
+# through WF_B_SCHED_DIR, WF_B_FLOOR or WF_B_WFC above is by itself a request
+# for the twin: a regression run sets no control flag and must still get its
+# second image.
 WF_AB ?=
-AB := $(if $(strip $(WF_PAR_CONTROL_FLAGS)$(WF_RUNTIME_CONTROL_FLAGS)$(WF_MODULE_CONTROL_FLAGS)$(WF_AB)),1,)
+AB := $(if $(strip $(WF_PAR_CONTROL_FLAGS)$(WF_RUNTIME_CONTROL_FLAGS)$(WF_MODULE_CONTROL_FLAGS)$(WF_AB)$(BASELINE)),1,)
 
 KERNELS ?= mandelbrot quadrature records fir
 PASSES ?= 5
@@ -293,9 +366,18 @@ $$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll $$(WFC) | compiler
 # own name, so the plain module above can never be emitted under a control
 # flag. The symbol renames are identical because the two modules never meet in
 # one image.
-$$(BUILD)/$(1)-par-b.ll: programs/$(1).wf $(1)_host.ll $$(WFC) $$(PAR_CONTROL) | compiler
+#
+# It is emitted by $(WF_B_WFC), which is this tree's compiler unless a baseline
+# named another one, so a regression run compares this tree's emission against
+# the merge-base's rather than running both arms through one emitter. The
+# source is this tree's either way: a language change that moved a kernel's
+# .wf source has to be measured on the source the branch ships, and the
+# baseline compiler either accepts it or the run says so. $(BASELINE_STAMP)
+# carries the content hash of that compiler, so a moved baseline re-emits.
+$$(BUILD)/$(1)-par-b.ll: programs/$(1).wf $(1)_host.ll $$(WF_B_WFC) $$(PAR_CONTROL) \
+                         $$(BASELINE_STAMP) | compiler
 	@mkdir -p $$(BUILD)
-	$$(WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par-b.ledger
+	$$(WF_B_WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par-b.ledger
 	sed -e 's/@main(/@wfb_$(1)_par_main(/g' \
 	    -e 's/@wf__main_body(/@wfb_$(1)_par_body(/g' $$@.raw > $$@
 	sed -e 's/@wf_bench_$(1)(/@wf_bench_$(1)_par(/' \
@@ -357,16 +439,18 @@ $(BUILD)/sched_prim_host.o: $(SCHED)/prim_host.c
 $(BUILD)/sched_entry.o: $(SCHED)/entry.c
 	$(CC) $(WF_FLAGS) -c $< -o $@
 
-# The twin's four, the same sources with the runtime control appended and the
-# stamp that re-compiles them when its value changes.
-$(BUILD)/floor-b.o: $(FLOOR) $(RUNTIME_CONTROL) $(MODULE_CONTROL)
+# The twin's four. The same four translation units, read from $(WF_B_SCHED_DIR)
+# and $(WF_B_FLOOR) -- this tree's own unless a baseline named another tree --
+# with the runtime control appended and the two stamps that recompile them when
+# a control value or the baseline's bytes change.
+$(BUILD)/floor-b.o: $(WF_B_FLOOR) $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
 	@mkdir -p $(BUILD)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_core-b.o: $(SCHED)/core.c $(RUNTIME_CONTROL) $(MODULE_CONTROL)
+$(BUILD)/sched_core-b.o: $(WF_B_SCHED_DIR)/core.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_prim_host-b.o: $(SCHED)/prim_host.c $(RUNTIME_CONTROL) $(MODULE_CONTROL)
+$(BUILD)/sched_prim_host-b.o: $(WF_B_SCHED_DIR)/prim_host.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_entry-b.o: $(SCHED)/entry.c $(RUNTIME_CONTROL) $(MODULE_CONTROL)
+$(BUILD)/sched_entry-b.o: $(WF_B_SCHED_DIR)/entry.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
 
 $(BUILD)/%_bench.o: %_bench.c harness.h backend.h $(BUILD)/%_split.h
@@ -599,6 +683,11 @@ compare: build
 	  echo "WF_RUNTIME_CONTROL_FLAGS: $(WF_RUNTIME_CONTROL_FLAGS)"; \
 	  echo "WF_MODULE_CONTROL_FLAGS: $(WF_MODULE_CONTROL_FLAGS)"; \
 	  echo "WF_AB_TWIN: $(if $(AB),yes (the wf-b row; the wf row is plain),no)"; \
+	  echo "WF_B_SOURCE: $(if $(strip $(WF_B_SOURCE)),$(strip $(WF_B_SOURCE)),$(if $(BASELINE),unlabelled (WF_B_SOURCE was not set),this tree))"; \
+	  test -z "$(BASELINE)" || echo "WF_B_SCHED_DIR: $(WF_B_SCHED_DIR)"; \
+	  test -z "$(BASELINE)" || echo "WF_B_FLOOR: $(WF_B_FLOOR)"; \
+	  test -z "$(BASELINE)" || echo "WF_B_WFC: $(WF_B_WFC)"; \
+	  test -z "$(AB)" || sed 's/^/WF_B_SOURCE_SHA256: /' $(BASELINE_STAMP); \
 	  echo "RFLAGS: $(RFLAGS)"; \
 	  echo "BENCH_ARCH: $(BENCH_ARCH)"; \
 	  echo "pins: oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0"; \
@@ -660,6 +749,7 @@ compare: build
 	    -v parcontrol="$(WF_PAR_CONTROL_FLAGS)" \
 	    -v runtimecontrol="$(WF_RUNTIME_CONTROL_FLAGS)" \
 	    -v modulecontrol="$(WF_MODULE_CONTROL_FLAGS)" \
+	    -v bsource="$(if $(BASELINE),$(if $(strip $(WF_B_SOURCE)),$(strip $(WF_B_SOURCE)),unlabelled),)" \
 	    -v pins="oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0" \
 	    $(RESULTS)/raw.tsv | tee $(RESULTS)/table.txt
 	@set -e; for k in $(KERNELS); do $(SHA256) $(BUILD)/$$k $(BUILD)/$$k-par.ll $(BUILD)/$$k-seq.ll; \
