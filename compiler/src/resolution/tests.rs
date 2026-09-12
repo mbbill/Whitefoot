@@ -482,7 +482,7 @@ fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
             issue.kind(),
             ResolutionIssueKind::ReservedName {
                 spelling,
-                declaration_role: ReservedDeclarationRole::Let,
+                declaration_role: ReservedDeclarationRole::ContractDefinition,
                 ..
             } if spelling == "cvt"
         ));
@@ -1012,6 +1012,7 @@ conform u64: Task {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("a system operation must not bind a contract member: {outcome:?}");
         };
+        assert_eq!(issue.rule(), ResolutionRule::Fn3);
         assert!(matches!(
             issue.kind(),
             ResolutionIssueKind::UnresolvedUse { spelling, available, .. }

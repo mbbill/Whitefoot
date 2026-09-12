@@ -379,7 +379,10 @@ fn use_rule(role: LexicalUseRole) -> ResolutionRule {
         LexicalUseRole::Const => ResolutionRule::Const1,
         LexicalUseRole::ConstValue => ResolutionRule::Const2,
         LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee => ResolutionRule::Op1,
-        LexicalUseRole::FunctionBinding => ResolutionRule::Fn4,
+        // The right IDENT of an `fn_bind` resolves under FN-3's own text and
+        // the specification's citation table names FN-3 for it; FN-4 owns
+        // only law discharge.
+        LexicalUseRole::FunctionBinding => ResolutionRule::Fn3,
         LexicalUseRole::GenericNumericSuffix => ResolutionRule::Form5,
         LexicalUseRole::InvariantValue => ResolutionRule::Inv1,
         LexicalUseRole::ProofValue => ResolutionRule::Prf1,
