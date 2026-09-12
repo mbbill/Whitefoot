@@ -116,15 +116,21 @@ static int lanes;
  * and 34644579271) read within the instrument's one-percent lean at W=4 on
  * every runner whose lanes ran evenly. An eight-CPU Apple M1 Pro is where the
  * work term was binding: it afforded mandelbrot 16 chunks at W=8 as at W=4, so
- * the W=8 wall was the W=4 wall (5,441 against 5,411 us) while tbb read 3,440,
- * and the twin built at 150,000 with the cap at 32 read mandelbrot W=8
- * 0.692 [0.65-0.75] with five of five pairs lower and records W=8 0.965 with
- * four of five, at a W=4 cost in CPU alone (paired cpu 1.189 on mandelbrot,
- * 1.177 on fir, wall within 1.5 percent). 150,000 is therefore the value: for
- * these sizes it leaves the count to the cap at every width from four lanes
- * up, and the cap stays at 16 per lane, which halves the W=4 chunk count the
- * twin paid for (research/investigations/compute-runtime/RESULTS.md, the
- * idle-window sections and the M1 Pro grain twin).
+ * eight lanes bought nothing over four. In the grain twin's own table that
+ * runtime reads 5,441 us at W=8 against 5,506 at W=4 while tbb reads 3,440 at
+ * W=8; the window twin's table, taken on the same host, reads the same shape
+ * more flatly still at 5,412 against 5,411. The twin built at 150,000 with the
+ * cap at 32 read mandelbrot W=8 0.692 [0.65-0.75] with five of five pairs
+ * lower and records W=8 0.965 with four of five, at a W=4 cost in CPU alone
+ * (paired cpu 1.189 on mandelbrot, 1.177 on fir, wall within 1.5 percent).
+ * 150,000 is therefore the value, and the cap stays at 16 per lane, which
+ * halves the W=4 chunk count the twin paid for. What that leaves, for these
+ * sizes: records and fir are cap-bound at every width through 32 -- 64 chunks
+ * at W=4, 128 at W=8, 256 at W=16, 512 at W=32 -- and mandelbrot is cap-bound
+ * at W=4 and W=8 at 64 and 128, then work-term-bound at 128 from W=16 up,
+ * where its 143 affordable chunks fall below the cap
+ * (research/investigations/compute-runtime/RESULTS.md, the idle-window
+ * sections and the M1 Pro grain twin).
  *
  * WF_SPLIT_WORK overrides it per process for diagnosis; the scoreboard's
  * harness unsets that variable so a recorded row can never be taken under one.

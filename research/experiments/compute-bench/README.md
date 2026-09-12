@@ -457,13 +457,15 @@ and is never inside a measured interval.
 
 ## Sizes, chunk counts and the sizing window
 
-Each kernel has exactly one size constant. It is chosen from the chunk count the
-Whitefoot loop must reach at the highest width the table records, subject to two
-bounds: the `wf-seq` median at width one lands in **[5 ms, 60 ms]**, and the `wf`
-median at the highest recorded width stays **above 1 ms**, so fork, join and
-dispatch cannot dominate the thing being compared. It is never chosen from the
-minimum admission threshold: a loop that is merely admitted may still get two
-chunks.
+Each kernel has exactly one size constant. It is chosen so the Whitefoot loop
+reaches a chunk count worth timing at the highest width the table records,
+subject to two bounds: the `wf-seq` median at width one lands in **[5 ms,
+60 ms]**, and the `wf` median at the highest recorded width stays **above
+1 ms**, so fork, join and dispatch cannot dominate the thing being compared. It
+is never chosen from the minimum admission threshold: a loop that is merely
+admitted may still get two chunks. Which of the two terms in the rule below
+actually sets a count depends on the work unit the runtime ships; at the
+current one it is mostly the cap, as the note under the table says.
 
 The compiler splits an independent map into `2^budget` chunks with
 
@@ -472,14 +474,27 @@ chunks = 2^floor(log2(min(16 * lanes, span / ceil(150,000 / weight))))
 ```
 
 so the oversubscription term scales with the width, and the result is rounded
-**down** to a power of two — seventeen affordable chunks are sixteen chunks.
+**down** to a power of two — 143 affordable chunks are 128 chunks.
 
-| kernel | shipped size | emitted weight | chunks W=2 | chunks W=4 | chunks W=8 | reference chunks |
-|---|---|---|---|---|---|---|
-| mandelbrot | 98,304 points, limit 256, shape `trailing` | 219 | 16 | 16 | 16 | 1,536 at grain 64 |
-| records | 131,072 records, `max_length` 255, shape `unicode` | 812 | 32 | 64 | 64 | 8,192 at grain 16 |
-| fir | K=64 taps, N=524,288 outputs | 150 | 32 | 64 | 64 | 2,048 at grain 256 |
-| quadrature | M=64 integrations, tol `0x1p-54`, depth 24 | none | n/a | n/a | n/a | frontier depth 8 |
+The `affordable` column below is the work term alone, `span / ceil(150,000 /
+weight)`; the per-width columns are the whole formula.
+
+| kernel | shipped size | emitted weight | affordable | W=2 | W=4 | W=8 | W=16 | W=32 | reference chunks |
+|---|---|---|---|---|---|---|---|---|---|
+| mandelbrot | 98,304 points, limit 256, shape `trailing` | 219 | 143 | 32 | 64 | 128 | 128 | 128 | 1,536 at grain 64 |
+| records | 131,072 records, `max_length` 255, shape `unicode` | 812 | 708 | 32 | 64 | 128 | 256 | 512 | 8,192 at grain 16 |
+| fir | K=64 taps, N=524,288 outputs | 150 | 524 | 32 | 64 | 128 | 256 | 512 | 2,048 at grain 256 |
+| quadrature | M=64 integrations, tol `0x1p-54`, depth 24 | none | n/a | n/a | n/a | n/a | n/a | n/a | frontier depth 8 |
+
+**Which term binds, and therefore what a size constant still controls.** At the
+shipped work unit of 150,000 the oversubscription cap `16 * lanes` is the
+binding term for all three maps at W=2, W=4 and W=8, and for records and fir at
+W=16 and W=32 as well; only mandelbrot returns to the work term, from W=16 up,
+where its 143 affordable chunks sit under the cap and hold the count at 128. So
+at the widths a four- or eight-CPU host records, these counts follow the lane
+count rather than the size: a size step moves one only where it drops the
+affordable count below the cap. The size constants therefore stand on the two
+window bounds alone, and they are unchanged.
 
 **`max_length` is 255, not 256, and that is a contract bound rather than a
 transcription slip.** `summarize_records` in `programs/records.wf` carries
@@ -509,8 +524,11 @@ the levels below which that component runs its sequential clone.
 the `wf-seq` median inside [5 ms, 60 ms], the `wf` median above 1 ms at the
 recorded width, and `steals > 0` on the `wf` row at every parallel width. If a
 bound fails, change that one size constant by the smallest power-of-two step
-that fixes it, re-derive the chunk count from the formula, and record the new
-count here and in the table header. Nothing else moves.
+that fixes it, re-derive the chunk count from the formula — the affordable
+column and every width column — and record the new counts here and in the
+table header. A step may leave the recorded counts unchanged, because the cap
+binds below W=16; record what the formula gives either way. Nothing else
+moves.
 
 **The window was confirmed on the first host to record a table**, a
 four-logical-CPU `x86_64` Linux machine with mask `0-3`, on 2026-09-11 at
@@ -705,16 +723,20 @@ in the old bundle is comparable with anything here, and its tile form is not
 carried.**
 
 **mandelbrot** — loop with imbalance, timed on the `trailing` shape where the
-interior points come last. Granularity, not the dispatcher, decides this row: at
-65,536 points plain `--par` emits eight chunks at every width, which on
-`trailing` is exactly two heavy chunks and a 2x ceiling no lane count can lift.
-98,304 points is the middle of the band that yields sixteen chunks, and the
-sizing window caps it there — thirty-two chunks would need 175,360 points and
-about 80 ms of `wf-seq`, outside [5 ms, 60 ms]. **At W=8 those sixteen chunks
-are four heavy chunks over eight lanes, which is a property of the fixture**,
-and this block says so rather than letting a reader take sixteen chunks for a
-scheduling result. The `static` row here is a strong **regular-work** reference
-and not a dynamic scheduling ceiling for skew — which is exactly why the skewed
+interior points come last. Granularity, not the dispatcher, decides this row,
+and which term sets the granularity has changed. Under the work unit of
+1,200,000 this fixture could afford only 17 chunks, so `--par` emitted 16 at
+every width — on `trailing` that is four heavy chunks, and at W=8 a ceiling no
+lane count could lift; an eight-CPU host's W=8 wall equalled its W=4 wall
+there, which is why the work unit moved to 150,000 (the scheduler's own note
+beside `WF_PAR_SPLIT_WORK_UNIT`). At 150,000 the same 98,304 points afford 143,
+so the count follows the lanes: 32 chunks at W=2, 64 at W=4, 128 at W=8, and
+128 again at W=16 and W=32, where the work term binds. The size constant did
+not move; it stands on the [5 ms, 60 ms] `wf-seq` window. **At W=8 the heavy
+interior quarter lands in 32 of those 128 chunks, four per lane, which is a
+property of the fixture**, and this block says so rather than letting a reader
+take a chunk count for a scheduling result. The `static` row here is a strong
+**regular-work** reference and not a dynamic scheduling ceiling for skew — which is exactly why the skewed
 shape is the timed one — and its medians in the old bundle carried
 multi-millisecond excursions with 65-117 involuntary context switches.
 **Excursions are retained, never discarded**: there is no outlier removal and no

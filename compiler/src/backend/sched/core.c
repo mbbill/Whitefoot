@@ -18,16 +18,30 @@
  * HOW OFTEN is a count of misses, and it is unchanged. A lane should not pay
  * for a sleep in order to save less than the sleep costs, so the count is only
  * meaningful against what a round costs and what a park costs, and both are
- * measured by wake_probe.c on the host the choice is made for. On the four-CPU
- * Linux development host that probe reads a park-and-wake of 16.3 us -- the
- * median of seven runs of 2,000 alternating parks through this file's own
- * wf__par_signal and wf_prim_wait_sleep -- and one wf__par_find round at
- * 18.9 ns uncontended at four lanes, so 1,024 rounds is about 19.4 us. A
- * monotonic clock read costs far more than a round, so the window below is
- * sampled once per 1,024 rounds and this count is now the window's resolution
- * rather than the whole of a lane's patience. Re-measure both numbers before
- * moving it: a change that makes a round cheaper shortens the sampling
- * interval by the same factor and is not a separate variable.
+ * measured by wake_probe.c on the host the choice is made for. Re-measured at
+ * this revision on 2026-09-12, on a four-CPU Linux development host, that
+ * probe reads a park-and-wake of 10.3 us -- the median of seven runs of 2,000
+ * alternating parks through this file's own wf__par_signal and
+ * wf_prim_wait_sleep -- and a spin-round floor of 11.6 ns, the median of the
+ * same seven runs, uncontended at four lanes, so 1,024 rounds is about 11.9
+ * us. (The reading this comment carried before, taken on 2026-09-11 on another
+ * machine of that class, was 16.3 us and 18.9 ns, about 19.4 us for 1,024
+ * rounds. The probe is run per host rather than inherited for exactly that
+ * spread.)
+ *
+ * What the round figure is: the probe times wf__par_find alone, the FULL SCAN,
+ * which is the round of a lane that has not yet reached the first spin bound.
+ * It brackets a real round rather than equalling one. A real round also issues
+ * wf_prim_spin_hint(), which the probe does not, so an ungated round costs
+ * somewhat more than the floor; and past the first bound inside the window the
+ * publish epoch below replaces the scan with a single counter load, so a gated
+ * round costs less. Both regimes are far below a monotonic clock read, which is
+ * why the window below is sampled once per 1,024 rounds and this count is now
+ * the window's resolution rather than the whole of a lane's patience. It is
+ * also why a changed round cost is not a separate variable: the window is
+ * measured on the clock, so a cheaper or dearer round moves the sampling
+ * interval and not how long a lane stays hot. Re-measure both numbers before
+ * moving the count.
  *
  * HOW LONG is a time, and it depends on whether the pool fits the machine.
  * On the hosted ubuntu-24.04 runners -- two cores, two SMT siblings each, four
@@ -94,10 +108,18 @@
  *
  * Each spin round also issues the hardware hint an SMT sibling needs from its
  * partner: wf_prim_spin_hint() is YieldProcessor() on Windows -- _mm_pause on
- * x86 and x64, a store barrier plus yield on arm -- and, since the same
- * hosted evidence, `pause` on x86 and `yield` on aarch64 for the POSIX hosts
- * too (prim.h); before that a POSIX spin round emitted no pause at all, which
- * is the tightest loop an SMT sibling can be asked to share a core with.
+ * x86 and x64, a store barrier plus yield on arm -- and `pause` on x86 and
+ * `yield` on aarch64 for the POSIX hosts too (prim.h); before that a POSIX
+ * spin round emitted no pause at all, which is the tightest loop an SMT
+ * sibling can be asked to share a core with. That hint is REASONED AND
+ * UNMEASURED IN ISOLATION: no twin separates it from anything else, and the
+ * hosted evidence above measured the window, not the hint. What stands behind
+ * it is the structure of the host -- a lane spinning on one of these two-core,
+ * four-CPU SMT runners shares a core with a sibling that needs the spinning
+ * partner to release issue slots -- and the cost of being wrong is one
+ * instruction a round. It landed with the window because that is the work that
+ * put lanes in a spin loop for a millisecond at a time, not because a reading
+ * selected it.
  *
  * The scheduler probes compile this file with WF_SCHED_TEST and hold native
  * threads at the park protocol's own race windows -- wf_sched_test_before_wait
@@ -137,28 +159,57 @@
  * size: a range too small to be worth splitting stays bounded by the work term
  * however much oversubscription this allows.
  *
- * What is known about 16, which arrived with the splitter: on the compute
- * scoreboard it is the BINDING term for two of the three map kernels at the
- * widths that host records. At weight 812 over
- * 131,072 records and weight 150 over 524,288 outputs the work term affords
- * far more chunks than `16 * lanes`, so records and fir read exactly 32 chunks
- * at two lanes and 64 at four -- the cap, not the grain -- which is why the
- * work unit's own sweep could not move either row at either width
+ * What is known about 16, which arrived with the splitter: at the work unit
+ * entry.c now carries, 150,000, it is the BINDING term for all three of the
+ * compute scoreboard's map kernels at the widths a four- or eight-CPU host
+ * records. The work term affords mandelbrot 143 chunks (weight 219 over 98,304
+ * points), records 708 (weight 812 over 131,072 records) and fir 524 (weight
+ * 150 over 524,288 outputs), so every one of them reads 32 chunks at two
+ * lanes, 64 at four and 128 at eight: the cap, not the grain. Past that the
+ * two large maps stay on the cap -- records and fir read 256 at sixteen lanes
+ * and 512 at thirty-two -- while mandelbrot's work term binds again from
+ * sixteen lanes up and holds it at 128. So for these sizes this cap IS the
+ * grain at the recorded widths, and it is no longer slack anywhere below
+ * sixteen lanes. (Until 2026-09-12 the work unit was 1,200,000, and the
+ * division was the other way: records and fir were cap-bound at 32 and 64
+ * while mandelbrot could afford only 17 chunks, so its 16 were the grain --
+ * which is why the work unit's own sweep could not move the records or fir row
+ * at either width. That remains a true statement about those runs
  * (research/investigations/compute-runtime/RESULTS.md, the split work unit
- * swept against the Mandelbrot grain). Mandelbrot is the opposite case: at
- * weight 219 over 98,304 points the work term affords 17, so its 16 chunks are
- * the grain and this cap is slack there; against it oneTBB's auto_partitioner
- * hands the same skewed map out as about 1,536 callbacks.
+ * swept against the Mandelbrot grain).) Against any of these counts oneTBB's
+ * auto_partitioner hands the same skewed mandelbrot map out as about 1,536
+ * callbacks.
  *
- * It was swept and it does not move. The compute scoreboard ran three
- * candidate pairs against the shipped runtime through its A/B twin -- the cap
- * and the work unit raised together, so mandelbrot's chunk count could pass its
- * own cap rather than stop at it -- one `compare PASSES=5 CALLS=5` each on the
- * four-CPU Linux development host, the plain image byte-identical in all three.
- * The chunk counts moved exactly as the rule predicts: (64, 300,000) gave
- * mandelbrot 64 chunks at every width with records and fir at 128/256/256,
- * (256, 75,000) gave 256 with 512/1024/1024, and (1024, 20,000) gave 1,024
- * with records 2048/4096/4096 and fir 2,048 at every width. The acceptance was
+ * What keeps the cap at 16 now that it is the binding term is the M1 Pro grain
+ * twin of 2026-09-11, the run that moved the work unit
+ * (research/investigations/compute-runtime/RESULTS.md, the M1 Pro grain twin;
+ * its `wf-b` arm was built -DWF_PAR_SPLIT_WORK_UNIT=150000
+ * -DWF_PAR_SPLIT_OVERSUBSCRIBE=32). That arm and the runtime now shipped agree
+ * on mandelbrot at W=8: a cap of 32 per lane wants 256 chunks there and only
+ * 143 are affordable, so both give 128, and the 0.692 [0.65-0.75] with five of
+ * five pairs lower that the twin read at W=8 is what the work unit alone now
+ * buys. Where they differ is W=4 -- 128 chunks against the 64 this cap allows
+ * -- and that is the width the twin charged for: paired CPU 1.189 on
+ * mandelbrot and 1.177 on fir to buy wall inside 1.5 percent either way (1.015
+ * and 0.998), three to four percent of process CPU for nothing at the width a
+ * four-CPU table records. The twin moved both terms at once, so those figures
+ * price the finer grain as a whole rather than the cap alone; what stands
+ * against 32 is that the only reading of a 32-per-lane build spends CPU at W=4
+ * and returns nothing at W=8 that a 16-per-lane build does not already return,
+ * while the hosted four-CPU twin that reached only the 64 chunks this cap
+ * allows (run 34630112178) read neutral at W=4. So the cap stays at 16 and the
+ * work unit is what moved.
+ *
+ * It was also swept directly, and that sweep selects nothing. The compute
+ * scoreboard ran three candidate pairs against the shipped runtime through its
+ * A/B twin -- the cap and the work unit raised together, so mandelbrot's chunk
+ * count could pass its own cap rather than stop at it -- one
+ * `compare PASSES=5 CALLS=5` each on the four-CPU Linux development host, the
+ * plain image byte-identical in all three. The chunk counts moved exactly as
+ * the rule predicts: (64, 300,000) gave mandelbrot 64 chunks at every width
+ * with records and fir at 128/256/256, (256, 75,000) gave 256 with
+ * 512/1024/1024, and (1024, 20,000) gave 1,024 with records 2048/4096/4096 and
+ * fir 2,048 at every width. The acceptance was
  * mandelbrot's W=4 `wf-b/wf` wall below 1.000 with at least four of five
  * paired passes lower, no kernel reproducibly worse at W=2 or W=4, W=4 paired
  * CPU no worse than 1.05, and W=1 unchanged. It read 0.999 (3/5), 0.992 (3/5)
@@ -170,10 +221,11 @@
  * a 0/5-lower reading, which is the one thing a within-pass twin cannot remove:
  * the two images differ in bytes and therefore in code placement, this bundle's
  * largest confound. (1024, 20,000) also took fir's W=2 pair to 1.053 with one
- * of five lower. So nothing here selects a cap, and 16 stands unmeasured rather
- * than measured-and-kept (research/investigations/compute-runtime/RESULTS.md,
- * the oversubscription cap measured with the A/B twin). Reopen on a host whose
- * null arm holds inside one percent, or on an eight-CPU host where W=8 is the
+ * of five lower. So nothing in THAT sweep selects a cap; what 16 stands on is
+ * the grain twin's W=4 CPU column above, not these three pairs
+ * (research/investigations/compute-runtime/RESULTS.md, the oversubscription
+ * cap measured with the A/B twin). Reopen on a host whose null arm holds
+ * inside one percent, or on an eight-CPU host where W=8 is the
  * recorded block -- at the oversubscribed W=8 here the middle candidate read
  * fir 0.909 with five of five lower and paired CPU 0.922.
  *

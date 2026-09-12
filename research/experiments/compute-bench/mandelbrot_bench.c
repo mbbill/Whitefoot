@@ -39,10 +39,13 @@
 #include <string.h>
 
 /* The timed fixture. `trailing` puts the interior quarter last, which is this
- * kernel's stated role: maximum skew. 98,304 points is the middle of the band
- * that makes plain --par emit 16 chunks, and it is the largest size the
- * [5 ms, 60 ms] wf-seq window admits here; the window caps this row's chunk
- * count, not the scheduler. */
+ * kernel's stated role: maximum skew. At the emitted weight 219 the runtime's
+ * work divisor is ceil(150,000 / 219) = 685, so 98,304 points afford 143
+ * chunks and min(16 * lanes, 143) gives 32 at width 2, 64 at width 4 and 128
+ * at width 8: the scheduler's cap, not this size, caps the row at those
+ * widths. The work term binds again only from width 16 up, where it holds the
+ * count at 128. The size is the largest the [5 ms, 60 ms] wf-seq window admits
+ * here, which is now the whole of what fixes it. */
 #define MB_POINTS ((size_t)98304)
 #define MB_LIMIT ((uint64_t)256)
 #define MB_SHAPE "trailing"
