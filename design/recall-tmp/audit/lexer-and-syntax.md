@@ -28,15 +28,17 @@ Two scope notes that shape section 1:
   (it is `compiler/src/resolution/`'s concern); it is omitted from section 1
   rather than force-fit.
 
-Git history note, relevant to "no reason recorded" below: this repository's
-visible history has one root commit, `65b3d24` (2026-08-28), a single
-3,134-file import of the whole pre-existing project with no parent (recorded
-independently in `design/recall-tmp/sources.md`). `git blame` traces nearly
-all of both modules' substantive code to that one commit, whose message
-("wip: TYPE-5 and OWN-10 publish the two sides they compared") does not
-address lexer or parser architecture. Fine-grained commits and PRs exist only
-from that date forward (`design/recall-tmp/sources/commits.md` and
-`pull-requests.md`); where they contain relevant material it is cited below.
+Git history note, relevant to "reason found"/"no reason recorded" below: an
+earlier pass over this audit ran against a shallow clone, whose earliest
+reachable commit, `65b3d24` (2026-08-28), a single 3,134-file working-tree
+snapshot, was mistaken for a parentless root import. The clone is now
+unshallowed: the repository has 2,374 commits back to the true first commit,
+`7c1d7641` (2026-07-07, "Initial commit: xlang," the project's earlier name).
+Every "Reason" line below has been re-checked against that full history with
+`git log -S`, `git blame`, and `git log --follow`, reading the bodies of the
+commits that introduced each choice; several turned up a stated reason that
+the shallow view could not reach. Where none did, the entry says so against
+the actual introducing commit rather than against `65b3d24`.
 
 ## 1. Covered by the tree
 
@@ -167,8 +169,13 @@ Alternative: one pass appending to a growable `Vec` (the ordinary approach),
 or a size estimate with reallocation as needed.
 Where: `compiler/src/lexer/scanner.rs::lex_shapes` (first pass ~L325-410,
 second pass ~L410-495); `compiler/src/lexer/outcome.rs::LexCompilerFailure`.
-Reason: none recorded. Git blame attributes the function to the single root
-import commit `65b3d24`, whose message does not discuss the lexer.
+Reason: none recorded. The mechanism is present unchanged from the lexer's
+first commit, `858d2f27` (2026-07-20, "Add lossless v0.8 lexer foundation"),
+whose message and diff carry no comment explaining the two-pass shape; the
+same day's architecture record (`4ecc14dd`, 2026-07-21, "Record production
+compiler architecture") states only the general principle that "All tables
+have explicit ceilings," not why counting-then-allocating was chosen over
+checking a running count while appending to a growing `Vec`.
 Effect: performance only (every source is scanned twice); does not change
 which programs are accepted.
 
@@ -184,9 +191,13 @@ mirrored with no stated reason by `TerminalLimits`
 (`compiler/src/syntax/outcome.rs`), `ParseLimits`
 (`compiler/src/syntax/parser/outcome.rs`), `FinalizeLimits`/`CanonicalLimits`
 (`compiler/src/syntax/parser/finalize/outcome.rs`).
-Reason (quoted, `compiler/src/lexer/outcome.rs:24-25`): "There is deliberately
-no default or unbounded production profile. The caller must select every
-ceiling explicitly for its deployment."
+Reason (quoted, `compiler/src/lexer/outcome.rs:24-25`, present unchanged since
+`858d2f27`, 2026-07-20, "Add lossless v0.8 lexer foundation"): "There is
+deliberately no default or unbounded production profile. The caller must
+select every ceiling explicitly for its deployment." The same day's
+architecture record (`4ecc14dd`, 2026-07-21, "Record production compiler
+architecture", Decision 1) generalizes this compiler-wide ("All tables have
+explicit ceilings") but does not add a further reason.
 Effect: structural/API only inside these two modules; a program's actual
 acceptance still depends on whichever concrete numbers a caller supplies
 (the driver's numbers live in `compiler/src/driver.rs`, outside this audit).
@@ -208,7 +219,17 @@ machine").
 Where: `compiler/src/syntax/parser/engine.rs` (`struct Parser`,
 `execute_node`, `parse_source`); `parser/diagnostic.rs::probe`;
 `parser/finalize/shape.rs::verify`.
-Reason: none recorded; blame again resolves to `65b3d24`.
+Reason found: the same day's architecture record (`4ecc14dd`, 2026-07-21,
+"Record production compiler architecture", `compiler-architecture-frontend.md`
+Decision 2) states the threat model directly — "hostile tokens try to exhaust
+lookahead, nesting, and list storage" — and specifies the response: "Production
+parsing is `O(tokens + nodes)` time and memory with an explicit work counter
+and iterative stack." The parser itself was implemented that evening in
+`b8cb9f93` (2026-07-21, "Implement exact v0.9 LL(2) derivation parser") and the
+finalizer's shape check 37 minutes later in `04bbe002` ("Complete exact v0.9
+canonical frontend"); neither commit message repeats the reason, but both
+follow the record closely enough (same day, same wording — "iterative stack")
+that the record reads as their stated ground.
 Effect: both. Performance: an explicit stack costs more per node than a
 direct call, in exchange for depth bounded by policy rather than guesswork.
 Safety/acceptance: a deeply nested but otherwise valid construct fails
@@ -249,9 +270,27 @@ which the test suite names for exactly this property —
 `compiler/src/syntax/parser/tests.rs:672`:
 `panic!("the all-production derivation must pass the independent shape
 finalizer")`.
-Reason: none stated; consistent with but not derived from the crate's
-`#![forbid(unsafe_code)]` (`compiler/src/lib.rs:1`), which is about memory
-safety, not panic-freedom or cross-stage re-verification.
+Reason: the introducing commit for the re-verification half,
+`04bbe002` (2026-07-21, "Complete exact v0.9 canonical frontend"), states
+nothing. It is worth reading beside a contemporaneous record, though: the
+same day's `4ecc14dd` ("Record production compiler architecture") assigns
+grammar-shape agreement to an independent oracle instead — "Builders own
+local shape; finalization owns whole-tree topology; test oracles own
+independent grammar evidence. Combining them creates correlated evidence"
+(`compiler-architecture-frontend.md`, Decision 3) — and the index file states
+the same principle compiler-wide: "Semantic-kernel logic bugs are attacked by
+the independent evidence lanes in Decision 16, not by calling the same
+judgments twice" (`compiler-architecture-design.md`, "Authority, trust, and
+threat model"). `finalize/shape.rs::verify_production_shape` re-derives a
+production's expected shape from the same grammar tables and the same
+arm-selection style the parser itself uses, inside the trusted path, which is
+close to the "calling the same judgment twice" the record warns produces
+correlated rather than independent evidence; no later record revises this
+boundary or reconciles the two. The panic-freedom half has no stated reason
+anywhere found; it is consistent with but not derived from the crate's
+`#![forbid(unsafe_code)]` (`compiler/src/lib.rs:1`, present since `a71379a6`,
+2026-07-20, "Establish Rust source binding foundation"), which is about memory
+safety, not panic-freedom.
 Effect: safety/structure, not acceptance or speed for a valid program: a
 compiler-side bug becomes a reported `CompilerFailure` instead of an unwind
 or crash, at the cost of a large amount of duplicated verification code and,
@@ -273,15 +312,27 @@ Where: `compiler/src/syntax/parser/diagnostic.rs`, constants
 `GRAM9_BODY_FIX`/`GRAM9_CONTRACT_FIX`/`FORM3_IDENT_FIX`/`FORM3_TYPEID_FIX`/
 `FORM3_REGIONID_FIX`/`FORM3_LABEL_FIX`/`GRAM2_CONTRACT_ORDER_FIX`, and
 functions `name_class_fix`, `production_fix`.
-Reason (partial, quoted, `diagnostic.rs:60-61`, motivating the name-class
-case only): "The expectation list names the class and never says what the
-class is, so a writer who spelled a const `Limit` read only `expected:
-[\"IDENT\"]`." Nothing explains why this specific set of rules, and not
-others that leave the same gap, was chosen; the specification does not
-require fix text for any of these grammar-stage rules (`spec/kernel-spec.md`
-mandates fix wording only for later semantic rules, e.g. FORM-8, GIVE-1,
-SET-2). Commit `39da854` (2026-08-28) only corrects a doc comment's claim
-that `mechanical_fix` "had no caller"; it does not address the selection.
+Reason found, and it is exactly "encountered, not planned": the FORM-3 and
+GRAM-2 fixes were added by `dfb0a30d` (2026-08-28 05:54, "diagnostics: teach
+the four remaining bad defaults the verification writer met"), whose body
+names the selection directly — "FORM-3 name slots, GRAM-2's contract-block
+order, TYPE-6's four colliding situations, and SYS-8's second residual now
+say what the writer has to do" — i.e. these were the specific diagnostics an
+AI writer process actually hit and found unhelpful ("bad defaults"), fixed as
+found rather than from a rule choosing which syntax rules deserve one. The
+GRAM-9 fix was added about two hours earlier the same session by `1feb44b5`
+(2026-08-28 04:04, "wip: GRAM-9 carries the binding form its grammar position
+admits"), whose own message and diff carry no stated reason beyond the code
+comment already quoted below (`diagnostic.rs:60-61`, motivating the
+name-class case only): "The expectation list names the class and never says
+what the class is, so a writer who spelled a const `Limit` read only
+`expected: [\"IDENT\"]`." Neither commit, nor anything found earlier, states a
+rule for which of the many rules with the same gap get a fix; the
+specification does not require fix text for any of these grammar-stage rules
+(`spec/kernel-spec.md` mandates fix wording only for later semantic rules,
+e.g. FORM-8, GIVE-1, SET-2). A later commit, `39da854` (2026-08-28), only
+corrects a doc comment's claim that `mechanical_fix` "had no caller"; it does
+not address the selection either.
 Effect: diagnostics quality/consistency only; no effect on acceptance or
 performance.
 
@@ -304,11 +355,24 @@ Where: `compiler/src/syntax/parser/tree.rs` (`DerivationElement`,
 `DerivationTree`); `parser/finalize/topology.rs` (`NodeRecord`,
 `FinalizedTopology`); `parser/finalize/engine.rs` (`Finalizer::run`,
 `production`, `assign_depths`).
-Reason: none stated for the split itself. `canonical/render.rs:3-8` explains
-only why the renderer and auditor share logic once the topology exists
-("They share the layout rules rather than restating them ... so a change to
-either rule moves the auditor and the renderer together"), not why the
-topology is a second pass rather than built during parsing.
+Reason found: the same architecture record as choice 3
+(`4ecc14dd`, 2026-07-21, "Record production compiler architecture",
+`compiler-architecture-frontend.md`) states it directly. Decision 4: "Do not
+create a separate copied AST. Pair typed construction with a cheap internal
+topology finalizer..."; its rejected alternatives include "Maintaining both
+CST and AST creates an unnecessary binding proof." Decision 3 gives the
+reason for the *split* itself: "Builders own local shape; finalization owns
+whole-tree topology; test oracles own independent grammar evidence. Combining
+them creates correlated evidence." The postorder builder went into the parser
+in `b8cb9f93` (2026-07-21 17:52, "Implement exact v0.9 LL(2) derivation
+parser") and the separate topology finalizer 37 minutes later in `04bbe002`
+("Complete exact v0.9 canonical frontend"); neither commit message repeats
+the reason, but the design record committed hours earlier the same day states
+it.
+`canonical/render.rs:3-8` separately explains only why the renderer and
+auditor share logic once the topology exists ("They share the layout rules
+rather than restating them ... so a change to either rule moves the auditor
+and the renderer together").
 Effect: performance/structure, not acceptance: a flat, index-addressed tree
 is cache-friendly and makes `NodePath` a direct parent-pointer walk
 (`canonical.rs::node_path`), at the cost of a second full linear pass over
