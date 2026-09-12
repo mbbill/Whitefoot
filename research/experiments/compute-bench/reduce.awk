@@ -6,8 +6,8 @@
 # NOTHING HERE FAILS ON A MEASUREMENT. The exit status is nonzero only on a
 # missing or malformed row: a cell with the wrong number of processes, a row
 # count other than calls+1, a non-dense call index, `first` in the wrong
-# place, or a header/trailer mismatch. Never on a ratio, never on spread,
-# never on an ordering, never on an elapsed time.
+# place, a header/trailer mismatch, or two call cadences in one table. Never on
+# a ratio, never on spread, never on an ordering, never on an elapsed time.
 #
 # The median routine is the insertion-sort form of the research bundle's
 # pure-compare.awk; everything else is new, because every median in that
@@ -62,6 +62,22 @@ BEGIN {
     # lines below say about the three control variables, because with a twin the
     # controls built `wf-b` and `wf` is still the plain program.
     if (h_form == "wf-b") has_twin = 1
+    # The call cadence is read off the stream and nowhere else, exactly as the
+    # twin's presence is: what a table is a measurement of is what its
+    # processes did, not what a -v on the command line said they would do. An
+    # absent gap_us -- which is every header this bundle wrote before the mode
+    # existed -- reads as zero, the back-to-back cadence.
+    #
+    # A TABLE MIXES NO CADENCES. Rows taken with a gap between calls and rows
+    # taken back to back are two measurements of two different questions, and a
+    # median over both would report neither, so the first header fixes the
+    # table's gap and a later disagreement is refused here like a header/trailer
+    # mismatch. It is a malformed stream, never a measurement: no elapsed time
+    # is being judged, only which run a row belongs to.
+    h_gap = field($0, "gap_us") + 0
+    if (!gap_seen) { gap_seen = 1; run_gap = h_gap }
+    else if (h_gap != run_gap)
+        bad("a process at gap_us=" h_gap " in a table at gap_us=" run_gap)
     if (h_calls != calls + 0) bad("header calls=" h_calls " is not " calls)
     next
 }
@@ -69,7 +85,8 @@ BEGIN {
 /^# batch / {
     if (!open_process) bad("a trailer with no header")
     if (field($0, "form") != h_form || field($0, "width") + 0 != h_width ||
-        field($0, "calls") + 0 != h_calls) bad("header/trailer mismatch for " h_form)
+        field($0, "calls") + 0 != h_calls ||
+        field($0, "gap_us") + 0 != h_gap) bad("header/trailer mismatch for " h_form)
     if (rows != h_calls + 1) bad("process " h_kernel "/" h_form "/w" h_width "/p" h_pass \
                                  " has " rows " rows, not " h_calls + 1)
     cell = h_kernel SUBSEP h_width SUBSEP h_form
@@ -186,7 +203,17 @@ END {
     if (has_twin && !parcontrol && !runtimecontrol && !modulecontrol) printf "WF A/B twin: `wf-b` is built from the same sources as `wf` with NO control\n      flag set (WF_AB=1), so the A/B lines below read this host's own\n      within-pass spread over identical behaviour -- see README\n"
     if (pins) printf "pins: %s\n", pins
     for (i = 1; i <= kernels; i++) printf "sizes: %-12s %s\n", kernel_at[i], workload[kernel_at[i]]
-    printf "passes=%d calls=%d\n\n", passes + 0, calls + 0
+    # The same disclosure the three control lines above carry, for the fourth
+    # thing that makes a table something other than the plain one: a gap waited
+    # between consecutive calls, on every form alike, outside every measured
+    # interval. Printed only when the run had one, so its absence is the
+    # ordinary case and says the calls were back to back; manifest.txt carries
+    # WFB_GAP_US either way.
+    if (run_gap > 0)
+        printf "WF gap between calls=%d us\n      (waited by the driver between consecutive timed calls of EVERY form,\n      outside every measured interval: this table is a SPARSE cadence and is\n      NOT the back-to-back one a recorded table is taken at -- it must not be\n      recorded as a plain table, see README)\n", run_gap
+    printf "passes=%d calls=%d", passes + 0, calls + 0
+    if (run_gap > 0) printf " gap_us=%d", run_gap
+    printf "\n\n"
     # No grain column. Each block prints its own grain strings in full as a
     # legend under its verdict line; see the end of `report` below.
     printf "%-11s %2s %-16s %10s %5s %-22s %10s %-17s %6s %5s %7s %s\n",

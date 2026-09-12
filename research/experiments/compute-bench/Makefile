@@ -196,6 +196,43 @@ KERNELS ?= mandelbrot quadrature records fir
 PASSES ?= 5
 CALLS  ?= 5
 
+# ------------------------------------------------------- the call cadence --
+# The gap between consecutive timed calls, in microseconds, per process. The
+# table's default cadence is back to back -- five calls with microseconds
+# between them -- and a runtime that keeps an idle lane hot for a window
+# before it parks is measured at its best there, because the next call always
+# arrives while the lanes are still hot. Real programs have gaps between their
+# parallel regions. A non-zero value here asks what survives at a gap of G:
+# the driver waits G microseconds between consecutive calls, OUTSIDE the
+# measured interval, with a monotonic-clock busy-wait rather than a sleep, so
+# the calling thread stays running as a program doing its own sequential work
+# would while the helper lanes go idle and park. It reaches EVERY FORM
+# identically, references included; harness.c owns the wait and states why.
+#
+# It is a RUN-TIME setting and nothing else. It is in no stamp, no emission,
+# no compile and no link, on the plain image or on the twin, so a changed gap
+# rebuilds NOTHING and the images a gapped run times are byte-identical to the
+# ones a gap-free run times -- which is what lets the gap compose with the A/B
+# twin, `WFB_GAP_US=2000 WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_IDLE_WINDOW_US=0`
+# being the pair that reads a runtime's idle window against a sparse cadence.
+#
+# It is EMPTY BY DEFAULT and must stay empty for any table that is recorded,
+# on the same terms as the three control flags above: a recorded table is the
+# back-to-back one, and a table taken at another cadence measures another
+# question. It is written into manifest.txt either way, and a non-zero value
+# puts `gap_us=` in the table header and a disclosure line above it, so a
+# sparse-cadence table can never be read as a plain one. It is handed to the
+# timed passes and to `verify` -- `verify` reads it, reports it and waits
+# nothing, because it drives no timed call loop; the harness comment on
+# do_verify says so. Nothing in the gate reads it: `programs-check` links
+# nothing and runs no image.
+WFB_GAP_US ?=
+
+# Passed down only when it is set, so an unset gap leaves every command line
+# exactly as it was and a hand-run image needs nothing in its environment to
+# get the back-to-back cadence.
+GAP_ENV := $(if $(strip $(WFB_GAP_US)),WFB_GAP_US=$(strip $(WFB_GAP_US)),)
+
 CHECK   := $(WORK)/check
 CHECKED := $(addprefix $(CHECK)/checked_,$(KERNELS))
 JOBS    ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
@@ -493,6 +530,10 @@ images: $(addprefix $(BUILD)/,$(KERNELS)) \
 # the driver prints what its oracle computed and this only requires that it
 # compared something.
 #
+# WFB_GAP_US reaches this sweep so a malformed value is refused here, cheaply,
+# rather than only by the long `compare` that follows; `verify` reports the gap
+# it was given and waits nothing, because it drives no timed call loop.
+#
 # When a twin was built, its `wf` form is verified at every width too, in a
 # second sweep after the plain one. The twin links a differently built runtime
 # and answers the same oracle or it is not a control; its split fixture line
@@ -513,7 +554,7 @@ verify: build
 	        case $$form in wf-seq|serial) continue;; esac; \
 	      fi; \
 	      echo "== $$k $$form width=$$w"; \
-	      WF_WORKERS=$$w $(BUILD)/$$k verify $$form $$w > $(WORK)/verify.out 2>&1 \
+	      $(GAP_ENV) WF_WORKERS=$$w $(BUILD)/$$k verify $$form $$w > $(WORK)/verify.out 2>&1 \
 	        || { cat $(WORK)/verify.out; exit 1; }; \
 	      cat $(WORK)/verify.out >> $(WORK)/verify.log; \
 	      awk '/VERIFY PASS/ { if (match($$0, /compared=[0-9]+/)) { \
@@ -527,7 +568,7 @@ verify: build
 	  widths=`sed -n 's/^# cpus=[0-9]* widths=//p' $(WORK)/$$k.forms`; \
 	  for w in $$widths; do \
 	    echo "== $$k-b wf width=$$w"; \
-	    WF_WORKERS=$$w $(BUILD)/$$k-b verify wf $$w > $(WORK)/verify.out 2>&1 \
+	    $(GAP_ENV) WF_WORKERS=$$w $(BUILD)/$$k-b verify wf $$w > $(WORK)/verify.out 2>&1 \
 	      || { cat $(WORK)/verify.out; exit 1; }; \
 	    cat $(WORK)/verify.out >> $(WORK)/verify.log; \
 	    awk '/VERIFY PASS/ { if (match($$0, /compared=[0-9]+/)) { \
@@ -598,6 +639,7 @@ compare: build
 	  echo "WF_PAR_CONTROL_FLAGS: $(WF_PAR_CONTROL_FLAGS)"; \
 	  echo "WF_RUNTIME_CONTROL_FLAGS: $(WF_RUNTIME_CONTROL_FLAGS)"; \
 	  echo "WF_MODULE_CONTROL_FLAGS: $(WF_MODULE_CONTROL_FLAGS)"; \
+	  echo "WFB_GAP_US: $(WFB_GAP_US)"; \
 	  echo "WF_AB_TWIN: $(if $(AB),yes (the wf-b row; the wf row is plain),no)"; \
 	  echo "RFLAGS: $(RFLAGS)"; \
 	  echo "BENCH_ARCH: $(BENCH_ARCH)"; \
@@ -631,7 +673,7 @@ compare: build
 	    while read -r form w; do \
 	      echo "== pass $$p: $$k $$form width=$$w"; \
 	      if [ "$$form" = wf-b ]; then \
-	        WF_WORKERS=$$w $(BUILD)/$$k-b time wf $$w $$p $(CALLS) \
+	        $(GAP_ENV) WF_WORKERS=$$w $(BUILD)/$$k-b time wf $$w $$p $(CALLS) \
 	          > $(RESULTS)/logs/$$k-wf-b-w$$w-p$$p.out 2> $(RESULTS)/logs/$$k-$$form-w$$w-p$$p.log \
 	          || { cat $(RESULTS)/logs/$$k-$$form-w$$w-p$$p.log >&2; exit 1; }; \
 	        awk -F'\t' -v OFS='\t' \
@@ -640,7 +682,7 @@ compare: build
 	           { $$2 = "wf-b"; print }' \
 	          $(RESULTS)/logs/$$k-wf-b-w$$w-p$$p.out >> $(RESULTS)/raw.tsv; \
 	      else \
-	        WF_WORKERS=$$w $(BUILD)/$$k time $$form $$w $$p $(CALLS) \
+	        $(GAP_ENV) WF_WORKERS=$$w $(BUILD)/$$k time $$form $$w $$p $(CALLS) \
 	          >> $(RESULTS)/raw.tsv 2> $(RESULTS)/logs/$$k-$$form-w$$w-p$$p.log \
 	          || { cat $(RESULTS)/logs/$$k-$$form-w$$w-p$$p.log >&2; exit 1; }; \
 	      fi; \
