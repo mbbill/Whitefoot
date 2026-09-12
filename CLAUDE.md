@@ -222,6 +222,9 @@ one-time cleanup.
   spec and test guard, reached by oracle scripts, or wired into a gate;
   moving them creates more breakage and rot than it removes. Prefer
   legibility — a clear map, a good name, a stated purpose — over relocation.
+- No active source, build, test, or tool may depend on `archive/`.
+- New and modified repository artifacts, identifiers, comments, diagnostics,
+  fixtures, test names, and file names use English.
 
 Follow this by judgment and keep moving; it is a standing rule, not a reason to
 pause on every file. Canonical `make check` enforces append-only versioned
@@ -255,38 +258,10 @@ only reports the same class of mistake earlier.
 
 ## Compiler rules
 
-- Use safe Rust; do not introduce `unsafe`.
-- Implement language capabilities by grammar and semantic rule, never by
-  function name, signature, source shape, project, corpus, or test identity.
-- Keep one normal semantic and lowering path. A temporary unsupported
-  capability must be explicit rather than misreported as invalid source.
-- Never replace or weaken required static proof with executable fallback
-  control flow. Required static proof is the only authority for admitting a
-  partial operation.
-- State relations that are intended to hold on every conforming execution as
-  proof-only source evidence: `requires`/`ensures` across functions,
-  header `invariant` relations across loop edges, and local `invariant`
-  statements for program-point facts. A local invariant may carry explicit
-  `use` steps; those steps read one entering snapshot, publish nothing
-  themselves, and only the checked outer invariant becomes a later fact. A
-  source branch may guard a partial operation only when its false edge is
-  intended program behavior. An impossible-case return or other observable
-  branch added only to satisfy the checker is a compiler or source defect;
-  improve the proof or the checker instead.
-- Do not add timeouts, fuel, a proof-work budget, heuristic early failure, or
-  hash-order dependence to any acceptance path. Fixed structural source
-  ceilings are language rules; within them the specified checker runs to
-  completion. Stopping at the first success in a fixed order is valid because
-  a later candidate cannot revoke a proof.
-- Keep facts-off compilation correct. An optimizer fact may improve an accepted
-  program but may not change source acceptance or program semantics.
-- Prefer simple implementations and normal collections. Fix measured
-  performance or resource problems instead of designing for imagined scale.
-- Keep files cohesive and reviewable. Split by invariant-bearing
-  responsibility, not arbitrary line counts or forwarding-only layers.
-- No active source, build, test, or tool may depend on `archive/`.
-- New and modified repository artifacts, identifiers, comments, diagnostics,
-  fixtures, test names, and file names use English.
+The compiler's implementation rules are its design decisions and live in
+`design/compiler`, each with its reason. Before changing the compiler, read
+the subtree you are changing and its ancestors, and change the tree before
+the code, as `design/skill/SKILL.md` prescribes.
 
 ## Data safety
 

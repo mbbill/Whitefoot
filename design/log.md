@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-12 Review the compiler root with the owner
+
+Nodes: compiler, language
+
+Summary: The owner and the agent went through the compiler root decision by decision. Removed: the two optimizer-fact decisions, because the owner's intent was never a facts-on and facts-off pair of builds but the absence of any behavior-changing build mode, and what the compiler hands LLVM, such as aliasing attributes or inlining, is an implementation detail the language never sees and needs no rule; the checker-as-trusted-computing-base decision, a tautology whose only content, fix the compiler rather than the conformance verdict, is already a rule in the agent instructions; the serialization-and-replay and later-hardening decisions, which only negated an architecture nobody proposes and are now one rejected alternative under the research-instrument decision; the Python reference-model rejection, historical; and the ripgrep umbrella target, a project direction that now lives in the research experiments index. Merged: the one-crate decision became the research-instrument decision and absorbed simple implementations and safe Rust, whose reason the agent supplied; the conformance-is-evidence and staging-is-not-a-profile decisions became one rule-not-shape decision; the deterministic rejection decision absorbed the no-timeout, no-budget, no-hash-order rule. The language root's optimizer-facts decision became the one-source-one-program decision in the owner's words, to be re-read in the language pass. The agent instructions' compiler-rules section now points at this tree, and its two repository rules moved to the hygiene section, because the owner ruled that implementation rules belong to the tree that is checked, not to the instructions.
+
 ## 2026-09-11 Apply the pull-request check findings to the compiler tree
 
 Nodes: compiler, compiler/cleanup-traversal, compiler/tag-only-lowering, compiler/resource-exhaustion-floor, compiler/parallel-lowering, compiler/parallel-lowering/lane-stack, compiler/parallel-lowering/parallel-runtime

@@ -13,6 +13,14 @@ permission.
 
 ## Current flagship experiment evidence
 
+The owner's ruling for the flagship: ripgrep is the umbrella target with a
+fair two-times end-to-end objective, performance comes first in that loop,
+and a missing performance capability stops downstream expansion until its
+owning layer is fixed rather than being written around, so that the target
+exposes general language defects and every win is attributable to generated
+code. SQLite as the umbrella target and shipping the finished tool as the
+completion criterion were refused.
+
 - `park-on-miss-switch-cost/` — the first §12 measurement of the park-on-miss
   design: one hand-written stack switch against a condition-variable
   park-and-wake on the same host. Measured 2026-09-04 (Darwin arm64): 9.8–10.4

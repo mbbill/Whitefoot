@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-12 与所有者一起审阅 compiler 树根
+
+Nodes: compiler, language
+
+Summary: 所有者和 agent 逐条过了 compiler 树根。删除：两条优化器事实的决策，因为所有者的本意从来不是一对 facts-on 与 facts-off 的构建，而是不存在任何改变行为的构建模式，并且编译器交给 LLVM 的东西（比如别名属性或内联）是语言永远看不到的实现细节，不需要规则；"检查器属于可信计算基"那条，是同义反复，它唯一的内容（改编译器而不是改一致性判决）已经是 agent 指令里的规则；序列化回放和"以后再加固"两条，它们只是在否定一个没人再提的架构，现在合并为研究工具决策下的一条被否决方案；Python 参考模型的否决项，属于历史；以及 ripgrep 伞形目标，那是项目方向，现在放在 research 实验索引里。合并：单一 crate 那条变成了研究工具决策，并吸收了"实现要简单"和 safe Rust，后者的理由由 agent 补写；"一致性用例只是证据"与"分期不构成配置档"两条合成一条"按规则不按形状"的决策；确定性拒绝那条吸收了不许超时、预算、哈希顺序的规则。language 树根的优化器事实决策改成了所有者原话里的"一份源码一个程序"，待 language 审阅时再读一遍。agent 指令里的 compiler rules 一节现在指向这棵树，其中两条仓库规则移到了仓库整洁一节，因为所有者裁定实现准则属于被检查的树，而不属于指令。
+> 通俗解释：这次是所有者亲自把 compiler 树根过了一遍，11 条砍到 4 条。砍掉的都是些空话或历史包袱：关于"优化器事实开关"的两条整个概念就不对，所有者要的只是"没有调试版发布版之分"，编译器内部给 LLVM 什么提示根本不用写规则；"检查器要可信"是废话；"不做序列化回放"是在反对一个早就没人提的老方案；Python 参考模型是陈年旧事；ripgrep 目标是项目方向，不是编译器设计，挪去了 research 目录。剩下的合并成四条：编译器是研究工具、只按规则不认程序、没实现的功能要明说、报错要确定且指明规则。顺带把 CLAUDE.md 里那一段编译器规则删了，改成指向这棵树。
+
 ## 2026-09-11 把拉取请求检查的发现应用到 compiler 树
 
 Nodes: compiler, compiler/cleanup-traversal, compiler/tag-only-lowering, compiler/resource-exhaustion-floor, compiler/parallel-lowering, compiler/parallel-lowering/lane-stack, compiler/parallel-lowering/parallel-runtime
