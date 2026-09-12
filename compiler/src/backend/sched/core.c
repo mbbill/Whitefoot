@@ -154,12 +154,20 @@
  *
  * The hosted evidence above is unchanged by construction -- every runner in it
  * has CPUs of one level, so the new test answers one there and the window is
- * still admitted on exactly the machines it was measured on. What this rule
- * has NOT been measured as built code on is the machine it is for: the same
- * M1 Pro twin, with WF_PAR_IDLE_WINDOW_ON_ASYMMETRIC defined on the twin arm
- * so that arm keeps the window this rule now withholds, is what reads it back,
- * and that arm is the whole reason the knob exists. Nothing that ships defines
- * it. One more limit belongs beside the claim: wf_prim_cpu_levels does not see
+ * still admitted on exactly the machines it was measured on. AND THE RULE IS
+ * MEASURED AS BUILT CODE on the machine it is for: "the asymmetric-core rule
+ * read back against a twin that keeps the window", at `8c296c91`, is the same
+ * M1 Pro pair with WF_PAR_IDLE_WINDOW_ON_ASYMMETRIC defined on the twin arm,
+ * so that arm keeps the window this rule withholds and behaves like the
+ * runtime that shipped before it. At W=8 that twin reads `wf-b/wf` quadrature
+ * 1.296 and records 1.239 with none of five pairs lower, fir 1.116 with one of
+ * five, and mandelbrot 1.007 with two -- the rule ahead on three kernels and
+ * level on the fourth, in the direction and, for quadrature, the size the
+ * inverted twins above predict -- while at W<=4 it is flat, 0.987 to 1.075,
+ * and at W=16 neither arm opens a window. That run was taken on a loaded
+ * machine, so only its within-pass paired lines are read; the section says so
+ * and says what else it leaves open. Nothing that ships defines the knob.
+ * One more limit belongs beside the claim: wf_prim_cpu_levels does not see
  * an Intel hybrid part on Linux, which publishes no capacity file; prim_host.c
  * states that gap and what would close it rather than guessing at it.
  *

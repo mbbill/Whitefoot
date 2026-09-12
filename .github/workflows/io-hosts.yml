@@ -144,8 +144,8 @@ jobs:
 
       # The machine fact the idle window's admission test reads, through the
       # Windows leaf that answers it: the CPU sets this process may run on and
-      # how many efficiency classes they carry. The probe asserts the rule's
-      # direction rather than a topology, so a uniform runner and a hybrid one
+      # how many efficiency classes they carry. The probe asserts the rule's two
+      # directions rather than a topology, so a uniform runner and a hybrid one
       # both pass; what running it here proves is that the leaf's own path --
       # the run-time symbol lookup, the sized report, the group and affinity
       # filter -- answers on a real Windows host rather than only compiling.

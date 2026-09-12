@@ -6,13 +6,16 @@
  * this runs on. First, that `wf_prim_cpu_levels` answers at all: at least one
  * level, and the same count twice, because the rule reads it once at pool
  * start and a count that moved between two calls would mean the pool's
- * behaviour depended on which call it made. Second, the one-directional half
- * of the rule that can be checked anywhere: a pool that OPENED the window did
- * so on a pool that fits the CPUs and on CPUs that are alike, and the window
- * it opened is the compiled one. Nothing here asserts that this host is
- * uniform or that it is not -- an asymmetric host and a uniform host both pass
- * -- and nothing asserts the window is open, since a host with an unknown CPU
- * count legitimately has none.
+ * behaviour depended on which call it made. Second, both directions of the
+ * rule, each conditioned on what this probe itself read rather than on the
+ * host: a pool that OPENED the window did so on a pool that fits the CPUs and
+ * on CPUs that are alike, at the compiled length, and a pool that fits CPUs
+ * read as one level DID open it. The second direction is the one a prim that
+ * mistook a uniform machine for an asymmetric one would fail, which is the
+ * regression that would otherwise be silent -- the window withheld on every
+ * runner whose tables sized it. Nothing here asserts that this host is uniform
+ * or that it is not: an asymmetric host takes neither branch and passes, and a
+ * host whose CPU count is unknown has no fitting pool and passes too.
  *
  * Built a second time with WF_PAR_IDLE_WINDOW_ON_ASYMMETRIC, the probe checks
  * the other direction of the knob instead: that arm withdraws the machine test
@@ -64,6 +67,17 @@ int main(void) {
 #if defined(WF_PAR_IDLE_WINDOW_ON_ASYMMETRIC)
     if (window == 0 && fits && (uint64_t)WF_PAR_IDLE_WINDOW_US != 0) {
         return fail("the twin knob withheld the window from a pool that fits");
+    }
+#else
+    /* The other direction on the arm that ships, and it is what a prim that
+     * called a uniform machine asymmetric would fail: a pool that fits CPUs
+     * this probe read as ONE level must have the compiled window, so the new
+     * test can only subtract the machines it names. Conditioned on the levels
+     * read here rather than on the host, so an asymmetric machine passes by
+     * taking neither branch. */
+    if (window == 0 && fits && levels == 1u
+        && (uint64_t)WF_PAR_IDLE_WINDOW_US != 0) {
+        return fail("the window was withheld from a fitting pool on alike CPUs");
     }
 #endif
     (void)printf(

@@ -311,14 +311,14 @@ which reads the affinity mask where that is cheap, and the level count from
 `wf_prim_cpu_levels`, which reads `hw.nperflevels` on Darwin, `cpu_capacity`
 over the affinity mask on Linux and the CPU sets' efficiency classes on
 Windows, and answers one wherever the host does not say. All three are
-ordinary prim-layer declarations in
-[`sched/prim.h`](src/backend/sched/prim.h) with a host and a Windows
-definition, and [`sched/core.c`](src/backend/sched/core.c) records the
-measurements the window is sized against and the readings that withhold it. Task storage belongs to the offering
-lane until join, result access, and release finish. Deque cells and ownership
-claims are atomic; local execution avoids the completion runtime. Resource
-exhaustion retains the ordinary-call fallback and the native stack-exhaustion
-floor.
+ordinary prim-layer declarations in [`sched/prim.h`](src/backend/sched/prim.h)
+with a host and a Windows definition, and
+[`sched/core.c`](src/backend/sched/core.c) records the measurements the window
+is sized against and the readings that withhold it. Task storage belongs to
+the offering lane until join, result access, and release finish. Deque cells
+and ownership claims are atomic; local execution avoids the completion
+runtime. Resource exhaustion retains the ordinary-call fallback and the native
+stack-exhaustion floor.
 
 Direct typed I/O retains one submit-then-join lowering path. A may-suspend user
 call executes on the caller's ordinary stack and is not published to a compute
