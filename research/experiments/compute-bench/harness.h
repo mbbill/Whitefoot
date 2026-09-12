@@ -23,10 +23,11 @@ uint64_t wfb_now_ns(void);
 uint64_t wfb_clock_floor_ns(void);
 
 /* Process CPU time in nanoseconds: every thread of this process summed, user
-   plus system. The source is per host --- proc_pid_rusage on Darwin, where
-   CLOCK_PROCESS_CPUTIME_ID does not count threads that are still alive,
-   CLOCK_PROCESS_CPUTIME_ID where the host defines it and counts them, and
-   getrusage(RUSAGE_SELF) as the fallback. It is the whole process and not one
+   plus system. The source is per host --- task_info's live-thread and
+   exited-thread totals on Darwin, where CLOCK_PROCESS_CPUTIME_ID counts only
+   threads that have already exited, CLOCK_PROCESS_CPUTIME_ID where the host
+   defines it and counts live threads too, and getrusage(RUSAGE_SELF) as the
+   fallback. It is the whole process and not one
    thread deliberately: what this bundle wants to know is what a decomposition
    costs in CPU across every lane or worker it started, which a spinning
    scheduler shows in and a wall clock hides. Never wall time, and never a

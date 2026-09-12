@@ -131,10 +131,12 @@ at eight lanes the **work term, not the cap**, fixed mandelbrot at sixteen
 chunks, and the finer arm reads W=8 **0.692** five of five at 128 chunks,
 records W=8 0.965. Both sections also record an instrument defect — on
 Darwin the harness's process-CPU clock does not count some rows' helper
-threads, so **no macOS `cpu_r` is read in either**. That defect is fixed at
-`f602d621`, which reads Darwin process CPU from `proc_pid_rusage`; the two
-sections stand as recorded, and a later macOS table is the one to read
-`cpu_r` from.
+threads, so **no macOS `cpu_r` is read in either**. That defect is fixed in the
+bundle by reading Darwin process CPU from `task_info` — the live threads'
+times plus the exited threads' — after a first attempt at `f602d621` on
+`proc_pid_rusage` read 0.02 to 0.07 times its own wall on run `34667394566`
+and was rejected; the two sections stand as recorded, and a later macOS table
+is the one to read `cpu_r` from.
 
 Each run that matters is added the same way, newest last.
 
@@ -17719,11 +17721,18 @@ process-CPU clock is not counting those references' helper threads, while it
 does count the Whitefoot lanes, so every `cpu_r` on this host compares two
 different things. **The `cpu_r` column is therefore not read anywhere in this
 section or the one below**, and fixing the Darwin CPU accounting is a task for
-the bundle, not for the runtime. **Fixed at `f602d621`**: the reading was that
-Darwin answers `CLOCK_PROCESS_CPUTIME_ID` from the task's terminated-thread
-accounting, and the harness now takes Darwin process CPU from
-`proc_pid_rusage`, whose `ri_user_time` and `ri_system_time` cover live threads
-too. This table was recorded before that and is not reread.
+the bundle, not for the runtime. **Fixed in the bundle**: the reading was that
+Darwin answers `CLOCK_PROCESS_CPUTIME_ID` from the task's accounting for
+threads that have already exited, so the harness now takes Darwin process CPU
+from the task-level pair that consults the live threads when it is asked —
+`task_info(TASK_THREAD_TIMES_INFO)` for the threads that still exist plus
+`task_info(TASK_BASIC_INFO)` for the ones that have exited. `proc_pid_rusage`
+was tried first, at `f602d621`, and rejected on the hosted `macos-14` leg of
+run `34667394566`: its figures read 0.02 to 0.07 times their own wall and
+hardly moved with the work — mandelbrot `wf` at W=2 read 540 to 570 us of CPU
+for walls from 11.7 to 36.2 ms, `static` at W=4 read 2,363 us against a 35,089
+us wall — which is neither a CPU figure nor a unit error. This table was
+recorded before either attempt and is not reread.
 
 - host: `Darwin arm64`, an Apple M1 Pro, as the table header records it. There
   is no `manifest.txt` for this run, so no `uname -a` string, no CPU topology
@@ -18181,8 +18190,8 @@ the `wf` arm and 3,021 against 3,021.2 in `wf-b`, one lane's worth for a
 four-lane run that steals a thousand chunks. So no `cpu_r` is read in this
 section either, and the paired `cpu` figures quoted above — both arms Whitefoot
 images timed inside the same passes — are corroboration for the wall lines and
-not a reading on their own. The defect is **fixed at `f602d621`** by the Darwin
-`proc_pid_rusage` source described in the section above; this table keeps the
+not a reading on their own. The defect is **fixed** by the Darwin
+`task_info` source described in the section above; this table keeps the
 readings it was recorded with.
 
 - host: `Darwin arm64`, the same Apple M1 Pro as the section above, as the

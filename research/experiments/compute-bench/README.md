@@ -379,17 +379,22 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   than wall, read around the same interval the wall clock brackets, so it counts
   every thread the form started, spinning and parked ones included. The source
   is chosen per host and the driver line of `raw.tsv` names the one that was
-  read as `cpu_clock=`: `CLOCK_PROCESS_CPUTIME_ID` on Linux,
-  **`proc_pid_rusage` on Darwin**, `getrusage(RUSAGE_SELF)` as the fallback
-  anywhere the chosen source is absent or refuses. Darwin is not on the POSIX
-  clock because it answers that clock from the task's terminated-thread
-  accounting: a pool whose workers are still alive contributes nothing, so the
-  column read about one lane's worth however many lanes ran, and the M1 Pro
-  tables in `RESULTS.md` recorded `tbb` spending 5,896 us of CPU for a 2,441 us
-  wall on eight threads beside a four-lane `static` row spending 2,904 us
-  against a 2,866 us wall. `proc_pid_rusage` reports `ri_user_time` and
-  `ri_system_time` in nanoseconds over live and terminated threads alike. The
-  wall clock stays the outermost pair and the two CPU reads are nested inside
+  read as `cpu_clock=`: `CLOCK_PROCESS_CPUTIME_ID` on Linux, **`task_info` on
+  Darwin**, `getrusage(RUSAGE_SELF)` as the fallback anywhere the chosen source
+  is absent or refuses. Darwin is not on the POSIX clock because it answers that
+  clock from the task's accounting for threads that have already exited: a pool
+  whose workers are still alive contributes nothing, so the column read about
+  one lane's worth however many lanes ran, and the M1 Pro tables in `RESULTS.md`
+  recorded `tbb` spending 5,896 us of CPU for a 2,441 us wall on eight threads
+  beside a four-lane `static` row spending 2,904 us against a 2,866 us wall. The
+  Darwin source is therefore the task-level pair that does consult the live
+  threads when asked: `task_info(TASK_THREAD_TIMES_INFO)` for the threads that
+  still exist plus `task_info(TASK_BASIC_INFO)` for the ones that have exited,
+  each `time_value_t` seconds and microseconds, summed. `proc_pid_rusage` was
+  tried between the two and rejected on evidence: on the hosted `macos-14`
+  runner of run 34667394566 its figures read 0.02 to 0.07 times their own wall
+  and hardly moved with the work, which is not a CPU figure and is not a unit
+  error either. The wall clock stays the outermost pair and the two CPU reads are nested inside
   it, so no CPU a call spends can fall outside the wall interval; the nested
   reads cost tens of nanoseconds against per-call intervals of milliseconds. A
   form whose wall time is bought by burning four lanes is indistinguishable from
