@@ -220,6 +220,18 @@ uint64_t wf_prim_monotonic_us(void) {
         + (uint64_t)now.tv_nsec / UINT64_C(1000);
 }
 
+#if defined(WF_PAR_TRACE)
+/* The lane trace's clock; see prim.h. Behind the instrument's guard, so an
+ * ordinary build of this file has the same bytes it had before it existed. */
+uint64_t wf_prim_monotonic_ns(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0;
+    }
+    return (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
+}
+#endif
+
 int wf_prim_setting_text(const char *name, char *buffer, size_t capacity) {
     const char *text;
     size_t length;

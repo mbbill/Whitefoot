@@ -54,6 +54,16 @@ unsigned wf_prim_cpu_levels(void);
  * zero must fall back to behaviour that needs no clock rather than treat the
  * difference as elapsed time. */
 uint64_t wf_prim_monotonic_us(void);
+#if defined(WF_PAR_TRACE)
+/* The same clock at nanosecond resolution, and it exists ONLY for the lane
+ * trace core.c compiles under WF_PAR_TRACE: that instrument times executed
+ * chunks and a fixed calibration loop of a few microseconds, neither of which
+ * whole microseconds resolve. Nothing that ships reads it, so it lives behind
+ * the instrument's own guard and an ordinary build has neither the declaration
+ * nor the definition. Zero is reserved on the same terms as the microsecond
+ * reading above. */
+uint64_t wf_prim_monotonic_ns(void);
+#endif
 #define WF_PRIM_SETTING_BYTES 64u
 int wf_prim_setting_text(const char *name, char *buffer, size_t capacity);
 #endif

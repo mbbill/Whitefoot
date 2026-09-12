@@ -379,6 +379,330 @@ static uint64_t wf__par_epoch_read(void) {
     return __atomic_load_n(&wf__par_epoch.value, __ATOMIC_ACQUIRE);
 }
 
+#if defined(WF_PAR_TRACE)
+/* A MEASUREMENT INSTRUMENT, compiled only when this macro is defined and
+ * defined by nothing that ships. No shipped build, no gate target and no test
+ * defines it; whitefootc never passes it; the compute scoreboard reaches it
+ * only through WF_RUNTIME_CONTROL_FLAGS, which compiles the A/B twin's four
+ * runtime units and never the plain image's. Undefined -- which is every
+ * ordinary build -- this file preprocesses to exactly the bytes it did before
+ * the instrument existed, and `cmp` on the object says so.
+ *
+ * WHAT IT IS FOR. At a sparse call cadence -- WFB_GAP_US=2000, the mode the
+ * scoreboard's README describes -- the compiled form at four lanes on the
+ * hosted two-core, four-CPU SMT runners runs 8 to 18 percent behind references
+ * that also park their workers, while its process CPU per call equals that of
+ * the reference whose helpers never sleep. Lane time is ABSENT rather than
+ * spent: about three milliseconds of it per call. A twin whose idle window
+ * covers the gap recovers the whole of it, so parking is the cause, but a
+ * park-and-wake this file's own wake_probe measures in tens of microseconds
+ * cannot by itself account for three milliseconds. This records what each lane
+ * is actually doing, so the difference can be read off rather than guessed: for
+ * every call, per lane, the time from the head to the lane's return from its
+ * condvar wait and to its first successful steal, the CPU it parked on against
+ * the CPU it woke on, how long it had been parked, the duration and position of
+ * every chunk it then executed, and -- from a fixed dependent chain timed at
+ * each of those points -- how fast the core it is on was running there.
+ *
+ * WHAT IT COSTS WHERE IT IS ON. Every event is a fixed store into a per-lane
+ * ring of WF_PAR_TRACE_RING entries: no allocation, no lock, no shared line
+ * between lanes, and nothing on the spin path. PARK and WAKE sit on either
+ * side of a native sleep that costs microseconds; STEAL_OK fires at most once
+ * per lane per call, guarded by one byte; the two root events fire once per
+ * call each; a chunk event costs two clock reads around a callback that runs
+ * for hundreds of microseconds. The clock reads are wf_prim_monotonic_us, the
+ * one the idle window samples, and its nanosecond companion; sched_getcpu is a
+ * vDSO read on Linux. The calibration chain is the one deliberate cost and the
+ * one that is not negligible: it rides on chunks 1, 2, 4, 8, ... so it grows
+ * with the logarithm of the chunk count, and at four lanes it is worth about
+ * three to four percent of a call. The ring wraps, so a long process keeps its
+ * most recent WF_PAR_TRACE_RING events per lane and never grows; with chunks
+ * capped per call below, a map kernel's bench process never reaches the wrap.
+ *
+ * Only a lane's own thread writes that lane's ring, and the count is published
+ * with a release store after the event's fields, so the atexit dump -- which
+ * runs after main has returned and every lane is idle -- acquires a consistent
+ * prefix. Nothing here reads or writes scheduler state that acceptance or
+ * lowering depends on; it observes and does not steer. */
+#if defined(__linux__)
+/* Declared here rather than by naming _GNU_SOURCE ahead of this file's
+ * includes, so the instrument stays inside its own guard and cannot change how
+ * anything else in the translation unit is preprocessed. */
+extern int sched_getcpu(void);
+#endif
+
+#ifndef WF_PAR_TRACE_RING
+#define WF_PAR_TRACE_RING 4096u
+#endif
+
+/* Executed chunks recorded per lane per call. The map kernels this instrument
+ * was written for hand out 32 to 128 chunks over two to eight lanes, so this
+ * ceiling never truncates one of their calls; a recursive kernel that runs a
+ * thousand leaves a call is truncated here rather than allowed to fill the
+ * ring and push every other event out of it. A truncated call is visible as
+ * such: its chunk events stop at this count while its park, wake and join
+ * events still arrive. */
+#ifndef WF_PAR_TRACE_CHUNKS_PER_CALL
+#define WF_PAR_TRACE_CHUNKS_PER_CALL 64
+#endif
+
+/* Iterations of the fixed dependent chain wf__par_trace_probe runs. The chain
+ * is latency-bound and carries a compiler barrier per iteration, so its wall
+ * time counts CORE CYCLES rather than retired work: at a nominal clock it
+ * costs single-digit microseconds, and it grows in proportion as the core it
+ * runs on runs slower. That is the point -- a core that has just left a deep
+ * idle state, or that is sharing issue slots with a busy SMT partner, takes
+ * measurably longer over the same chain, and the difference between a probe
+ * taken immediately after a wake and one taken later in the same call is the
+ * reading this instrument exists to take. */
+#ifndef WF_PAR_TRACE_PROBE_ITERATIONS
+#define WF_PAR_TRACE_PROBE_ITERATIONS 20000
+#endif
+
+enum {
+    WF_PAR_TRACE_PARK = 0,
+    WF_PAR_TRACE_WAKE = 1,
+    WF_PAR_TRACE_STEAL_OK = 2,
+    WF_PAR_TRACE_ROOT_PUBLISH_FIRST = 3,
+    WF_PAR_TRACE_CALL_HEAD = 4,
+    WF_PAR_TRACE_ROOT_JOIN_DONE = 5,
+    /* One executed chunk. `v` is its duration in nanoseconds and the event's
+     * own timestamp is when it finished, so a call reads as a time series of
+     * work per lane against its position within the call. */
+    WF_PAR_TRACE_CHUNK = 6,
+    /* The calibration chain. `v` is its duration in nanoseconds and `seq` says
+     * where in the call it ran: 0 immediately after returning from a park and
+     * before the lane's first scan, and otherwise the index of the chunk it
+     * followed. */
+    WF_PAR_TRACE_PROBE = 7,
+    WF_PAR_TRACE_KIND_COUNT = 8
+};
+
+static const char *const wf__par_trace_names[WF_PAR_TRACE_KIND_COUNT] = {
+    "park", "wake", "steal_ok", "root_publish_first", "call_head",
+    "root_join_done", "chunk", "probe"
+};
+
+struct wf__par_trace_event {
+    uint64_t at_us;
+    int64_t value;
+    int cpu;
+    int kind;
+    /* Where in the call this event sits: the chunk index for CHUNK, the chunk
+     * index it followed for PROBE (0 for the probe taken straight out of a
+     * park), and zero for every other kind. */
+    int seq;
+};
+
+struct wf__par_trace_ring {
+    /* Written only by this lane, on its own line: the publish and release
+     * paths touch `depth` on every frame, and an arming sweep from another
+     * lane must not take that line away from them. */
+    _Alignas(WF_PAR_CACHE_LINE) uint64_t written;
+    /* This lane opened the current top-level call. */
+    unsigned char in_call;
+    /* Frames this lane has published and not yet released. The emitted form
+     * pairs each publish with exactly one release on the publishing lane, so
+     * the outermost release of a call is the one that brings this to zero. */
+    int depth;
+    /* The next successful steal on this lane is worth an event: set when the
+     * lane returns from a wait and when a call head finds lanes parked, and
+     * cleared by the steal it names, so one STEAL_OK is recorded per lane per
+     * call rather than one per chunk. Its own line, because the arming sweep
+     * writes every lane's copy from whichever lane opened the call. */
+    _Alignas(WF_PAR_CACHE_LINE) unsigned char armed;
+    /* Chunks this lane has executed since the current call's head. It shares
+     * the arming line deliberately: the sweep that opens a call is the only
+     * writer from another lane and it resets both at once, and between sweeps
+     * this line is the lane's own, so counting a chunk costs nothing shared. */
+    int chunks;
+    _Alignas(WF_PAR_CACHE_LINE) struct wf__par_trace_event events[WF_PAR_TRACE_RING];
+};
+
+static struct wf__par_trace_ring wf__par_trace_rings[WF_PAR_MAX_LANES];
+
+/* Whether the publish this pool made most recently found parked lanes. The
+ * root's split publishes six frames within a few hundred nanoseconds, and only
+ * the first of that burst is the head of a call; this makes the transition
+ * from "no lane parked" to "some lane parked" the event. */
+static int wf__par_trace_wake_open;
+
+static int wf__par_trace_cpu(void) {
+#if defined(__linux__)
+    return sched_getcpu();
+#else
+    return -1;
+#endif
+}
+
+static void wf__par_trace_put_seq(struct wf__par_lane *lane, int kind, int64_t value,
+                                  int seq) {
+    struct wf__par_trace_ring *ring;
+    struct wf__par_trace_event *event;
+    uint64_t written;
+    if (lane == NULL) {
+        return;
+    }
+    ring = &wf__par_trace_rings[lane - wf__par_lanes];
+    written = ring->written;
+    event = &ring->events[written % WF_PAR_TRACE_RING];
+    event->at_us = wf_prim_monotonic_us();
+    event->value = value;
+    event->cpu = wf__par_trace_cpu();
+    event->kind = kind;
+    event->seq = seq;
+    __atomic_store_n(&ring->written, written + 1, __ATOMIC_RELEASE);
+}
+
+static void wf__par_trace_put(struct wf__par_lane *lane, int kind, int64_t value) {
+    wf__par_trace_put_seq(lane, kind, value, 0);
+}
+
+/* Where the calibration chain's result goes. The empty asm below is what
+ * actually keeps the chain alive -- it forbids any transformation that would
+ * fold twenty thousand dependent steps into a closed form -- and this sink is
+ * the second belt: the value leaves the function, is accumulated across every
+ * probe of the process, and is printed in the dump's footer, so no reader of
+ * this file has to take the barrier's word for it. */
+static uint64_t wf__par_trace_sink;
+
+static uint64_t wf__par_trace_chain(void) {
+    uint64_t acc = UINT64_C(0x9e3779b97f4a7c15);
+    for (int step = 0; step < WF_PAR_TRACE_PROBE_ITERATIONS; step += 1) {
+        acc += (uint64_t)step;
+        acc ^= acc >> 7;
+        __asm__ __volatile__("" : "+r"(acc));
+    }
+    return acc;
+}
+
+/* One calibration reading on whatever core this lane is running on. */
+static void wf__par_trace_probe(struct wf__par_lane *lane, int seq) {
+    uint64_t start = wf_prim_monotonic_ns();
+    uint64_t folded = wf__par_trace_chain();
+    uint64_t stop = wf_prim_monotonic_ns();
+    wf__par_trace_sink += folded;
+    wf__par_trace_put_seq(lane, WF_PAR_TRACE_PROBE, (int64_t)(stop - start), seq);
+}
+
+static void wf__par_trace_arm_all(void) {
+    int count = __atomic_load_n(&wf__par_lane_count, __ATOMIC_RELAXED);
+    for (int index = 0; index < count; index += 1) {
+        __atomic_store_n(&wf__par_trace_rings[index].chunks, 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&wf__par_trace_rings[index].armed, (unsigned char)1,
+                         __ATOMIC_RELAXED);
+    }
+}
+
+/* One executed chunk, recorded after the completion it belongs to has been
+ * published, so nothing here sits between a finished callback and the lane
+ * waiting on it. The probe rides on chunk 1, 2, 4, 8, ... so one call is
+ * sampled from its first chunk to its last at a cost that grows with the
+ * logarithm of the chunk count rather than with the count. */
+static void wf__par_trace_chunk(struct wf__par_lane *lane, uint64_t elapsed_ns) {
+    struct wf__par_trace_ring *ring;
+    int index;
+    if (lane == NULL) {
+        return;
+    }
+    ring = &wf__par_trace_rings[lane - wf__par_lanes];
+    /* Relaxed rather than plain: the sweep that opens a call resets this
+     * counter from whichever lane offered, so a plain read-modify-write here
+     * would race that store. Nothing orders on the value -- it only labels the
+     * event -- so relaxed is the whole of what is needed, and between sweeps
+     * the line is this lane's own. */
+    index = (int)__atomic_add_fetch(&ring->chunks, 1, __ATOMIC_RELAXED);
+    if (index > WF_PAR_TRACE_CHUNKS_PER_CALL) {
+        return;
+    }
+    wf__par_trace_put_seq(lane, WF_PAR_TRACE_CHUNK, (int64_t)elapsed_ns, index);
+    if ((index & (index - 1)) == 0) {
+        wf__par_trace_probe(lane, index);
+    }
+}
+
+/* The head of one top-level call: the splitter's single entry query, asked by
+ * the offering lane before it publishes anything, with the idle mask as it
+ * stood at that moment so a call where no lane had parked is visible as such. */
+static void wf__par_trace_call_head(struct wf__par_lane *lane) {
+    struct wf__par_trace_ring *ring;
+    if (lane == NULL) {
+        return;
+    }
+    ring = &wf__par_trace_rings[lane - wf__par_lanes];
+    ring->depth = 0;
+    ring->in_call = 1;
+    wf__par_trace_arm_all();
+    wf__par_trace_put(lane, WF_PAR_TRACE_CALL_HEAD,
+                      (int64_t)__atomic_load_n(&wf__par_idle, __ATOMIC_RELAXED));
+    /* The offering lane's own reading at the head, the reference every helper's
+     * post-wake probe is read against. */
+    wf__par_trace_probe(lane, 0);
+}
+
+/* Every publish reaches this, so the ordinary mid-call publish -- no lane
+ * parked, the flag already clear -- must be a LOAD of a shared clean line and
+ * nothing else. A store here would invalidate that line on every frame offered
+ * and would make the instrument's cost scale with the chunk count, which is
+ * the one thing an instrument measuring lane latency must not do. */
+static void wf__par_trace_publish(struct wf__par_lane *lane, unsigned long long parked) {
+    int open = __atomic_load_n(&wf__par_trace_wake_open, __ATOMIC_RELAXED);
+    if (parked == 0) {
+        if (open != 0) {
+            __atomic_store_n(&wf__par_trace_wake_open, 0, __ATOMIC_RELAXED);
+        }
+        return;
+    }
+    if (open != 0) {
+        return;
+    }
+    if (__atomic_exchange_n(&wf__par_trace_wake_open, 1, __ATOMIC_RELAXED) != 0) {
+        return;
+    }
+    wf__par_trace_arm_all();
+    wf__par_trace_put(lane, WF_PAR_TRACE_ROOT_PUBLISH_FIRST, (int64_t)parked);
+}
+
+static void wf__par_trace_steal(struct wf__par_lane *lane) {
+    struct wf__par_trace_ring *ring = &wf__par_trace_rings[lane - wf__par_lanes];
+    if (__atomic_load_n(&ring->armed, __ATOMIC_RELAXED) == 0) {
+        return;
+    }
+    __atomic_store_n(&ring->armed, (unsigned char)0, __ATOMIC_RELAXED);
+    wf__par_trace_put(lane, WF_PAR_TRACE_STEAL_OK, 0);
+}
+
+static void wf__par_trace_wake(struct wf__par_lane *lane) {
+    __atomic_store_n(&wf__par_trace_rings[lane - wf__par_lanes].armed,
+                     (unsigned char)1, __ATOMIC_RELAXED);
+    wf__par_trace_put(lane, WF_PAR_TRACE_WAKE, (int64_t)wf__par_epoch_read());
+}
+
+static void wf__par_trace_dump(void) {
+    int count = __atomic_load_n(&wf__par_lane_count, __ATOMIC_RELAXED);
+    for (int index = 0; index < count; index += 1) {
+        struct wf__par_trace_ring *ring = &wf__par_trace_rings[index];
+        uint64_t written = __atomic_load_n(&ring->written, __ATOMIC_ACQUIRE);
+        uint64_t first = written > (uint64_t)WF_PAR_TRACE_RING
+            ? written - (uint64_t)WF_PAR_TRACE_RING : 0;
+        for (uint64_t seq = first; seq < written; seq += 1) {
+            const struct wf__par_trace_event *event =
+                &ring->events[seq % WF_PAR_TRACE_RING];
+            const char *name = (event->kind >= 0 && event->kind < WF_PAR_TRACE_KIND_COUNT)
+                ? wf__par_trace_names[event->kind] : "unknown";
+            (void)fprintf(stderr,
+                          "wf-trace lane=%d ev=%s t_us=%llu cpu=%d v=%lld seq=%d\n",
+                          index, name, (unsigned long long)event->at_us, event->cpu,
+                          (long long)event->value, event->seq);
+        }
+    }
+    (void)fprintf(stderr, "wf-trace-probe sink=%llu iterations=%d\n",
+                  (unsigned long long)wf__par_trace_sink,
+                  (int)WF_PAR_TRACE_PROBE_ITERATIONS);
+    (void)fflush(stderr);
+}
+#endif
+
 static _Thread_local struct wf__par_lane *wf__par_self;
 
 static _Thread_local int wf__par_attached;
@@ -566,6 +890,9 @@ static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
         }
         slot = wf__par_steal(victim);
         if (slot != NULL) {
+#if defined(WF_PAR_TRACE)
+            wf__par_trace_steal(lane);
+#endif
             return slot;
         }
     }
@@ -576,7 +903,17 @@ static struct wf__par_slot *wf__par_find(struct wf__par_lane *lane) {
  * read. The owner can already reuse the frame; a late signal is harmless. */
 static void wf__par_execute(struct wf__par_slot *slot) {
     struct wf__par_lane *waiter;
+#if defined(WF_PAR_TRACE)
+    /* Bracket the callback and nothing else; the event itself is recorded
+     * after the completion below, so the instrument never sits between a
+     * finished chunk and the lane waiting on it. */
+    uint64_t trace_started = wf_prim_monotonic_ns();
+    uint64_t trace_elapsed;
+#endif
     slot->run(slot->frame);
+#if defined(WF_PAR_TRACE)
+    trace_elapsed = wf_prim_monotonic_ns() - trace_started;
+#endif
 #if defined(WF_SCHED_TEST)
     wf_sched_test_before_done(slot->frame);
 #endif
@@ -590,6 +927,9 @@ static void wf__par_execute(struct wf__par_slot *slot) {
     }
 #if defined(WF_SCHED_TEST)
     wf_sched_test_after_notify();
+#endif
+#if defined(WF_PAR_TRACE)
+    wf__par_trace_chunk(wf__par_self, trace_elapsed);
 #endif
 }
 
@@ -737,17 +1077,34 @@ static void wf__par_wait(struct wf__par_lane *lane, struct wf__par_slot *target)
             continue;
         }
 
+#if defined(WF_PAR_TRACE)
+        int trace_slept = 0;
+#endif
         wf_prim_wait_lock(&lane->wait);
         __atomic_store_n(&target->waiter, lane, __ATOMIC_SEQ_CST);
         while (__atomic_load_n(&target->state, __ATOMIC_SEQ_CST) != WF_PAR_SLOT_DONE) {
 #if defined(WF_SCHED_TEST)
             wf_sched_test_before_wait(target->frame);
 #endif
+#if defined(WF_PAR_TRACE)
+            wf__par_trace_put(lane, WF_PAR_TRACE_PARK, (int64_t)idling.rounds);
+#endif
             wf_prim_wait_sleep(&lane->wait);
+#if defined(WF_PAR_TRACE)
+            wf__par_trace_wake(lane);
+            trace_slept = 1;
+#endif
         }
         __atomic_store_n(&target->waiter, NULL, __ATOMIC_RELAXED);
         lane->posted = 0;
         wf_prim_wait_unlock(&lane->wait);
+#if defined(WF_PAR_TRACE)
+        /* Outside the station lock: a publisher signalling this lane must not
+         * wait on a calibration chain. */
+        if (trace_slept) {
+            wf__par_trace_probe(lane, 0);
+        }
+#endif
         return;
     }
 }
@@ -787,14 +1144,30 @@ static void wf__par_worker_main(void *opaque) {
             wf__par_idling_reset(&idling);
             continue;
         }
+#if defined(WF_PAR_TRACE)
+        int trace_slept = 0;
+#endif
         wf_prim_wait_lock(&lane->wait);
         if (!lane->posted) {
-
+#if defined(WF_PAR_TRACE)
+            wf__par_trace_put(lane, WF_PAR_TRACE_PARK, (int64_t)idling.rounds);
+#endif
             wf_prim_wait_sleep(&lane->wait);
+#if defined(WF_PAR_TRACE)
+            wf__par_trace_wake(lane);
+            trace_slept = 1;
+#endif
         }
         lane->posted = 0;
         wf_prim_wait_unlock(&lane->wait);
         __atomic_fetch_and(&wf__par_idle, ~(1ull << (lane - wf__par_lanes)), __ATOMIC_ACQ_REL);
+#if defined(WF_PAR_TRACE)
+        /* Outside the station lock and before the loop's next scan: this is
+         * the reading of the core the moment the lane is runnable again. */
+        if (trace_slept) {
+            wf__par_trace_probe(lane, 0);
+        }
+#endif
         wf__par_idling_reset(&idling);
     }
 
@@ -884,6 +1257,12 @@ static void wf__par_start(void) {
     }
     while (__atomic_load_n(&wf__par_ready, __ATOMIC_ACQUIRE) < (unsigned)started)
         wf_prim_yield();
+#if defined(WF_PAR_TRACE)
+    /* Registered once the pool exists, so a program that never starts one
+     * prints nothing. The dump runs after main returns, with every lane parked
+     * or spinning and none of them publishing. */
+    (void)atexit(wf__par_trace_dump);
+#endif
 }
 
 static struct wf__par_lane *wf__par_attach(void) {
@@ -933,6 +1312,11 @@ void wf__par_publish(void *frame, void (*fn)(void *)) {
     slot->run = fn;
     __atomic_store_n(&slot->state, WF_PAR_SLOT_PENDING, __ATOMIC_RELAXED);
     wf__par_push(slot->home, slot);
+#if defined(WF_PAR_TRACE)
+    wf__par_trace_rings[slot->home - wf__par_lanes].depth += 1;
+    wf__par_trace_publish(slot->home,
+                          __atomic_load_n(&wf__par_idle, __ATOMIC_RELAXED));
+#endif
     if (__atomic_load_n(&wf__par_idle, __ATOMIC_SEQ_CST) != 0) {
         wf__par_wake_one();
     }
@@ -944,8 +1328,13 @@ void wf__par_join(void *frame) {
     struct wf__par_slot *slot = wf__par_pop(lane);
 
     if (slot == target) {
-
+#if defined(WF_PAR_TRACE)
+        uint64_t trace_started = wf_prim_monotonic_ns();
+#endif
         target->run(target->frame);
+#if defined(WF_PAR_TRACE)
+        wf__par_trace_chunk(lane, wf_prim_monotonic_ns() - trace_started);
+#endif
         return;
     }
     while (slot != NULL) {
@@ -956,7 +1345,13 @@ void wf__par_join(void *frame) {
         }
         slot = wf__par_pop(lane);
         if (slot == target) {
+#if defined(WF_PAR_TRACE)
+            uint64_t trace_started = wf_prim_monotonic_ns();
+#endif
             target->run(target->frame);
+#if defined(WF_PAR_TRACE)
+            wf__par_trace_chunk(lane, wf_prim_monotonic_ns() - trace_started);
+#endif
             return;
         }
     }
@@ -969,6 +1364,25 @@ void wf__par_release(void *frame) {
     __atomic_store_n(&slot->state, WF_PAR_SLOT_FREE, __ATOMIC_RELAXED);
     slot->next_free = lane->free_head;
     lane->free_head = (int)(slot - lane->slots);
+#if defined(WF_PAR_TRACE)
+    {
+        /* The single site where a call's outermost join is unambiguous: one
+         * release per publish on the publishing lane, so the release that
+         * brings the balance to zero is the last of the call. */
+        struct wf__par_trace_ring *ring = &wf__par_trace_rings[lane - wf__par_lanes];
+        if (ring->depth > 0) {
+            ring->depth -= 1;
+        }
+        if (ring->depth == 0 && ring->in_call) {
+            ring->in_call = 0;
+            wf__par_trace_put(lane, WF_PAR_TRACE_ROOT_JOIN_DONE, 0);
+            /* The offering lane's closing reading, against its own at the
+             * head: the same core, the same thread, one call apart. */
+            wf__par_trace_probe(
+                lane, (int)__atomic_load_n(&ring->chunks, __ATOMIC_RELAXED));
+        }
+    }
+#endif
 }
 
 int wf__par_pool_active(void) { return wf__sched_lanes() >= 2; }
@@ -991,6 +1405,9 @@ uint64_t wf__par_split_budget(uint64_t span, uint64_t weight) {
             return 0;
         }
     }
+#if defined(WF_PAR_TRACE)
+    wf__par_trace_call_head(lane);
+#endif
     if (weight == 0) {
         weight = 1;
     }
