@@ -24,9 +24,11 @@ name: compute-bench
 
 on:
   workflow_dispatch:
-    # An A/B twin on a quiet runner: a non-empty value builds the second image
-    # and adds the wf-b rows (README, "The A/B twin"); such a table is never a
-    # recorded plain table. Pushes always run plain.
+    # An A/B twin on a quiet runner: a non-empty control value builds the second
+    # image and adds the wf-b rows (README, "The A/B twin"); such a table is
+    # never a recorded plain table. `gap_us` is not a control and builds
+    # nothing, but marks its table the same way. Pushes always run plain, back
+    # to back, with no twin.
     inputs:
       par_control_flags:
         description: WF_PAR_CONTROL_FLAGS for the B image (emission)
@@ -38,6 +40,16 @@ on:
         type: string
       module_control_flags:
         description: WF_MODULE_CONTROL_FLAGS for the B image (module and runtime compile)
+        default: ""
+        type: string
+      # The call cadence, and the one input here that is not an A/B control: it
+      # builds nothing, reaches every form alike, and is waited between
+      # consecutive timed calls outside every measured interval (README, "The
+      # gap between calls"). Empty is the back-to-back cadence a recorded table
+      # is taken at; a non-zero value marks its own table `gap_us=` and is
+      # never recorded as a plain one.
+      gap_us:
+        description: WFB_GAP_US, microseconds waited between consecutive timed calls (every form)
         default: ""
         type: string
   push:
@@ -94,13 +106,15 @@ jobs:
           rustc -vV
           cargo --version
           echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/scratch" >> "$GITHUB_ENV"
-          # The three A/B controls travel as environment variables, which the
-          # bundle Makefile's `?=` defaults yield to; they are empty on a push
-          # and on a dispatch that set none, so those runs build no twin.
+          # The three A/B controls and the call cadence travel as environment
+          # variables, which the bundle Makefile's `?=` defaults yield to; they
+          # are empty on a push and on a dispatch that set none, so such a run
+          # builds no twin and times its calls back to back.
           {
             echo "WF_PAR_CONTROL_FLAGS=${{ inputs.par_control_flags }}"
             echo "WF_RUNTIME_CONTROL_FLAGS=${{ inputs.runtime_control_flags }}"
             echo "WF_MODULE_CONTROL_FLAGS=${{ inputs.module_control_flags }}"
+            echo "WFB_GAP_US=${{ inputs.gap_us }}"
           } >> "$GITHUB_ENV"
 
       # The OS prefix is load-bearing. Keyed on the three hashes alone, both

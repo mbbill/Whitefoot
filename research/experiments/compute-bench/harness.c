@@ -1,7 +1,8 @@
 /* Serves compute-bench: the one driver linked into every kernel image. It
  * owns the process protocol, the width rule, the clock, the timed loop, the
- * TSV the reducer reads, the backend lookup table, and the `main` that routes
- * through the Whitefoot floor. Nothing here knows what any kernel computes.
+ * call cadence, the TSV the reducer reads, the backend lookup table, and the
+ * `main` that routes through the Whitefoot floor. Nothing here knows what any
+ * kernel computes.
  *
  * The timed interval is section 4.5's and is identical for every
  * implementation of a kernel: the clock encloses exactly one `call()` and
@@ -189,6 +190,42 @@ WFB_NORETURN void wfb_fail(const char *message) {
     exit(1);
 }
 
+/* -------------------------------------------------------------- the gap -- */
+
+/* WFB_GAP_US is the gap between consecutive timed calls, in microseconds. With
+   WF_WORKERS it is one of the two variables the table sets. Unset, empty or
+   zero is the back-to-back cadence of every recorded table and is exactly what
+   this file did before the mode existed; a non-zero value asks the other
+   question, the one a program with sequential work between its parallel
+   regions poses: how much of a runtime's win survives when the next call does
+   not arrive while the lanes are still hot.
+
+   IT APPLIES TO EVERY FORM IDENTICALLY, references included. A gap that
+   reached only the Whitefoot row would be measuring one scheduler's idle
+   policy against another scheduler's warm one, which is not a comparison.
+
+   The ceiling is a fixed structural bound on a run-time setting, so that a
+   mistyped value cannot hold a process for an unbounded time. It selects
+   nothing, and no elapsed time reaches a verdict here any more than anywhere
+   else in this file. */
+#define WFB_MAX_GAP_US 1000000uL
+
+/* The wait is a busy-wait on the monotonic clock and deliberately NOT
+   nanosleep: the point of the mode is that the calling thread stays running,
+   as a program doing its own sequential work between parallel regions does,
+   while the runtime's helper lanes go idle and park. A sleeping driver thread
+   would hand its CPU back and measure something else.
+
+   It is outside every measured interval. Both clocks are started after this
+   returns, so no part of the gap is in a reported wall or CPU figure -- the
+   whole of what the gap does to a call is in the call's own numbers. */
+static void wfb_wait_gap(unsigned gap_us) {
+    uint64_t deadline;
+    if (!gap_us) return;
+    deadline = wfb_now_ns() + (uint64_t)gap_us * UINT64_C(1000);
+    while (wfb_now_ns() < deadline) { }
+}
+
 /* -------------------------------------------------------------- backends -- */
 
 static const wfb_backend *const wfb_table[] = {
@@ -315,6 +352,18 @@ static unsigned parse_width(const char *text) {
     return width;
 }
 
+/* Read once per process, in `verify` as well as in `time`, so a malformed value
+   is refused by the cheap sweep as well as by a long `compare` run instead of
+   only by the one that waits on it. `list` drives no call and reports no row,
+   so it reads nothing. Absent and empty both mean zero: the Makefile hands the
+   variable down only when it is set, and a reader running an image by hand gets
+   the back-to-back cadence without setting anything. */
+static unsigned wfb_gap_us(void) {
+    const char *text = getenv("WFB_GAP_US");
+    if (!text || !*text) return 0;
+    return parse_count(text, WFB_MAX_GAP_US, "WFB_GAP_US must be 0..WFB_MAX_GAP_US");
+}
+
 static void require_form(const wfb_kernel *k, const char *form) {
     for (const char *const *f = k->forms; *f; ++f)
         if (strcmp(*f, form) == 0) {
@@ -415,17 +464,27 @@ static void shut_down(const wfb_kernel *k, const char *form,
     *shutdown_ns = wfb_now_ns() - start;
 }
 
+/* The gap is READ AND REPORTED HERE AND NOT WAITED. `verify` drives no timed
+   call loop: the whole fixture sweep is one call into the kernel's own
+   `verify`, which owns its grid and is never measured, so the only place a
+   gap could go is inside each kernel's fixture loop -- between calls that no
+   clock brackets and no table reports. A wait there would lengthen `verify`
+   and check nothing, so this mode makes `verify` slower by nothing at all.
+   What it does do is refuse a malformed WFB_GAP_US in the cheap sweep that
+   runs before a long `compare`, which is why the Makefile hands the variable
+   to both. */
 static int do_verify(const wfb_kernel *k, const char *form, unsigned width) {
     size_t compared;
     int explicit_shutdown;
     uint64_t shutdown_ns;
+    unsigned gap_us = wfb_gap_us();
     require_form(k, form);
     k->prepare(width);
     compared = k->verify(form, width);
     shut_down(k, form, &explicit_shutdown, &shutdown_ns);
     if (compared == 0) wfb_fail("verify compared nothing");
-    (void)printf("# %s VERIFY PASS: form=%s width=%u compared=%zu\n",
-                 k->name, form, width, compared);
+    (void)printf("# %s VERIFY PASS: form=%s width=%u gap_us=%u compared=%zu\n",
+                 k->name, form, width, gap_us, compared);
     return fflush(stdout) == 0 ? 0 : 1;
 }
 
@@ -435,15 +494,21 @@ static int do_time(const wfb_kernel *k, const char *form, unsigned width,
     size_t outputs = 0, compared = 0;
     int explicit_shutdown;
     uint64_t shutdown_ns;
+    unsigned gap_us = wfb_gap_us();
     require_form(k, form);
     if (calls < 1) wfb_fail("CALLS must be at least 1");
 
     k->prepare(width);
+    /* `gap_us` goes in the header because the gap is part of what this process
+       measured: a row taken at one cadence and a row taken at another are two
+       measurements, and the reducer refuses to put them in one table. It sits
+       ahead of `workload` and `note`, each of which the reducer reads as
+       everything up to the next key. */
     (void)printf("# driver=%s form=%s grain=%s width=%u cpus=%u oversubscribed=%d"
-                 " calls=%u pass=%u workload=%s clock=%s clock_floor_ns=%llu"
-                 " cpu_clock=%s note=%s",
+                 " gap_us=%u calls=%u pass=%u workload=%s clock=%s"
+                 " clock_floor_ns=%llu cpu_clock=%s note=%s",
                  k->name, form, form_grain(k, form), width, cpus,
-                 width > cpus ? 1 : 0, calls, pass,
+                 width > cpus ? 1 : 0, gap_us, calls, pass,
                  k->workload ? k->workload : "unknown", WFB_CLOCK_NAME,
                  (unsigned long long)wfb_clock_floor_ns(), wfb_cpu_clock_name(),
                  form_note(k, form));
@@ -469,10 +534,20 @@ static int do_time(const wfb_kernel *k, const char *form, unsigned width,
        worker or lane thread the form started, spinning ones included; that is
        the point of the column. */
     for (unsigned call = 0; call <= calls; ++call) {
-        unsigned long before = wf__par_grants();
-        uint64_t a = wfb_now_ns();
-        uint64_t ca = wfb_cpu_ns();
-        size_t produced = k->call(form, width);
+        unsigned long before;
+        uint64_t a, ca;
+        size_t produced;
+        /* The gap, between consecutive calls and nowhere else: nothing precedes
+           the warm-up call, and by the time the wait returns the previous
+           call's verification and its printf are long done, so the wait is the
+           last thing that happens before the clock starts. That is the state
+           the mode is about -- the lanes have had the whole gap with no work
+           to find. */
+        if (call) wfb_wait_gap(gap_us);
+        before = wf__par_grants();
+        a = wfb_now_ns();
+        ca = wfb_cpu_ns();
+        produced = k->call(form, width);
         uint64_t cb = wfb_cpu_ns();
         uint64_t b = wfb_now_ns();
         unsigned long after = wf__par_grants();
@@ -485,9 +560,9 @@ static int do_time(const wfb_kernel *k, const char *form, unsigned width,
     }
 
     shut_down(k, form, &explicit_shutdown, &shutdown_ns);
-    (void)printf("# batch form=%s width=%u calls=%u outputs=%zu compared=%zu"
-                 " explicit_shutdown=%d shutdown_ns=%llu\n",
-                 form, width, calls, outputs, compared, explicit_shutdown,
+    (void)printf("# batch form=%s width=%u calls=%u gap_us=%u outputs=%zu"
+                 " compared=%zu explicit_shutdown=%d shutdown_ns=%llu\n",
+                 form, width, calls, gap_us, outputs, compared, explicit_shutdown,
                  (unsigned long long)shutdown_ns);
     return fflush(stdout) == 0 ? 0 : 1;
 }
@@ -509,9 +584,12 @@ int wf__main_body(int argc, char **argv) {
    runs, and ends the process there on a value outside a setting's ceiling.
    Unsetting them from the harness body would be too late. WF_SPLIT_WORK is
    unset for the same reason even where it does nothing: a split-budget
-   override must never silently change a recorded row. WF_WORKERS is never
-   unset -- it is the one variable the table sets, and parse_width above
-   cross-checks it against the WIDTH argument. */
+   override must never silently change a recorded row. WF_WORKERS and
+   WFB_GAP_US are never unset -- they are the two variables the table sets,
+   neither is read by the scheduler, and each is reported by the process that
+   read it: parse_width above cross-checks WF_WORKERS against the WIDTH
+   argument, and the gap goes into the header and the trailer of every batch it
+   shaped. */
 int main(int argc, char **argv) {
     if (unsetenv("WF_SCHED_REPORT") || unsetenv("WF_STACKS") ||
         unsetenv("WF_IO_HELPERS") || unsetenv("WF_SPLIT_WORK"))

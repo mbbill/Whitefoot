@@ -1,11 +1,12 @@
 <!-- Serves compute-bench: the reader's entry point. It states the one question
      the bundle answers, how to run it, how to read the table it prints, what
      each reference's grain policy is and what it is not, the three A/B
-     handles and the baseline twin a fourth builds, the two flag sets and the
-     asymmetry between them, the one compiled-Whitefoot standing the old
-     research bundle left behind, where a table that matters is recorded, and
-     the one rule here that decides a pass/fail: the compute regression check,
-     a separate pull-request check that is not part of `make check`. -->
+     handles and the baseline twin a fourth builds, the call cadence and the
+     gap mode, the two flag sets and the asymmetry between them, the one
+     compiled-Whitefoot standing the old research bundle left behind, where a
+     table that matters is recorded, and the one rule here that decides a
+     pass/fail: the compute regression check, a separate pull-request check
+     that is not part of `make check`. -->
 
 # compute-bench
 
@@ -249,10 +250,11 @@ twin, runs no extra process and leaves the bundle exactly as it was. An A/B run
 is recorded as the *arms of an experiment*, with the control flags in its
 heading and the `A/B` lines quoted in its reading. A push to the hosted
 workflow sets none of the three and therefore builds no twin; a manual dispatch
-of `.github/workflows/compute-bench.yml` takes the three as inputs, which is
-how an A/B pair is read on a quiet runner (its table is an experiment, never a
-recorded plain one). The two targets the repository's `make check` runs —
-`programs-check` and `verdict-test` — read none of the four: one compiles
+of `.github/workflows/compute-bench.yml` takes the three as inputs, beside the
+call cadence of the section below, which is how an A/B pair is read on a quiet
+runner (its table is an experiment, never a recorded plain one). The two
+targets the repository's `make check` runs — `programs-check` and
+`verdict-test` — read none of these handles nor the cadence: one compiles
 programs and the other feeds the regression rule crafted table fragments.
 
 **A fourth handle hands the same twin a different tree.** `WF_B_SCHED_DIR`,
@@ -434,11 +436,14 @@ BUILD=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/build
 $BUILD/mandelbrot list                     # forms, grain policies, widths
 WF_WORKERS=4 $BUILD/mandelbrot verify wf 4
 WF_WORKERS=4 $BUILD/mandelbrot time wf 4 0 5
+WF_WORKERS=4 WFB_GAP_US=2000 $BUILD/mandelbrot time wf 4 0 5   # a 2 ms gap
 ```
 
 `WF_WORKERS` must be set and must equal the `WIDTH` argument for every form,
 native ones included; the driver cross-checks the two before anything else
 happens, because a disagreement would silently compare two different widths.
+`WFB_GAP_US` is the other variable the table sets and is optional: unset is the
+back-to-back cadence, and "The gap between calls" below is what a value does.
 
 `make programs-check` and `make verdict-test` are the two targets the
 repository's `make check` runs, and neither times anything. `programs-check`
@@ -507,6 +512,162 @@ make -C research/experiments/compute-bench compare PASSES=5 CALLS=5
 
 The same four commands run in `.github/workflows/compute-bench.yml` on
 `ubuntu-24.04` and `macos-14`.
+
+## The gap between calls
+
+Five calls per process, back to back, with microseconds between them: that is
+the cadence every recorded table is taken at, and it is the cadence a runtime
+that keeps an idle lane hot for a window before it parks is measured at its
+best in, because the next call always arrives while the lanes are still hot.
+Real programs have gaps between their parallel regions.
+
+`WFB_GAP_US` is that gap, in microseconds, per process. It is **zero by
+default**, which is the back-to-back cadence and exactly what the bundle did
+before the mode existed.
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/gap-2ms \
+     PASSES=5 CALLS=5 WFB_GAP_US=2000
+```
+
+Between two consecutive timed calls the driver waits that many microseconds
+**outside the measured interval**, on a monotonic-clock busy-wait and not a
+sleep: the point of the mode is that the calling thread stays running, as a
+program doing its own sequential work between parallel regions does, while the
+runtime's helper lanes go idle and park. A driver that slept would hand its CPU
+back and measure something else. The wait is the last thing before the clock
+starts — after the previous call's verification and its printf — so no part of
+a gap is inside any reported wall or CPU figure, and the whole of what the gap
+did to a call is in that call's own numbers.
+
+**It reaches every form identically, references included.** A gap that reached
+only the `wf` row would compare one scheduler's idle policy against another
+scheduler's warm one, which is not a comparison; what a gapped table reads is
+how the compiled program and each reference alike behave when their work
+arrives sparsely.
+
+It is a **run-time setting and nothing else**: no stamp, no emission, no
+compile and no link reads it, on the plain image or on the twin, so changing it
+rebuilds nothing and the images a gapped run times are byte-identical to the
+ones a gap-free run times. That is what lets it compose with the A/B twin, and
+the composition is the run the mode was added for:
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/gap-2ms-nowindow \
+     PASSES=5 CALLS=5 \
+     WFB_GAP_US=2000 WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_IDLE_WINDOW_US=0
+```
+
+— the runtime this tree ships against the same runtime with its idle window
+withheld, both at a 2 ms gap, in one set of passes, paired within each pass by
+the `A/B wf-b/wf` line. That is the sparse-cadence reading
+[`RESULTS.md`](../../investigations/compute-runtime/RESULTS.md) records as open
+beside the idle window, and the question the bundle could not ask before: how
+much of a win measured on back-to-back calls survives a gap, and what the
+references do across the same gap.
+
+**A table taken at a non-zero gap is never a candidate record for the W
+blocks**, on exactly the terms of the three control flags above: the recorded
+table for a host is its highest non-oversubscribed block at the back-to-back
+cadence, and a table at another cadence measures a different question about the
+same programs. Three things keep the two apart without anyone having to
+remember. `manifest.txt` records `WFB_GAP_US` on every run, empty or not. Every
+process writes the gap it ran at into its own header and trailer in `raw.tsv`,
+and the reducer **refuses to put two cadences in one table** — a disagreement
+is a malformed stream, refused exactly as a header/trailer mismatch is, and
+never a judgement about a measurement. And a non-zero gap puts `gap_us=` on the
+table's `passes=` line with a disclosure line above it, saying in the table
+itself that it is not the back-to-back one.
+
+`verify` is handed the variable too and **waits nothing**. It drives no timed
+call loop: the whole fixture sweep is one call into the kernel's own `verify`,
+which no clock brackets and no table reports, so the only place a wait could go
+is inside a grid that measures nothing, where it would lengthen `verify` and
+check nothing. What `verify` does with it is read it, report it in its
+`VERIFY PASS` line, and refuse a malformed value cheaply, before a long
+`compare` pays for the same mistake. `programs-check` reads it no more than it
+reads the three controls: it links nothing and runs no image.
+
+A hosted run takes the gap as the `gap_us` input of
+`.github/workflows/compute-bench.yml`, beside the three control inputs, and a
+push sets none of the four.
+
+## The lane trace
+
+A gapped run says the compiled form gives up wall time at a sparse cadence on
+some hosted runners; it does not say where that time goes, and a table cannot.
+`WF_PAR_TRACE` is the runtime's own answer: defined,
+`compiler/src/backend/sched/core.c` records a fixed per-lane ring of scheduler
+events and prints it to **stderr** at process exit, one line per event. What it
+found is in [`RESULTS.md`](../../investigations/compute-runtime/RESULTS.md),
+the three `bench/wake-trace` sections.
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/gap-2ms-trace \
+     PASSES=5 CALLS=5 \
+     WFB_GAP_US=2000 WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_TRACE=1
+```
+
+It is a runtime control like any other, so it reaches the **twin only**: the
+`wf-b` cells trace and the `wf` cells are the runtime this tree ships, and the
+`A/B wf-b/wf` line of the same table is what says whether carrying the
+instrument moved the reading. Nothing else changes. The events go to stderr,
+which `compare` already keeps per cell in
+`results/logs/<kernel>-wf-b-w<W>-p<pass>.log`, so the parsed stdout stream and
+`raw.tsv` are untouched and the workflow uploads the trace with the rest of
+`logs/`.
+
+```
+wf-trace lane=<n> ev=<kind> t_us=<monotonic us> cpu=<sched_getcpu> v=<payload> seq=<n>
+```
+
+| kind | when | `v` | `seq` |
+| --- | --- | --- | --- |
+| `call_head` | the splitter's entry query, once per top-level call | the idle mask then | 0 |
+| `root_publish_first` | the first publish of a burst that finds lanes parked | the idle mask | 0 |
+| `park` | entering the condvar wait, in either idle loop | spin/yield rounds done | 0 |
+| `wake` | returning from that wait | the publish epoch seen | 0 |
+| `steal_ok` | the lane's first successful steal after a wake or a call head | 0 | 0 |
+| `chunk` | one executed callback; the timestamp is when it finished | its duration in ns | its index in the call |
+| `probe` | a fixed dependent chain of 20,000 steps, timed | its duration in ns | 0 straight out of a park and at a call head, else the chunk it followed |
+| `root_join_done` | the release that closes the call on the offering lane | 0 | 0 |
+
+Per call and per lane that gives wake latency (`wake` minus `call_head`), steal
+latency, how long the lane had been parked, the CPU it parked on against the
+CPU it woke on and the offering lane's own, the work it did as a time series of
+chunk durations against their position in the call, and — from `probe` — how
+fast the core it is on was running at each of those points. Lines are grouped
+by lane and ordered within a lane; sort by `t_us` to interleave them. A final
+`wf-trace-probe sink=<n> iterations=<n>` line carries the chain's accumulated
+result, so its work is visibly consumed.
+
+The probe rides on chunks 1, 2, 4, 8, … so its cost grows with the logarithm of
+the chunk count; on the hosted runners it added **3 to 4 %** to a `wf-b` cell at
+two and four lanes. It also lengthens every latency measured from the call
+head: the offering lane runs one probe before it publishes anything, and each
+helper runs one before its first scan, so head-to-`wake` reads about 39 µs where
+a build without the probe reads 21, and head-to-`steal_ok` 57 where it reads 22.
+**Read wake and steal latency off a run built without the probe.** `chunk`
+events are capped at 64 per lane per call, above what any map kernel here
+reaches; a recursive kernel that runs a thousand leaves a call is truncated at
+that count rather than filling the ring, and shows it by its chunk events
+stopping while its park, wake and join events continue.
+
+It is a **measurement instrument**. No shipped build, gate target or test
+defines it, `whitefootc` never passes it, and with it undefined the scheduler
+core and the host primitives compile to the same object bytes they did before
+the instrument existed.
+
+Pairing it with a wider idle window asks whether any of it is the parking:
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/gap-2ms-trace-hot \
+     PASSES=5 CALLS=5 WFB_GAP_US=2000 \
+     WF_RUNTIME_CONTROL_FLAGS="-DWF_PAR_TRACE=1 -DWF_PAR_IDLE_WINDOW_US=3000"
+```
+
+— the same instrument over lanes that stay hot across the gap, so the two runs
+differ in whether a lane parked and in nothing else.
 
 ## How to read the table
 
@@ -810,6 +971,7 @@ WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
 KERNELS ?= mandelbrot quadrature records fir
 PASSES ?= 5
 CALLS  ?= 5
+WFB_GAP_US ?=
 ```
 
 `-fno-lto` is repeated on every link line, not only on compiles.
