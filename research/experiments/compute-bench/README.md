@@ -463,26 +463,51 @@ which `compare` already keeps per cell in
 `logs/`.
 
 ```
-wf-trace lane=<n> ev=<kind> t_us=<monotonic us> cpu=<sched_getcpu> v=<payload>
+wf-trace lane=<n> ev=<kind> t_us=<monotonic us> cpu=<sched_getcpu> v=<payload> seq=<n>
 ```
 
-| kind | when | `v` |
-| --- | --- | --- |
-| `call_head` | the splitter's entry query, once per top-level call | the idle mask then |
-| `root_publish_first` | the first publish of a burst that finds lanes parked | the idle mask |
-| `park` | entering the condvar wait, in either idle loop | spin/yield rounds done |
-| `wake` | returning from that wait | the publish epoch seen |
-| `steal_ok` | the lane's first successful steal after a wake or a call head | 0 |
-| `root_join_done` | the release that closes the call on the offering lane | 0 |
+| kind | when | `v` | `seq` |
+| --- | --- | --- | --- |
+| `call_head` | the splitter's entry query, once per top-level call | the idle mask then | 0 |
+| `root_publish_first` | the first publish of a burst that finds lanes parked | the idle mask | 0 |
+| `park` | entering the condvar wait, in either idle loop | spin/yield rounds done | 0 |
+| `wake` | returning from that wait | the publish epoch seen | 0 |
+| `steal_ok` | the lane's first successful steal after a wake or a call head | 0 | 0 |
+| `chunk` | one executed callback; the timestamp is when it finished | its duration in ns | its index in the call |
+| `probe` | a fixed dependent chain of 20,000 steps, timed | its duration in ns | 0 straight out of a park, else the chunk it followed |
+| `root_join_done` | the release that closes the call on the offering lane | 0 | 0 |
 
 Per call and per lane that gives wake latency (`wake` minus `call_head`), steal
-latency, how long the lane had been parked, and the CPU it parked on against
-the CPU it woke on and the offering lane's own. Lines are grouped by lane and
-ordered within a lane; sort by `t_us` to interleave them.
+latency, how long the lane had been parked, the CPU it parked on against the
+CPU it woke on and the offering lane's own, the work it did as a time series of
+chunk durations against their position in the call, and — from `probe` — how
+fast the core it is on was running at each of those points. Lines are grouped
+by lane and ordered within a lane; sort by `t_us` to interleave them. A final
+`wf-trace-probe sink=<n> iterations=<n>` line carries the chain's accumulated
+result, so its work is visibly consumed.
+
+The probe rides on chunks 1, 2, 4, 8, … so its cost grows with the logarithm of
+the chunk count; at four lanes it adds about 2 % to a `wf-b` cell and it
+lengthens the measured `wake`-to-`steal_ok` gap by one probe, since the
+post-park reading is taken before the lane's first scan. Read steal latency off
+a run without the probe. `chunk` events are capped at 64 per lane per call,
+which no map kernel here reaches.
 
 It is a **measurement instrument**. No shipped build, gate target or test
 defines it, `whitefootc` never passes it, and with it undefined the scheduler
-core compiles to the same object bytes it did before the instrument existed.
+core and the host primitives compile to the same object bytes they did before
+the instrument existed.
+
+Pairing it with a wider idle window asks whether any of it is the parking:
+
+```sh
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/gap-2ms-trace-hot \
+     PASSES=5 CALLS=5 WFB_GAP_US=2000 \
+     WF_RUNTIME_CONTROL_FLAGS="-DWF_PAR_TRACE=1 -DWF_PAR_IDLE_WINDOW_US=3000"
+```
+
+— the same instrument over lanes that stay hot across the gap, so the two runs
+differ in whether a lane parked and in nothing else.
 
 ## How to read the table
 
