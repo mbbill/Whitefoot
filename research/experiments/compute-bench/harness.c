@@ -257,11 +257,12 @@ static unsigned parse_width(const char *text) {
     return width;
 }
 
-/* Read once per process, in every mode, so a malformed value is refused by the
-   cheap `verify` sweep as well as by a long `compare` run instead of only by
-   the one that waits on it. Absent and empty both mean zero: the Makefile hands
-   the variable down only when it is set, and a reader running an image by hand
-   gets the back-to-back cadence without setting anything. */
+/* Read once per process, in `verify` as well as in `time`, so a malformed value
+   is refused by the cheap sweep as well as by a long `compare` run instead of
+   only by the one that waits on it. `list` drives no call and reports no row,
+   so it reads nothing. Absent and empty both mean zero: the Makefile hands the
+   variable down only when it is set, and a reader running an image by hand gets
+   the back-to-back cadence without setting anything. */
 static unsigned wfb_gap_us(void) {
     const char *text = getenv("WFB_GAP_US");
     if (!text || !*text) return 0;

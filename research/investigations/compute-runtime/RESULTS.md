@@ -151,17 +151,29 @@ and that with it inert the compiled forms lose 8 to 18 percent at W=4 —
 mandelbrot 1.176, fir 1.114, records 1.079, quadrature 0.980 — while every
 reference crosses the same gap unchanged. Run `34668796717` puts a
 three-millisecond window on the twin at the same 2 ms gap, so that arm's lanes
-never park, and it **identifies the cause**: hot over parked reads 0.771 to
-0.946 on mandelbrot, fir and quadrature, the hot arm returns to 1.012 at
+never park, and it **identifies the trigger**: hot over parked reads 0.771 to
+0.946 on mandelbrot, fir and quadrature, and the hot arm returns to 1.012 at
 mandelbrot W=4 and 0.992 at fir W=2 against 1.148 and 1.289 for the parking
-arm, and the per-call series shows the parked lane coming back onto its waker's
-SMT sibling and staying there — the same co-location, and very nearly the same
-numbers, that the pre-window runtime read at back-to-back cadence. So the idle
-window did not remove that behaviour; it moved the cadence at which it appears.
-The work these three select is the **wake path**, not a longer window, whose
-cost is spent between calls where no column of this table reports it. Records
-is the exception and is **OPEN**: both arms lose it at a 2 ms gap by the same
-amount, so its loss there is not lane wake, and at 500 us it has none. The two
+arm, so **the loss is caused by the lanes having parked across the gap** — the
+parking arm reading very nearly the numbers the pre-window runtime read at
+back-to-back cadence. So the idle window did not remove that behaviour; it moved
+the cadence at which it appears. **What the park costs is OPEN**, and a later
+trace run refutes the mechanism these three sections first read into it: run
+`34671025894` on branch `bench/wake-trace`, a gated `WF_PAR_TRACE` twin on the
+same runner class at a 2 ms gap, reproduces the loss (fir W=4 1.113 and 1.115,
+mandelbrot W=4 1.111 and 1.151) and measures the wake path over seventy-five
+traced W=4 calls per kernel — the wake from the root's first publish is a median
+20 to 22 us, helper absence inside a call is 0.3 to 0.4 percent of helper time,
+and the four lanes sit one per logical CPU and never move, in 75 of 75 calls.
+**It is not the wake, not the lanes' absence and not their placement**: the cost
+is paid inside the working portion of the call, with the lanes present on
+distinct CPUs and each doing the same work slower. So the work these three
+select is to find **why a lane that parked across a gap runs its chunks slower
+for the rest of the call** on this runner class, with the per-chunk trace as the
+instrument — not a longer window, whose cost is spent between calls where no
+column of this table reports it. Records is the exception and is **OPEN**: both
+arms lose it at a 2 ms gap by the same amount, so its loss there is not the park
+at all, and at 500 us it has none. The two
 local **Apple M1 Pro** tables, the zero-window twin at each of the same two
 gaps on eight real cores, say the loss is not the runtime's on every machine:
 there the cadence does not reach the result at all — mandelbrot W=4 1.023 and
@@ -18678,15 +18690,31 @@ pair at `cpu` 0.992. And it is not spinning, which the twin settles outright:
 `wf-b` has no window to spin in past its fixed 1,024-round bound, and it loses
 the same wall — A/B 1.003 in this block and 1.000 to 1.011 at every
 non-oversubscribed width. A runtime that cannot spin cannot be losing the gap
-to spin. What is left is the other half of the wait path, the one this file
-already has a mechanism for: run `34631106340`'s per-call series on this runner
-class reads a lane that parks on a condvar and is woken by a publisher coming
-back slow, placed beside its waker until the load balancer separates them, and
-`static`, whose helpers never sleep, not paying it. There that cost was the
-first few calls of a process; a 2 ms gap makes every call the first one, and
-the call pays about 0.85 ms at mandelbrot W=4, 0.68 at fir and 0.63 at records
-— against 0.13, none and 0.34 at W=2, where one helper has to come back
-instead of three. The window's own price is still beside it and unchanged in
+to spin. What is left is the park itself — and a later trace run says which
+part of it, by refuting the mechanism this section first read into it. Run
+`34671025894` on branch `bench/wake-trace`, a gated `WF_PAR_TRACE` instrument
+compiled into the `wf-b` twin and dispatched on this runner class at a 2 ms
+gap, reproduces the loss — fir W=4 1.113 and 1.115 and mandelbrot W=4 1.111 and
+1.151 against the best reference, with the instrumented twin pairing its plain
+arm at `A/B` 1.004 and 1.000 — and then measures the wake path directly over
+seventy-five traced W=4 calls per kernel. Every helper lane was indeed parked at
+every call head. But **the wake is not the cost**: from the root's first publish
+the wake arrives in a median 20 to 22 us with p90 at or below 27 us, the first
+successful steal follows it by 1 to 2 us, and total helper absence inside a call
+is 60 to 75 us, 0.3 to 0.4 percent of helper time — an order of magnitude below
+the 0.6 to 0.9 ms this table reads. And **it is not placement**: no helper
+changed CPU between its park, its wake and its first steal in 150 of 150 traced
+calls, and at W=4 the four lanes occupied exactly the four logical CPUs, one each,
+with no hyperthread idle and no CPU doubly occupied, in 75 of 75 calls. What the
+trace leaves is the working portion of the call, with every lane present on its
+own CPU and each one doing the same work slower: per-call lane occupancy,
+`cpu / (4 x wall)`, reads 0.92 to 0.94 on `wf` against `tbb`'s 0.95 to 0.97 and
+`rayon-join`'s 0.98 to 0.99, and at fir W=4 `wf` spends about 9 percent more
+process CPU per call than `tbb` for 10 percent more wall. So the call pays about
+0.85 ms at mandelbrot W=4, 0.68 at fir and 0.63 at records — against 0.13, none
+and 0.34 at W=2, where one helper has to come back instead of three — for having
+parked across the gap, and **why a lane that parked runs slower once it is back
+is open**. The window's own price is still beside it and unchanged in
 kind: mandelbrot W=4 pairs `cpu` 0.920 between the arms and reads `cpu_r`
 1.137 against `tbb` where the zero-window arm reads 1.039 — the tail spin the
 sections above priced, now paid on a call that gains nothing from it.
@@ -18701,26 +18729,33 @@ each lane one chunk of a partition at the start of the call, so a lane that is
 still coming back is a lane missing from the widest part of the call;
 quadrature's recursive fork-join keeps offering work for the whole call, and a
 late lane still gets to do some of it. That is a hypothesis the table is
-consistent with, not a mechanism this run measured.
+consistent with, not a mechanism this run measured — and the trace above removes
+the half of it that has a lane arriving late: a helper is absent for 60 to 75 us
+of a call that runs 5 to 9 ms. What is left of it, that a kernel still offering
+work gives a slowed lane somewhere useful to be, is untested.
 
 **This is a runner-class result, and the third run of this set says what
-causes it.** The development host does not reproduce it: at `fd00c10c` the fir image
-at W=4 reads per-call walls of 6.3 to 6.8 ms at a gap of zero and at a gap of
-200,000 us alike, a hundred times the gap that costs 11 percent here, and that
-host's own `/sys` reports one thread sibling per CPU and `smt: 0` against this
-runner's two cores with two siblings each. Neither does an Apple M1 Pro with
-eight real cores: the two local tables at the end of this file run the same
-twin at both gaps there and read the same ratios at both, 1.023 and 1.026 at
-mandelbrot W=4 where this runner reads 1.176. This table on its own does not
-separate the candidates — the SMT pairing, the virtualized runner's idle
+triggers it.** The development host does not reproduce it: at `fd00c10c` the
+fir image at W=4 reads per-call walls of 6.3 to 6.8 ms at a gap of zero and at
+a gap of 200,000 us alike, a hundred times the gap that costs 11 percent here,
+and that host's own `/sys` reports one thread sibling per CPU and `smt: 0`
+against this runner's two cores with two siblings each. Neither does an Apple
+M1 Pro with eight real cores: the two local tables at the end of this file run
+the same twin at both gaps there and read the same ratios at both, 1.023 and
+1.026 at mandelbrot W=4 where this runner reads 1.176. This table on its own
+does not separate the candidates — the SMT pairing, the virtualized runner's idle
 handling, the kernel's placement of a woken lane — and no constant and no rule
 changes on the strength of it. Run `34668796717`, further down this set, is the
-twin that does separate them: a three-millisecond window that outlasts the gap
-puts the arm whose lanes never park back among the references and leaves the
-parking arm exactly where this table has it, so **the loss is the park and the
-wake that follows it**, and on that runner class the woken lane's placement is
-visible per call. What stays open there is why this runtime's parked lane comes
-back badly where the references' do not.
+twin that separates the park from everything else: a three-millisecond window
+that outlasts the gap puts the arm whose lanes never park back among the
+references and leaves the parking arm exactly where this table has it, so **the
+loss is caused by the lanes having parked across the gap**. What the park costs
+is neither the wake nor where the woken lane lands — run `34671025894` above
+measures both on this runner class and finds a median 20 us wake, helper absence
+at 0.3 to 0.4 percent of helper time, and one lane per logical CPU, never
+moving, in 75 of 75 traced W=4 calls. **The mechanism is open**: the cost is
+paid inside the working portion of the call, with the lanes present on distinct
+CPUs and each doing the same work slower.
 
 - host: `Linux runnervmlun5p 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux` (the hosted
   ubuntu image reports the same node name on every run in this file; it does
@@ -19374,7 +19409,11 @@ park. What the pair measures is the cost of the park itself as a function of
 how long it lasts — zero at 500 us, about 0.7 ms at 2 ms — on a runner whose
 references pay neither. The section after next closes the causal half of it
 with a third twin at `-DWF_PAR_IDLE_WINDOW_US=3000`, whose lanes never park
-across a 2 ms gap and which reads back among the references. A measurement on
+across a 2 ms gap and which reads back among the references — so the park is
+the trigger. What the park then costs is open: run `34671025894` on branch
+`bench/wake-trace` measures the wake path on this runner class and finds it is
+neither the wake, nor the lane's absence, nor where the lane lands.
+A measurement on
 hardware that is not a hosted VM is still worth having: the four-logical-CPU
 Linux development host, whose `/sys` reports one thread sibling per CPU and
 `smt: 0`, does not reproduce the loss at all, reading fir W=4 per-call walls of
@@ -20017,18 +20056,25 @@ it when the lanes outnumber the online CPUs, so at eight lanes on four CPUs
 **both** arms are zero-window and there is nothing between them. The guard
 holds here too.
 
-**The per-call series at fir W=2 says what the parked lane is doing, and it is
-the co-location this file already has a name for.** The parking arm's warm
-calls sit at a steady 13.44 to 13.51 ms with 25.9 to 26.8 ms of process CPU —
-very nearly two full lanes of CPU for a call that should take 10.4 — while the
-hot arm's twenty-five warm calls run 10.338 to 10.487 ms at 20.3 to 21.4 ms of
-CPU, which is `static`'s own 10.417 to 10.574 ms at 20.4 to 21.6. Both lanes
-are running in the slow arm and both are running at half speed: that is two
-lanes sharing one core, not one lane waiting. One call out of the
-twenty-five, pass 3 call 2, reads 10.797 ms at 20.664 ms of CPU — the same call
-placed on two cores — which is the same effect appearing and disappearing
-inside one process. The block ratio, **1.289 with `cpu_r` 1.282**, is the
-number run `34628390507` read on the pre-window runtime at back-to-back cadence
+**The per-call series at fir W=2 says both parked lanes come back and both run
+slow, and a later trace says it is not the core they are on.** The parking arm's
+warm calls sit at a steady 13.44 to 13.51 ms with 25.9 to 26.8 ms of process
+CPU — very nearly two full lanes of CPU for a call that should take 10.4 —
+while the hot arm's twenty-five warm calls run 10.338 to 10.487 ms at 20.3 to
+21.4 ms of CPU, which is `static`'s own 10.417 to 10.574 ms at 20.4 to 21.6.
+Both lanes are running in the slow arm and both are running at half speed: that
+is not one lane waiting. **The reading first recorded here, that they are two
+lanes sharing one core, is wrong.** Run `34671025894` on branch
+`bench/wake-trace` traced fir at W=2 on this runner class and found **no
+same-core call at all**, 0 of 25, and read its own per-pass bimodality — 8.25
+against 10.4 ms — on a fixed cross-core CPU set, with pass 0 and pass 2 holding
+identical placement and opposite medians. So both lanes run slower on a
+placement that does not change, and **the mechanism is open**. One call out of
+the twenty-five here, pass 3 call 2, reads 10.797 ms at 20.664 ms of CPU — the
+hot arm's own numbers — which is the same effect appearing and disappearing
+inside one process, on a cause the trace has since shown is not where the lanes
+sit. The block ratio, **1.289 with `cpu_r` 1.282**, is the number run
+`34628390507` read on the pre-window runtime at back-to-back cadence
 on this class, 1.290 with `cpu_r` 1.303, and the hot arm's **0.992 with `cpu_r`
 0.995** is the number run `34639809658` read after the window landed, 0.994
 with 0.996. So the idle window did not remove that behaviour; it moved the call
@@ -20039,13 +20085,14 @@ longer than the window.
 amount: W=2 reads 1.062 for the parking arm and 1.068 for the hot one, W=4
 reads 1.067 and 1.115, and the `A/B` lines are 1.006 and 1.005 — flat, where
 the other three kernels separate by 5 to 23 percent. Keeping the lanes hot does
-nothing for it, so whatever records loses at a 2 ms gap is not lane wake. At a
+nothing for it, so whatever records loses at a 2 ms gap is not the park. At a
 500 us gap, two sections above, the same kernel was the fastest form in its
 block at both widths, 0.867 and 0.997, so the loss is real and cadence-related
 and has some second cause. Nothing here identifies it.
 
-**What this set selects as the next work: fix the wake path, not the window.**
-The lever the third run pulls is not a candidate for shipping. A window sized
+**What this set selects as the next work: find why a parked lane comes back
+slow, not lengthen the window.** The lever the third run pulls is not a
+candidate for shipping. A window sized
 to span the gaps of a real program is unbounded in the only dimension that
 matters — the gap is whatever the program does between parallel regions — and
 what it costs does not appear in this table at all: the spin happens between
@@ -20054,12 +20101,19 @@ calls, outside every measured interval, so at W=4 the hot arm burns roughly
 some 30 ms of process CPU that no column here reports, to save the 0.6 to
 1.6 ms per call the table does report. Measured that way a longer window will
 always look free and never be. What these three runs isolate instead is a
-defect with a known shape: this runtime's parked lane comes back onto the SMT
-sibling of its waker and stays there, where `rayon`'s, `tbb`'s and `parlay`'s
-parked workers cross the same 2 ms gap and cost their schedulers nothing. That
-is the thing to fix, and the investigation of why is in progress; a wake path
-that places a lane correctly ends the cadence sensitivity for every gap length
-at once, and would let the window go back to being what it is for, the
+defect with a known trigger and an unknown mechanism: a lane that parked across
+the gap makes the whole call slower, where `rayon`'s, `tbb`'s and `parlay`'s
+parked workers cross the same 2 ms gap and cost their schedulers nothing. Run
+`34671025894` on branch `bench/wake-trace` rules out the three obvious
+explanations on this runner class — the wake from the root's first publish is a
+median 20 to 22 us, helper absence inside a call is 0.3 to 0.4 percent of helper
+time, and the lanes sit one per logical CPU and never move, in 75 of 75 traced
+W=4 calls — so the cost is inside the working portion of the call, with every
+lane present on its own CPU and each doing the same work slower. **The next work
+is to find why a lane that parked across a gap runs its chunks slower for the
+rest of the call on this runner class, with the per-chunk trace as the
+instrument.** A fix there ends the cadence sensitivity for every gap length at
+once, and would let the window go back to being what it is for, the
 microsecond-scale idleness inside a call.
 
 - host: `Linux runnervmlun5p 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux` (the hosted
@@ -20699,11 +20753,12 @@ twin is flat across all sixteen of those lines, 0.995 to 1.014 here and 0.979
 to 1.020 in the section below. The hosted runners read 8 to 18 percent at W=4
 when the gap reached 2 ms; this machine reads the same numbers at both gaps.
 **So the sparse-cadence loss is not a property of the runtime on every
-machine.** It is the hosted class's, where a parked lane comes back onto the
-SMT sibling of its waker; an M1 Pro has no SMT sibling for it to land on. That
-is consistent with the hosted evidence rather than a second measurement of it:
-this host differs from those runners in more than one way, and only the runner
-class has a per-call series showing the placement.
+machine.** It is the hosted class's, where a lane that parked across the gap
+makes the rest of its call slower; this machine's lanes cross the same gaps and
+pay nothing. **Why the two differ is open.** The hosted trace, run
+`34671025894` on branch `bench/wake-trace`, rules out the wake, the lane's
+absence and its placement there, so this table cannot name the difference
+either, and this host differs from those runners in more than one way.
 
 **What repeats here is what the earlier M1 Pro sections already record as
 open.** At the recorded W=8, where the lanes still fit the eight online CPUs,
