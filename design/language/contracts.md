@@ -8,4 +8,3 @@ Decision: Generic bounds over source contracts and member calls stay absent unti
 
 Rejected:
 - Raw source-row equality for member effect compatibility: rejected because it breaks signature regularity across irrelevant occurrence order, repetition, and region spelling.
-- Effect subtyping for member compatibility: rejected because both sides must carry every capability exactly.
