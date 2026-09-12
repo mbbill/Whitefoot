@@ -43,6 +43,12 @@ the rejected `N`-layer frontier, alignment flags, and wake-path change.
 No decision needed: the compute scoreboard and its harness, CPU column, A/B
 twin, Darwin CPU source, and hosted workflows (research instruments); the
 `compute-regression` required check and the scratch-root move (infrastructure);
-the POSIX spin hint (a missing instruction, not a choice); the `WF_PAR_TRACE`
-instrument compiled into no shipped build; the io-model scheduler findings and
-the chunk-lease measurement (measurements, not decisions).
+the POSIX spin hint (a missing instruction, not a choice); the io-model
+scheduler findings and the chunk-lease measurement (measurements, not
+decisions).
+
+Ruled by the owner: the `WF_PAR_TRACE` instrument in `sched/core.c` stays. It
+is not the same kind of thing as the deleted inventory switches, which
+reproduced historical states of the system API that nothing used; it is a
+performance-debugging instrument for the parallel runtime, compiled into no
+shipped build, and will be wanted the next time that runtime is tuned.
