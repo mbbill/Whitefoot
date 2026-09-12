@@ -441,11 +441,13 @@ push sets none of the four.
 
 ## The lane trace
 
-A gapped run says the compiled form loses lane time at the head of a call; it
-does not say where that time goes. `WF_PAR_TRACE` is the runtime's own answer:
-defined, `compiler/src/backend/sched/core.c` records a fixed per-lane ring of
-scheduler events and prints it to **stderr** at process exit, one line per
-event.
+A gapped run says the compiled form gives up wall time at a sparse cadence on
+some hosted runners; it does not say where that time goes, and a table cannot.
+`WF_PAR_TRACE` is the runtime's own answer: defined,
+`compiler/src/backend/sched/core.c` records a fixed per-lane ring of scheduler
+events and prints it to **stderr** at process exit, one line per event. What it
+found is in [`RESULTS.md`](../../investigations/compute-runtime/RESULTS.md),
+the three `bench/wake-trace` sections.
 
 ```sh
 make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/gap-2ms-trace \
@@ -474,7 +476,7 @@ wf-trace lane=<n> ev=<kind> t_us=<monotonic us> cpu=<sched_getcpu> v=<payload> s
 | `wake` | returning from that wait | the publish epoch seen | 0 |
 | `steal_ok` | the lane's first successful steal after a wake or a call head | 0 | 0 |
 | `chunk` | one executed callback; the timestamp is when it finished | its duration in ns | its index in the call |
-| `probe` | a fixed dependent chain of 20,000 steps, timed | its duration in ns | 0 straight out of a park, else the chunk it followed |
+| `probe` | a fixed dependent chain of 20,000 steps, timed | its duration in ns | 0 straight out of a park and at a call head, else the chunk it followed |
 | `root_join_done` | the release that closes the call on the offering lane | 0 | 0 |
 
 Per call and per lane that gives wake latency (`wake` minus `call_head`), steal
@@ -487,11 +489,16 @@ by lane and ordered within a lane; sort by `t_us` to interleave them. A final
 result, so its work is visibly consumed.
 
 The probe rides on chunks 1, 2, 4, 8, … so its cost grows with the logarithm of
-the chunk count; at four lanes it adds about 2 % to a `wf-b` cell and it
-lengthens the measured `wake`-to-`steal_ok` gap by one probe, since the
-post-park reading is taken before the lane's first scan. Read steal latency off
-a run without the probe. `chunk` events are capped at 64 per lane per call,
-which no map kernel here reaches.
+the chunk count; on the hosted runners it added **3 to 4 %** to a `wf-b` cell at
+two and four lanes. It also lengthens every latency measured from the call
+head: the offering lane runs one probe before it publishes anything, and each
+helper runs one before its first scan, so head-to-`wake` reads about 39 µs where
+a build without the probe reads 21, and head-to-`steal_ok` 57 where it reads 22.
+**Read wake and steal latency off a run built without the probe.** `chunk`
+events are capped at 64 per lane per call, above what any map kernel here
+reaches; a recursive kernel that runs a thousand leaves a call is truncated at
+that count rather than filling the ring, and shows it by its chunk events
+stopping while its park, wake and join events continue.
 
 It is a **measurement instrument**. No shipped build, gate target or test
 defines it, `whitefootc` never passes it, and with it undefined the scheduler

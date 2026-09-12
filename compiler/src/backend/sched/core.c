@@ -355,21 +355,27 @@ static uint64_t wf__par_epoch_read(void) {
  * covers the gap recovers the whole of it, so parking is the cause, but a
  * park-and-wake this file's own wake_probe measures in tens of microseconds
  * cannot by itself account for three milliseconds. This records what each lane
- * is actually doing at the head of a call so the difference can be read off
- * rather than guessed: for every call, per lane, the time from the head to the
- * lane's return from its condvar wait and to its first successful steal, the
- * CPU it parked on against the CPU it woke on, and how long it had been parked.
+ * is actually doing, so the difference can be read off rather than guessed: for
+ * every call, per lane, the time from the head to the lane's return from its
+ * condvar wait and to its first successful steal, the CPU it parked on against
+ * the CPU it woke on, how long it had been parked, the duration and position of
+ * every chunk it then executed, and -- from a fixed dependent chain timed at
+ * each of those points -- how fast the core it is on was running there.
  *
  * WHAT IT COSTS WHERE IT IS ON. Every event is a fixed store into a per-lane
  * ring of WF_PAR_TRACE_RING entries: no allocation, no lock, no shared line
  * between lanes, and nothing on the spin path. PARK and WAKE sit on either
  * side of a native sleep that costs microseconds; STEAL_OK fires at most once
  * per lane per call, guarded by one byte; the two root events fire once per
- * call each. The clock read is wf_prim_monotonic_us, the same one the idle
- * window samples, and sched_getcpu is a vDSO read on Linux. The ring wraps, so
- * a long process keeps its most recent WF_PAR_TRACE_RING events per lane and
- * never grows; one bench process makes six calls, so wrapping does not arise
- * there.
+ * call each; a chunk event costs two clock reads around a callback that runs
+ * for hundreds of microseconds. The clock reads are wf_prim_monotonic_us, the
+ * one the idle window samples, and its nanosecond companion; sched_getcpu is a
+ * vDSO read on Linux. The calibration chain is the one deliberate cost and the
+ * one that is not negligible: it rides on chunks 1, 2, 4, 8, ... so it grows
+ * with the logarithm of the chunk count, and at four lanes it is worth about
+ * three to four percent of a call. The ring wraps, so a long process keeps its
+ * most recent WF_PAR_TRACE_RING events per lane and never grows; with chunks
+ * capped per call below, a map kernel's bench process never reaches the wrap.
  *
  * Only a lane's own thread writes that lane's ring, and the count is published
  * with a release store after the event's fields, so the atexit dump -- which
@@ -558,8 +564,12 @@ static void wf__par_trace_chunk(struct wf__par_lane *lane, uint64_t elapsed_ns) 
         return;
     }
     ring = &wf__par_trace_rings[lane - wf__par_lanes];
-    ring->chunks += 1;
-    index = ring->chunks;
+    /* Relaxed rather than plain: the sweep that opens a call resets this
+     * counter from whichever lane offered, so a plain read-modify-write here
+     * would race that store. Nothing orders on the value -- it only labels the
+     * event -- so relaxed is the whole of what is needed, and between sweeps
+     * the line is this lane's own. */
+    index = (int)__atomic_add_fetch(&ring->chunks, 1, __ATOMIC_RELAXED);
     if (index > WF_PAR_TRACE_CHUNKS_PER_CALL) {
         return;
     }
@@ -1309,7 +1319,8 @@ void wf__par_release(void *frame) {
             wf__par_trace_put(lane, WF_PAR_TRACE_ROOT_JOIN_DONE, 0);
             /* The offering lane's closing reading, against its own at the
              * head: the same core, the same thread, one call apart. */
-            wf__par_trace_probe(lane, ring->chunks);
+            wf__par_trace_probe(
+                lane, (int)__atomic_load_n(&ring->chunks, __ATOMIC_RELAXED));
         }
     }
 #endif
