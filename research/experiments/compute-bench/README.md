@@ -468,7 +468,7 @@ chunks.
 The compiler splits an independent map into `2^budget` chunks with
 
 ```
-chunks = 2^floor(log2(min(16 * lanes, span / ceil(1,200,000 / weight))))
+chunks = 2^floor(log2(min(16 * lanes, span / ceil(150,000 / weight))))
 ```
 
 so the oversubscription term scales with the width, and the result is rounded
@@ -731,19 +731,20 @@ that something was compared.
 
 **One verify fixture per flat-map kernel is above the split admission floor.**
 The linked scheduler splits an independent map only from
-`2 * ceil(1,200,000 / weight)` iterations upward, and every fixture in
-Mandelbrot's and FIR's grids is a few thousand elements — below that floor at
-every width. Without more, the `--par` module would take its unsplit path
-through the whole of `verify`, and the chunked path the table times would never
-be the path the oracle checks. So each of those two kernels carries **one extra
+`2 * ceil(150,000 / weight)` iterations upward, and the smaller fixtures in
+Mandelbrot's and FIR's grids sit below that floor at every width (at the
+earlier work unit of 1,200,000 every grid fixture did). Without a fixture the
+floor is known to admit, the `--par` module could take its unsplit path through
+the whole of `verify`, and the chunked path the table times would never be the
+path the oracle checks. So each of those two kernels carries **one extra
 fixture** sized from the floor its own emitted module implies: nothing is
 stored, a change of weight moves the fixture rather than quietly dropping it
 back below the floor, and `verify` prints the weight, the floor, the size and
 the chunk count the run produced —
 
 ```
-# mandelbrot split fixture: weight=219 floor=10960 points=11008 chunks=2
-# fir split fixture: weight=150 floor=16000 outputs=16128 chunks=2
+# mandelbrot split fixture: weight=219 floor=1370 points=1408 chunks=2
+# fir split fixture: weight=150 floor=2000 outputs=2048 chunks=2
 ```
 
 — `chunks=0` at width one, where the scheduler does not split at all. This is

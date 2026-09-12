@@ -110,12 +110,28 @@ static int lanes;
  * (research/investigations/compute-runtime/RESULTS.md, the oversubscription cap
  * measured with the A/B twin).
  *
+ * The third measurement moved it. The two sweeps above ran on four-CPU hosts,
+ * where a map of this size is at or near the 16-per-lane cap at every value,
+ * and the hosted twins at 300,000 and 150,000 (runs 34630112178, 34628390507
+ * and 34644579271) read within the instrument's one-percent lean at W=4 on
+ * every runner whose lanes ran evenly. An eight-CPU Apple M1 Pro is where the
+ * work term was binding: it afforded mandelbrot 16 chunks at W=8 as at W=4, so
+ * the W=8 wall was the W=4 wall (5,441 against 5,411 us) while tbb read 3,440,
+ * and the twin built at 150,000 with the cap at 32 read mandelbrot W=8
+ * 0.692 [0.65-0.75] with five of five pairs lower and records W=8 0.965 with
+ * four of five, at a W=4 cost in CPU alone (paired cpu 1.189 on mandelbrot,
+ * 1.177 on fir, wall within 1.5 percent). 150,000 is therefore the value: for
+ * these sizes it leaves the count to the cap at every width from four lanes
+ * up, and the cap stays at 16 per lane, which halves the W=4 chunk count the
+ * twin paid for (research/investigations/compute-runtime/RESULTS.md, the
+ * idle-window sections and the M1 Pro grain twin).
+ *
  * WF_SPLIT_WORK overrides it per process for diagnosis; the scoreboard's
  * harness unsets that variable so a recorded row can never be taken under one.
  * This selects how finely an admitted program is actualized in parallel; no
  * acceptance path reads it. */
 #ifndef WF_PAR_SPLIT_WORK_UNIT
-#define WF_PAR_SPLIT_WORK_UNIT 1200000ul
+#define WF_PAR_SPLIT_WORK_UNIT 150000ul
 #endif
 static unsigned long split_work = WF_PAR_SPLIT_WORK_UNIT;
 static unsigned long report_wanted;
