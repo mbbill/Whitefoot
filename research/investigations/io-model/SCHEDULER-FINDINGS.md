@@ -370,12 +370,14 @@ notified cohort drains; at `04106a23` the native Windows job reports
 `expected=2 received=2` on both `gate=0` and `gate=1` replays and the scheduler
 job passes all 32 pinned/four-worker repetitions and all 18 staged IOCP socket
 configurations.
-*Verdict:* **unresolved** — the only correctness fix in the family rather than a
-rejected policy, and it is not in the tree, where
-`compiler/src/backend/completion/windows_iocp.c` still uses
-`wf_windows_return_wake` with no notified-waiter cohort. Settle it by running the
-`native_adapter_probe.c` replay against the current-stack runtime; the wait
-structure around the port changed with the runtime, so a diff cannot answer it.
+*Verdict:* **holds** — the only correctness fix in the family rather than a
+rejected policy, and it is now in the tree:
+`io/salvage-iocp-uring` carries the repair into
+`compiler/src/backend/completion/windows_iocp.c`, so `wf_windows_return_wake`
+preserves a packet for a notified cohort rather than for a parked count. Its
+replay harness was not carried, so what exercises the repaired path on the
+current stack is the `completion-windows` job's native adapter probe rather
+than an on-demand reproduction of the old interleaving.
 `codex/io-windows-wake-fix@04106a23` (reproduction at
 `codex/io-windows-wake-experiments@3821ce73`), *Twenty-fourth experiment: Windows
 wake ownership under re-entry*.
@@ -631,7 +633,10 @@ wins: 64 KiB against 8 KiB provided buffers gives paired throughput
 large-message sample, while all eight small-message ranges cross 1.0.
 *Verdict:* **holds** — a native baseline and a correctness repair to it,
 independent of any Whitefoot runtime, and the reason the earlier epoll-only
-panel cannot be read as a complete native target.
+panel cannot be read as a complete native target. `io/salvage-iocp-uring`
+carries both defects' repairs and the selectable provided-buffer size into the
+tree's `uring_echo.c`, with `make uring-check` deciding the queue, re-arm and
+retirement invariants without a kernel or a network.
 `codex/io-native-baselines@0357259d`, *Thirty-sixth experiment: strengthen the
 native completion reference* (screen at `475008b5`).
 
@@ -647,8 +652,10 @@ cleanup frees the operation's wake storage — and, separately, a missing
 store-to-load barrier on the unmeasured SQPOLL path between publishing the SQ
 tail and reading the wake-needed flag, matched against upstream liburing.
 *Verdict:* **holds** for the send-policy screen and the shutdown-loan
-correction, both native-reference facts; the SQPOLL barrier is separately
-**unresolved** and appears in the open section.
+correction, both native-reference facts; the SQPOLL barrier is a correctness
+fact of the same file and `io/salvage-iocp-uring` carries it, together with the
+inline-send configuration and the shutdown-loan correction, into
+`research/experiments/io-completion-bench/uring_echo.c`.
 `codex/io-native-baselines@0357259d`, *Thirty-eighth experiment: native
 completion receive with immediate send*.
 
@@ -1342,26 +1349,38 @@ Nothing below is summarized above, and each line says why.
 
 ## Open after this record
 
-**Is the Windows IOCP wake defect still live?** The repair at `04106a23` is
-absent from the tree, where `compiler/src/backend/completion/windows_iocp.c`
-keeps the earlier re-post approach with no notified-waiter cohort. Whether the
-current-stack runtime can still reach the interleaving cannot be read from a
-diff, because the wait structure around the port changed with the runtime.
-Settle it by running the wake replay in `native_adapter_probe.c` against the
-current runtime on a native Windows host: if the interleaving survives, the
-repair belongs in `windows_iocp.c` as an ordinary change; if it does not, one
-dated fact citing `04106a23` should say so.
+**Is the Windows IOCP wake defect still live?** The repair at `04106a23` is no
+longer absent: `io/salvage-iocp-uring` carries
+`compiler/src/backend/completion/windows_iocp.c` and its header onto the current
+tree, so the port's notify path publishes one packet per previously unnotified
+node of an intrusive waiter list, `wf_windows_return_wake` preserves a polled
+packet only while a notified cohort is outstanding, and a new park waits on the
+runtime condition until that cohort has left the kernel. What the entry asked
+first — whether the repair belongs in the tree — is answered by taking it: the
+repair is correct on its own terms whether or not the current wait structure can
+still reach the interleaving, and it removes a wake that depends on a parked
+count the runtime no longer owns exclusively.
 
-**Is the SQPOLL store-to-load barrier still missing?** The branch found that a
-release store of the submission tail and an acquire load of the ring flags do
+What is still open is the reachability question, and one step less of it can now
+be taken. The replay hooks in `native_adapter_probe.c`, the
+`WF_WINDOWS_IOCP_WAKE_REPLAY` build and their workflow wiring were deliberately
+not carried, because they are a reproduction harness rather than the repair, so
+nothing in the tree reproduces the old interleaving on demand; the repaired path
+is exercised by the `completion-windows` job's ordinary native adapter probe on
+a real Windows host. Settle the remainder by carrying those hooks and their
+wiring from the same branch, or by recording that the current wait structure
+cannot reach the interleaving.
+
+**Is the SQPOLL store-to-load barrier still missing?** No. The branch found that
+a release store of the submission tail and an acquire load of the ring flags do
 not by themselves order the publication against the read of the wake-needed bit,
-and matched the requirement against upstream liburing. The tree's
-`research/experiments/io-completion-bench/uring_echo.c` still publishes the tail
-with a release store and then reads the flags with an acquire load, with no
-fence between; the compiler's own io_uring path has no SQPOLL code at all. The
-path is optional, off by default and never enabled by any screen, so the risk is
-latent. Settle it by inserting the sequentially consistent fence in the
-benchmark's poll-thread path, or by recording that the path is retired.
+and matched the requirement against upstream liburing.
+`io/salvage-iocp-uring` carries the tree's
+`research/experiments/io-completion-bench/uring_echo.c` from that branch, and its
+poll-thread path now executes a sequentially consistent fence between the two.
+The compiler's own io_uring path still has no SQPOLL code at all, so the
+requirement has no second site in the tree, and the benchmark's path remains
+optional, off by default and enabled by no screen.
 
 **Which of the branch's dated memory facts remain true?** The branch's
 `mcts_mem/whitefoot/system-interface.md` carries 36 dated 2026-09-0x facts
