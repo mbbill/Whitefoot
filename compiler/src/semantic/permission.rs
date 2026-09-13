@@ -1844,13 +1844,11 @@ pub(super) fn set_target_place(
             }
             rooted_container_place(places, target)
         }
-        // [PAR-2] a view element store writes the origin, and [VIEW-1] says
-        // which storage that is: the range the view was formed over. A
-        // resolved place carries no index segment, so one element write
-        // conflicts with any access to that origin. Where this prepass does
-        // not resolve the origin the descriptor's own place stands for it, as
-        // it did before, because a view whose origin is a caller's storage
-        // anchors at the binding exactly as an opaque holder does [OWN-6].
+        // A view element store contributes its resolved origin range under
+        // VIEW-2. PAR-2 may contain it in a proved range assignment. Formal
+        // view origins are installed at the callable boundary; every other
+        // unresolved origin denies permission instead of inventing storage
+        // at the descriptor binding.
         CheckedSetTarget::SliceIndex(target) => {
             collect_operand_reads(places, &target.offset, node, footprint);
             let Some(place) = places.view_origin(target.root.binding) else {

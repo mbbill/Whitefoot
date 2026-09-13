@@ -341,3 +341,91 @@ before and after the run; every other old kernel's paired executable hashes
 also match exactly. Thus this reported slowdown is a difference between two
 executions of identical bytes, not generated-code regression. The failed run
 and its raw artifact remain the evidence; no threshold or check is weakened.
+
+## Corrected native measurements, 2026-09-13
+
+All three corrected runs measure
+`2c2b8ada30fc88f3cfab153dbe6137539135164c`. The compiler and conformance code
+is unchanged from `741bafb4`, whose canonical gate passed 1602 library tests,
+the complete program/research suites, conformance 758/1/1 and snapshots 484/0.
+The later fixture selector passed `make KERNELS=stencil verify` across every
+reported form at widths 1, 2, 4, 8 and 16. Every measured call also compared
+its complete result with the independent oracle.
+
+The host is Apple M1 Pro, Darwin 25.6.0 arm64, eight physical/logical CPUs and
+two performance levels, without an affinity mask. The runs use
+`CLOCK_MONOTONIC_RAW` wall time and the existing Darwin `task_info` process-CPU
+clock, with no gap, control flags, A/B twin or architecture override. They
+follow the existing rotated/reversed five-pass order, retaining five warm
+calls after one first call per process. All 135 process batches and 810 calls
+per fixture remain in the raw streams, including the eight-worker and
+oversubscribed sixteen-worker observations.
+
+Toolchain: Apple clang/clang++ 21.0.0 (`clang-2100.3.34.2`), Rust 1.98.1
+(`48a229ceaefd4985c50990b14116b6d856af0985`, LLVM 22.1.8), Cargo 1.98.1,
+CMake 4.4.3; oneTBB `3046c8b0c29df995980003ea24f4d78c80ec0c8d`,
+ParlayLib `51017699dcc421f80479cdb238d3092233ad0d26`, Rayon 1.12.0.
+WF module/runtime flags are `-std=c11 -pthread -O2 -Wno-override-module`.
+Native reference flags are `-O3 -g -Wall -Wextra -Werror -Wpedantic -pthread
+-fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto`,
+with `-std=c11` for C and `-std=c++17 -DNDEBUG` for C++. Rust reference flags
+are `-C no-vectorize-loops -C no-vectorize-slp -C lto=off
+-C symbol-mangling-version=v0`. This is the bundle's standing compiler-flag
+asymmetry; the result does not compare equal optimizer settings.
+
+The executable and both emitted modules were unchanged before/after each run
+and identical across all three fixture selections. SHA-256:
+
+| Artifact | SHA-256 |
+|---|---|
+| Stencil executable | `68b05b1ed83bd403cabebe6aa6c27b33305e43073d2f32c1023d9d5b68935da4` |
+| Parallel module | `ee931b21f224573c6d11b15965d2192161d64e9852ccef674aba057e67e9af32` |
+| Sequential module | `1cdae5c5ec6ff7bc0099994251a1b5d9620df98314a91bae9bfb3e1cb8e53ec4` |
+
+Raw streams: [large](../../experiments/compute-bench/stencil-2026-09-13-large.tsv),
+[original](../../experiments/compute-bench/stencil-2026-09-13-original.tsv),
+and [small](../../experiments/compute-bench/stencil-2026-09-13-small.tsv).
+From `research/experiments/compute-bench`, reproduce with
+`WFB_STENCIL_GRID=large make KERNELS=stencil compare PASSES=5 CALLS=5 RESULTS=<fresh-directory>`,
+substituting `original` and `small` for the other fixtures. Read a retained
+stream with `awk -f reduce.awk -v passes=5 -v calls=5 <stream.tsv>`.
+
+The table below reports the requested widths. Wall and CPU are medians in
+microseconds. The reference ratio is the existing reducer's median of paired
+per-pass WF/best-reference ratios, not the ratio of two table medians; it
+does not use the `wf-seq` control as a reference. A dash is the one-worker
+control block, where the reducer prints no paired ratio.
+
+| Grid | Workers | WF wall | WF process CPU | Paired reference ratio | Median grants |
+|---|---:|---:|---:|---:|---:|
+| 1024 x 4096, 16 steps | 1 | 42715.8 | 42693.0 | — | 0 |
+| 1024 x 4096, 16 steps | 2 | 22041.4 | 43023.0 | 0.887 | 18 |
+| 1024 x 4096, 16 steps | 4 | 13745.9 | 50627.0 | 0.906 | 56 |
+| 1024 x 2048, 16 steps | 1 | 16800.0 | 16793.0 | — | 0 |
+| 1024 x 2048, 16 steps | 2 | 7204.1 | 13877.0 | 0.676 | 18 |
+| 1024 x 2048, 16 steps | 4 | 7557.7 | 15372.0 | 1.167 | 26 |
+| 17 x 13, 3 steps | 1 | 3.0 | 2.0 | — | 0 |
+| 17 x 13, 3 steps | 2 | 3.0 | 2.0 | 0.828 | 0 |
+| 17 x 13, 3 steps | 4 | 3.0 | 2.0 | 0.632 | 0 |
+
+At the saturated size, WF is lower in all five paired passes at two and four
+workers. The original-size four-worker loss remains visible: its two row
+chunks cap useful row parallelism, and process CPU divided by wall is about
+two, consistent with that limit. The eight-worker saturated ratio is 1.089;
+the result does not establish a wider-worker advantage.
+
+The sequential WF control takes 37272.3 us at the large size and 14023.6 us at
+the original size. Thus the one-worker parallel build still costs about
+14.6% and 19.8% respectively, despite granting no tasks. The data locates an
+open cost in the difference between the parallel and sequential lowerings;
+it does not isolate a particular optimization, split/clone path or code
+placement cause. This remains an open compiler cost, not evidence of a
+universal no-loss property. The ordinary serial native reference takes
+46430.4 us and 20852.1 us respectively under its recorded flags.
+
+The small fixture grants no tasks and both WF forms take about 3 us. Its
+2-us process-CPU median is too coarse for a sub-microsecond CPU conclusion.
+Together, these measurements establish a working range-based ordinary helper
+path with competitive two/four-worker saturated behavior on this host. They
+also expose the grain limit and one-worker cost that further compute work
+must address before any broader no-loss claim.

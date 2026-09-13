@@ -63,6 +63,15 @@ of them is a decision. Remove an item when its fix and test land.
   propagate g();` never overlaps. Allowing a `propagate` second member would
   need the lowering to join the hand-out before the `Err` return; a future
   investigation, taken up when a real program shows the gap.
+- **Parallel stencil lowering has a one-worker cost and a grain cliff.**
+  The runtime-sized stencil's parallel build is about 15–20% slower than its
+  sequential build at one worker on the measured M1 Pro, while granting no
+  tasks. At 2046 interior rows, the current estimated row cost affords only
+  two chunks even with four workers. The
+  [range-loan measurements](../research/investigations/range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
+  retain both that size and the larger four-chunk case. The one-worker cause
+  within lowering/code generation is not isolated; the finite range proofs
+  add no runtime range checks.
 
 ## Open language questions
 
