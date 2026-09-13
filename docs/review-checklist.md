@@ -68,9 +68,8 @@ or self-description merely to satisfy this table.
 | `AGENTS.md` / `CLAUDE.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
 | `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
 | `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule |
-| `docs/ideas.md`; `docs/bargain.md`, `docs/why-whitefoot.md` | Candidate mechanisms; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
+| `docs/ideas.md`; `docs/why-whitefoot.md` | Candidate mechanisms, open questions and experiment sketches; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
 | `docs/roadmap.md` | Long-range reference directions | Required task sequencing, approval, an authoritative current capability inventory; routine work does not require updating it |
-| `docs/ongoing/` | Existing, bounded implementation notes for their named subsystem | A new per-task reporting system, a second project-wide status inventory |
 | `design/` | Live design decisions with their reasons and refused alternatives, one log entry per approved tree change, and the procedure that maintains them | Module inventories, implementation transcripts, task progress, history |
 | PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
 

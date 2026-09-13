@@ -1,21 +1,27 @@
-# Supporting direction notes
+# Research ideas and open questions
 
 Status: NON-AUTHORITATIVE DETAIL.
 
 The [reference roadmap](roadmap.md) groups long-range directions and candidate
 projects; it is outside the working loop and may be stale. This file preserves
-mechanism sketches and possible experiments. A selected question belongs in
-`research/investigations/`, and settled choices in `design/`, under the
-reading and workflow rules in [AGENTS.md](../AGENTS.md). Current capabilities
-are what the conformance report states. An idea here does not change the
-language or select implementation work.
+candidate mechanisms, unresolved costs, and possible experiments. A selected
+question belongs in `research/investigations/`, and settled choices in
+`design/`, under the reading and workflow rules in [AGENTS.md](../AGENTS.md).
+Current capabilities are what the conformance report states. An idea here
+does not change the language or select implementation work.
 
 Whitefoot keeps facts in source that other languages discard. LLVM optimization
 is one consumer of those facts. The ideas below ask whether the same checked
 facts can also buy portability, automated tuning, stronger testing, safer
-interop, or tighter deployment controls.
+interop, or tighter deployment controls. They also ask what those guarantees
+cost to author and check. Historical experiments retain their original
+conditions; they do not establish current compiler capabilities or a general
+advantage over another language. The [constitution](constitution.md) owns the
+objectives against which a candidate would be judged.
 
-## A portable C backend
+## Candidate directions
+
+### A portable C backend
 
 Whitefoot could emit C from the same checked typed IR that feeds the LLVM
 backend. Users would write Whitefoot, retain Whitefoot's safety rules, and use
@@ -40,13 +46,13 @@ compilation. Named compiler profiles could make separate, measured performance
 claims.
 
 First experiment: lower a small corpus that covers bounds discharge, exclusive
-borrows, checked arithmetic, claims, and effect attributes. Compile it with two
-C compilers, compare results and claim failures with the LLVM backend, run C
-sanitizers, and inspect both assembly and throughput. Stop if the backend needs
-an unreviewable undefined-behavior assumption or cannot preserve a checked
-operation.
+borrows, exact and fallible arithmetic, and effect attributes. Compile it with
+two C compilers, compare values, typed failures, and cleanup with the LLVM
+backend, run C sanitizers, and inspect both assembly and throughput. Stop if
+the backend needs an unreviewable undefined-behavior assumption or cannot
+preserve a checked operation.
 
-## Proof-guided autotuning
+### Proof-guided autotuning
 
 An autotuner could generate several implementations of one checked operation:
 different data layouts, unroll factors, SIMD widths, branch structures, or
@@ -61,29 +67,32 @@ First experiment: choose one bounded kernel with a scalar reference and two
 plausible fast shapes. Freeze the input distribution and target, verify every
 variant against the same differential corpus, then measure whether target
 selection beats a fixed compiler choice without expanding the trusted base.
+Possible variant families include record layouts and interpreter dispatch
+structures. Inspect the final emitted shape: source-level duplication that
+optimization folds away supplies no comparison between runtime strategies.
 
-## A proof-gap performance coach
+### A proof-gap performance coach
 
-The compiler could explain each residual static obligation, retained claim,
-and missed optimization in terms the writer can act on. A report might say
+The compiler could explain each unproved static obligation and missed
+optimization in terms the writer can act on. A report might say
 that an index is rejected because no dominating fact proves
-`offset + 16 <= len`, that a hot path still executes a named claim, or that a
-loop cannot vectorize because two live places may overlap.
+`offset + 16 <= len`, or that a loop cannot vectorize because two live places
+may overlap. Required safety proofs and optional optimization opportunities
+need distinct explanations.
 
 An automated tool could propose a rewrite constrained to the canonical
 patterns, run the checker and performance protocol, and present the source
 diff, proof delta, and measurement for human approval. The tool would never add
-an assumption, remove a claim, or weaken an obligation. It would change source
+an assumption or weaken a contract or obligation. It would change source
 structure until the checker derives the needed fact.
 
-First experiment: use the observational proof reports planned for the
-facts-on compiler. Select ten rejected proof gaps, hot claims, or alias
-barriers, generate one mechanical suggestion for each, and measure suggestion
-validity, proof closure, code-shape change, and runtime change. Preserve every
-failed suggestion as a regression for the diagnostic or rewrite rule that
-produced it.
+First experiment: select ten rejected proof gaps or missed optimization
+opportunities, generate one mechanical suggestion for each, and measure
+suggestion validity, proof closure, code-shape change, and runtime change.
+Preserve every failed suggestion as a regression for the diagnostic or rewrite
+rule that produced it.
 
-## Multiple backends as mutual oracles
+### Multiple backends as mutual oracles
 
 Independent LLVM, C, and future WebAssembly backends could compile the same
 checked program. A differential runner would compare values, typed outcomes,
@@ -99,7 +108,7 @@ Compile the C at low and high optimization levels with two compilers. Require
 the same result and typed-failure class for valid inputs and boundary cases,
 including failure paths.
 
-## Safe C ABI capsules
+### Safe C ABI capsules
 
 Whitefoot could package a module as generated C plus a generated header. The
 header would expose opaque validated handles, constructors, operations, and
@@ -117,7 +126,7 @@ Generate misuse tests for stale handles, double drop, overlapping buffers,
 short outputs, and allocation failure. Require deterministic rejection and no
 partial mutation on each failing call.
 
-## A C-to-Whitefoot assumption extractor
+### A C-to-Whitefoot assumption extractor
 
 A migration tool could ingest a restricted C kernel and identify the
 assumptions that make it work: bounds assertions, `restrict`, signed-overflow
@@ -134,23 +143,25 @@ First experiment: select a small, defined-behavior C loop with one bounds
 contract and one alias contract. Mutate the contracts one at a time and require
 the extractor or Whitefoot checker to reject the corresponding program.
 
-## Effect-derived sandbox policies
+### Effect-derived sandbox policies
 
-Once Whitefoot has production I/O and FFI, the compiler could derive a sandbox
-manifest from checked effect rows. A deployment tool could translate that
+Given a qualified mapping from system operations and resource authority to
+host restrictions, the compiler could derive a sandbox manifest from checked
+effects. A deployment tool could translate that
 manifest into a WASI capability set, syscall policy, filesystem allowlist, or
 network policy for a named platform.
 
-The effect system would remain the source of authority. Platform policy
-generators would consume its output and fail closed when the platform cannot
-represent a restriction.
+An ordinary effect row alone does not identify every runtime path, endpoint,
+or foreign call. The mapping and its limits are part of the experiment.
+Platform policy generators would consume checked authority and fail closed
+when the platform cannot represent a restriction.
 
 First experiment: define a tiny abstract effect set and one sandbox target.
 Generate policies for pure, read-only, and network-using fixtures. Mutation
 tests should add one hidden effect at a time and require either a broader
 manifest or compiler rejection.
 
-## Narrow semantic domains and automatic niches
+### Narrow semantic domains and automatic niches
 
 AI-written code should choose the narrowest honest type that contains every
 legitimate value. It should not default to a broad integer for convenience, and
@@ -161,8 +172,9 @@ compiler-checked refined integers for domains such as “nonzero `u64`” or
 would be a separate language decision; these examples describe semantics only.
 
 The compiler would make the refinement invariant unforgeable. Construction and
-conversion would require a static proof, a typed fallible constructor for an
-expected invalid input, or an explicit named claim for an asserted invariant.
+conversion would require a static proof or a typed fallible constructor for an
+expected invalid input. An asserted invariant would need a checked source
+proof, with no runtime proof fallback.
 Arithmetic would preserve the refined type only when its result remains in the
 declared domain. The layout pass could then derive invalid bit patterns
 automatically and use them as enum niches:
@@ -194,9 +206,191 @@ valid value round-trips and every invalid construction is rejected. Stop if
 maintaining the refinement costs more complexity or runtime work than the
 measured layout benefit justifies.
 
-## Common admission questions
+### ML systems components
 
-Before an owner promotes one of these ideas, its experiment should answer:
+Candidate entry points include CPU request handling and batching, data
+pipeline components, and numerical kernels whose users need reproducibility
+or checked shape relations. A library that fits an existing Python application
+offers a smaller experiment than replacing an ML stack. The
+[PyO3 guide](https://pyo3.rs/main/index.html) supplies a concrete native-extension
+baseline; a Whitefoot experiment would need its own checked boundary, including
+buffer ownership, lifetime, errors, and crossing cost.
+
+Possible guarantees include shape and dtype contracts, checked use of random
+keys, and reproducible reductions. JAX documents
+[purity and static-shape constraints](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html)
+and [random-key reuse](https://docs.jax.dev/en/latest/101/random.html).
+These are concrete comparison problems, not evidence that Whitefoot already
+solves them or that they dominate AI-written ML failures. Compare against the
+baseline's available checks as well as its unchecked configuration.
+
+First experiment: one callable CPU component with fixed valid inputs, an
+independent result oracle, and a measured boundary. Separate proof and repair
+cost, cold and repeated compile-run latency, runtime, and any numerical
+reproducibility cost. Stop if integration or copying consumes the proposed
+benefit. A tokenizer or serialization rewrite would need an advantage over an
+existing safe library or format; a language change alone is not that advantage.
+
+GPU execution and automatic differentiation are separate questions. A bounded
+GPU probe could compare generated source passed to a vendor compiler with a
+direct backend route. An autodiff probe would pin the LLVM/tool versions and
+exercise diagnostics and compiler failures as well as derivatives. Reduced
+mutation, strict arithmetic, or proof erasure does not by itself establish
+cheap differentiation or competitive deterministic GPU execution.
+
+### Embedded systems and resource evidence
+
+Two candidate outputs are a small firmware component and machine-checkable
+resource evidence for an existing systems program. A resource certificate
+would need proved loop or recursion bounds, complete call and allocation
+coverage, and a stated target/runtime model. Source-level boundedness alone
+does not establish the final linked program's stack, heap, or timing bound.
+
+First experiments can be separated: a minimal bare-metal program measures
+startup, linker, runtime, and image-size costs; a bounded existing program
+tests whether a stack or allocation bound can be derived and checked against
+the emitted code. Measure monomorphization and runtime size before claiming
+suitability for a small flash budget. A host result is not a microcontroller
+result, and static bounds complement on-target measurements.
+
+MMIO and interrupts need explicit language and target contracts. The
+[LLVM volatile rules](https://llvm.org/docs/LangRef.html#volatile-memory-accesses)
+do not give volatile accesses general cross-thread synchronization or ordering
+against all non-volatile work. The
+[RTIC model](https://rtic.rs/2/book/en/) provides a concrete comparison for
+interrupt scheduling and its assumptions. It does not supply Whitefoot with
+an interrupt model. Any probe must name its core, preemption and ordering
+conditions, resource ownership, and treatment of external failure.
+
+Timing analysis also has existing static baselines, including the
+[aiT avionics case study](https://www.absint.com/aiT_airbus.pdf).
+The question is whether Whitefoot supplies more useful analyzable inputs or
+tighter justified bounds, under a specified cache and hardware model. A
+certificate would also need a preservation argument through optimization and
+linking. Qualification and certification require their own evidence and cost
+study; neither a safety objective nor a regulation establishes adoption or a
+short route to a certified toolchain.
+
+### Constant-time preservation
+
+A candidate information-flow discipline could prevent a secret from choosing
+a branch, address, or variable-latency operation. Its useful result would be
+a property of the generated program under a named leakage and target model.
+Source checking alone cannot establish that optimization and instruction
+selection preserve the property.
+
+First experiment: a bounded existing cryptographic component, a fixed
+functional oracle, and paired inputs differing only in the secret. Check
+source flows, optimized IR, and final instructions; use timing measurements
+as a probe rather than a proof of no leakage. Stop if the compiler pipeline
+cannot provide an inspectable preservation contract. This shares the backend
+preservation question with timing/resource evidence, while requiring a
+different property and argument.
+
+### Interoperable libraries as validation projects
+
+Codecs, parsers, image decoders, and text tools can expose a real compiler gap
+while offering an independent oracle. The dated
+[artifact brainstorm](../research/notes/headline-artifact-brainstorm.md)
+preserves candidate interfaces, workloads, and risks. Its rankings and
+implementation estimates are historical, not a current selection.
+
+A useful first boundary is one real operation and its failure behavior. An
+ABI replacement must match ownership, lifetime, layout, and errors as well as
+symbol names. Decode comparisons can demand exact output under a pinned
+format and implementation contract; encoder comparisons need round trips,
+compression ratio, and speed rather than assuming identical compressed bytes.
+Compare against a maintained safe implementation as well as a native baseline.
+Stop if the supposed drop-in requires callers to change the protected contract
+or if a toy kernel no longer exercises the promised component.
+
+### Compiler-guided synthesis and rejection data
+
+A deterministic checker and canonical source could support program search,
+training examples derived from diagnostics, or automated repair. Compiler
+acceptance is a useful signal, but it cannot establish an unstated requirement
+or prevent a search from succeeding by narrowing its own contract. Correlated
+errors in a generated program and its generated explanation are another open
+problem, not two independent checks.
+
+First experiment: one small task whose interface and behavior oracle are
+fixed outside the candidate writer. Compare compiler-guided search with the
+same writer and resources without that assistance. Include valid inputs that
+expose an over-restrictive contract, and keep oracle cases out of the search
+feedback. Measure correctness, repairs, source/proof size, and runtime; stop
+if gains depend on weakening the task or merely memorizing the exposed cases.
+The existing [differential corpus work](../research/experiments/differential-fuzz/README.md)
+illustrates executable disagreement witnesses, not evidence that this search
+or a learned writer is effective.
+
+## Open questions and experiments
+
+### AI authoring and proof costs
+
+Does a regular, unfamiliar language help an AI author enough to justify its
+extra source and proof work? How much comes from the language, the examples,
+the diagnostics, and the allowed repair loop? Can independently written
+components be changed and composed without disproportionate rework? The
+[August writer trial](../research/experiments/blind-writer/2026-08-28/REPORT.md)
+and [default-floor series](../research/experiments/default-floor/RESULTS.md)
+retain concrete programs and observations under earlier compiler conditions.
+They do not settle these questions for the current language or future models.
+
+First experiment: a bounded real task with an independent oracle and fixed
+requirements, comparing Whitefoot with a useful alternative such as Rust.
+Record model, tools, supplied context, source/proof tokens, compile and repair
+attempts, human intervention, maintenance edits, and resulting runtime. Change
+one teaching or diagnostic condition at a time when attributing the result.
+Compare familiar and unfamiliar spellings only in a separate controlled
+language experiment; ordinary tests are not a population of real writers.
+
+Measure costs that verbosity can hide: long proofs, spec/teaching context,
+mathematically safe operations whose proofs do not fit an automatic family,
+and repeated cross-module repairs. A useful mistake case is treating an eager
+Boolean operation as a guard for a partial operand, documented in the
+[spelling study](../research/investigations/spelling-relief/SWEEP.md).
+Shorter source is not success if it changes the required result or removes a
+needed proof. Reopen a teaching or surface choice when a controlled comparison
+identifies the cost and an alternative preserves its required properties.
+
+### Proof checking and compile-run latency
+
+Erased proofs need not be cheap to check. The
+[source-proof assessment](../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
+separates the soundness obligations from unresolved checking and authoring
+costs. Deterministic termination does not establish practical iteration, and
+explicit finite steps do not establish linear total checking cost.
+
+A bounded study could attribute time and memory to proof formation, automatic
+derivation, explicit-certificate checking, fact transport, lowering, and native
+compilation on the same programs. Compare cold runs, repeated runs, and a small
+source edit; validate outputs and diagnostics while varying one mechanism.
+Caching is a candidate response only if repeated work is the measured cause.
+Its key would need every relevant source, specification, compiler, and target
+input, and invalidation tests would have to expose stale answers. Stop before
+building cache infrastructure if the cost is elsewhere. Measurements may
+inform a future rule or implementation choice; elapsed time or an experiment's
+budget never selects acceptance of a Whitefoot program.
+
+## Lessons and reopening conditions
+
+Preserve the failure that an alternative must address, together with its
+conditions. A historical rejection label is not a current language rule.
+
+| Tempting conclusion | What must be demonstrated before relying on it |
+|---|---|
+| Proved parallel permission guarantees a speedup. | Measure discovery, scheduling, grain, and locality costs on the same source against sequential execution. Permission establishes independence, not profitable granularity. |
+| More writer annotations necessarily make checking or maintenance cheaper. | Attribute construction, checking, and repair costs. A larger vocabulary or a redundant certificate can be sound while still costing more; the source-proof assessment above keeps those questions separate. |
+| Restricting source shapes guarantees a good performance floor. | Preserve a representative slow-but-accepted program, compare better valid shapes, and identify whether the cause is teaching, missing permission, or lowering. A restriction that excludes a better valid implementation needs reconsideration under the constitution. |
+| A checked source property survives every backend optimization. | State and check the preserved property through the actual backend and target. Functional correctness, constant-time behavior, MMIO ordering, and timing bounds require different evidence. |
+| Repeated AI statements are independent verification. | Use independently fixed requirements and behavior oracles; test contract narrowing and correlated mistakes rather than counting agreeing outputs. |
+| A new language automatically supplies a compelling deployment advantage. | Compare the full component, ABI and integration cost with effective existing solutions. GPU support, foreign libraries, small-device budgets, and certification are costs to investigate, not consequences of source safety. |
+
+## Selecting an experiment
+
+A candidate investigation should identify its concrete consumer, useful
+alternative, required properties, evidence, uncertainty, and a result that
+would stop the work. For a consumer of checked facts, ask:
 
 - Which checked proposition does the idea consume?
 - Does the consumer affect correctness, performance, or both?
@@ -207,7 +401,6 @@ Before an owner promotes one of these ideas, its experiment should answer:
   experiment?
 - Which result stops the work instead of expanding its scope?
 
-Before one of these notes enters an execution proposal, its Direction Outline
-item must name the current producer, consumer, invalidators, safe fallback,
-premise-removal case, decision observation, and stop condition that actually apply.
-Until then it remains supporting detail rather than compiler work.
+Record a selected experiment and its discriminating criterion in its existing
+research home, following [decision practice](practice.md#decision-work).
+The roadmap remains an orientation aid outside that work.

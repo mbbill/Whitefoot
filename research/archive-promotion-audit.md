@@ -129,9 +129,8 @@ The current live material is split:
   GATE-1 and LEDGER-1 govern human-approved trusted boundaries; they are not
   proof-admission channels.
 - None of those rules defines a general representation-invariant proof system.
-- [`docs/why-whitefoot.md`](../docs/why-whitefoot.md) and
-  [`docs/bargain.md`](../docs/bargain.md) explain the full D17 direction while
-  also admitting that its feasibility is unproved.
+- [`docs/why-whitefoot.md`](../docs/why-whitefoot.md) explains the full D17
+  direction while also admitting that its feasibility is unproved.
 - Direction Outline item STORE-2 retains the unresolved storage dimensions;
   only a selected project or owner decision can place one in the Current Plan.
 
@@ -220,7 +219,7 @@ The archived regions-and-effects study already has a concise live successor,
 [`research/notes/regions-effects-vs-safe-rust-2026-07-08.md`](notes/regions-effects-vs-safe-rust-2026-07-08.md),
 so its raw archive needs no second promotion. The older phase-2 findings,
 debates, matrices, and source snapshots remain citation provenance for
-`docs/why-whitefoot.md` and `docs/bargain.md`; they are not a parallel live
+`docs/why-whitefoot.md`; they are not a parallel live
 research program.
 
 ## Material that stays archived
