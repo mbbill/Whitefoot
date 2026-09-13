@@ -83,12 +83,14 @@ static void file_probe(wf_inputs *inputs) {
 #endif
     };
     unsigned char bytes[4096];
+    unsigned char unchanged[sizeof(bytes)];
     wf_view window = {bytes, sizeof(bytes)};
     wf_open_result opened, listing, independent;
     wf_read_result read;
     wf_list_result listed;
     wf_close_result closed;
     wf_value receiving_factory = {{0, 0, 0, 0}};
+    wf_value limited_factory = {{1, 0, 0, 0}};
     uint64_t saved = inputs->handles.words[0];
     FILE *fixture = NULL;
 #if defined(_WIN32)
@@ -99,6 +101,16 @@ static void file_probe(wf_inputs *inputs) {
     assert(fixture != NULL);
     assert(fwrite("hello", 1, 5, fixture) == 5);
     assert(fclose(fixture) == 0);
+    /* This valid component names a regular file, so opening it as a directory
+     * fails after taking the sole credit, not at the quota refusal above the
+     * host call. The next successful open must consume that same credit. */
+    wf__body_open_directory(&listing, &limited_factory, &inputs->cwd, &name, 0, name.length);
+    assert(listing.tag == 1 && listing.error.tag != 21 && limited_factory.words[0] == 1);
+    wf__body_open_file(&opened, &limited_factory, &inputs->cwd, &name, 0, name.length);
+    assert(opened.tag == 0 && limited_factory.words[0] == 0);
+    wf_close_read(&closed, &limited_factory, &opened.value);
+    check_close(&closed);
+    assert(limited_factory.words[0] == 1);
     inputs->handles.words[0] = 0;
     wf__body_open_file(&opened, &inputs->handles, &inputs->cwd, &name, 0, name.length);
     assert(opened.tag == 1 && opened.error.tag == 21 && inputs->handles.words[0] == 0);
@@ -109,8 +121,10 @@ static void file_probe(wf_inputs *inputs) {
     wf__body_read_at(&read, &inputs->handles, &opened.value, &window, 0, 2, 9);
     assert(read.tag == 0 && read.value == 7 && bytes[1] == 7 && bytes[7] == 7);
     assert(memcmp(bytes + 2, "hello", 5) == 0);
+    memcpy(unchanged, bytes, sizeof(bytes));
     wf__body_read_at(&read, &inputs->handles, &opened.value, &window, 5, 2, 9);
     assert(read.tag == 1 && read.error.tag == 0);
+    assert(memcmp(bytes, unchanged, sizeof(bytes)) == 0);
     wf__body_read_at(&read, &inputs->handles, &opened.value, &window, 0, 9, 9);
     assert(read.tag == 0 && read.value == 9);
     wf_close_read(&closed, &receiving_factory, &opened.value);
@@ -131,10 +145,12 @@ static void file_probe(wf_inputs *inputs) {
     wf__body_directory_next(&listed, &listing.value, &window, 3, sizeof(bytes));
     assert(listed.result.tag == 0 && listed.next > 3 && listed.entries > 0);
     do {
+        memcpy(unchanged, bytes, sizeof(bytes));
         wf__body_directory_next(&listed, &listing.value, &window, 3, sizeof(bytes));
         assert(listed.next >= 3 && listed.next <= sizeof(bytes));
     } while (listed.result.tag == 0);
     assert(listed.result.error.tag == 0 && listed.next == 3 && listed.entries == 0);
+    assert(memcmp(bytes, unchanged, sizeof(bytes)) == 0);
     /* Reopening the same directory must not share the first cursor's EOF. */
     wf__body_directory_next(&listed, &independent.value, &window, 3, sizeof(bytes));
     assert(listed.result.tag == 0 && listed.next > 3 && listed.entries > 0);

@@ -251,10 +251,10 @@ ordinary sibling and loop permission tests remain in their own modules.
 Deleting these assertions does not certify native overlap behavior or replace
 lost PAR-3 performance with a new permission path.
 
-The temporary ordinary `compile` probe verifies the three added conformance
-witnesses (two accepted, missing-brand FORM-8). Full Rust test execution is
-pending unrelated C2 integration of backend and permission test APIs; the
-failed interim test build is not reported as successful validation.
+At the initial migration checkpoint, the temporary ordinary `compile` probe
+verified the three added conformance witnesses (two accepted, missing-brand
+FORM-8). Backend and permission test integration still prevented a full Rust
+test run then; that failed interim build is not successful validation.
 
 | Outgoing system-effects test | Disposition under the selected C2 rules |
 | --- | --- |
@@ -446,13 +446,13 @@ ledger, ordinary multiworker folds, aggregate results and forced lane refusal.
 The new worker-helper test calls write_once through an ordinary source body;
 no suspension classification authorizes it.
 
-Validation so far: the initial ordinary_effects 23/23, entry_form 8/8,
+Initial migration evidence: ordinary_effects 23/23, entry_form 8/8,
 scripted linked library 16/16, ordinary parallel 29/29, private completion
 engine 8/8, and all 80 pinned diagnostic probes passed. The later 98-test
 array, buffer, owner-place, reborrow, slice, arena-boundary and source-cost
 subset also passed. That snapshot precedes the final directory three-result
-API update. The full integrated gate remains pending; these local results
-do not claim canonical make check or native CI success.
+API update. These historical subsets do not establish the final revision's
+canonical make check or native CI result; the PR reports those separately.
 
 
 `compiler/src/backend/tests/cost_shape.rs` retains its two source-program tests:

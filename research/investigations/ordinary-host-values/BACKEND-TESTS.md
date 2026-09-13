@@ -15,6 +15,16 @@ test adds a WF wrapper with the exact `host_copy_bytes` signature and source
 contract, checks ABI equality, and executes raw non-UTF-8 bytes through both
 calls in the three driver configurations.
 
+`behavior_actuals_preserve_ordinary_view_calls_rows_and_contracts` binds
+that WF wrapper and the linked `host_copy_bytes` declaration to the same
+formal copier in turn. Both calls pass through one generic forwarding body,
+execute the byte fixture in all three driver configurations, and name their
+selected member directly in the instantiated LLVM function. A caller range
+violation rejects FN-8 for either actual. Separately, an uncovered actual row
+or a structurally different contract rejects FN-4 at the binding declaration;
+those negatives omit a forwarding body whose own row or ensures would also
+be invalid under the intentionally changed formal.
+
 `ordinary_values.ll` supplies ten ordinary library definitions whose view
 parameters are LLVM `{ptr, i64}` values. Each stores that descriptor locally
 and calls a private C body through pointers/scalars. This is necessary because
@@ -74,6 +84,20 @@ The checked-expression and provider-write comments now describe ordinary
 call datums and parameters instead of deleted owner images and entry inputs.
 
 ## Refusal paths and ordinary overlap
+
+The native file probe also uses a factory with exactly one credit. Opening
+its regular-file fixture as a directory fails after taking that credit;
+the probe checks the exact restored count, spends it on a successful file
+open, and checks its return on explicit close. A generous factory followed
+by another successful open would not distinguish a lost credit. The probe
+compares the complete destination before and after file EOF and directory EOF.
+The scripted mid-stream device-failure case checks all three bytes delivered
+by the preceding successful read, as well as the error and exact attempt trace.
+
+The opaque replacement negative retains its original FN-1 result-arity
+assertion and adds a well-formed one-result signature that leaves the displaced
+linear owner unconsumed. That separate source must reject PROV-6; an earlier
+arity error is not evidence that the consumption obligation was reached.
 
 The 34 host cases with an old reserve failure branch retain that real branch
 under direct open's `ResourceExhausted` with origin zero. Native open failures

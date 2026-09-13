@@ -108,9 +108,7 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 
 static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 
-/// The shipped default compilation: only eligible compiler-owned completion
-/// operations are actualized; pure compute still emits the exact sequential
-/// reference bytes.
+/// The shipped default compilation, with ordinary overlap actualization off.
 ///
 /// It is also the only *non-outlined* reference on the parallel path. Every
 /// comparison that links one emitted module two ways has a defect in the

@@ -11,7 +11,7 @@ use crate::{
 
 use super::{
     CANONICAL_LIMITS, FINALIZE_LIMITS, LEX_LIMITS, PARSE_LIMITS, SOURCE_LIMITS, compile,
-    compile_and_run, compile_and_run_with, compile_rejection,
+    compile_and_run, compile_and_run_with, compile_rejection, emitted_function,
 };
 
 pub(super) fn with_ir<R>(
@@ -125,9 +125,7 @@ fn a_non_utf8_argument_round_trips_its_exact_bytes() {
     run_arguments("run-syshost-nontext-argv-bytes-roundtrip", &[b"a\xffb"]);
 }
 
-#[test]
-fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
-    let wrapper = r#"fn copy_bytes(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
+const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
   requires start <= end;
   requires end <= len_of(deref(destination));
   ensures when Ok(value: next): start <= next;
@@ -146,10 +144,13 @@ fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
 }
 
 "#;
+
+#[test]
+fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
     let original = String::from_utf8(corpus_source("run-syshost-nontext-argv-bytes-roundtrip"))
         .expect("source is UTF-8");
     let source = format!(
-        "{wrapper}{}",
+        "{COPY_BYTES_WRAPPER}{}",
         original.replace("host_copy_bytes(", "copy_bytes(")
     );
     with_ir(source.as_bytes(), |program| {
@@ -182,6 +183,76 @@ fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
         );
         assert!(result.stdout.is_empty());
         assert!(result.stderr.is_empty());
+    }
+}
+
+#[test]
+fn behavior_actuals_preserve_ordinary_view_calls_rows_and_contracts() {
+    let formal = r#"formal Copier {
+  fn transfer(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
+    requires start <= end;
+    requires end <= len_of(deref(destination));
+    ensures when Ok(value: next): start <= next;
+    ensures when Ok(value: next): next <= end;
+  };
+}
+
+"#;
+    let forwarding = COPY_BYTES_WRAPPER
+        .replacen("fn copy_bytes(", "fn copy_through<Copier>(", 1)
+        .replace("host_copy_bytes(", "Copier::transfer(");
+    let original = String::from_utf8(corpus_source("run-syshost-nontext-argv-bytes-roundtrip"))
+        .expect("source is UTF-8");
+    let caller = original.replace("host_copy_bytes(", "copy_through::<Selected>(");
+    for member in ["host_copy_bytes", "copy_bytes"] {
+        let actual = format!("actual Selected : Copier {{\n  transfer = {member};\n}}\n\n");
+        let prefix = format!("{formal}{actual}{COPY_BYTES_WRAPPER}{forwarding}");
+        let source = format!("{prefix}{caller}");
+        let forwarding_name = with_ir(source.as_bytes(), |program| {
+            let names = program
+                .functions()
+                .iter()
+                .filter(|function| function.name().starts_with("copy_through$instance$"))
+                .map(|function| function.name().to_owned())
+                .collect::<Vec<_>>();
+            assert_eq!(names.len(), 1, "one concrete forwarding instance");
+            names[0].clone()
+        });
+        for overlap in [None, Some(OverlapLowering::Off), Some(OverlapLowering::On)] {
+            let inputs = [SourceInput::new("test.wf", source.as_bytes())];
+            let llvm = match overlap {
+                None => crate::compile(&inputs, crate::CompilerLimits::default()),
+                Some(overlap) => {
+                    crate::compile_with_overlap(&inputs, crate::CompilerLimits::default(), overlap)
+                }
+            }
+            .expect("WF and linked actuals compile through the ordinary call path");
+            let body = emitted_function(&llvm, &forwarding_name);
+            assert!(body.contains(&format!("call void @wf_{member}(")), "{body}");
+            let output = compile_and_run_with(&llvm, &[b"a\xffb"]);
+            assert!(output.status.success(), "{member}: {output:?}");
+            assert!(output.stdout.is_empty());
+            assert!(output.stderr.is_empty());
+        }
+
+        let out_of_range = format!("{prefix}{}", caller.replace("end: 4_u64", "end: 5_u64"));
+        assert_eq!(
+            compile_rejection(out_of_range.as_bytes()).rule_id(),
+            Some("FN-8")
+        );
+        for changed_formal in [
+            formal.replace(", writes(destination)", ""),
+            formal.replace("    ensures when Ok(value: next): next <= end;\n", ""),
+        ] {
+            // FN-4 checks the binding itself, before any generic caller is
+            // needed. Keeping the forwarding body out of these negatives
+            // avoids its separate row or postcondition failure under the
+            // deliberately narrowed formal boundary.
+            let mismatched = format!("{changed_formal}{actual}{COPY_BYTES_WRAPPER}");
+            let mismatched = format!("{}\n", mismatched.trim_end());
+            let failure = compile_rejection(mismatched.as_bytes());
+            assert_eq!(failure.rule_id(), Some("FN-4"), "{member}: {failure:?}");
+        }
     }
 }
 

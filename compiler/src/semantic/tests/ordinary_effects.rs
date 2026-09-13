@@ -595,9 +595,14 @@ fn opaque_fields_have_the_same_replacement_row_and_must_return_the_previous_owne
             "let previous = exchange(target: &uniq holder.value, incoming: move incoming);\n    return move holder, move previous;\n  }",
         );
     assert_complete(source.as_bytes());
-    let missing_consume =
+    let missing_result =
         source.replace("return move holder, move previous;", "return move holder;");
-    assert_rule_kind(missing_consume.as_bytes(), SemanticRule::Fn1, |_| true);
+    assert_rule_kind(missing_result.as_bytes(), SemanticRule::Fn1, |_| true);
+    let missing_consume = missing_result.replace(
+        "(result: own Holder, old: own ReadFile)",
+        "result: own Holder",
+    );
+    assert_rule_kind(missing_consume.as_bytes(), SemanticRule::Prov6, |_| true);
 }
 
 #[test]

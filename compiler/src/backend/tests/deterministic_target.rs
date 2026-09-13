@@ -1042,8 +1042,26 @@ fn a_mid_stream_read_failure_stops_the_drain_after_the_bytes_it_delivered() {
     // deterministic target's case. The first attempt delivers three bytes and
     // the second reports a device failure; the drain must observe
     // `Ok(3)` then `Err(ReadFailed(...))`, not a silent end of input.
+    let source = std::str::from_utf8(CHUNKED_READ)
+        .expect("source is UTF-8")
+        .replace(
+            "return exit_status(code: 202_u8);",
+            "let first = bytes[0_u64];
+                      let second = bytes[1_u64];
+                      let third = bytes[2_u64];
+                      if first != 97_u8 {
+                        return exit_status(code: 206_u8);
+                      }
+                      if second != 98_u8 {
+                        return exit_status(code: 207_u8);
+                      }
+                      if third != 99_u8 {
+                        return exit_status(code: 208_u8);
+                      }
+                      return exit_status(code: 202_u8);",
+        );
     let run = run_on_deterministic_host(
-        CHUNKED_READ,
+        source.as_bytes(),
         &HostScript::new().file(b"abcdefgh").reads(&[
             HostOutcome::Succeed,
             HostOutcome::Fail(HostError::DeviceFailure),
@@ -1051,8 +1069,9 @@ fn a_mid_stream_read_failure_stops_the_drain_after_the_bytes_it_delivered() {
         &[b"eight.txt"],
     );
 
-    // 202 is the program's own `ReadFailed` status: the failure reached
-    // source as its own outcome and was never reported as the end of input.
+    // 202 is the program's own `ReadFailed` status after inspecting every
+    // destination byte. The failed call preserved the preceding "abc", and
+    // its error was not reported as the end of input.
     assert_eq!(
         run.output.status.code(),
         Some(202),
@@ -1074,7 +1093,7 @@ fn a_mid_stream_read_failure_stops_the_drain_after_the_bytes_it_delivered() {
     // The control: the same program over the same fixture with nothing
     // scripted drains the file to its end and reports its own total.
     let clean = run_on_deterministic_host(
-        CHUNKED_READ,
+        source.as_bytes(),
         &HostScript::new().file(b"abcdefgh"),
         &[b"eight.txt"],
     );
