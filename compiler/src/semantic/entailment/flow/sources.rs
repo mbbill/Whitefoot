@@ -9,7 +9,7 @@
 //! version-monotone direction [ENT-1].
 //!
 //! Implemented here: S1 (through the parent's arm entry), S4, S5, S6, S7,
-//! S9, and S10. Retired labels are not reused [ENT-3].
+//! and S9. Retired labels are not reused [ENT-3].
 
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
@@ -1502,11 +1502,11 @@ impl Analyzer<'_, '_> {
     }
 
     // ------------------------------------------------------------------
-    // S7 checked arithmetic and S10 boundary counts, observed at a match
+    // S7 checked arithmetic, observed at a match
     // ------------------------------------------------------------------
 
     /// Records the outcome origin of a `let` whose initializer is a checked
-    /// arithmetic call or a bounded [SYS-2] boundary call, so a later match
+    /// arithmetic call, so a later match
     /// over the bare IDENT observes the same fact the direct scrutinee does.
     /// The recorded origin dies with any kill on its base term and with a
     /// `set` naming the binding, the discipline [ENT-3] states for it.
@@ -1522,7 +1522,7 @@ impl Analyzer<'_, '_> {
     }
 
     /// The [ENT-3] arm facts one match scrutinee admits: the S1 comparison
-    /// relation for a `Bool` match, and the S7/S10 fact carried by an
+    /// relation for a `Bool` match, and the S7 fact carried by an
     /// outcome-typed scrutinee — the call directly, or a bare IDENT naming a
     /// binding of its outcome whose origin survived the path here.
     pub(super) fn arm_facts(
@@ -1572,7 +1572,7 @@ impl Analyzer<'_, '_> {
     }
 
     /// The outcome fact one call expression carries, if any: S7's checked
-    /// `Ok(value: w)` shift, or S10's absolute endpoint on the observing arm.
+    /// `Ok(value: w)` shift on the observing arm.
     fn outcome_fact(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
         self.checked_offset_outcome(value)
     }

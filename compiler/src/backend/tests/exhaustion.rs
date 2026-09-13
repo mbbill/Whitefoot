@@ -850,7 +850,11 @@ const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 pure
   return element;
 }
 
-fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let count = 0_u64;
   region {
     set count = args_count(args: &args);
@@ -1032,7 +1036,11 @@ fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
   }
 }
 
-fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let count = 0_u64;
   region {
     set count = args_count(args: &args);
@@ -1193,9 +1201,8 @@ fn expose_large_frame_spine(module: &str) -> String {
     exposed = exposed
         .lines()
         .map(|line| {
-            if line.starts_with("define internal i64 @wf_read_pad(") {
-                line.replacen("define internal ", "define ", 1)
-                    .replace(" #0 {", " noinline #0 {")
+            if line.starts_with("define i64 @wf_read_pad(") {
+                line.replace(" #0 {", " noinline #0 {")
             } else {
                 line.to_owned()
             }
@@ -1204,7 +1211,7 @@ fn expose_large_frame_spine(module: &str) -> String {
         .join("\n");
     exposed.push_str("\ndeclare i32 @wf__main_body(i32, ptr)\n");
     assert_eq!(
-        module.matches("define internal i64 @wf_spine(").count(),
+        module.matches("define i64 @wf_spine(").count(),
         1,
         "the fixture must expose exactly one generated spine"
     );

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- the header invariant is reproved on the backedge despite the body's set to the value it names [INV-1].";
   let weights = fixed_vector::<u8, 5>();
   region {

@@ -4,8 +4,8 @@ mod finiteness;
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, DeclarationRole, FixedTerminal, LexicalUseRole,
-    PreludeDeclarationId, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
+    BuiltinPreludeId, DeclarationClass, DeclarationId, DeclarationRole, FixedTerminal,
+    LexicalUseRole, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
     SemanticRule, UnsupportedSemanticFeature,
 };
 
@@ -2127,10 +2127,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.written_linearity_bound(node)?
                         .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?,
                 ),
-                Some((ResolvedTarget::Prelude(id), _)) if id == PreludeDeclarationId::new(22) => {
+                Some((ResolvedTarget::Prelude(id), _)) if id == BuiltinPreludeId::INT => {
                     GenericBound::Int
                 }
-                Some((ResolvedTarget::Prelude(id), _)) if id == PreludeDeclarationId::new(23) => {
+                Some((ResolvedTarget::Prelude(id), _)) if id == BuiltinPreludeId::FLOAT => {
                     GenericBound::Float
                 }
                 Some((

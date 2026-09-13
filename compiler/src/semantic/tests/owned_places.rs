@@ -72,7 +72,7 @@ fn direct['s](owner: own Box<'s, Payload>) -> result: own Box<'s, Payload> reads
   set deref(owner) = move deref(owner);
   return move owner;
 }
-fn borrowed(owner: &uniq Box<Payload>) -> result: own unit reads(owner), writes(owner) {
+fn borrowed['heap](owner: &uniq Box<'heap, Payload>) -> result: own unit reads(owner), writes(owner) {
   set deref(deref(owner)) = move deref(deref(owner));
   return unit;
 }
@@ -137,7 +137,7 @@ fn outer['s](owner: own Box<'s, Payload>, store: &uniq Heap<'s>) -> result: own 
 fn box_referent_read_out_preserves_shared_and_non_target_boundaries() {
     let source = box_read_out(
         r#"
-fn shared(owner: &Box<Payload>) -> result: own unit reads(owner) {
+fn shared['heap](owner: &Box<'heap, Payload>) -> result: own unit reads(owner) {
   set deref(deref(owner)) = move deref(deref(owner));
   return unit;
 }
@@ -174,7 +174,7 @@ fn identity_box['r, 's](value: &uniq 'r Box<'s, Payload>) -> result: &uniq 'r Bo
   return &uniq 'r deref(value);
 }
 
-fn suspended(owner: &uniq Box<Payload>) -> result: own unit reads(owner), writes(owner) {
+fn suspended['heap](owner: &uniq Box<'heap, Payload>) -> result: own unit reads(owner), writes(owner) {
   region {
     let child = identity_box(value: &uniq deref(owner));
     set deref(deref(owner)) = move deref(deref(owner));
@@ -213,11 +213,11 @@ fn descendant['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(o
 fn box_referent_read_out_rejects_a_later_reborrow_at_its_use() {
     let source = box_read_out(
         r#"
-fn keep(value: own Payload, alias: &uniq Box<Payload>) -> result: own Payload pure {
+fn keep['heap](value: own Payload, alias: &uniq Box<'heap, Payload>) -> result: own Payload pure {
   return move value;
 }
 
-fn late(owner: &uniq Box<Payload>) -> result: own unit reads(owner), writes(owner) {
+fn late['heap](owner: &uniq Box<'heap, Payload>) -> result: own unit reads(owner), writes(owner) {
   region {
     set deref(deref(owner)) = keep(value: move deref(deref(owner)), alias: &uniq deref(owner));
   }

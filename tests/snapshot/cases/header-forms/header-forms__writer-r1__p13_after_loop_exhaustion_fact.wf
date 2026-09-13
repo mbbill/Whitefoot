@@ -10,7 +10,7 @@ fn slack(limit: own u64) -> remaining: own u64 pure {
   return remaining;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- the counted for's exact-exhaustion export discharges a plain, proof-required subtraction right after the loop [INV-1].";
   let remaining = slack(limit: 5_u64);
   if remaining == 0_u64 {

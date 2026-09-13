@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: each byte is scaled by a fixed factor before accumulation, bound tightened to 510 per step.";
   let data = fixed_vector::<u8, 5>();
   region {

@@ -103,6 +103,24 @@ pub(crate) const DECLARATIONS: &[(&str, PreludeSource, &str)] = &[
 "#,
     ),
     (
+        "prelude/structs.wf",
+        PreludeSource::Items,
+        r#"struct TcpConnection {
+  receive: TcpReceive;
+  send: TcpSend;
+}
+
+struct Inputs {
+  args: Args;
+  cwd: DirectoryRead;
+  stdout: OutputStream;
+  stderr: OutputStream;
+  handles: HandleFactory;
+  stdin: InputStream;
+}
+"#,
+    ),
+    (
         "prelude/types.wf",
         PreludeSource::Items,
         r#"enum ArgError {
@@ -195,24 +213,6 @@ enum AcceptOutcome {
 enum ConnectOutcome {
   Connected(connection: TcpConnection);
   ConnectFailed(error: IoError);
-}
-"#,
-    ),
-    (
-        "prelude/structs.wf",
-        PreludeSource::Items,
-        r#"struct TcpConnection {
-  receive: TcpReceive;
-  send: TcpSend;
-}
-
-struct Inputs {
-  args: Args;
-  cwd: DirectoryRead;
-  stdout: OutputStream;
-  stderr: OutputStream;
-  handles: HandleFactory;
-  stdin: InputStream;
 }
 "#,
     ),
@@ -320,11 +320,11 @@ struct Inputs {
     (
         "prelude/directory_next.wf",
         PreludeSource::Function,
-        r#"fn directory_next(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<u64, ListStop>, entries: own u64) reads(source, destination), writes(source, destination) contract {
+        r#"fn directory_next(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) reads(source, destination), writes(source, destination) contract {
   requires start <= end;
   requires end <= len_of(deref(destination));
-  ensures when result is Ok(value: next): start <= next;
-  ensures when result is Ok(value: next): next <= end;
+  ensures start <= next;
+  ensures next <= end;
 };
 "#,
     ),

@@ -19,7 +19,7 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 
 #[test]
 fn cell_creation_dereference_and_cleanup_are_explicit() {
-    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let value = 41_u64;
   region {
     match heap_box(store: &uniq heap, value: value) {
@@ -95,7 +95,7 @@ fn whole_cell_replacement_preserves_the_owner_shape() {
   value: u64;
 }
 
-fn replace_owner(store: &uniq Heap) -> result: own Option<u64> reads(store), writes(store), allocates(store) {
+fn replace_owner['heap](store: &uniq Heap<'heap>) -> result: own Option<u64> reads(store), writes(store), allocates(store) {
   let first_value = Pair(value: 0_u64);
   let second_value = Pair(value: 1_u64);
   region {
@@ -135,7 +135,7 @@ fn main() -> status: own ExitStatus pure {
             .find(|function| function.name == "replace_owner")
             .expect("replace_owner function");
         assert!(
-            statements_contain_replace(&replace_owner.body.as_deref().expect("WF body")),
+            statements_contain_replace(replace_owner.body.as_deref().expect("WF body")),
             "the whole-owner replacement must remain a checked Replace"
         );
     });
@@ -157,7 +157,7 @@ fn statements_contain_replace(body: &[CheckedStatement]) -> bool {
 
 #[test]
 fn affine_cell_referent_move_stays_an_explicit_capability_boundary() {
-    let source = br#"fn hold(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+    let source = br#"fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   let bytes = fixed_vector::<u8, 1>();
   region {
     match heap_box(store: &uniq deref(store), value: move bytes) {
@@ -198,7 +198,7 @@ fn cell_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
         });
     };
     assert_admitted(
-        br#"fn hold(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+        br#"fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   region {
     match heap_box(store: &uniq deref(store), value: 4_i32) {
       Ok(value: b) => {
@@ -220,7 +220,7 @@ fn main() -> status: own ExitStatus pure {
     // [SET-2] shares SET-1's writability relation, so an affine, region-free
     // cell content is a legal `replace` target on the same storage path.
     assert_admitted(
-        br#"fn hold(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+        br#"fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   let bytes = fixed_vector::<u8, 1>();
   let other = fixed_vector::<u8, 1>();
   region {
@@ -250,7 +250,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn cell_content_set_targets_keep_their_source_rejections() {
     assert_rule(
-        br#"fn hold(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+        br#"fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   let bytes = fixed_vector::<u8, 1>();
   let other = fixed_vector::<u8, 1>();
   region {
@@ -281,7 +281,7 @@ fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 4_i32) {
       Ok(value: b) => {
@@ -309,7 +309,7 @@ fn region_bearing_cell_content_rejects_under_stor5_at_both_stores() {
         mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid(value: own Box<Slice<u8>>) -> result: own unit pure {
+        br#"fn invalid['heap](value: own Box<'heap, Slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -321,7 +321,7 @@ fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid(store: &uniq Heap, value: own Slice<u8>) -> result: own unit reads(store), writes(store), allocates(store) {
+        br#"fn invalid['heap](store: &uniq Heap<'heap>, value: own Slice<u8>) -> result: own unit reads(store), writes(store), allocates(store) {
   region {
     heap_box(store: &uniq deref(store), value: value);
   }
@@ -361,7 +361,7 @@ fn main() -> status: own ExitStatus pure {
     // is STOR-5's relation over that type rather than a view-shaped operand
     // test.
     assert_rule(
-        br#"fn hold(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+        br#"fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   region 'a {
     let workspace = arena_frame::<64, 8, 'a>();
     region {
@@ -396,7 +396,7 @@ fn main() -> status: own ExitStatus pure {
 /// prefix, and no two instances share a region.
 #[test]
 fn a_derived_cell_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewhere() {
-    let named_nowhere = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let named_nowhere = br#"fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 41_u64) {
       Ok(value: owner) => {
@@ -414,7 +414,7 @@ fn a_derived_cell_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewhe
   return unit;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 41_u64) {
       Ok(value: owner) => {

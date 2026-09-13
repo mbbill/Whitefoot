@@ -16,7 +16,7 @@ fn narrow_matched(x: own i32) -> result: own i8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = narrow_direct(x: 200_i32);
   let ok_result = narrow_matched(x: 200_i32);
   return exit_status(code: 0_u8);

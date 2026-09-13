@@ -5,7 +5,7 @@ fn read_at_index<const n: u64>(bytes: own FixedVector<u8, n>, index: own u64) ->
   return bytes[index];
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(args: own Args) -> status: own ExitStatus reads(args) {
   doc "expect REJECT: [FN-8] the caller never establishes index < len_of(bytes) before calling read_at_index";
   region {
     let index = args_count(args: &args);

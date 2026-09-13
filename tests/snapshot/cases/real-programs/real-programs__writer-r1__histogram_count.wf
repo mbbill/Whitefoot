@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- tallies a byte histogram over 4 buckets keyed by the top two bits with bounds-checked writes";
   let input = fixed_vector::<u8, 8>();
   region {

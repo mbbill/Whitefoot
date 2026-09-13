@@ -7,7 +7,7 @@ fn get_bounded<const n: u64>(b: own FixedVector<u8, n>, i: own u64) -> (rest: ow
   return move b, value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT REJECT: the header invariant only proves i <= n (i may equal n), which is too weak to discharge get_bounded's requires i < spare at i == n; if this is accepted, concrete state buf has len 5 and the last loop iterate calls get_bounded with i = 5, reading one past the end.";
   let buf = fixed_vector::<u8, 5>();
   region {

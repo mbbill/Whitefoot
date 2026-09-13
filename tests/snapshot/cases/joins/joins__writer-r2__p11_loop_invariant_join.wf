@@ -16,7 +16,7 @@ fn compact(buf: &uniq MutSlice<u8>) -> result: own u64 reads(buf), writes(buf) {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<4, 1, 'w>();
     region {

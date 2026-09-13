@@ -304,7 +304,7 @@ fn buffer_new_selects_its_element_from_the_fill_value() {
 #[test]
 fn cell_content_that_bears_a_region_still_rejects_under_stor5() {
     assert_rule_at(
-        br#"fn invalid(value: own Slice<u8>, store: &uniq Heap) -> result: own unit writes(store) {
+        br#"fn invalid['heap](value: own Slice<u8>, store: &uniq Heap<'heap>) -> result: own unit writes(store) {
   region {
     heap_box(store: &uniq deref(store), value: value);
   }

@@ -7,7 +7,7 @@ fn wrap_then_index<const n: u64>(table: own FixedVector<u8, n>, i: own u64) -> v
   return table[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u8, 6>();
   region {
     place_back(vector: &uniq table, value: 5_u8);

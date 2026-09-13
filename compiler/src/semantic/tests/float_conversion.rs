@@ -55,7 +55,15 @@ fn classifies_every_distinct_pair_with_a_float_endpoint() {
             panic!("all concrete float-endpoint conversion pairs must check: {outcome:?}");
         };
         assert_eq!(expected.len(), 34);
-        assert_eq!(checked.data.functions.len(), expected.len() + 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            expected.len() + 1
+        );
         for (function, (expected_source, expected_destination, total, destination_name)) in
             checked.data.functions.iter().zip(expected)
         {

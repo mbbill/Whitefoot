@@ -119,18 +119,56 @@ impl DeclarationId {
     }
 }
 
-/// Dense identity of one normative PRE-1 declaration record.
+/// Identity of an existing language-known built-in prelude record.
+/// This internal identity is independent of its PRE-1 diagnostic ordinal.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PreludeDeclarationId(u8);
+pub struct BuiltinPreludeId(u8);
 
-impl PreludeDeclarationId {
-    pub(crate) const fn new(index: u8) -> Self {
-        Self(index)
-    }
+impl BuiltinPreludeId {
+    pub(crate) const BOOL: Self = Self(0);
+    pub(crate) const TRUE: Self = Self(1);
+    pub(crate) const FALSE: Self = Self(2);
+    pub(crate) const OPTION: Self = Self(3);
+    pub(crate) const OPTION_TYPE: Self = Self(4);
+    pub(crate) const NONE: Self = Self(5);
+    pub(crate) const SOME: Self = Self(6);
+    pub(crate) const SOME_VALUE: Self = Self(7);
+    pub(crate) const RESULT: Self = Self(8);
+    pub(crate) const RESULT_VALUE_TYPE: Self = Self(9);
+    pub(crate) const RESULT_ERROR_TYPE: Self = Self(10);
+    pub(crate) const OK: Self = Self(11);
+    pub(crate) const OK_VALUE: Self = Self(12);
+    pub(crate) const ERR: Self = Self(13);
+    pub(crate) const ERR_ERROR: Self = Self(14);
+    pub(crate) const OVERFLOW_TYPE: Self = Self(15);
+    pub(crate) const OVERFLOW: Self = Self(16);
+    pub(crate) const DIV_ERROR_TYPE: Self = Self(17);
+    pub(crate) const DIVIDE_BY_ZERO: Self = Self(18);
+    pub(crate) const DIV_OVERFLOW: Self = Self(19);
+    pub(crate) const NARROW_ERROR_TYPE: Self = Self(20);
+    pub(crate) const NARROW_ERROR: Self = Self(21);
+    pub(crate) const INT: Self = Self(22);
+    pub(crate) const FLOAT: Self = Self(23);
 
-    /// Returns the zero-based PRE-1 declaration ordinal.
+    /// Returns the internal built-in record index.
     #[must_use]
     pub const fn ordinal(self) -> u8 {
+        self.0
+    }
+}
+
+/// Diagnostic identity in the complete PRE-1 declaration preorder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PreludeDeclarationId(u32);
+
+impl PreludeDeclarationId {
+    pub(crate) fn from_index(index: usize) -> Option<Self> {
+        u32::try_from(index).ok().map(Self)
+    }
+
+    /// Returns the zero-based ordinal in the complete PRE-1 inventory.
+    #[must_use]
+    pub const fn ordinal(self) -> u32 {
         self.0
     }
 }
@@ -387,7 +425,7 @@ pub enum DeclarationOrigin {
     Prelude(PreludeDeclarationId),
     /// One [TYPE-2] compiler-owned container or provider nominal.
     Container(ContainerNominalId),
-    /// One [BLK-0] kernel-domain operation present in every unit [SYS-3].
+    /// One [BLK-0] kernel-domain operation present in every unit [BLK-0].
     Kernel(KernelOperationId),
 }
 
@@ -400,9 +438,20 @@ pub struct DeclarationRecord {
     origin: SourceOrigin,
     scope: ScopeId,
     classes: Vec<DeclarationClass>,
+    diagnostic_origins: Vec<(DeclarationClass, PreludeDeclarationId)>,
 }
 
 impl DeclarationRecord {
+    fn diagnostic_origin(&self, class: DeclarationClass) -> DeclarationOrigin {
+        self.diagnostic_origins
+            .iter()
+            .find_map(|(candidate, origin)| (*candidate == class).then_some(*origin))
+            .map_or_else(
+                || DeclarationOrigin::Source(self.origin.clone()),
+                DeclarationOrigin::Prelude,
+            )
+    }
+
     /// Returns this declaration's dense identity.
     #[must_use]
     pub const fn id(&self) -> DeclarationId {
@@ -479,14 +528,14 @@ pub enum ResolvedTarget {
         class: DeclarationClass,
     },
     /// One normative PRE-1 lookup entry.
-    Prelude(PreludeDeclarationId),
+    Prelude(BuiltinPreludeId),
     /// One exact OP-1 operation family.
     Operation(OperationFamilyId),
     /// One [TYPE-2] compiler-owned container or provider nominal, admitted at
     /// a `type` TYPEID in every unit.
     Container(ContainerNominalId),
     /// One admitted [BLK-0] kernel-domain operation, admitted at a `callee`
-    /// IDENT in every unit [SYS-3].
+    /// IDENT in every unit [BLK-0].
     Kernel(KernelOperationId),
 }
 
@@ -611,32 +660,41 @@ pub(crate) struct PostconditionResolutionRecord {
     pub(crate) entry_resolution_issue: Option<ResolutionIssue>,
 }
 
-/// One normative PRE-1 declaration record.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// One record in the complete PRE-1 diagnostic inventory.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreludeDeclarationRecord {
     id: PreludeDeclarationId,
-    spelling: &'static str,
+    spelling: String,
     class: Option<DeclarationClass>,
 }
 
 impl PreludeDeclarationRecord {
-    /// Returns the PRE-1 record ordinal.
     #[must_use]
-    pub const fn id(self) -> PreludeDeclarationId {
+    /// Returns this record's complete PRE-1 diagnostic ordinal.
+    pub const fn id(&self) -> PreludeDeclarationId {
         self.id
     }
 
-    /// Returns the normative spelling.
     #[must_use]
-    pub const fn spelling(self) -> &'static str {
-        self.spelling
+    /// Returns the declaration or owner-local record spelling.
+    pub fn spelling(&self) -> &str {
+        &self.spelling
     }
 
-    /// Returns the source-lookup class, or `None` for owner-local records.
     #[must_use]
-    pub const fn lookup_class(self) -> Option<DeclarationClass> {
+    /// Returns its whole-unit lookup class, or None for an owner-local record.
+    pub const fn lookup_class(&self) -> Option<DeclarationClass> {
         self.class
     }
+}
+
+/// An existing built-in declaration used by ordinary lookup.
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct BuiltinPreludeDeclarationRecord {
+    id: BuiltinPreludeId,
+    spelling: &'static str,
+    class: Option<DeclarationClass>,
 }
 
 /// Numbered rule owning one resolver rejection.
@@ -929,7 +987,7 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         &self.scopes
     }
 
-    /// Returns all twenty-four PRE-1 records in normative preorder.
+    /// Returns the complete PRE-1 diagnostic records in normative preorder.
     #[must_use]
     pub fn prelude_declarations(&self) -> &[PreludeDeclarationRecord] {
         &self.prelude
@@ -941,7 +999,7 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         &self,
         id: PreludeDeclarationId,
     ) -> Option<&PreludeDeclarationRecord> {
-        self.prelude.get(usize::from(id.ordinal()))
+        self.prelude.get(id.ordinal() as usize)
     }
 
     /// Returns all source declaration events D01 through D15.

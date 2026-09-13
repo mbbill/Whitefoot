@@ -10,7 +10,7 @@ fn ring_slot<const n: u64>(buf: own FixedVector<u8, n>, front: own u64, used: ow
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let buf = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq buf, value: 9_u8);

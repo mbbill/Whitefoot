@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: two cursors advance together across paired buffers inside one counted for, i rises and j = 4 - i falls in lockstep to reverse-copy 5 bytes";
   let src = fixed_vector::<u8, 5>();
   region {

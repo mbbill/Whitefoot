@@ -11,7 +11,10 @@ pub(crate) struct ScopeBuild {
 }
 
 impl ScopeBuild {
-    pub(crate) fn build(topology: &FinalizedTopology, sources: &SourceBundle) -> Result<Self, ResolutionCompilerFailure> {
+    pub(crate) fn build(
+        topology: &FinalizedTopology,
+        sources: &SourceBundle,
+    ) -> Result<Self, ResolutionCompilerFailure> {
         let mut build = Self {
             records: Vec::new(),
             node_scopes: vec![None; topology.nodes.len()],
@@ -25,7 +28,11 @@ impl ScopeBuild {
         // PRE-1 is the fixed outer environment that writer declarations
         // extend. Its signature-local names cannot see later writer names.
         let unit = if sources.includes_prelude() {
-            build.push_scope(Some(supplied), ScopeKind::CompilationUnit, root_path.clone())?
+            build.push_scope(
+                Some(supplied),
+                ScopeKind::CompilationUnit,
+                root_path.clone(),
+            )?
         } else {
             supplied
         };
@@ -52,9 +59,13 @@ impl ScopeBuild {
             match node.production {
                 Production::Program => {
                     for (index, child) in children.iter().enumerate() {
-                        let record = topology.node(*child).ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+                        let record = topology
+                            .node(*child)
+                            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
                         if let crate::FinalizedExtent::Source { source, .. } = record.extent
-                            && sources.file(source).is_some_and(|file| file.prelude().is_some())
+                            && sources
+                                .file(source)
+                                .is_some_and(|file| file.prelude().is_some())
                         {
                             child_scopes[index] = supplied;
                         }
@@ -290,7 +301,21 @@ impl ScopeBuild {
     }
 
     pub(crate) fn is_unit_scope(&self, scope: ScopeId) -> bool {
-        self.records.get(scope.index()).is_some_and(|record| record.kind == ScopeKind::CompilationUnit)
+        self.records
+            .get(scope.index())
+            .is_some_and(|record| record.kind == ScopeKind::CompilationUnit)
+    }
+
+    /// The ordinary outer environment supplied by PRE-1. Without supplied
+    /// declarations the writer unit is the root and has no unit child.
+    pub(crate) fn is_prelude_scope(&self, scope: ScopeId) -> bool {
+        self.records.get(scope.index()).is_some_and(|record| {
+            record.kind == ScopeKind::CompilationUnit
+                && record.parent().is_none()
+                && self.records.iter().any(|child| {
+                    child.kind == ScopeKind::CompilationUnit && child.parent() == Some(scope)
+                })
+        })
     }
 
     pub(crate) fn declaration_scope(

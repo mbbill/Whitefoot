@@ -58,18 +58,18 @@ fn dispositions(proof: &FunctionPostconditionProof) -> Vec<PostconditionDisposit
     proof.exits.iter().map(|exit| exit.disposition).collect()
 }
 
-const COMMAND_MAIN: &str =
+const ORDINARY_MAIN: &str =
     "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
-fn command_entry_smoke() {
-    assert_complete(COMMAND_MAIN.as_bytes());
+fn ordinary_main_smoke() {
+    assert_complete(ORDINARY_MAIN.as_bytes());
 }
 
 #[test]
 fn requires_smoke() {
     let source = format!(
-        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  requires value == value;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  requires value == value;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     assert_complete(source.as_bytes());
 }
@@ -77,7 +77,7 @@ fn requires_smoke() {
 #[test]
 fn ensures_smoke() {
     let source = format!(
-        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     assert_complete(source.as_bytes());
 }
@@ -85,7 +85,7 @@ fn ensures_smoke() {
 #[test]
 fn published_relations_keep_distinct_scalar_result_ordinals_separate() {
     let source = format!(
-        "fn pair() -> (zero: own i32, one: own i32) pure contract {{\n  ensures zero == 0_i32;\n  ensures one == 1_i32;\n}} {{\n  return 0_i32, 1_i32;\n}}\n\n{COMMAND_MAIN}"
+        "fn pair() -> (zero: own i32, one: own i32) pure contract {{\n  ensures zero == 0_i32;\n  ensures one == 1_i32;\n}} {{\n  return 0_i32, 1_i32;\n}}\n\n{ORDINARY_MAIN}"
     );
     assert_complete(source.as_bytes());
 }
@@ -93,7 +93,7 @@ fn published_relations_keep_distinct_scalar_result_ordinals_separate() {
 #[test]
 fn contradictory_relations_on_one_scalar_result_ordinal_still_reject() {
     let source = format!(
-        "fn contradictory() -> (zero: own i32, spare: own i32) pure contract {{\n  ensures zero == 0_i32;\n  ensures spare == 1_i32;\n  ensures zero == 1_i32;\n}} {{\n  return 0_i32, 1_i32;\n}}\n\n{COMMAND_MAIN}"
+        "fn contradictory() -> (zero: own i32, spare: own i32) pure contract {{\n  ensures zero == 0_i32;\n  ensures spare == 1_i32;\n  ensures zero == 1_i32;\n}} {{\n  return 0_i32, 1_i32;\n}}\n\n{ORDINARY_MAIN}"
     );
     assert_rule(
         source.as_bytes(),
@@ -257,7 +257,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_non_bool_ensures_predicate_cites_op5() {
     let source = format!(
-        "fn invalid(value: own i32) -> out: own i32 pure contract {{\n  ensures value;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn invalid(value: own i32) -> out: own i32 pure contract {{\n  ensures value;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     assert_rule(
         source.as_bytes(),
@@ -269,7 +269,7 @@ fn a_non_bool_ensures_predicate_cites_op5() {
 #[test]
 fn plural_ensures_are_proved_and_published_as_independent_relations() {
     let source = format!(
-        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= value;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= value;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics_dark(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -304,7 +304,7 @@ fn plural_ensures_are_proved_and_published_as_independent_relations() {
 #[test]
 fn one_failed_ensure_withholds_every_summary_in_its_component() {
     let source = format!(
-        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= 0_i32;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= 0_i32;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics_dark(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -338,7 +338,7 @@ fn one_failed_ensure_withholds_every_summary_in_its_component() {
 #[test]
 fn one_failed_relation_withholds_every_summary_in_a_mutual_scc() {
     let source = format!(
-        "fn left(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n}} {{\n  let ignored = right(value: value);\n  return value;\n}}\n\nfn right(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= 0_i32;\n}} {{\n  let ignored = left(value: value);\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn left(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n}} {{\n  let ignored = right(value: value);\n  return value;\n}}\n\nfn right(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= 0_i32;\n}} {{\n  let ignored = left(value: value);\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics_dark(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -385,7 +385,7 @@ fn one_failed_relation_withholds_every_summary_in_a_mutual_scc() {
 #[test]
 fn an_inhabited_routed_ensure_without_a_selected_exit_is_rejected() {
     let source = format!(
-        "fn only_error(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  ensures when Ok(value: payload): payload == value;\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{COMMAND_MAIN}"
+        "fn only_error(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  ensures when Ok(value: payload): payload == value;\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -402,7 +402,7 @@ fn an_inhabited_routed_ensure_without_a_selected_exit_is_rejected() {
 #[test]
 fn an_uninhabited_routed_ensure_needs_no_exit_and_publishes_no_summary() {
     let source = format!(
-        "fn impossible(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  requires value == 0_i32;\n  requires value != 0_i32;\n  ensures when Ok(value: payload): payload == value;\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{COMMAND_MAIN}"
+        "fn impossible(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  requires value == 0_i32;\n  requires value != 0_i32;\n  ensures when Ok(value: payload): payload == value;\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -1026,7 +1026,7 @@ fn a_cell_deref_actual_survives_a_cross_formal_owner_move_as_a_call_datum() {
   return value;
 }
 
-fn caller(heap: own Heap) -> result: own i32 reads(heap), writes(heap), allocates(heap) contract {
+fn caller['heap](heap: own Heap<'heap>) -> result: own i32 reads(heap), writes(heap), allocates(heap) contract {
   ensures result == 1_i32;
 } {
   region {
@@ -1095,7 +1095,7 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller(heap: own Heap) -> result: own unit reads(heap), writes(heap), allocates(heap) {
+fn caller['heap](heap: own Heap<'heap>) -> result: own unit reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 1_i32) {
       Ok(value: owner) => {
@@ -1214,7 +1214,7 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller(heap: own Heap) -> result: own unit reads(heap), writes(heap), allocates(heap) {
+fn caller['heap](heap: own Heap<'heap>) -> result: own unit reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 1_i32) {
       Ok(value: owner) => {
@@ -1261,7 +1261,7 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller(choose: own Bool, heap: own Heap) -> result: own unit reads(heap), writes(heap), allocates(heap) {
+fn caller['heap](choose: own Bool, heap: own Heap<'heap>) -> result: own unit reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 1_i32) {
       Ok(value: owner) => {
@@ -1757,7 +1757,7 @@ fn a_bound_measured_call_return_preserves_the_kernel_result_relation() {
 fn a_measured_postcondition_cannot_omit_a_direct_call_return() {
     for returned in ["fixed_vector::<u8, 1>()", "empty()"] {
         let source = format!(
-            "fn empty() -> result: own FixedVector<u8, 1> pure {{\n  return fixed_vector::<u8, 1>();\n}}\n\nfn choose(keep: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  if keep {{\n    let vacant = fixed_vector::<u8, 1>();\n    region {{\n      place_back(vector: &uniq vacant, value: 17_u8);\n    }}\n    let full = move vacant;\n    return move full;\n  }}\n  return {returned};\n}}\n\n{COMMAND_MAIN}"
+            "fn empty() -> result: own FixedVector<u8, 1> pure {{\n  return fixed_vector::<u8, 1>();\n}}\n\nfn choose(keep: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  if keep {{\n    let vacant = fixed_vector::<u8, 1>();\n    region {{\n      place_back(vector: &uniq vacant, value: 17_u8);\n    }}\n    let full = move vacant;\n    return move full;\n  }}\n  return {returned};\n}}\n\n{ORDINARY_MAIN}"
         );
         with_semantics(source.as_bytes(), |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -1784,7 +1784,7 @@ fn measured_recursive_return_source(bind_result: bool) -> String {
         "return forward(items: move items, again: again);"
     };
     format!(
-        "fn forward(items: own FixedVector<u8, 1>, again: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  requires len_of(items) == 1_u64;\n  ensures len_of(result) == 1_u64;\n}} {{\n  if again {{\n    {returned}\n  }}\n  return move items;\n}}\n\n{COMMAND_MAIN}"
+        "fn forward(items: own FixedVector<u8, 1>, again: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  requires len_of(items) == 1_u64;\n  ensures len_of(result) == 1_u64;\n}} {{\n  if again {{\n    {returned}\n  }}\n  return move items;\n}}\n\n{ORDINARY_MAIN}"
     )
 }
 
@@ -1857,7 +1857,7 @@ fn an_unselected_error_skips_other_measured_call_return_datums() {
             )
         };
         let source = format!(
-            "fn build(keep: own Bool) -> ({results}) pure contract {{\n  ensures when status is Ok(value: accepted): len_of(items) == 1_u64;\n}} {{\n  if keep {{\n    let empty = fixed_vector::<u8, 1>();\n    region {{\n      place_back(vector: &uniq empty, value: 17_u8);\n    }}\n    let full = move empty;\n    return {success};\n  }}\n  return {failure};\n}}\n\n{COMMAND_MAIN}"
+            "fn build(keep: own Bool) -> ({results}) pure contract {{\n  ensures when status is Ok(value: accepted): len_of(items) == 1_u64;\n}} {{\n  if keep {{\n    let empty = fixed_vector::<u8, 1>();\n    region {{\n      place_back(vector: &uniq empty, value: 17_u8);\n    }}\n    let full = move empty;\n    return {success};\n  }}\n  return {failure};\n}}\n\n{ORDINARY_MAIN}"
         );
         assert_complete(source.as_bytes());
     }
@@ -2118,9 +2118,7 @@ fn main() -> status: own ExitStatus pure {
             issue.kind(),
             &SemanticIssueKind::InvalidPostconditionSelector
         );
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("selector must cite a source node");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(&source[start..end], b"ForeignCase(value: payload)");
@@ -2528,12 +2526,13 @@ fn main() -> status: own ExitStatus pure {
                     .windows(2)
                     .all(|pair| pair[0].0 < pair[1].0)
             );
-            assert!(
-                component
-                    .summaries
-                    .windows(2)
-                    .all(|pair| pair[0].function.0 < pair[1].function.0)
-            );
+            assert!(component.summaries.windows(2).all(|pair| (
+                pair[0].function.0,
+                pair[0].relation_ordinal
+            ) < (
+                pair[1].function.0,
+                pair[1].relation_ordinal
+            )));
             assert!(component.summaries.iter().all(|summary| {
                 summary.component == component.ordinal
                     && component.functions.contains(&summary.function)
@@ -2630,12 +2629,13 @@ fn main() -> status: own ExitStatus pure {
                 .all(|pair| pair[0].0 < pair[1].0)
         );
         assert_eq!(component.summaries.len(), 2);
-        assert!(
-            component
-                .summaries
-                .windows(2)
-                .all(|pair| pair[0].function.0 < pair[1].function.0)
-        );
+        assert!(component.summaries.windows(2).all(|pair| (
+            pair[0].function.0,
+            pair[0].relation_ordinal
+        ) < (
+            pair[1].function.0,
+            pair[1].relation_ordinal
+        )));
         for summary in &component.summaries {
             let proof = checked.data.functions[summary.function.0 as usize]
                 .entailment
@@ -2887,7 +2887,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_unit_without_postconditions_keeps_the_empty_schedule_fast_path() {
+fn a_unit_without_writer_postconditions_still_publishes_prelude_contracts() {
     let source = br#"fn helper(value: own i32) -> result: own i32 pure {
   return value;
 }
@@ -2901,7 +2901,82 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("no-postcondition control must check completely: {outcome:?}");
         };
-        assert!(checked.data.postcondition_schedule.components.is_empty());
+        // v0.58 PRE-1 records contribute ordinary signature contracts even
+        // when every writer-defined function has no postcondition.
+        assert!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .all(|function| function.postconditions.is_empty())
+        );
+        let declared = checked
+            .data
+            .functions
+            .iter()
+            .filter(|function| function.body.is_none() && !function.postconditions.is_empty())
+            .collect::<Vec<_>>();
+        assert!(!declared.is_empty());
+        for function in declared {
+            for proof in &function.entailment.postconditions {
+                assert!(proof.aggregate.discharged);
+                assert!(proof.summary.is_some());
+                assert!(proof.exits.is_empty());
+            }
+        }
     });
     assert_complete(source);
+}
+
+/// An endpoint outside an enum is an ordinary multi-result datum [CALL-4].
+/// Supplied signatures and checked WF bodies publish exactly the same bounds;
+/// observing the independent status does not need delayed enum fact transfer.
+#[test]
+fn ordinary_directory_result_bounds_cross_both_callable_body_forms() {
+    let source = br#"fn forward(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) reads(source, destination), writes(source, destination) contract {
+  requires start <= end;
+  requires end <= len_of(deref(destination));
+  ensures start <= next;
+  ensures next <= end;
+} {
+  region {
+    let (outcome, cursor, count) = directory_next(source: &uniq deref(source), destination: &uniq deref(destination), start: start, end: end);
+    match move outcome {
+      Ok(value: done) => {
+        return Ok<unit, ListStop>(value: unit), cursor, count;
+      }
+      Err(error: stopped) => {
+        return Err<unit, ListStop>(error: move stopped), start, count;
+      }
+    }
+  }
+}
+
+fn observe(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own unit reads(source, destination), writes(source, destination) contract {
+  requires start <= end;
+  requires end <= len_of(deref(destination));
+} {
+  region {
+    let (outcome, cursor, count) = forward(source: &uniq deref(source), destination: &uniq deref(destination), start: start, end: end);
+    match move outcome {
+      Ok(value: done) => {
+        invariant bounded_low: start <= cursor;
+        invariant bounded_high: cursor <= end;
+      }
+      Err(error: stopped) => {
+        invariant bounded_low: start <= cursor;
+        invariant bounded_high: cursor <= end;
+      }
+    }
+  }
+  return unit;
+}
+"#;
+    super::with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, crate::SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
 }

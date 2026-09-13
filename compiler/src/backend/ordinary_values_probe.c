@@ -110,9 +110,14 @@ static void file_probe(wf_inputs *inputs) {
     wf_open_directory_source(&listing, &inputs->handles, &inputs->cwd);
     assert(listing.tag == 0);
     wf__body_directory_next(&listed, &listing.value, &window, 11, 11);
-    assert(listed.result.tag == 0 && listed.result.value == 11 && listed.entries == 0);
+    assert(listed.result.tag == 0 && listed.next == 11 && listed.entries == 0);
     wf__body_directory_next(&listed, &listing.value, &window, 3, sizeof(bytes));
-    assert(listed.result.tag == 0 && listed.result.value > 3 && listed.entries > 0);
+    assert(listed.result.tag == 0 && listed.next > 3 && listed.entries > 0);
+    do {
+        wf__body_directory_next(&listed, &listing.value, &window, 3, sizeof(bytes));
+        assert(listed.next >= 3 && listed.next <= sizeof(bytes));
+    } while (listed.result.tag == 0);
+    assert(listed.result.error.tag == 0 && listed.next == 3 && listed.entries == 0);
     wf_close_directory_source(&closed, &inputs->handles, &listing.value);
     check_close(&closed);
     assert(remove(filename) == 0);

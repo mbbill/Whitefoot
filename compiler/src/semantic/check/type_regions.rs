@@ -56,6 +56,90 @@ impl TypeRegionShape {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// [BLK-4] the complete value type, including phantom nominal brands and
+    /// instantiated element types. This is independent of the declaration's
+    /// region-argument matching shape: an opaque `T` can carry confinement.
+    pub(super) fn confinement_regions(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Vec<DeclarationId>, CheckStop> {
+        let mut pending = vec![ty];
+        let mut visited = std::collections::HashSet::new();
+        let mut regions = Vec::new();
+        while let Some(ty) = pending.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            let (_, axes, arguments) = self.type_region_axes(ty)?;
+            regions.extend(axes.into_iter().map(|axis| axis.formal));
+            pending.extend(arguments);
+            if let CheckedType::Nominal(id) = ty {
+                match &self.nominal(id)?.kind {
+                    CheckedNominalKind::Struct { fields } => {
+                        pending.extend(fields.iter().map(|field| field.ty));
+                    }
+                    CheckedNominalKind::Enum { variants } => {
+                        pending.extend(
+                            variants
+                                .iter()
+                                .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        regions.sort_by_key(|region| region.index());
+        regions.dedup();
+        Ok(regions)
+    }
+
+    /// An instantiated type parameter can carry a caller's store brand even
+    /// though that brand's source declaration belongs to a different body.
+    /// Input values and explicit type arguments supply those regions for
+    /// this invocation [FN-2, OWN-3].
+    pub(super) fn check_confined_destination(
+        &self,
+        function: &super::FunctionSignature,
+        ty: CheckedType,
+        destination: Option<DeclarationId>,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        let regions = self.confinement_regions(ty)?;
+        if regions.is_empty() {
+            return Ok(());
+        }
+        let mut supplied = function.region_parameters.clone();
+        for parameter in &function.parameters {
+            supplied.extend(self.confinement_regions(parameter.ty)?);
+        }
+        for (_, argument) in function.substitution.entries() {
+            if let super::generics::GenericArgument::Type(ty) = argument {
+                supplied.extend(self.confinement_regions(*ty)?);
+            }
+        }
+        for region in regions {
+            let within = match destination {
+                Some(destination) => {
+                    self.declaration_is_within_region_block(destination, region)?
+                }
+                None => false,
+            };
+            if supplied.contains(&region) || within {
+                continue;
+            }
+            return self.issue_node(
+                crate::SemanticRule::Blk4,
+                node,
+                crate::SemanticIssueKind::ConfinedValueEscape {
+                    region: self.region_phrase(region)?,
+                    mechanical_fix: "keep the destination within every region named by the value's complete type, or allocate its storage in a region that outlives the destination",
+                },
+            );
+        }
+        Ok(())
+    }
+
     /// The name's own region and type-argument axes, without its fields.
     fn type_region_axes(
         &self,

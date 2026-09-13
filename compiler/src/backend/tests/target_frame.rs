@@ -15,7 +15,7 @@ fn plan(
     address_index_max: Option<u64>,
 ) -> Result<TargetFramePlan, TargetLayoutFailure> {
     with_ir(FRAME_CONTEXT, |program| {
-        let host = TargetLayout::host().expect("the frame test runs on a qualified host");
+        let host = TargetLayout::host().expect("the frame test runs on a supported host layout");
         let target = address_index_max
             .map(|maximum| host.with_address_index_max_for_test(maximum))
             .unwrap_or(host);
@@ -28,7 +28,8 @@ fn validate_static(
     address_index_max: u64,
 ) -> Result<TargetAggregateLayout, TargetLayoutFailure> {
     with_ir(FRAME_CONTEXT, |program| {
-        let host = TargetLayout::host().expect("the static-storage test runs on a qualified host");
+        let host =
+            TargetLayout::host().expect("the static-storage test runs on a supported host layout");
         let target = host.with_address_index_max_for_test(address_index_max);
         validate_static_storage(target, program, ty)
     })

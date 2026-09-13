@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+#[path = "../linkage.rs"]
+mod linkage;
+
 use std::{collections::BTreeMap, env, fs};
 
 fn write_changed(path: &str, content: &str) {
@@ -116,7 +119,9 @@ fn main() {
             write_changed(&arguments[4], source.trim_start_matches('\n'));
         }
         Some("adapt") if arguments.len() == 4 => {
-            let module = fs::read_to_string(&arguments[2]).expect("read emitted module");
+            let module = linkage::closed_helpers(
+                &fs::read_to_string(&arguments[2]).expect("read emitted module"),
+            );
             let symbol = "define internal i64 @wf_dense(i64 ";
             assert_eq!(module.matches(symbol).count(), 1, "unexpected measured ABI");
             assert_eq!(module.matches("define i32 @main(").count(), 1);

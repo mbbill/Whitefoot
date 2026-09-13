@@ -38,7 +38,7 @@ fn chunk_count(length: own u64, chunk_size: own u64) -> count: own u64 pure cont
   return whole;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: sum_all walks cursor with an ordinary loop invariant (cursor <= length), so each subscript is discharged by the has_more branch; chunk_count is a pure division/remainder computation with no subscript at all.";
   let data = fixed_vector::<u8, 7>();
   region {

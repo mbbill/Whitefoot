@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- a whole-place replace of the buffer kills its old length fact [ENT-5](a); a fresh len_of() reestablishes it.";
   let line = fixed_vector::<u8, 10>();
   region {

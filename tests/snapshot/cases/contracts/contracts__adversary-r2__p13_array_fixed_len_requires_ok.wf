@@ -5,7 +5,7 @@ fn read_slot(values: own FixedVector<u8, 8>, index: own u64) -> output: own u8 r
   return values[index];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: define capacity = len_of(values) is a fixed-size array<u8, 8> constant length; the literal index 7 satisfies requires 7 < 8 statically with no runtime dependence on the array contents.";
   let values = fixed_vector::<u8, 8>();
   region {

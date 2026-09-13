@@ -1,4 +1,4 @@
-use crate::{DeclarationId, NodePath, PreludeDeclarationId};
+use crate::{BuiltinPreludeId, DeclarationId, NodePath};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct FunctionId(pub(crate) u32);
@@ -727,7 +727,7 @@ pub(crate) struct CheckedVariant {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedConstructor {
     Source(DeclarationId),
-    Prelude(PreludeDeclarationId),
+    Prelude(BuiltinPreludeId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2026,9 +2026,9 @@ pub(crate) struct CheckedMatchArm {
 /// One compiler-derived release on a normal control-flow edge [STOR-3].
 ///
 /// The record is explicit in the checked program [DIAG-2] rather than being
-/// rederived from the type by every consumer: [EFF-2]'s release contribution
-/// reads its row, and lowering carries the same record into the typed IR so a
-/// target stage can emit the exact [SYS-5] action.
+/// rederived from the type by every consumer. Lowering carries the record
+/// into typed IR to emit the ordinary storage release [STOR-3]. Opaque
+/// nominals have the empty release.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedDrop {
     /// The existing source edge whose normal exit performs this release.
@@ -2349,12 +2349,8 @@ pub(crate) struct CheckedFunction {
     pub(crate) parameters: Vec<CheckedParameter>,
     pub(crate) result_mode: CheckedMode,
     pub(crate) result: CheckedType,
-    /// Closed-world state origin of this function's result.
+    /// Ordinary loan-origin ceiling of this function's view result.
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
-    /// Whether this function's own body reaches an ambient-heap allocation
-    /// [STOR-1]. The ambient heap has no provider value, so [EFF-1] gives it
-    /// no written entry and this is derived rather than declared [S23].
-    pub(crate) reaches_ambient_heap: bool,
     /// Formal state paths named by `writes(...)`.
     pub(crate) declared_state_writes: Vec<CheckedStatePath>,
     /// Callable-boundary predicates in `requires_clause` source order.
@@ -2400,15 +2396,18 @@ pub(crate) struct CheckedEffects {
     pub(crate) writes: Vec<CheckedStatePath>,
     /// [S23] the declared `allocates` paths.
     pub(crate) allocates: Vec<CheckedStatePath>,
-    /// The ambient heap [STOR-1], which has no `effect_path` and no written
-    /// entry; derived, never declared.
-    pub(crate) allocates_heap: bool,
+    /// Transitional ordinary region allocation [STOR-2, EFF-1].
     pub(crate) allocates_arenas: Vec<DeclarationId>,
 }
 
 #[derive(Debug)]
 pub(crate) struct CheckedProgramData {
     pub(crate) nominals: Vec<CheckedNominal>,
+    /// [BLK-4, DIAG-2] retained confinement for each complete nominal,
+    /// including phantom brands. Structural types carry their region and
+    /// element handles directly, so together these retain every value's set.
+    #[allow(dead_code)]
+    pub(crate) nominal_confinement: Vec<Vec<DeclarationId>>,
     /// Append-only structural elements, including unreachable replay history.
     /// Only handles reachable from executable types belong to lowering.
     pub(crate) elements: Vec<CheckedType>,

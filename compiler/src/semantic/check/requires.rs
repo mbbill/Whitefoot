@@ -1259,7 +1259,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.invalid_clause(clause, entry);
         };
         let ResolvedTarget::Operation(operation) = usage.target() else {
-            // FN-8 admits only table-operation calls. User and system
+            // FN-8 admits only table-operation calls. Ordinary function
             // callees have already resolved successfully, so they are an
             // InvalidRequires source form rather than a compiler-resolution
             // failure.

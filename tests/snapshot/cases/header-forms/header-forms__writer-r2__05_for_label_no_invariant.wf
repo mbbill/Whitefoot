@@ -10,7 +10,7 @@ fn find_first_zero(count: own u64) -> found: own u64 pure {
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: labeled counted for with zero header invariants, label before the one-space paren [GRAM-4, FORM-2].";
   let found = find_first_zero(count: 5_u64);
   if found == 0_u64 {

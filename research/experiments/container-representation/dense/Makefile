@@ -11,6 +11,8 @@ case_flags = -DSIZE=$(call case_size,$(1)) -DLANES=$(call case_lanes,$(1))
 CFLAGS := -O2 -std=c17 -Wall -Wextra -Werror
 IRFLAGS := -O2 -Wno-override-module
 
+include ../native.mk
+
 .PHONY: all check measure shape clean
 .PRECIOUS: $(BUILD)/dense%.wf $(BUILD)/raw%.ll $(BUILD)/linked%.ll \
            $(BUILD)/dense%.o $(BUILD)/native%.o
@@ -20,7 +22,7 @@ all: $(CASES:%=$(BUILD)/bench%) $(CASES:%=$(BUILD)/smoke%) \
 $(BUILD):
 	mkdir -p $@
 
-$(BUILD)/driver: driver.rs | $(BUILD)
+$(BUILD)/driver: driver.rs ../linkage.rs | $(BUILD)
 	$(RUSTC) --edition=2024 -C opt-level=2 -D warnings $< -o $@
 
 $(BUILD)/dense%.wf: dense.wf.in $(BUILD)/driver
@@ -38,8 +40,8 @@ $(BUILD)/dense%.o: $(BUILD)/dense%.s
 $(BUILD)/native%.o: reference.c
 	$(CLANG) $(CFLAGS) $(call case_flags,$*) -fstack-usage -c $< -o $@
 
-$(BUILD)/bench%: harness.c $(BUILD)/dense%.o $(BUILD)/native%.o
-	$(CLANG) $(CFLAGS) $(call case_flags,$*) $^ -o $@
+$(BUILD)/bench%: harness.c $(BUILD)/dense%.o $(BUILD)/native%.o $(NATIVE_OBJECTS)
+	$(CLANG) $(CFLAGS) $(call case_flags,$*) $^ $(NATIVE_LINK_FLAGS) -o $@
 
 $(BUILD)/smoke%: $(BUILD)/dense%.wf $(WHITEFOOTC)
 	$(WHITEFOOTC) -o $@ $<
@@ -56,8 +58,8 @@ $(BUILD)/native%.opt.ll: reference.c
 $(BUILD)/native%.s: reference.c
 	$(CLANG) $(CFLAGS) $(call case_flags,$*) -S $< -o $@
 
-$(BUILD)/boundary-bench256: harness.c reference.c $(BUILD)/dense256.o
-	$(CLANG) $(CFLAGS) -DSIZE=256 -DLANES=1 -DBOUNDARY_CONTROL=1 $^ -o $@
+$(BUILD)/boundary-bench256: harness.c reference.c $(BUILD)/dense256.o $(NATIVE_OBJECTS)
+	$(CLANG) $(CFLAGS) -DSIZE=256 -DLANES=1 -DBOUNDARY_CONTROL=1 $^ $(NATIVE_LINK_FLAGS) -o $@
 
 $(BUILD)/boundary256.ll: reference.c
 	$(CLANG) $(CFLAGS) -DSIZE=256 -DLANES=1 -DBOUNDARY_CONTROL=1 -S -emit-llvm $< -o $@

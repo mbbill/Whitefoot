@@ -3,9 +3,8 @@ use std::collections::HashSet;
 use crate::syntax::NodeId;
 use crate::syntax::terminal::TerminalPredicate;
 use crate::{
-    DeclarationClass, DeclarationRole, DependentDeclarationRole, LexicalUseRole,
-    PreludeDeclarationId, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
-    SemanticRule,
+    BuiltinPreludeId, DeclarationClass, DeclarationRole, DependentDeclarationRole, LexicalUseRole,
+    Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
 use super::super::model::{
@@ -423,12 +422,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(());
         }
         match usage.target() {
-            ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(3) => {
+            ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::OPTION => {
                 let value = self.option_type_argument_with(node, substitution)?;
                 self.intern_prelude_nominal(PreludeType::Option(value))?;
                 Ok(())
             }
-            ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(8) => {
+            ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::RESULT => {
                 let (ok, error) = self.result_type_arguments_with(node, substitution)?;
                 self.intern_prelude_nominal(PreludeType::Result(ok, error))?;
                 Ok(())
@@ -1367,8 +1366,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// the proof, so two such nominals are two checked types and one IR
     /// nominal. The content comparison is what keeps a difference the run
     /// time *can* see out of the relation — a run or box's release class is
-    /// read off its region's own declaration [PROV-6], so two instances whose
-    /// classes differ are two representations and are not related here.
+    /// read off its region's own declaration [PROV-6]. Representation aliasing
+    /// keeps those classes distinct; the release-insensitive formation view
+    /// compares only the structural family.
     ///
     /// The relation reaches beyond a source instance because a call's region
     /// substitution does: a callee returning `own Option<BlockPool<'s>>`
@@ -1376,17 +1376,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// callee hands back its result-list nominal with every ordinal
     /// substituted, so those two classes meet at the same boundary a source
     /// instance does.
-    pub(super) fn nominals_differ_only_in_region(
-        &self,
-        left: NominalId,
-        right: NominalId,
-    ) -> Result<bool, CheckStop> {
-        if left == right {
-            return Ok(false);
-        }
-        self.nominals_share_region_erased_family(left, right, true)
-    }
-
     fn nominals_share_region_erased_family(
         &self,
         left: NominalId,

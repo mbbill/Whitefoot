@@ -12,7 +12,7 @@ fn probe<const n: u64>(table: own FixedVector<u8, n>, lo: own u64, hi: own u64) 
   return byte;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u8, 8>();
   region {
     place_back(vector: &uniq table, value: 0_u8);

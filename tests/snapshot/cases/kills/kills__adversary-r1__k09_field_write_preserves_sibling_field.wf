@@ -14,7 +14,7 @@ fn read_after_tag_write<const n: u64>(table: own FixedVector<u8, n>, cursor: own
   return table[cursor.idx];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq table, value: 7_u8);

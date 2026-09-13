@@ -34,12 +34,8 @@
 //!   needs a place base that resolves to neither; the resolver admits only
 //!   those two classes in a `PlaceBase` use.
 //!
-//! Three more sentences belong to the staged-permission report, which an
-//! *accepted* program prints through the notice channel rather than through a
-//! rejection. They are pinned where that report is built:
-//! `semantic::tests::staged_permission` compares
-//! `StagedDenial::writer_form()` verbatim for the two condition-2 remedies,
-//! and `driver::tests` compares the one-position remedy.
+//! C2 deletes the PAR-3 staging report and its three exclusive sentences.
+//! Ordinary call diagnostics remain pinned below.
 
 use super::{CompilationFailureKind, CompilerLimits, compile};
 use crate::SourceInput;
@@ -50,7 +46,7 @@ struct Probe {
     /// The compiled unit's name, which also names the form under test.
     name: &'static str,
     /// The complete source. Minimal on purpose: everything in it is either the
-    /// form under test or the entry point the language requires.
+    /// form under test or an ordinary caller that inhabits its signature.
     source: &'static [u8],
     /// The numbered rule [DIAG-1] must select.
     rule: &'static str,
@@ -66,7 +62,7 @@ const PROBES: &[Probe] = &[
         name: "const-name-is-not-an-ident.wf",
         source: br#"const Limit: u64 = 8_u64;
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -83,7 +79,7 @@ command fn main() -> status: own ExitStatus pure {
   seq: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -98,7 +94,7 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -109,7 +105,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "break-target-is-not-a-label.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   loop @spin {
     break spin;
   }
@@ -141,7 +137,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -161,7 +157,7 @@ fn helper(value: own u64) -> out: own u64 pure {
   return a;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -178,7 +174,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -198,7 +194,7 @@ command fn main() -> status: own ExitStatus pure {
   return len_of(deref(destination));
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -217,7 +213,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -236,7 +232,7 @@ command fn main() -> status: own ExitStatus pure {
   seq: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -246,23 +242,23 @@ command fn main() -> status: own ExitStatus pure {
         ],
     },
     Probe {
-        name: "collides-with-a-system-declaration.wf",
+        name: "collides-with-a-prelude-opaque-declaration.wf",
         source: br#"struct DirectoryRead {
   seq: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "TYPE-6",
         sentences: &[
-            "a source declaration never displaces, overrides, or shadows an admitted system declaration of the same spelling and domain [SYS-1, SYS-3], and neither declaration resolves after the collision; rename this declaration",
+            "a source declaration never displaces, overrides, or shadows a PRE-1 prelude declaration of the same spelling and domain, and neither declaration resolves after the collision; rename this declaration",
         ],
     },
     Probe {
         name: "redeclared-in-one-scope.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let count = 1_u64;
   let count = 2_u64;
   return exit_status(code: 0_u8);
@@ -283,7 +279,7 @@ fn consume(ticket: own Ticket) -> seq: own u64 pure {
   return ticket.seq;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let permit = Ticket(seq: 1_u64);
   let used = consume(ticket: move permit);
   region {
@@ -300,26 +296,29 @@ command fn main() -> status: own ExitStatus pure {
         ],
     },
     // -------------------------------------------------------------------
-    // [SYS-8] and [OP-4]: the residual is a place of the caller's program.
+    // [FN-8, CALL-1] and [OP-4]: the residual names the caller's place.
     // -------------------------------------------------------------------
     Probe {
-        name: "system-range-residual.wf",
-        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+        name: "prelude-range-residual.wf",
+        source: br#"fn main(out: own OutputStream, factory: own HandleFactory) -> status: own ExitStatus reads(out, factory), writes(out, factory) {
   let header = buffer_new(4_u64, 65_u8);
   let payload = buffer_new(9_u64, 66_u8);
   let wide = len_of(payload);
   region {
-    let sent = write_once(output: &uniq out, source: &header, start: 0_u64, end: wide);
+    let view = slice_of(&header);
+    region {
+      let sent = write_once(factory: &uniq factory, output: &uniq out, source: &view, start: 0_u64, end: wide);
+    }
   }
   return exit_status(code: 0_u8);
 }
 "#,
-        rule: "SYS-8",
-        sentences: &[r#"residual: "wide <= len_of(header)""#],
+        rule: "FN-8",
+        sentences: &[r#"instantiated_goal: "wide <= len_of(view)""#],
     },
     Probe {
         name: "bounds-residual.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let table = buffer_new(4_u64, 0_u8);
   let other = buffer_new(9_u64, 0_u8);
   let pick = len_of(other);
@@ -331,23 +330,10 @@ command fn main() -> status: own ExitStatus pure {
         sentences: &[r#"residual: "pick < len_of(table)""#],
     },
     // -------------------------------------------------------------------
-    // [SYS-2] and [FN-2]: written type and region arguments.
+    // [FN-2]: written type and region arguments.
     // -------------------------------------------------------------------
-    Probe {
-        name: "system-argument-does-not-name-a-region.wf",
-        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
-  let payload = buffer_new(4_u64, 65_u8);
-  region {
-    let sent = write_once::<ExitStatus>(output: &uniq out, source: &payload, start: 0_u64, end: 4_u64);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "SYS-2",
-        sentences: &[
-            r#"TypeMismatch { expected: "a region argument in this position", found: "an argument that does not name a region" }"#,
-        ],
-    },
+    // C2 removes SYS-2's separate region-argument diagnostic. Ordinary
+    // FN-2 arity and FORM-8 call-region probes below retain their coverage.
     // The two region-arity rows this table carried until v0.42 are retired
     // with the sentences they pinned: [FORM-8] gives a call exactly one legal
     // region-argument list, so "no region argument list" and "too many region
@@ -360,7 +346,7 @@ command fn main() -> status: own ExitStatus pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let doubled = identity(value: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -380,7 +366,7 @@ command fn main() -> status: own ExitStatus pure {
   right: T;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let p = Pair(left: 1_u64, right: 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -397,7 +383,7 @@ command fn main() -> status: own ExitStatus pure {
   right: T;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let p = Pair<u64, u64>(left: 1_u64, right: 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -414,7 +400,7 @@ command fn main() -> status: own ExitStatus pure {
   right: T;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let p = Pair<4>(left: 1_u64, right: 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -430,7 +416,7 @@ command fn main() -> status: own ExitStatus pure {
   count: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let r = Row<u64>(count: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -446,7 +432,7 @@ command fn main() -> status: own ExitStatus pure {
   value: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let p = Plain<u64>(value: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -462,7 +448,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -477,7 +463,7 @@ command fn main() -> status: own ExitStatus pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = widen::<f64>(value: 1.0_f64);
   return exit_status(code: 0_u8);
 }
@@ -493,7 +479,7 @@ command fn main() -> status: own ExitStatus pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = scale::<u64>(value: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -512,7 +498,7 @@ command fn main() -> status: own ExitStatus pure {
   return Ok(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -527,7 +513,7 @@ command fn main() -> status: own ExitStatus pure {
   return Ok<u64>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -542,7 +528,7 @@ command fn main() -> status: own ExitStatus pure {
   return Ok<4, IoError>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -557,7 +543,7 @@ command fn main() -> status: own ExitStatus pure {
   return Some(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -572,7 +558,7 @@ command fn main() -> status: own ExitStatus pure {
   return Some<u64, u64>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -587,7 +573,7 @@ command fn main() -> status: own ExitStatus pure {
   return Some<4>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -604,7 +590,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -622,7 +608,7 @@ command fn main() -> status: own ExitStatus pure {
   return len_of(deref(data));
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -637,7 +623,7 @@ command fn main() -> status: own ExitStatus pure {
   return left;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -652,7 +638,7 @@ command fn main() -> status: own ExitStatus pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -672,7 +658,7 @@ fn touch(pair: own Pair) -> out: own u64 reads(pair.middle) {
   return pair.left;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -687,7 +673,7 @@ command fn main() -> status: own ExitStatus pure {
   return len_of(deref(data));
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -701,7 +687,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "buffer-length-is-not-a-u64.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let flag = 1_u64 > 0_u64;
   let store = buffer_new(flag, 0_u8);
   return exit_status(code: 0_u8);
@@ -714,7 +700,7 @@ command fn main() -> status: own ExitStatus pure {
         // Field suffixes after indices are supported; this scalar element
         // still has no fields. Pin that type rule, not the retired path limit.
         name: "scalar-buffer-element-has-no-fields.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   let one = store[0_u64].value;
   return exit_status(code: 0_u8);
@@ -727,7 +713,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "indexed-operand-is-a-move.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   let n = len_of(move store);
   return exit_status(code: 0_u8);
@@ -740,7 +726,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "indexed-operand-is-not-a-place.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let n = len_of(1_u64);
   return exit_status(code: 0_u8);
 }
@@ -752,7 +738,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "indexed-place-is-a-scalar.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let value = 1_u64;
   let n = len_of(value);
   return exit_status(code: 0_u8);
@@ -767,7 +753,7 @@ command fn main() -> status: own ExitStatus pure {
         name: "slice-of-a-non-borrow.wf",
         source: br#"const digits: array<u8, 2> =[48_u8, 49_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let view = slice_of(digits);
   return exit_status(code: 0_u8);
 }
@@ -779,7 +765,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "slice-of-a-unique-borrow.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   region {
     let view = slice_of(&uniq store);
@@ -802,7 +788,7 @@ command fn main() -> status: own ExitStatus pure {
   return marker;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -823,7 +809,7 @@ fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> pure {
   return anchor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -838,7 +824,7 @@ command fn main() -> status: own ExitStatus pure {
   return &'b deref(holder);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -857,7 +843,7 @@ command fn main() -> status: own ExitStatus pure {
   }
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -879,7 +865,7 @@ fn bad['r](value: &uniq 'r u64, other: &'r u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -894,7 +880,7 @@ command fn main() -> status: own ExitStatus pure {
   return len_of(deref(data));
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   region {
     let n = measure(data: &uniq store);
@@ -907,10 +893,13 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "shared-borrow-where-a-unique-one-is-required.wf",
-        source: br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
-  let payload = buffer_new(4_u64, 65_u8);
+        source: br#"fn update(output: &uniq OutputStream) -> result: own unit pure {
+  return unit;
+}
+
+fn main(out: own OutputStream) -> status: own ExitStatus pure {
   region {
-    let sent = write_once(output: &out, source: &payload, start: 0_u64, end: 4_u64);
+    let result = update(output: &out);
   }
   return exit_status(code: 0_u8);
 }
@@ -926,7 +915,7 @@ fn measure(view: own u64) -> out: own u64 pure {
   return view;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&digits);
     let n = measure(view: view);
@@ -946,7 +935,7 @@ command fn main() -> status: own ExitStatus pure {
   return value.count;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -966,7 +955,7 @@ fn peek(pair: own Pair) -> out: own u64 pure {
   return pair.middle;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -981,7 +970,7 @@ command fn main() -> status: own ExitStatus pure {
   seq: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let ticket = Ticket(seq: 1_u64);
   let stale = replace ticket = 2_u64;
   return exit_status(code: 0_u8);
@@ -992,7 +981,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "boolean-operand-is-an-integer.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let flag = band(1_u64, 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -1002,7 +991,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "match-scrutinee-is-not-an-enum.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let value = 1_u64;
   match value {
     Ok(value: inner) => {
@@ -1022,7 +1011,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_T;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let flag = 1_u64 > 0_u64;
   let a = zeroed::<Bool>(sample: flag);
   return exit_status(code: 0_u8);
@@ -1045,7 +1034,7 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let s = 3_u64;
   let r = need(x: s);
   return exit_status(code: 0_u8);
@@ -1063,7 +1052,7 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bytes = buffer_new(1_u64, 3_u8);
   let raw = bytes[0_u64];
   let s = cvt::<u8, u32>(raw);
@@ -1088,7 +1077,7 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let s = 3_i64;
   let r = need(x: s);
   return exit_status(code: 0_u8);
@@ -1105,7 +1094,7 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let v = 2.0_f64;
   let r = need(x: v);
   return exit_status(code: 0_u8);
@@ -1122,7 +1111,7 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   let r = need(x: data[0_u64]);
   return exit_status(code: 0_u8);
@@ -1145,7 +1134,7 @@ fn outer(names: &buffer<u8>) -> out: own u64 pure {
   return r;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1160,7 +1149,7 @@ command fn main() -> status: own ExitStatus pure {
   return deref(value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1175,7 +1164,7 @@ command fn main() -> status: own ExitStatus pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1190,7 +1179,7 @@ command fn main() -> status: own ExitStatus pure {
   return first;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1201,7 +1190,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "region-written-at-the-innermost-borrow.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let a = 40_i32;
   region 'r {
     let p = &'r a;
@@ -1223,7 +1212,7 @@ command fn main() -> status: own ExitStatus pure {
     // is the body's only statement spells that one region twice.
     Probe {
         name: "region-block-is-the-whole-loop-body.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let a = 40_i32;
   for @scan (step in 0_u64..2_u64) {
     region {
@@ -1245,7 +1234,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "region-block-name-nothing-references.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let a = 40_i32;
   region 'r {
     let p = &a;
@@ -1269,7 +1258,7 @@ command fn main() -> status: own ExitStatus pure {
   return deref(value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = 40_i32;
   region 'r {
     let p = &a;
@@ -1288,8 +1277,8 @@ command fn main() -> status: own ExitStatus pure {
         ],
     },
     Probe {
-        name: "system-region-argument-the-call-determines.wf",
-        source: br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+        name: "prelude-region-argument-the-call-determines.wf",
+        source: br#"fn main(args: own Args) -> status: own ExitStatus reads(args) {
   region 'a {
     let total = args_count::<'a>(args: &args);
   }
@@ -1298,7 +1287,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "FORM-8",
         sentences: &[
-            "drop the region arguments: every system operation's region occurs at one parameter position, so this call's own arguments determine it",
+            "write exactly the callee's region parameters that occur in no parameter type, in their declared order; every other region argument is determined by this call's own arguments and is not written",
         ],
     },
     // -------------------------------------------------------------------
@@ -1311,7 +1300,7 @@ command fn main() -> status: own ExitStatus pure {
   return n;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let c = buffer_new(4_u64, 0_u8);
   let flag = 1_u64;
   let taken = 0_u64;
@@ -1338,7 +1327,7 @@ command fn main() -> status: own ExitStatus pure {
   return n;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let c = buffer_new(4_u64, 0_u8);
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
@@ -1358,7 +1347,7 @@ command fn main() -> status: own ExitStatus pure {
   return 1_u8, 2_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let v = buffer_new(4_u64, 0_u8);
   let i = 0_u64;
   let j = 1_u64;
@@ -1375,7 +1364,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "a-commit-target-carrying-a-region.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   let spare = buffer_new(4_u64, 0_u8);
   region {
@@ -1396,7 +1385,7 @@ command fn main() -> status: own ExitStatus pure {
     // condition would admit with nothing consumed.
     Probe {
         name: "a-commit-displacing-a-live-loan.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   let spare = buffer_new(4_u64, 0_u8);
   region {
@@ -1419,7 +1408,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "a-construct-naming-a-run.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let made = FixedVector(len: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -1432,7 +1421,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "a-construct-naming-a-provider.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let made = Heap(cursor: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -1449,7 +1438,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1463,7 +1452,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "an-affine-factor-that-is-not-a-measure.wf",
-        source: br#"command fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: own ExitStatus pure {
   let limit = 4_u64;
   let seen = 0_u64;
   for (

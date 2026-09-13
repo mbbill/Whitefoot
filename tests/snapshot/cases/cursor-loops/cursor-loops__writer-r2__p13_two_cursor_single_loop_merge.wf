@@ -39,7 +39,7 @@ fn merge_total<const left_cap: u64, const right_cap: u64>(left: own FixedVector<
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left = fixed_vector::<u64, 3>();
   region {
     place_back(vector: &uniq left, value: 0_u64);

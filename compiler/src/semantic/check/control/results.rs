@@ -324,6 +324,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     kind: SemanticIssueKind::ReturnMismatch,
                 }));
             }
+            self.check_confined_destination(
+                function,
+                value.expression.ty(),
+                None,
+                *expression_node,
+            )?;
             self.borrow_for_destination(CheckedMode::Own, &value, *expression_node)?;
             effects = effects.union(value.effects);
             fields.push(value.expression);

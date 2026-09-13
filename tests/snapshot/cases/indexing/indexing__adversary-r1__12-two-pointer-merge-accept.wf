@@ -34,7 +34,7 @@ fn sum_all<const n_left: u64, const n_right: u64>(left: own FixedVector<u8, n_le
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left = fixed_vector::<u8, 3>();
   region {
     place_back(vector: &uniq left, value: 2_u8);

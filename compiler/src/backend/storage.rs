@@ -79,9 +79,20 @@ struct FieldReuse {
 }
 
 impl FunctionStoragePlan {
+    #[cfg(test)]
     pub(super) fn build(
         program: &IrProgram<'_, '_, '_>,
         function: &IrFunction,
+    ) -> Result<Self, BackendFailure> {
+        Self::build_in_world(program, function, false)
+    }
+
+    /// Storage interference follows the world being emitted. A sequential
+    /// clone has no deferred hand-out operands, including in its callees.
+    pub(super) fn build_in_world(
+        program: &IrProgram<'_, '_, '_>,
+        function: &IrFunction,
+        sequential: bool,
     ) -> Result<Self, BackendFailure> {
         // A signature has the same parameter/result ABI as a definition but
         // no activation or control-flow graph to allocate storage for.
@@ -99,7 +110,7 @@ impl FunctionStoragePlan {
             .iter()
             .map(|ty| is_stored_aggregate(program, *ty).map(|stored| stored.then_some(*ty)))
             .collect::<Result<Vec<_>, _>>()?;
-        let graph = FlowGraph::from_function(program, function)?;
+        let graph = FlowGraph::from_function(program, function, sequential)?;
         let returned: Vec<_> = function
             .blocks()
             .iter()
@@ -110,7 +121,7 @@ impl FunctionStoragePlan {
             .collect();
         let mut plan = graph.plan(types, &returned)?;
         plan.select_destinations(function, &graph)?;
-        plan.select_field_destinations(program, function, &graph)?;
+        plan.select_field_destinations(program, function, &graph, sequential)?;
         Ok(plan)
     }
 
@@ -148,6 +159,7 @@ impl FunctionStoragePlan {
         program: &IrProgram<'_, '_, '_>,
         function: &IrFunction,
         graph: &FlowGraph,
+        sequential: bool,
     ) -> Result<(), BackendFailure> {
         if !graph.coalesce {
             return Ok(());
@@ -243,8 +255,9 @@ impl FunctionStoragePlan {
                     let Some(child) = self.slot(projection) else {
                         continue;
                     };
-                    let Some(argument) =
-                        call_reuse_operand_for_type(program, function, *call, operation, ty)?
+                    let Some(argument) = call_reuse_operand_for_type(
+                        program, function, *call, operation, ty, sequential,
+                    )?
                     else {
                         continue;
                     };
@@ -416,6 +429,7 @@ impl FlowGraph {
     fn from_function(
         program: &IrProgram<'_, '_, '_>,
         function: &IrFunction,
+        sequential: bool,
     ) -> Result<Self, BackendFailure> {
         let blocks = function
             .blocks()
@@ -461,7 +475,9 @@ impl FlowGraph {
                     instructions: block
                         .instructions()
                         .iter()
-                        .map(|instruction| FlowInstruction::from_ir(program, function, instruction))
+                        .map(|instruction| {
+                            FlowInstruction::from_ir(program, function, instruction, sequential)
+                        })
                         .collect::<Result<Vec<_>, BackendFailure>>()?,
                     terminal_uses: terminator_operands(block.terminator())
                         .into_iter()
@@ -480,7 +496,7 @@ impl FlowGraph {
                 .collect(),
             blocks,
             // A refused ordinary hand-out reads its arguments at join.
-            coalesce: function.overlaps().is_empty(),
+            coalesce: sequential || function.overlaps().is_empty(),
         })
     }
 
@@ -726,9 +742,10 @@ fn call_reuse_operand(
     caller: &IrFunction,
     result: IrValueId,
     operation: &IrOperation,
+    sequential: bool,
 ) -> Result<Option<IrValueId>, BackendFailure> {
     let ty = caller.value_type(result).ok_or(BackendFailure::InvalidIr)?;
-    call_reuse_operand_for_type(program, caller, result, operation, ty)
+    call_reuse_operand_for_type(program, caller, result, operation, ty, sequential)
 }
 
 fn call_reuse_operand_for_type(
@@ -737,6 +754,7 @@ fn call_reuse_operand_for_type(
     result: IrValueId,
     operation: &IrOperation,
     input_type: IrType,
+    sequential: bool,
 ) -> Result<Option<IrValueId>, BackendFailure> {
     let IrOperation::Call {
         function,
@@ -745,7 +763,7 @@ fn call_reuse_operand_for_type(
     else {
         return Err(BackendFailure::InvalidIr);
     };
-    if !caller.overlaps().is_empty() {
+    if !sequential && !caller.overlaps().is_empty() {
         return Ok(None);
     }
     let mut source_calls = caller
@@ -765,7 +783,7 @@ fn call_reuse_operand_for_type(
     let Some(signature) = callee.source_signature() else {
         return Ok(None);
     };
-    if !callee.overlaps().is_empty()
+    if (!sequential && !callee.overlaps().is_empty())
         || signature.result() != IrSourceMode::Own
         || signature.parameters().len() != arguments.len()
         || callee.result() != caller.value_type(result).ok_or(BackendFailure::InvalidIr)?
@@ -798,6 +816,7 @@ impl FlowInstruction {
         program: &IrProgram<'_, '_, '_>,
         function: &IrFunction,
         instruction: &IrInstruction,
+        sequential: bool,
     ) -> Result<Self, BackendFailure> {
         let (result, reuse, exposed) = match instruction {
             IrInstruction::Define {
@@ -806,7 +825,8 @@ impl FlowInstruction {
                 let reuse = match operation {
                     IrOperation::InsertStruct { aggregate, .. } => Some(index(*aggregate)),
                     IrOperation::Call { .. } => {
-                        call_reuse_operand(program, function, *result, operation)?.map(index)
+                        call_reuse_operand(program, function, *result, operation, sequential)?
+                            .map(index)
                     }
                     _ => None,
                 };
@@ -1789,8 +1809,11 @@ fn main() -> status: own ExitStatus pure {
 }
 "#,
             |program| {
-                let function =
-                    &program.functions().iter().find(|function| function.name() == "main").expect("fixture main");
+                let function = &program
+                    .functions()
+                    .iter()
+                    .find(|function| function.name() == "main")
+                    .expect("fixture main");
                 let plan = FunctionStoragePlan::build(program, function).expect("plan");
                 let slots: BTreeSet<_> = function
                     .blocks()

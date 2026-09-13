@@ -67,7 +67,7 @@ the innermost suitable one. A value taken from an extent is branded with that
 extent's region and stays inside it: [BLK-4] refuses a destination the value
 could outlive, rather than promoting it implicitly. A value that truly needs a
 different lifetime therefore belongs in an outer extent from the start, or at
-the general store, whose provider is the entry's own `command.heap` input.
+the general store, whose provider is an ordinary `Heap<'s>` parameter.
 A single value at a store is `Box<'s, T>` [S39], formed by `heap_box(store: h,
 value: e)` or `arena_box(store: a, value: e)`: the call writes no type or region
 argument, its outcome is `Result<Box<'s, T>, T>` whose `Err` arm hands the value
@@ -80,9 +80,9 @@ right: Box<'s, Tree<'s>>); }` — and its release is the recursive walk.
 Effect rows keep the allocation site visible in a signature. Since [S23] the
 `allocates` entry takes the same formal-rooted paths `reads` and `writes` take,
 so an allocation from a store whose provider is a value names that provider:
-`allocates(store)` for a helper taking `&uniq Arena<'s, ...>` or `&uniq Heap`,
-and `allocates(heap)` for a `main` whose `command.heap` binder is spelled
-`heap`. The ambient heap of `box<T>` and `buffer<T>` has no provider value and
+`allocates(store)` for a helper taking `&uniq Arena<'s, ...>` or
+`&uniq Heap<'s>`, and `allocates(heap)` for a function whose ordinary Heap
+parameter is named `heap`. The ambient heap of `box<T>` and `buffer<T>` has no provider value and
 therefore no path, so it writes no entry at all; `allocates(arena 'r)` is the
 one remaining region-keyed entry and retires with `arena<'r, T>`.
 
@@ -153,9 +153,10 @@ the group itself has no value or storage.
 The formal row is the caller's boundary even when the actual reads fewer
 fields. Actual requirements and ensures match structurally; members state
 their own loan regions and instantiate them at each call. Actual header
-regions capture store brands in type arguments. A non-copy owned member
-result must be fresh, so ownership-returning conversions and pop helpers
-remain ordinary direct functions.
+regions capture store brands in type arguments. Owned member results follow
+ordinary ownership transfer. C2 removes the fresh-result restriction and its
+state-routing summary; an actual may return an input when its signature,
+linearity, effects and contracts permit it.
 
 The selected calls monomorphize to ordinary direct calls. No runtime
 dictionary, closure object, function pointer or dispatch is formed. The
@@ -265,8 +266,9 @@ put a merely common-case size or a rare worst-case allocation in `requires`.
 Current value: one `contract` block may state several independent `requires`
 goals. Every ordinary caller establishes every goal in the same pre-transfer
 state; the callee body receives them as static facts and executes no prologue.
-The sole `command fn main` has no contract, so there is no entry exception or
-wrapper check. Recoverable boundary control preserves the useful small-buffer
+A function named `main` has the same contract rules as every other function.
+A build-selected caller must establish its requirements; its name grants no
+source exception. Recoverable boundary control preserves the useful small-buffer
 domain. The current compiler can use these facts to discharge existing finite
 obligations but provides no general Boolean theorem prover. Any future guarded
 fast region must re-establish its authority without weakening OP-4 safety.
@@ -442,190 +444,48 @@ fallback.
 Replaces: assertions, intentional aborts, "trust me" comments, and compiler
 guessing over proof candidates.
 
-## P15. Per-iteration scratch in an I/O loop
+## P15. Own the handles and storage for the whole call
 
-Problem: a loop opens and reads one file per iteration and folds what it read.
-The habit imported from every other systems language is to allocate the name
-buffer and the destination buffer once above the loop and reuse them, because
-allocation is expensive. Under [PAR-3] that habit is exactly what costs the
-loop its pipeline: the destination is storage the body writes and the iteration
-does not introduce, a `may-suspend` call retains a borrow of it past its own
-submission, and the staged permission denies. Reusing one buffer is also what
-makes the program genuinely order-dependent — after a short read the bytes
-beyond it are the previous iteration's.
+Problem: an I/O helper uses caller storage, and one of its exits must release a
+handle. Pattern: treat both the storage and the handle as ordinary values.
+Allocate storage in the region that outlives its uses; pass a view for the
+range and an exclusive loan for mutable state. A call holds these loans until
+it returns, regardless of how its implementation waits for native work.
 
-Pattern: construct the per-iteration scratch **inside** the loop body.
+The ordinary `Inputs` struct can be destructured at `main`. Its `cwd` field is
+linear. Either consume it on every exit or call a helper that borrows it and
+then close it once after the helper returns:
 
 ```whitefoot
-for @scan (index in 0_u64..8192_u64) {
-  region 'iteration {
-  let workspace = arena_frame::<65552, 8, 'iteration>();  // reserved and reset per iteration
-  let name = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
-  let data = arena_vector_proved::<u8>(store: &uniq workspace, count: 65536_u64);
-  /* fill both to capacity with counted `place_back` appends */
-  let window = mut_slice_of(&uniq name);
-  let rendered = name_at(destination: &uniq window, index: index);
-  region 'f {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        region {
-          match open_file(permit: move permit, root: &'f cwd,
-                          name: &name, start: 0_u64, end: 10_u64) {
-            FileOpened(value: handle) => { /* read, fold, accumulate */ }
-            FileOpenFailed(error: problem, permit: refused) => { }
-          }
-        }
-      }
-      Err(error: spent) => { break; }   // the factory is out of credits: leave before any submission
-    }
-  }
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err,
+             handles: factory, stdin: input) = move inputs;
+  region {
+    let answer = exercise(root: &cwd, factory: &uniq factory);
+    close_directory(factory: &uniq factory, directory: move cwd);
+    return move answer;
   }
 }
 ```
 
-The extent is the store whose release is empty [BLK-2], so nothing gives storage
-back in the remainder and the take stays in the prologue. A per-iteration run
-taken from the **general** store is denied instead: its release spends that
-store's own capability on the iteration's own exit [PROV-6, STOR-1], which puts
-the store on both sides of the cut.
+`exercise` is an ordinary function with `reads(root, factory), writes(factory)`
+when its actual body exhibits those effects. `open_read` and `open_file` take
+`factory: &uniq HandleFactory` directly. Success transfers one linear owner;
+failure returns an error, with no permit value to recover. A helper opening a
+file closes it or returns it on every exit. `close_read` consumes the file and
+returns `Result<unit, IoError>`; deciding whether a close error changes the
+program's result belongs to the caller.
 
-*Compiler limit, recorded 6.0x.* The permission above is granted, and the
-lowering does not yet take it for this shape: `whitefootc --par` hands a staged
-loop out only when the regions enclosing its cut carry no compiler-derived drop
-record, and a region that binds a store-backed run, or a view of one, carries
-one. Until that is repaired the run form is staged on paper and sequential in
-the emitted module, and `tests/programs/tcp_fanout.wf` keeps its `buffer_new`
-scratch for exactly that reason.
+The same factory is explicit shared state for `read_at`, `read_next` and
+`write_once`, covering redirected-stream offset and content aliases. TCP
+receive/send calls borrow their separate linear direction owners. This API
+choice is visible in ordinary rows; no alias exception is supplied by the
+compiler. The native implementation may wait or park inside these calls.
 
-Three companion rules make the rest of that body work, and each is a form to
-copy rather than a fact to rediscover:
-
-- **Take every early exit before the first submission.** A `break` or `return`
-  written after the submission denies the loop: with later iterations already
-  in flight, the decision to leave would be taken after opens the source-order
-  execution never performs. Write the guard and its `break` at the top of the
-  body, before any I/O. `let written = propagate write_once(…);` is such an
-  exit and not an exception to it: the `Err` edge is selected by the
-  submission's own outcome, so it leaves from the remainder however early the
-  statement is written. Match on the outcome instead and handle the error
-  inside the body. An open has no `propagate` form at all: its outcome is
-  `FileOpened(value: …)` or `FileOpenFailed(error: …, permit: …)`, and the
-  failed arm hands the permit back, so the body decides what to do with the
-  error and the credit in the same place.
-- **Write the accumulator as an ordinary source-order `set`.** `set sum = sum
-  +wrap digest;` needs no associativity, no identity element, and no
-  combination tree, because [PAR-3] commits the remainder's writes to storage
-  rooted outside the body in iteration order. This is strictly more general
-  than [PAR-2]'s admitted operation set: a non-associative fold, a float fold,
-  and a `Result` route are all admitted here.
-- **Reserve the handle factory in the prologue, inline.** `reserve_handle` takes
-  and returns a short unique `&uniq HandleFactory` loan inline [SYS-10], and
-  prologues run in index order without overlapping, so one enclosing factory
-  serves every iteration with no replication and no [OWN-5] relaxation. Its
-  `Err(ResourceExhausted)` edge is the program's own source-order outcome (the
-  factory's capacity is real: one credit per descriptor the target provides),
-  so match on it and take the exit there, before the open: that is an early
-  exit before the first submission, which the first rule admits. A program
-  that reuses its capacity closes explicitly (`close_read`,
-  `close_directory`, `close_directory_source`, `close_listener` and
-  `close_connection` return the permit); derived release closes but returns
-  nothing. One factory serves every handle the target counts, so a listener
-  and a connection draw from the same capacity a file open draws from
-  [SYS-10, SYS-17, SYS-18]. Write
-  the reserve and the open in the loop body itself. Factoring the pair into a
-  helper — `fn open_source_from(factory: &uniq HandleFactory, …)` — costs the
-  loop its pipeline, because the callee's own retained loan is what
-  the staged judgment then sees. Two programs identical except for that
-  factoring (‹loop› stands for the writer's own file and line; the verdict text
-  after it is byte-exact):
-
-  ```text
-  inline  PAR stage  ‹loop›             for  permitted  staged at open_file(…); 5 places classified
-  helper  PAR stage  ‹loop›             for  denied     condition 3: a may-suspend call retains a borrow
-                     past its own submission on storage the body writes and the iteration does not
-                     introduce; instead, give each iteration its own resource; or, where the body only
-                     publishes to that storage — an output stream is the pointed case — hoist the
-                     per-iteration write out of the loop, folding a total in the body and writing it
-                     once after the loop; or leave this loop sequential, because storage that carries
-                     one position cannot be held by two iterations at once, at &uniq files
-  ```
-
-  When the factory is itself a borrow — as in a recursive walker — put the
-  child reborrow in the acquiring call that is the direct `match` scrutinee.
-  The header-created temporary ends after the owned outcome is complete and
-  before an arm begins, so the arm may reborrow the factory for a later
-  acquisition. The child's local region remains its formation and type ceiling;
-  it still may not extend beyond the enclosing match statement. Binding the
-  outcome in a preceding `let` is not equivalent: that child's region cannot
-  span the `let` and the later match, and direct-result route facts attach only
-  to the direct matched call. A helper that retains the factory loan in its own
-  signature remains a different shape and [PAR-3] judges that retained loan.
-  The control-header boundary does not grant staged permission by itself.
-
-Read the verdict rather than guessing it. An ordinary `whitefootc` compile
-prints a denied staged verdict to stderr, prefixed `whitefootc: note:`, with
-every denied row of that loop's disposition table under it; the compilation
-succeeded and the note is not a rejection. A loop whose staged verdict is
-granted says nothing at all — including when its counted [PAR-2] verdict is
-denied, which is the ordinary case for the form above: the counted rule refuses
-the short factory loan the staged rule exists to admit, and that denial is
-deliberately withheld from the default channel rather than telling a writer
-their granted loop was denied. It is in the full report. A `--no-overlap`
-build prints none of these notes: that flag has already said this build takes
-no overlap at all, so a denied loop is the build the writer asked for rather
-than news about the program they wrote.
-
-`whitefootc --par-ledger` is that full report: one `PAR stage` line per loop
-that performs I/O, and one `PAR place` line for every place the judgment
-classified, with its disposition and the reason, plus the `PAR pair`, `PAR
-chain`, and `PAR loop` lines of the other judgments. A denial names the
-offending place, the numbered condition, and the admitted form, and the flag
-prints it under every lowering. Every notice is one of those lines, byte for
-byte.
-
-One remedy the report can print is not one a writer can take, and it says so:
-where a loop's exit is selected by the may-suspend call's own outcome — the
-`ReadEnd` break of a read-to-EOF loop over one file — the condition-2 line
-states that [PAR-3] cannot stage that loop as written. The shapes staged today
-by the permission judgment include a fixed-trip bounded loop and a per-file loop
-over names; one file's chunk loop stays sequential. Permission does not by
-itself promise that the backend has a multi-operation schedule for the whole
-permitted set.
-
-The current multi-operation actualizer covers one smaller form: one direct
-counted loop, one straight-line prologue, and a final `match` whose scrutinee is
-the selected may-suspend system call. It derives a fixed two-slot driver from
-the checked source. A native POSIX completion target asks once for a window in
-`1..2`; a qualified target without native completion keeps the same generated
-control flow, fixes the window at one, and issues direct calls. The driver
-issues one batch, drains every issued result in source order, then reuses slot
-zero. Executable tests cover a changing path slice on each iteration, an odd
-five-iteration final batch, the ordinary success and error arms, twelve issued
-iterations, and helper counts zero, one, and four.
-
-That evidence does not cover the full P15 example above. In particular, wider
-open/read/fold bodies, a remainder that needs the counted binder or a prologue
-local, additional branch or cleanup shapes, other operation families, and more
-than one staged loop in a function remain on the ordinary path. If a function
-contains two staged loops, the compiler currently transforms neither. The
-permission judgment and its ledger still apply to those loops; only the
-multi-operation schedule is narrower.
-
-`dir_walk.wf`, `wfgrep.wf`, and `byte_string.wf` remain useful negative
-boundaries for the current actualizer. Their walker loops retain helper
-factoring, whose declared retained loan [PAR-3] sees, and their chunk loops leave
-on a read result, so condition 2 keeps them sequential. The control-header loan
-boundary makes the direct borrowed-factory spelling source-valid; it does not
-change what these existing sources say or establish that the narrower driver
-covers their complete bodies. The driver evidence currently lives in lowering
-and backend tests rather than in a selected real program.
-
-Replaces: hoisting scratch buffers out of loops for allocation cost, and every
-writer-visible depth, window, batch, or `par for` marker a language would
-otherwise need to express I/O overlap. There is no source spelling for how many
-operations stay outstanding. The compiler fixes the available storage at two
-slots for the implemented form, and the selected target chooses a window no
-larger than those two slots.
+The earlier staged-loop pattern depended on deleted [PAR-3]. It no longer
+supplies source permission or an optimization promise. Use [PAR-1] sibling
+calls and [PAR-2] maps/reductions only where their ordinary dependencies,
+loans and effect footprints admit them.
 
 ## P16. One length fact above the writes
 
@@ -649,7 +509,7 @@ At a call the transports decide which of those two a projected callee write is:
 
 - a **shared borrow** `&'r T` of any type kills nothing at all [CALL-1];
 - a **view** parameter — `&uniq MutSlice<'r, T>`, or the range-bearing operand
-  of an [SYS-8] operation — writes the viewed range's element storage, so every
+  of an ordinary prelude function — writes the viewed range's element storage, so every
   measure of the origin place and of the view survives it [CALL-3];
 - an **`own`** parameter consumes an affine or linear actual and duplicates a
   copy one: a `Slice` handed at an `own` parameter leaves the caller's place and
@@ -914,71 +774,25 @@ no arbitrary history of values pushed into and removed from a run.
 Replaces: an unnecessary temporary-variable swap and manual reconstruction of
 a value whose old owner must be returned. Mutable run helpers use P21.
 
-## P18. The loop's own buffer, published once
+## P18. Build a result locally, then publish it
 
-Problem: a loop reads a file per iteration and writes one line to an output —
-`command.stdout`, or another positioned write target — from inside the body.
-[PAR-3] denies it: the resource carries one position, so no iteration can be
-given its own. (‹loop› is the writer's file and line; verdicts are byte-exact.)
+Problem: each iteration computes output and immediately mutates a shared
+stream. Pattern: build the output in ordinary caller-owned storage, then pass
+a shared view to a publishing helper. The computation and the stream mutation
+then have separate ordinary effect boundaries. Whether this improves elapsed
+time needs measurement; allocating a buffer is not automatically worthwhile.
 
-```whitefoot
-for @scan (index in 0_u64..8_u64) {
-  /* P15's reserve, open, and read; then */
-  region {
-    let written = write_once(output: &uniq out, source: &data, start: 0_u64, end: 2_u64);
-  }
-}
-```
+An output call takes both `&uniq OutputStream` and the shared
+`&uniq HandleFactory` state. Consecutive writes using either common object are
+ordered by their ordinary effects and loans. A fact that an iteration owns a
+buffer does not make those writes independent. Conversely, disjoint pure
+computations can use the ordinary parallel permissions without a stream- or
+suspension-specific judgment.
 
-```text
-PAR stage  ‹loop›  for  denied  condition 3: a may-suspend call retains a borrow past its own submission
-           on storage the body writes and the iteration does not introduce; instead, give each iteration
-           its own resource; or, where the body only publishes to that storage — an output stream is the
-           pointed case — hoist the per-iteration write out of the loop, folding a total in the body and
-           writing it once after the loop; or leave this loop sequential, because storage that carries
-           one position cannot be held by two iterations at once, at &uniq out
-```
-
-Pattern: **hold no `&uniq` resource inside a loop body; hold a buffer instead,
-and publish it once after the loop.** Each iteration folds its line into the
-loop's own buffer with an element `set` under one length fact above the loop
-(P16); that element is `serialized-E`, the remainder's writes to storage
-outside the loop being taken in index order.
-
-```whitefoot
-let page = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-/* fill it to capacity with eight counted `place_back` appends */
-let spare = len_of(page);
-for @scan (index in 0_u64..8_u64) {
-  /* reserve, open, and read into the iteration's own data buffer */
-  let writable = index < spare;
-  if writable {
-    set page[index] = data[0_u64];
-  }
-}
-region {
-  let written = write_once(output: &uniq out, source: &page, start: 0_u64, end: 8_u64);
-}
-```
-
-```text
-PAR stage  ‹loop›  for  permitted  staged at open_file(permit: move permit, root: &cwd,
-           name: &name, start: 0_u64, end: 2_u64); 6 places classified
-```
-
-Write into the page by element. A helper taking `&uniq` of it costs the loop
-its pipeline under condition 4 instead: `denied  &uniq page  a call of
-the remainder holds an exclusive loan on it, and two remainders coexist`.
-
-Current value: this is the explicit writer form. The [PAR-3] judgment can grant
-it, but the current fixed two-slot actualizer does not cover the shown
-remainder because it reads the counted binder and per-iteration data while
-writing the enclosing page. The loop therefore keeps ordinary lowering today.
-The implicit alternative, a per-iteration output write committed by a final
-ordered stage, is also not implemented. Output accumulated through this pattern
-appears only when the one write after the loop runs.
-
-Replaces: writing each line where it is produced, as every other language does.
+The v0.57 staged-loop ledger examples are retired with [PAR-3]. Existing
+traversal and staged workloads remain measurement inputs for C2, with the lost
+overlap attributed separately from factory serialization and ordinary call
+cost. They do not establish a current staging capability.
 
 ## P19. Advance a tracked binding the same way on every arm
 
@@ -1844,7 +1658,7 @@ run whose contents are literals.
 ## P34. Read a stream to its end, and publish through a helper
 
 The stream operations `read_next` and `receive_next` have no offset: the
-position they advance is the stream's own [SYS-15, SYS-18]. A read to end is
+position they advance is the stream's ordinary state. A read to end is
 therefore an uncounted loop whose only exit is the `ReadEnd` arm, and the run
 it reads into is the loop's own — one store-resident `Vector` filled once
 before the loop, whose length the loop reads back as `held`.
@@ -1857,11 +1671,15 @@ loop @chunks {
   region {
     let sink = mut_slice_of(&uniq chunk);
     region {
-      match read_next(input: &uniq input, destination: &uniq sink,
+      match read_next(factory: &uniq factory, input: &uniq input, destination: &uniq sink,
                       start: 0_u64, end: held) {
-        ReadBytes(next: endpoint) => { set available = endpoint; }
-        ReadEnd() => { set ended = 1_u8; }
-        ReadFailed(error: problem) => { set outcome = 3_u8; set ended = 2_u8; }
+        Ok(value: endpoint) => { set available = endpoint; }
+        Err(error: stop) => {
+          match move stop {
+            ReadEnd() => { set ended = 1_u8; }
+            ReadFailed(error: problem) => { set outcome = 3_u8; set ended = 2_u8; }
+          }
+        }
       }
     }
   }
@@ -1869,7 +1687,7 @@ loop @chunks {
     region {
       let payload = slice_of(&chunk);
       region {
-        match publish_all(output: &uniq out, source: &payload, length: available) {
+        match publish_all(factory: &uniq factory, output: &uniq out, source: &payload, length: available) {
           Ok(value: published) => { }
           Err(error: problem) => { set outcome = 4_u8; set ended = 2_u8; }
         }
@@ -1892,8 +1710,8 @@ Three rules make it work, and all three are forms to copy:
   other.
 - **Publish through the helper of P16's shape, not through a second inner
   loop.** `write_once` over the same run the read filled needs
-  `available <= len_of(payload)` at its call site. The read's own [SYS-8]
-  relation gives `available <= held` on the `ReadBytes` edge, and both views
+  `available <= len_of(payload)` at its call site. The read's ordinary ensures
+  gives `available <= held` on the `Ok` edge, and both views
   carry their origin's length, so `len_of(sink) == len_of(payload) == held`;
   the facts are live immediately after the read region and neither survives a
   second loop header. A helper whose contract states
@@ -1901,15 +1719,29 @@ Three rules make it work, and all three are forms to copy:
   live point, and the writer never restates the bound. Reading `held` once,
   before the loop, is what lets the bound be the run's own length rather than a
   literal the writer must keep in step with the allocation.
-- **Leave through one flag, at the bottom.** The `ReadEnd` break is selected
-  by the submission's own outcome, so it can never be taken in a staged
-  prologue and the loop stays sequential ([PAR-3] says so in as many words).
-  Writing the exit as a flag the body sets and one `break` at the end keeps the
-  failure and the end on the same edge and keeps the body's shape readable.
+- **Select the exit from the returned value.** `Err(ReadEnd())` ends the stream;
+  `Err(ReadFailed(...))` reports an actual error. A flag can combine those
+  outcomes at the bottom of the loop, or an ordinary helper can return early.
+  Neither form changes the lifetime of the call's loans.
 
-Current value: measured on the v0.46 batch branch, on `tests/programs/stdin_echo.wf`
-against a pipe and against a redirected file, on both runtime routes; carried
-onto the view forms with the same two shapes and the same two routes.
+Current executable reference: `tests/programs/stdin_echo.wf`. C2 updates its
+source to ordinary factory parameters, views and `Result` endpoints; earlier
+v0.46 runtime-route measurements remain historical evidence.
+
+Directory batches return their endpoint separately from their outcome:
+
+```whitefoot
+let (batch, next, entries) = directory_next(source: &uniq cursor, destination: &uniq sink,
+                                           start: 0_u64, end: held);
+```
+
+Here `batch` is `Result<unit, ListStop>`. The ordinary contract publishes
+`0_u64 <= next <= held` for the numeric result on every return; an error
+returns the starting endpoint. Saving and later matching `batch` therefore
+does not have to recover an endpoint fact from inside an enum. The directory
+walker uses this existing multi-result form when it must end the writable
+view's loan before consuming a batch. CALL-4 does not yet transport a
+selected enum-bound fact through a later match of an owned local.
 
 Replaces: a positioned read with a writer-tracked offset, which is the wrong
 operation for a stream, and an inner publish loop, which loses the length

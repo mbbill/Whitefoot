@@ -621,8 +621,8 @@ static const char *s19_covered(const wf_enum_coverage *cov) {
 
 /* ------------------------------------------------------------------- S20 */
 
-/* A may-suspend member that need not miss: one I/O whose completion may be
- * there at the join. The fast path is a take with zero switches. */
+/* An ordinary callback whose private I/O record may already be ready at
+ * the join. The fast path is a take with zero switches. */
 static void s20_main(void *argument) {
     (void)argument;
     one_io();

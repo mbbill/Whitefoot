@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- reverses a byte buffer in place, mirror index proved from the counted loop bound and a checked length";
   let data = fixed_vector::<u8, 7>();
   region {

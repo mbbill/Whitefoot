@@ -30,7 +30,7 @@ ordered .wf source bundle
   -> private checked program
   -> proof erasure
   -> target-independent typed control-flow IR
-  -> selected-target layout, address, and system qualification
+  -> physical layout, address and frame checks
   -> conservative textual LLVM
   -> host executable
 ```
@@ -141,104 +141,59 @@ Every supported partial operation is admitted only after its exact domain goal
 has been proved. This includes the implemented exact integer arithmetic,
 division and remainder, shifts, subscripts, buffer-allocation fit, counted-loop
 hidden updates, callable requirements, selected return postconditions, and
-system buffer ranges. Failure to prove the goal is a compile-time rejection;
+ordinary prelude view-range requirements. Failure to prove the goal is a compile-time rejection;
 the compiler does not insert a hidden runtime check or fallback.
 
 The same semantic path checks affine ownership, moves, borrows, resolved-place
 overlap, initialization, exact effect rows, cleanup, fixed arrays, runtime
-buffers, structs, enums, concrete generic instances, and the supported system
-interfaces. Checked, wrapping, and saturating integer operations are total
+buffers, structs, enums, concrete generic instances, and ordinary prelude interfaces. Checked, wrapping, and saturating integer operations are total
 value operations. Recoverable language and system failures use typed
 `Result`/`Option` values rather than a proof-failure path.
 
-After source checking, selected-target qualification proves concrete object
-layout, element stride, allocation byte ceilings, frame materialization, and
-address-index representability before emission. A source proof of
-`i < len_of(buffer)` does not by itself prove that the selected target can
-represent `base + stride*i`; the target stage checks that separate obligation.
-An unrepresentable target is a target compilation failure and emits no partial
-operation.
+After source checking, physical layout checks establish object size, alignment,
+element stride, allocation byte ceilings and frame materialization before
+emission. An unrepresentable layout is a build failure, not a source rejection.
+Opaque nominals use the same by-address callable ABI as other values; a linked
+body and a Whitefoot body with the same signature have the same call boundary.
+Missing native definitions are ordinary link failures.
 
-The only boundary temporarily left outside the source outcome model is
-external resource availability: heap exhaustion, stack exhaustion,
-operating-system quotas, and runtime-start resources may stop execution at the
-host boundary without a Whitefoot value or cleanup guarantee. This does not
-defer layout, address, allocation-ceiling, target-domain, target qualification,
-parallel independence, or bounded queue/completion proof, and resource failure
-never establishes a source fact or licenses an unproved operation.
+Resource availability remains the [SCOPE-3] boundary: heap or stack exhaustion,
+operating-system quotas and startup failure may stop execution where no source
+outcome is provided. This does not admit an unproved operation or establish a
+source fact. Recoverable shortages declared by a prelude function return its
+ordinary outcome value.
 
-## Parallel and completion lowering
+## Parallel calls and native implementations
 
-Parallel permission is derived from the same checked program. The compiler
-uses ordinary data dependencies, ownership and loan overlap, exact effect
-footprints, control exits, and already-discharged operation goals. It does not
-repeat a bounds proof to authorize an index map. The counted-loop path
-currently supports a fixed single-binder affine map `a*i+b`, with one identical
-map required at every read or write to the same root. This includes
-same-index read-modify-write and an output reached through a live usable
-`&uniq` holder, as well as the enumerated exactly-associative reductions.
-Sibling-call and staged-I/O judgments use their own fixed, fail-closed shape
-rules.
+Parallel permission uses ordinary data dependencies, ownership and loans,
+resolved storage overlap, exact effect rows and control exits [PAR-1, PAR-2].
+The counted-loop path supports its specified single-binder affine maps and
+exactly associative reductions. Permission never depends on whether a function
+has a Whitefoot body or a linked implementation.
 
-Permission and actualization are separate. The default lowering actualizes
-eligible finite completion operations while leaving compute-call outlining
-off. `--par` additionally actualizes eligible compute groups, maps, and
-reductions. A denied permission leaves the program sequential; it does not
-change source acceptance. Proof-only statements introduce no runtime branch,
-lock, dependency, scheduling event, or task edge.
+Default lowering is sequential. `--par` actualizes eligible sibling calls,
+maps and reductions through one acquire/publish/join/release protocol. A denied
+permission leaves the same source program sequential. Every borrowed argument
+remains borrowed until its ordinary call returns. The v0.57 staged-loop
+judgment [PAR-3] is deleted; there is no source or checked-IR suspension class,
+completion milestone, target summary or separate operation dispatch.
 
-The first multi-operation loop path is deliberately specific: one
-source-derived fixed two-slot bounded batch for the direct staged counted-loop
-shape. On native POSIX completion targets the runtime window is bounded to
-`1..2`. A qualified target without native completion uses the same generated
-CFG with a deterministic window of one and direct calls. The driver issues up
-to that window, drains the complete batch in source order, and only then reuses
-slot zero. Backend evidence covers dynamic per-iteration paths, an odd final
-batch, the ordinary result/error arm, LLVM emission, linking, and execution.
-When one function contains two staged loops, both deliberately remain ordinary.
-Wider control flow, operation families, and multi-loop selection remain
-possible future extensions; this path does not imply those capabilities.
+The linked prelude library may internally use bounded native queues, worker
+parking, helper lanes, wakeups or completion ports. These are implementation
+choices inside a call. They grant no overlap permission and cannot shorten a
+source loan. The same ordinary worker callback can call the linked library;
+its frame and borrowed storage remain live through join.
 
-With `--par`, an admitted may-suspend user call bound by `let` can drive a
-bounded lane batch. Issue-local values needed by the remainder or cleanup are
-carried per slot. An addressed owner retains its address over distinct backing
-for each in-flight iteration; its contents are read after join, including
-mutations made by the callee. The complete caller frame is planned and checked
-before emission. Joined aggregate results reach caller backing before the lane
-frame is released, and each iteration's remainder and checked cleanup finish
-before its pipeline slot is reused. These representations consume the existing
-source permission judgment and do not add an I/O or scheduling protocol.
+The build adapter constructs an ordinary `Inputs` value and, where requested,
+a separately branded `Heap<'s>` value. These supported launch shapes do not
+restrict ordinary function declarations or calls named `main`. A function's
+requirements remain the caller's obligation, including a build-selected entry.
+Native launcher and per-host linkage tests validate that boundary.
 
-The completion runtime uses bounded, generation-checked operation storage and
-separate exactly-once result-ready, loan-released, and terminal milestones.
-Native queues, helper lanes, wakeups, and completion ports are target-private
-protocol state, never Whitefoot shared storage. The macOS and Linux paths are
-qualified for the implemented operations, including Linux io_uring where its
-route is available.
-
-The exact `x86_64-pc-windows-msvc` row is native-qualified for the
-compiler-owned UTF-16 command bootstrap and the direct, bounded blocking, and
-IOCP positioned-I/O routes. An IOCP-eligible request cannot silently use the
-direct or blocking route: handle association or submission failure stops at
-the host boundary. At full bounded storage the emitter retires the oldest
-addressable source-owned generation; when no one-slot owner is addressable it
-waits for core progress, then retries that same request. Native probes require
-zero eligible fallback. Synchronous-success operations publish inline only
-after the runtime has disabled their completion packets; pending operations
-publish through the IOCP worker.
-
-Every emitted Windows `--par` module requires the compiler-owned compute pool
-through hard external ABI obligations. A missing runtime fails to link, and an
-invalid worker configuration or partial startup fails at the host boundary
-instead of selecting sequential execution. The native gate requires a
-non-owner worker to execute and steal source work while preserving the
-sequential build's exact bytes. A fixed-host paired gate qualifies compute,
-warm IOCP, and mixed compute-plus-IOCP execution against matched controls on
-the same revision.
-
-`--par-ledger` prints the permission and actualization explanation for compiler
-development. `--stack-ledger` reports selected-host frame costs. Neither report
-participates in source acceptance or lowering authority.
+`--par-ledger` reports permission and actualization, while `--stack-ledger`
+reports physical frame costs. Neither report participates in source acceptance.
+The C2 migration is being validated; earlier completion or staged measurements
+are historical evidence and do not establish current native parity.
 
 ## Implemented language surface
 
@@ -256,22 +211,25 @@ supports them:
 - shared and unique borrows over the implemented storage forms, exact
   caller-visible state effects, compiler-derived cleanup, and verified
   contracts; and
-- the current command entry, owned system resources, positioned I/O,
-  directory enumeration, typed host errors, and completion lowering.
+- ordinary opaque prelude values, an ordinary `Inputs` struct, positioned and
+  stream I/O, directory enumeration, typed errors and explicit consuming closes.
 
 This list is an implementation map, not a second language specification. The
 compiler deliberately reports remaining active-spec gaps as unsupported and
 keeps conservative LLVM when no specification-backed optimization fact exists.
-Effect checking projects a borrowed opaque-resource field to that field's state,
-including nested fields and child reborrows. Unrelated scalar siblings contribute
-no effect merely because they share its struct. Returned-owner origin summaries
-retain the same selected field path.
-The implemented run placements cover inline storage, bump extents, and the
+Effect checking projects accesses onto ordinary resolved storage. A borrowed
+opaque field has the same path and overlap rules as any other field. Moving an
+owner into a local does not leave a value-history effect on its old parameter.
+A local mutation has no parameter-storage effect merely because that value
+arrived through a parameter; reads needed to reach parameter storage still
+contribute their declared paths.
+The implemented run placements
+ cover inline storage, bump extents, and the
 general store:
 `fixed_vector` forms an inline run, `arena_frame` reserves a bump extent in the
 reserving activation's frame, and `arena_vector_proved` and `arena_vector` take
-a store-resident run from that extent. [FN-7]'s `command.heap` entry supplies a
-`Heap<'s>` provider, and `heap_vector` takes a run from it, returning `Some` on
+a store-resident run from that extent. An ordinary `Heap<'s>` parameter supplies a
+provider, and `heap_vector` takes a run from it, returning `Some` on
 success or `None` when the store cannot satisfy the allocation. The row still
 requires [OP-9]'s static allocation-fit proof; runtime refusal does not replace
 that proof. [BLK-3]'s four boundary operations take `vector: &uniq V` and
@@ -381,16 +339,13 @@ permits dead storage to be reused, and internal aggregate results use explicit
 destinations. An exposed address or deferred use prevents unsafe reuse. A
 mutation captures its target components before its RHS. The commit rechecks
 writability under the complete post-RHS loan state; replacement reads the old
-owner only at that admitted commit. Function definitions and ordinary,
-refused, staged, thunk and split calls consume the typed internal ABI in
-`src/backend/abi.rs`: inline aggregate parameters use content pointers and
-aggregate results use destinations. Descriptors retain value passing; qualified
-system wrappers retain their separate ABI. Before frame planning, a fresh
-addressable binding can become its producer's destination when the value has
-one use, independent backing, and a matching dynamic lifetime. Ordinary static
-destinations must be acyclic; repeated staged construction uses the selected
-pipeline's per-slot backing through retirement. This removes the intermediate
-result-to-owner transfer for those cases without input/result aliasing.
+owner only at that admitted commit. Function definitions, direct calls and outlined worker calls consume the typed
+ABI in `src/backend/abi.rs`: inline aggregate parameters use content pointers,
+aggregate results use destinations, and descriptors retain value passing.
+Linked declarations have the same ABI. Before frame planning, a fresh binding
+can become its producer's destination when it has one use, independent backing
+and a matching dynamic lifetime. Static destinations must be acyclic. This
+removes intermediate result-to-owner transfers without input/result aliasing.
 Alternative local return values can also share the caller's result destination
 when the complete CFG conflict and exposed-address checks admit one storage
 group. A group containing one owned entry parameter can use that destination
@@ -414,7 +369,7 @@ storage groups retain the complete CFG conflict and exposed-address checks.
 Real field types determine offsets and padding. Returning a child keeps the
 ordinary return transfer; the caller promises only the child's extent, which
 is not selected as the complete parent's backing. Ambiguous inputs, whole-parent
-or cross-block uses, nested field placements, and overlap/completion schedules retain separate storage;
+or cross-block uses, nested field placements, and ordinary overlap schedules retain separate storage;
 general alias-directed placement remains incomplete.
 
 The [borrowed full-array heap](../research/experiments/container-representation/families/priority-borrowed.wf)
@@ -449,108 +404,23 @@ borrows, and child reborrows keep the same address. Explicit dereference chains
 first read the value behind the borrow before reading a box's referent. Owned
 boxes retain their pointer representation; the fix does not add a payload copy.
 Borrowed enum payloads project from the actual scrutinee storage as well.
-Opaque resources likewise borrow their owning slots, including scalar
-descriptors and aggregate leases. System-call lowering reads the qualified
-resource value from that address; the target ABI stays unchanged. Retained-call
-native controls cover descriptor exchange with inert test identities and
-HostString field replacement through borrowed results and reborrows.
-Normal-exit state summaries preserve ordinary whole owners, static struct
-fields, Box referents, selected enum payloads and literal element replacements
-through exclusive actuals, including unit-result helpers,
-reborrows, simultaneous disjoint updates, and recursive callable composition.
-Effects, returned owners and stored outputs use one call-entry image; later
-reads and releases follow the current owner. A complete binding already dead
-at statement entry initializes without an old-owner write, while same-statement
-read-out retains its commit write. Ordinary Box direct/helper controls and
-retained native calls cover both state attribution and physical writeback.
-Whole-value routes retain exclusions for replaced subtrees, keeping an owning
-allocation distinct from its current contents. Reading an exact sibling does
-not inherit the replaced sibling's new origin. Consuming a cell projects the
-same referent used by its constructor, including through helper results.
-Dynamic updates and owning extraction retain finite source bounds when all
-suppliers are described, even when their destination slots are not. Owning
-insertion additionally preserves complete source coverage when it transfers
-all supplied contents. That coverage supports declared whole-value call effects through
-ordinary helper and aggregate-component boundaries, without claiming which
-source occupies an element. Selecting below it or removing part of it reduces
-it to a bound; substitution never upgrades an already incomplete actual.
-Local descriptor reads and type-directed releases still require selected
-sources; complete content coverage alone supplies neither selection.
-A bound can resolve to fresh state when helper substitution proves every
-selected supplier fresh. For a surviving imported bound, local accesses and
-call effects can retain possible formal-path contributions separately from
-established contributions. The whole body has an exact effect row only when
-established contributions cover every possible atom in the same category;
-the written declaration never supplies that evidence. Unknown sources,
-uncertain sources with nameable struct fields, and uncovered possibilities
-still report `OwnerStateRouting`. This does not improve returned-owner,
-borrowed-location or parallel-access precision. Kernel
-effects use the selected operand image without adding enclosing address-access
-roots. Kernel transfers use captured operand images, and storage
-read-out captures the selected value rather than reconstructing it from address
-expressions. Ordinary checking and callable replay share the transfer rules.
-A returned borrow's candidate ceiling alone is not
-an exact writeback location. A separate declaration-only judgment preserves an
-already exact actual when an exclusive result has the same complete type as
-its sole candidate and that type cannot occur at a proper typed subplace.
-Shared results, recursive same-type containment, unresolved generics and
-inexact actuals do not establish this whole-location property. Writes still
-kill prior value facts. Child reborrows use the ordinary typed storage path for
-fields and proved element subscripts, including fields beneath an element.
-Their evaluated offsets retain their effects and accesses; projecting through
-an inexact result remains a capability gap.
-An unresolved interior replacement retains both the previous and incoming
-suppliers as a bound within its longest known typed prefix, including when the
-displaced value is discarded. Independent fields retain their precise origins
-through direct operations, returned owners and exclusive borrowed writeback.
-A wholly unresolved location remains unknown. Neither case silently preserves
-stale exact contents. These boundaries apply to memory and resource objects alike.
-Reads retain their complete typed query after a dynamic element selector;
-the longest exact prefix is used separately for weak updates. Selecting a
-record's fresh key therefore does not observe its imported Box payload.
-Dynamic selections keep known field layout inside the selected value while
-its source correspondence remains bounded. Ordinary checking and callable
-replay share that query; borrowed helper effects retain the selected fields.
-An unrepresented suffix still uses the conservative prefix bound. A complete
-typed choice retains internal field correspondence through owned helper results,
-without locating its chosen supplier or establishing complete source coverage.
-Instantiating an arbitrary unlocated result still cannot recover that layout.
-These queries neither locate an exact writeback address nor narrow a loan.
-Known logical run lengths now locate back insertion and extraction precisely,
-preserving earlier slots and removing a taken slot from the remaining image.
-These value facts travel with fields and results independently of owner routes.
-Control-flow joins keep common lengths; known enum alternatives distinguish an
-absent payload from one with an unknown length. These conditional facts do not
-filter control-flow edges or strengthen any loan; they hold only when their
-corresponding variant payload exists. A helper's owner correspondence
-alone never forwards its caller's length. Front shifts, unknown lengths and
-general dynamic residual membership still use conservative bounds.
-Measure reads select the run descriptor; typed cleanup selects only components
-whose release contracts write state, including owning arrays. Imported payloads
-therefore do not become descriptor reads or writes of memory-only siblings.
-Boxed enum-child replacement retains its native execution and release-observer
-behavior. Fresh-state full-array construction and replacement, wide results
-containing owners, the block-pool program and the optional-slot program execute
-again. Imported-owner array construction through generic helpers, boxed-run
-read-out and runtime-indexed boxed migration also execute; complete nested-run
-transport checks. Descriptor reads on unlocated contents and helpers whose exact
-effects or type-selected release require a finer extracted/residual image remain
-capability gaps. All executable assertions remain enabled. An empty current
-origin list alone does not recover
-a wholly unknown summary.
-Loop headers carry the stable union of entry and backedge owner origins. The
-final body check uses that image, and counted-loop exhaustion retains it.
-Backedges require containment in the header image while every other binding
-property, including liveness and loans, retains its ordinary equality check.
-Precise negative controls catch reads of a second supplier on later iterations
-and after exhaustion; retained native calls cover zero, one and two iterations.
-Indexed mutation targets no longer overwrite the containing owner's image
-merely because their effect access names that storage root. For copy elements,
-kernel run-take rows preserve the updated run's origin through the exclusive
-referent; the returned copy element carries no identity. Noncopy elements retain complete supplier bounds, but exact
-remainder/content images still need their own transfer: front insertion shifts
-logical indices, and removal does not leave every old owner in both outputs.
-Recursive contained-owner extraction remains a separate capability gap.
+Opaque values likewise borrow their owning slots. Ordinary call lowering passes
+that address through the shared ABI; a linked implementation reads or replaces
+it just as a Whitefoot body would. The previous state-origin and result-routing
+summaries have been deleted. Effects no longer follow an owner through moves,
+and an opaque value has no implicit release effect. The six linear prelude
+handle types must instead be consumed explicitly, normally by a close function
+whose row names its ordinary factory parameter. Affine opaque values have empty
+drop, while ordinary containers retain type-derived memory cleanup.
+
+Measure facts still have ordinary [MSR-3] datums and [ENT-5] storage support.
+At a call the exact projected write row kills overlapping facts; verified
+ensures then publish entry and exit relations under [CALL-6]. This mechanism
+applies uniformly to source and prelude declarations and does not reconstruct
+where an owned value came from. The C2 conformance register distinguishes
+retired routing assertions from retained ownership, writeback, measure and
+allocation-cleanup tests.
+
 An owning Box's run or extent referent supports measures and indexed access
 through the same typed place path. Replacing its owner invalidates referent
 facts. Box content also supports copy assignment, affine replacement and
@@ -579,7 +449,7 @@ Canonical declaration checking, proof summaries and parallel permissions are
 shared; source obligations do not depend on which callers happen to exist.
 The finite instance inventory includes store regions captured inside generic
 type arguments. Contextual type lowering preserves nested Box/Vector cleanup
-through ordinary calls, ordered results and staged calls without a runtime
+through ordinary calls, ordered results and ordinary outlined calls without a runtime
 class branch. Regions with the same complete reclamation graph share physical
 types; identical pointer layout alone does not select a release action.
 
@@ -644,19 +514,16 @@ element type, at either parent strength, and for no exclusive one.
 is that descriptor read once more rather than an addressed reborrow of one;
 there is nothing to load and nothing to narrow, which is why the semantic arm
 and the lowering arm are one line each.
-**The system boundary takes views.** The range-bearing parameter of each of the
-seven operations [SYS-8] names is one operand class rather than one type:
-`&uniq MutSlice<u8>` where the operation writes the storage, `&Slice<u8>` where
-it reads it, and `buffer<u8>` at the same position for as long as `buffer<T>`
-lives. A view handed to a call is borrowed and not consumed, so the caller's
-facts about it survive the call, and the write a callee performs through one is
-an element write over the view's own place [ENT-5, MSR-2], so the view's
-measures survive it and its element facts do not. A `&uniq` parameter whose
-referent is a view is admitted at a source declaration for the same reason
-[BLK-4]. An inline `FixedVector<T, n>` can now supply the writable destination
-through its exclusive view, just as a store-backed `Vector<'s, T>` can. Its
-backing must remain live until every borrowed use retires; copying the view
-descriptor does not extend that lifetime.
+**Prelude range functions take ordinary views.** A function that reads bytes
+accepts `&Slice<u8>`; a function that writes bytes accepts `&uniq MutSlice<u8>`.
+There is no operand class or alternate `buffer<u8>` argument. Form the view
+explicitly. The ordinary `requires` clauses establish
+`start <= end <= len_of(deref(view))`; selected `Ok` ensures bound the returned
+endpoint. Element writes kill element facts while preserving the view's
+measures [ENT-5, MSR-2]. Inline and store-backed runs supply these views through
+the same constructors. Borrowing or copying a descriptor never extends its
+backing lifetime.
+
 **Parallel footprints use resolved view origins.** A locally formed view and
 a shared copy of it retain their source storage footprint
 (`par1-pos-a-view-argument-is-a-footprint-on-its-origin`). Opaque parameter and
@@ -837,12 +704,10 @@ parameter of any type is [CALL-1]'s shared borrow and the call kills nothing
 through it, a parameter of view type own or behind a borrow is [CALL-3]'s viewed
 range and the write reaches element storage only, an `own` parameter is
 [CALL-2]'s value, and every other `&uniq` selects none and kills the actual's
-descriptor storage. A callee with no body is read the same way from its own
-record: [SYS-8]'s range-bearing operand class is a viewed range at either of its
-members, which is why the I/O corpus keeps its lengths across a `read_at`
-whether it supplies a `MutSlice<u8>` or the transitional `buffer<u8>`, and a
-kernel row's `&uniq` state operand is a run or a provider whose descriptor the
-row changes. The argument expression's shape is read for the *place* a write
+descriptor storage. A declaration without a body is read from the same ordinary parameter types
+and row. The prelude's `read_at` therefore writes the elements of its
+`MutSlice<u8>` argument without replacing its descriptor. A kernel run or
+provider state parameter instead selects the descriptor it changes. The argument expression's shape is read for the *place* a write
 reaches and never for how far into it that write goes; deriving the latter from
 the former was the unsound accept the sweep of 2026-09-03 recorded, and
 `ent5-neg-a-callee-write-through-a-uniq-extent-kills-the-room` is its successor
@@ -960,7 +825,8 @@ Contracts are not a general specification language for aggregate results or
 mutable data-structure invariants. A function-kind parameter's `fn_sig` carries
 the same requirement and ensures vocabulary. FN-4 compares the supplied
 function's contract structurally and checks its signature, region bounds,
-effect coverage and fresh owned results before the binding can be used.
+effect coverage before the binding can be used. There is no owned-result
+routing or freshness summary.
 Verification is over the closed source bundle; independent module checking
 remains future work.
 
@@ -988,7 +854,7 @@ missing-entry diagnostic path. Implementation owners are
 | Proof facts, kills, joins, and obligation consumers | [entailment flow](src/semantic/entailment/flow.rs) and [fact state](src/semantic/entailment/state.rs) |
 | Affine arithmetic and written sums | [affine core](src/semantic/entailment/affine.rs) |
 | Typed control-flow lowering | [lowering builder](src/lowering/builder.rs) |
-| Target qualification and LLVM emission | [qualification](src/backend/qualification.rs) and [emitter](src/backend/emitter.rs) |
+| LLVM emission and ordinary callable ABI | [emitter](src/backend/emitter.rs) and [ABI](src/backend/abi.rs) |
 
 Read the owning rule and nearby tests for the change in hand. The map is a
 navigation aid, not another definition of language or proof authority.

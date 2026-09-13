@@ -12,7 +12,7 @@ fn store_then_double(out: &uniq MutSlice<u32>, at: own u64, value: own u32) -> r
   return doubled;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<16, 4, 'w>();
     region {

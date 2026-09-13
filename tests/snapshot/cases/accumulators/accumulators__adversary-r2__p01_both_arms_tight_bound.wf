@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- both if and else arms accumulate (2 when the byte equals 9, else 1), so sum after i iterations is at most 2*i; the invariant sum <= 2*i is provably true on every path since 1 <= 2 as well.";
   let data = fixed_vector::<u8, 6>();
   region {

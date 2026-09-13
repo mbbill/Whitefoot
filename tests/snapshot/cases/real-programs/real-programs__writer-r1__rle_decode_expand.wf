@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- run-length decode expands (value,count) pairs into a bounds-checked output buffer";
   let encoded = fixed_vector::<u8, 4>();
   region {

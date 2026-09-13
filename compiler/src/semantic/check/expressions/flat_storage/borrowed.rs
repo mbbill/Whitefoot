@@ -97,9 +97,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // from, so this is the same container place the deref-free path
             // forms, with the holder recorded: the loan judgment reads the
             // holder's own borrow, and every measure and subscript term over
-            // the place carries that holder's `deref` step. [BLK-4] refuses
-            // only the `&uniq` of a run, so a holder that reaches one here is
-            // a shared one or an own-mode cell.
+            // the place carries that holder's `deref` step. Both shared and
+            // exclusive holders use this ordinary place resolution.
             CheckedType::Array { .. }
             | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [OP-4] -- idx accumulates the widened byte values themselves (not a match count), so after 3 iterations idx can reach 3*255=765; table has length 256, and the concrete violating trace is data all 100s: idx = 100+100+100 = 300, and table[300] indexes past a length-256 buffer.";
   let data = fixed_vector::<u8, 3>();
   region {

@@ -23,7 +23,7 @@ fn last_chunk_status<const n_buf: u64, const n_status: u64>(buf: own FixedVector
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let buf = fixed_vector::<u8, 9>();
   region {
     place_back(vector: &uniq buf, value: 0_u8);

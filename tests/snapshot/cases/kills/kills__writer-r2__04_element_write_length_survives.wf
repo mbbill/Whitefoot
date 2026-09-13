@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- P16: an element write never kills the buffer's length fact, so `spare` stays live across every set into the buffer.";
   let line = fixed_vector::<u8, 6>();
   region {

@@ -2040,25 +2040,38 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(!*seen, "one exact root per discharged aggregate");
                 *seen = true;
                 assert_eq!(conclusion, &DerivationConclusion::PostconditionAggregate);
-                let DerivationNode::PostconditionAggregate {
-                    block,
-                    relation_ordinal: node_ordinal,
-                    parents,
-                } = &summary.derivations.nodes[root.node.0 as usize]
-                else {
-                    panic!("postcondition aggregate root must name an aggregate node");
-                };
-                assert_eq!(block, &proof.block);
-                assert_eq!(*node_ordinal, relation_ordinal);
-                let expected = proof
-                    .exits
-                    .iter()
-                    .map(|exit| {
-                        exit.derivation
-                            .expect("a discharged aggregate requires every exit root")
-                    })
-                    .collect::<Vec<_>>();
-                assert_eq!(parents, &expected);
+                match &summary.derivations.nodes[root.node.0 as usize] {
+                    DerivationNode::PostconditionAggregate {
+                        block,
+                        relation_ordinal: node_ordinal,
+                        parents,
+                    } => {
+                        assert_eq!(block, &proof.block);
+                        assert_eq!(*node_ordinal, relation_ordinal);
+                        let expected = proof
+                            .exits
+                            .iter()
+                            .map(|exit| {
+                                exit.derivation
+                                    .expect("a discharged aggregate requires every exit root")
+                            })
+                            .collect::<Vec<_>>();
+                        assert_eq!(parents, &expected);
+                    }
+                    DerivationNode::SignatureContract {
+                        block,
+                        relation_ordinal: node_ordinal,
+                    } => {
+                        // PRE-1 declarations publish their written signature,
+                        // with no fabricated source return or proof edge.
+                        assert_eq!(block, &proof.block);
+                        assert_eq!(*node_ordinal, relation_ordinal);
+                        assert!(proof.exits.is_empty());
+                    }
+                    _ => panic!(
+                        "postcondition aggregate root must name its ordinary proof or signature premise"
+                    ),
+                }
             }
             DerivationRootKind::PostconditionState { occurrence } => {
                 assert_eq!(occurrence, seen_s12);
@@ -7044,8 +7057,8 @@ fn main() -> status: own ExitStatus pure {
             })
             .collect::<Vec<_>>();
         assert_eq!(routes.len(), 1, "{function} retains one selected route");
-        assert_eq!(routes[0].0, crate::PreludeDeclarationId::new(11));
-        assert_eq!(routes[0].1, crate::PreludeDeclarationId::new(12));
+        assert_eq!(routes[0].0, crate::BuiltinPreludeId::OK);
+        assert_eq!(routes[0].1, crate::BuiltinPreludeId::OK_VALUE);
         assert_eq!(routes[0].2, 0, "PRE-1 Ok is the selected tag");
         assert_eq!(
             summary
@@ -7848,8 +7861,11 @@ fn main(text: &HostString, destination: &uniq MutSlice<u8>) -> result: own unit 
 }
 
 #[test]
-fn a_let_bound_transfer_outcome_carries_the_same_endpoint_bound() {
-    // Ordinary CALL-6 postconditions follow a named result.
+fn a_let_bound_numeric_outcome_does_not_gain_a_special_endpoint_route() {
+    // C2 retires ENT-3.S10's external-only let-bound outcome propagation.
+    // CALL-4 explicitly defers carrying a non-measure relation through this
+    // naming event. Direct `match write_once(...)` is the ordinary supported
+    // destination and is covered alongside this negative.
     let source = br#"const count: u64 = 4_u64;
 
 const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
@@ -7895,7 +7911,8 @@ fn killed(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Sli
             .filter(|outcome| outcome.family == ObligationFamily::Bounds)
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![true]
+        vec![false],
+        "CALL-4 does not carry the numeric endpoint through a named enum"
     );
     assert_eq!(
         obligations(source, "killed")
@@ -8294,7 +8311,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
     for (caller, function) in program.functions.iter().enumerate() {
         let mut found = Vec::new();
         collect_direct_calls(
-            &function.body.as_deref().expect("WF body"),
+            function.body.as_deref().expect("WF body"),
             read_bits,
             &mut found,
         );
@@ -8783,7 +8800,7 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
         .id;
     let mut publish_calls = Vec::new();
     collect_direct_calls(
-        &report.body.as_deref().expect("WF body"),
+        report.body.as_deref().expect("WF body"),
         publish,
         &mut publish_calls,
     );
@@ -9777,7 +9794,7 @@ fn main() -> status: own ExitStatus pure {
         // opened `Boolean(And)<types=[], consts=[]>(Integer { operation:
         // Greater, .. }(Place { root: BindingId(0), .. }))`, and four rounds of
         // readers could not find any of that in their own program. [OP-4] and
-        // [SYS-8] already print their residual this way.
+        // Ordinary call requirements also print their complete residual this way.
         assert_eq!(
             detail.instantiated_goal,
             "band(value > 0_u64, value < 10_u64)"
@@ -9787,9 +9804,7 @@ fn main() -> status: own ExitStatus pure {
             detail.mechanical_fix,
             "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
         );
-        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("FN-8 must cite the source call");
-        };
+        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(&source[start..end], b"guarded(value: value)");

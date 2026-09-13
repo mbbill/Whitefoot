@@ -1,3 +1,92 @@
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
 fn socket_class(error: own IoError) -> result: own u8 pure {
   doc "Reduces one portable IoError class to the distinctions a loopback program reports [SYS-7].";
   match error {
@@ -131,8 +220,12 @@ fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digi
   return port;
 }
 
-fn main['heap](command.args as args: own Args, command.handles as handles: own HandleFactory, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(args, handles, heap), writes(handles, heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Connects twice to a loopback port nobody listens on, with the very permit the first refusal handed back, so a refused connect is shown to take no handle and to leave the program's own capacity untouched [SYS-10, SYS-17]. The argument scratch is a store-resident run, viewed exclusively where the argument is copied into it and shared where the port is read out.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 16_u64) {
       None() => {
@@ -163,11 +256,11 @@ fn main['heap](command.args as args: own Args, command.handles as handles: own H
         region {
           match arg_get(args: &args, position: 1_u64) {
             Ok(value: text) => {
-              region 'v {
+              region {
                 region {
                   let window = mut_slice_of(&uniq digits);
                   region {
-                    match host_copy_utf8(value: &'v text, destination: &uniq window, start: 0_u64, end: room) {
+                    match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: room) {
                       Ok(value: written) => {
                         set carried = written;
                       }
@@ -196,23 +289,30 @@ fn main['heap](command.args as args: own Args, command.handles as handles: own H
         let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
         let outcome = 0_u8;
         region {
-          match reserve_handle(factory: &uniq handles) {
-            Ok(value: permit) => {
-              region {
-                match tcp_connect(permit: move permit, address: &address) {
-                  Connected(connection: link) => {
-                    let credit = close_connection(connection: move link);
-                    set outcome = 3_u8;
-                  }
-                  ConnectFailed(error: problem, permit: handed_back) => {
-                    let first = socket_class(error: move problem);
+          region {
+            match tcp_connect(factory: &uniq handles, address: &address) {
+              Connected(connection: link) => {
+                let TcpConnection(receive: close_receive_9, send: close_send_9) = move link;
+                close_receive(factory: &uniq handles, receive: move close_receive_9);
+                close_send(factory: &uniq handles, send: move close_send_9);
+                set outcome = 3_u8;
+              }
+              ConnectFailed(error: problem) => {
+                region {
+                  let exhausted = factory_refusal(error: &problem);
+                  let first = socket_class(error: move problem);
+                  if exhausted {
+                    set outcome = 5_u8;
+                  } else {
                     region {
-                      match tcp_connect(permit: move handed_back, address: &address) {
+                      match tcp_connect(factory: &uniq handles, address: &address) {
                         Connected(connection: again) => {
-                          let credit = close_connection(connection: move again);
+                          let TcpConnection(receive: close_receive_10, send: close_send_10) = move again;
+                          close_receive(factory: &uniq handles, receive: move close_receive_10);
+                          close_send(factory: &uniq handles, send: move close_send_10);
                           set outcome = 4_u8;
                         }
-                        ConnectFailed(error: second_problem, permit: spent) => {
+                        ConnectFailed(error: second_problem) => {
                           let second = socket_class(error: move second_problem);
                           let refused = first == 1_u8;
                           let twice = second == 1_u8;
@@ -227,9 +327,6 @@ fn main['heap](command.args as args: own Args, command.handles as handles: own H
                   }
                 }
               }
-            }
-            Err(error: problem) => {
-              set outcome = 5_u8;
             }
           }
         }

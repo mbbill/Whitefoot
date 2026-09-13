@@ -16,7 +16,7 @@ fn count_nonzero<const n: u64>(values: own FixedVector<u64, n>) -> kept: own u64
   return write_at;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let source = fixed_vector::<u64, 6>();
   region {
     place_back(vector: &uniq source, value: 0_u64);

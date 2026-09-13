@@ -180,7 +180,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             reads: effective.declared_effects.reads.clone(),
             writes: effective.declared_effects.writes.clone(),
             allocates: effective.declared_effects.allocates.clone(),
-            allocates_heap: effective.declared_effects.allocates_heap,
             allocates_arenas: effective.declared_effects.allocates_arenas.clone(),
         });
         self.check_selected_user_call(node, &effective, effects, function, bindings, loop_depth)
@@ -228,12 +227,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut goal_arguments = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<TemporaryLoan> = Vec::new();
         let call = self.tree.path(node)?.clone();
-        // Payload-free heap allocation transfers by presence at a call
-        // boundary [EFF-2]; region entries are projected below.
-        let mut effects = EffectSet {
-            allocates_heap: signature.declared_effects.allocates_heap,
-            ..EffectSet::NONE
-        };
+        let mut effects = EffectSet::NONE;
         let result_candidate = self.result_borrow_candidate(signature);
         for (ordinal, (field, parameter)) in
             fields.into_iter().zip(&signature.parameters).enumerate()
@@ -1387,6 +1381,16 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                         .get(index)
                         .and_then(Option::as_ref)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    // A borrowed descriptor is reached through its resolved
+                    // place; the argument's holder, if present, names the
+                    // borrow of that descriptor. Backing accesses continue
+                    // the descriptor's recorded view loan [VIEW-2, OWN-5].
+                    let descriptor = borrows
+                        .get(index)
+                        .and_then(Option::as_ref)
+                        .filter(|borrow| borrow.place.path.is_empty())
+                        .map(|borrow| borrow.place.root)
+                        .or_else(|| holders.get(index).copied().flatten());
                     // [PROV-3] use 1: an access the callee makes through this
                     // view is *that view's own* access to its origin, judged
                     // at its own strength, and not a second access the view's
@@ -1402,11 +1406,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                         place.extend_fields(&formal.fields);
                         if judged {
                             self.check_call_loan_access(
-                                bindings,
-                                holders.get(index).copied().flatten(),
-                                &place,
-                                access,
-                                node,
+                                bindings, descriptor, &place, access, node,
                             )?;
                         }
                     }

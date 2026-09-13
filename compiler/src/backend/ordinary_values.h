@@ -19,7 +19,8 @@ typedef struct { uint32_t tag; uint64_t value; uint8_t error; } wf_utf8_result;
 typedef struct { uint32_t tag; uint64_t value; wf_io_error error; } wf_write_result;
 typedef struct { uint32_t tag; wf_io_error error; } wf_read_stop;
 typedef struct { uint32_t tag; uint64_t value; wf_read_stop error; } wf_read_result;
-typedef struct { wf_read_result result; uint64_t entries; } wf_list_result;
+typedef struct { uint32_t tag; uint8_t value; wf_read_stop error; } wf_list_status;
+typedef struct { wf_list_status result; uint64_t next; uint64_t entries; } wf_list_result;
 typedef struct { uint32_t tag; uint8_t value; wf_io_error error; } wf_close_result;
 typedef struct { uint32_t tag; wf_value value; wf_io_error error; } wf_open_result;
 typedef struct { wf_value receive; wf_value send; } wf_connection;
@@ -32,6 +33,10 @@ typedef struct {
 _Static_assert(sizeof(wf_value) == 32 && _Alignof(wf_value) == 16, "ordinary opaque layout");
 _Static_assert(sizeof(wf_io_error) == 228, "ordinary error enum layout");
 _Static_assert(sizeof(wf_read_result) == 248, "ordinary read Result layout");
+_Static_assert(sizeof(wf_list_status) == 240, "ordinary directory status Result layout");
+_Static_assert(offsetof(wf_list_result, next) == 240 &&
+               offsetof(wf_list_result, entries) == 248 &&
+               sizeof(wf_list_result) == 256, "ordinary directory three-result layout");
 _Static_assert(sizeof(wf_open_result) == 288, "ordinary open enum layout");
 _Static_assert(sizeof(wf_accept_result) == 352, "ordinary accept enum layout");
 _Static_assert(sizeof(wf_inputs) == 192, "ordinary Inputs layout");

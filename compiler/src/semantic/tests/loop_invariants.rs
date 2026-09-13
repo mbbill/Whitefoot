@@ -26,9 +26,7 @@ fn assert_invariant_issue(source: &[u8], expected: LoopInvariantProofObligation)
         };
         assert_eq!(name, "limit");
         assert_eq!(*obligation, expected);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("INV-1 must cite the source invariant statement");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         let cited = std::str::from_utf8(&source[start..end]).expect("invariant source is UTF-8");
@@ -1623,7 +1621,7 @@ fn main() -> status: own ExitStatus pure {
         );
         assert!(ranges[0].requires_clause.components() < ranges[1].requires_clause.components());
         assert_eq!(ranges[0].node_path, ranges[1].node_path);
-        for range in ranges {
+        for (ordinal, range) in ranges.iter().enumerate() {
             assert_eq!(
                 range.disposition,
                 super::super::entailment::CallGoalDisposition::Discharged
@@ -1646,7 +1644,7 @@ fn main() -> status: own ExitStatus pure {
                         matches!(
                             premise.source,
                             SourceAffineFactRef::LoopInvariant(source)
-                                if source.source_ordinal == u32::from(range.conjunct)
+                                if source.source_ordinal == ordinal as u32
                         )
                     });
                 }
@@ -1654,7 +1652,7 @@ fn main() -> status: own ExitStatus pure {
             }
             assert!(
                 used_expected_invariant,
-                "each SYS-8 component must descend from its corresponding exported invariant"
+                "each ordinary requirement must descend from its corresponding exported invariant"
             );
         }
     });
@@ -2200,9 +2198,7 @@ fn main() -> status: own ExitStatus pure {
             panic!("the unproved post-loop requirement must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Fn8);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("FN-8 must cite the call whose requirement is unproved");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         assert_eq!(
@@ -2659,9 +2655,7 @@ fn main() -> status: own ExitStatus pure {
             );
         };
         assert_eq!(name, "reprove");
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("INV-1 must cite a source node");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         assert_eq!(

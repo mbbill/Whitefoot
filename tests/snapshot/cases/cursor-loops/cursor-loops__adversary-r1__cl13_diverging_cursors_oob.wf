@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: i is bounded 0..5 by the counted for but j = i +wrap i runs up to 8 while buf only holds 5 elements, so buf[j] is out of bounds once i>=3 (i==3 gives j==6)";
   let buf = fixed_vector::<u64, 5>();
   region {

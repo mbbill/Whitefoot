@@ -2,7 +2,7 @@ use super::*;
 
 /// Opaque descriptors remain replaceable owners even though their payload has
 /// no source fields. The host supplies inert identities, never OS descriptors;
-/// every owner is returned so unresolved release-origin routing is not needed.
+/// every linear owner is returned under ordinary ownership rules.
 #[test]
 fn opaque_resource_borrows_write_back_through_calls_fields_and_reborrows() {
     let source = br#"struct Holder {
@@ -51,7 +51,7 @@ fn rotate(file: own ReadFile, incoming: own ReadFile) -> (current: own ReadFile,
   }
 }
 
-fn rotate_field(file: own ReadFile, incoming: own ReadFile) -> (current: own ReadFile, previous: own ReadFile, before: own u64, after: own u64) reads(file), writes(file) {
+fn rotate_field(file: own ReadFile, incoming: own ReadFile) -> (current: own ReadFile, previous: own ReadFile, before: own u64, after: own u64) pure {
   let holder = Holder(before: 101_u64, file: move file, after: 103_u64);
   region {
     let previous = through_return(target: &uniq holder.file, incoming: move incoming);
@@ -67,57 +67,38 @@ fn main() -> status: own ExitStatus pure {
     let host = r#"#include <stdint.h>
 #include <stdlib.h>
 
-struct Owners { int32_t current; int32_t previous; };
-struct HeldOwners { int32_t current; int32_t previous; uint64_t before; uint64_t after; };
-extern void wf_rotate(struct Owners *, int32_t, int32_t);
-extern void wf_rotate_field(struct HeldOwners *, int32_t, int32_t);
-
-void wf_test_unexpected_close(int32_t descriptor, void *record) {
-    (void)descriptor;
-    (void)record;
-    abort();
-}
-void wf_test_unexpected_join(void *record, int64_t *value, int32_t *error) {
-    (void)record;
-    (void)value;
-    (void)error;
-    abort();
-}
+/* Same ordinary opaque ceiling and destination ABI as the linked prelude. */
+typedef struct { _Alignas(16) uint64_t words[4]; } Opaque;
+struct Owners { Opaque current; Opaque previous; };
+struct HeldOwners { Opaque current; Opaque previous; uint64_t before; uint64_t after; };
+_Static_assert(sizeof(Opaque) == 32 && _Alignof(Opaque) == 16, "opaque ABI");
+extern void wf_rotate(struct Owners *, const Opaque *, const Opaque *);
+extern void wf_rotate_field(struct HeldOwners *, const Opaque *, const Opaque *);
 
 int main(void) {
-    struct Owners owners = {0, 0};
-    wf_rotate(&owners, 17, 29);
-    if (owners.current != 29 || owners.previous != 17) return 1;
+    Opaque first = {{17, 18, 19, 20}}, second = {{29, 30, 31, 32}};
+    struct Owners owners = {0};
+    wf_rotate(&owners, &first, &second);
+    for (unsigned i = 0; i < 4; ++i) {
+        if (owners.current.words[i] != second.words[i] || owners.previous.words[i] != first.words[i]) return 1;
+    }
+    Opaque third = {{37, 38, 39, 40}}, fourth = {{41, 42, 43, 44}};
     struct HeldOwners result = {0};
-    wf_rotate_field(&result, 37, 41);
-    if (result.current != 41 || result.previous != 37) return 2;
+    wf_rotate_field(&result, &third, &fourth);
+    for (unsigned i = 0; i < 4; ++i) {
+        if (result.current.words[i] != fourth.words[i] || result.previous.words[i] != third.words[i]) return 2;
+    }
     if (result.before != 101 || result.after != 103) return 3;
     return 0;
 }
 "#;
-    for overlap in [
-        OverlapLowering::Off,
-        OverlapLowering::On,
-        OverlapLowering::Completion,
-    ] {
+    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
         let module = emit_lowered(source, overlap);
-        assert!(module.contains("define internal void @wf_rotate("));
-        assert!(module.contains("define internal void @wf_rotate_field("));
+        assert!(module.contains("define void @wf_rotate(ptr %wf.result, ptr"));
+        assert!(module.contains("define void @wf_rotate_field(ptr %wf.result, ptr"));
+        assert!(!module.contains("call void @wf_close_read("));
         let observed = super::owned_places::retain_calls(&module)
-            .replace(
-                "define internal void @wf_rotate(",
-                "define void @wf_rotate(",
-            )
-            .replace(
-                "define internal void @wf_rotate_field(",
-                "define void @wf_rotate_field(",
-            )
-            .replace("define i32 @main(", "define i32 @wf_test_original_main(")
-            .replace(
-                "@wf__completion_file_close_submit(",
-                "@wf_test_unexpected_close(",
-            )
-            .replace("@wf__completion_file_join(", "@wf_test_unexpected_join(");
+            .replace("define i32 @main(", "define i32 @wf_test_original_main(");
         let output = compile_link_and_run(&observed, Some(host), &[]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         assert!(output.stdout.is_empty(), "{output:?}");
@@ -125,10 +106,10 @@ int main(void) {
     }
 }
 
-/// HostString is an opaque two-word lease. System operations must observe the
+/// HostString is an ordinary opaque nominal. Linked functions must observe the
 /// current lease value through both shared and exclusive user-call borrows.
 #[test]
-fn opaque_aggregate_borrows_preserve_replacement_and_system_observations() {
+fn opaque_aggregate_borrows_preserve_replacement_and_linked_observations() {
     let source = br#"struct Holder {
   value: HostString;
   marker: u64;
@@ -182,7 +163,11 @@ fn initial(value: &HostString) -> result: own u8 reads(value) {
   return bytes[0_u64];
 }
 
-fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match arg_get(args: &args, position: 1_u64) {
       Err(error: absent) => {
@@ -233,11 +218,7 @@ fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   }
 }
 "#;
-    for overlap in [
-        OverlapLowering::Off,
-        OverlapLowering::On,
-        OverlapLowering::Completion,
-    ] {
+    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
         let module = emit_lowered(source, overlap);
         let output = compile_link_and_run(
             &super::owned_places::retain_calls(&module),
@@ -300,11 +281,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        OverlapLowering::Off,
-        OverlapLowering::On,
-        OverlapLowering::Completion,
-    ] {
+    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
         let module = emit_lowered(source, overlap);
         let output = compile_and_run(&super::owned_places::retain_calls(&module));
         assert_eq!(output.status.code(), Some(0), "{output:?}");

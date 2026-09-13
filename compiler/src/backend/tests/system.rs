@@ -48,7 +48,9 @@ pub(super) fn with_mutated_ir_lowering<R>(
     let TerminalOutcome::Complete(classified) = classify_terminals(
         &lexed,
         ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits { max_tokens: LEX_LIMITS.max_tokens },
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
     ) else {
         panic!("ordinary ABI test source must classify");
     };
@@ -73,9 +75,12 @@ pub(super) fn with_mutated_ir_lowering<R>(
 }
 
 pub(super) fn corpus_source(name: &str) -> Vec<u8> {
-    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/conformance/cases").join(format!("{name}.wf")))
-        .expect("retained ordinary corpus source")
+    std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/conformance/cases")
+            .join(format!("{name}.wf")),
+    )
+    .expect("retained ordinary corpus source")
 }
 
 fn run_arguments(name: &str, arguments: &[&[u8]]) {
@@ -87,26 +92,97 @@ fn run_arguments(name: &str, arguments: &[&[u8]]) {
 
 #[test]
 fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
-    with_ir(br#"fn relay(code: own u8) -> result: own ExitStatus pure {
+    with_ir(
+        br#"fn relay(code: own u8) -> result: own ExitStatus pure {
   return exit_status(code: code);
 }
-"#, |program| {
-        let declared = program.functions().iter().find(|function| function.name() == "exit_status")
-            .expect("ordinary prelude signature");
-        assert!(declared.blocks().is_empty());
-        let plan = crate::backend::storage::FunctionStoragePlan::build(program, declared)
-            .expect("a declaration has no activation to allocate");
-        assert!(plan.slots().is_empty());
-        let llvm = crate::emit_llvm(program).expect("ordinary signature and body emit").into_string();
-        assert!(llvm.contains("declare void @wf_exit_status(ptr %wf.result, i8 %v0)"));
-        assert!(llvm.contains("call void @wf_exit_status(ptr"));
-        assert!(!llvm.contains("@main("), "a callable unit needs no selected entry");
-    });
+"#,
+        |program| {
+            let declared = program
+                .functions()
+                .iter()
+                .find(|function| function.name() == "exit_status")
+                .expect("ordinary prelude signature");
+            assert!(declared.blocks().is_empty());
+            let plan = crate::backend::storage::FunctionStoragePlan::build(program, declared)
+                .expect("a declaration has no activation to allocate");
+            assert!(plan.slots().is_empty());
+            let llvm = crate::emit_llvm(program)
+                .expect("ordinary signature and body emit")
+                .into_string();
+            assert!(llvm.contains("declare void @wf_exit_status(ptr %wf.result, i8 %v0)"));
+            assert!(llvm.contains("call void @wf_exit_status(ptr"));
+            assert!(
+                !llvm.contains("@main("),
+                "a callable unit needs no selected entry"
+            );
+        },
+    );
 }
 
 #[test]
 fn a_non_utf8_argument_round_trips_its_exact_bytes() {
     run_arguments("run-syshost-nontext-argv-bytes-roundtrip", &[b"a\xffb"]);
+}
+
+#[test]
+fn a_view_signature_is_identical_for_a_wf_body_and_a_linked_body() {
+    let wrapper = r#"fn copy_bytes(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
+  requires start <= end;
+  requires end <= len_of(deref(destination));
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+} {
+  region {
+    match host_copy_bytes(value: value, destination: &uniq deref(destination), start: start, end: end) {
+      Ok(value: next) => {
+        return Ok<u64, CopyError>(value: next);
+      }
+      Err(error: problem) => {
+        return Err<u64, CopyError>(error: move problem);
+      }
+    }
+  }
+}
+
+"#;
+    let original = String::from_utf8(corpus_source("run-syshost-nontext-argv-bytes-roundtrip"))
+        .expect("source is UTF-8");
+    let source = format!(
+        "{wrapper}{}",
+        original.replace("host_copy_bytes(", "copy_bytes(")
+    );
+    with_ir(source.as_bytes(), |program| {
+        let signature = |name| {
+            let function = program
+                .functions()
+                .iter()
+                .find(|function| function.name() == name)
+                .expect("ordinary function exists");
+            crate::backend::abi::FunctionAbi::build(program, function).expect("one callable ABI")
+        };
+        assert_eq!(signature("copy_bytes"), signature("host_copy_bytes"));
+    });
+    // Exercise each supported command-line configuration through its real
+    // driver API: default, explicit --no-overlap, and --par. The first two
+    // select Off today; neither is an arithmetic-proof acceptance switch.
+    for overlap in [None, Some(OverlapLowering::Off), Some(OverlapLowering::On)] {
+        let inputs = [SourceInput::new("test.wf", source.as_bytes())];
+        let llvm = match overlap {
+            None => crate::compile(&inputs, crate::CompilerLimits::default()),
+            Some(overlap) => {
+                crate::compile_with_overlap(&inputs, crate::CompilerLimits::default(), overlap)
+            }
+        };
+        let llvm = llvm.expect("ordinary view wrapper compiles in each driver mode");
+        let result = compile_and_run_with(&llvm, &[b"a\xffb"]);
+        assert!(
+            result.status.success(),
+            "same-signature view call: {result:?}"
+        );
+        assert!(result.stdout.is_empty());
+        assert!(result.stderr.is_empty());
+    }
 }
 
 #[test]
@@ -117,7 +193,10 @@ fn args_count_reports_the_complete_invocation_vector() {
 #[test]
 fn relative_path_admits_by_construction_and_never_normalizes() {
     run_arguments("run-syspath-relative-basic", &[b"fixture.txt"]);
-    run_arguments("run-syspath-dotdot-preserved", &[b"./inner/../inner/fixture.txt"]);
+    run_arguments(
+        "run-syspath-dotdot-preserved",
+        &[b"./inner/../inner/fixture.txt"],
+    );
     run_arguments("run-syspath-absolute-rejected", &[b"/absent"]);
 }
 
@@ -135,9 +214,15 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
 
 #[test]
 fn an_out_of_range_copy_is_an_ordinary_requirement_rejection() {
-    for name in ["reject-syshost-copybytes-start-after-end",
-        "reject-syshost-copybytes-end-beyond-buffer", "reject-syshost-copybytes-start-beyond-buffer"] {
-        assert_eq!(compile_rejection(&corpus_source(name)).rule_id(), Some("FN-8"));
+    for name in [
+        "reject-syshost-copybytes-start-after-end",
+        "reject-syshost-copybytes-end-beyond-buffer",
+        "reject-syshost-copybytes-start-beyond-buffer",
+    ] {
+        assert_eq!(
+            compile_rejection(&corpus_source(name)).rule_id(),
+            Some("FN-8")
+        );
     }
 }
 
@@ -148,20 +233,24 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 
 #[test]
 fn an_entry_selecting_no_input_starts_and_returns_its_status() {
-    let llvm = compile(br#"fn main() -> status: own ExitStatus pure {
+    let llvm = compile(
+        br#"fn main() -> status: own ExitStatus pure {
   return exit_status(code: 37_u8);
 }
-"#);
+"#,
+    );
     assert_eq!(compile_and_run(&llvm).status.code(), Some(37));
 }
 
 #[test]
 fn opaque_drop_has_no_implicit_native_close() {
-    let llvm = compile(br#"fn main() -> status: own ExitStatus pure {
+    let llvm = compile(
+        br#"fn main() -> status: own ExitStatus pure {
   let unused = exit_status(code: 9_u8);
   return exit_status(code: 0_u8);
 }
-"#);
+"#,
+    );
     assert!(!llvm.contains("call void @wf_close_"));
     assert!(compile_and_run(&llvm).status.success());
 }

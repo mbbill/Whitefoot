@@ -238,7 +238,7 @@ fn boundary_append_preserves_its_clause_stripped_invalid_domain_behavior() {
     let control = format!(
         r#"{declaration}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   region 'destinations {{
     let workspace = arena_frame::<6, 1, 'destinations>();
     region {{

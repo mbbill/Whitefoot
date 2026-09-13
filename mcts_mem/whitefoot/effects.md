@@ -1,14 +1,8 @@
-- EFF-1 and EFF-2 own the exact effect vocabulary and judgment. Reads and writes name formal parameters or their static fields; regions describe lifetimes, not state identity.
-- Effects describe ordinary state, including opaque system resources. The old `external`, `blocks`, and `traps` categories are retired; host scheduling mechanisms belong to target lowering.
-- Rows account for the specified body and release contributions and are checked for exactness. Effects project through actual storage paths at calls, including borrows and reborrows; local state is framed out as the rule specifies.
-- Normal-exit owner summaries preserve the current values left in exclusive
-  actuals as well as returned values. Call effects use entry identities; later
-  effects use the installed owners. This does not change storage/loan identity,
-  supply exact returned-borrow locations, or make an unrepresented transfer
-  fresh. The bounded container representation and its open nested-content
-  questions are recorded in [[data-model/container-representation]].
-- Contracts and invariants are erased proof syntax and introduce no runtime effect or scheduling edge. Effect-derived optimization remains downstream of acceptance.
-- compiler/README.md owns current implementation and optimizer coverage. The dated six-category and region-row descriptions below preserve earlier designs.
+- Exact effect rows name ordinary formal parameters or their static fields. Regions describe lifetimes; they are not state identities.
+- Rows account for ordinary body accesses and required store operations. Opaque leaf drop contributes no release effect and calls no native finalizer.
+- Calls project effects through resolved actual storage, including ordinary borrows and view backing. Owned local storage is framed out without tracking where its current value used to reside.
+- [[data-model/container-representation/ordinary-storage-effects]] records the replacement of owned-value history. It leaves storage identity, loan provenance and explicit two-state contracts intact.
+- Proof syntax is erased and adds no runtime effect or scheduling edge. Optimization based on effects remains downstream of acceptance.
 
 ## Facts
 
@@ -30,3 +24,4 @@
   departed owner. Nonreturning recursion cannot justify deleting structural
   effects or require a particular internal unknown-state encoding.
   [Ordinary controls and amendment grounds](../../research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls). (sourced)
+- 2026-09-12 (d695f385) correction: the 2026-09-09 incoming-owner attribution selection is superseded by C1 decision 6. Replacing a unique referent writes that resolved storage; a subsequent read adds no effect on the replacement value's earlier input. Source effect rows no longer require a normal-exit ancestry summary. (sourced)

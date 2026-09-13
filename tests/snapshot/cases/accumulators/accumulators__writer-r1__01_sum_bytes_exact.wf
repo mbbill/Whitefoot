@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: per-byte bound sum over a small buffer, proved by header invariant sum <= 255*i.";
   let data = fixed_vector::<u8, 8>();
   region {

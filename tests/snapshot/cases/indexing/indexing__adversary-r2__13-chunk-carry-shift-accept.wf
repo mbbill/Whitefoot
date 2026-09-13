@@ -19,7 +19,7 @@ fn shift_tail(input: &uniq MutSlice<u8>, available: own u64, scan: own u64) -> m
   return moved;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<16, 1, 'w>();
     region {

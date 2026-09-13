@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: the bounded match count from the loop is used afterward as a write index into a marker buffer.";
   let data = fixed_vector::<u8, 6>();
   region {

@@ -16,7 +16,7 @@ use super::super::model::{
 };
 use super::VerifiedPostconditionSummaryRef;
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
-use crate::{NodePath, PreludeDeclarationId};
+use crate::{BuiltinPreludeId, NodePath};
 
 /// One normalized source relation over interned terms.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -507,8 +507,8 @@ pub(crate) enum DerivationNode {
     },
     PostconditionDirectMatch {
         call: NodePath,
-        variant: PreludeDeclarationId,
-        field: PreludeDeclarationId,
+        variant: BuiltinPreludeId,
+        field: BuiltinPreludeId,
         tag: u32,
         binding: BindingId,
         relation: Box<Relation>,

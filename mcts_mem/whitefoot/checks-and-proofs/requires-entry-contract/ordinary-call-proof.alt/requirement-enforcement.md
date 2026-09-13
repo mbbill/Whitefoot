@@ -11,3 +11,4 @@
 ## Moves
 
 - 2026-08-19 (55a75434) replaced [[ordinary-plus-program-entry]]: with one source-uncallable command entry, no FFI, and contracts forbidden on main, every requirement belongs to an internal ordinary call and can be proved before transfer; retaining an entry-only runtime exception would violate the claim-only trap boundary (sourced)
+- 2026-09-12 (d695f385) replaced by [[ordinary-call-proof]]: C2 removes the source-uncallable command form without restoring a runtime contract exception; all calls use ordinary pre-transfer proof, and a build launcher cannot invoke a required signature without an admitted ordinary caller. (sourced)

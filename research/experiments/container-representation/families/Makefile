@@ -7,6 +7,8 @@ EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 BUILD := .build
 .DELETE_ON_ERROR:
 
+include ../native.mk
+
 .PHONY: check check-interface measure measure-interface reproduce-runtime-gap reproduce-region-gap clean
 
 $(BUILD)/owning-growth-%.raw.ll: owning-growth.wf $(WHITEFOOTC) | $(BUILD)
@@ -18,8 +20,8 @@ $(BUILD)/owning-growth-%.ll: $(BUILD)/owning-growth-%.raw.ll $(BUILD)/abi$(EXE)
 	awk '/^define internal i64 @wf_map_contract\(ptr %v0, i64 %v1, i64 %v2, i64 %v3\)/ { sub(/internal /, ""); exported++ } { print } END { if (exported != 1) exit 1 }' $@.tmp > $@
 	rm $@.tmp
 
-$(BUILD)/owning-growth-observer-%$(EXE): owning-growth-observer.c $(BUILD)/owning-growth-%.ll ../costs/sparse-owned.c
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $< $(BUILD)/owning-growth-$*.ll -o $@
+$(BUILD)/owning-growth-observer-%$(EXE): owning-growth-observer.c $(BUILD)/owning-growth-%.ll ../costs/sparse-owned.c $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $< $(BUILD)/owning-growth-$*.ll $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
 
 .PHONY: check-owning-growth
 check-owning-growth: $(addprefix $(BUILD)/owning-growth-observer-,default$(EXE) par$(EXE) no-overlap$(EXE))
@@ -36,8 +38,8 @@ $(BUILD)/owning-behavior-%.ll: $(BUILD)/owning-behavior-%.raw.ll $(BUILD)/abi$(E
 	awk '/^define internal i64 @wf_map_contract\(ptr %v0, i64 %v1, i64 %v2, i64 %v3\)/ { sub(/internal /, ""); exported++ } /^define internal i8 @wf_behavior_contract\(ptr %v0, i64 %v1\)/ { sub(/internal /, ""); exported++ } { print } END { if (exported != 2) exit 1 }' $@.tmp > $@
 	rm $@.tmp
 
-$(BUILD)/owning-behavior-observer-%$(EXE): owning-growth-observer.c $(BUILD)/owning-behavior-%.ll ../costs/sparse-owned.c
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DBEHAVIOR_DEMOS $< $(BUILD)/owning-behavior-$*.ll -o $@
+$(BUILD)/owning-behavior-observer-%$(EXE): owning-growth-observer.c $(BUILD)/owning-behavior-%.ll ../costs/sparse-owned.c $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DBEHAVIOR_DEMOS $< $(BUILD)/owning-behavior-$*.ll $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
 
 .PHONY: check-owning-behavior
 check-owning-behavior: $(addprefix $(BUILD)/owning-behavior-observer-,default$(EXE) par$(EXE) no-overlap$(EXE))
@@ -45,10 +47,10 @@ check-owning-behavior: $(addprefix $(BUILD)/owning-behavior-observer-,default$(E
 	$(BUILD)/owning-behavior-observer-par$(EXE)
 	$(BUILD)/owning-behavior-observer-no-overlap$(EXE)
 
-$(BUILD)/owning-growth-abi$(EXE): owning-growth-abi.rs | $(BUILD)
+$(BUILD)/owning-growth-abi$(EXE): owning-growth-abi.rs ../linkage.rs | $(BUILD)
 	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
 
-$(BUILD)/owning-growth-abi-tests$(EXE): owning-growth-abi.rs | $(BUILD)
+$(BUILD)/owning-growth-abi-tests$(EXE): owning-growth-abi.rs ../linkage.rs | $(BUILD)
 	$(RUSTC) --edition=2024 -D warnings --test $< -o $@
 
 $(BUILD)/owning-growth-cost.raw.ll: owning-growth.wf $(WHITEFOOTC) | $(BUILD)
@@ -60,9 +62,9 @@ $(addprefix $(BUILD)/owning-growth-cost-,normal.ll retained.ll inlined.ll): $(BU
 $(BUILD)/owning-growth-cost-%.opt.ll: $(BUILD)/owning-growth-cost-%.ll
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
 
-$(BUILD)/owning-growth-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-growth-cost-%.ll ../costs/sparse-owned.c
+$(BUILD)/owning-growth-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-growth-cost-%.ll ../costs/sparse-owned.c $(NATIVE_OBJECTS)
 	@set -eu; case '$*' in normal) flags= ;; retained) flags=-DRETAIN_HELPERS ;; inlined) flags=-DINLINE_HELPERS ;; *) exit 1 ;; esac; \
-	  $(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $$flags $< $(BUILD)/owning-growth-cost-$*.ll -o $@
+	  $(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $$flags $< $(BUILD)/owning-growth-cost-$*.ll $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
 
 .PHONY: check-owning-costs measure-owning-costs
 check-owning-costs: $(BUILD)/owning-growth-abi-tests$(EXE) \
@@ -95,9 +97,9 @@ $(addprefix $(BUILD)/owning-behavior-cost-,normal.ll retained.ll inlined.ll): $(
 $(BUILD)/owning-behavior-cost-%.opt.ll: $(BUILD)/owning-behavior-cost-%.ll
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
 
-$(BUILD)/owning-behavior-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-behavior-cost-%.ll ../costs/sparse-owned.c
+$(BUILD)/owning-behavior-costs-%$(EXE): owning-growth-costs.c $(BUILD)/owning-behavior-cost-%.ll ../costs/sparse-owned.c $(NATIVE_OBJECTS)
 	@set -eu; case '$*' in normal) flags= ;; retained) flags=-DRETAIN_HELPERS ;; inlined) flags=-DINLINE_HELPERS ;; *) exit 1 ;; esac; \
-	  $(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $$flags $< $(BUILD)/owning-behavior-cost-$*.ll -o $@
+	  $(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $$flags $< $(BUILD)/owning-behavior-cost-$*.ll $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
 
 .PHONY: check-behavior-costs measure-behavior-costs
 check-behavior-costs: $(addprefix $(BUILD)/owning-behavior-costs-,normal$(EXE) retained$(EXE) inlined$(EXE)) \
@@ -124,7 +126,7 @@ measure-behavior-costs: check-owning-costs check-behavior-costs
 $(BUILD):
 	mkdir -p $@
 
-$(BUILD)/abi$(EXE): abi.rs | $(BUILD)
+$(BUILD)/abi$(EXE): abi.rs ../linkage.rs | $(BUILD)
 	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
 
 $(BUILD)/priority.raw.ll: priority.wf $(WHITEFOOTC) | $(BUILD)
@@ -133,11 +135,11 @@ $(BUILD)/priority.raw.ll: priority.wf $(WHITEFOOTC) | $(BUILD)
 $(BUILD)/priority.ll: $(BUILD)/priority.raw.ll $(BUILD)/abi$(EXE)
 	$(BUILD)/abi$(EXE) $< $@ wf_priority_trace
 
-$(BUILD)/priority-costs$(EXE): priority-costs.c $(BUILD)/priority.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
+$(BUILD)/priority-costs$(EXE): priority-costs.c $(BUILD)/priority.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ $(NATIVE_LINK_FLAGS) -o $@
 
-$(BUILD)/priority-boundary-costs$(EXE): priority-costs.c $(BUILD)/priority.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+$(BUILD)/priority-boundary-costs$(EXE): priority-costs.c $(BUILD)/priority.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ $(NATIVE_LINK_FLAGS) -o $@
 
 $(BUILD)/priority-borrowed.raw.ll: priority-borrowed.wf $(WHITEFOOTC) | $(BUILD)
 	$(WHITEFOOTC) --no-overlap --emit-llvm $< -o $@
@@ -145,17 +147,17 @@ $(BUILD)/priority-borrowed.raw.ll: priority-borrowed.wf $(WHITEFOOTC) | $(BUILD)
 $(BUILD)/priority-borrowed.ll: $(BUILD)/priority-borrowed.raw.ll $(BUILD)/abi$(EXE)
 	$(BUILD)/abi$(EXE) $< $@ wf_priority_trace
 
-$(BUILD)/priority-borrowed-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
+$(BUILD)/priority-borrowed-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ $(NATIVE_LINK_FLAGS) -o $@
 
-$(BUILD)/priority-borrowed-boundary-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+$(BUILD)/priority-borrowed-boundary-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ $(NATIVE_LINK_FLAGS) -o $@
 
 $(BUILD)/priority-borrowed-retained.ll: $(BUILD)/priority-borrowed.ll
 	awk '/^define internal (void|i64) @wf_(push|pop)\(/ { if (sub(/ #0 [{]$$/, " noinline #0 {") != 1) exit 1; retained++ } { print } END { if (retained != 2) exit 1 }' $< > $@
 
-$(BUILD)/priority-borrowed-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed-retained.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+$(BUILD)/priority-borrowed-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-borrowed-retained.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ $(NATIVE_LINK_FLAGS) -o $@
 
 $(BUILD)/priority-interface$(EXE): priority-interface.rs | $(BUILD)
 	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
@@ -169,8 +171,8 @@ $(BUILD)/priority-retained.ll: $(BUILD)/priority.ll $(BUILD)/priority-interface$
 $(BUILD)/priority-retained.opt.ll: $(BUILD)/priority-retained.ll
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
 
-$(BUILD)/priority-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-retained.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+$(BUILD)/priority-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-retained.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ $(NATIVE_LINK_FLAGS) -o $@
 
 $(BUILD)/priority-behavior.raw.ll: priority-behavior.wf $(WHITEFOOTC) | $(BUILD)
 	$(WHITEFOOTC) --no-overlap --emit-llvm $< -o $@
@@ -184,8 +186,8 @@ $(BUILD)/priority-behavior-retained.ll: $(BUILD)/priority-behavior.ll $(BUILD)/p
 $(BUILD)/priority-behavior-retained.opt.ll: $(BUILD)/priority-behavior-retained.ll
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
 
-$(BUILD)/priority-behavior-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-behavior-retained.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+$(BUILD)/priority-behavior-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-behavior-retained.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ $(NATIVE_LINK_FLAGS) -o $@
 
 $(BUILD)/priority-behavior-direct.raw.ll: priority-behavior-direct.wf $(WHITEFOOTC) | $(BUILD)
 	$(WHITEFOOTC) --no-overlap --emit-llvm $< -o $@
@@ -199,8 +201,8 @@ $(BUILD)/priority-behavior-direct-retained.ll: $(BUILD)/priority-behavior-direct
 $(BUILD)/priority-behavior-direct-retained.opt.ll: $(BUILD)/priority-behavior-direct-retained.ll
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
 
-$(BUILD)/priority-behavior-direct-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-behavior-direct-retained.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ -o $@
+$(BUILD)/priority-behavior-direct-retained-costs$(EXE): priority-costs.c $(BUILD)/priority-behavior-direct-retained.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module -DRETAIN_HELPERS $^ $(NATIVE_LINK_FLAGS) -o $@
 
 check-interface: $(BUILD)/priority-interface-tests$(EXE) $(BUILD)/priority-retained-costs$(EXE) \
                  $(BUILD)/priority-borrowed-retained-costs$(EXE) $(BUILD)/priority-retained.opt.ll \
@@ -236,10 +238,10 @@ $(BUILD)/owning-map.raw.ll: owning-map.wf $(WHITEFOOTC) | $(BUILD)
 $(BUILD)/owning-map.observed.ll: $(BUILD)/owning-map.raw.ll $(BUILD)/abi$(EXE)
 	$(BUILD)/abi$(EXE) --observe-allocations $< $@
 
-$(BUILD)/owning-map-observer$(EXE): owning-map-observer.c $(BUILD)/owning-map.observed.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
+$(BUILD)/owning-map-observer$(EXE): owning-map-observer.c $(BUILD)/owning-map.observed.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ $(NATIVE_LINK_FLAGS) -o $@
 
-$(BUILD)/growth-abi$(EXE): growth-abi.rs | $(BUILD)
+$(BUILD)/growth-abi$(EXE): growth-abi.rs ../linkage.rs | $(BUILD)
 	$(RUSTC) --edition=2024 -D warnings -C opt-level=2 $< -o $@
 
 $(BUILD)/growth.raw.ll: growth.wf $(WHITEFOOTC) | $(BUILD)
@@ -252,14 +254,14 @@ $(BUILD)/growth.opt.ll: $(BUILD)/growth.instrumented.ll $(BUILD)/growth-abi$(EXE
 	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $< -o $@
 	$(BUILD)/growth-abi$(EXE) --verify $@
 
-$(BUILD)/growth-costs$(EXE): growth-costs.c $(BUILD)/growth.opt.ll
-	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ -o $@
+$(BUILD)/growth-costs$(EXE): growth-costs.c $(BUILD)/growth.opt.ll $(NATIVE_OBJECTS)
+	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ $(NATIVE_LINK_FLAGS) -o $@
 
 check: check-interface check-owning-growth check-owning-behavior check-owning-costs check-behavior-costs $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-costs$(EXE) $(BUILD)/priority-borrowed-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-retained-costs$(EXE) \
        $(BUILD)/owning-map-observer$(EXE) $(BUILD)/growth-costs$(EXE)
-	rustfmt --edition 2024 --check abi.rs growth-abi.rs priority-interface.rs
+	rustfmt --edition 2024 --check abi.rs growth-abi.rs priority-interface.rs ../linkage.rs
 	@set -eu; \
 	  for source in hashmap owning-map owning-growth owning-behavior ordered priority priority-borrowed priority-behavior priority-behavior-direct packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view; do \
 	    for mode in default par no-overlap; do \

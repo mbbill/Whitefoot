@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- idx accumulates the widened byte values over 3 iterations, so idx is provably at most 3*255=765; table has length 766, so table[idx] (max index 765) is always in bounds, discharged by the explicit dominating in_bounds check.";
   let data = fixed_vector::<u8, 3>();
   region {

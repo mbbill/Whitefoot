@@ -40,7 +40,7 @@ fn merge_step(left: own FixedVector<u32, 3>, right: own FixedVector<u32, 3>, out
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left = fixed_vector::<u32, 3>();
   region {
     place_back(vector: &uniq left, value: 0_u32);

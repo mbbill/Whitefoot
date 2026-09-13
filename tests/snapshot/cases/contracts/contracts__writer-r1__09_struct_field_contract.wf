@@ -9,7 +9,7 @@ fn clamp_range(value: own i32, floor: own i32, ceiling: own i32) -> result: own 
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: two independent ensures clauses bound a signed result from two chained requires facts.";
   let result = clamp_range(value: -7_i32, floor: -50_i32, ceiling: 50_i32);
   if result == -7_i32 {

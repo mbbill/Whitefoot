@@ -7,7 +7,7 @@ struct Filter {
   gain: u32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "SNAPSHOT REJECT [OP-2]: the finder expected ACCEPT, and the re-read chain after the middle-term replace is now accepted, but the later checked product after * filter.gain still has no proved domain.";
   let first_samples = fixed_vector::<u32, 4>();
   region {

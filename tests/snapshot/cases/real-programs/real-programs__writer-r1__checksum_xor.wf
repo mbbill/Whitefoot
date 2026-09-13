@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- computes a running XOR checksum over a byte buffer, wraparound is the intended group operation";
   let message = fixed_vector::<u8, 5>();
   region {

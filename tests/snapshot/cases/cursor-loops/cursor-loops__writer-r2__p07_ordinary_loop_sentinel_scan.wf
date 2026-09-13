@@ -21,7 +21,7 @@ fn text_length<const n: u64>(text: own FixedVector<u8, n>) -> length: own u64 re
   return cursor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let text = fixed_vector::<u8, 6>();
   region {
     place_back(vector: &uniq text, value: 0_u8);

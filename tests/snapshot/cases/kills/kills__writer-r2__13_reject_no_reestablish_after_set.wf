@@ -10,7 +10,7 @@ fn read_shifted<const n: u64>(b: own FixedVector<u8, n>, shift: own u64) -> resu
   return b[cursor];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [OP-4] -- the bound check guards `cursor` before the set retargets it to the unbounded param `shift`; the later subscript has no surviving bound [ENT-5](a).";
   let data = fixed_vector::<u8, 8>();
   region {

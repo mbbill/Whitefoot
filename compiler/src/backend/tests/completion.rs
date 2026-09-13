@@ -5,8 +5,8 @@
 //! C2 retires the former source completion/staged-lowering assertions; the
 //! ordinary host fixtures retain their observable library behavior.
 
-use std::process::Command;
 use super::test_directory;
+use std::process::Command;
 
 #[test]
 fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
@@ -249,7 +249,7 @@ fn a_join_waits_in_place_and_sleeps_on_the_one_primitive() {
     // this design; the arm stays because the harness and the probes call these
     // joins from plain threads.
     // The four are the file join, the open join, the status join, and the
-    // accept join a TCP connection's peer address needs [SYS-17]; a join added
+    // accept join that returns a TCP peer address; a join added
     // for a new operation raises this number and must still enter here.
     assert_eq!(
         bridge.matches("wf_bridge_join(held)").count(),

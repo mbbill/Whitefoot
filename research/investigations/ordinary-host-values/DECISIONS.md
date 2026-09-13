@@ -180,3 +180,19 @@ also possible, but then callers must establish their bounds with intended
 runtime outcomes; an impossible-case branch added solely to satisfy the
 checker is not an acceptable migration. Do not generalize FN-9's route
 grammar during this removal.
+
+The selected enumeration API uses three ordinary results:
+`(Result<unit, ListStop>, next: u64, entries: u64)`. It promises
+`start <= next <= end` on every return. Its implementation returns
+`next == start` on an error; CALL-4's deferred non-Ok routes stay deferred,
+so this convention is tested without adding a selected-Err proof premise.
+This matters to the directory walker: it binds the batch, closes the view's
+loan, and then matches the outcome. CALL-4 does not carry an enum-bound
+endpoint fact through that later owned-local match. The separate numeric
+result uses the existing FN-9/CALL-6 multi-result publication path and keeps
+the endpoint available without an impossible bounds-failure branch. The
+ordinary WF `provide` witness in
+[`ordinary_numeric_result_facts_survive_a_later_outcome_match`](../../../compiler/src/semantic/tests/ordinary_effects.rs)
+returns an outcome, endpoint and count with an unconditional endpoint
+contract; its caller proves the endpoint after matching the saved outcome.
+This selects an API shape, not a new fact rule.

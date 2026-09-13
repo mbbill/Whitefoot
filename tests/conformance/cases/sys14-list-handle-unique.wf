@@ -1,3 +1,92 @@
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
 fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq Heap<'heap>) -> status: own ExitStatus reads(cwd, files, heap), writes(files, heap), allocates(heap) {
   doc "`directory_next` takes an exclusive `DirectorySource` borrow because advancing enumeration changes that source's state. This negative case deliberately requests two simultaneous unique borrows of the same owner, so ordinary OWN-5 exclusivity rejects them.";
   region {
@@ -23,9 +112,9 @@ fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq 
                 region {
                   let first = &uniq list;
                   let second = &uniq list;
-                  let (list_result_12, reported) = directory_next(source: &uniq deref(first), destination: &uniq window, start: 0_u64, end: 1024_u64);
+                  let (list_result_12, bytes, reported) = directory_next(source: &uniq deref(first), destination: &uniq window, start: 0_u64, end: 1024_u64);
                   match list_result_12 {
-                    Ok(value: bytes) => {
+                    Ok(value: done) => {
                       close_directory_source(factory: &uniq deref(files), source: move list);
                       return exit_status(code: 0_u8);
                     }
@@ -45,6 +134,11 @@ fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq 
                 }
               }
               SourceOpenFailed(error: problem) => {
+                region {
+                  if factory_refusal(error: &problem) {
+                    return exit_status(code: 5_u8);
+                  }
+                }
                 return exit_status(code: 4_u8);
               }
             }

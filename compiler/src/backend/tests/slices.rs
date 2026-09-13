@@ -176,11 +176,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        OverlapLowering::Off,
-        OverlapLowering::On,
-        OverlapLowering::Completion,
-    ] {
+    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
         let module = emit_lowered(source, overlap);
         for module in [&module, &super::owned_places::retain_calls(&module)] {
             let output = compile_and_run(module);
@@ -278,11 +274,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        OverlapLowering::Off,
-        OverlapLowering::On,
-        OverlapLowering::Completion,
-    ] {
+    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
         let module = emit_lowered(source, overlap);
         for module in [&module, &super::owned_places::retain_calls(&module)] {
             let output = compile_and_run(module);
@@ -339,11 +331,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     for formation in ["slice_of(&deref(view))", "child(view: &uniq deref(view))"] {
         let source = source.replace("FORM", formation);
-        for overlap in [
-            OverlapLowering::Off,
-            OverlapLowering::On,
-            OverlapLowering::Completion,
-        ] {
+        for overlap in [OverlapLowering::Off, OverlapLowering::On] {
             let module = emit_lowered(source.as_bytes(), overlap);
             for module in [&module, &super::owned_places::retain_calls(&module)] {
                 let output = compile_and_run(module);
@@ -378,7 +366,11 @@ fn sum(values: own Slice<u8>) -> result: own u64 reads(values) {
   return total;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let code = 0_u8;
   region {
     let view = slice_of(&bytes);
@@ -590,20 +582,23 @@ fn main() -> status: own ExitStatus pure {
 }
 
 /// A view of a frame-resident run reaches that run's own slots, and it does so
-/// across a may-suspend call [VIEW-2, SYS-8].
+/// until an ordinary borrowed call returns [VIEW-2, OWN-6].
 ///
 /// The frame-slot planner and the emission that consumes the slot each decide
 /// whether a run keeps its slots inline; a view that the planner did not see
 /// would take the address of a slot no entry reserved. The pin is the whole
 /// path: the emitted view is a `getelementptr` into the run's own frame slot
 /// rather than a copy of a descriptor's pointer word, the run is the source
-/// operand of a `write_once` that is `may-suspend` and therefore reaches the
-/// completion runtime, and the process publishes exactly the bytes the fill
+/// operand of an ordinary linked `write_once` whose loan lasts until return, and the process publishes exactly the bytes the fill
 /// loop wrote.
 #[test]
-fn a_view_of_a_frame_resident_run_reaches_its_own_slots_across_a_may_suspend_call() {
-    let source = br#"fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
-  doc "Publishes a frame-resident run through a shared view held across the may-suspend write.";
+fn a_view_of_a_frame_resident_run_reaches_its_own_slots_until_call_return() {
+    let source = br#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "Publishes a frame-resident run through a shared view held until the linked write returns.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let page = fixed_vector::<u8, 4>();
   for @fill (
     at in 0_u64..4_u64,
@@ -613,10 +608,10 @@ fn a_view_of_a_frame_resident_run_reaches_its_own_slots_across_a_may_suspend_cal
   ) {
     place_back(vector: &uniq page, value: 65_u8);
   }
-  region 'o {
+  region {
     let window = slice_of(&page);
     region {
-      match write_once(output: &uniq 'o out, source: &window, start: 0_u64, end: 4_u64) {
+      match write_once(factory: &uniq entry_factory, output: &uniq out, source: &window, start: 0_u64, end: 4_u64) {
         Ok(value: written) => {
           if written != 4_u64 {
             return exit_status(code: 1_u8);

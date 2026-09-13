@@ -18,6 +18,7 @@ struct InventoryTables<'a> {
     declarations: &'a [DeclarationRecord],
     metas: &'a [DeclarationMeta],
     index: &'a DeclarationIndex,
+    prelude_origins: &'a [super::super::PreludeDeclarationId],
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -29,6 +30,7 @@ pub(super) fn check_declaration_inventory(
     metas: &[DeclarationMeta],
     index: &DeclarationIndex,
     declaration_by_role: &[Option<usize>],
+    prelude_origins: &[super::super::PreludeDeclarationId],
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     check_inventory(
         topology,
@@ -38,6 +40,7 @@ pub(super) fn check_declaration_inventory(
         metas,
         index,
         declaration_by_role,
+        prelude_origins,
         |_| true,
     )
 }
@@ -51,6 +54,7 @@ fn check_inventory(
     metas: &[DeclarationMeta],
     index: &DeclarationIndex,
     declaration_by_role: &[Option<usize>],
+    prelude_origins: &[super::super::PreludeDeclarationId],
     include: impl Fn(&ClassifiedRole) -> bool,
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     if declarations.len() != metas.len()
@@ -66,6 +70,7 @@ fn check_inventory(
         declarations,
         metas,
         index,
+        prelude_origins,
     };
     for (role_index, role) in roles.iter().enumerate() {
         if !include(role) {
@@ -294,7 +299,9 @@ fn collision_issue(
                     class: prelude
                         .class
                         .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?,
-                    origin: DeclarationOrigin::Prelude(prelude.id),
+                    origin: DeclarationOrigin::Prelude(
+                        tables.prelude_origins[usize::from(prelude.id.ordinal())],
+                    ),
                 });
             }
         }
@@ -389,6 +396,7 @@ fn collision_issue(
     }
 
     let mut shadows = Vec::new();
+    let mut shadows_prelude = false;
     for candidate in tables
         .index
         .with_spelling(&declaration.spelling)
@@ -408,6 +416,7 @@ fn collision_issue(
         {
             continue;
         }
+        let before = shadows.len();
         collect_domain_conflicts(
             declaration,
             meta,
@@ -415,6 +424,7 @@ fn collision_issue(
             candidate,
             &mut shadows,
         );
+        shadows_prelude |= shadows.len() != before && scopes.is_prelude_scope(candidate.scope);
     }
     sort_conflicts(&mut shadows, tables.declarations);
     Ok((!shadows.is_empty()).then(|| {
@@ -422,7 +432,11 @@ fn collision_issue(
             declaration,
             shadows,
             declaration_collision_rule(declaration),
-            COLLIDES_WITH_LIVE_OUTER,
+            if shadows_prelude {
+                COLLIDES_WITH_PRELUDE
+            } else {
+                COLLIDES_WITH_LIVE_OUTER
+            },
         )
     }))
 }
@@ -464,7 +478,7 @@ fn collect_domain_conflicts(
                 conflicts.push(DeclarationConflict {
                     domain,
                     class: *candidate_class,
-                    origin: DeclarationOrigin::Source(candidate.origin.clone()),
+                    origin: candidate.diagnostic_origin(*candidate_class),
                 });
             }
         }

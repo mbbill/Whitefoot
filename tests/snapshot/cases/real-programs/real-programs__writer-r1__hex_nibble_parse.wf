@@ -14,7 +14,7 @@ fn nibble_value(digit: own u8) -> result: own u8 pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- parses hex ASCII digit pairs back into bytes using an executed decimal/letter dominating branch";
   let input = fixed_vector::<u8, 4>();
   region {

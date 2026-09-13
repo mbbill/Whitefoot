@@ -1,8 +1,8 @@
 const appended_bytes: FixedVector<u8, 5> =[33_u8, 33_u8, 33_u8, 33_u8, 33_u8];
 
-enum Grown {
-  Grew(value: Vector<u8>);
-  Refused(value: Vector<u8>);
+enum Grown['heap] {
+  Grew(value: Vector<'heap, u8>);
+  Refused(value: Vector<'heap, u8>);
 }
 
 fn bs_new['heap](heap: &uniq Heap<'heap>) -> made: own Option<Vector<'heap, u8>> reads(heap), writes(heap), allocates(heap) {
@@ -12,7 +12,7 @@ fn bs_new['heap](heap: &uniq Heap<'heap>) -> made: own Option<Vector<'heap, u8>>
   }
 }
 
-fn bs_reserve['heap](s: own Vector<'heap, u8>, heap: &uniq Heap<'heap>, total: own u64) -> grown: own Grown reads(s, heap), writes(s, heap), allocates(heap) contract {
+fn bs_reserve['heap](s: own Vector<'heap, u8>, heap: &uniq Heap<'heap>, total: own u64) -> grown: own Grown<'heap> reads(s, heap), writes(s, heap), allocates(heap) contract {
   requires total >= len_of(s);
 } {
   doc "Grows the backing run to total slots, preserving element order, or reports that the store refused. Growth is the drain-front, append-back walk the growth policy fixes, and the superseded run is disposed before the new one is handed back, which is the difference between a peak of count + total slots and a peak of total. The four measures the policy publishes on the Grew arm are not written here: a variant-routed measure clause is a deferred contract route, so the caller reads them back instead.";

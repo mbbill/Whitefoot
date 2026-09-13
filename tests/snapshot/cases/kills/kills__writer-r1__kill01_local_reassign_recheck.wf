@@ -19,7 +19,7 @@ fn second_or_zero(values: own FixedVector<u32, 6>, idx: own u64) -> result: own 
   return second;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u32, 6>();
   region {
     place_back(vector: &uniq values, value: 9_u32);

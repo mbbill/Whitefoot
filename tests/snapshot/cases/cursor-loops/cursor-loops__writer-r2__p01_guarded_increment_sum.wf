@@ -16,7 +16,7 @@ fn sum_below(limit: own u64) -> total: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = sum_below(limit: 5_u64);
   let correct = total == 10_u64;
   if correct {

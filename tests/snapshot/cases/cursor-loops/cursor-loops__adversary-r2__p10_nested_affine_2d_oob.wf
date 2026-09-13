@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: inner loop col range 0..5 with row*4+col overruns the 12-slot grid when row=2,col=4 (flat=12)";
   let grid = fixed_vector::<u64, 12>();
   for (

@@ -189,7 +189,7 @@ fn borrow_scalar(value: &u64) -> result: own unit pure {
   return unit;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region 'a {
     let first = arena_frame::<8, 8, 'a>();
     region 'b {
@@ -265,7 +265,12 @@ fn physical_call_inventory_reuses_classes_and_keeps_independent_axes() {
         assert_eq!(variants("observe"), [vec![General], vec![Extent]]);
         assert_eq!(
             variants("pair"),
-            [vec![General, Extent], vec![Extent, General]]
+            [
+                vec![General, General],
+                vec![General, Extent],
+                vec![Extent, General]
+            ],
+            "ordinary callable definitions retain their default physical ABI as well as the two independently instantiated call environments"
         );
         assert_eq!(
             variants("borrow_scalar"),
@@ -855,7 +860,7 @@ fn touch(value: &uniq Holder) -> result: own unit writes(value.stamp) {{
   return unit;
 }}
 
-fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes(value.bytes, value.stamp) {{
+fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes(value, value.stamp) {{
   region {{
     touch(value: &uniq value);
   }}

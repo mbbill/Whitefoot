@@ -49,7 +49,15 @@ fn classifies_every_distinct_integer_pair_through_one_conversion_judgment() {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("all integer conversion pairs must check: {outcome:?}");
         };
-        assert_eq!(checked.data.functions.len(), expected.len() + 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            expected.len() + 1
+        );
         for (function, (source_type, destination_type, total)) in
             checked.data.functions.iter().zip(expected)
         {

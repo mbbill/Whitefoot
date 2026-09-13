@@ -8,7 +8,7 @@ fn window_one_past<const n: u64>(buf: own FixedVector<u8, n>, start: own u64, en
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let buf = fixed_vector::<u8, 8>();
   region {
     place_back(vector: &uniq buf, value: 5_u8);

@@ -62,7 +62,11 @@ fn wide_frame_source(depth: u64) -> Vec<u8> {
   return a +wrap b;
 }}
 
-fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
+  let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;
+  region {{
+    close_directory(factory: &uniq factory, directory: move cwd);
+  }}
   let count = 0_u64;
   region {{
     set count = args_count(args: &args);
@@ -347,7 +351,11 @@ fn boxed_branch['s](store: &uniq Heap<'s>, left: own Box<'s, Tree<'s>>, right: o
   }
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match boxed_leaf(store: &uniq heap) {
       None() => {

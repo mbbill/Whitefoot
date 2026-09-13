@@ -7,9 +7,7 @@ param(
 
     [int]$Rounds = 15,
 
-    [int]$Warmup = 2,
-
-    [switch]$Enforce
+    [int]$Warmup = 2
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,7 +42,7 @@ $Cargo = (Get-Command cargo.exe -ErrorAction Stop).Source
 $Git = (Get-Command git.exe -ErrorAction Stop).Source
 $Workers = [Math]::Min(64, [Environment]::ProcessorCount)
 if ($Workers -lt 2) {
-    throw "the Windows compute qualification requires at least two logical processors"
+    throw "the Windows scheduler observation requires at least two logical processors"
 }
 if ($Workers -eq 64) {
     $AffinityMask = [UInt64]::MaxValue
@@ -85,26 +83,26 @@ function Compile-Object {
     )
     $arguments = @(
         "-std=c11", "-O2", "-g", "-Wall", "-Wextra", "-Werror",
-        "-Wpedantic", "-municode", "-I", $Backend, "-I", $Completion,
+        "-Wpedantic", "-I", $Backend, "-I", $Completion,
         "-c", $Source, "-o", $Output
     )
     Invoke-Tool -File $Clang -Arguments $arguments -Description "compile $Source"
 }
 
-# The body of one emitted definition, so an order is pinned inside the
-# function that carries it rather than anywhere in the module. `wf_main` and
-# `wf_compute_pair` are both defined before anything calls them, so the first
-# occurrence of the symbol is its definition, and an emitted body is the only
-# text whose closing brace starts a line.
+# Inspect a definition, independent of whether a call or declaration occurs
+# earlier in the module. Emitted definition braces end at the start of a line.
 function Get-EmittedFunction {
     param(
         [Parameter(Mandatory = $true)][string]$Module,
         [Parameter(Mandatory = $true)][string]$Symbol
     )
-    $at = $Module.IndexOf("@$Symbol(", [StringComparison]::Ordinal)
-    if ($at -lt 0) {
+    $definition = [regex]::Match(
+        $Module, '(?m)^define[^\r\n]*@' + [regex]::Escape($Symbol) + '\('
+    )
+    if (-not $definition.Success) {
         throw "the emitted mixed module defines no $Symbol"
     }
+    $at = $definition.Index
     $end = $Module.IndexOf("`n}`n", $at, [StringComparison]::Ordinal)
     if ($end -lt 0) {
         throw "the emitted definition of $Symbol is unterminated"
@@ -168,12 +166,12 @@ Write-AsciiFile -Path $MixedExpected -Text "17574306422404092952`n"
 
 $ComputeSeq = Join-Path $Bin "compute-seq.exe"
 $ComputePar = Join-Path $Bin "compute-par.exe"
-$IoDirect = Join-Path $Bin "io-direct.exe"
-$IoIocp = Join-Path $Bin "io-iocp.exe"
-$MixedSeq = Join-Path $Bin "mixed-seq.exe"
-$MixedIocp = Join-Path $Bin "mixed-iocp.exe"
-$MixedFull = Join-Path $Bin "mixed-full.exe"
-$MixedIr = Join-Path $Out "mixed-full.ll"
+$IoNoOverlap = Join-Path $Bin "io-no-overlap.exe"
+$IoDefault = Join-Path $Bin "io-default.exe"
+$MixedNoOverlap = Join-Path $Bin "mixed-no-overlap.exe"
+$MixedDefault = Join-Path $Bin "mixed-default.exe"
+$MixedPar = Join-Path $Bin "mixed-par.exe"
+$MixedIr = Join-Path $Out "mixed-par.ll"
 $MixedSource = Join-Path $Programs "windows_runtime_mixed.wf"
 
 Invoke-Tool -File $Wfc -Arguments @(
@@ -184,84 +182,42 @@ Invoke-Tool -File $Wfc -Arguments @(
 ) -Description "compile the native compute-pool contender"
 Invoke-Tool -File $Wfc -Arguments @(
     "--no-overlap", (Join-Path $Programs "read_heavy_wide8_4k.wf"),
-    "-o", $IoDirect
-) -Description "compile the sequential positioned-read reference"
+    "-o", $IoNoOverlap
+) -Description "compile the no-overlap positioned-read reference"
 Invoke-Tool -File $Wfc -Arguments @(
-    (Join-Path $Programs "read_heavy_wide8_4k.wf"), "-o", $IoIocp
-) -Description "compile the IOCP positioned-read contender"
+    (Join-Path $Programs "read_heavy_wide8_4k.wf"), "-o", $IoDefault
+) -Description "compile the default positioned-read contender"
 Invoke-Tool -File $Wfc -Arguments @(
-    "--no-overlap", $MixedSource, "-o", $MixedSeq
-) -Description "compile the fully sequential mixed reference"
-Invoke-Tool -File $Wfc -Arguments @($MixedSource, "-o", $MixedIocp) `
-    -Description "compile the IOCP-only mixed control"
-Invoke-Tool -File $Wfc -Arguments @("--par", $MixedSource, "-o", $MixedFull) `
-    -Description "compile the unified compute and IOCP contender"
+    "--no-overlap", $MixedSource, "-o", $MixedNoOverlap
+) -Description "compile the no-overlap mixed reference"
+Invoke-Tool -File $Wfc -Arguments @($MixedSource, "-o", $MixedDefault) `
+    -Description "compile the default mixed control"
+Invoke-Tool -File $Wfc -Arguments @("--par", $MixedSource, "-o", $MixedPar) `
+    -Description "compile the ordinary parallel-compute mixed contender"
 Invoke-Tool -File $Wfc -Arguments @(
     "--par", "--emit-llvm", $MixedSource, "-o", $MixedIr
 ) -Description "emit the observed mixed module"
 
-# What this pins, and why it is that shape.
-#
-# The mixed window is source-level `read_at, compute_pair, read_at`, and the
-# permission judgment reads it as one three-member chain -- `--par-ledger`
-# prints `run(read_at, compute_pair, read_at)  3 members` for it. Every I/O
-# operation now has exactly one lowering, submit and then join
-# (`research/investigations/io-model/PARK-ON-MISS.md` section 8, "One lowering
-# for every I/O operation"), so there is no direct-read family left to look
-# for: `@wf.sys.read_at.v1` is the always-inlined wrapper that submits and
-# joins, not a direct target read.
-#
-# So `@wf_main` carries, in this order:
-#
-#   1. `wf__completion_file_pread_submit` for the first read, which the group
-#      leaves in flight,
-#   2. the call to `@wf_compute_pair` on this thread,
-#   3. the source-last read through `@wf.sys.read_at.v1`, which submits and
-#      joins in place, and
-#   4. `wf__completion_file_join` for the first read.
-#
-# That order is exactly what this cohort claims to measure: the first read is
-# outstanding across both the compute member and the second read.
-#
-# The group hands none of its own members to a compute lane, and that is the
-# emitter's stated rule rather than an accident: a group whose join site is
-# itself a submitting member keeps the pure completion lowering
-# (`ordinary_overlap_lane_frames`, `compiler/src/backend/emitter.rs`), and here
-# the source-last member is a `read_at`. Section 4 leaves a completion member
-# where it was published in either case. The compute overlap this cohort
-# measures is one level down, inside `@wf_compute_pair`, whose own
-# `pair(churn, churn)` group takes the lane protocol -- acquire a lane, publish
-# into it, join it, release it -- 1024 times per run. That is the hand-out the
-# observed link below reads back as `grants=`.
-#
-# The order is a property of the emitter and not of the target, so reading it
-# here on the Windows host reads the same shape a Linux `--emit-llvm` of this
-# program reads. The completion schedule and the overlap group are both
-# produced by lowering, which takes no target; `ordinary_overlap_lane_frames`
-# declines this group before it reaches anything target-dependent; and the
-# Windows and native POSIX columns name the same submit and join symbols
-# (`HostFacilities` in `compiler/src/backend/qualification.rs`).
+# C2 deletes PAR-3 completion overlap. The source window remains two ordinary
+# read calls with compute between them; each read returns before the next
+# statement executes. The native body may use IOCP internally, which is not
+# a compiler acceptance or overlap classification. Inspect the actual worker
+# function, not the build launcher that receives Inputs.
 $Ir = [IO.File]::ReadAllText($MixedIr)
-$Main = Get-EmittedFunction -Module $Ir -Symbol "wf_main"
+$Exercise = Get-EmittedFunction -Module $Ir -Symbol "wf_exercise"
 $Pair = Get-EmittedFunction -Module $Ir -Symbol "wf_compute_pair"
-$SubmitAt = $Main.IndexOf(
-    "call void @wf__completion_file_pread_submit(", [StringComparison]::Ordinal
-)
-$ComputeAt = if ($SubmitAt -ge 0) {
-    $Main.IndexOf("call i64 @wf_compute_pair(", $SubmitAt, [StringComparison]::Ordinal)
+$FirstReadAt = $Exercise.IndexOf("call void @wf_read_at(", [StringComparison]::Ordinal)
+$ComputeAt = if ($FirstReadAt -ge 0) {
+    $Exercise.IndexOf("call i64 @wf_compute_pair(", $FirstReadAt, [StringComparison]::Ordinal)
 } else { -1 }
 $LastReadAt = if ($ComputeAt -ge 0) {
-    $Main.IndexOf("@wf.sys.read_at.v1(", $ComputeAt, [StringComparison]::Ordinal)
+    $Exercise.IndexOf("call void @wf_read_at(", $ComputeAt, [StringComparison]::Ordinal)
 } else { -1 }
-$CompletionJoinAt = if ($LastReadAt -ge 0) {
-    $Main.IndexOf(
-        "call void @wf__completion_file_join(", $LastReadAt, [StringComparison]::Ordinal
-    )
-} else { -1 }
-if ($SubmitAt -lt 0 -or $ComputeAt -le $SubmitAt -or $LastReadAt -le $ComputeAt `
-    -or $CompletionJoinAt -le $LastReadAt) {
-    throw "mixed IR does not keep the first read in flight across the compute member and the source-last read"
+if ($FirstReadAt -lt 0 -or $ComputeAt -le $FirstReadAt -or $LastReadAt -le $ComputeAt) {
+    throw "mixed IR does not preserve the ordinary read, compute, read call order"
 }
+# Ordinary computation still uses the existing lane protocol. This check is
+# independent of how the linked read implementation completes its operation.
 $AcquireAt = $Pair.IndexOf("call ptr @wf__par_acquire_lane(", [StringComparison]::Ordinal)
 $PublishAt = if ($AcquireAt -ge 0) {
     $Pair.IndexOf("call void @wf__par_publish(", $AcquireAt, [StringComparison]::Ordinal)
@@ -277,64 +233,17 @@ if ($AcquireAt -lt 0 -or $PublishAt -le $AcquireAt -or $ParJoinAt -le $PublishAt
     throw "the mixed program's compute member does not offer a lane, publish into it, join it and release it"
 }
 
-# The observed link: the shipped runtime, plus one unit no shipped program
-# carries.
+# The observed link contains the same ordinary implementations, callable ABI
+# wrappers and private runtime dependencies as whitefootc. The only observer
+# addition is grant_observer.c, which reports ordinary scheduler hand-outs to
+# another worker. No library function is replaced by a benchmark stub.
 #
-# The production executables above are `whitefootc.exe`'s own links and need
-# nothing added to them. This one link exists to read back a fact that correct
-# bytes alone would also be produced without: that the mixed contender really
-# stole compute work and really carried its reads on the completion port. It is
-# `io-hosts.yml`'s `completion-windows` step "Require native workers for a real
-# --par program" applied to this program, and the unit list below is exactly
-# what `whitefootc` stages for a module that both hands work out and submits
-# operations -- `runtime_units(core, completion)` in
-# `compiler/src/bin/whitefootc.rs`: the floor, the scheduler core with its
-# Windows leaf, and the completion runtime with its Windows wait, host leaf and
-# ring. The one addition is `sched/grant_observer.c`, which registers an
-# `atexit` report of the core's own steal count and is linked into no shipped
-# program.
-#
-# What the retired probes measured, and what carries it now. The Windows
-# parallel runtime, its identity probe and its mixed probe are gone with the
-# second copy of the runtime they belonged to, so their counters are gone with
-# them:
-#
-#   `wf__par_started_worker_count` and `wf__par_worker_execution_count`
-#     -> `wf__par_grants`, reported as the `grants=` line. The core counts
-#        hand-outs that ran on a thread other than the one that offered them,
-#        which is the property those two were together standing in for: a pool
-#        that started and never granted a lane cannot produce a positive count.
-#   `publishes`, `outstanding_publishes` and `kernel_overlap_publishes`
-#     (`WF_PAR_MIXED_PROBE`)
-#     -> the IR assertion above. That the compute member runs while the first
-#        read is outstanding is a property of the one lowering, fixed for every
-#        iteration by the emitted order, so it is pinned where it is decided
-#        instead of counted once per run.
-#   the IOCP inline and dequeued completion counts
-#     -> nothing on the protocol's side, deliberately. The ring still keeps
-#        both (`wf_windows_iocp_statistics` in `completion/windows_iocp.h`) and
-#        the bridge still exports the shared halves of that split
-#        (`wf__completion_native_ring_submissions` and
-#        `wf__completion_inline_executions`), but the split was a throughput
-#        fact and never a verdict, and what this protocol needs from the ring
-#        -- that it carried the reads and reaped them -- is the exit assertion
-#        below.
-#   `submissions`, `publications`, `consumes`, `helpers` and `fallback`
-#     -> the shared bridge's own statistics entries
-#        (`completion/bridge.h`: `wf__completion_file_submissions`,
-#        `wf__completion_publications`,
-#        `wf__completion_file_helper_executions`,
-#        `wf__completion_file_fallback_submissions`). There is no consume step
-#        left to count: the record is the submitting frame's, so a completion
-#        is published into it and joined there.
-#
-# The second half of the protocol is the runtime's own: with
-# `WF_REQUIRE_WINDOWS_IOCP=1` the bridge asserts at exit that the port carried
-# at least one submission and that it reaped every submission it made
-# (`wf_bridge_verify_required_ring` in `completion/bridge.c`), and fails the
-# process otherwise. So a run that silently reached no ring cannot answer zero
-# here; it cannot exit zero at all.
+# WF_REQUIRE_WINDOWS_IOCP=1 independently requires the linked read body to
+# submit at least one operation to the completion port and reap every native
+# submission. This observes an implementation path; it does not grant early
+# result or loan release, or assert overlap between source calls.
 $ObservedUnits = @(
+    "ordinary_values.c",
     "sched/core.c",
     "sched/prim_windows.c",
     "sched/entry.c",
@@ -354,14 +263,20 @@ foreach ($unit in $ObservedUnits) {
     Compile-Object -Source (Join-Path $Backend $unit) -Output $object
     $ObservedObjects += $object
 }
+$OrdinaryIr = Join-Path $Objects "ordinary_values_ir.o"
+Invoke-Tool -File $Clang -Arguments @(
+    "-O2", "-Wno-override-module", "-x", "ir", "-c",
+    (Join-Path $Backend "ordinary_values.ll"), "-o", $OrdinaryIr
+) -Description "compile the ordinary callable ABI wrappers"
+$ObservedObjects += $OrdinaryIr
 $MixedObserved = Join-Path $Bin "mixed-observed.exe"
-# Winsock is on the line because the completion port's unit and the Windows
-# host runtime name it since the TCP routes landed, exactly as `whitefootc`'s
-# own Windows link and `io-hosts.yml`'s hand-written ones do.
+# The emitted launcher defines ordinary C main. Only windows_runner.c, whose
+# entry is wmain, uses -municode. Winsock and shell32 are dependencies of the
+# ordinary linked library, matching whitefootc's native Windows link.
 $LinkArguments = @(
-    "-std=c11", "-O2", "-g", "-municode", "-x", "ir", $MixedIr,
+    "-std=c11", "-O2", "-g", "-x", "ir", $MixedIr,
     "-x", "none"
-) + $ObservedObjects + @("-Wno-override-module", "-o", $MixedObserved, "-lws2_32")
+) + $ObservedObjects + @("-Wno-override-module", "-o", $MixedObserved, "-lws2_32", "-lshell32")
 Invoke-Tool -File $Clang -Arguments $LinkArguments `
     -Description "link the observed mixed executable"
 
@@ -445,24 +360,24 @@ $Variants = @{
         Exe = $ComputePar; Args = $ComputeArguments; Expected = $ComputeExpected
         Workers = $true; RequireIocp = $false
     }
-    "io.direct" = @{
-        Exe = $IoDirect; Args = $IoArguments; Expected = $IoExpected
+    "io.no-overlap" = @{
+        Exe = $IoNoOverlap; Args = $IoArguments; Expected = $IoExpected
         Workers = $false; RequireIocp = $false
     }
-    "io.iocp" = @{
-        Exe = $IoIocp; Args = $IoArguments; Expected = $IoExpected
+    "io.default" = @{
+        Exe = $IoDefault; Args = $IoArguments; Expected = $IoExpected
         Workers = $false; RequireIocp = $true
     }
-    "mixed.seq" = @{
-        Exe = $MixedSeq; Args = @("f00000.dat", "f00001.dat")
+    "mixed.no-overlap" = @{
+        Exe = $MixedNoOverlap; Args = @("f00000.dat", "f00001.dat")
         Expected = $MixedExpected; Workers = $false; RequireIocp = $false
     }
-    "mixed.iocp" = @{
-        Exe = $MixedIocp; Args = @("f00000.dat", "f00001.dat")
+    "mixed.default" = @{
+        Exe = $MixedDefault; Args = @("f00000.dat", "f00001.dat")
         Expected = $MixedExpected; Workers = $false; RequireIocp = $true
     }
-    "mixed.full" = @{
-        Exe = $MixedFull; Args = @("f00000.dat", "f00001.dat")
+    "mixed.par" = @{
+        Exe = $MixedPar; Args = @("f00000.dat", "f00001.dat")
         Expected = $MixedExpected; Workers = $true; RequireIocp = $true
     }
 }
@@ -581,6 +496,11 @@ function Run-CohortAttempt {
     $p90 = Percentile -Values $ratioValues -Fraction 0.90
     $referenceMedian = Median -Values ([double[]]$referenceWalls.ToArray())
     $candidateMedian = Median -Values ([double[]]$candidateWalls.ToArray())
+    $stability = if (($mad / $ratioMedian) -le 0.05 -and (($p90 - $p10) / $ratioMedian) -le 0.10) {
+        "within reference bands"
+    } else {
+        "wide spread"
+    }
     return [pscustomobject]@{
         Name = $Name
         Reference = $Reference
@@ -591,36 +511,34 @@ function Run-CohortAttempt {
         Ratio = $ratioMedian
         MadFraction = $mad / $ratioMedian
         SpreadFraction = ($p90 - $p10) / $ratioMedian
+        Stability = $stability
         P10 = $p10
         P90 = $p90
     }
 }
 
-function Run-QualifiedCohort {
+# Keep one fixed cohort even when its timing spread is wide. Stability is
+# descriptive data, never a reason to select another sample or fail CI.
+function Run-Cohort {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$Reference,
         [Parameter(Mandatory = $true)][string]$Candidate
     )
-    for ($attempt = 1; $attempt -le 2; $attempt += 1) {
-        $result = Run-CohortAttempt -Name $Name -Reference $Reference `
-            -Candidate $Candidate -Attempt $attempt
-        if ($result.MadFraction -le 0.05 -and $result.SpreadFraction -le 0.10) {
-            return $result
-        }
-    }
-    throw "$Name remained unstable after two complete cohorts"
+    $result = Run-CohortAttempt -Name $Name -Reference $Reference `
+        -Candidate $Candidate -Attempt 1
+    return $result
 }
 
 try {
-    [void](Invoke-Sample -Variant "io.direct" -Label "preflight.io.direct")
-    [void](Invoke-Sample -Variant "io.iocp" -Label "preflight.io.iocp")
+    [void](Invoke-Sample -Variant "io.no-overlap" -Label "preflight.io.no-overlap")
+    [void](Invoke-Sample -Variant "io.default" -Label "preflight.io.default")
     $Results = @(
-        Run-QualifiedCohort -Name "compute" -Reference "compute.seq" -Candidate "compute.par"
-        Run-QualifiedCohort -Name "io-warm" -Reference "io.direct" -Candidate "io.iocp"
-        Run-QualifiedCohort -Name "mixed-iocp" -Reference "mixed.seq" -Candidate "mixed.iocp"
-        Run-QualifiedCohort -Name "mixed-full" -Reference "mixed.iocp" -Candidate "mixed.full"
-        Run-QualifiedCohort -Name "mixed-total" -Reference "mixed.seq" -Candidate "mixed.full"
+        Run-Cohort -Name "compute" -Reference "compute.seq" -Candidate "compute.par"
+        Run-Cohort -Name "io-warm" -Reference "io.no-overlap" -Candidate "io.default"
+        Run-Cohort -Name "mixed-default" -Reference "mixed.no-overlap" -Candidate "mixed.default"
+        Run-Cohort -Name "mixed-par" -Reference "mixed.default" -Candidate "mixed.par"
+        Run-Cohort -Name "mixed-total" -Reference "mixed.no-overlap" -Candidate "mixed.par"
     )
 } finally {
     $Raw.Dispose()
@@ -630,7 +548,7 @@ try {
 
 $SummaryPath = Join-Path $Out "summary.md"
 $Summary = [IO.StreamWriter]::new($SummaryPath, $false, [Text.UTF8Encoding]::new($false))
-$Summary.WriteLine("## Windows native runtime qualification")
+$Summary.WriteLine("## Windows native runtime measurements")
 $Summary.WriteLine()
 $Summary.WriteLine('```text')
 foreach ($line in $HostLines) {
@@ -639,36 +557,19 @@ foreach ($line in $HostLines) {
 $Summary.WriteLine((Get-Content -Raw -LiteralPath (Join-Path $Out "mixed-observer.txt")).TrimEnd())
 $Summary.WriteLine('```')
 $Summary.WriteLine()
-$Summary.WriteLine("| cohort | reference median ms | candidate median ms | paired candidate/reference | MAD | p10..p90 | attempt |")
-$Summary.WriteLine("|---|---:|---:|---:|---:|---:|---:|")
+$Summary.WriteLine("Correctness, ordinary scheduler hand-outs and the native IOCP path were checked before timing. Ratios and spread are observations, not pass/fail thresholds. C2 runs both reads as ordinary calls that return before the following statement.")
+$Summary.WriteLine()
+$Summary.WriteLine("| cohort | reference median ms | candidate median ms | paired candidate/reference | MAD | p10..p90 | width | stability |")
+$Summary.WriteLine("|---|---:|---:|---:|---:|---:|---:|---|")
 foreach ($result in $Results) {
     $Summary.WriteLine((
-        "| {0} | {1:F3} | {2:F3} | {3:F4} | {4:P2} | {5:F4}..{6:F4} | {7} |" -f
+        "| {0} | {1:F3} | {2:F3} | {3:F4} | {4:P2} | {5:F4}..{6:F4} | {7:P2} | {8} |" -f
         $result.Name, $result.ReferenceMedian, $result.CandidateMedian,
         $result.Ratio, $result.MadFraction, $result.P10, $result.P90,
-        $result.Attempt
+        $result.SpreadFraction, $result.Stability
     ))
 }
 $Summary.Dispose()
-
-if ($Enforce) {
-    $ByName = @{}
-    foreach ($result in $Results) {
-        $ByName[$result.Name] = $result
-    }
-    if ($ByName["compute"].Ratio -gt 0.90) {
-        throw "native compute pool failed its 0.90 paired-ratio qualification"
-    }
-    if ($ByName["io-warm"].Ratio -gt 1.10) {
-        throw "warm IOCP path exceeded the 1.10 framework-overhead ceiling"
-    }
-    if ($ByName["mixed-full"].Ratio -gt 0.95) {
-        throw "unified compute/IOCP path failed its 0.95 paired-ratio qualification"
-    }
-    if ($ByName["mixed-total"].Ratio -gt 0.95) {
-        throw "unified compute/IOCP path failed its 0.95 total mixed qualification"
-    }
-}
 
 Get-Content -LiteralPath $HostPath
 Get-Content -LiteralPath $SummaryPath

@@ -8,7 +8,7 @@ fn table_lookup(table: own FixedVector<u8, 6>, key: own u64) -> value: own u8 re
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u8, 6>();
   region {
     place_back(vector: &uniq table, value: 11_u8);

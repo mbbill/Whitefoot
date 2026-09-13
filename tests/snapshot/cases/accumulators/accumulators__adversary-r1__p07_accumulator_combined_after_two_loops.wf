@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- count_a and count_b are produced by two independent scan loops over two different buffers, each individually bounded by its own trip count; the checked sum after both loops is provably at most 7.";
   let first = fixed_vector::<u8, 4>();
   region {

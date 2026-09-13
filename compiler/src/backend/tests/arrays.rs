@@ -36,7 +36,11 @@ fn read<const n: u64>['s](bytes: &SmallBytes<'s, n>) -> result: own u64 reads(by
   return checksum::<n>(bytes: bytes);
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
       None() => {
@@ -107,11 +111,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         // External visibility plus noinline preserves an ordinary pointer
         // ABI, including the helper-to-helper call, under host optimization.
         let module = retain_nested_run_calls(&super::emit_lowered(source, overlap))
@@ -216,11 +216,7 @@ __attribute__((constructor)) static void check_shared_abi(void) {
     if (wf_read_entry(&values[1]) != 127) exit(84);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         // Keep an externally callable pointer ABI as well as call boundaries:
         // noinline alone still lets IPSCCP specialize an internal helper to
         // this caller's one constant global and remove its pointer argument.
@@ -372,11 +368,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_nested_run_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -446,7 +438,11 @@ fn build['s](store: &uniq Heap<'s>) -> result: own Result<array<Record<'s>, 3>, 
   }
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match build(store: &uniq heap) {
       Err(error: refused) => {
@@ -477,11 +473,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_nested_run_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -540,7 +532,7 @@ fn slot_declarations(function: &str) -> (usize, usize) {
 /// it needs no recursive postcondition summary.
 #[test]
 fn recursive_full_arrays_merge_without_a_postcondition_summary() {
-    let source = br#"fn merge_step(left: own array<u32, 3>, right: own array<u32, 3>, out: own array<u32, 3>, i: own u64, j: own u64, k: own u64) -> result: own array<u32, 3> reads(left, right), writes(out) contract {
+    let source = br#"fn merge_step(left: own array<u32, 3>, right: own array<u32, 3>, out: own array<u32, 3>, i: own u64, j: own u64, k: own u64) -> result: own array<u32, 3> reads(left, right) contract {
   requires i <= 3_u64;
   requires j <= 3_u64;
   requires k <= 3_u64;
@@ -624,7 +616,7 @@ fn pass<T: linear>(value: own T) -> result: own T pure {
   return move value;
 }
 
-fn make['s](owner: own Box<'s, u64>, tag: own u64) -> result: own array<Record<'s>, 1> reads(owner) {
+fn make['s](owner: own Box<'s, u64>, tag: own u64) -> result: own array<Record<'s>, 1> pure {
   let record = Record(tag: tag, owner: move owner);
   let empty = fixed_vector::<Record<'s>, 1>();
   region {
@@ -634,13 +626,17 @@ fn make['s](owner: own Box<'s, u64>, tag: own u64) -> result: own array<Record<'
   return array_from_fixed(vector: move full);
 }
 
-fn relay['s](values: own array<Record<'s>, 1>) -> result: own array<Record<'s>, 1> reads(values) {
+fn relay['s](values: own array<Record<'s>, 1>) -> result: own array<Record<'s>, 1> pure {
   let passed = pass::<array<Record<'s>, 1>>(value: move values);
   let full = fixed_from_array(values: move passed);
   return array_from_fixed(vector: move full);
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region 'a {
     let store = arena_frame::<8, 8, 'a>();
     region {
@@ -677,11 +673,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_nested_run_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -747,11 +739,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = retain_nested_run_calls(&super::emit_lowered(source, overlap));
         let output = compile_and_run(&module);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
@@ -774,7 +762,7 @@ fn const_runs_are_immutable_globals_and_execute_through_index_and_len() {
     // claims, so all three outcomes return an ExitStatus without a trap edge.
     assert!(!main.contains("icmp ult i64"));
     assert_eq!(main.matches("icmp eq").count(), 2);
-    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 3);
+    assert_eq!(main.matches("call void @wf_exit_status").count(), 3);
     assert!(!main.contains("call void @wf_trap"));
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -1138,11 +1126,7 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        crate::OverlapLowering::Off,
-        crate::OverlapLowering::On,
-        crate::OverlapLowering::Completion,
-    ] {
+    for overlap in [crate::OverlapLowering::Off, crate::OverlapLowering::On] {
         let llvm = super::emit_lowered(source, overlap);
         let output = compile_and_run(&llvm);
         assert!(output.status.success(), "{overlap:?}: {output:?}");
@@ -1182,11 +1166,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_nested_run_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -1227,7 +1207,11 @@ fn carry['s](value: own FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>
   return pass::<FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1>>(value: move value);
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region 'a {
     let store = arena_frame::<8, 8, 'a>();
     region {
@@ -1254,11 +1238,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_nested_run_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -1310,7 +1290,11 @@ fn build['s](store: &uniq Heap<'s>) -> result: own Option<Tree<'s>> reads(store)
   }
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match build(store: &uniq heap) {
       None() => {
@@ -1323,11 +1307,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_nested_run_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -1369,7 +1349,7 @@ fn place['s](store: &uniq Heap<'s>, values: own array<Record, 2>) -> result: own
   }
 }
 
-fn read(storage: &Box<array<Record, 2>>, index: own u64) -> result: own u64 reads(storage) contract {
+fn read['s](storage: &Box<'s, array<Record, 2>>, index: own u64) -> result: own u64 reads(storage) contract {
   requires index < 2_u64;
 } {
   return deref(deref(storage))[index].payload[7_u64];
@@ -1384,7 +1364,11 @@ fn update['s](storage: own Box<'s, array<Record, 2>>) -> (result: own Box<'s, ar
   return move storage, move previous;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let first = make_record(tag: 11_u64);
   let second_tag = first.payload[0_u64] +wrap 11_u64;
   let second = make_record(tag: second_tag);
@@ -1437,11 +1421,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_nested_run_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")

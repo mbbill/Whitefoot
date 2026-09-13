@@ -488,13 +488,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     name: "True".to_owned(),
                     tag: 1,
                     fields: Vec::new(),
-                    constructor: CheckedConstructor::Prelude(crate::PreludeDeclarationId::new(1)),
+                    constructor: CheckedConstructor::Prelude(crate::BuiltinPreludeId::TRUE),
                 },
                 VariantDescriptor {
                     name: "False".to_owned(),
                     tag: 0,
                     fields: Vec::new(),
-                    constructor: CheckedConstructor::Prelude(crate::PreludeDeclarationId::new(2)),
+                    constructor: CheckedConstructor::Prelude(crate::BuiltinPreludeId::FALSE),
                 },
             ],
         }

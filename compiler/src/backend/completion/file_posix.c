@@ -66,12 +66,11 @@ extern ssize_t WF_COMPLETION_GETDIRENTRIES64(
     int64_t *
 );
 #elif defined(__linux__)
-/* glibc exports the exact facility used by the qualified Linux target.  It is
+/* glibc exports the batch facility used by the Linux native library. It is
  * declared here rather than reached through <dirent.h> for the same reason
  * the Darwin entry above is: the declaration is behind _GNU_SOURCE, which
  * this unit does not ask for, and the prototype is fixed by the ABI.  It is
- * intentionally not replaced with an opendir/readdir loop, which is a scan
- * built out of other operations [QUAL-2, QUAL-3]. */
+ * used directly so one engine request returns one bounded native batch. */
 #if !defined(WF_COMPLETION_GETDENTS64)
 #define WF_COMPLETION_GETDENTS64 getdents64
 #endif
@@ -97,7 +96,7 @@ _Static_assert(
  * Both endpoint kinds do exactly these two things before their own host call,
  * and both dispose of the socket on any refusal, because a listener or a
  * connection that was never created holds no credit and the permit goes back
- * to the program [SYS-10].  Returns -1 with `errno` set when the host refused
+ * to the program (ordinary native library).  Returns -1 with `errno` set when the host refused
  * the socket. */
 static int wf_socket_endpoint(
     const wf_file_request *request,
@@ -300,7 +299,7 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
 #endif
         break;
 #endif
-    /* The six socket kinds [SYS-17, SYS-18].  Each is exactly the host calls
+    /* The six socket kinds (ordinary native library).  Each is exactly the host calls
      * its operation names and nothing else; the descriptor accounting is the
      * emitted program's, through the permit it holds. */
     case WF_FILE_SOCKET_LISTEN: {

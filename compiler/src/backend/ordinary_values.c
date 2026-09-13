@@ -703,7 +703,14 @@ void wf__body_directory_next(wf_list_result *result, wf_value *source,
                                          end - start, &position, &record);
     wf__completion_file_join(&record, &amount, &error);
     memset(result, 0, sizeof(*result));
-    wf_read_result_value(&result->result, amount, error, start, end - start);
+    result->next = start;
+    if (amount < 0) {
+        result->result.tag = 1;
+        result->result.error.tag = 1;
+        wf_error(&result->result.error.error, error, 2);
+    } else if (amount == 0 && end != start) {
+        result->result.tag = 1;
+    }
     if (amount <= 0) return;
     if ((uint64_t)amount > end - start) abort();
     while (cursor < (uint64_t)amount) {
@@ -751,6 +758,6 @@ void wf__body_directory_next(wf_list_result *result, wf_value *source,
         cursor += extent;
         entries++;
     }
-    result->result.value = start + written;
+    result->next = start + written;
     result->entries = entries;
 }

@@ -81,8 +81,6 @@ pub enum FixedTerminal {
     Copy,
     /// `affine`.
     Affine,
-    /// `.`.
-    Dot,
     /// `i8`.
     I8,
     /// `i16`.
@@ -219,6 +217,8 @@ pub enum FixedTerminal {
     Deref,
     /// `entry`.
     Entry,
+    /// `.`.
+    Dot,
     /// `pure`.
     Pure,
     /// `reads`.
@@ -261,7 +261,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::RightBracket,
     FixedTerminal::Copy,
     FixedTerminal::Affine,
-    FixedTerminal::Dot,
     FixedTerminal::I8,
     FixedTerminal::I16,
     FixedTerminal::I32,
@@ -330,6 +329,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::GreaterEqual,
     FixedTerminal::Deref,
     FixedTerminal::Entry,
+    FixedTerminal::Dot,
     FixedTerminal::Pure,
     FixedTerminal::Reads,
     FixedTerminal::Writes,
@@ -842,23 +842,23 @@ mod tests {
                 Some(terminal)
             );
         }
-        assert_eq!(FixedTerminal::PercentChecked as u8, 92);
-        assert_eq!(FixedTerminal::For as u8, 60);
-        assert_eq!(FixedTerminal::In as u8, 61);
-        assert_eq!(FixedTerminal::DotDot as u8, 62);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 91);
+        assert_eq!(FixedTerminal::For as u8, 59);
+        assert_eq!(FixedTerminal::In as u8, 60);
+        assert_eq!(FixedTerminal::DotDot as u8, 61);
         assert_eq!(FixedTerminal::Ensures as u8, 16);
-        assert_eq!(FixedTerminal::Replace as u8, 56);
-        assert_eq!(FixedTerminal::Invariant as u8, 63);
-        assert_eq!(FixedTerminal::Use as u8, 64);
+        assert_eq!(FixedTerminal::Replace as u8, 55);
+        assert_eq!(FixedTerminal::Invariant as u8, 62);
+        assert_eq!(FixedTerminal::Use as u8, 63);
         assert_eq!(FixedTerminal::Is as u8, 18);
         // D7 uses first grammar occurrence for the fixed-terminal inventory;
         // function signatures and member applications move several keywords.
         assert_eq!(FixedTerminal::Linear as u8, 0);
         assert_eq!(FixedTerminal::Affine as u8, 29);
         assert_eq!(FixedTerminal::Copy as u8, 28);
-        assert_eq!(FixedTerminal::Dispose as u8, 72);
-        assert_eq!(FixedTerminal::MutSlice as u8, 44);
-        assert_eq!(FixedTerminal::Times as u8, 65);
+        assert_eq!(FixedTerminal::Dispose as u8, 71);
+        assert_eq!(FixedTerminal::MutSlice as u8, 43);
+        assert_eq!(FixedTerminal::Times as u8, 64);
         assert_eq!(TerminalPredicate::Identifier.index(), 103);
         assert_eq!(TerminalPredicate::Digits.index(), 110);
     }

@@ -3,7 +3,7 @@ struct MovingWindow {
   cursor: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- maintains a 4-slot fixed-point moving-average window over a struct field with a proved cursor bound";
   let history = fixed_vector::<u32, 4>();
   region {

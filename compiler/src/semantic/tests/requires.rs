@@ -202,7 +202,7 @@ fn main() -> status: own ExitStatus pure {
             .functions
             .iter()
             .find(|function| function.name == "main")
-            .expect("command main");
+            .expect("ordinary main");
         let CheckedStatement::Let {
             value: CheckedExpression::UserCall { requirements, .. },
             ..
@@ -493,7 +493,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn resolved_system_calls_in_requires_are_fn8_source_rejections() {
+fn ordinary_prelude_calls_in_requires_are_fn8_source_rejections() {
     assert_rule(
         br#"fn invalid() -> result: own ExitStatus pure contract {
   define status = exit_status(code: 0_u8);
@@ -647,7 +647,7 @@ fn goal_cell_deref_projection_retains_the_selected_referent_type() {
     // The holder is a store cell [S39] where it was the retiring `box<i32>`.
     // A cell carries no measure and its referent read is the same `deref`
     // projection, so the retained goal datum is unchanged.
-    let source = br#"fn positive(owner: own Box<i32>) -> result: own Box<i32> pure contract {
+    let source = br#"fn positive['heap](owner: own Box<'heap, i32>) -> result: own Box<'heap, i32> pure contract {
   requires deref(owner) > 0_i32;
 } {
   return move owner;
@@ -808,7 +808,15 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("unused generic requirement must survive symbolic checking: {outcome:?}");
         };
-        assert_eq!(checked.data.functions.len(), 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            1
+        );
         assert_eq!(checked.data.functions[0].name, "main");
         assert_eq!(checked.data.generic_requirements.len(), 1);
         let symbolic = &checked.data.generic_requirements[0];
@@ -979,7 +987,15 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("transitive symbolic validation must retain canonical entries: {outcome:?}");
         };
-        assert_eq!(checked.data.functions.len(), 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            1
+        );
         assert_eq!(checked.data.generic_requirements.len(), 2);
         assert_ne!(
             checked.data.generic_requirements[0].declaration,

@@ -89,7 +89,7 @@
 //! permission judgment therefore neither rechecks proofs nor models a proof
 //! failure path.
 //!
-//! **Invariant.** The window and staged judgments consult typing, declared
+//! **Invariant.** The window and counted-loop judgments consult typing, declared
 //! effect rows, resolved places [OWN-5, OWN-7], and statement-graph exit edges.
 //! The counted-loop judgment additionally consumes an already-successful
 //! [OP-4] disposition and its retained single-binder affine value image; it

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: back = 5 - i for i in 0..5 reaches back=5 when i=0, one past the 5-slot array (OOB)";
   let data = fixed_vector::<u64, 5>();
   region {

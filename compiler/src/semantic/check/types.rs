@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{
-    DeclarationClass, DeclarationRole, LexicalUseRole, PreludeDeclarationId, Production,
+    BuiltinPreludeId, DeclarationClass, DeclarationRole, LexicalUseRole, Production,
     ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
     UnsupportedSemanticFeature,
 };
@@ -230,7 +230,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             let usage = self.use_at(node, LexicalUseRole::Type)?;
             match usage.target() {
-                ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(0) => {
+                ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::BOOL => {
                     if targs.is_some() {
                         return self.issue_node(
                             SemanticRule::Type5,
@@ -243,7 +243,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     return Ok(CheckedType::Bool);
                 }
-                ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(3) => {
+                ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::OPTION => {
                     let value = self.option_type_argument_with(node, substitution)?;
                     return self
                         .prelude_nominals
@@ -252,7 +252,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .map(CheckedType::Nominal)
                         .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
-                ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(8) => {
+                ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::RESULT => {
                     let (ok, error) = self.result_type_arguments_with(node, substitution)?;
                     return self
                         .prelude_nominals
@@ -261,7 +261,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .map(CheckedType::Nominal)
                         .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
-                ResolvedTarget::Prelude(id) if matches!(id.ordinal(), 15 | 17 | 20) => {
+                ResolvedTarget::Prelude(id)
+                    if matches!(
+                        id,
+                        crate::BuiltinPreludeId::OVERFLOW_TYPE
+                            | crate::BuiltinPreludeId::DIV_ERROR_TYPE
+                            | crate::BuiltinPreludeId::NARROW_ERROR_TYPE
+                    ) =>
+                {
                     if targs.is_some() {
                         return self.issue_node(
                             SemanticRule::Type5,
@@ -272,10 +279,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             ),
                         );
                     }
-                    let ty = match id.ordinal() {
-                        15 => PreludeType::Overflow,
-                        17 => PreludeType::DivError,
-                        20 => PreludeType::NarrowError,
+                    let ty = match id {
+                        crate::BuiltinPreludeId::OVERFLOW_TYPE => PreludeType::Overflow,
+                        crate::BuiltinPreludeId::DIV_ERROR_TYPE => PreludeType::DivError,
+                        crate::BuiltinPreludeId::NARROW_ERROR_TYPE => PreludeType::NarrowError,
                         _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
                     };
                     return Ok(CheckedType::Nominal(self.prelude_nominal(ty)?));

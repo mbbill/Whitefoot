@@ -1,5 +1,9 @@
-fn main['heap](command.args as args: own Args, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Require one argument's complete target-native code-unit byte sequence to be the exact two bytes selected by the native target fixture, qualifying host_bytes_len and host_copy_bytes together [HOST-2, SYS-9].";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
       None() => {
@@ -18,7 +22,7 @@ fn main['heap](command.args as args: own Args, command.heap as heap: own Heap<'h
         region {
           match arg_get(args: &args, position: 1_u64) {
             Ok(value: text) => {
-              region 'v {
+              region {
                 let length = host_bytes_len(value: &text);
                 if length == 2_u64 {
                 } else {
@@ -27,7 +31,7 @@ fn main['heap](command.args as args: own Args, command.heap as heap: own Heap<'h
                 region {
                   let window = mut_slice_of(&uniq bytes);
                   region {
-                    match host_copy_bytes(value: &'v text, destination: &uniq window, start: 0_u64, end: 2_u64) {
+                    match host_copy_bytes(value: &text, destination: &uniq window, start: 0_u64, end: 2_u64) {
                       Ok(value: next) => {
                         if next == 2_u64 {
                         } else {

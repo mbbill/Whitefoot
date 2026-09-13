@@ -170,7 +170,7 @@ impl GoalDatum {
 /// Structural identity for an already-evaluated, occurrence-local value.
 ///
 /// Call actuals remain distinguishable from proof-obligation operands so
-/// FN-8's bind-first diagnostic cannot be selected for OP-2, OP-9, or SYS-8.
+/// FN-8's bind-first diagnostic cannot be selected for OP-2 or OP-9.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum EvaluatedValueOccurrence {
     CallArgument { call: NodePath, argument: u32 },

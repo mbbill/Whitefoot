@@ -112,18 +112,6 @@ impl CallTransport {
         }
     }
 
-    /// The transport one declared system-operation parameter selects.
-    ///
-    /// A system operation has no body, so its [SYS-2] declaration record
-    /// together with the rules stating that record's behaviour is the whole
-    /// of its declared contract, and [CALL-5]'s selector reads that record
-    /// rather than any summary of a target. [SYS-8] declares that the
-    /// half-open `[start, end)` extent its range-bearing family names is the
-    /// complete extent such an operation may change and that the extent is
-    /// element storage; the operand class carrying that extent is the
-    /// declared type of that parameter, so the row itself selects [CALL-3]'s
-    /// transport. Every other parameter selects from its declared mode.
-
     /// The transport one declared kernel-domain parameter selects [BLK-0].
     ///
     /// A row has no body either, so the same reading applies: the declared
@@ -308,11 +296,10 @@ pub(crate) struct ObligationOutcome {
     pub(crate) node_path: NodePath,
     /// The obligation family this occurrence belongs to.
     pub(crate) family: ObligationFamily,
-    /// Family-local occurrence ordinal: zero for every family except the two
-    /// independent SystemRange goals, which use zero and one.
+    /// Requirement ordinal within a kernel row; zero for single-goal families.
     pub(crate) conjunct: u8,
     /// The canonical total Bool domain predicate. Bounds obligations alone
-    /// carry `None`; OP-2, OP-9, and SYS-8 always retain one exact identity,
+    /// carry `None`; OP-2, OP-9, and ordinary call requirements retain one exact identity,
     /// using an occurrence-local evaluated-value leaf only when no stable
     /// structural operand identity exists.
     pub(crate) canonical_goal: Option<GoalExpression>,
@@ -1034,8 +1021,7 @@ pub(crate) struct CallGoalOutcome {
     pub(crate) goal: ConcreteGoal,
     /// The same goal in the terms the source wrote it in, rendered here
     /// because this is where the caller's binding names are in scope. [FN-8]
-    /// publishes it as its `instantiated_goal` payload, the way [OP-4] and
-    /// [SYS-8] publish their residual.
+    /// publishes it as its `instantiated_goal` payload, the way [OP-4] publishes its residual.
     pub(crate) rendered_goal: String,
     /// Exact declared-order actual count at this concrete call occurrence.
     /// This remains zero for a legal zero-argument call with a requirement.

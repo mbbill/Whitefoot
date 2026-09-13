@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: the body attempts to set the counted for-loop binder i directly, which the counted header does not carry as a mutable identity and must be rejected rather than silently accepted as a way to widen its proven range";
   let data = fixed_vector::<u8, 5>();
   region {

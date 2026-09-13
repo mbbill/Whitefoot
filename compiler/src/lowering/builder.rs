@@ -417,9 +417,8 @@ fn lower_parameter_type(
 /// The representation a borrow-mode value carries.
 ///
 /// A borrow addresses the owner's storage, including a Box's pointer slot.
-/// Opaque resources use the same address path; their qualified value ABI is
-/// adapted only when lowering a system operation [OWN-2, SYS-2]. The legacy
-/// buffer/view ABI retains its value representation.
+/// Ordinary opaque values use the same address path. The buffer/view ABI
+/// retains its descriptor representation for every callable body [OWN-2].
 fn lower_borrow_mode_type(
     mode: CheckedMode,
     ty: IrType,

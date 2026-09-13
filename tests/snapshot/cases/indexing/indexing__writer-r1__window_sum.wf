@@ -13,7 +13,7 @@ fn window_sum<const n: u64>(data: own FixedVector<u8, n>, start: own u64, end: o
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let data = fixed_vector::<u8, 8>();
   region {
     place_back(vector: &uniq data, value: 3_u8);

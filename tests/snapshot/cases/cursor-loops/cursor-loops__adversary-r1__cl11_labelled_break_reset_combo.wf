@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: an outer counted for resets an inner cursor each pass and a labelled break from the inner loop skips to the next outer row on sentinel";
   let grid = fixed_vector::<u8, 12>();
   for (

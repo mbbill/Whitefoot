@@ -355,7 +355,7 @@ fn allocate_put['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s>>, ke
   }
 }
 
-fn check_put['s](store: &uniq Heap<'s>, outcome: own PutOutcome<'s>, kind: own u64, expected: own u64) -> code: own u8 reads(outcome), writes(store) {
+fn check_put['s](store: &uniq Heap<'s>, outcome: own PutOutcome<'s>, kind: own u64, expected: own u64) -> code: own u8 writes(store) {
   match move outcome {
     Inserted() => {
       if kind != 1_u64 {
@@ -406,7 +406,7 @@ fn digest['s](slots: &Vector<'s, Slot<'s>>) -> result: own u64 reads(slots) {
   return hash;
 }
 
-fn cleanup['s](store: &uniq Heap<'s>, state: own Rehash<'s>) -> result: own unit writes(store, state.source, state.target, state.progress.held, state.progress.source_next, state.progress.next_probe, state.progress.phase) {
+fn cleanup['s](store: &uniq Heap<'s>, state: own Rehash<'s>) -> result: own unit writes(store, state) {
   dispose state;
   return unit;
 }

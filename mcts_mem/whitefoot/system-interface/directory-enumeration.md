@@ -12,6 +12,8 @@
 - 2026-08-18 (f8c81dfc) statement: that rejection is the gate working as designed, and it is why the first traversal program was rewritten before it ran. (code)
 - 2026-08-18 statement: the portable record header is smaller than any native one, so the in-place rewrite only ever moves bytes forward and cannot overwrite unread data. (code)
 
+- 2026-09-12 (d695f385) correction: the 2026-08-18 external-provenance rejection is retired by C2. Payload-derived indices still need ordinary bounds proofs, while the directory operation's range guarantee is an ordinary contract. The status, numeric endpoint and count are separate results because CALL-4 does not carry non-measure payload relations through a later own-place match; unconditional endpoint bounds survive without widening that rule. (sourced)
+
 ## Moves
 
 - 2026-08-18 (f8c81dfc) replaced [[enumeration-cursor-window]]: a handle owning its own window needs storage the system layer does not allocate, a second call to drain it, and a lifetime rule for entries it still holds, while the caller-range transfer reuses the existing one-attempt contract whole (sourced)

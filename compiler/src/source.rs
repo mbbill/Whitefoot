@@ -484,7 +484,7 @@ impl SourceBundle {
                 .iter()
                 .map(|(path, _, text)| SourceInput::new(path, text.as_bytes())),
         );
-        let mut bundle = Self::with_limits(&complete, limits)?;
+        let mut bundle = Self::from_inputs(&complete, limits, inputs.len())?;
         for (file, (_, kind, _)) in bundle.files[inputs.len()..]
             .iter_mut()
             .zip(crate::prelude::DECLARATIONS)
@@ -499,7 +499,16 @@ impl SourceBundle {
         inputs: &[SourceInput<'_>],
         limits: SourceLimits,
     ) -> Result<Self, SourceBundleError> {
+        Self::from_inputs(inputs, limits, inputs.len())
+    }
+
+    fn from_inputs(
+        inputs: &[SourceInput<'_>],
+        limits: SourceLimits,
+        writer_count: usize,
+    ) -> Result<Self, SourceBundleError> {
         let source_count = inputs.len();
+
         let source_count_u64 =
             u64::try_from(source_count).map_err(|_| SourceBundleError::ArithmeticOverflow)?;
         if source_count_u64 > u64::from(limits.max_sources) {
@@ -556,7 +565,7 @@ impl SourceBundle {
             total_bytes = next_total_bytes;
         }
 
-        if let Some((first, duplicate)) = find_duplicate_paths(inputs)? {
+        if let Some((first, duplicate)) = find_duplicate_paths(&inputs[..writer_count])? {
             let path =
                 LogicalPath::parse(inputs[duplicate].logical_path).map_err(
                     |error| match error {

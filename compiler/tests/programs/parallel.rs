@@ -23,7 +23,7 @@ use super::support::{
     corpus_program_files, program_permission_ledger, run_counting_grants,
     try_compile_programs_with_overlap,
 };
-use whitefoot::{CompilationFailureKind, module_requires_parallel_runtime};
+use whitefoot::module_requires_parallel_runtime;
 
 /// Both folds are handed out, in the same module, from the same source shape.
 ///
@@ -329,29 +329,13 @@ fn the_corpus_units_cover_every_program_file() {
 /// reaches the argument-handling path only and the link is what carries it;
 /// its search path is covered with real arguments in `wfgrep.rs`.
 ///
-/// What a host cannot build is read from the compiler rather than assumed: a
-/// target qualification failure is recorded rather than panicked on, and the
-/// case ends by requiring that the recorded list is empty. Every triple this
-/// compiler recognizes now has an approved [SYS-14] directory-enumeration row,
-/// so every unit of this corpus builds on every gated host; the arm survives
-/// because reading the compiler's own report is what makes that a checked
-/// statement rather than an assumption.
+/// Every source and target failure is a failing case, with no host exemption.
 #[test]
 fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
-    let mut beyond_this_target: Vec<String> = Vec::new();
     for unit in CORPUS_UNITS {
         let named = unit.join(" + ");
         let llvm = match try_compile_programs_with_overlap(unit) {
             Ok(llvm) => llvm,
-            // A target that qualifies for less than this corpus needs says so
-            // itself. Reading that report keeps every other corpus program
-            // covered on such a host instead of taking the whole case away
-            // from it; every other kind of failure is still a failure here.
-            // The assertion at the end of the case is that the list is empty.
-            Err(failure) if failure.kind() == CompilationFailureKind::TargetQualification => {
-                beyond_this_target.push(named);
-                continue;
-            }
             Err(failure) => panic!("{named} must compile under --par: {failure}"),
         };
         // Linking is the assertion: `build_program` fails the case if the host
@@ -384,14 +368,6 @@ fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
             );
         }
     }
-    // No unit of this corpus is out of a gated host's reach. The list was
-    // last nonempty when Linux had no approved [SYS-14] enumeration row and
-    // the two directory-walking programs did not compile there; that row
-    // landed, so the exemption is gone rather than narrowed.
-    assert!(
-        beyond_this_target.is_empty(),
-        "every corpus program must be within this target's reach: {beyond_this_target:?}"
-    );
 }
 
 /// The text of one emitted function definition, from its `define` line to its

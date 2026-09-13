@@ -9,7 +9,7 @@ fn running_bound(limit: own u64) -> total: own u64 pure {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- counted for with exactly one header invariant, multi-line form [INV-1].";
   let total = running_bound(limit: 5_u64);
   if total == 5_u64 {

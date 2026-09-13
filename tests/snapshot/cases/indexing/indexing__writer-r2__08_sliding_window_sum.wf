@@ -21,7 +21,7 @@ fn window_sum(data: own Slice<u32>, start: own u64, width: own u64) -> total: ow
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: the dominating branch establishes end <= spare, then the for-loop's automatic i < end fact composes with it under [OP-4]'s two-premise automatic rule, so the window subscript needs no written invariant.";
   let data = fixed_vector::<u32, 6>();
   region {

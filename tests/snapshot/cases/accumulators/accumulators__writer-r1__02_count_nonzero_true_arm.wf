@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: count is bumped only in the true arm; header invariant bounds count by i.";
   let data = fixed_vector::<u8, 6>();
   region {

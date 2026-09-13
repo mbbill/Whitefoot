@@ -122,9 +122,17 @@ including their diagnostics, captured operands and result-parent bookkeeping.
 Keeping `ReadBytes(next)` and `ListBytes(next, entries)` as special proof
 producers would preserve the violation. FN-9 currently routes only through
 `Result.Ok`. Use that existing form: a read returns `Result<u64, ReadStop>`;
-enumeration can return an endpoint `Result<u64, ListStop>` and an ordinary
-second integer result. Custom outcome enums remain ordinary data, but no
-unwritten fact follows from matching one. Broadening FN-9 is not part of C1.
+enumeration returns three ordinary results: `Result<unit, ListStop>`,
+`next: u64`, and `entries: u64`. Its unconditional contract is
+`start <= next <= end`. The implementation returns `next == start` on an
+error; that behavior is tested and adds no selected-Err proof premise.
+A caller can bind all
+three, match the outcome later, and retain the numeric endpoint's ordinary
+multi-result facts. CALL-4 deliberately defers transporting a selected
+enum-bound fact through a later match of an owned local; putting the numeric
+endpoint in its own result avoids relying on that absent proof route.
+Custom outcome enums remain ordinary data, but no unwritten fact follows
+from matching one. Broadening FN-9 or CALL-4 is not part of this removal.
 
 Input validation, short-transfer behavior, portable error classes, pathname
 encoding, and close-error policy are ordinary library API contracts and

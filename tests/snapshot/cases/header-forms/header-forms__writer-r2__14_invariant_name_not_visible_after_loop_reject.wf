@@ -12,7 +12,7 @@ fn touch_count(count: own u64) -> total: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "REJECT: the header invariant name never escapes the loop body, so a proof_use after the loop cannot resolve bound [INV-1].";
   let total = touch_count(count: 6_u64);
   return exit_status(code: 0_u8);

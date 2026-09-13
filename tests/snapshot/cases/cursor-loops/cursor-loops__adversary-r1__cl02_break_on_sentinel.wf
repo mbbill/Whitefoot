@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: ordinary loop scans a fixed array and breaks when it finds sentinel byte 9, index proven safe by the pre-index bound check";
   let values = fixed_vector::<u8, 8>();
   region {

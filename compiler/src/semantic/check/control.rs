@@ -71,9 +71,9 @@ impl GiveContext {
 pub(super) struct ControlCounters<'state> {
     pub(super) next_binding: &'state mut u32,
     pub(super) next_loop: &'state mut u32,
-    /// Source spelling of every allocated binding, indexed by [`BindingId`];
-    /// kept only to render the owner in a release-attributed EFF-2
-    /// diagnostic. Every allocation site pushes exactly one name.
+    /// Source spelling of every allocated binding, indexed by [`BindingId`],
+    /// for ordinary proof and effect diagnostics. Every binding allocation
+    /// site pushes exactly one name.
     pub(super) binding_names: &'state mut Vec<String>,
 }
 
@@ -234,6 +234,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         kind: SemanticIssueKind::ReturnMismatch,
                     }));
                 }
+                self.check_confined_destination(function, value.expression.ty(), None, node)?;
                 // [FN-1] owns the result mode; [OWN-4] owns the region
                 // relation between the returned borrow and the written
                 // `rtype` region, so the two are judged separately.
@@ -460,6 +461,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn check_let(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        counters: &mut ControlCounters<'_>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
+        let first_binding = *counters.next_binding;
+        let result = self.check_let_body(function, node, bindings, counters, scope)?;
+        // Every binding form shares the same destination judgment. In
+        // particular, a value initializer can deliver storage allocated in
+        // a region nested inside its own destination's scope.
+        let mut destinations = bindings
+            .values()
+            .filter(|local| local.binding.0 >= first_binding)
+            .collect::<Vec<_>>();
+        destinations.sort_by_key(|local| local.binding.0);
+        for local in destinations {
+            self.check_confined_destination(function, local.ty, Some(local.declaration), node)?;
+        }
+        Ok(result)
+    }
+
+    fn check_let_body(
         &self,
         function: &FunctionSignature,
         node: NodeId,

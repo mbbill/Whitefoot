@@ -87,7 +87,7 @@ fn try_take<T: affine, const n: u64>(vector: &uniq FixedVector<T, n>) -> taken: 
   return None<T>();
 }
 
-fn rebase<T: affine, const n: u64>(vector: own FixedVector<T, n>, spare: own FixedVector<T, n>) -> rebased: own FixedVector<T, n> reads(vector, spare), writes(vector, spare) contract {
+fn rebase<T: affine, const n: u64>(vector: own FixedVector<T, n>, spare: own FixedVector<T, n>) -> rebased: own FixedVector<T, n> reads(vector), writes(vector) contract {
   requires len_of(spare) <= 0_u64;
   requires room_of(spare) >= n;
   requires room_of(spare) <= n;

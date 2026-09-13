@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a counted for loop maintains a windowed tally cursor that resets to zero inside the body whenever it reaches a fixed window size, while a separate running grand total keeps accumulating across every window.";
   let values = fixed_vector::<u32, 9>();
   for (

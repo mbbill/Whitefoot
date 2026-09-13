@@ -76,7 +76,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("(", "LeftParen"),
         (")", "RightParen"),
         (",", "Comma"),
-        ("command", "Command"),
         ("fn", "Fn"),
         ("->", "ThinArrow"),
         ("requires", "Requires"),
@@ -132,7 +131,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("reads", "Reads"),
         ("writes", "Writes"),
         ("allocates", "Allocates"),
-        ("as", "As"),
         // FLOOR-5 additions: `if` plus the twenty `infix_op` spellings.
         // `else` already exists for statement and value conditionals. Verified
         // against the fixed delta's [GRAM-5] block, not guessed.
@@ -551,9 +549,23 @@ pub fn follow_sets(grammar: &Grammar, first: &First, start: usize) -> Follow {
     // the same fn_sig production checks the declaration itself. This root
     // continuation does not add fn_sig to the writer's item production.
     if let Some(signature) = grammar.index.get("fn_sig") {
+        // The record uses the same separator as an ordinary formal member.
+        // Retain that grammar occurrence as the lookahead's provenance.
+        let formal = grammar.index["formal_decl"];
+        let mut pending = vec![grammar.roots[formal]];
+        let mut separator = None;
+        while let Some(node) = pending.pop() {
+            if matches!(&grammar.nodes[node].kind, Kind::Terminal(predicates)
+                if predicates.as_slice() == [Pred::Fixed("Semicolon")])
+            {
+                separator = Some(node);
+                break;
+            }
+            pending.extend_from_slice(&grammar.nodes[node].children);
+        }
         follow.production[*signature].insert(vec![Tok {
             pred: Pred::Fixed("Semicolon"),
-            prov: None,
+            prov: Some(separator.expect("formal members have a signature separator")),
             tname: None,
             atom_only: false,
             inside: false,

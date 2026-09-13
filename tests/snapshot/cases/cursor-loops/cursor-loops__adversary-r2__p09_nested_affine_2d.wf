@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: nested counted loops over a 3x4 flat array with affine index row*4+col stay in bounds";
   let grid = fixed_vector::<u64, 12>();
   for (

@@ -30,13 +30,12 @@ extern "C" {
 
 /* ------------------------------------------------- the typed file request */
 
-/* Whether this build's family has the [QUAL-2] directory-enumeration
+/* Whether this native library build has the directory-enumeration
  * facility: one host call that reports a bounded batch of an open directory's
  * entries and advances that descriptor's own position.  Darwin, Linux and
  * Windows all do, through different calls writing different records; a family
- * that has none compiles no enumeration request kind at all, which is the C
- * side of the same refusal `backend/qualification.rs` makes for such a
- * target. */
+ * that has none compiles no enumeration request kind in this private engine.
+ * This build capability does not participate in source acceptance. */
 #if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
 #define WF_FILE_HAS_DIRECTORY_NEXT 1
 #endif
@@ -58,7 +57,7 @@ enum wf_file_operation_kind {
      * bytes it left behind. */
     WF_FILE_DIRECTORY_NEXT = 8,
 #endif
-    /* The six TCP request kinds [SYS-17, SYS-18].  Their values are fixed
+    /* The six TCP request kinds (ordinary native library).  Their values are fixed
      * rather than following the enumerator above it, because the directory
      * kind is compiled only on a family that has the facility and these are
      * compiled on every family. */
@@ -78,18 +77,18 @@ enum wf_file_operation_kind {
     WF_FILE_SOCKET_RECEIVE = 12,
     WF_FILE_SOCKET_SEND = 13,
     /* One direction's half-close, and the close of the target's object when
-     * it is the pair's second release [SYS-18]. */
+     * it is the pair's second release (ordinary native library). */
     WF_FILE_SOCKET_SHUTDOWN = 14,
 };
 
-/* Which direction of one connection a half-close releases [SYS-18]. */
+/* Which direction of one connection a half-close releases (ordinary native library). */
 enum wf_socket_direction {
     WF_SOCKET_DIRECTION_RECEIVE = 0,
     WF_SOCKET_DIRECTION_SEND = 1
 };
 
 /* One internet address in exactly the form an emitted `SocketAddress` value
- * carries [SYS-16].
+ * carries (ordinary native library).
  *
  * Sixteen address bytes in two 64-bit words, then the port in the low sixteen
  * bits of a 32-bit word whose bit 16 selects the family.  Byte `i` of the
@@ -134,12 +133,10 @@ enum wf_file_open_outcome {
 
 /* One typed request, filled by submit into the submitting frame's record.
  *
- * An open's path bytes are the submitting frame's own and are never copied:
- * the emitter stages the component into the frame (`CompletionSlot::Component`)
- * and [SYS-2]'s loan on it holds until the join, so the kernel or the helper
- * resolves the caller's bytes in place.  That is what removed the record's
- * path storage, the "path does not fit" refusal, and the demoted-open counter
- * with it (design §5, §7). */
+ * Path bytes belong to the ordinary library call's local storage. Its native
+ * body waits for the private request before returning, so both the record and
+ * every borrowed byte remain live until the engine has finished using them.
+ * The engine retains pointers and does not copy the path payload. */
 typedef struct wf_file_request {
     enum wf_file_operation_kind kind;
     union {

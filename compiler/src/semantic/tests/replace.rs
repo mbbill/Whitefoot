@@ -384,7 +384,7 @@ fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_oblig
             matches!(target.path.as_slice(), [super::super::model::CheckedPlaceStep::Subscript(index)] if !index.obligation.components().is_empty())
         );
         assert!(matches!(
-            &main.body.as_deref().expect("WF body")[5],
+            main.body.as_deref().expect("WF body")[5],
             CheckedStatement::Replace {
                 target: CheckedSetTarget::Storage(_),
                 ..
@@ -627,7 +627,7 @@ fn main() -> status: own ExitStatus pure {
 /// accepted and the fresh binding owns the previous box.
 #[test]
 fn replace_of_a_cell_descriptor_accepts() {
-    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 1_u64) {
       Ok(value: first) => {
@@ -657,7 +657,7 @@ fn replace_of_a_cell_descriptor_accepts() {
         };
         let main = &checked.data.functions[0];
         assert!(
-            replace_reachable(&main.body.as_deref().expect("WF body")),
+            replace_reachable(main.body.as_deref().expect("WF body")),
             "the exchange must remain a checked Replace"
         );
     });

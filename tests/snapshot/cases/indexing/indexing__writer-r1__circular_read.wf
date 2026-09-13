@@ -14,7 +14,7 @@ fn circular_read(table: own FixedVector<u8, 6>, base: own u64, steps: own u64) -
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u8, 6>();
   region {
     place_back(vector: &uniq table, value: 0_u8);

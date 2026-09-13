@@ -7,6 +7,8 @@
 - Optional optimization facts may improve accepted code but never change acceptance or semantics. Current proof choices are recorded in [[checks-and-proofs]].
 - Before real project adoption, migration costs of existing language designs are excluded from language-selection grounds. Real project compatibility needs are weighed against improvement benefits, actual impact, and migration capability.
 
+- Host interaction is fully represented by ordinary values, signatures, ownership and proof rules. Native implementation origin creates no language exception; [[system-interface]] records the interface choices.
+
 ## Facts
 
 - 2026-09-06 owner clarification: W1 means constraints plus usable guidance should steer lower-cost AI authors toward efficient implementation classes and expose architectural mistakes early. It does not mean every accepted program is globally optimal. The intended long-term collaboration has stronger AI designing architecture and interfaces while lower-cost AI implements components; browser-scale work is a motivating goal, and the organization remains to be investigated. Backward compatibility is lower priority because AI-assisted migration reduces editing cost, while verification of migrated behavior remains necessary. Self-hosting and proving core correctness are separate future objectives. (sourced)

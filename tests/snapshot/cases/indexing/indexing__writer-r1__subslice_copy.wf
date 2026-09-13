@@ -35,7 +35,7 @@ fn copy_window(src: own Slice<u8>, start: own u64, width: own u64, dst: &uniq Mu
   return count;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<13, 1, 'w>();
     region {

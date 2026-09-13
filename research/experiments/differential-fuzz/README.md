@@ -8,7 +8,7 @@ contain. A passing suite is not
 coverage: it is blind to every program nobody thought to write. This experiment
 is the mechanical source of programs nobody thought of.
 
-The property under test is the one [PAR-1], [PAR-2], and [PAR-3] all state in
+The property under test is the one [PAR-1] and [PAR-2] state in
 the same words: *bindings and every Whitefoot state place equal the source-order
 result*, and *whether an overlap was performed at all is not observable*. That
 makes a differential oracle exact rather than statistical. One program compiled
@@ -21,14 +21,14 @@ lowering mistranslated, or the harness lied.
 
 ## What it does
 
-`src/generator.rs` writes accepted Whitefoot command programs from the grammar
+`src/generator.rs` writes ordinary Whitefoot programs from the grammar
 fence [GRAM-4, GRAM-5] under a typing and ownership environment, so the emitted
 forms are grammar-derived rather than string-spliced: reads and writes on
 stdout and stderr, opens and positioned reads over a fixture tree, directory
 enumeration, counted and unbounded loops, matches with typed exits, user
-functions carrying real effect rows, always-true claims, and buffers with
+functions carrying real effect rows, checked local invariants, and buffers with
 guarded and structurally-proved subscripts. It biases toward the shapes the
-three permissions can admit — independent calls on disjoint places, iteration-own
+current permissions can admit — independent calls on disjoint places, iteration-own
 scratch, accumulators written in source order — and toward their exact
 boundaries: a shared destination buffer, a second write through one `Output`, a
 `break` after the submission, scratch hoisted above the loop.
@@ -42,6 +42,22 @@ source that still compiles and still differs.
 
 A generated program the compiler rejects is discarded and counted by the rule
 its diagnostic cites, so generator bias stays visible instead of silent.
+
+## Ordinary host-value migration
+
+Under v0.58 the entry takes ordinary `Inputs`, acquired handles close explicitly
+on every exit, and direct factory calls replace permits. Ordinary WF helpers
+construct the required views and preserve buffer-length facts in two-state
+contracts. The generator emits current comparison, call, loop and view forms;
+the former claim/index shape retains its arithmetic and indexed mutation with
+an erased invariant.
+
+PAR-3 and its stage ledger are retired. All four file-loop variants remain,
+including hoisted and shared scratch and the early-break path. Distinct output
+wrappers share an explicit state operand and can no longer be assumed independent
+when native redirection aliases them. The oracle still executes the complete
+sequential/default/parallel and worker/helper matrix, including delayed FIFO
+reads; removing stage counts does not remove any workload or byte comparison.
 
 ## Running it
 

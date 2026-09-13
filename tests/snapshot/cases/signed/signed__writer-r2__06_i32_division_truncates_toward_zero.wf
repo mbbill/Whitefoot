@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: exact division on negative i32 operands truncates toward zero, not floor.";
   let dividend = -7_i32;
   let divisor = 2_i32;

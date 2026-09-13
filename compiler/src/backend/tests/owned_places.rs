@@ -11,7 +11,9 @@ pub(super) fn retain_calls(module: &str) -> String {
     let result = module
         .lines()
         .map(|line| {
-            if line.starts_with("define internal ")
+            if line.starts_with("define ")
+                && line.contains(" @wf_")
+                && !line.contains(" @wf__")
                 && let Some(header) = line.strip_suffix(" {")
             {
                 retained += 1;
@@ -58,7 +60,7 @@ fn relay(value: own Row, bias: own u64) -> result: own Row reads(value.left, val
   return move updated;
 }
 
-fn repeat(value: own Row, count: own u64) -> result: own Row reads(value.left, value.right), writes(value.left, value.right) {
+fn repeat(value: own Row, count: own u64) -> result: own Row reads(value, value.left, value.right), writes(value, value.left, value.right) {
   let before = 0_u8;
   let after = 0_u16;
   for (iteration in 0_u64..count) {
@@ -101,11 +103,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         // Retaining calls makes the callee write the complete padded result
         // before its caller extracts the middle field and the later sibling.
@@ -169,11 +167,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         assert_success(&module);
         assert_success(&retain_calls(&module));
@@ -233,11 +227,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         assert_success(&module);
         assert_success(&retain_calls(&module));
@@ -295,11 +285,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         assert_success(&module);
         assert_success(&retain_calls(&module));
@@ -329,7 +315,11 @@ fn relay(seed: own u64) -> result: own Result<Record, u8> pure {
   return make_record(seed: seed);
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<Record>(store: &uniq heap, count: 1_u64) {
       None() => {
@@ -378,11 +368,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -466,11 +452,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         assert_success(&retain_calls(&module));
     }
@@ -597,11 +579,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         // The call inside relay can place its result in its consumed second
         // input's backing while choose returns its first input. Retained calls
@@ -645,11 +623,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         assert_success(&retain_calls(&module));
     }
@@ -657,7 +631,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn general_and_extent_boxes_keep_distinct_cleanup_actions() {
-    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -688,11 +666,7 @@ fn general_and_extent_boxes_keep_distinct_cleanup_actions() {
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -739,7 +713,11 @@ fn extract['s](cell: own Box<'s, u64>, witness: &Box<'s, u64>) -> value: own u64
   return value;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region 'a {
     let store = arena_frame::<16, 8, 'a>();
     region {
@@ -814,11 +792,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -850,7 +824,7 @@ fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previou
   return move displaced;
 }
 
-fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own Observed reads(owner, incoming), writes(owner, store) {
+fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own Observed reads(owner), writes(owner, store) {
   let previous_value = 0_u64;
   region {
     let previous = exchange(slot: &uniq owner, incoming: move incoming);
@@ -860,7 +834,11 @@ fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq
   return Observed(previous: previous_value, current: current_value);
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -887,11 +865,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -911,7 +885,11 @@ fn borrowed_box_replacement_updates_the_owner_and_releases_each_cell_once() {
   return move displaced;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -940,11 +918,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -982,7 +956,11 @@ fn relay['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: 
   }
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -1016,11 +994,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -1067,7 +1041,11 @@ fn read_child['s](tree: &Box<'s, Node<'s>>) -> result: own u64 reads(tree) {
   }
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -1117,11 +1095,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -1554,7 +1528,7 @@ fn prepare['s](value: own Pair<'s>, counter: &uniq u64) -> result: own Pair<'s> 
   return move value;
 }
 
-fn finish['s](value: own Pair<'s>, store: &uniq Heap<'s>) -> result: own ExitStatus reads(value.first, value.second), writes(value.first, value.second, store) {
+fn finish['s](value: own Pair<'s>, store: &uniq Heap<'s>) -> result: own ExitStatus writes(store) {
   let Pair(first: first_cell, second: second_cell) = move value;
   let first_value = deref(first_cell);
   let second_value = deref(second_cell);
@@ -1569,7 +1543,11 @@ fn finish['s](value: own Pair<'s>, store: &uniq Heap<'s>) -> result: own ExitSta
   return exit_status(code: 0_u8);
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let counter = 0_u64;
   region {
     match construct(store: &uniq heap, counter: &uniq counter) {
@@ -1638,7 +1616,7 @@ fn value_if_cleans_unchosen_owners_before_reusing_delivery_storage() {
   value: Box<'s, u64>;
 }
 
-fn choose['s](left: own Cell<'s>, right: own Cell<'s>, flag: own Bool, store: &uniq Heap<'s>) -> result: own u64 reads(left.value, right.value), writes(store) {
+fn choose['s](left: own Cell<'s>, right: own Cell<'s>, flag: own Bool, store: &uniq Heap<'s>) -> result: own u64 writes(store) {
   let selected = if flag {
     let first = move left;
     let second = move right;
@@ -1651,7 +1629,11 @@ fn choose['s](left: own Cell<'s>, right: own Cell<'s>, flag: own Bool, store: &u
   return deref(selected.value);
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   for (round in 0_u64..2_u64) {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: first_back) => {
@@ -1707,7 +1689,7 @@ fn touch(value: &uniq u64) -> result: own unit writes(value) {
   return unit;
 }
 
-fn release['s](value: own Holder<'s>, store: &uniq Heap<'s>, early: own Bool) -> result: own u8 reads(value.stamp), writes(value.cell, value.bytes, value.stamp, store) {
+fn release['s](value: own Holder<'s>, store: &uniq Heap<'s>, early: own Bool) -> result: own u8 reads(value.stamp), writes(value, value.stamp, store) {
   region {
     touch(value: &uniq value.stamp);
   }
@@ -1721,7 +1703,11 @@ fn release['s](value: own Holder<'s>, store: &uniq Heap<'s>, early: own Bool) ->
   return 0_u8;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   for (round in 0_u64..2_u64) {
     match heap_box(store: &uniq heap, value: 17_u64) {
       Err(error: returned) => {
@@ -1933,7 +1919,11 @@ fn exercise['s](storage: own Box<'s, FixedVector<box<u64>, 2>>) -> result: own C
   }
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region 'a {
     let store = arena_frame::<128, 16, 'a>();
     let empty_heap = fixed_vector::<box<u64>, 2>();
@@ -1975,11 +1965,7 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
   }
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -2004,11 +1990,7 @@ fn statement_children_keep_displaced_owners_and_provider_results_alive() {
     let source = include_bytes!(
         "../../../../tests/conformance/cases/own6-pos-statement-children-use-a-longer-local-region.wf"
     );
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         assert_success(&module);
         assert_success(&retain_calls(&module));
@@ -2054,11 +2036,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
@@ -2097,11 +2075,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 2_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")

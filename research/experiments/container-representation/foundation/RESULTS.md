@@ -579,3 +579,21 @@ the arguments also support standalone measurement runs.
 
 [rust-reserve]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/vec/mod.rs#L1540-L1579
 [rust-convert]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/boxed/convert.rs#L259-L311
+
+## C2 ordinary-host-values rerun
+
+On 2026-09-12 PDT, `make measure` passed with the C2 v0.58 worktree based on
+`d695f385`, Apple Clang 21.0.0 and Rust 1.98.1 on arm64 macOS 26.6.2. The
+finite models, native layout/control probes and `large-result.wf` operation
+chain are unchanged. The retained-producer adapter now recognizes an ordinary
+linkable WF definition before adding `noinline`.
+
+The optimized large-result module has SHA-256
+`357f44038dbfeef01826eb406a1497526994926b5b1d9c89c6316e626ec744c1`.
+Its `make_record` producer stays retained, and `build_record` still contains
+an 8,208-byte result transfer and a 4,096-byte payload transfer. These are
+current emitted-code costs, not a timing attribution or a claim that C2
+introduced them. This witness contains no timed host call, factory access or
+PAR-3 completion overlap. The C2 direct-container timings are recorded in
+[the dense rerun](../dense/RESULTS.md#c2-ordinary-host-values-rerun) and
+[the family rerun](../families/RESULTS.md#ordinary-host-values-amendment-c2-v058).

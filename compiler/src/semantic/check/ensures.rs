@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use crate::FixedTerminal;
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationClass, DeclarationId, LexicalUseRole, PostconditionCandidateRecord,
-    PostconditionResolutionRecord, PostconditionSelectorClass, PreludeDeclarationId, Production,
-    ResolvedTarget, SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation,
-    SemanticRule, SourceOrigin,
+    BuiltinPreludeId, DeclarationClass, DeclarationId, LexicalUseRole,
+    PostconditionCandidateRecord, PostconditionResolutionRecord, PostconditionSelectorClass,
+    Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssue, SemanticIssueKind,
+    SemanticLocation, SemanticRule, SourceOrigin,
 };
 
 use super::super::goal::{GoalOperation, GoalProjection};
@@ -722,7 +722,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         selectors: &[CheckedPostconditionSelector],
         relations: &[RelationTemplate],
     ) -> Result<(), CheckStop> {
-        let mut routes: Vec<Option<PreludeDeclarationId>> = vec![None];
+        let mut routes: Vec<Option<BuiltinPreludeId>> = vec![None];
         for selector in selectors {
             if let Some(variant) = selector.variant
                 && !routes.contains(&Some(variant))
@@ -2022,7 +2022,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     &field.candidate,
                     Some(variant),
                     Some(PostconditionFieldIdentity {
-                        declaration: PreludeDeclarationId::new(12),
+                        declaration: BuiltinPreludeId::OK_VALUE,
                         origin: field.origin.clone(),
                     }),
                 )
@@ -2071,9 +2071,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self
                         .issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
                 }
-                if record.variant_target
-                    != Some(ResolvedTarget::Prelude(PreludeDeclarationId::new(11)))
-                {
+                if record.variant_target != Some(ResolvedTarget::Prelude(BuiltinPreludeId::OK)) {
                     return self
                         .issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
                 }

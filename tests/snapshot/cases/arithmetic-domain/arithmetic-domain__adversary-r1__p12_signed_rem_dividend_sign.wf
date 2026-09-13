@@ -6,7 +6,7 @@ fn probe() -> result: own i32 pure {
   return r;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: signed remainder truncates toward zero, -7%2=-1.";
   let v = probe();
   if v == -1_i32 {

@@ -1,9 +1,13 @@
-# Program-level I/O measurement for the unified-state completion model.
+# Program-level measurement of ordinary linked I/O functions and native controls.
 #
 # Three lines per workload, all publishing the same bytes:
 #   N  the best hand-written native shape (thread pool, io_uring)
-#   S  the Whitefoot program built with --no-overlap, the sequential reference
-#   C  the Whitefoot program built the way it ships, with completion overlap
+#   S  the Whitefoot program built with --no-overlap
+#   C  the same Whitefoot program built with the default lowering
+#
+# These retained labels do not assert that the two WF modules differ. C2's
+# ordinary shared-factory calls serialize, and PAR-3 staging is deleted; the
+# measured many-files modules are identical in both modes. See C2-RESULTS.md.
 #
 # This is a measurement bundle, not a gate. It is deliberately not reachable
 # from the repository's `make check`: it generates a large tree, runs for
@@ -15,8 +19,8 @@
 #   make -C research/experiments/io-completion-bench linux     the Linux table
 #
 # Generated trees, binaries, and raw output stay in the scratch root. Only the
-# summarized table is committed, in
-# research/investigations/io-model/RESULTS.md.
+# summarized tables and their owned sample artifacts are retained here and in
+# research/investigations/io-model/RESULTS.md (historical completion results).
 
 ROOT := $(abspath ../../..)
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
@@ -136,9 +140,8 @@ $(BUILD)/pipe_producer: pipe_producer.c | prepare
 $(BUILD)/pipe_harness: pipe_harness.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
 
-# The C line and the S line are one source compiled two ways. Nothing else
-# differs between them, which is what makes the pair a statement about the
-# lowering rather than about two programs.
+# The C and S labels retain the same source under two lowering configurations.
+# An identical emitted module makes this pair a measurement-noise control.
 $(BUILD)/%: programs/%.wf compiler | prepare
 	$(WFC) -o $@ $<
 

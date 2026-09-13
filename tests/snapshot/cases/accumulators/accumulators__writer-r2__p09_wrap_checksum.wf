@@ -1,6 +1,6 @@
 const packet: FixedVector<u8, 6> =[200_u8, 101_u8, 50_u8, 221_u8, 30_u8, 11_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: conditional accumulation with the explicit .wrap spelling needs no bound proof, since modular checksum semantics are the intended meaning here.";
   let sum = 0_u32;
   for (i in 0_u64..6_u64) {

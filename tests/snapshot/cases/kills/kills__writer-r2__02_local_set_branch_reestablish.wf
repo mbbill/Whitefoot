@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- a local's bound dies at its own set [ENT-5](a); the guard after the write reestablishes it before use.";
   let data = fixed_vector::<u8, 4>();
   region {

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- peak tracks the running imax of the scanned u8 bytes, so peak can never exceed u8::MAX=255; table has length 256, so table[cvt::<u8,u64>(peak)] (max index 255) is always in bounds.";
   let data = fixed_vector::<u8, 4>();
   region {

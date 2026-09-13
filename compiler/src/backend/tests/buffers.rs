@@ -10,7 +10,7 @@ fn generic_allocation_fit_uses_each_concrete_element_ceiling() {
   return fits;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
   let scalar_boundary = fits_element::<u64>(count: 2305843009213693951_u64);
   if scalar_boundary {
   } else {
@@ -29,12 +29,12 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
   if inline_overflow {
     return exit_status(code: 4_u8);
   }
-  let stored_boundary = fits_element::<Vector<u8>>(count: 576460752303423487_u64);
+  let stored_boundary = fits_element::<Vector<'heap, u8>>(count: 576460752303423487_u64);
   if stored_boundary {
   } else {
     return exit_status(code: 5_u8);
   }
-  let stored_overflow = fits_element::<Vector<u8>>(count: 576460752303423488_u64);
+  let stored_overflow = fits_element::<Vector<'heap, u8>>(count: 576460752303423488_u64);
   if stored_overflow {
     return exit_status(code: 6_u8);
   }
@@ -63,8 +63,12 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-const U64_STORE_TAKE: &[u8] = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+const U64_STORE_TAKE: &[u8] = br#"fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "One eight-byte slot taken from the general store, whose actual alignment the selected allocator has to promise.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u64>(store: &uniq heap, count: 1_u64) {
       None() => {
@@ -79,8 +83,12 @@ const U64_STORE_TAKE: &[u8] = br#"fn main(command.heap as heap: own Heap) -> sta
 }
 "#;
 
-const U64_STORE_CELL: &[u8] = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+const U64_STORE_CELL: &[u8] = br#"fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "One eight-byte cell taken from the same store, the other half of the same obligation S39.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_box(store: &uniq heap, value: 7_u64) {
       Ok(value: made) => {
@@ -107,7 +115,7 @@ const U64_STORE_CELL: &[u8] = br#"fn main(command.heap as heap: own Heap) -> sta
 #[test]
 fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
     with_ir(AFFINE_INVARIANT_BOUNDED_ALLOCATION, |program| {
-        let host = TargetLayout::host().expect("the backend test runs on a qualified host");
+        let host = TargetLayout::host().expect("the backend test runs on a supported host layout");
 
         let exact = host.with_runtime_allocation_limits_for_test(2000, 8);
         assert_eq!(validate_program(exact, program), Ok(()));
@@ -136,8 +144,12 @@ fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
 /// — at any element type whose stride makes the fit goal underivable.
 #[test]
 fn a_store_take_of_an_unbounded_runtime_count_emits_rather_than_stopping_at_the_target() {
-    const UNBOUNDED_STORE_TAKE: &[u8] = br#"fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
+    const UNBOUNDED_STORE_TAKE: &[u8] = br#"fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "The count is the invocation's own argument count, which no source fact bounds.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let n = 0_u64;
   region {
     set n = args_count(args: &args);
@@ -156,7 +168,7 @@ fn a_store_take_of_an_unbounded_runtime_count_emits_rather_than_stopping_at_the_
 }
 "#;
     with_ir(UNBOUNDED_STORE_TAKE, |program| {
-        let host = TargetLayout::host().expect("the backend test runs on a qualified host");
+        let host = TargetLayout::host().expect("the backend test runs on a supported host layout");
         assert_eq!(validate_program(host, program), Ok(()));
     });
     let output = compile_and_run(&compile(UNBOUNDED_STORE_TAKE));
@@ -177,7 +189,8 @@ fn a_store_take_of_an_unbounded_runtime_count_emits_rather_than_stopping_at_the_
 fn a_store_take_and_a_store_cell_must_fit_the_selected_allocator_alignment() {
     for fixture in [U64_STORE_TAKE, U64_STORE_CELL] {
         with_ir(fixture, |program| {
-            let host = TargetLayout::host().expect("the backend test runs on a qualified host");
+            let host =
+                TargetLayout::host().expect("the backend test runs on a supported host layout");
 
             // The byte domain stays the host's own: a store take is not judged
             // against an allocator byte ceiling at all, and cutting the
@@ -345,7 +358,7 @@ fn main() -> status: own ExitStatus pure {
     ] {
         assert!(
             !llvm.contains(absent),
-            "a target-qualified allocation must not emit {absent}:\n{llvm}"
+            "an allocation checked against the target layout must not emit {absent}:\n{llvm}"
         );
     }
 
@@ -398,7 +411,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn op9_overflow_is_rejected_before_lowering() {
-    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u64>(store: &uniq heap, count: 18446744073709551615_u64) {
       None() => {
@@ -430,7 +447,11 @@ fn an_out_of_bounds_run_set_is_an_op4_compile_rejection() {
   return 9_u8;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
       None() => {
@@ -452,7 +473,11 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
 
 #[test]
 fn an_empty_run_has_zero_length_and_a_normal_release() {
-    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 0_u64) {
       None() => {
@@ -478,7 +503,7 @@ fn an_empty_run_has_zero_length_and_a_normal_release() {
 
 #[test]
 fn run_cleanup_is_explicit_on_return_and_break_edges() {
-    let source = br#"fn cleanup(flag: own Bool, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+    let source = br#"fn cleanup['s](flag: own Bool, store: &uniq Heap<'s>) -> result: own unit reads(store), writes(store), allocates(store) {
   doc "Every edge that leaves this scope holding a run carries that run's release: the early return, the loop break, and the final return.";
   region {
     match heap_vector::<u8>(store: &uniq deref(store), count: 2_u64) {
@@ -507,7 +532,11 @@ fn run_cleanup_is_explicit_on_return_and_break_edges() {
   }
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let true_value = True();
   let false_value = False();
   region {
@@ -567,7 +596,7 @@ fn borrowed_columns_cross_helpers_without_transferring_ownership() {
     // checksum branch and the success exit — ten in all — and the releases are
     // the general store's, one per run on each edge that leaves holding them.
     assert!(!main.contains("call void @wf_trap"));
-    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 10);
+    assert_eq!(main.matches("call void @wf_exit_status").count(), 10);
     assert_eq!(main.matches("call void @free").count(), 17);
     assert!(main.contains("call i8 @wf_fill"));
     assert!(main.contains("call i64 @wf_fold"));
@@ -635,8 +664,8 @@ fn main() -> status: own ExitStatus pure {
     let update = emitted_function(&llvm, "update");
     let observe = emitted_function(&llvm, "observe");
     let main = emitted_function(&llvm, "main");
-    assert!(update.starts_with("define internal i8 @wf_update(ptr "));
-    assert!(observe.starts_with("define internal i64 @wf_observe(ptr "));
+    assert!(update.starts_with("define i8 @wf_update(ptr "));
+    assert!(observe.starts_with("define i64 @wf_observe(ptr "));
     assert!(main.contains("call i8 @wf_update(ptr "));
     assert!(main.contains("call i64 @wf_observe(ptr "));
     assert!(!update.contains("call void @free"));
@@ -660,8 +689,8 @@ fn compiler_independent_borrowed_pool_tree_executes() {
     // The case lends the pool as two view descriptors and a scalar borrow.
     // The view arguments remain descriptors, while the aggregate outcome is
     // written into caller-owned result storage.
-    assert!(build.starts_with("define internal void @wf_build(ptr %wf.result, "));
-    assert!(checksum.starts_with("define internal void @wf_checksum(ptr %wf.result, "));
+    assert!(build.starts_with("define void @wf_build(ptr %wf.result, "));
+    assert!(checksum.starts_with("define void @wf_checksum(ptr %wf.result, "));
     for function in [build, checksum] {
         let header = function.lines().next().expect("helper signature");
         assert_eq!(header.matches("{ ptr, i64 }").count(), 2);
@@ -693,7 +722,7 @@ fn compiler_independent_borrowed_pool_tree_executes() {
     assert!(!build.contains("call void @wf_trap"));
     assert!(!checksum.contains("call void @wf_trap"));
     assert!(!main.contains("call void @wf_trap"));
-    assert_eq!(main.matches("call i8 @wf.sys.exit_status.v1").count(), 5);
+    assert_eq!(main.matches("call void @wf_exit_status").count(), 5);
     assert_eq!(main.matches("call void @free").count(), 0);
 
     let output = compile_and_run(&llvm);
@@ -713,14 +742,39 @@ fn compiler_independent_wc_chunk_summary_executes() {
     let llvm = compile(include_bytes!(
         "../../../../tests/conformance/cases/x-wc-chunk-summary-run.wf"
     ));
-    let four_bytes = emitted_function(&llvm, "summarize$instance$2");
-    let one_byte = emitted_function(&llvm, "summarize$instance$3");
+    let summaries = llvm
+        .lines()
+        .filter(|line| line.starts_with("define ") && line.contains(" @wf_summarize$instance$"))
+        .map(|header| {
+            assert!(header.starts_with("define i8 @wf_summarize$instance$"));
+            assert!(header.contains("(ptr %v0, ptr %wf.arg.v1)"));
+            let name = header
+                .split_once("@wf_")
+                .expect("WF symbol")
+                .1
+                .split_once('(')
+                .expect("signature")
+                .0;
+            emitted_function(&llvm, name)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(summaries.len(), 2, "two source const instantiations");
+    assert_eq!(
+        summaries
+            .iter()
+            .filter(|body| body.contains("getelementptr inbounds { [4 x i8], i64, i64 }"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        summaries
+            .iter()
+            .filter(|body| body.contains("getelementptr inbounds { [1 x i8], i64, i64 }"))
+            .count(),
+        1
+    );
     let combine = emitted_function(&llvm, "combine");
-    assert!(four_bytes.starts_with("define internal i8 @wf_summarize$instance$2(ptr "));
-    assert!(four_bytes.contains(", { [4 x i8], i64, i64 } "));
-    assert!(one_byte.starts_with("define internal i8 @wf_summarize$instance$3(ptr "));
-    assert!(one_byte.contains(", { [1 x i8], i64, i64 } "));
-    assert!(combine.starts_with("define internal i8 @wf_combine(ptr "));
+    assert!(combine.starts_with("define i8 @wf_combine(ptr "));
     assert_eq!(
         combine
             .lines()
@@ -830,7 +884,11 @@ fn release['s](owner: own Owner<'s>, store: &uniq Heap<'s>) -> result: own unit 
   return unit;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
       None() => {
@@ -904,7 +962,11 @@ fn take['s](owner: own Owner<'s>) -> result: own Vector<'s, u8> pure {
   return move owner.pair.first;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
       None() => {
@@ -1050,7 +1112,11 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
 
 #[test]
 fn trivially_droppable_affine_elements_keep_the_single_free() {
-    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<Option<u32>>(store: &uniq heap, count: 4_u64) {
       None() => {
@@ -1090,7 +1156,11 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
 
 #[test]
 fn a_vacant_run_op9_overflow_is_rejected_before_lowering() {
-    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<Option<u32>>(store: &uniq heap, count: 18446744073709551615_u64) {
       None() => {

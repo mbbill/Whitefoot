@@ -76,6 +76,41 @@ pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendF
     emit_llvm_with_layout(program, target)
 }
 
+/// The executable builder may choose the no-pool world once at startup. The
+/// set depends on ordinary calls and physical lane fit, never on an entry kind.
+pub(crate) fn sequential_entry_symbol(
+    program: &IrProgram<'_, '_, '_>,
+    name: &str,
+) -> Result<Option<String>, BackendFailure> {
+    let clones = sequential_clone_set(program);
+    let selected_is_cloned = program
+        .functions()
+        .iter()
+        .enumerate()
+        .any(|(index, function)| {
+            function.name() == name
+                && u32::try_from(index).is_ok_and(|index| clones.contains(&index))
+        });
+    if !selected_is_cloned {
+        return Ok(None);
+    }
+    for function in program.functions() {
+        for overlap in function.overlaps() {
+            if ordinary_overlap_lane_frames(
+                program,
+                TargetLayout::host().map_err(BackendFailure::TargetLayout)?,
+                function,
+                overlap,
+            )?
+            .is_some()
+            {
+                return Ok(Some(sequential_clone_symbol(name)));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Emits the same ordinary callable ABI with a selected physical target layout.
 pub(super) fn emit_llvm_with_layout(
     program: &IrProgram<'_, '_, '_>,
@@ -859,7 +894,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .iter()
             .filter_map(crate::IrOverlap::join_site)
             .collect();
-        let storage = FunctionStoragePlan::build(program, function)?;
+        let storage =
+            FunctionStoragePlan::build_in_world(program, function, sequential_clones.is_some())?;
         let result_slot = places::returned_storage_slot(function, &storage);
         let frame = FunctionFramePlan::build(
             target,

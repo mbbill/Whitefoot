@@ -23,7 +23,7 @@ fn replace_one['s](slots: &uniq FixedVector<Option<Entry<'s>>, 1>, replacement: 
   return move previous;
 }
 
-fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(first), writes(first) contract {
+fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) pure contract {
   ensures len_of(updated) == 1_u64;
 } {
   let (slots, returned) = build(first: move first, replacement: move replacement);

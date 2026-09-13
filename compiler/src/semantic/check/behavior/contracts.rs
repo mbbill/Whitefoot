@@ -21,8 +21,8 @@ struct InterfaceContracts {
 #[derive(Eq, PartialEq)]
 struct InterfaceEnsures {
     ordinal: u32,
-    variant: Option<crate::PreludeDeclarationId>,
-    field: Option<crate::PreludeDeclarationId>,
+    variant: Option<crate::BuiltinPreludeId>,
+    field: Option<crate::BuiltinPreludeId>,
     expression: ExpandedClauseExpression,
 }
 

@@ -1,3 +1,92 @@
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
 fn socket_class(error: own IoError) -> result: own u8 pure {
   doc "Reduces one portable IoError class to the distinctions a loopback program reports [SYS-7].";
   match error {
@@ -157,8 +246,12 @@ fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result:
   return Ok<unit, IoError>(value: unit);
 }
 
-fn main['heap](command.args as args: own Args, command.handles as handles: own HandleFactory, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(args, handles, heap), writes(handles, heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Listens on the loopback port named by the invocation, takes one connection, and returns every byte the peer sends until the peer stops sending [SYS-17, SYS-18]. The specification declares no operation reporting a listener's own local address, so the port is the caller's choice and arrives as an argument. The argument scratch and the echo chunk are store-resident runs, each viewed exclusively where it is written and shared where it is read.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 16_u64) {
       None() => {
@@ -204,11 +297,11 @@ fn main['heap](command.args as args: own Args, command.handles as handles: own H
             region {
               match arg_get(args: &args, position: 1_u64) {
                 Ok(value: text) => {
-                  region 'v {
+                  region {
                     region {
                       let window = mut_slice_of(&uniq digits);
                       region {
-                        match host_copy_utf8(value: &'v text, destination: &uniq window, start: 0_u64, end: room) {
+                        match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: room) {
                           Ok(value: written) => {
                             set carried = written;
                           }
@@ -237,82 +330,86 @@ fn main['heap](command.args as args: own Args, command.handles as handles: own H
             let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
             let outcome = 0_u8;
             region {
-              match reserve_handle(factory: &uniq handles) {
-                Ok(value: listen_permit) => {
-                  region {
-                    match tcp_listen(permit: move listen_permit, address: &address) {
-                      Listening(listener: bound) => {
-                        region 'l {
-                          match reserve_handle(factory: &uniq handles) {
-                            Ok(value: accept_permit) => {
+              region {
+                match tcp_listen(factory: &uniq handles, address: &address) {
+                  Listening(listener: bound) => {
+                    region {
+                      region {
+                        match tcp_accept(factory: &uniq handles, listener: &uniq bound) {
+                          Accepted(connection: link, peer: from) => {
+                            loop @chunks {
+                              let available = 0_u64;
+                              let ended = 0_u8;
                               region {
-                                match tcp_accept(permit: move accept_permit, listener: &'l bound) {
-                                  Accepted(connection: link, peer: from) => {
-                                    loop @chunks {
-                                      let available = 0_u64;
-                                      let ended = 0_u8;
-                                      region {
-                                        let sink = mut_slice_of(&uniq chunk);
-                                        region {
-                                          match receive_next(receive: &uniq link.receive, destination: &uniq sink, start: 0_u64, end: held) {
-                                            ReadBytes(next: endpoint) => {
-                                              set available = endpoint;
-                                            }
-                                            ReadEnd() => {
-                                              set ended = 1_u8;
-                                            }
-                                            ReadFailed(error: problem) => {
-                                              let reported = socket_class(error: move problem);
-                                              set outcome = 20_u8 +wrap reported;
-                                              set ended = 2_u8;
-                                            }
-                                          }
+                                let sink = mut_slice_of(&uniq chunk);
+                                region {
+                                  match receive_next(receive: &uniq link.receive, destination: &uniq sink, start: 0_u64, end: held) {
+                                    Ok(value: endpoint) => {
+                                      set available = endpoint;
+                                    }
+                                    Err(error: read_stop_1) => {
+                                      match read_stop_1 {
+                                        ReadEnd() => {
+                                          set ended = 1_u8;
                                         }
-                                      }
-                                      if ended == 0_u8 {
-                                        region {
-                                          let returned = slice_of(&chunk);
-                                          region {
-                                            match send_all(send: &uniq link.send, source: &returned, length: available) {
-                                              Ok(value: delivered) => {
-                                              }
-                                              Err(error: problem) => {
-                                                let reported = socket_class(error: move problem);
-                                                set outcome = 30_u8 +wrap reported;
-                                                set ended = 2_u8;
-                                              }
-                                            }
-                                          }
+                                        ReadFailed(error: problem) => {
+                                          let reported = socket_class(error: move problem);
+                                          set outcome = 20_u8 +wrap reported;
+                                          set ended = 2_u8;
                                         }
-                                      }
-                                      if ended == 0_u8 {
-                                      } else {
-                                        break @chunks;
                                       }
                                     }
-                                    let credit = close_connection(connection: move link);
-                                  }
-                                  AcceptFailed(error: problem, permit: handed_back) => {
-                                    set outcome = 7_u8;
                                   }
                                 }
                               }
+                              if ended == 0_u8 {
+                                region {
+                                  let returned = slice_of(&chunk);
+                                  region {
+                                    match send_all(send: &uniq link.send, source: &returned, length: available) {
+                                      Ok(value: delivered) => {
+                                      }
+                                      Err(error: problem) => {
+                                        let reported = socket_class(error: move problem);
+                                        set outcome = 30_u8 +wrap reported;
+                                        set ended = 2_u8;
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                              if ended == 0_u8 {
+                              } else {
+                                break @chunks;
+                              }
                             }
-                            Err(error: problem) => {
-                              set outcome = 8_u8;
+                            let TcpConnection(receive: close_receive_2, send: close_send_2) = move link;
+                            close_receive(factory: &uniq handles, receive: move close_receive_2);
+                            close_send(factory: &uniq handles, send: move close_send_2);
+                          }
+                          AcceptFailed(error: problem) => {
+                            region {
+                              if factory_refusal(error: &problem) {
+                                set outcome = 8_u8;
+                              } else {
+                                set outcome = 7_u8;
+                              }
                             }
                           }
-                          let listener_credit = close_listener(listener: move bound);
                         }
                       }
-                      ListenFailed(error: problem, permit: handed_back) => {
+                      let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
+                    }
+                  }
+                  ListenFailed(error: problem) => {
+                    region {
+                      if factory_refusal(error: &problem) {
+                        set outcome = 10_u8;
+                      } else {
                         set outcome = 9_u8;
                       }
                     }
                   }
-                }
-                Err(error: problem) => {
-                  set outcome = 10_u8;
                 }
               }
             }

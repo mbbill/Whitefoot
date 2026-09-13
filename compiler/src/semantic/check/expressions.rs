@@ -2083,7 +2083,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ),
             );
         }
-        if matches!(usage.target(), ResolvedTarget::Prelude(id) if !matches!(id.ordinal(), 5 | 6 | 11 | 13))
+        if matches!(usage.target(), ResolvedTarget::Prelude(id) if !matches!(id, crate::BuiltinPreludeId::NONE | crate::BuiltinPreludeId::SOME | crate::BuiltinPreludeId::OK | crate::BuiltinPreludeId::ERR))
             && self.tree.argument_list(node)?.is_some()
         {
             return self.issue_node(
@@ -2096,11 +2096,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         if let ResolvedTarget::Prelude(id) = usage.target()
-            && matches!(id.ordinal(), 1 | 2)
+            && matches!(
+                id,
+                crate::BuiltinPreludeId::TRUE | crate::BuiltinPreludeId::FALSE
+            )
         {
-            let value = match id.ordinal() {
-                1 => CheckedValue::Bool(true),
-                2 => CheckedValue::Bool(false),
+            let value = match id {
+                crate::BuiltinPreludeId::TRUE => CheckedValue::Bool(true),
+                crate::BuiltinPreludeId::FALSE => CheckedValue::Bool(false),
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             };
             if self
@@ -2163,7 +2166,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 self.source_constructor(node, declaration, &function.substitution)?
             }
-            ResolvedTarget::Prelude(id) => match id.ordinal() {
+            ResolvedTarget::Prelude(id) => match id {
                 // [TYPE-5] the prelude generic nominals are constructed
                 // through these variant constructors, and they write the
                 // nominal's arguments in every position, mandatorily:
@@ -2172,30 +2175,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // written arguments are read here exactly as
                 // `generic_substitution` reads a source generic's, so both
                 // classes cite TYPE-5 at the complete `construct`.
-                5 | 6 => {
+                crate::BuiltinPreludeId::NONE | crate::BuiltinPreludeId::SOME => {
                     let value = self.option_type_argument_with(node, &function.substitution)?;
                     Constructor::Enum {
                         nominal: self.prelude_nominal(super::PreludeType::Option(value))?,
-                        variant: u32::from(id.ordinal() == 6),
+                        variant: u32::from(id == crate::BuiltinPreludeId::SOME),
                     }
                 }
-                11 | 13 => {
+                crate::BuiltinPreludeId::OK | crate::BuiltinPreludeId::ERR => {
                     let (ok, error) =
                         self.result_type_arguments_with(node, &function.substitution)?;
                     Constructor::Enum {
                         nominal: self.prelude_nominal(super::PreludeType::Result(ok, error))?,
-                        variant: u32::from(id.ordinal() == 13),
+                        variant: u32::from(id == crate::BuiltinPreludeId::ERR),
                     }
                 }
-                16 => Constructor::Enum {
+                crate::BuiltinPreludeId::OVERFLOW => Constructor::Enum {
                     nominal: self.prelude_nominal(super::PreludeType::Overflow)?,
                     variant: 0,
                 },
-                18 | 19 => Constructor::Enum {
-                    nominal: self.prelude_nominal(super::PreludeType::DivError)?,
-                    variant: u32::from(id.ordinal() == 19),
-                },
-                21 => Constructor::Enum {
+                crate::BuiltinPreludeId::DIVIDE_BY_ZERO | crate::BuiltinPreludeId::DIV_OVERFLOW => {
+                    Constructor::Enum {
+                        nominal: self.prelude_nominal(super::PreludeType::DivError)?,
+                        variant: u32::from(id == crate::BuiltinPreludeId::DIV_OVERFLOW),
+                    }
+                }
+                crate::BuiltinPreludeId::NARROW_ERROR => Constructor::Enum {
                     nominal: self.prelude_nominal(super::PreludeType::NarrowError)?,
                     variant: 0,
                 },

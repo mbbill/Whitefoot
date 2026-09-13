@@ -55,9 +55,7 @@ fn assert_prf1_issue_named(
         };
         assert_eq!(name, expected_name);
         assert_eq!(*obligation, expected);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("PRF-1 must cite the complete invariant statement");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         let cited = std::str::from_utf8(&source[start..end]).expect("proof source is UTF-8");

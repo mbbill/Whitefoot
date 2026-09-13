@@ -9,7 +9,7 @@ fn bucket_of<const n_values: u64>(values: own FixedVector<u8, n_values>, n: own 
   return byte;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u8, 10>();
   region {
     place_back(vector: &uniq values, value: 4_u8);

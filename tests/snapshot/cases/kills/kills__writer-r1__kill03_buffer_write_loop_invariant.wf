@@ -17,7 +17,7 @@ fn fill_running_sum(out: &uniq MutSlice<u64>, count: own u64) -> result: own uni
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<48, 8, 'w>();
     region {

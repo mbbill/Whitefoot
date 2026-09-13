@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- decodes an unsigned LEB128 varint from a byte buffer with a bounded shift-amount check";
   let encoded = fixed_vector::<u8, 3>();
   region {

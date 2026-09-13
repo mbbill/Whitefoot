@@ -125,9 +125,9 @@ by renaming it into an unrelated passing case.
 | [run-sysfile-multichunk](../../../tests/conformance/cases/run-sysfile-multichunk.wf) | Source advances its explicit file offset across ordinary read_at calls. Ok payloads are absolute destination endpoints; the final short prefix and later Err(ReadEnd) preserve the original observations. |
 | [run-sysout-basic-write](../../../tests/conformance/cases/run-sysout-basic-write.wf) | The ordinary write_once signature borrows its output and shared invocation factory state. Its linked implementation makes one output attempt and returns the absolute accepted endpoint. |
 | [run-sysout-redirect-same-sink-order](../../../tests/conformance/cases/run-sysout-redirect-same-sink-order.wf) | Output calls and the later file read explicitly borrow the same HandleFactory state. Ordinary EFF-2/PAR-1 interference preserves the arranged shared sink order, including independently named aliased output streams; the readback observes the combined bytes. |
-| [sys14-list-outcome-exhaustive](../../../tests/conformance/cases/sys14-list-outcome-exhaustive.wf) | directory_next returns an ordinary Result<u64,ListStop> and an entry count. Complete Ok and nested ReadStop-style ListEnd/ListFailed matches are exhaustive under ERR-2; the fixture reaches a successful batch. |
+| [sys14-list-outcome-exhaustive](../../../tests/conformance/cases/sys14-list-outcome-exhaustive.wf) | directory_next returns an ordinary Result<unit,ListStop>, numeric endpoint and entry count. Complete Ok and nested ListEnd/ListFailed matches are exhaustive under ERR-2; the fixture reaches a successful batch. The endpoint contract is unconditional and follows its ordinary numeric result. |
 | [reject-sys14-list-end-beyond-buffer](../../../tests/conformance/cases/reject-sys14-list-end-beyond-buffer.wf) | The original end 4104 exceeds the 4096-byte destination. FN-8 rejects directory_next through its ordinary end <= len_of(deref(destination)) requirement; SYS-8 is retired. |
-| [sys14-list-zero-range](../../../tests/conformance/cases/sys14-list-zero-range.wf) | The ordinary directory_next library operation returns Ok(start) and zero entries for an empty range, leaving enumeration available for a later transfer. |
+| [sys14-list-zero-range](../../../tests/conformance/cases/sys14-list-zero-range.wf) | The ordinary directory_next library operation returns Ok(unit), next=start and zero entries for an empty range, leaving enumeration available for a later transfer. |
 | [sys14-open-directory-component](../../../tests/conformance/cases/sys14-open-directory-component.wf) | The ordinary open_directory implementation rejects a name containing a separator with InvalidPath. The supplied factory remains available on refusal; no permit object or implicit close is involved. |
 | [sys14-open-directory-empty-name](../../../tests/conformance/cases/sys14-open-directory-empty-name.wf) | The ordinary open_directory implementation rejects an empty component with InvalidPath. The original valid backing bytes and empty selected range distinguish this library outcome from a static range failure. |
 | [sys14-open-directory-success](../../../tests/conformance/cases/sys14-open-directory-success.wf) | The ordinary open_directory operation returns a linear DirectoryRead for an existing component; the program uses and explicitly closes the returned owner through its factory. |
@@ -171,6 +171,19 @@ by renaming it into an unrelated passing case.
 | [fn1-pos-exclusive-owner-exit-state](../../../tests/conformance/cases/fn1-pos-exclusive-owner-exit-state.wf) | An ordinary helper returns the previous Box and installs the incoming Box through an exclusive referent. The caller observes both values and releases both through its Heap provider. C2 removes owned routing: the later current-value read belongs to owner storage, and the row no longer claims reads(incoming). |
 | [eff2-neg-installed-owner-read-omitted](../../../tests/conformance/cases/eff2-neg-installed-owner-read-omitted.wf) | C2 removes FN-1 owned ancestry and EFF-2 value-history roots. The original reads(owner), writes(owner, store) row is now exact: the old missing-reads(incoming) rejection is retired, while replacement values and ordinary provider cleanup remain checked. |
 | [fn4-neg-input-owner-for-fresh-result](../../../tests/conformance/cases/fn4-neg-input-owner-for-fresh-result.wf) | C2 removes FN-4 fresh-owned-result routing. The original actual returning its incoming FixedVector is admitted by ordinary signature, row and structural-contract matching; returning an owner does not duplicate it. |
+
+### Additional storage-effect source migrations
+
+These are source-row changes derived from C2 EFF-2; no expected verdict changes.
+
+| Case | Rule and applied migration |
+|---|---|
+| [own1-neg-set-rhs-kills-root](../../../tests/conformance/cases/own1-neg-set-rhs-kills-root.wf) | EFF-2 now requires reads(cell.value) for the helper's actual field read. The later dead-root use still rejects under OWN-1. |
+| [own6-pos-statement-children-use-a-longer-local-region](../../../tests/conformance/cases/own6-pos-statement-children-use-a-longer-local-region.wf) | EFF-2 removes reads(incoming) after its move into the replacement; reads(owner) and writes(owner) remain. The ordinary statement-loan endpoint assertion is unchanged. |
+| [liv2-pos-entry-dead-owner-initialization](../../../tests/conformance/cases/liv2-pos-entry-dead-owner-initialization.wf) | EFF-2 whole-owner replacement names reads(owner), writes(owner), rather than its value field. The entry-dead initialization assertion is unchanged. |
+| [run-generic-priority-behavior](../../../tests/conformance/cases/run-generic-priority-behavior.wf) | EFF-2 removes reads(value), writes(value) for an owned scalar supplied to a local run insertion. queue.heap and env paths retain their actual accesses; both generic instantiations still execute. |
+| [prov6-pos-a-run-visits-its-window-before-its-backing](../../../tests/conformance/cases/prov6-pos-a-run-visits-its-window-before-its-backing.wf) | EFF-2 removes first.data history effects after moving first into local storage. Store reads, writes and allocation remain; cleanup order is still the tested behavior. |
+| [fn2-pos-a-result-only-region-is-written-at-the-call](../../../tests/conformance/cases/fn2-pos-a-result-only-region-is-written-at-the-call.wf) | EFF-2 makes absorb pure after the matched owner moves into a local payload. The explicit result-region FN-2 assertion remains. |
 
 ### Added ordinary witnesses
 
@@ -310,6 +323,177 @@ failed interim test build is not reported as successful validation.
 | `ordinary_displaced_box_result_keeps_the_extracted_owners_origin` | Source regression retained as `ordinary_displaced_box_result_uses_only_target_storage_effects`; assertions on removed owner metadata/history are retired under FN-1/EFF-2. |
 | `ordinary_displaced_run_keeps_its_origin_and_inherent_capacity` | Source regression retained as `ordinary_displaced_run_keeps_its_inherent_capacity`; assertions on removed owner metadata/history are retired under FN-1/EFF-2. |
 | `loop_origin_sets_ignore_route_enumeration_order` | Source regression retained as `owning_sparse_rehash_keeps_ordinary_loop_proofs`; assertions on removed owner metadata/history are retired under FN-1/EFF-2. |
+
+### Other compiler assertions retired or re-derived
+
+C2 removes the old mechanism rather than maintaining shadow metadata for its
+tests. The following assertions are retired under the named amended rule;
+ordinary source outcomes, ownership, bounds, allocator cleanup and native
+library behavior remain tested by the retained suites.
+
+| Outgoing test file | Retired test or exclusive helper | Rule change |
+|---|---|---|
+| `compiler/src/lowering/tests.rs` | `dropped_resource` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `assert_contract` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `every_system_type_carries_its_release_contract_and_one_release_edge` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `a_move_keeps_the_resource_identity_and_its_release` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `a_struct_field_release_reaches_the_contained_resource` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `an_enum_release_carries_the_union_of_its_components_rows` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `one_match_arm_releases_its_binder_on_that_arms_normal_edge` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `returning_or_passing_an_owner_derives_no_release_here` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `releases_keep_reverse_declaration_order_on_the_normal_edge` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `a_system_call_carries_its_semantic_identity_and_precedes_the_releases` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `the_entry_retains_distinct_standard_input_rows_without_alias_metadata` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identity` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `direct_staged_loop_builds_a_two_slot_issue_and_drain_driver` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `two_staged_loops_in_one_function_leave_both_on_the_ordinary_path` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/lowering/tests.rs` | `a_prologue_gate_leaving_by_break_keeps_the_two_slot_driver` | FN-1/EFF-2 remove owner-history and target summaries; PRE-1 uses ordinary calls; PAR-3 is deleted. |
+| `compiler/src/driver/tests.rs` | `a_denied_io_loop_is_reported_without_a_flag_and_a_granted_one_is_silent` | PAR-3 staging and disposition reports are deleted; ordinary PAR-1/PAR-2 reports remain. |
+| `compiler/src/driver/tests.rs` | `the_permission_ledger_reports_a_granted_stage_and_its_disposition_table` | PAR-3 staging and disposition reports are deleted; ordinary PAR-1/PAR-2 reports remain. |
+| `compiler/src/driver/tests.rs` | `a_disposition_table_keeps_one_row_per_place_when_two_rows_read_alike` | PAR-3 staging and disposition reports are deleted; ordinary PAR-1/PAR-2 reports remain. |
+| `compiler/src/driver/tests.rs` | `the_permission_ledger_names_the_condition_the_place_and_the_admitted_form` | PAR-3 staging and disposition reports are deleted; ordinary PAR-1/PAR-2 reports remain. |
+| `compiler/src/driver/tests.rs` | `a_retained_borrow_denial_names_a_write_and_never_an_overlap_with_itself` | PAR-3 staging and disposition reports are deleted; ordinary PAR-1/PAR-2 reports remain. |
+| `compiler/src/driver/tests.rs` | `nested_loops_sharing_one_cut_print_at_their_own_heads` | PAR-3 staging and disposition reports are deleted; ordinary PAR-1/PAR-2 reports remain. |
+| `compiler/src/driver/tests.rs` | `a_one_position_resource_is_offered_the_hoist_that_works` | PAR-3 staging and disposition reports are deleted; ordinary PAR-1/PAR-2 reports remain. |
+| `compiler/src/semantic/tests/permission.rs` | `completion_waits_for_the_exact_nonadjacent_unique_loan` | PAR-3 and EFF-3 suspension/target classification are deleted; ordinary dependency/loan/effect permission remains. |
+| `compiler/src/semantic/tests/permission.rs` | `may_suspend_release_wrappers_on_distinct_capabilities_are_permitted` | PAR-3 and EFF-3 suspension/target classification are deleted; ordinary dependency/loan/effect permission remains. |
+| `compiler/src/backend/tests/completion.rs` | `windows_completion_modules_require_the_native_runtime_at_link_time` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `windows_core_pressure_never_becomes_inline_execution` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `only_an_actualized_target_operation_selects_the_completion_runtime` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `compute_world_selection_does_not_disable_completion_io` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `one_slot_submission_crosses_its_edge_before_the_drain_joins_and_dispatches` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `source_derived_two_slot_batch_links_and_preserves_every_iteration` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `windows_staged_ring_initializes_submission_state_before_pressure_recovery` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `an_odd_batch_keeps_each_iterations_path_and_result_in_its_own_slot` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `a_target_without_native_completion_runs_the_same_batch_one_iteration_at_a_time` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `the_file_helper_receives_a_typed_request_and_never_a_writer_thunk` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `positioned_read_emits_a_checked_typed_pread_request` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `one_empty_write_uses_the_one_normal_operation_path` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `a_completion_window_before_a_block_join_names_its_join_block` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `independent_io_reaches_the_second_operation_before_the_first_unblocks` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `a_reused_unique_output_waits_only_for_its_own_prior_operation` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `reused_output_progress_preserves_ac_around_an_independent_rejected_open` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `more_than_sixty_four_calls_progress_by_falling_back_only_the_full_call` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `a_rejected_nonregular_open_does_not_delay_independent_writer_work` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `direct_and_completion_open_read_reject_a_fifo_without_blocking` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `component_directory_open_uses_the_same_typed_completion_route` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `windows_component_completion_stages_one_terminated_utf16_name` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `directory_source_open_uses_the_typed_completion_route` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `regular_file_open_maps_status_and_release_after_completion` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `directory_enumeration_completes_before_writer_normalization` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `a_call_in_scrutinee_position_is_handed_out_exactly_as_a_bound_call_is` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `a_value_match_scrutinee_call_is_handed_out_exactly_as_a_bound_call_is` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `a_scrutinee_call_before_an_independent_call_stays_sequential` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/completion.rs` | `completion_storage_uses_one_planned_frame_and_k1_elements` | PRE-1 ordinary call ABI replaces per-operation compiler emission; PAR-3 and QUAL-1..3 target/milestone metadata are deleted. Private native-engine execution tests remain. |
+| `compiler/src/backend/tests/parallel.rs` | `a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes` | PAR-3 and EFF-3 staged/completion member classes are deleted. Ordinary sibling calls, worker execution and allocation ledgers remain. |
+| `compiler/src/backend/tests/parallel.rs` | `the_staged_lane_window_ceiling_is_the_runtimes` | PAR-3 and EFF-3 staged/completion member classes are deleted. Ordinary sibling calls, worker execution and allocation ledgers remain. |
+| `compiler/src/backend/tests/parallel.rs` | `a_system_operation_bound_by_a_let_is_not_the_lane_form` | PAR-3 and EFF-3 staged/completion member classes are deleted. Ordinary sibling calls, worker execution and allocation ledgers remain. |
+| `compiler/src/backend/tests/parallel.rs` | `owned_staged_results_and_cleanup_survive_retirement_and_forced_refusal` | PAR-3 and EFF-3 staged/completion member classes are deleted. Ordinary sibling calls, worker execution and allocation ledgers remain. |
+| `compiler/src/backend/tests/parallel.rs` | `owned_staged_inline_places_keep_each_iterations_backing_until_retirement` | PAR-3 and EFF-3 staged/completion member classes are deleted. Ordinary sibling calls, worker execution and allocation ledgers remain. |
+| `compiler/src/backend/tests/parallel.rs` | `staged_arena_box_borrows_keep_each_owner_slot_and_drain_before_refusal` | PAR-3 and EFF-3 staged/completion member classes are deleted. Ordinary sibling calls, worker execution and allocation ledgers remain. |
+| `compiler/src/backend/tests/parallel.rs` | `owned_match_headers_and_staged_results_observe_completed_scratch` | PAR-3 and EFF-3 staged/completion member classes are deleted. Ordinary sibling calls, worker execution and allocation ledgers remain. |
+| `compiler/src/backend/tests/parallel.rs` | `a_mixed_group_hands_out_both_kinds_and_joins_them_newest_compute_first` | PAR-3 and EFF-3 staged/completion member classes are deleted. Ordinary sibling calls, worker execution and allocation ledgers remain. |
+| `compiler/src/backend/tests/parallel.rs` | `a_mixed_group_whose_completion_member_is_first_joins_it_where_it_was_published` | PAR-3 and EFF-3 staged/completion member classes are deleted. Ordinary sibling calls, worker execution and allocation ledgers remain. |
+| `compiler/src/backend/tests/deterministic_target.rs` | `the_deterministic_target_qualifies_the_same_program_as_the_native_target` | QUAL-1..3 operation-target columns are deleted. Scripted syscall fixtures now substitute only linked library internals, leaving the WF module unchanged. |
+| `compiler/src/backend/tests/deterministic_target.rs` | `only_the_host_facing_rows_differ_between_the_two_targets` | QUAL-1..3 operation-target columns are deleted. Scripted syscall fixtures now substitute only linked library internals, leaving the WF module unchanged. |
+
+The driver's six entry-kind/input-label rejection assertions are retired under
+FN-7/PRE-1. Their conformance cases remain in the ordinary acceptance suite.
+The semantic delayed-endpoint assertion no longer receives ENT-3.S10's special
+I/O fact: it is re-derived as a negative under CALL-4's ordinary deferred
+postcondition transport, while the direct-match endpoint positive remains.
+The native program suite's reverse-four-peer and staged-lane shape assertions
+are retired with PAR-3. Ordinary TCP behavior still executes through both
+native library routes; ordinary function declarations replace assertions that
+the compiler emits individual TCP operation bodies.
+
+`deterministic_target.rs` retains sixteen executing or layout assertions.
+Explicit closes still attempt once, provisional cleanup preserves the selected
+error, short transfers preserve absolute endpoints, zero progress returns
+WriteZero, and retryable interruptions remain internal to the linked body.
+Opaque affine output drop is empty under PRE-1; cwd now closes explicitly, so
+the argument-access fixture observes one close rather than an implicit-release
+side effect. `parallel.rs` retains the heap-box loop and its exact release
+ledger, ordinary multiworker folds, aggregate results and forced lane refusal.
+The new worker-helper test calls write_once through an ordinary source body;
+no suspension classification authorizes it.
+
+Validation so far: the initial ordinary_effects 23/23, entry_form 8/8,
+scripted linked library 16/16, ordinary parallel 29/29, private completion
+engine 8/8, and all 80 pinned diagnostic probes passed. The later 98-test
+array, buffer, owner-place, reborrow, slice, arena-boundary and source-cost
+subset also passed. That snapshot precedes the final directory three-result
+API update. The full integrated gate remains pending; these local results
+do not claim canonical make check or native CI success.
+
+
+`compiler/src/backend/tests/cost_shape.rs` retains its two source-program tests:
+buffer initialization reuse and observed output batching. The following
+QUAL-1..3/SYS-5 wrapper and descriptor-publication inspection assertions retire
+because the compiler no longer emits per-operation native bodies. Their
+solely supporting IR inspection functions are deleted with them. Native
+operation behavior remains in the scripted linked-library tests.
+
+| Retired assertion | Selection ground |
+|---|---|
+| `publication_owner_routing_rejects_an_unknown_second_incoming_edge` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+| `publication_owner_routing_reads_adjacent_typed_frame_fields` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+| `target_selection_is_one_link_time_table_decision` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+| `an_argument_lease_allocates_nothing_and_copies_no_byte` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+| `the_raw_byte_route_carries_no_unicode_gate` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+| `relative_path_retypes_the_lease_without_allocating` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+| `open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+| `each_transfer_is_one_host_call_with_a_cold_outcome_mapper` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+| `every_release_close_is_one_discarded_attempt` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+| `releasing_a_value_or_an_output_reaches_no_host_facility` | PRE-1 ordinary linked declarations replace compiler operation wrappers; QUAL-1..3 and SYS-5 are deleted. |
+
+### Retained backend source migrations
+
+The retained aggregate/array regressions keep their values, refusal outcomes
+and exact allocation ledgers. Their source changes follow the ordinary rules:
+
+| Test file / test | Rule and source migration |
+|---|---|
+| arrays / recursive_full_arrays_merge_without_a_postcondition_summary | EFF-2 removes writes(out) after out moves into a local destination. Input element reads remain. |
+| arrays / full_arrays_preserve_heap_and_arena_element_ownership_through_generic_helpers | EFF-2 removes reads(owner) for ownership passed into a new local record and reads(values) after relay moves its argument to a local conversion; ownership and cleanup observations remain. |
+| arrays / heap_full_arrays_preserve_elements_across_calls_replacement_and_refusal | FORM-8 writes the Box store brand in the read helper. |
+| owned_places / consumed_result_fields_preserve_padding_siblings_and_smaller_returns | EFF-2 includes whole-parameter reads/writes when the counted loop moves and reinitializes the complete Row, beside actual field accesses. |
+| owned_places / ordinary_box_owner_transfer_keeps_values_and_release_across_two_helpers | EFF-2 removes reads(incoming) after its transfer into local replacement state. The current owner and store effects remain. |
+| owned_places / partial_construction_refusal_preserves_effects_values_and_release_order | EFF-2 removes former value.first/value.second effects after destructuring the owner into local cells; explicit store cleanup still writes(store). |
+| owned_places / value_if_cleans_unchosen_owners_before_reusing_delivery_storage | EFF-2 removes original-parameter field reads after moving the selected owner to a local binding. Store cleanup remains. |
+| owned_places / addressed_owner_cleanup_releases_descriptor_fields_in_checked_order | EFF-2 whole-value dispose writes the complete owner; the direct stamp access remains field-specific. |
+| owned_places / box_field_borrows_keep_the_owner_slot_across_reborrow_and_return | FORM-8 spells the shared/exclusive result loan region independently of the Box store region. |
+| buffers / generic_allocation_fit_uses_each_concrete_element_ceiling | FORM-8 names the Vector store region. The nonallocating main is pure and takes an ordinary Heap solely to name that brand. |
+| buffers / run_cleanup_is_explicit_on_return_and_break_edges | FORM-8 writes the helper Heap store brand. |
+| reborrows / opaque_resource_borrows_write_back_through_calls_fields_and_reborrows | EFF-2 removes the original file parameter's effects after constructing a local Holder. The C observer uses the ordinary 32-byte, align-16 opaque destination ABI and checks every transferred word plus both adjacent scalar fields. |
+| reborrows / opaque_aggregate_borrows_preserve_replacement_and_linked_observations | FORM-8 explicitly names the borrowed HostString result's parameter region. The original byte-content observations remain. |
+| slices / a_view_of_a_frame_resident_run_reaches_its_own_slots_until_call_return | OWN-6/VIEW-2 preserve the complete inline-storage observation through an ordinary linked call; the obsolete suspension-class name and description retire with PAR-3. |
+| ordinary retained-call helpers and symbol assertions | PRE-1 one callable ABI emits public WF definitions and ordinary ExitStatus result destinations; no internal/system symbol spelling remains required. Monomorphized function assertions select two exact signatures independently of PRE declaration ordinals. |
+
+Canonical blank lines between declarations are restored in embedded source
+fixtures. Bounds-negative values, return values and execution observations are
+unchanged; formatting no longer masks the operation the regression tests.
+
+The allocation-shape test distinguishes a retained public helper definition
+from an uninlined call to it: PRE-1's ordinary public ABI can preserve the
+former after every call is inlined. Each definition still contains exactly
+one allocation, every retained call resolves to such a definition, and the
+eleven source allocations retain the same exact byte-extent ledger.
+
+### Pinned diagnostic sentences
+
+`compiler/src/driver/pinned_sentences.rs` keeps 80 source probes and their
+exact ordinary diagnostic fragments. FN-7 removes each `command` scaffold.
+The `DirectoryRead` collision is re-derived as the same TYPE-6/PRE-1
+collision as `Option`; the range witness now passes an ordinary view and
+checks FN-8/CALL-1's instantiated requirement. The excessive region argument
+to `args_count` now checks the ordinary FORM-8 sentence. The shared-borrow
+mismatch uses an ordinary function with the same exclusive parameter type.
+Only `system-argument-does-not-name-a-region.wf` and its SYS-2-specific
+sentence retire: that separate argument class no longer exists, while the
+ordinary FN-2 arity and FORM-8 region diagnostics remain pinned. The three
+PAR-3 notice sentences mentioned by the old module introduction retire with
+the staging report, as recorded above.
 
 ## C1 baseline inventory (historical evidence)
 

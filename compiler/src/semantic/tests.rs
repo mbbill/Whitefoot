@@ -207,8 +207,9 @@ fn with_semantics_inputs<ResultValue>(
     let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
         panic!("semantic test derivation must finalize");
     };
-    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
-        panic!("semantic test source must be canonical");
+    let canonical = audit_canonical(finalized, CANONICAL_LIMITS);
+    let CanonicalOutcome::Complete(canonical) = canonical else {
+        panic!("semantic test source must be canonical: {canonical:?}");
     };
     let outcome = resolve(canonical);
     let ResolutionOutcome::Complete(resolved) = outcome else {
@@ -248,8 +249,9 @@ fn with_semantics_dark<ResultValue>(
     let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
         panic!("semantic test derivation must finalize");
     };
-    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
-        panic!("semantic test source must be canonical");
+    let canonical = audit_canonical(finalized, CANONICAL_LIMITS);
+    let CanonicalOutcome::Complete(canonical) = canonical else {
+        panic!("semantic test source must be canonical: {canonical:?}");
     };
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("semantic test source must resolve");
@@ -309,8 +311,9 @@ fn with_semantics_entry<ResultValue>(
     let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
         panic!("semantic test derivation must finalize");
     };
-    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
-        panic!("semantic test source must be canonical");
+    let canonical = audit_canonical(finalized, CANONICAL_LIMITS);
+    let CanonicalOutcome::Complete(canonical) = canonical else {
+        panic!("semantic test source must be canonical: {canonical:?}");
     };
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("semantic test source must resolve");
@@ -367,12 +370,7 @@ fn assert_rule_at(source: &[u8], rule: SemanticRule, cited: &str) {
             panic!("expected {rule:?} at {cited:?}, got {outcome:?}");
         };
         assert_eq!(issue.rule(), rule);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!(
-                "expected a source-node citation, got {:?}",
-                issue.location()
-            );
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         let actual = std::str::from_utf8(&source[start..end]).expect("cited bytes must be text");
@@ -783,9 +781,7 @@ fn effect_mismatch_is_located_at_the_written_effect_row() {
             panic!("expected EFF-2 mismatch, got {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("EFF-2 must use the source effects node");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("test offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("test offset fits usize");
         assert_eq!(&source[start..end], b"pure");
@@ -968,7 +964,7 @@ fn propagate_of_a_cell_holder_is_a_type7_missing_dereference() {
   Failed();
 }
 
-fn unwrap(holder: own Box<Result<i32, StepError>>) -> result: own Result<i32, StepError> pure {
+fn unwrap['s](holder: own Box<'s, Result<i32, StepError>>) -> result: own Result<i32, StepError> pure {
   let accepted = propagate holder;
   return Ok<i32, StepError>(value: accepted);
 }
@@ -995,7 +991,7 @@ fn match_and_index_of_a_cell_holder_are_type7_missing_dereferences() {
   Ready();
 }
 
-fn inspect(holder: own Box<State>) -> result: own unit pure {
+fn inspect['s](holder: own Box<'s, State>) -> result: own unit pure {
   match holder {
     Ready() => {
     }
@@ -1013,7 +1009,7 @@ fn main() -> status: own ExitStatus pure {
         },
     );
     assert_rule(
-        br#"fn read(holder: own Box<FixedVector<u8, 4>>) -> result: own u8 pure {
+        br#"fn read['s](holder: own Box<'s, FixedVector<u8, 4>>) -> result: own u8 pure {
   return holder[0_u64];
 }
 
@@ -1337,12 +1333,12 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_prior_rhs_borrow_cannot_retarget_a_later_atomic_readout() {
     assert_rule_kind(
-        br#"fn install(target: &uniq ReadFile, incoming: own ReadFile) -> result: own unit reads(target), writes(target) {
+        br#"fn install(target: &uniq OutputStream, incoming: own OutputStream) -> result: own unit reads(target), writes(target) {
   let previous = replace deref(target) = move incoming;
   return unit;
 }
 
-fn later(file: &uniq ReadFile, incoming: own ReadFile) -> result: own unit reads(file), writes(file) {
+fn later(file: &uniq OutputStream, incoming: own OutputStream) -> result: own unit reads(file), writes(file) {
   let marker = unit;
   region {
     set (marker, deref(file)) = install(target: &uniq deref(file), incoming: move incoming), move deref(file);
@@ -1433,7 +1429,7 @@ fn set_revalidates_the_target_after_rhs_ownership_changes() {
   value: i32;
 }
 
-fn take(cell: own Cell) -> result: own i32 pure {
+fn take(cell: own Cell) -> result: own i32 reads(cell.value) {
   return cell.value;
 }
 

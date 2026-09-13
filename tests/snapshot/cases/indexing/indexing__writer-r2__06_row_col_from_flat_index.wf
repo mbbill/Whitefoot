@@ -35,7 +35,7 @@ fn pixel_at(grid: own Slice<u8>, width: own u64, height: own u64, row: own u64, 
   return byte;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: every partial arithmetic step (width*height, row*width, the +col) is guarded by its own dominating .defined branch, and the flattened row*width+col subscript is guarded by its own direct flat < area branch [OP-2, OP-4].";
   let grid = fixed_vector::<u8, 12>();
   region {

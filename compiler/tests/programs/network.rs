@@ -1,35 +1,9 @@
-//! The network, end to end over a loopback [SYS-16, SYS-17, SYS-18].
+//! Ordinary prelude TCP functions over loopback peers.
 //!
-//! Loopback is a controlled peer: the harness plays the other side with
-//! `std::net`, so a Whitefoot server is measured against a known client and a
-//! Whitefoot client against a known server
-//! (`research/investigations/io-model/NETWORK.md` §6).
-//!
-//! Every case runs on both routes the host has. The shipped default reaches
-//! the Linux completion ring, which carries accept, connect, receive and send
-//! as ring operations; `WF_IO_NO_NATIVE_RING` runs the same program through
-//! the shared file adapter's own `accept4`, `connect`, `recv` and `send`. The
-//! two must agree byte for byte and status for status, because the route is an
-//! implementation choice and not a language one.
-//!
-//! The specification declares no operation reporting a listener's own local
-//! address ([SYS-17]; NETWORK.md §4 lists the complete operation set), so a
-//! server program cannot tell the harness which port it took. The harness
-//! therefore picks a free port itself and passes it as an argument, which is
-//! the same fact from the other side.
-//!
-//! Nothing these cases *do* is POSIX: the peer is `std::net`, the port comes
-//! from a bound-and-released listener, the half-close is
-//! `Shutdown::Write`, and the port argument reaches the program through
-//! `support::invocation_argument`, which is text on a family whose arguments
-//! are not bytes. What is still POSIX is the harness's own link
-//! (`support.rs`, `stage_runtime_units` and `link_module`): it stages the
-//! POSIX runtime units and names an absolute `clang`, so these cases build
-//! nowhere else yet. That is one bounded piece of harness work and not a
-//! property of the cases; the Windows evidence for the same programs is
-//! `.github/workflows/io-hosts.yml`'s `completion-windows` job, which
-//! compiles `tcp_echo.wf` and `tcp_refused.wf` with the production driver and
-//! runs them on both routes against a `System.Net.Sockets` peer.
+//! The same linked implementation may use the native engine or file adapter.
+//! These private choices preserve bytes and outcomes. C2 removed PAR-3, so
+//! the previous reverse-peer scheduling assertion and staged-lane shape
+//! assertion are retired; the source fanout loop now serves peers in order.
 
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -37,8 +11,8 @@ use std::process::Child;
 use std::time::{Duration, Instant};
 
 use super::support::{
-    CompiledProgram, build_program, compile_and_run, compile_program, compile_program_with_overlap,
-    compile_program_without_overlap, emitted_function, program_permission_ledger,
+    CompiledProgram, build_program, compile_and_run, compile_program, emitted_function,
+    program_permission_ledger,
 };
 
 /// One port the host is not using, released before the program binds it.
@@ -47,7 +21,7 @@ use super::support::{
 /// so the port is free the moment this drops and the program's own `bind`
 /// answers without `SO_REUSEADDR` — which the runtime deliberately does not
 /// set, because it would change what a second bind of one port means
-/// [SYS-17].
+///.
 fn free_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("reserve a loopback port");
     listener
@@ -101,7 +75,7 @@ fn echo_exchange(program: &CompiledProgram, native_ring: bool, bytes: &[u8]) -> 
     stream.write_all(bytes).expect("send the payload");
     // The connection's receiving direction ends where this peer stops sending,
     // and the server's `receive_next` answers `ReadEnd` for exactly that
-    // [SYS-8, SYS-18].
+    //.
     stream.shutdown(Shutdown::Write).expect("stop sending");
     let mut returned = Vec::new();
     stream
@@ -137,52 +111,27 @@ fn ipv4_checksum_uses_one_slice_consumer_for_static_and_runtime_storage() {
 }
 
 #[test]
-fn every_tcp_operation_lowers_through_the_one_submit_and_join_shape() {
+fn tcp_calls_use_ordinary_linked_declarations() {
     let llvm = compile_program("tcp_echo.wf");
-    // One lowering: each operation is filled into the frame's own record,
-    // submitted, and joined where its outcome is needed. No direct arm and no
-    // second lowering.
-    for submit in [
-        "call void @wf__completion_socket_listen_submit",
-        "call void @wf__completion_socket_accept_submit",
-        "call void @wf__completion_socket_receive_submit",
-        "call void @wf__completion_socket_send_submit",
-        "call void @wf__completion_socket_shutdown_submit",
+    for name in [
+        "tcp_listen",
+        "tcp_accept",
+        "receive_next",
+        "send_once",
+        "close_listener",
+        "close_receive",
+        "close_send",
     ] {
-        assert!(llvm.contains(submit), "missing {submit}");
+        assert!(
+            llvm.contains(&format!("call void @wf_{name}(")),
+            "missing ordinary call {name}"
+        );
+        assert!(
+            llvm.contains(&format!("declare void @wf_{name}(")),
+            "missing ordinary declaration {name}"
+        );
     }
-    // The accept has its own join because it publishes the peer's address
-    // beside the descriptor; every other TCP kind retires through the one file
-    // join.
-    assert!(llvm.contains("call void @wf__completion_socket_accept_join"));
-    assert!(llvm.contains("call void @wf__completion_file_join"));
-    // The listener's explicit close is the ordinary close every other
-    // descriptor-shaped resource takes; the connection's is two half-closes,
-    // one per direction, and the runtime's own two-count decides which of them
-    // releases the target's object [SYS-18].
-    assert!(llvm.contains("call void @wf__completion_file_close_submit"));
-    let explicit = llvm
-        .split("define private i1 @wf.sys.close_connection.v1(")
-        .nth(1)
-        .and_then(|tail| tail.split("\n}\n").next())
-        .expect("the emitted explicit close of a connection");
-    assert_eq!(
-        explicit
-            .matches("call void @wf.sys.socket.half_close(i32")
-            .count(),
-        2,
-        "the pair's close is exactly one half-close per direction"
-    );
-    // Compiler-derived release of a direction reaches the very same helper, so
-    // a pair released either way makes the same two attempts and the runtime's
-    // own two-count decides which of them releases the target's object
-    // [SYS-5, SYS-18].
-    assert!(
-        llvm.matches("call void @wf.sys.socket.half_close(i32")
-            .count()
-            > 2,
-        "derived release of a direction must reach the one half-close"
-    );
+    assert!(!llvm.contains("@wf__completion_"));
 }
 
 #[test]
@@ -203,7 +152,7 @@ fn a_peer_that_stops_sending_is_the_receiving_direction_s_end_on_both_routes() {
     let program = build_program(&llvm);
     for native_ring in [true, false] {
         // Nothing at all is sent, so the very first `receive_next` observes
-        // the end and the program returns without failure [SYS-8].
+        // the end and the program returns without failure.
         let (returned, status) = echo_exchange(&program, native_ring, &[]);
         assert_eq!(status, 0, "native ring: {native_ring}");
         assert!(returned.is_empty(), "native ring: {native_ring}");
@@ -238,7 +187,7 @@ fn a_peer_that_resets_reaches_the_program_as_its_own_outcome_on_both_routes() {
         let (status, _) = finished(child);
         // `tcp_echo.wf` reports 20 plus the portable class for a refused
         // receive and 30 plus it for a refused send; class 2 is
-        // `ConnectionReset` and class 4 is `BrokenPipe` [SYS-7]. Which of the
+        // `ConnectionReset` and class 4 is `BrokenPipe`. Which of the
         // three the program observes is the host's own timing and every one of
         // them is the peer's reset reaching source as an ordinary outcome.
         assert!(
@@ -298,79 +247,24 @@ fn four_connections_reach_one_listener_on_both_routes() {
 }
 
 #[test]
-fn the_fanout_loop_states_its_permission_verdict() {
-    // The judgment is target-independent and the same on both routes, so this
-    // reads it once. The counted permission refuses the loop, because the
-    // status it accumulates is written by no associative operation; the staged
-    // permission admits it, because every edge that leaves the loop is in the
-    // prologue, the factory is touched by the prologue alone, the listener is
-    // only ever borrowed shared, and the status is written by the remainder
-    // alone [PAR-3]. The disposition table is pinned here because those
-    // dispositions are what a server loop's shape has to satisfy, and the
-    // ledger is where a writer reads them.
-    //
-    // A fourth disposition stood here until the container retirement: the
-    // per-connection scratch was an iteration-own `buffer_new` run, classified
-    // `replicated`, handed to `serve_one` as `&uniq`. No run replaces it in
-    // this position. A borrow of a run is the address of the run's own storage
-    // [OWN-2], and an address the loop body hands out pins that storage to one
-    // frame slot, which the staged lowering refuses because four in-flight
-    // iterations cannot share it; and an owned run parameter occurring at one
-    // position of a declaration may carry no region name, therefore no affine
-    // bound [FORM-8], so its store region is the fail-closed general one and
-    // the callee may not release it [PROV-6]. `serve_one` therefore reserves
-    // its own extent, and what the ledger reports here is the three
-    // dispositions that remain. The `replicated` classification itself is
-    // still covered, over a run taken from a store, by the conformance case
-    // `par3-pos-a-per-iteration-run-from-the-store-is-iteration-own`.
-    //
-    // What the permission grants, the lowering takes: the staged point is a
-    // may-suspend user call, `serve_one`, and in a `--par` build the backend
-    // offers it a lane frame there and retires it in the exact drain, so the
-    // four accepts are in flight at once. The two cases at the end of this
-    // module are the ones that say so — one on the emitted shape and one on
-    // four peers that connect before any of them speaks.
+fn the_fanout_loop_has_only_ordinary_counted_permission() {
     let ledger = program_permission_ledger("tcp_fanout.wf");
-    let denial = ledger
-        .iter()
-        .find(|line| {
-            line.starts_with("PAR loop")
-                && line.contains("tcp_fanout.wf:")
-                && line.contains("set outcome = reported")
-        })
-        .expect("the fixed-trip accept loop states a counted verdict");
     assert!(
-        denial.contains("denied")
-            && denial.contains("condition 1: the loop writes storage outliving the iteration"),
-        "the accept loop's counted verdict must be the judgment's own, got {denial}"
+        ledger.iter().any(|line| line.starts_with("PAR loop")
+            && line.contains("denied")
+            && line.contains("condition 1")),
+        "{ledger:?}"
     );
-    let staging = ledger
-        .iter()
-        .find(|line| line.starts_with("PAR stage") && line.contains("serve_one(listener: &bound"))
-        .expect("the fixed-trip accept loop states a staging verdict");
     assert!(
-        staging.contains("permitted") && staging.contains("3 places classified"),
-        "the accept loop must be staged at its accept, got {staging}"
+        !ledger
+            .iter()
+            .any(|line| line.starts_with("PAR stage") || line.starts_with("PAR place")),
+        "{ledger:?}"
     );
-    for (disposition, place) in [
-        ("serialized-P", "&uniq handles"),
-        ("read-only", "&bound"),
-        ("serialized-E", "set outcome = reported;"),
-    ] {
-        assert!(
-            ledger.iter().any(|line| {
-                line.starts_with("PAR place")
-                    && line.contains("tcp_fanout.wf:")
-                    && line.contains(disposition)
-                    && line.contains(place)
-            }),
-            "the ledger must classify {place} as {disposition}"
-        );
-    }
 }
 
 #[test]
-fn a_refused_connect_hands_its_permit_back_on_both_routes() {
+fn a_refused_connect_restores_factory_capacity_on_both_routes() {
     let llvm = compile_program("tcp_refused.wf");
     let program = build_program(&llvm);
     for native_ring in [true, false] {
@@ -380,138 +274,8 @@ fn a_refused_connect_hands_its_permit_back_on_both_routes() {
         let text = port.to_string();
         let child = program.spawn_on_route(native_ring, &[text.as_bytes()]);
         let (status, _) = finished(child);
-        // The program exits zero only when both attempts answered
-        // `ConnectFailed(ConnectionRefused, permit)` and the second used the
-        // very permit the first handed back [SYS-10, SYS-17].
+        // Both attempts must report ConnectionRefused; failed construction
+        // leaves the same factory available for the second ordinary call.
         assert_eq!(status, 0, "native ring: {native_ring}");
     }
-}
-
-/// Four peers connect before any of them speaks, and the last to connect is
-/// the first to be answered.
-///
-/// A server that takes the four connections one at a time is parked in its
-/// first peer's `receive_next` while the fourth peer waits, so this exchange
-/// cannot complete; only a server whose four accepts are in flight at once
-/// answers it. That is what the staged permission grants the fixed-trip
-/// accept loop of `tcp_fanout.wf` in a `--par` build [PAR-3], and what the
-/// lane hand-out of its staged call takes: the prologue of each iteration
-/// takes its permit and publishes its `serve_one`, and the remainders, one
-/// parked callee per peer, run overlapped. The reads carry a deadline so a
-/// server that serves peers in turn fails this case in bounded time rather
-/// than hanging it.
-///
-/// Three workers, on both routes, because the property is about what the
-/// runtime does with a wait and not about how many cores the runner has. A
-/// pool sized to a large machine gives each of the four peers a worker of its
-/// own, so a runtime that let every one of those workers block inside its own
-/// peer's `receive_next` would still answer all four here and fail only on a
-/// three-core host. Pinned below the peer count, the fourth peer is answered
-/// only if the waits are carried by something other than the workers.
-#[test]
-fn four_peers_are_served_at_once_under_par_on_both_routes() {
-    let llvm = compile_program_with_overlap("tcp_fanout.wf");
-    let program = build_program(&llvm);
-    for native_ring in [true, false] {
-        let port = free_port();
-        let text = port.to_string();
-        let child = program.spawn_on_route_with_workers(native_ring, Some("3"), &[text.as_bytes()]);
-        let mut streams = (0..4_u8)
-            .map(|_| connect_when_ready(port))
-            .collect::<Vec<_>>();
-        for peer in (0..4_u8).rev() {
-            let stream = &mut streams[usize::from(peer)];
-            stream
-                .set_read_timeout(Some(Duration::from_secs(20)))
-                .expect("bound the wait for this peer's answer");
-            let sent = [peer, peer + 1, peer + 2];
-            stream.write_all(&sent).expect("send this peer's bytes");
-            let mut returned = Vec::new();
-            stream.read_to_end(&mut returned).unwrap_or_else(|error| {
-                panic!(
-                    "peer {peer} was not answered while earlier peers were still silent \
-                     (native ring: {native_ring}): {error}"
-                )
-            });
-            assert_eq!(returned, sent, "peer {peer} (native ring: {native_ring})");
-        }
-        drop(streams);
-        let (status, _) = finished(child);
-        assert_eq!(status, 0, "native ring: {native_ring}");
-    }
-}
-
-/// The fanout loop's carrying block offers its staged call to a lane, and its
-/// drain retires it.
-///
-/// The end-to-end case above proves the four peers are answered at once; this
-/// one pins the shape that does it, so a regression that quietly returns the
-/// loop to serving in turn fails here as well as there. The publish is in the
-/// block the loop carries an iteration out of, and the join and the release
-/// are in the exact drain, which is the whole of the schedule: submit at the
-/// staged point, retire in iteration order. The `--no-overlap` module names
-/// none of the four lane entries, because a hand-out exists only in the world
-/// that asked for one.
-#[test]
-fn the_fanout_loop_offers_its_staged_call_to_a_lane_and_retires_it_in_the_drain() {
-    let overlapped = compile_program_with_overlap("tcp_fanout.wf");
-    let main = emitted_function(&overlapped, "main");
-    // The window is asked once at the loop's entry, with the trip count the
-    // source states and the compiler's own ceiling: one lane frame slot per
-    // in-flight iteration.
-    assert!(
-        main.contains(&format!(
-            "call i64 @wf__completion_window(i64 4, i64 0, i64 {})",
-            whitefoot::LANE_SLOTS
-        )),
-        "the staged loop must ask for its window once at entry:\n{main}"
-    );
-    let offer = labelled_block(main, "par.staged.offer.");
-    assert!(
-        offer.contains("call void @wf__par_publish("),
-        "the carrying block must publish the staged call's frame:\n{main}"
-    );
-    let wait = labelled_block(main, "par.staged.wait.");
-    assert!(
-        wait.contains("call void @wf__par_join(") && wait.contains("call void @wf__par_release("),
-        "the drain must join the frame, read it, and give it back:\n{main}"
-    );
-    // The refused edge is the same call on the same operands, run where it is
-    // written, and its answer waits in the same ring element the drain reads.
-    let inline = labelled_block(main, "par.staged.inline.");
-    assert!(
-        inline.contains("call i8 @wf_serve_one("),
-        "a refused acquisition must run the staged call inline:\n{main}"
-    );
-
-    let sequential = compile_program_without_overlap("tcp_fanout.wf");
-    for entry in [
-        "@wf__par_acquire_lane",
-        "@wf__par_publish",
-        "@wf__par_join",
-        "@wf__par_release",
-    ] {
-        assert!(
-            !sequential.contains(entry),
-            "the --no-overlap module must name no lane entry, found {entry}"
-        );
-    }
-}
-
-/// The instructions of the first block whose label starts with `prefix`.
-///
-/// A label is the only unindented line inside an emitted function body, so the
-/// block runs from the line after its label to the next unindented line.
-fn labelled_block(function: &str, prefix: &str) -> String {
-    let mut lines = function
-        .lines()
-        .skip_while(|line| !line.starts_with(prefix));
-    assert!(
-        lines.next().is_some(),
-        "no block labelled {prefix} in:\n{function}"
-    );
-    lines
-        .take_while(|line| line.starts_with(' '))
-        .collect::<Vec<_>>()
-        .join("\n")
 }

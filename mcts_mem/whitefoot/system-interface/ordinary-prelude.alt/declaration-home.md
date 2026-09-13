@@ -9,3 +9,4 @@
 ## Moves
 
 - 2026-08-19 (55a75434) replaced [[program-kind-conditional-domain]]: once every legal unit has the sole `command` entry form, program-kind conditional visibility partitions no accepted program; keeping that condition only preserves a dead declaration path and complicates one-domain resolution (sourced)
+- 2026-09-12 (d695f385) replaced by [[ordinary-prelude]]: C1 DESIGN and selected decision 6 require one ordinary declaration and call model; the always-visible system domain adds a source distinction based only on implementation origin, while ordinary prelude signatures retain the same named arguments and contracts. (sourced)

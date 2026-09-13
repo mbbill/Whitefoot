@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: nonzero counts from two separate buffers are each bounded, then added once after both loops.";
   let first = fixed_vector::<u8, 4>();
   region {

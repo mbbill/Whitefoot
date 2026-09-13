@@ -22,7 +22,7 @@ fn scan_with_carry<const n: u64>(buf: own FixedVector<u8, n>, start_carry: own u
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let buf = fixed_vector::<u8, 5>();
   region {
     place_back(vector: &uniq buf, value: 2_u8);

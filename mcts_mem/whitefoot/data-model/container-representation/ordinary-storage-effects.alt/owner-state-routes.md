@@ -27,3 +27,4 @@
 ## Moves
 
 - 2026-09-09 (4bcb9961) replaced [[whole-static-field-routes]]: Whole-owner and static-field routes could not retain an enclosing allocation and its displaced and installed children independently; typed subvalue routes with exclusions express that distinction. (code)
+- 2026-09-12 (d695f385) replaced by [[ordinary-storage-effects]]: Selected C1 decision 6 removes value-history effect roots uniformly; ordinary resolved storage paths and explicit contracts express mutation and result facts without inferring owner ancestry through locals, results or exclusive replacement. (sourced)

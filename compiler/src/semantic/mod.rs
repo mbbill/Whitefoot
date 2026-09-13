@@ -42,15 +42,15 @@ pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission}
 
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
-    CheckedBufferRoot, CheckedCommitValues, CheckedConst, CheckedConstructor, CheckedContainerRoot,
-    CheckedDrop, CheckedElement, CheckedEnumType, CheckedExpression, CheckedFlatElement,
-    CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedKernelInstance,
-    CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure,
-    CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedPlaceStep,
-    CheckedProgramData, CheckedProjectedDrop, CheckedReleaseClass, CheckedRuntimeTargetObligations,
-    CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource, CheckedStatement,
-    CheckedTargetDomainObligation, CheckedType, CheckedValue, CheckedWritablePlace, FunctionId,
-    MeasureCell, MeasuredKind, NominalId, PropagationContext, expression_children,
+    CheckedBufferRoot, CheckedCommitValues, CheckedConst, CheckedContainerRoot, CheckedDrop,
+    CheckedElement, CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation,
+    CheckedFunction, CheckedIntegerOperation, CheckedKernelInstance, CheckedLayoutCeiling,
+    CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure, CheckedMode,
+    CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedPlaceStep, CheckedProgramData,
+    CheckedProjectedDrop, CheckedReleaseClass, CheckedRuntimeTargetObligations, CheckedSetTarget,
+    CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
+    CheckedType, CheckedValue, CheckedWritablePlace, FunctionId, MeasureCell, MeasuredKind,
+    NominalId, PropagationContext, expression_children,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -154,7 +154,7 @@ pub enum SemanticRule {
     Fn2,
     /// Numeric bounds and named parameter/argument group formation.
     Fn3,
-    /// Function-kind signature, effect, contract and fresh-result matching.
+    /// Function-kind signature, effect and structural-contract matching.
     Fn4,
     /// Explicit static member selection from a formal parameter group.
     Fn5,
@@ -976,6 +976,12 @@ pub enum SemanticIssueKind {
     /// returned, stored into a field, or moved to an outside destination.
     ArenaEscape {
         /// Required STOR-4 restructuring.
+        mechanical_fix: &'static str,
+    },
+    /// [BLK-4] a complete value type names a region that does not outlive
+    /// the destination of an ordinary owned transfer.
+    ConfinedValueEscape {
+        region: String,
         mechanical_fix: &'static str,
     },
     /// A slice-valued value match would require an unselected origin join.

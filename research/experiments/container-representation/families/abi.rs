@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+#[path = "../linkage.rs"]
+mod linkage;
+
 use std::{env, fs};
 
 fn main() {
@@ -10,12 +13,14 @@ fn main() {
         "usage: abi INPUT OUTPUT SYMBOL | abi --observe-allocations INPUT OUTPUT"
     );
     if args[1] == "--observe-allocations" {
-        let input = fs::read_to_string(&args[2]).expect("read compiler module");
+        let input =
+            linkage::closed_helpers(&fs::read_to_string(&args[2]).expect("read compiler module"));
         fs::write(&args[3], observe_allocations(&input))
             .expect("write allocation observer adapter");
         return;
     }
-    let input = fs::read_to_string(&args[1]).expect("read compiler module");
+    let input =
+        linkage::closed_helpers(&fs::read_to_string(&args[1]).expect("read compiler module"));
     let old = format!("define internal i64 @{}(i64 ", args[3]);
     let new = format!("define i64 @{}(i64 ", args[3]);
     assert_eq!(input.matches(&old).count(), 1, "unexpected scalar ABI");

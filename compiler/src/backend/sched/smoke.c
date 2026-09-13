@@ -1,10 +1,8 @@
-/* A host smoke run of the scheduler core: real threads, the real switch, the
- * real park. It is not the gate (the enumerator is, design §11); it is the
- * first thing that has to work before an enumeration is worth running, and
- * it exercises the shapes of §0 the staged pipeline never reaches: a
- * straight-line group of I/O records parked on and resumed on foreign
- * threads, a hand-out whose callee parks on I/O, and the entry stack parked
- * on main's first I/O and run to its return by a worker (S17). */
+/* A host smoke run of the scheduler core, complementing the exhaustive
+ * enumerator with real threads, context switches and parking. It exercises
+ * a straight-line group of I/O records resumed on other threads, an ordinary
+ * callback that parks inside a native call, and the entry stack parked on
+ * its first I/O and subsequently run to return by a worker. */
 
 #include "core.h"
 

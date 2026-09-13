@@ -24,14 +24,14 @@ fn filled_array<T: Int, const n: u64>(value: own T) -> result: own FixedVector<T
   return move built;
 }
 
-fn filled_buffer<T: Int>(store: &uniq Heap, length: own u64, value: own T) -> result: own Option<Vector<T>> reads(store), writes(store), allocates(store) contract {
+fn filled_buffer<T: Int>['heap](store: &uniq Heap<'heap>, length: own u64, value: own T) -> result: own Option<Vector<'heap, T>> reads(store), writes(store), allocates(store) contract {
   requires buffer_fits::<T>(length);
   requires length <= 1152921504606846975_u64;
 } {
   region {
     match heap_vector::<T>(store: &uniq deref(store), count: length) {
       None() => {
-        return None<Vector<T>>();
+        return None<Vector<'heap, T>>();
       }
       Some(value: fresh) => {
         let built = move fresh;
@@ -43,7 +43,7 @@ fn filled_buffer<T: Int>(store: &uniq Heap, length: own u64, value: own T) -> re
         ) {
           place_back(vector: &uniq built, value: value);
         }
-        return Some<Vector<T>>(value: move built);
+        return Some<Vector<'heap, T>>(value: move built);
       }
     }
   }

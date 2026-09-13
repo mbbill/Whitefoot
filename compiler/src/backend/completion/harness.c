@@ -215,7 +215,7 @@ int wf_completion_test_poll(
  *     `test_a_name_no_pool_record_could_hold_takes_the_completion_path`.
  *   - The overwrite arm of `test_submitted_open_owns_its_path_bytes`, which
  *     rewrote the caller's buffer immediately after submitting.  The bytes are
- *     the frame's and [SYS-2]'s loan on them holds until the join (design §5),
+ *     the frame's and (ordinary native library)'s loan on them holds until the join (design §5),
  *     so rewriting them while the operation is outstanding is no longer a
  *     thing a conforming caller does; what remains -- that an open resolves
  *     the name it was given -- is asserted by
@@ -961,7 +961,7 @@ static int wf_harness_write_marker_file(int root, const char *name, char byte) {
  * outstanding opens resolve their own.
  *
  * Nothing is copied any more: the path is the frame's own storage and
- * [SYS-2]'s loan on it holds until the join, so the kernel or the helper
+ * (ordinary native library)'s loan on it holds until the join, so the kernel or the helper
  * resolves the caller's bytes in place (design §5).  The property that
  * survives the copy's removal is the one an emitted program depends on --
  * that two independent opens outstanding at once each resolve their own name
@@ -2671,14 +2671,14 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
 }
 
 /* One loopback connection through the submitted TCP kinds, and the accounting
- * a connection's two directions carry [SYS-17, SYS-18].
+ * a connection's two directions carry (ordinary native library).
  *
  * This is the whole socket lifecycle at the bridge's own ABI: listen, connect,
  * accept, send, receive, and the two half-closes. The accounting under test is
  * the pair's: a connection is one descriptor and two owners, so it takes
  * exactly two releases, the first is that direction's half-close and leaves
  * the target's object open, and the second releases it. That is the runtime's
- * half of the [SYS-10] credit rule -- one connection costs the target one
+ * half of the (ordinary native library) credit rule -- one connection costs the target one
  * native handle, whichever way the pair is released -- and it is checked here
  * by asking the host whether the descriptor is still this program's.
  *
@@ -2755,7 +2755,7 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
     CHECK(memcmp(received, message, sizeof(message)) == 0);
 
     /* An empty receive has no external action at all and answers zero without
-     * a host call, exactly as an empty read does [SYS-8]. */
+     * a host call, exactly as an empty read does (ordinary native library). */
     wf__completion_socket_receive_submit(taken, received, 0, record.bytes);
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
@@ -2785,7 +2785,7 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
 
     /* The other connection takes exactly the same two releases, in the other
      * order, because which direction is released first is the program's own
-     * ordinary release order and changes no outcome [SYS-18]. */
+     * ordinary release order and changes no outcome (ordinary native library). */
     wf__completion_socket_shutdown_submit(
         connected,
         WF_SOCKET_DIRECTION_SEND,
@@ -2812,7 +2812,7 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
 
     /* A connect nobody is listening for takes no handle at all: the host
      * refuses it and the runtime disposes of the socket it made, so the
-     * program's own permit comes back rather than a descriptor [SYS-10]. */
+     * program's own permit comes back rather than a descriptor (ordinary native library). */
     wf__completion_socket_connect_submit(0x0100007fu, 0, port, record.bytes);
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value < 0 && error_code == ECONNREFUSED);

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- len_of(arr) = 4 is published by the four commits that fill the run and holds at every program point; 0_u64 < len_of(arr) must discharge after the replace.";
   let arr = fixed_vector::<u32, 4>();
   region {

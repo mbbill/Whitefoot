@@ -11,7 +11,7 @@ fn fill_prefix(out: &uniq MutSlice<u8>, source: own Slice<u8>) -> written: own u
   return amount;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: requires uses a len_of(deref(out)) definition to bound the write loop.";
   region 'w {
     let workspace = arena_frame::<8, 1, 'w>();

@@ -139,9 +139,7 @@ fn main() -> status: own ExitStatus pure {
                 mechanical_fix: DIVISION_FIX,
             },
         );
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("expected a source-node citation: {:?}", issue.location());
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(
@@ -315,7 +313,7 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(issue.rule(), SemanticRule::Op2);
     });
     let extra_effect_row =
-        br#"fn ratio(heap: &uniq Heap, n: own i32, d: own i32) -> result: own i32 allocates(heap) {
+        br#"fn ratio['heap](heap: &uniq Heap<'heap>, n: own i32, d: own i32) -> result: own i32 allocates(heap) {
   let q = n / d;
   return q;
 }
@@ -367,7 +365,7 @@ fn a_checked_division_attaches_no_obligation() {
 #[test]
 fn effect_mismatch_precedes_static_division_rejection() {
     let source =
-        br#"fn ratio(heap: &uniq Heap, n: own u64, d: own u64) -> result: own u64 allocates(heap) {
+        br#"fn ratio['heap](heap: &uniq Heap<'heap>, n: own u64, d: own u64) -> result: own u64 allocates(heap) {
   let q = n / d;
   let r = n % d;
   return q;
@@ -643,9 +641,7 @@ fn main() -> status: own ExitStatus pure {
             panic!("the old dividend value must not constrain its replacement: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("the rejection must cite the exact arithmetic site");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(&source[start..end], b"count - doubled");
@@ -1009,7 +1005,8 @@ fn a_store_run_indexed_defined_guard_discharges_the_same_structural_exact_operat
     // The borrowed store-resident run replaces the retiring `&buffer<u8>`.
     // Its measured kind is `Vector` where the fixed run above is
     // `FixedVector`, so the two cases still pin two distinct index rows.
-    let source = br#"fn increment(values: &Vector<u8>) -> result: own u8 reads(values) {
+    let source =
+        br#"fn increment['heap](values: &Vector<'heap, u8>) -> result: own u8 reads(values) {
   let spare = len_of(deref(values));
   if 0_u64 < spare {
     if deref(values)[0_u64] +defined 1_u8 {

@@ -21,9 +21,7 @@ fn assert_behavior_site(source: &str, rule: SemanticRule, expected: &str) {
             panic!("expected {rule:?}");
         };
         assert_eq!(issue.rule(), rule, "{issue:?}");
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("source location required");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).unwrap();
         let end = usize::try_from(coordinate.end().value()).unwrap();
         assert_eq!(&source[start..end], expected);
@@ -78,7 +76,14 @@ fn group_contracts_publish_only_after_structurally_matched_actual_proofs() {
                     .all(|function| !function.formal_hypothesis)
             );
             let lowered = lower_checked(*checked, mode).expect("direct-call lowering");
-            assert_eq!(lowered.functions().len(), 3);
+            assert_eq!(
+                lowered
+                    .functions()
+                    .iter()
+                    .filter(|function| !function.blocks().is_empty())
+                    .count(),
+                3
+            );
         });
     }
     // Equivalent integer relations still differ structurally; no theorem
@@ -94,7 +99,7 @@ fn group_contracts_publish_only_after_structurally_matched_actual_proofs() {
 }
 
 #[test]
-fn owned_function_formal_results_must_be_fresh() {
+fn owned_function_formal_results_follow_ordinary_transfer() {
     let source = r#"formal Factory<T: affine> {
   fn make(value: own T) -> result: own T pure;
 }
@@ -111,7 +116,14 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_behavior_rule(source, SemanticRule::Fn4);
+    // v0.58 removes FN-1 state routing and the derived FN-4 freshness
+    // ceiling. A same-signature actual can return the value it consumes.
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
     with_semantics(
         source
             .replace("return move value;", "return fixed_vector::<u8, 4>();")
@@ -154,7 +166,14 @@ fn main() -> status: own ExitStatus pure {
         );
         let lowered = lower_checked(*checked, OverlapLowering::Off)
             .expect("raw function substitution lowers directly");
-        assert_eq!(lowered.functions().len(), 3);
+        assert_eq!(
+            lowered
+                .functions()
+                .iter()
+                .filter(|function| !function.blocks().is_empty())
+                .count(),
+            3
+        );
     });
 }
 
@@ -490,7 +509,15 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("{outcome:?}");
         };
-        assert_eq!(checked.data.functions.len(), 2);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            2
+        );
         assert!(
             checked
                 .data
@@ -671,7 +698,7 @@ fn outer<Inspect<T>>(value: &T) -> result: own u64 reads(value) {
   return Inspect::read(value: value);
 }
 
-fn wrapper(value: &Pair) -> result: own u64 reads(value.left, value.right) {
+fn wrapper(value: &Pair) -> result: own u64 reads(value) {
   return outer::<Left>(value: value);
 }
 
@@ -690,13 +717,13 @@ fn main() -> status: own ExitStatus pure {
         lower_checked(*checked, OverlapLowering::Off)
             .expect("covered actual lowers as a direct call");
     });
-    // The ordinary EFF-2 projection names the concrete aggregate's incoming
-    // state leaves. Both leaves of the formal read remain exhibited; using
-    // the selected actual's narrower row would incorrectly accept the next
-    // wrapper, which declares only the left leaf.
+    // v0.58 EFF-2 projects the formal's root onto the resolved actual place,
+    // without value-history leaf expansion. The complete formal read remains
+    // exhibited; substituting the narrower actual would accept this wrapper
+    // incorrectly when it declares only the left field.
     assert_behavior_rule(
         &source.replace(
-            "fn wrapper(value: &Pair) -> result: own u64 reads(value.left, value.right)",
+            "fn wrapper(value: &Pair) -> result: own u64 reads(value)",
             "fn wrapper(value: &Pair) -> result: own u64 reads(value.left)",
         ),
         SemanticRule::Eff2,
@@ -710,9 +737,7 @@ fn assert_issue_slice(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind
         };
         assert_eq!(issue.rule(), rule);
         assert_eq!(issue.kind(), &kind);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("contract diagnostics are source-node diagnostics");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("test offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("test offset fits");
         assert_eq!(&source[start..end], expected);
@@ -788,10 +813,25 @@ fn main() -> status: own ExitStatus pure {
 
         // The bound function is still present exactly once in the ordinary
         // function table. Contract metadata contributes no executable function.
-        assert_eq!(checked.data.functions.len(), 2);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            2
+        );
         let lowered = lower_checked(*checked, OverlapLowering::Off)
             .expect("static contract metadata must not alter ordinary lowering");
-        assert_eq!(lowered.functions().len(), 2);
+        assert_eq!(
+            lowered
+                .functions()
+                .iter()
+                .filter(|function| !function.blocks().is_empty())
+                .count(),
+            2
+        );
     });
 }
 
@@ -811,7 +851,15 @@ fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("empty marker conformance must check: {outcome:?}");
         };
-        assert_eq!(checked.data.functions.len(), 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            1
+        );
         assert!(!checked.data.functions[0].formal_hypothesis);
     });
 }

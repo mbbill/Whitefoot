@@ -12,7 +12,7 @@ fn copy_window(src: own Slice<u8>, dst: &uniq MutSlice<u8>, start: own u64, end:
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: window [start, end) is proved inside both buffers by contract; end <= spare composes with the for-loop's automatic i < end fact under [OP-4]'s two-premise automatic rule.";
   region 'w {
     let workspace = arena_frame::<16, 1, 'w>();

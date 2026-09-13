@@ -21,10 +21,8 @@ use std::path::Path;
 use std::process::Command;
 
 use super::support::{
-    CompiledProgram, build_program, close_path, compile_program, compile_program_rejection_with,
-    fixture_directory, reopen_path,
+    CompiledProgram, build_program, close_path, compile_program, fixture_directory, reopen_path,
 };
-use whitefoot::Inventory;
 
 /// The reusable input run length in `tests/programs/wfgrep.wf`.
 ///
@@ -442,18 +440,11 @@ fn the_search_source_requires_the_complete_file_permit_inventory() {
     let llvm = compile_program("wfgrep.wf");
     // The approved implementations, by symbol rather than by any source name
     // [QUAL-1].
-    assert!(llvm.contains("@wf.sys.open_file.v1"));
-    assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
-    assert!(llvm.contains("@wf.sys.directory_next.v1"));
-    assert!(llvm.contains("@wf.sys.open_directory.v1"));
-    assert!(llvm.contains("@wf.sys.read_at.v1"));
-
-    let failure = compile_program_rejection_with("wfgrep.wf", Inventory::OpenByName);
-    assert!(
-        failure.contains("UnresolvedUse")
-            && (failure.contains("HandleFactory") || failure.contains("reserve_handle")),
-        "the pre-permit inventory must reject explicit file authority: {failure}"
-    );
+    assert!(llvm.contains("@wf_open_file"));
+    assert!(llvm.contains("@wf_open_directory_source"));
+    assert!(llvm.contains("@wf_directory_next"));
+    assert!(llvm.contains("@wf_open_directory"));
+    assert!(llvm.contains("@wf_read_at"));
 }
 
 // The old traversal/open-by-name byte differential ended when the file-permit

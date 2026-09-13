@@ -58,7 +58,7 @@ pub(super) fn resolve_uses_deferred(
                             class: *class,
                         });
                     } else {
-                        invisible.push(DeclarationOrigin::Source(declaration.origin.clone()));
+                        invisible.push(declaration.diagnostic_origin(*class));
                     }
                 }
             }

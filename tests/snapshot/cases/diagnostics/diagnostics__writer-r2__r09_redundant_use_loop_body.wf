@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT REJECT under Prf1: AUTO already proves the body-local invariant directly from the counted for's own structural fact i < count, so the written use block restates a residual AUTO already closes on its own; the correct repair is to remove the use block.";
   let count = 4_u64;
   let touched = 0_u64;

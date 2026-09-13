@@ -3,7 +3,7 @@ struct Ring {
   cursor: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- writing filter.cursor kills the old bound on that field [ENT-5](a); each iteration reestablishes it before indexing.";
   let samples = fixed_vector::<u32, 4>();
   region {

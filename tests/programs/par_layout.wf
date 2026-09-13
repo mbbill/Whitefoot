@@ -223,8 +223,12 @@ fn spell_hex(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> re
   return limit;
 }
 
-fn main['heap](command.args as args: own Args, command.stdout as out: own OutputStream, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(args, out, heap), writes(out, heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes. The complete invocation count selects identical benchmark batches; an ordinary argument-free invocation has one batch.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let batches = 1_u64;
   region {
     let invocation_count = args_count(args: &args);
@@ -272,9 +276,9 @@ fn main['heap](command.args as args: own Args, command.stdout as out: own Output
                   if done {
                     break @reps;
                   }
-                  region 'tree {
+                  region {
                     region {
-                      let total = layout(node: &uniq 'tree tree, words: &words, inh: seed);
+                      let total = layout(node: &uniq tree, words: &words, inh: seed);
                       set last = total;
                     }
                   }
@@ -297,9 +301,9 @@ fn main['heap](command.args as args: own Args, command.stdout as out: own Output
                   if done {
                     break @band_reps;
                   }
-                  region 'banded_tree {
+                  region {
                     region {
-                      let total = layout_banded(node: &uniq 'banded_tree tree, words: &words, count: 4096_u64, inh: band_seed);
+                      let total = layout_banded(node: &uniq tree, words: &words, count: 4096_u64, inh: band_seed);
                       set banded = total;
                     }
                   }
@@ -335,10 +339,10 @@ fn main['heap](command.args as args: own Args, command.stdout as out: own Output
                         let second = spell_hex(destination: &uniq window, at: 17_u64, value: banded_bits);
                       }
                     }
-                    region 'o {
+                    region {
                       let published = slice_of(&report);
                       region {
-                        match write_once(output: &uniq 'o out, source: &published, start: 0_u64, end: 34_u64) {
+                        match write_once(factory: &uniq entry_factory, output: &uniq out, source: &published, start: 0_u64, end: 34_u64) {
                           Ok(value: next) => {
                             return exit_status(code: 0_u8);
                           }

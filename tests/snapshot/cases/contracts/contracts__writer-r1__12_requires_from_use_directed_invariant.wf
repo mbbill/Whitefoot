@@ -21,7 +21,7 @@ fn combined_probe<const n: u64>(table: own FixedVector<u8, n>, first: own u64, f
   return byte;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an explicit use directed local invariant combines three published premises to establish a subscript's domain obligation.";
   let table = fixed_vector::<u8, 12>();
   for (

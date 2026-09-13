@@ -11,7 +11,7 @@ fn scaled_area(side: own u16) -> result: own Result<u32, Overflow> pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   match scaled_area(side: 100_u16) {
     Ok(value: v) => {
       if v == 400_u32 {

@@ -14,7 +14,7 @@ fn last_slot(capacity: own u64, attempts: own u64) -> slot: own u64 pure {
   return slot;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let slot = last_slot(capacity: 3_u64, attempts: 7_u64);
   let correct = slot == 1_u64;
   if correct {

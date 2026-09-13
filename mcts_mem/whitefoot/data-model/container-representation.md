@@ -22,13 +22,10 @@
   complete loan lifetime.
   Absence of a candidate record does not imply that an owned view has no borrowed
   backing.
-- Derive ordinary callable owner transfer jointly for owned results and values
-  left in exclusive referents on normal exit. Instantiate their origins and
-  call effects from one entry image, then install stored outputs together at
-  exact actual places. A pointer slot or formal spelling is not the identity of
-  the current value it holds. Use [[owner-state-routes]] for subvalue attribution;
-  a borrow-result ceiling supplies no exact writeback target. Unknown origin
-  dependencies remain explicit compiler limitations, never fresh state.
+- Use [[ordinary-storage-effects]] for caller-visible mutation. Owned results
+  carry ordinary types, ownership and written result facts; exclusive writes
+  remain at resolved actual storage. No owned-value ancestry summary contributes
+  effect roots or supplies missing loan provenance.
 - An exclusive returned borrow can retain an already exact actual through a
   declaration-only whole-location judgment: one candidate, the same complete
   type, and no same-typed proper subplace. This adds no body-derived location

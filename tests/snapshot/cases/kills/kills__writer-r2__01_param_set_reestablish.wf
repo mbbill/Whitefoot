@@ -15,7 +15,7 @@ fn clamp_and_read<const n: u64>(b: own FixedVector<u8, n>, idx: own u64, stride:
   return b[cursor];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- set on a param kills its old bound [ENT-5](a); a fresh branch reestablishes it before the subscript.";
   let data = fixed_vector::<u8, 8>();
   region {

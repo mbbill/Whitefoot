@@ -245,7 +245,7 @@ int wf_file_request_valid(const wf_file_request *request);
 int wf_file_request_is_peer_bound(const wf_file_request *request);
 
 /* Records one direction of one connection as released, and answers whether it
- * was the pair's second release [SYS-18].
+ * was the pair's second release (ordinary native library).
  *
  * The two directions of one connection are two Whitefoot places and the
  * target's object behind them is one, so the runtime keeps the "both halves
@@ -262,7 +262,7 @@ int wf_file_request_is_peer_bound(const wf_file_request *request);
  * derived release of both halves -- so a descriptor's byte returns to zero
  * before the host can hand that descriptor out again.
  *
- * The table covers every descriptor the [SYS-10] handle factory can produce:
+ * The table covers every descriptor the (ordinary native library) handle factory can produce:
  * that factory's own capacity ceiling is this same number less the reserve it
  * keeps for the runtime's descriptors (`backend/wf_floor.c`), and the host
  * hands out the lowest free descriptor, so a connection's descriptor is

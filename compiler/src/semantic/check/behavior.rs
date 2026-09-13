@@ -1604,8 +1604,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "the formal row covers every actual arena allocation",
             );
         }
-        // Ambient legacy allocation is target metadata, not a written row.
-        boundary.allocates_heap = actual.declared_effects.allocates_heap;
         effective.declared_effects = boundary;
         for (parameter, formal_parameter) in effective.parameters.iter_mut().zip(&formal.parameters)
         {

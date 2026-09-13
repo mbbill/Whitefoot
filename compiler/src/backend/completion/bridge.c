@@ -1260,7 +1260,7 @@ void wf__completion_file_open_join(
  *
  * A refused accept publishes the all-zero address, which the emitted mapper
  * never reads: `AcceptFailed` carries the error and the permit and no peer
- * [SYS-17]. */
+ * (ordinary native library). */
 void wf__completion_socket_accept_join(
     const void *record,
     int64_t *value,
@@ -1361,9 +1361,8 @@ static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
  * changed is that the record is published at the end, so every submit path
  * ends in a published record (design §7).  A refusal the host gives it,
  * including an open that found no descriptor, is the outcome the program
- * sees: the descriptor an open needs is owned by its `HandlePermit` [SYS-10],
- * drawn from a factory whose capacity is inside what the host provides, so a
- * refusal here is a genuine exhaustion and not a schedule's invention. */
+ * sees. Factory quota is ordinary library state outside this private engine;
+ * native descriptor refusal is reported unchanged to that library. */
 static void wf_bridge_execute_here(wf_completion_record *record) {
     wf_file_result result;
     record->route = WF_COMPLETION_ROUTE_INLINE;
@@ -1830,9 +1829,8 @@ void wf__completion_directory_next_submit(
     held->request.operation.directory_next.position = position;
     wf_bridge_dispatch(held);
 #else
-    /* A family with no [QUAL-2] enumeration facility compiles no such request
-     * kind, and `backend/qualification.rs` refuses the operation for that
-     * target, so reaching this entry at all is a contract violation. */
+    /* This private engine build has no enumeration request kind. A linked
+     * library must not call an engine facility absent from its build. */
     (void)descriptor;
     (void)buffer;
     (void)count;

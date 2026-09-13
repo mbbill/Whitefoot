@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an ordinary loop advances two independent cursors together over two equal-length arrays, guarding both against their bound before each step and accumulating a wrapped dot product.";
   let left = fixed_vector::<u32, 5>();
   region {

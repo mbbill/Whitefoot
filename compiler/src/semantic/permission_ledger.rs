@@ -206,13 +206,8 @@ impl Entry {
 /// Sorts the rendered lines into source order and collapses the duplicates one
 /// generic's several instances produce.
 ///
-/// The rendered text carries the path, the line, and the kind, so ordinal and
-/// text are the whole reported identity. The notice flag is not part of it: one
-/// source loop of a generic monomorphized twice can render one `loop` line
-/// whose staged sibling was denied in one instance and granted in the other,
-/// and the two entries then differ only in the flag. Dropping either silently
-/// would make the default channel depend on table order, so the surviving line
-/// carries the flag when any instance raised it.
+/// The rendered text carries the path, line, and kind. Together with the
+/// ordinal, these fields give a deterministic reported identity across instances.
 fn collapse(entries: &mut Vec<Entry>) {
     entries.sort_by(|left, right| {
         left.display_path
@@ -223,8 +218,7 @@ fn collapse(entries: &mut Vec<Entry>) {
             .then(left.text.cmp(&right.text))
     });
     entries.dedup_by(|removed, retained| {
-        let same = removed.ordinal == retained.ordinal && removed.text == retained.text;
-        same
+        removed.ordinal == retained.ordinal && removed.text == retained.text
     });
 }
 

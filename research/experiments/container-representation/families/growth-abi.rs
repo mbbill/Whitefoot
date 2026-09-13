@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+#[path = "../linkage.rs"]
+mod linkage;
+
 use std::{env, fs};
 
 fn main() {
@@ -23,7 +26,8 @@ fn main() {
         );
         return;
     }
-    let input = fs::read_to_string(&args[1]).expect("read compiler module");
+    let input =
+        linkage::closed_helpers(&fs::read_to_string(&args[1]).expect("read compiler module"));
     let signature =
         "define internal i64 @wf_growth_trace(ptr %v0, i8 %v1, i64 %v2, i64 %v3, i64 %v4)";
     assert_eq!(input.matches(signature).count(), 1, "unexpected growth ABI");

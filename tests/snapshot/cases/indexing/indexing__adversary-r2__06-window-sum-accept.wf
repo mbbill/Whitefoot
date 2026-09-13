@@ -20,7 +20,7 @@ fn window_sum<const n: u64>(buf: own FixedVector<u8, n>, offset: own u64, length
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let buf = fixed_vector::<u8, 10>();
   region {
     place_back(vector: &uniq buf, value: 3_u8);

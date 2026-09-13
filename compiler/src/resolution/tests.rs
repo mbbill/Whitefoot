@@ -1654,7 +1654,7 @@ fn grouped<Bound>() -> result: own i32 pure {
   return called;
 }
 
-fn viewer['v](values: own Slice<'v, i32>, capability: own Args) -> result: own unit reads(values, capability), allocates(arena 'v) {
+fn viewer['v](values: own Slice<'v, i32>, capability: own i32) -> result: own unit reads(values, capability), allocates(arena 'v) {
   let held = arena_new::<'v, i32>(1_i32);
   return unit;
 }
@@ -1807,7 +1807,7 @@ fn probe() -> result: own unit pure {
 
 #[test]
 fn effect_paths_resolve_the_exact_formal_parameter_and_retain_fields() {
-    let source = b"struct Holder {\n  output: OutputStream;\n}\n\nfn publish(holder: own Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
+    let source = b"struct Holder {\n  output: i32;\n}\n\nfn publish(holder: own Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a parameter-rooted state path must resolve: {outcome:?}");
@@ -1872,12 +1872,16 @@ fn existing_positive_conformance_programs_resolve_without_fixture_rewrites() {
         include_bytes!("../../../tests/conformance/cases/ex1-pos-worked-example.wf").as_slice(),
         include_bytes!("../../../tests/conformance/cases/gram10-pos-named-binders.wf").as_slice(),
     ] {
-        with_one_resolution(source, |outcome| {
-            assert!(
-                matches!(outcome, ResolutionOutcome::Complete(_)),
-                "positive compiler-independent conformance source must resolve: {outcome:?}"
-            );
-        });
+        with_resolution_sources(
+            &[SourceInput::new("conformance.wf", source)],
+            true,
+            |outcome| {
+                assert!(
+                    matches!(outcome, ResolutionOutcome::Complete(_)),
+                    "positive compiler-independent conformance source must resolve: {outcome:?}"
+                );
+            },
+        );
     }
 }
 
@@ -2326,10 +2330,12 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_opaque_types_have_no_constructo
                 let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
                     panic!("PRE-1 collision must reject: {outcome:?}");
                 };
-                assert!(matches!(
-                    issue.kind(),
-                    ResolutionIssueKind::DeclarationCollision { .. }
-                ));
+                let ResolutionIssueKind::DeclarationCollision { mechanical_fix, .. } = issue.kind()
+                else {
+                    panic!("PRE-1 collision must retain its ordinary diagnostic: {issue:?}");
+                };
+                assert!(mechanical_fix.contains("PRE-1 prelude declaration"));
+                assert!(!mechanical_fix.contains("binding whose value was moved"));
             },
         );
     }
@@ -2369,8 +2375,125 @@ fn an_ordinary_prelude_signature_is_eligible_for_an_actual_member() {
 fn supplied_signature_locals_do_not_capture_writer_global_names() {
     // PRE-1 is an outer ordinary declaration environment. Its local `f` and
     // `input` parameter names cannot reserve those names in the writer unit.
-    let source = b"const input: u64 = 7_u64;\n\nfn f() -> result: own u64 pure {\n  return input;\n}\n";
-    with_resolution_sources(&[SourceInput::new("ordinary.wf", source)], true, |outcome| {
-        assert!(matches!(outcome, ResolutionOutcome::Complete(_)), "{outcome:?}");
-    });
+    let source =
+        b"const input: u64 = 7_u64;\n\nfn f() -> result: own u64 pure {\n  return input;\n}\n";
+    with_resolution_sources(
+        &[SourceInput::new("ordinary.wf", source)],
+        true,
+        |outcome| {
+            assert!(
+                matches!(outcome, ResolutionOutcome::Complete(_)),
+                "{outcome:?}"
+            );
+        },
+    );
+}
+
+#[test]
+fn ordinary_prelude_diagnostic_origins_follow_the_complete_record_preorder() {
+    // Opaque table first; Bool and its variants follow; the ordinary struct
+    // contributes distinct nominal and constructor records before its fields.
+    for (name, origins) in [
+        ("HostString", vec![1]),
+        ("Bool", vec![14]),
+        ("Overflow", vec![29, 30]),
+        ("TcpConnection", vec![36, 37]),
+    ] {
+        let source = format!("struct {name} {{\n}}\n");
+        with_resolution_sources(
+            &[SourceInput::new("prelude/HostString.wf", source.as_bytes())],
+            true,
+            |outcome| {
+                let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                    panic!("collision must reject: {outcome:?}");
+                };
+                let ResolutionIssueKind::DeclarationCollision { conflicts, .. } = issue.kind()
+                else {
+                    panic!("ordinary collision: {issue:?}");
+                };
+                let observed: Vec<_> = conflicts
+                    .iter()
+                    .map(|conflict| match conflict.origin() {
+                        DeclarationOrigin::Prelude(id) => id.ordinal(),
+                        other => {
+                            panic!("PRE-1 records have no fabricated source origin: {other:?}")
+                        }
+                    })
+                    .collect();
+                assert_eq!(observed, origins, "{name}");
+                assert_eq!(issue.origin().coordinate().source().ordinal(), 0);
+            },
+        );
+    }
+}
+
+#[test]
+fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_count() {
+    let read_inventory = |source: &[u8]| {
+        with_resolution_sources(
+            &[SourceInput::new("prelude/HostString.wf", source)],
+            true,
+            |outcome| {
+                let ResolutionOutcome::Complete(resolved) = outcome else {
+                    panic!("legal writer path: {outcome:?}");
+                };
+                resolved
+                    .prelude_declarations()
+                    .iter()
+                    .map(|record| {
+                        assert_eq!(resolved.prelude_declaration(record.id()), Some(record));
+                        (
+                            record.id().ordinal(),
+                            record.spelling().to_owned(),
+                            record.lookup_class(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            },
+        )
+    };
+    let first = read_inventory(b"fn helper() -> result: own unit pure {\n  return unit;\n}\n");
+    let second = read_inventory(b"struct Extra {\n  field: u64;\n}\n\nfn helper() -> result: own unit pure {\n  let local = 0_u64;\n  return unit;\n}\n");
+    assert_eq!(first, second);
+    assert_eq!(first[0].1, "Args");
+    assert_eq!(first[14].1, "Bool");
+    assert_eq!(first[36].1, "TcpConnection");
+    assert_eq!(first[185].1, "Int");
+    assert_eq!(first[186].1, "Float");
+    assert_eq!(first[187].1, "args_count");
+    assert_eq!(first[303].1, "close_send");
+    assert_eq!(first.len(), 306);
+    assert_eq!(first.last().map(|record| record.1.as_str()), Some("send"));
+    assert!(
+        first.len() > 256,
+        "the full ordinary inventory must not truncate at u8: {}",
+        first.len()
+    );
+    assert!(
+        first
+            .iter()
+            .enumerate()
+            .all(|(index, record)| index == record.0 as usize)
+    );
+}
+
+#[test]
+fn a_late_prelude_function_collision_preserves_an_ordinal_above_u8() {
+    let source = b"fn close_send() -> result: own unit pure {\n  return unit;\n}\n";
+    with_resolution_sources(
+        &[SourceInput::new("collision.wf", source)],
+        true,
+        |outcome| {
+            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("the function collides with its PRE-1 declaration: {outcome:?}");
+            };
+            let ResolutionIssueKind::DeclarationCollision { conflicts, .. } = issue.kind() else {
+                panic!("ordinary function collision: {issue:?}");
+            };
+            assert_eq!(conflicts.len(), 1);
+            assert!(
+                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 303)
+            );
+        },
+    );
 }

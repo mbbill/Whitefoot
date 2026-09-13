@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an outer labelled loop advances a scan cursor over a text buffer and an inner labelled loop compares a fixed pattern at each position, the inner loop breaking the outer label as soon as a full match is confirmed.";
   let text = fixed_vector::<u8, 6>();
   region {

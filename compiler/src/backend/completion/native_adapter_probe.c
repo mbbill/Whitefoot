@@ -412,14 +412,11 @@ static int probe_open_and_close_cases(
 /* A submitted open resolves the submitting frame's own bytes.
  *
  * The SQE names the caller's buffer and the caller keeps it live until the
- * join, because the record is a block of that frame and [SYS-2]'s loan on the
- * path component holds for exactly that interval (design §5).  What used to be
- * checked here -- that the adapter had copied the name into a pool entry of
- * its own, and had published `loan-released(path)` to say so -- is retired
- * with the copy: there is no entry to copy into, no `WF_FILE_PATH_CAPACITY` to
- * exceed, no "path does not fit" refusal and no demoted-open counter (design
- * §7, "The record's pool machinery: deleted, not answered").  What remains is
- * that the SQE names the record's request, which is what this checks. */
+ * join, because the record belongs to that frame and the ordinary library
+ * call does not return until the request is finished. The adapter does not
+ * copy the component into a bounded pool entry or introduce another path
+ * capacity refusal. This probe checks that the SQE names the request's
+ * actual bytes throughout the native operation. */
 static int probe_open_names_the_submitters_bytes(
     wf_linux_io_uring_adapter *adapter,
     const char *data_path
@@ -652,7 +649,7 @@ static int probe_loopback_round_trip(wf_linux_io_uring_adapter *adapter) {
 
     /* This probe links the ring and nothing else, so the pair's own two-count
      * -- which lives in the shared adapter and is what a half-close consults
-     * [SYS-18] -- is exercised by `harness.c` instead. Here the three
+     * (ordinary native library) -- is exercised by `harness.c` instead. Here the three
      * descriptors are simply given back. */
     PROBE_CHECK(close(connected) == 0);
     PROBE_CHECK(close(taken) == 0);

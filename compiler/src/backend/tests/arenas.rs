@@ -23,7 +23,7 @@ const BYTE_ARENA_NODE: &[u8] = br#"fn main() -> status: own ExitStatus pure {
 #[test]
 fn selected_target_validates_the_complete_padded_arena_node() {
     with_ir(BYTE_ARENA_NODE, |program| {
-        let host = TargetLayout::host().expect("the backend test runs on a qualified host");
+        let host = TargetLayout::host().expect("the backend test runs on a supported host layout");
 
         let exact = host.with_runtime_allocation_limits_for_test(16, 8);
         assert_eq!(validate_program(exact, program), Ok(()));

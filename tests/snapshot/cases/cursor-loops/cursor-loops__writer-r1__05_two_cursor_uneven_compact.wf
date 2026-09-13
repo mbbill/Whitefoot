@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a source cursor advances every iteration while a destination cursor advances only when a nonzero guard passes, compacting nonzero bytes toward the front of an array with the header invariant that the destination cursor never runs ahead of the source.";
   let source = fixed_vector::<u8, 6>();
   region {

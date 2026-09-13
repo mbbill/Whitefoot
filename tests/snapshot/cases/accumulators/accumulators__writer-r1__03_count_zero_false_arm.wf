@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: mirror of the true-arm case, bumping the accumulator only in the else branch.";
   let data = fixed_vector::<u8, 6>();
   region {

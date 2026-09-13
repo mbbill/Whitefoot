@@ -23,7 +23,7 @@ use super::with_semantics;
 
 // Scalar state keeps the ordinary window tests independent of a library API.
 // The shared-factory tests below exercise the linked declarations separately.
-const MARKER: &str = "fn write_marker(output: &uniq u64, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) {\n  let previous = deref(output);\n  let length = len_of(deref(source));\n  set deref(output) = previous +wrap start;\n  return Ok(value: end);\n}\n\n";
+const MARKER: &str = "fn write_marker(output: &uniq u64, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) {\n  let previous = deref(output);\n  let length = len_of(deref(source));\n  set deref(output) = previous +wrap start;\n  return Ok<u64, IoError>(value: end);\n}\n\n";
 
 fn permission_of(source: &[u8]) -> PermissionMetadata {
     let combined = [MARKER.as_bytes(), source].concat();
@@ -74,12 +74,10 @@ fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
 // Grants
 // ----------------------------------------------------------------------
 
-/// Direct system operations are ordinary permission candidates. Their
-/// compiler-owned execution contract is retained for lowering, but authority
-/// overlap is decided solely from the concrete actual places.
+/// Distinct scalar places admit independent ordinary mutating calls.
 #[test]
 fn writes_to_independent_scalar_places_are_permitted() {
-    let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus reads(out, err), writes(out, err) {
+    let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {
@@ -103,7 +101,7 @@ fn writes_to_independent_scalar_places_are_permitted() {
 /// same named region therefore fail before overlap permission is considered.
 #[test]
 fn two_unique_loans_of_one_scalar_deny_overlap() {
-    let source = br#"fn main(out: own u64) -> status: own ExitStatus reads(out), writes(out) {
+    let source = br#"fn main(out: own u64) -> status: own ExitStatus pure {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region {
@@ -155,7 +153,7 @@ fn reads_through_one_factory_and_file_conflict_despite_disjoint_destinations() {
 }
 
 #[test]
-fn direct_inline_system_operations_form_an_eligible_pair() {
+fn direct_prelude_calls_form_an_eligible_pair() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   let first = exit_status(code: 0_u8);
   let second = exit_status(code: 1_u8);
@@ -1468,7 +1466,7 @@ fn main() -> status: own ExitStatus pure {
 /// permission judgment. An inline, authority-free operation therefore forms
 /// the two adjacent eligible pairs rather than becoming opaque interposition.
 #[test]
-fn an_inline_system_operation_forms_ordinary_adjacent_windows() {
+fn an_inline_prelude_call_forms_ordinary_adjacent_windows() {
     let source = br#"fn quiet(cell: &uniq u64) -> result: own u64 pure {
   return 3_u64;
 }
@@ -1522,7 +1520,7 @@ fn main() -> status: own ExitStatus pure {
 /// all about a program that plainly performs two independent operations.
 #[test]
 fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
-    let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus reads(out, err), writes(out, err) {
+    let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {
@@ -1562,7 +1560,7 @@ fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
 /// match written *between* two bound calls already gets.
 #[test]
 fn a_scrutinee_call_denies_against_a_later_call_it_is_read_before() {
-    let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus reads(out, err), writes(out, err) {
+    let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {

@@ -985,7 +985,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [EFF-2] the row's declared effect row projected through its actuals,
     /// exactly as an ordinary call's is: a `&uniq` state operand projects
     /// through its loan, and every operand projects through the resolved
-    /// places and state origins of the actual itself.
+    /// actual place or its ordinary view-loan origins.
     #[allow(clippy::too_many_arguments)]
     fn project_kernel_call_effects(
         &self,

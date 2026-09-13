@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: two nested counted for loops walk a fixed grid row by row and column by column, guarding each addend against a diagonal skip before accumulating a wrapped total.";
   let grid = fixed_vector::<u32, 9>();
   for (

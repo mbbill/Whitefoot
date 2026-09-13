@@ -960,7 +960,7 @@ fn replace_one['s](slots: &uniq FixedVector<Option<Entry<'s>>, 1>, replacement: 
   return move previous;
 }
 
-fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) reads(first), writes(first) {
+fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) pure {
   let (slots, returned) = build(first: move first, replacement: move replacement);
   let stored_entry = Entry(payload: move returned);
   region {
@@ -1321,7 +1321,7 @@ fn filled_float_run<T: Float, const n: u64>(value: own T) -> result: own FixedVe
   return move built;
 }
 
-fn store_run<T: Int>(store: &uniq Heap, length: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
+fn store_run<T: Int>['heap](store: &uniq Heap<'heap>, length: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
   requires buffer_fits::<T>(length);
 } {
   region {
@@ -1336,7 +1336,7 @@ fn store_run<T: Int>(store: &uniq Heap, length: own u64) -> result: own u64 read
   }
 }
 
-fn float_store_run<T: Float>(store: &uniq Heap, length: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
+fn float_store_run<T: Float>['heap](store: &uniq Heap<'heap>, length: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
   requires buffer_fits::<T>(length);
 } {
   region {
@@ -1351,7 +1351,7 @@ fn float_store_run<T: Float>(store: &uniq Heap, length: own u64) -> result: own 
   }
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let bytes = filled_run::<u8, 2>(value: 7_u8);
   let words = filled_run::<i64, 3>(value: -5_i64);
   let byte = bytes[1_u64];
@@ -1637,9 +1637,7 @@ fn main() -> status: own ExitStatus pure {
             panic!("both bodies contain an OP-4 rejection: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op4);
-        let crate::SemanticLocation::SourceNode(path, _) = issue.location() else {
-            panic!("OP-4 must cite the source operation");
-        };
+        let crate::SemanticLocation::SourceNode(path, _) = issue.location();
         assert_eq!(path.components().first(), Some(&0));
     });
 }
@@ -2085,5 +2083,31 @@ fn main() -> status: own ExitStatus pure {
             panic!("the terminal nominal must retain its original family");
         };
         assert_eq!(fields[0].ty, CheckedType::Integer(IntegerType::U8));
+    });
+}
+
+#[test]
+fn constructor_fields_can_materialize_the_first_store_branded_nominal_instance() {
+    let source = br#"struct Wrapped['s] {
+  values: Vector<u8>;
+}
+
+fn rebuild['s](values: own Vector<'s, u8>) -> result: own Vector<'s, u8> pure {
+  let wrapped = Wrapped(values: move values);
+  let Wrapped(values: restored) = move wrapped;
+  return move restored;
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the constructor's ordinary field arguments determine its brand: {outcome:?}");
+        };
+        assert!(
+            checked
+                .data
+                .nominals
+                .iter()
+                .any(|nominal| nominal.name.starts_with("Wrapped"))
+        );
     });
 }

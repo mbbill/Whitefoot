@@ -1,6 +1,6 @@
 const empty_prefix: FixedVector<u8, 1> =[0_u8];
 
-fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(factory, output, source), writes(factory, output) contract {
   define source_length = len_of(source);
   requires length <= source_length;
 } {
@@ -13,7 +13,7 @@ fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u6
       break @publish;
     }
     region {
-      match write_once(output: &uniq deref(output), source: &source, start: sent, end: length) {
+      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -122,19 +122,14 @@ fn record_line['heap](records: &Vector<'heap, u8>, index: own u64, destination: 
 }
 
 fn open_source_from_factory(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
-  match reserve_handle(factory: move factory) {
-    Ok(value: permit) => {
-      match open_directory_source(permit: move permit, directory: directory) {
-        SourceOpened(value: opened) => {
-          return Ok<DirectorySource, IoError>(value: move opened);
-        }
-        SourceOpenFailed(error: problem, permit: refused) => {
-          return Err<DirectorySource, IoError>(error: move problem);
-        }
+  region {
+    match open_directory_source(factory: &uniq deref(factory), directory: directory) {
+      SourceOpened(value: opened) => {
+        return Ok<DirectorySource, IoError>(value: move opened);
       }
-    }
-    Err(error: spent) => {
-      return Err<DirectorySource, IoError>(error: move spent);
+      SourceOpenFailed(error: problem) => {
+        return Err<DirectorySource, IoError>(error: move problem);
+      }
     }
   }
 }
@@ -146,19 +141,14 @@ fn open_directory_from_factory(factory: &uniq HandleFactory, root: &DirectoryRea
   requires ordered;
   requires within;
 } {
-  match reserve_handle(factory: move factory) {
-    Ok(value: permit) => {
-      match open_directory(permit: move permit, root: root, name: name, start: start, end: end) {
-        DirectoryOpened(value: opened) => {
-          return Ok<DirectoryRead, IoError>(value: move opened);
-        }
-        DirectoryOpenFailed(error: problem, permit: refused) => {
-          return Err<DirectoryRead, IoError>(error: move problem);
-        }
+  region {
+    match open_directory(factory: &uniq deref(factory), root: root, name: name, start: start, end: end) {
+      DirectoryOpened(value: opened) => {
+        return Ok<DirectoryRead, IoError>(value: move opened);
       }
-    }
-    Err(error: spent) => {
-      return Err<DirectoryRead, IoError>(error: move spent);
+      DirectoryOpenFailed(error: problem) => {
+        return Err<DirectoryRead, IoError>(error: move problem);
+      }
     }
   }
 }
@@ -210,15 +200,20 @@ fn walk['heap](factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Sl
                         let window_room = len_of(entries);
                         let window = mut_slice_of(&uniq entries);
                         region {
-                          match directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: window_room) {
-                            ListBytes(next: endpoint, entries: reported) => {
+                          let (list_result_13, endpoint, reported) = directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: window_room);
+                          match list_result_13 {
+                            Ok(value: completed) => {
                               set produced = endpoint;
                             }
-                            ListEnd() => {
-                              set ended = 1_u8;
-                            }
-                            ListFailed(error: problem) => {
-                              set ended = 2_u8;
+                            Err(error: list_stop_13) => {
+                              match list_stop_13 {
+                                ListEnd() => {
+                                  set ended = 1_u8;
+                                }
+                                ListFailed(error: problem) => {
+                                  set ended = 2_u8;
+                                }
+                              }
                             }
                           }
                         }
@@ -437,6 +432,7 @@ fn walk['heap](factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Sl
                                           set total = walk(factory: &uniq deref(factory), dir: &opened, prefix: child_view, prefix_length: cursor, records: &uniq deref(records), used: total, depth: deeper, store: &uniq deref(store));
                                         }
                                       }
+                                      close_directory(factory: &uniq deref(factory), directory: move opened);
                                     }
                                     Err(error: problem) => {
                                     }
@@ -448,6 +444,7 @@ fn walk['heap](factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Sl
                         }
                       }
                     }
+                    close_directory_source(factory: &uniq deref(factory), source: move list);
                   }
                   Err(error: problem) => {
                   }
@@ -462,17 +459,17 @@ fn walk['heap](factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Sl
   return total;
 }
 
-fn main['heap](command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
+fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uniq OutputStream, files: &uniq HandleFactory, heap: &uniq Heap<'heap>) -> status: own ExitStatus reads(cwd, out, files, heap), writes(out, files, heap), allocates(heap) {
   doc "Walks the invocation directory recursively and publishes every entry's kind and relative path in sorted order.";
   let status = 0_u8;
   region {
-    match heap_vector::<u8>(store: &uniq heap, count: 8192_u64) {
+    match heap_vector::<u8>(store: &uniq deref(heap), count: 8192_u64) {
       None() => {
         return exit_status(code: 70_u8);
       }
       Some(value: fresh_records) => {
         let records = move fresh_records;
-        match heap_vector::<u8>(store: &uniq heap, count: 256_u64) {
+        match heap_vector::<u8>(store: &uniq deref(heap), count: 256_u64) {
           None() => {
             return exit_status(code: 70_u8);
           }
@@ -486,7 +483,7 @@ fn main['heap](command.args as args: own Args, command.cwd as cwd: own Directory
             ) {
               place_back(vector: &uniq line, value: 0_u8);
             }
-            match heap_vector::<u64>(store: &uniq heap, count: 64_u64) {
+            match heap_vector::<u64>(store: &uniq deref(heap), count: 64_u64) {
               None() => {
                 return exit_status(code: 70_u8);
               }
@@ -503,7 +500,7 @@ fn main['heap](command.args as args: own Args, command.cwd as cwd: own Directory
                 let stored = 0_u64;
                 region {
                   let root_view = slice_of(&empty_prefix);
-                  set stored = walk(factory: &uniq files, dir: &cwd, prefix: root_view, prefix_length: 0_u64, records: &uniq records, used: 0_u64, depth: 0_u64, store: &uniq heap);
+                  set stored = walk(factory: &uniq deref(files), dir: cwd, prefix: root_view, prefix_length: 0_u64, records: &uniq records, used: 0_u64, depth: 0_u64, store: &uniq deref(heap));
                 }
                 let seed = 0_u64;
                 loop @seed_order {
@@ -603,7 +600,7 @@ fn main['heap](command.args as args: own Args, command.cwd as cwd: own Directory
                     let length_fits = length <= payload_length;
                     if length_fits {
                       region {
-                        match publish_all(output: &uniq out, source: payload, length: length) {
+                        match publish_all(factory: &uniq deref(files), output: &uniq deref(out), source: payload, length: length) {
                           Ok(value: published) => {
                           }
                           Err(error: problem) => {
@@ -629,4 +626,14 @@ fn main['heap](command.args as args: own Args, command.cwd as cwd: own Directory
     }
   }
   return exit_status(code: status);
+}
+
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(args: &args, cwd: &cwd, out: &uniq out, err: &uniq err, files: &uniq files, heap: &uniq heap);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

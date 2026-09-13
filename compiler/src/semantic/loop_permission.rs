@@ -30,11 +30,9 @@
 //!    storage, an arena append, and every write this judgment cannot resolve
 //!    all deny. The mapped root may be owned directly or reached through the
 //!    live usable `&uniq` holder that made the `set` target writable.
-//! 3. **Complete target summaries.** Every call and derived release in B
-//!    identifies its target action. Ordinary effects and loans have already
-//!    denied every conflicting cross-iteration access. A may-suspend target
-//!    keeps the permission but requires a completion-capable loop actualizer;
-//!    this version otherwise leaves the loop sequential.
+//! 3. **Resolved ordinary footprints.** Each call's declared effects and
+//!    retained argument loans identify the places accessed. An unresolved
+//!    footprint denies permission, and each loan lasts through call return.
 //! 4. **No exit edge.** No `return`, `give`, `propagate` `Err` edge, or
 //!    `break` naming L or an enclosing loop leaves the loop, so every
 //!    iteration of the whole range runs.
@@ -133,7 +131,7 @@ pub(crate) struct LoopPermission {
     /// permitted one, which needs no rewrite.
     pub(crate) advises_split: bool,
     /// What actualizing this permission needs from the judgment, present for a
-    /// permitted non-suspending independent map or one-accumulator reduction.
+    /// permitted independent map or one-accumulator reduction.
     ///
     /// The judgment does not decide that anything is emitted: lowering reads
     /// this, applies its own emission conditions, and may still decline. The
@@ -451,9 +449,7 @@ struct Survey<'check, 'run> {
     /// read still fails closed.
     element_reads: Vec<ProvenElementRead>,
     form: Option<&'static str>,
-    /// Permission remains recorded, but a may-suspend function keeps the
-    /// synchronous ABI of the sequential world (design section 8), so this
-    /// loop actualizer must stay sequential.
+    /// A control edge that leaves the counted loop's iteration sequence.
     exit: Option<&'static str>,
 }
 
@@ -1237,8 +1233,7 @@ const fn boolean_combine(operation: CheckedBooleanOperation) -> Option<LoopCombi
 ///
 /// Storage rooted in one of these is created fresh by every iteration of the
 /// loop that owns the block and dies with it; everything else outlives the
-/// iteration. The staged judgment next door asks the same question of the same
-/// body, so both read this one walk rather than growing two drifting copies.
+/// iteration.
 pub(super) fn collect_introduced(statements: &[CheckedStatement], out: &mut Vec<BindingId>) {
     for statement in statements {
         match statement {

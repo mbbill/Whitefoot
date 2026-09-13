@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- walks a tag-length-value frame stream and sums the declared value lengths with bounds checks";
   let frame = fixed_vector::<u8, 10>();
   region {

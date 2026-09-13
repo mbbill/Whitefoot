@@ -271,7 +271,7 @@ enum ProofGoal<'a> {
     /// the one fixed two-operand interval-product rule. The consumer chooses
     /// none of those routes and performs no second query.
     IntegerDomain(IntegerDomainGoal<'a>),
-    /// One exact relation `left - right <= bound`. OP-4 and SYS-8 submit the
+    /// One exact relation `left - right <= bound`. OP-4 submits the
     /// same proposition through this entry; the finite signed form and the
     /// explicitly prepared affine forms are alternate representations of
     /// that proposition, not additional queries by either consumer.
@@ -637,8 +637,8 @@ struct ExpressionJudgment {
 #[derive(Clone, Debug)]
 struct AvailablePostcondition {
     relation: RelationTemplate,
-    variant: Option<crate::PreludeDeclarationId>,
-    field: Option<crate::PreludeDeclarationId>,
+    variant: Option<crate::BuiltinPreludeId>,
+    field: Option<crate::BuiltinPreludeId>,
     summary: VerifiedPostconditionSummary,
     discharged: bool,
 }
@@ -671,8 +671,8 @@ struct InstantiatedPostcondition {
 
 #[derive(Clone, Copy)]
 struct DirectMatchRoute {
-    variant: crate::PreludeDeclarationId,
-    field: crate::PreludeDeclarationId,
+    variant: crate::BuiltinPreludeId,
+    field: crate::BuiltinPreludeId,
     tag: u32,
     binding: BindingId,
     ty: CheckedType,
@@ -5979,10 +5979,9 @@ impl Analyzer<'_, '_> {
             });
             return;
         }
-        // [SYS-8]'s range-bearing operand class has a transitional member
-        // that is a `buffer<u8>` rather than a view [VIEW-1]. The row's
-        // declared extent still makes the write a viewed-range one, and the
-        // descriptor it names is the buffer's own place.
+        // A borrowed or reborrowed view resolves through the ordinary
+        // argument referent. CALL-3 still confines its write to element
+        // storage; only the address expression differs from an owned view.
         if let Some((place, entry_image_only)) = self.argument_referent(argument) {
             let place = element_write_place(place, PlaceOffset::Opaque);
             if entry_image_only {
@@ -14526,8 +14525,8 @@ impl Analyzer<'_, '_> {
     /// The structural dump this replaced published `Integer { operation:
     /// LessEqual, .. }(Place { root: BindingId(6), .. })`: a writer cannot find
     /// either half in their own program, and the blind-writer trial of
-    /// 2026-08-28 recorded four rounds of readers failing to. [OP-4] and
-    /// [SYS-8] already publish their residual as source terms from the
+    /// 2026-08-28 recorded four rounds of readers failing to. [OP-4]
+    /// already publishes its residual as source terms from the
     /// renderers below, so FN-8 publishes its goal from the same ones. The
     /// operation spellings come from the compiler's own exhaustive maps, which
     /// `semantic::tests::operation_table` locks against the specification.

@@ -154,9 +154,8 @@ impl TargetLayout {
     }
 
     /// Minimum alignment guaranteed by the selected target's heap allocator.
-    /// Current source representations require at most eight-byte alignment;
-    /// keeping the guarantee explicit makes a future wider representation a
-    /// target-layout decision rather than an unchecked emitter assumption.
+    /// Keeping this explicit checks wider element representations against the
+    /// allocator promise rather than assuming the address ABI guarantees it.
     pub(super) const fn runtime_allocation_alignment(self) -> u64 {
         self.allocator_alignment
     }
@@ -169,7 +168,6 @@ impl TargetLayout {
         byte_maximum: u64,
         alignment: u64,
     ) -> Self {
-        self.address_index_max = byte_maximum;
         self.allocator_parameter_max = byte_maximum;
         self.allocator_alignment = alignment;
         self

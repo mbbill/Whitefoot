@@ -26,7 +26,7 @@ fn bucket_offset<const n_buckets: u64>(buckets: own FixedVector<u8, n_buckets>, 
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let buckets = fixed_vector::<u8, 12>();
   region {
     place_back(vector: &uniq buckets, value: 0_u8);

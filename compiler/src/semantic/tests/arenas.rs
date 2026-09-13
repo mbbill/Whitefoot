@@ -445,7 +445,7 @@ fn from_unconstrained['s](run: own Vector<'s, u64>) -> back: own Vector<'s, u64>
   return move run;
 }
 
-fn from_entry_heap(run: own Vector<u64>) -> back: own Vector<u64> pure {
+fn from_general_store['heap](run: own Vector<'heap, u64>) -> back: own Vector<'heap, u64> pure {
   doc "An elided store brand at a parameter position is the entry heap's store region.";
   return move run;
 }
@@ -484,7 +484,7 @@ fn main() -> status: own ExitStatus pure {
             crate::semantic::CheckedReleaseClass::General
         );
         assert_eq!(
-            class("from_entry_heap"),
+            class("from_general_store"),
             crate::semantic::CheckedReleaseClass::General
         );
     });

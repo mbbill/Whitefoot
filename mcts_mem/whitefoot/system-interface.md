@@ -1,10 +1,9 @@
-- System access uses the typed entry inputs and ordinary owned resources defined by the active SYS and FN rules. Shared selectors and uniquely mutable state use ordinary ownership; no separate capability category is added.
-- I/O and resource roles do not grant source syntax, ownership, effect, or proof exceptions. Their required relations are represented by ordinary objects and callable contracts; an exception needs a demonstrated inability to meet the required behavior, safety, and performance through that model.
-- State effects are parameter paths under EFF-1/EFF-2. Regions describe lifetimes; the retired external/blocks categories and blanket external-order rule below do not describe the current interface.
-- Resource contracts state outcomes, ownership, cleanup, capacity relations, and target guarantees. Completion and host scheduling are lowering concerns; SCOPE-3 owns the external-availability boundary.
-- Arguments and paths preserve target host bytes with explicit conversion. Range-bearing operations expose their exact window and result relations in the specification.
-- System names belong to a compiler-owned declaration domain ([[declaration-home]]). Target qualification binds semantic operations to supported host implementations without granting writer-program proof authority.
-- compiler/README.md owns the implemented command, file, directory, stream, and network coverage. The dated slices below explain how those boundaries evolved.
+- Inside the language, every host-supplied value and native-implemented function is an ordinary value or function. No source exception depends on crossing that boundary.
+- Host-facing declarations belong to [[ordinary-prelude]], and process invocation is an ordinary caller under [[ordinary-entry]].
+- State effects are ordinary parameter paths. A host transition carries its observable changing state as an explicit operand; independent opaque wrappers do not imply independent host state.
+- Opaque drop is empty. Acquired resources that must be closed are linear ordinary values, and every exit consumes or transfers them explicitly. Standard stream and invocation views do not acquire implicit close responsibility.
+- Native completion engines implement ordinary calls whose loans last until return. No suspension classification, early loan-release milestone or special staged-loop permission exists in source semantics.
+- Arguments and paths preserve host bytes with explicit conversion. Range-bearing operations expose their window and result relations as ordinary source contracts.
 
 ## Facts
 
@@ -18,9 +17,14 @@
 
 - 2026-09-09 owner clarification: use the ordinary-object counterpart to distinguish missing resource-API relations from general language or compiler gaps before proposing a repair. A ReadFile-only example does not justify special source semantics, and an unsupported compiler path does not establish that the ordinary model is insufficient. This constrains future resource and container diagnoses without selecting a particular origin-summary implementation. (sourced)
 
+- 2026-09-12 (d695f385) selection: C2 selects all seven ordinary-host-values DECISIONS recommendations and deletes the conditional departure clause. The earlier system-domain, permit, qualification and suspension descriptions remain historical; the current interfaces and deletion grounds are in research/investigations/ordinary-host-values/DESIGN.md and DECISIONS.md. (sourced)
+
+- 2026-09-12 (d695f385) pitfall: two standard streams can name the same redirected file, and positioned reads can observe contents changed through an output stream. The selected ordinary library passes shared factory state on those transfers; TCP direction owners remain separate. Private descriptor bookkeeping does not justify source independence. (sourced)
+
 ## Moves
 
 - 2026-08-05 (8f7055fc) replaced [[raw-fd-syscall-source]]: raw syscalls and integer fds in source expose forgeable identities, an implicit global fd table, manual close, weak effect precision, poor Windows portability, and an unchecked pointer wall; they remain permitted only inside compiler-owned target code (sourced)
 - 2026-08-05 (8f7055fc) replaced [[ambient-system-functions]]: ambient system functions hide access and create inter-function channels against FN-7's no-global rationale; system use invisible in signatures cannot be narrowed, tested, or parallelized by ownership (sourced)
 - 2026-08-05 (8f7055fc) replaced [[affine-process-object]]: one permanently retained affine Process object makes every operation contend for the same unique holder, falsely serializing files, output, networking, clocks, and workers; making it shared would need a central lock or hidden aliasing (sourced)
 - 2026-08-05 (8f7055fc) replaced [[wasi-source-contract]]: a literal WASI source contract imports Unicode-only paths, no guaranteed caller-buffer or zero-copy route, async tied to Component Model costs, and an incomplete threads and process surface chosen for cross-language components rather than Whitefoot ownership; WASI remains a possible target implementation for operations it can supply (sourced)
+- 2026-09-12 (d695f385) dropped: conditional external-model departure and suspension-specific overlap: the owner's C2 boundary is unconditional, and deleted PAR-3 permission is not recovered from native scheduling behavior (sourced)

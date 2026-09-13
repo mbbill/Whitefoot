@@ -2,7 +2,7 @@ struct Cursor {
   pos: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect: REJECT (ENT-5) - obj.cursor is bound-checked, then set obj.cursor=99 (kill), reused for subscript unproven; cursor=99,limit=4 -> OOB";
   let buf = fixed_vector::<u8, 4>();
   region {

@@ -458,10 +458,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 layout_ceiling,
                 target_domains: CheckedRuntimeTargetObligations::new(),
             },
-            length
-                .effects
-                .union(value.effects)
-                .union(EffectSet::ALLOCATES_HEAP),
+            length.effects.union(value.effects),
         ))
     }
 
@@ -513,7 +510,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 layout_ceiling,
                 target_domains: CheckedRuntimeTargetObligations::new(),
             },
-            length.effects.union(EffectSet::ALLOCATES_HEAP),
+            length.effects,
         ))
     }
 

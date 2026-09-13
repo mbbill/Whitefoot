@@ -10,3 +10,4 @@
 ## Moves
 
 - 2026-08-19 (55a75434) replaced [[dual-entry-forms]]: two main forms make one declaration serve incompatible ordinary-call and process-entry roles and require a special executable requirement boundary; one source-uncallable command entry removes both ambiguity and the only contract-owned runtime trap exception (sourced)
+- 2026-09-12 (d695f385) replaced by [[ordinary-entry]]: Selected C1 decision 3 and C2 remove the command kind and labelled inputs; an ordinary callable unit can have no entry, and an ordinary build caller supplies arguments without changing source contracts or ownership. (sourced)

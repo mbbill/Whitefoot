@@ -16,7 +16,7 @@ fn double_step_sum<const n: u64>(source: own FixedVector<u64, n>) -> total: own 
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let source = fixed_vector::<u64, 6>();
   region {
     place_back(vector: &uniq source, value: 0_u64);

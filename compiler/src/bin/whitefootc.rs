@@ -187,12 +187,11 @@ const COMPLETION_COMPILE_UNITS: &[&str] = &[
 #[cfg(not(target_os = "windows"))]
 const TARGET_COMPILE_ARGUMENTS: &[&str] = &["-pthread"];
 #[cfg(target_os = "windows")]
-const TARGET_COMPILE_ARGUMENTS: &[&str] = &["-municode"];
+const TARGET_COMPILE_ARGUMENTS: &[&str] = &[];
 
-/// The libraries this host's link needs. Windows names exactly one: every
-/// other facility the runtime uses is in the import libraries clang links by
-/// default, and Winsock is not — the TCP routes of [SYS-17] and [SYS-18] are
-/// what put it here.
+/// The libraries this host's link needs. The ordinary Windows library uses
+/// Winsock and the shell's Unicode command-line conversion. The build launcher
+/// defines `main`; argument conversion does not require a `wmain` entry.
 #[cfg(not(target_os = "windows"))]
 const TARGET_LINK_LIBRARIES: &[&str] = HOST_LINK_LIBRARIES;
 #[cfg(target_os = "windows")]
@@ -660,36 +659,17 @@ mod tests {
     use std::path::{Component, Path, PathBuf};
 
     use super::{
-        CompilerLimits, Options, OverlapLowering, SourceInput, compile_with_io_notices,
-        compile_with_permission_ledger, io_notice_report, module_requires_parallel_runtime,
-        runtime_units, source_names,
+        CompilerLimits, Options, OverlapLowering, SourceInput, runtime_units, source_names,
     };
-
-    const PAR_LAYOUT: &[u8] = include_bytes!("../../../tests/programs/par_layout.wf");
-
-    fn compile_parallel_fixture(name: &str, source: &[u8]) -> String {
-        whitefoot::compile_with_overlap(
-            &[SourceInput::new(name, source)],
-            CompilerLimits::default(),
-            OverlapLowering::On,
-        )
-        .expect("parallel runtime selection fixture must compile")
-    }
 
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();
         Options::parse(&owned)
     }
 
-    /// The link stages the scheduler core on exactly the marker the emitter
-    /// leaves, and stages nothing beyond the floor for a module that neither
-    /// hands out work nor submits an operation.
-    ///
-    /// This case used to be about the Windows link alone, and about a second
-    /// worker-pool unit only that platform had. Step (iv) deleted that unit:
-    /// Windows takes the same `sched/entry.c` over the same `core.c` as every
-    /// other target, so what the link still decides is which staging group a
-    /// module needs, and that is what is asserted here.
+    /// The ordinary linked library uses one platform link set independent of
+    /// source call classification. Both plain arithmetic and I/O-shaped source
+    /// receive its transitive headers and native implementation units.
     #[test]
     fn the_ordinary_library_links_the_same_units_for_every_source_module() {
         let (staged, compiled) = runtime_units();

@@ -46,7 +46,7 @@ fn block_checksum<const n: u64>(data: own FixedVector<u8, n>, block_size: own u6
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let data = fixed_vector::<u8, 10>();
   region {
     place_back(vector: &uniq data, value: 1_u8);

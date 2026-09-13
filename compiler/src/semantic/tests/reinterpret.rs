@@ -46,7 +46,15 @@ fn retains_every_equal_width_reinterpret_pair() {
             panic!("complete reinterpret family must check: {outcome:?}");
         };
         assert_eq!(expected.len(), 16);
-        assert_eq!(checked.data.functions.len(), expected.len() + 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            expected.len() + 1
+        );
         for (function, (expected_source, expected_destination)) in
             checked.data.functions.iter().zip(expected)
         {

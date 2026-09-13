@@ -8,7 +8,7 @@ fn retain(value: own u64, limit: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let sample_value = 3_u64;
   let sample_limit = 5_u64;
   let base_code = 0_u8;

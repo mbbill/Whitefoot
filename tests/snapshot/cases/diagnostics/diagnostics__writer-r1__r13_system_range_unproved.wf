@@ -1,5 +1,5 @@
-command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
-  doc "expect REJECT: [SYS-8] end is a runtime-derived offset never proved within the destination length";
+fn main['heap](args: own Args, heap: own Heap<'heap>) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
+  doc "expect REJECT: [FN-8] the ordinary host_copy_bytes requirement lacks a proof that end is within the destination length";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
       None() => {

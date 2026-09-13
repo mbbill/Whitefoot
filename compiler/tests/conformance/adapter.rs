@@ -46,10 +46,9 @@ use whitefoot::{
     COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
     COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailureKind,
     CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
-    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
-    WINDOWS_RUNTIME_HEADER, compile, module_requires_completion_runtime,
-    module_requires_parallel_runtime,
+    ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, SCHED_CORE_HEADER,
+    SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER,
+    SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile,
 };
 
 use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
@@ -84,11 +83,6 @@ fn reach(case: &Case) -> Reached {
                 // the rule the case happens to declare.
                 CompilationFailureKind::Source => {
                     Verdict::Reject(failure.rule_id().map(ToOwned::to_owned))
-                }
-                // [QUAL-1] and [QUAL-2] stops are the specification's own
-                // non-rejections citing no language rule.
-                CompilationFailureKind::TargetQualification => {
-                    Verdict::Unsupported(failure.to_string())
                 }
                 // Valid source needing an unimplemented capability reaches
                 // the same verdict kind, so a `runnable` case fails rather
@@ -221,12 +215,9 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     let floor = directory.join("wf_floor.c");
     std::fs::write(&floor, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor);
-    // The scheduler core joins under the union of the two predicates
-    // (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Where the core
-    // is linked"): one scheduler for compute hand-outs and I/O completions.
-    // The completion units join only under the second.
-    let completion = module_requires_completion_runtime(module);
-    if completion || module_requires_parallel_runtime(module) {
+    // The ordinary linked library and its private runtime are build inputs
+    // for every executable, independent of accepted-program provenance.
+    {
         for (name, source) in [
             ("sched/core.h", SCHED_CORE_HEADER),
             ("sched/prim.h", SCHED_PRIM_HEADER),
@@ -250,7 +241,14 @@ fn link(module: &str, directory: &Path) -> PathBuf {
             .arg("c")
             .arg(directory.join("sched/entry.c"));
     }
-    if completion {
+    {
+        for (name, source) in [
+            ("ordinary_values.h", ORDINARY_VALUES_HEADER),
+            ("ordinary_values.c", ORDINARY_VALUES_SOURCE),
+            ("ordinary_values.ll", ORDINARY_VALUES_LLVM),
+        ] {
+            std::fs::write(directory.join(name), source).expect("write ordinary library unit");
+        }
         for (name, source) in [
             ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
             ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
@@ -306,6 +304,15 @@ fn link(module: &str, directory: &Path) -> PathBuf {
             .arg("c")
             .arg(directory.join("completion/linux_io_uring.c"));
     }
+    command
+        .arg("-I")
+        .arg(directory)
+        .arg("-x")
+        .arg("c")
+        .arg(directory.join("ordinary_values.c"))
+        .arg("-x")
+        .arg("ir")
+        .arg(directory.join("ordinary_values.ll"));
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         // One link recipe: a case that reaches a libm entry point links here

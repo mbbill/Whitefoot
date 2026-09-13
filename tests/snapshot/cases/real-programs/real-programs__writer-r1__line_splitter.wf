@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- splits a byte buffer on LF into line lengths recorded in an output buffer with bounds checks";
   let input = fixed_vector::<u8, 11>();
   region {

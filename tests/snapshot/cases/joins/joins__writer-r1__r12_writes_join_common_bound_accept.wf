@@ -18,7 +18,7 @@ fn store_byte(out: &uniq MutSlice<u8>, i: own u64, value: own u8, pick: own Bool
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<8, 1, 'w>();
     region {

@@ -8,7 +8,7 @@ fn last_index(values: own FixedVector<u8, 12>) -> index: own u64 reads(values) c
   return index;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: requires and ensures both use a shared define over a fixed array len.";
   let values = fixed_vector::<u8, 12>();
   for (

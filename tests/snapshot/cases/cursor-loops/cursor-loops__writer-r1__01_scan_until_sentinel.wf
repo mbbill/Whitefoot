@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: ordinary loop scans a byte array for a sentinel value, summing the bytes before it with a guarded, wrapping cursor increment that never runs past the array length.";
   let data = fixed_vector::<u8, 8>();
   region {

@@ -45,16 +45,12 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap)
             .lines()
             .map(|line| {
                 if let Some(header) = line
-                    .strip_prefix("define internal ")
+                    .strip_prefix("define ")
                     .and_then(|line| line.strip_suffix(" {"))
                 {
                     format!("define {header} noinline {{\n")
@@ -70,7 +66,7 @@ fn main() -> status: own ExitStatus pure {
     }
 }
 
-const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq MutSlice<u8>, source: own Vector<u8>, store: &uniq Heap) -> written: own u64 reads(source), writes(out, store) contract {
+const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['heap](out: &uniq MutSlice<u8>, source: own Vector<'heap, u8>, store: &uniq Heap<'heap>) -> written: own u64 reads(source), writes(out, store) contract {
   define out_length = len_of(deref(out));
   define source_length = len_of(source);
   requires source_length <= out_length;
@@ -83,7 +79,11 @@ const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq MutSlice<u8>, source
   return length;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let length = 4_u64;
   region {
     match heap_vector::<u8>(store: &uniq heap, count: length) {
@@ -143,16 +143,31 @@ fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), w
 "#;
 
 #[test]
-fn command_entry_rejects_a_contract_instead_of_emitting_a_wrapper_check() {
-    let failure = compile_rejection(
+fn an_ordinary_selected_function_keeps_its_contract_without_a_wrapper_check() {
+    // C2 deletes FN-7's command-entry contract refusal. This ordinary source
+    // requirement is statically true; the build caller proves it normally.
+    let module = compile(
         br#"fn main() -> status: own ExitStatus pure contract {
-  requires True();
+  requires 0_u64 == 0_u64;
 } {
   return exit_status(code: 0_u8);
 }
 "#,
     );
-    assert_eq!(failure.rule_id(), Some("FN-7"));
+    assert!(!emitted_function(&module, "main").contains("icmp"));
+    assert!(compile_and_run(&module).status.success());
+    // A false requirement does not invalidate an ordinary declaration. The
+    // build caller cannot prove it, so no executable entry is supplied.
+    let library = compile(
+        br#"fn main() -> status: own ExitStatus pure contract {
+  requires 0_u64 == 1_u64;
+} {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    assert!(emitted_function(&library, "main").contains("unreachable"));
+    assert!(!library.contains("define i32 @main("));
 }
 
 #[test]

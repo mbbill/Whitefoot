@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: the loop walks only a computed prefix of the buffer, and the bound tracks that shorter span.";
   let data = fixed_vector::<u8, 10>();
   for (

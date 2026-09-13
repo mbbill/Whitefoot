@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: for loop advances two arrays with the same cursor, both indexable in bounds";
   let a = fixed_vector::<u64, 5>();
   region {

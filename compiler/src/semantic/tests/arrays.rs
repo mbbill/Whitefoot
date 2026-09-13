@@ -193,9 +193,7 @@ fn main() -> status: own ExitStatus pure {
         };
         assert_eq!(issue.rule(), SemanticRule::Const2);
         assert_eq!(issue.kind(), &SemanticIssueKind::InvalidConstValue);
-        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("expected source location");
-        };
+        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(
@@ -216,9 +214,7 @@ fn main() -> status: own ExitStatus pure {
         };
         assert_eq!(issue.rule(), SemanticRule::Const2);
         assert_eq!(issue.kind(), &SemanticIssueKind::InvalidConstValue);
-        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("expected forbidden type location");
-        };
+        let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(&forbidden[start..end], b"box<u64>");
@@ -1019,8 +1015,8 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
-        br#"fn main() -> status: own ExitStatus pure {
-  let invalid = fixed_vector::<FixedVector<FixedVector<Heap, 1>, 1>, 1>();
+        br#"fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
+  let invalid = fixed_vector::<FixedVector<FixedVector<Heap<'heap>, 1>, 1>, 1>();
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),

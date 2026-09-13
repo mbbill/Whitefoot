@@ -1,4 +1,4 @@
-fn reverse_bytes<const n: u64>(buf: own FixedVector<u8, n>) -> out: own FixedVector<u8, n> reads(buf), writes(buf) {
+fn reverse_bytes<const n: u64>(buf: own FixedVector<u8, n>) -> out: own FixedVector<u8, n> pure {
   doc "ACCEPT: in-place reversal by two-pointer swap; a rising index and a falling mirror index are each proved inside the buffer independently, so the swap needs no written certificate.";
   let work = move buf;
   let capacity = len_of(work);
@@ -24,7 +24,7 @@ fn reverse_bytes<const n: u64>(buf: own FixedVector<u8, n>) -> out: own FixedVec
   return move work;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let buf = fixed_vector::<u8, 5>();
   region {
     place_back(vector: &uniq buf, value: 0_u8);

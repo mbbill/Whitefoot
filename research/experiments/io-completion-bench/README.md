@@ -1,8 +1,9 @@
 # io-completion-bench
 
-Program-level measurement of the unified-state completion I/O model against
-the best hand-written native shape and against Whitefoot's own sequential
-build.
+Program-level measurement of ordinary linked I/O functions against native
+controls and the same Whitefoot source under different lowering options.
+The [C2 measurements](C2-RESULTS.md) and their raw samples describe v0.58;
+the earlier completion-model tables remain historical evidence.
 
 ## What it serves
 
@@ -26,36 +27,34 @@ cannot report a time.
   blocking loop, a pthread pool over a striped index range, and on Linux a raw
   `io_uring` read pipeline (`uring_baseline.h`, kernel ABI directly, no
   liburing). Compiled `-O2` with no handicap.
-- **S** — the Whitefoot program built with `whitefootc --no-overlap`, which
-  emits the module a compiler with no overlap lowering at all emits. Every I/O
-  call is an ordinary direct call.
+- **S** — the Whitefoot program built with `whitefootc --no-overlap`.
 - **C** — the same Whitefoot source built the way it ships. The C and S lines
-  are one source compiled two ways, so the pair is a statement about the
-  lowering rather than about two programs.
+  retain two configurations of one source. These labels do not promise a
+  difference: all four C2 many-files programs emit byte-identical LLVM in
+  both configurations. Every linked call holds its loans until return.
 
 ## Workloads
 
 ### The many-files workload
 
-`programs/many_files_wide.wf` opens and reads four independent generated files
-per round, four opens and then four positioned reads written consecutively so
-the lowering can overlap them. `programs/many_files_wide8.wf` is the same
-shape hand-widened to eight, so the comparison against an eight-thread pool
-and a deep io_uring baseline is made at a matched width.
+`programs/many_files_wide.wf` opens and reads four generated files per round;
+`programs/many_files_wide8.wf` widens the same source shape to eight. Under
+v0.58, each open and read uses the same exclusive `HandleFactory`, so distinct
+files and destination buffers do not make those calls independent. The
+programs retain their source width but execute the calls sequentially.
 `programs/many_files_narrow.wf` is the same work written as the natural
 one-file-at-a-time loop, with its name and destination buffers hoisted above
 the loop; it exists to measure what a writer gets who does not hand-widen, and
 the answer is no overlap at all.
-`programs/many_files_loop.wf` is that same one-file-at-a-time loop with the
-name and destination buffers constructed inside the body, which is the form
-[PAR-3]'s staged permission grants — `whitefootc --par-ledger` prints a granted
-`PAR stage` verdict for its `@scan` loop and a denial naming `&'n name` for the
-narrow program's. Its helper functions are byte-identical to the other
-programs', so the pair isolates exactly the hoisting. Until the staged lowering
-lands it runs sequentially and pays a per-iteration allocation, and it must
-publish the same checksum as every other line.
+`programs/many_files_loop.wf` is the one-file-at-a-time counted loop with the
+name and destination buffers constructed inside the body. It retains the
+workload previously used to exercise PAR-3 staging. C2 deletes PAR-3, and its
+current ordinary loop has no parallel grant. Comparing it with the narrow
+program includes the per-iteration scratch allocation and source-shape costs;
+it does not separately measure a lost staged pipeline.
 `programs/pipe_relay.wf` pushes two independent byte streams at two
-independent consumers through `command.stdout` and `command.stderr`.
+consumers through the ordinary `Inputs.stdout` and `Inputs.stderr` fields.
+Its writes also share the passed factory.
 
 The generated tree and the checksum are defined once, in `workload.h`, and
 shared by the generator, the native baselines, and the Whitefoot programs. The
@@ -84,7 +83,7 @@ its file and its window-aligned offset from *k* alone, so the narrow program,
 the eight-wide one, and every native baseline traverse exactly the same list
 and fold exactly the same value.
 
-The 4 KiB eight-wide source is also the Windows qualification workload. Its
+The 4 KiB eight-wide source is also the Windows measurement workload. Its
 eight fixed file names arrive as command arguments and are copied through
 `host_copy_bytes` before `open_file`: ten bytes on a one-byte target and twenty
 UTF-16LE bytes on Windows. The direct and completion builds therefore receive
@@ -334,12 +333,11 @@ The TCP targets are Linux-only, as `linux` and `linux-read` are: `epoll_echo`
 and `uring_echo` are written against Linux interfaces, and the workload's
 point is the fastest shape that kernel offers.
 
-On native Windows, `windows-bench.ps1` owns a separate production
-qualification:
+On native Windows, `windows-bench.ps1` records matched runtime measurements:
 
     pwsh research/experiments/io-completion-bench/windows-bench.ps1 \
       -Root $PWD -Out $env:TEMP/whitefoot-windows-bench \
-      -Rounds 15 -Warmup 2 -Enforce
+      -Rounds 15 -Warmup 2
 
 It builds every contender from one compiler revision, generates the same eight
 64 MiB deterministic files as the other read-heavy protocols, warms them with
@@ -350,69 +348,64 @@ stderr, or stdout different from the committed exact oracle invalidates the
 sample before its time is reported. A sampled child or the untimed observer
 that exceeds two minutes is terminated and invalidates the run.
 
-Before any timed cohort, one sequential and one IOCP 4 KiB read-heavy sample
-must both publish the exact oracle. This keeps a target-native path or fixture
-failure from being discovered only after the compute cohort has completed.
+Before any timed cohort, the no-overlap and default 4 KiB read-heavy builds
+must both publish the exact oracle. The five alternating paired cohorts are
+compute (`par_layout.wf`, default against `--par`), warm 4 KiB reads
+(`--no-overlap` against default), mixed no-overlap/default, mixed default/`--par`,
+and mixed no-overlap/`--par`. These names describe compiler modes. Both read
+builds use the same ordinary linked read implementation; `--no-overlap` does
+not select a separate direct-read body.
 
-The five alternating paired cohorts are compute (`par_layout.wf`, default
-against `--par`), warm 4 KiB reads (`--no-overlap` against production IOCP),
-the mixed program's sequential/IOCP control, and its IOCP-only/full compute
-plus IOCP pair, followed by a direct sequential/full pair that prevents the
-two component improvements from hiding a net mixed regression. The exact
-mixed window is source-level
-`read_at, compute_pair, read_at`; `compute_pair` contains the independent
-`churn, churn` pair. Its fixed tree oracle is `17574306422404092952\n`.
+C2's [ordinary-host-values amendment](../../investigations/ordinary-host-values/DESIGN.md)
+deletes PAR-3 and its suspension/completion classification. The mixed source
+window remains `read_at, compute_pair, read_at`, but each ordinary read returns
+before the next statement executes. Its exclusive factory also participates
+in the ordinary effect and loan rules. The script checks the direct-call order
+inside `wf_exercise`, rather than a build launcher or operation-specific
+submit/join lowering. `compute_pair` still contains the independent
+`churn, churn` pair; its ordinary scheduler lane must acquire, publish, join
+and release in that order. The exact tree oracle remains
+`17574306422404092952\n`.
 
-Before timing, the script checks that the mixed contender is the thing it
-claims to be, in two places rather than one.
-
-The first is the emitted module. Every I/O operation has one lowering now,
-submit and then join, so the window's overlap is visible in the module itself:
-`@wf_main` submits the first read, calls `compute_pair` on this thread, runs
-the source-last read through the always-inlined wrapper that submits and joins
-in place, and only then joins the first read. The group hands none of its own
-members to a compute lane, because its join site is itself a submitting member
-and the emitter keeps the pure completion lowering for such a group; the
-compute hand-out this cohort measures is one level down, in `compute_pair`,
-whose `churn, churn` group acquires a lane, publishes into it, joins it, and
-releases it once per iteration. The script pins both orders. They belong to the
-emitter and not to the target, so the same shape reads out of a Linux
-`--emit-llvm` of the same program.
-
-The second is one observed link, the shipped runtime plus `grant_observer.c`,
-which is `io-hosts.yml`'s `completion-windows` worker step applied to this
-program. Correct bytes alone would also be produced by a pool that granted no
-lane and by a run that never reached the completion port, so that link requires
-all three: the program's exact oracle on the output channel, exactly one line
-on the diagnostic channel, `grants=` and a positive count, and exit zero under
-`WF_REQUIRE_WINDOWS_IOCP=1`, which is the runtime's own exit assertion that the
-port carried at least one submission and reaped every submission it made. The
-retired Windows probes counted worker starts, worker executions,
-compute publications outstanding across the first read, IOCP inline and
-dequeued completions, and accepted/published/consumed operations; the second
-copy of the runtime they instrumented is gone, the core's steal count and the
-required-ring assertion carry the verdict, and the publication-during-flight
-property is pinned in the emitted order above instead of counted once per run.
+A second check uses an observed link: the same ordinary prelude C bodies and
+LLVM callable wrappers as `whitefootc`, their private native dependencies,
+and `grant_observer.c`. It requires the exact output oracle, exactly one
+`grants=` diagnostic with a positive count, and exit zero under
+`WF_REQUIRE_WINDOWS_IOCP=1`. The last condition is the linked runtime's own
+assertion that the completion port carried at least one submission and reaped
+every submission it made. It observes the selected native implementation;
+it grants no source-level early result, loan release or overlap permission.
+The emitted launcher defines C `main`, so its link omits `-municode`.
+The native sample runner retains `-municode` for its own `wmain`. Both Winsock
+and shell32 dependencies of the ordinary linked library are present.
 
 The compute pair gives both builds three inert command arguments.
 `par_layout.wf` counts the complete invocation vector, including the invoked
 name, and therefore runs four identical batches in one process. Every batch
-resets both fold seeds, so the exact 34-byte oracle is unchanged. This makes
-the shorter parallel side about 1.4 seconds on the qualifying host and measures
-one initialized pool's steady-state work instead of trying to stabilize a
-sub-second process by weakening the spread bound or averaging repeated pool
-startups. Ordinary argument-free corpus runs still execute one batch.
+resets both fold seeds, so the exact 34-byte oracle is unchanged. Ordinary
+argument-free corpus runs still execute one batch.
 
 Each cohort records fifteen candidate/reference ratios, alternating order in
-each pair, after two unrecorded warm-up pairs. A cohort with ratio MAD above
-5% or p10-to-p90 width above 10% is repeated once and fails as an invalid
-measurement environment if still unstable. The production bounds are compute
-at most 0.90, warm IOCP at most 1.10, and full mixed at most 0.95 relative to
-both its IOCP-only control and the fully sequential program. These are
-same-host runtime qualifications. The host,
-Windows build, CPU, processor mask, memory, power scheme, toolchain, revision,
-and every raw sample ship with the table; a hosted VM is not treated as a
-persistent cross-revision hardware baseline.
+each pair, after two unrecorded warm-up pairs. Every sample remains in
+`raw.tsv`. The summary reports wall-time medians, paired ratios, ratio MAD,
+p10/p90 and relative width. The historical 5% MAD and 10% width bands label
+stability only: a wide spread is reported without retrying to select a better
+cohort or failing CI. Speed ratios do not select success. Correct output,
+ordinary scheduler activity and the observed IOCP path remain required.
+
+Earlier Windows results were collected under a different protocol: PAR-3 kept
+a read outstanding across compute and the following read, and `-Enforce`
+required compute <= 0.90, warm I/O <= 1.10, and mixed <= 0.95 relative to its
+two controls, with a stability retry. Those bounds and the cross-call overlap
+assertion are retired because C2 deletes that source behavior and explicitly
+requires measurements rather than performance gates. Historical tables remain
+historical; the new mode labels and ordinary call order must accompany new
+samples. Losing the old overlap is an outcome to measure, not a failed attempt
+to implement the old rule.
+
+The host, Windows build, CPU, processor mask, memory, power scheme, toolchain,
+revision and every raw sample ship with the table. A hosted VM is not treated
+as a persistent cross-revision hardware baseline.
 
 `linux` builds `linux.Dockerfile` and runs the whole pipeline inside one
 container, because the generated tree must sit on a container-local
@@ -432,8 +425,8 @@ runner. Only paths and the host's own capabilities differ -- `ROOT`, `OUT`,
 the io_uring lines are in the plan. The `io-bench` workflow's
 `bench-linux-read` and `bench-macos-read` jobs run exactly those bytes; that
 workflow runs on demand and when the runtime or this bundle changes. Those
-Linux and macOS tables judge nothing; the Windows paired protocol above is the
-dedicated qualified gate.
+Linux, macOS and Windows tables report performance; none selects acceptance
+by a speed ratio.
 
 The script differs from `bench-read` in one deliberate way. `bench-read`
 refuses to print a table whose cache-state label the probe did not confirm,
@@ -471,7 +464,7 @@ check.
 This bundle is deliberately not reachable from the repository's canonical
 `make check`. It generates a large tree and runs for minutes, so correctness
 builds do not depend on a performance host. The dedicated `io-bench` workflow
-owns the Windows qualification and the exploratory Linux/macOS tables.
+owns the Windows observations and the exploratory Linux/macOS tables.
 Generated trees, binaries, and raw output stay in the selected scratch
 directory; durable results retain the host identity and raw artifact beside
 their summarized table.

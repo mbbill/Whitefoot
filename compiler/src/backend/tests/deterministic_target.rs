@@ -1,33 +1,20 @@
-//! The deterministic test target: the second column of the [QUAL-1]
-//! qualification table and the scripted host its rows name.
+//! Scripted linked implementations of ordinary prelude functions.
 //!
-//! Some conditions the first slice's contracts fix cannot be produced on
-//! demand through a real file or pipe: a close attempt that fails, a read that
-//! stops short at a chosen call, a write the host accepts only in part. This
-//! module qualifies the same program against a target whose file and
-//! descriptor facilities are answered by one small scripted translation unit
-//! linked into the compiled test artifact, so the forced condition is observed
-//! through the same emitted lowering rather than through a model of it.
-//!
-//! It supplies exactly the arrangements those contract tests consume and
-//! nothing else: it is not a simulator of the host and not an artifact-replay
-//! framework. Adding an arrangement here is adding one scripted outcome to one
-//! facility, and a facility exists here only once an operation's contract test
-//! needs it.
+//! The program is emitted once through the ordinary ABI. Tests link the
+//! native library with selected syscall fixtures to force close errors,
+//! short reads and writes that a real descriptor cannot reliably produce.
+//! No compiler target, semantic identifier or acceptance classification
+//! changes when the linked implementation is substituted.
 
 use std::fmt::Write as _;
 
-use crate::backend::emitter::emit_llvm_for_target;
-use crate::backend::qualification::SystemTarget;
 use crate::backend::target::{TargetLayout, TargetLayoutFailure};
 
-use super::system::with_ir;
-// The same contract programs task 0012 exercises against real files and
-// pipes, re-run here under a forced condition no real object can produce on
-// demand. Sharing the source is the point: the two targets must make it
-// behave the same way for the same host answer.
+// The same programs run against real descriptors and scripted linked bodies.
 use super::system_io::{CHUNKED_READ, WRITE_PREFIX, class_arms};
-use super::{compile_link_and_run, host_optimized_module};
+use super::{build_linked_executable_with_library_defines, host_optimized_module, test_directory};
+use std::os::unix::ffi::OsStrExt;
+use std::process::Command;
 
 /// A host error the deterministic host can be scripted to report.
 ///
@@ -36,7 +23,7 @@ use super::{compile_link_and_run, host_optimized_module};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum HostError {
     /// An interrupted call. A close that reports it leaves the descriptor's
-    /// state unknowable, which is exactly why [SYS-5] never retries after one.
+    /// state unknowable, so the linked close implementation does not retry it.
     Interrupted,
     /// A readiness refusal. The deterministic adapter consumes the next
     /// scripted answer only after recording the exact readiness wait.
@@ -249,9 +236,7 @@ const HOST_PRELUDE: &str = "\
 \n\
 ";
 
-/// The fixed body of the generated host unit: one function per facility a
-/// [QUAL-1] deterministic-target row names, and the submit-and-join pair the
-/// one lowering reaches them through.
+/// The syscall fixtures linked inside the ordinary library implementation.
 const HOST_FACILITIES: &str = "\
 /* Every facility appends one line to the real standard error so a test can\n\
    observe host-visible facts the source cannot see — how many attempts a\n\
@@ -379,7 +364,7 @@ static ssize_t wf_test_pread(int descriptor, void *destination, size_t capacity,
     return (ssize_t)delivered;\n\
 }\n\
 \n\
-/* One unpositioned stream read [SYS-15], answered from the same fixture and\n\
+/* One unpositioned stream read, answered from the same fixture and\n\
    the same read script the positioned route uses. The position it reads at is\n\
    this host's own, exactly as a real descriptor's is: one cursor, advanced by\n\
    what each call delivered. */\n\
@@ -480,7 +465,7 @@ static int wf_test_close(int descriptor) {\n\
 \n\
 /* The one lowering, answered by this target's own column.\n\
  *\n\
- * Every qualified wrapper now reserves a record in its own frame, submits the\n\
+ * Each linked implementation reserves a record in its own frame, submits the\n\
  * operation into it, and joins it where the outcome is needed\n\
  * (research/investigations/io-model/PARK-ON-MISS.md section 8). This host\n\
  * answers the pair the way the design's second shape admits: the engine\n\
@@ -646,11 +631,7 @@ impl DeterministicRun {
 
 /// Emits one source against the deterministic test target.
 pub(super) fn emit_for_deterministic_target(source: &[u8]) -> String {
-    with_ir(source, |program| {
-        emit_llvm_for_target(program, SystemTarget::deterministic_test())
-            .expect("the deterministic test target admits the program")
-            .into_string()
-    })
+    super::compile(source)
 }
 
 /// Compiles one source against the deterministic test target, links it with
@@ -671,15 +652,42 @@ pub(super) fn run_emitted_on_deterministic_host(
     script: &HostScript,
     arguments: &[&[u8]],
 ) -> DeterministicRun {
-    let output = compile_link_and_run(llvm, Some(&script.unit()), arguments);
+    let directory = test_directory();
+    let defines = [
+        "wf__completion_file_open_at_submit=wf_test_open_at_submit",
+        "wf__completion_file_pread_submit=wf_test_pread_submit",
+        "wf__completion_file_read_submit=wf_test_read_submit",
+        "wf__completion_file_write_submit=wf_test_write_submit",
+        "wf__completion_file_close_submit=wf_test_close_submit",
+        "wf__completion_file_join=wf_test_file_join",
+        "wf__completion_file_open_join=wf_test_file_open_join",
+    ]
+    .map(str::to_owned);
+    let executable = build_linked_executable_with_library_defines(
+        llvm,
+        Some(&script.unit()),
+        &[],
+        &defines,
+        &directory,
+    );
+    let output = Command::new(&executable)
+        .args(
+            arguments
+                .iter()
+                .map(|bytes| std::ffi::OsStr::from_bytes(bytes)),
+        )
+        .output()
+        .expect("run the ordinary linked library with scripted syscalls");
+    std::fs::remove_dir_all(directory).expect("remove scripted library fixture");
     DeterministicRun { output }
 }
 
-/// A command that binds the initial working directory and returns a fixed
-/// status, so its only host activity is the [SYS-5] release of one
-/// `DirectoryRead`.
-const RELEASES_ONE_DIRECTORY: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus writes(cwd) {
+/// An ordinary entry that explicitly closes its initial working directory.
+const RELEASES_ONE_DIRECTORY: &[u8] = br#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
+  region {
+    let closed = close_directory(factory: &uniq factory, directory: move cwd);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -687,7 +695,11 @@ const RELEASES_ONE_DIRECTORY: &[u8] =
 /// A command that reads its own invocation vector and reaches no host object
 /// at all, so every row it uses is one both target columns share.
 const READS_ITS_ARGUMENTS: &[u8] =
-    br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+    br#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     let total = args_count(args: &args);
     let narrowed = cvt::<u64, u8>(total);
@@ -707,29 +719,44 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// while also binding the initial working directory so exactly one resource
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(cwd, out) {
+    br#"fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, entry_factory: &uniq HandleFactory) -> status: own ExitStatus reads(out, entry_factory), writes(out, entry_factory) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
-  region 'o {
+  region {
     region {
-      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 3_u64) {
-        Ok(value: written) => {
-          let narrowed = cvt::<u64, u8>(written);
-          match narrowed {
-            Ok(value: code) => {
-              return exit_status(code: code);
+      region {
+        let native_window_1 = slice_of(&bytes);
+        region {
+          match write_once(factory: &uniq deref(entry_factory), output: &uniq deref(out), source: &native_window_1, start: 0_u64, end: 3_u64) {
+            Ok(value: written) => {
+              let narrowed = cvt::<u64, u8>(written);
+              match narrowed {
+                Ok(value: code) => {
+                  return exit_status(code: code);
+                }
+                Err(error: overflowed) => {
+                  return exit_status(code: 200_u8);
+                }
+              }
             }
-            Err(error: overflowed) => {
-              return exit_status(code: 200_u8);
+            Err(error: problem) => {
+              return exit_status(code: 211_u8);
             }
           }
         }
-        Err(error: problem) => {
-          return exit_status(code: 211_u8);
-        }
       }
     }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, out: &uniq out, entry_factory: &uniq entry_factory);
+    close_directory(factory: &uniq entry_factory, directory: move cwd);
+    return move outcome;
   }
 }
 "#;
@@ -739,30 +766,37 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 /// inspection and provisional cleanup are therefore on the same emitted path
 /// under test.
 fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
-    let arms = class_arms(16, named, default);
+    let arms = class_arms(12, named, default);
     format!(
-        r#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {{
+        r#"fn exercise(factory: &uniq HandleFactory, cwd: &DirectoryRead) -> status: own ExitStatus reads(factory, cwd), writes(factory) {{
   let name = buffer_new(1_u64, 65_u8);
-  region 'c {{
+  region {{
+    let window = slice_of(&name);
     region {{
-      match reserve_handle(factory: &uniq 'c files) {{
-        Ok(value: permit) => {{
-          match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {{
-            FileOpened(value: file) => {{
-              return exit_status(code: 24_u8);
-            }}
-            FileOpenFailed(error: problem, permit: refused) => {{
-              match move problem {{
-{arms}              }}
-            }}
-          }}
+      match open_file(factory: &uniq deref(factory), root: cwd, name: &window, start: 0_u64, end: 1_u64) {{
+        FileOpened(value: file) => {{
+          close_read(factory: &uniq deref(factory), file: move file);
+          return exit_status(code: 24_u8);
         }}
-        Err(error: spent) => {{
-          return exit_status(code: 8_u8);
+        FileOpenFailed(error: problem) => {{
+          match move problem {{
+{arms}          }}
         }}
       }}
     }}
   }}
+}}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
+  let outcome = exit_status(code: 0_u8);
+  region {{
+    let previous = replace outcome = exercise(factory: &uniq factory, cwd: &cwd);
+  }}
+  region {{
+    close_directory(factory: &uniq factory, directory: move cwd);
+  }}
+  return move outcome;
 }}
 "#
     )
@@ -838,11 +872,8 @@ fn host_selection_uses_one_exact_explicit_target_row() {
 }
 
 #[test]
-fn a_program_reaching_no_host_object_emits_identically_on_both_targets() {
-    // The target column changes only the facilities that reach a real
-    // operating-system object. Argument access, the host-string routes, path
-    // construction, and `exit_status` resolve to the same approved row on both
-    // columns, so this program's module is the same byte for byte.
+fn linked_library_substitution_preserves_argument_access() {
+    // Substitution happens at link time; the WF module and launcher are identical.
     assert_eq!(
         super::compile(READS_ITS_ARGUMENTS),
         emit_for_deterministic_target(READS_ITS_ARGUMENTS)
@@ -853,108 +884,14 @@ fn a_program_reaching_no_host_object_emits_identically_on_both_targets() {
     // exactly.
     let run = run_on_deterministic_host(READS_ITS_ARGUMENTS, &HostScript::new(), &[b"a", b"b"]);
     assert_eq!(run.output.status.code(), Some(3));
-    assert_eq!(run.attempts("close"), 0);
+    assert_eq!(run.attempts("close"), 1);
     assert_eq!(run.attempts("open"), 0);
 }
 
 #[test]
-fn the_deterministic_target_qualifies_the_same_program_as_the_native_target() {
-    // The second column is a different implementation of the same
-    // specification, not a relaxed one: it qualifies exactly the facilities
-    // the native target qualifies, with the same [QUAL-2] guarantees.
-    with_ir(RELEASES_ONE_DIRECTORY, |program| {
-        let native = SystemTarget::for_triple(
-            crate::backend::target::TargetLayout::host()
-                .expect("a supported host")
-                .triple(),
-        )
-        .expect("the host triple is a qualified target");
-        let deterministic = SystemTarget::deterministic_test();
-        assert_eq!(
-            crate::backend::qualification::qualify_program(native, program)
-                .expect("the native target admits the program")
-                .kind(),
-            crate::backend::qualification::qualify_program(deterministic, program)
-                .expect("the deterministic target admits the program")
-                .kind()
-        );
-    });
-}
-
-#[test]
-fn only_the_host_facing_rows_differ_between_the_two_targets() {
-    // Selecting the deterministic target redirects exactly the rows that
-    // reach a real operating-system object. Everything else — the wrappers,
-    // the bootstrap, the release shape, the emitted call count — is the same
-    // code under test.
-    let native = super::compile(RELEASES_ONE_DIRECTORY);
-    let deterministic = emit_for_deterministic_target(RELEASES_ONE_DIRECTORY);
-
-    // A close is one operation like every other: submitted into the record the
-    // releasing frame reserved, then joined
-    // (`research/investigations/io-model/PARK-ON-MISS.md` §8). The row a target
-    // column redirects is therefore the submit-and-join pair, not a blocking
-    // call.
-    assert!(native.contains("declare void @wf__completion_file_close_submit(i32, ptr)"));
-    assert!(native.contains("declare void @wf__completion_file_join(ptr, ptr, ptr)"));
-    assert!(native.contains("declare i32 @open(ptr, i32, ...)"));
-    assert!(!native.contains("wf_test"));
-
-    assert!(deterministic.contains("declare void @wf_test_close_submit(i32, ptr)"));
-    assert!(deterministic.contains("declare void @wf_test_file_join(ptr, ptr, ptr)"));
-    assert!(deterministic.contains("declare i32 @wf_test_open(ptr, i32, ...)"));
-    // The redirect is complete: no use site keeps calling the native facility.
-    assert!(!deterministic.contains("@wf__completion_file_close_submit(i32 "));
-    assert!(!deterministic.contains("@wf__completion_file_join(ptr "));
-    assert!(!deterministic.contains("@open(ptr "));
-
-    // One release, one close attempt, on either target [SYS-5]: one submit and
-    // the one join that consumes its terminal completion.
-    assert_eq!(
-        native
-            .matches("call void @wf__completion_file_close_submit(i32")
-            .count(),
-        1
-    );
-    assert_eq!(
-        native
-            .matches("call void @wf__completion_file_join(ptr")
-            .count(),
-        1
-    );
-    assert_eq!(
-        deterministic
-            .matches("call void @wf_test_close_submit(i32")
-            .count(),
-        1
-    );
-    assert_eq!(
-        deterministic
-            .matches("call void @wf_test_file_join(ptr")
-            .count(),
-        1
-    );
-
-    // The rest of the module is identical, so a condition forced on the
-    // deterministic host is forced on the same lowering the native target
-    // emits.
-    assert_eq!(
-        native
-            .replace("@wf__completion_file_close_submit", "@wf_test_close_submit")
-            .replace("@wf__completion_file_join", "@wf_test_file_join")
-            .replace("@open", "@wf_test_open"),
-        deterministic
-    );
-}
-
-#[test]
-fn a_release_close_that_fails_is_attempted_once_and_never_retried() {
-    // [SYS-5]: a consuming close is one attempt whose diagnostic is
-    // discarded. An interrupted close leaves the descriptor's state
-    // unknowable, so retrying could close a descriptor the host has already
-    // reused; the release must not. A real directory close cannot be made to
-    // report `EINTR` on demand, which is why this case is the deterministic
-    // target's.
+fn an_explicit_close_that_fails_is_attempted_once_and_never_retried() {
+    // The ordinary close implementation attempts once even on EINTR.
+    // The caller explicitly discards its Result; an implicit drop does nothing.
     let run = run_on_deterministic_host(
         RELEASES_ONE_DIRECTORY,
         &HostScript::new().closes(&[HostOutcome::Fail(HostError::Interrupted)]),
@@ -970,14 +907,17 @@ fn a_release_close_that_fails_is_attempted_once_and_never_retried() {
     // The descriptor closed is the one the scripted directory open produced,
     // and the attempt reported a failure: the value itself is the selected
     // host's own `EINTR`, not a number this test fixes.
-    assert!(run.trace().contains("wf_test close fd=41 outcome=error"));
-    // The failed release changes nothing the source can observe: the command
-    // still produces its own status.
+    assert!(
+        run.trace()
+            .lines()
+            .any(|line| line.starts_with("wf_test close fd=") && line.ends_with("outcome=error"))
+    );
+    // This caller discards the close Result and keeps its selected exit status.
     assert_eq!(run.output.status.code(), Some(0));
 }
 
 #[test]
-fn a_release_close_that_succeeds_is_also_exactly_one_attempt() {
+fn an_explicit_close_that_succeeds_is_also_exactly_one_attempt() {
     // The control for the case above: the single attempt is a property of the
     // release, not of the failure.
     let run = run_on_deterministic_host(
@@ -987,16 +927,20 @@ fn a_release_close_that_succeeds_is_also_exactly_one_attempt() {
     );
 
     assert_eq!(run.attempts("close"), 1);
-    assert!(run.trace().contains("wf_test close fd=41 outcome=ok"));
+    assert!(
+        run.trace()
+            .lines()
+            .any(|line| line.starts_with("wf_test close fd=")
+                && !line.starts_with("wf_test close fd=42 ")
+                && line.ends_with("outcome=ok"))
+    );
     assert_eq!(run.output.status.code(), Some(0));
 }
 
 #[test]
 fn an_inspection_error_survives_a_failed_provisional_close() {
-    // `fstat` supplies the source-visible error. [SYS-5] makes the following
-    // close exactly one best-effort cleanup attempt whose own diagnostic is
-    // discarded, so even an interrupted close cannot replace the typed error
-    // with a process abort.
+    // The open implementation preserves the inspection error while closing
+    // its provisional descriptor once. The ordinary caller sees that error.
     let source = opens_one_file(
         &[(
             "DeviceFailure",
@@ -1029,14 +973,19 @@ fn an_inspection_error_survives_a_failed_provisional_close() {
     assert_eq!(run.attempts("close"), 2);
     assert!(run.trace().contains("wf_test fstat fd=42 outcome=error"));
     assert!(run.trace().contains("wf_test close fd=42 outcome=error"));
-    assert!(run.trace().contains("wf_test close fd=41 outcome=ok"));
+    assert!(
+        run.trace()
+            .lines()
+            .any(|line| line.starts_with("wf_test close fd=")
+                && !line.starts_with("wf_test close fd=42 ")
+                && line.ends_with("outcome=ok"))
+    );
 }
 
 #[test]
 fn a_nonregular_result_survives_a_failed_provisional_close() {
-    // The classification error is compiler-owned, but provisional cleanup has
-    // the same SYS-5 rule: one close attempt, no retry, and no replacement of
-    // the already selected source-visible outcome.
+    // The linked open implementation classifies the provisional descriptor
+    // and preserves that outcome if its cleanup close fails.
     let source = opens_one_file(
         &[(
             "IsDirectory",
@@ -1066,20 +1015,23 @@ fn a_nonregular_result_survives_a_failed_provisional_close() {
     assert_eq!(run.attempts("close"), 2);
     assert!(run.trace().contains("wf_test fstat fd=42 outcome=ok"));
     assert!(run.trace().contains("wf_test close fd=42 outcome=error"));
-    assert!(run.trace().contains("wf_test close fd=41 outcome=ok"));
+    assert!(
+        run.trace()
+            .lines()
+            .any(|line| line.starts_with("wf_test close fd=")
+                && !line.starts_with("wf_test close fd=42 ")
+                && line.ends_with("outcome=ok"))
+    );
 }
 
 #[test]
-fn the_deterministic_release_keeps_the_native_optimized_shape() {
-    // [QUAL-3]: the wrapper inlines and the release stays one direct call on
-    // the selected target's own facility, with no dispatch table, no handle
-    // lookup, and no allocation introduced by the second column.
+fn substituting_linked_closes_keeps_one_ordinary_call_in_optimized_ir() {
+    // Native syscall substitution cannot alter the WF call ABI.
     let optimized = host_optimized_module(&emit_for_deterministic_target(RELEASES_ONE_DIRECTORY));
-    // The close is a submit and the join that consumes its completion, both
-    // inlined into the releasing frame with the record it reserved there
-    // (design §8). Two symbols, one call and one declaration each.
-    assert_eq!(optimized.matches("@wf_test_close_submit(").count(), 2);
-    assert_eq!(optimized.matches("@wf_test_file_join(").count(), 2);
+    // The optimized WF body calls its ordinary declaration; linked internals
+    // are neither copied into this module nor selected by the compiler.
+    assert!(optimized.contains("@wf_close_directory("));
+    assert!(!optimized.contains("@wf_test_close_submit"));
     assert!(!optimized.contains("@malloc"));
 }
 
@@ -1089,8 +1041,7 @@ fn a_mid_stream_read_failure_stops_the_drain_after_the_bytes_it_delivered() {
     // arranged on a real filesystem at a chosen call, so this is the
     // deterministic target's case. The first attempt delivers three bytes and
     // the second reports a device failure; the drain must observe
-    // `ReadBytes(3)` then `ReadFailed`, not a silent end of input [SYS-8,
-    // SYS-11].
+    // `Ok(3)` then `Err(ReadFailed(...))`, not a silent end of input.
     let run = run_on_deterministic_host(
         CHUNKED_READ,
         &HostScript::new().file(b"abcdefgh").reads(&[
@@ -1182,7 +1133,7 @@ fn write_no_progress_answers_are_internal_until_one_write_progresses() {
 fn a_forced_short_write_reports_the_absolute_endpoint_after_the_host_prefix() {
     // A destination that accepts only part of one request is not something a
     // regular file or a pipe can be made to do on demand at a chosen call.
-    // [SYS-8] makes one `write_once` at most one host attempt, so a partial
+    // The linked `write_once` reports the first progress, so a partial
     // acceptance is `Ok(next)` with the exact absolute endpoint — never a silent
     // loop that finishes the range, and never an error.
     let run = run_on_deterministic_host(
@@ -1221,17 +1172,13 @@ fn a_forced_short_write_reports_the_absolute_endpoint_after_the_host_prefix() {
 }
 
 #[test]
-fn an_output_sink_that_fails_only_at_close_is_never_closed_by_its_release() {
-    // [SYS-12]: releasing an `OutputStream` is a logical source detach — no close,
-    // no flush, no target call. A sink whose failure appears only at close or
-    // writeback therefore cannot reach the program: every accepted write
-    // stands and the command still produces its own status. The scripted
-    // close proves the point by never firing for the output.
+fn an_affine_output_drop_does_not_call_a_close() {
+    // PRE-1 opaque drop is empty. OutputStream is affine, so dropping it
+    // performs no native close or flush. DirectoryRead is explicitly closed.
     let run = run_on_deterministic_host(
         WRITES_THEN_RELEASES_BOTH,
         &HostScript::new()
-            // Every close this run makes fails. Only the directory's release
-            // closes anything, so only it can consume an entry.
+            // Only the explicit directory close can consume a scripted answer.
             .closes(&[
                 HostOutcome::Fail(HostError::DeviceFailure),
                 HostOutcome::Fail(HostError::DeviceFailure),
@@ -1254,25 +1201,34 @@ fn an_output_sink_that_fails_only_at_close_is_never_closed_by_its_release() {
     // `OutputStream` owner closed its descriptor, so the sink's close-time failure
     // is outside what any release can observe.
     assert_eq!(run.attempts("close"), 1);
-    assert!(run.trace().contains("wf_test close fd=41 outcome=error"));
+    assert!(
+        run.trace()
+            .lines()
+            .any(|line| line.starts_with("wf_test close fd=") && line.ends_with("outcome=error"))
+    );
     assert!(!run.trace().contains("wf_test close fd=1 "));
     assert!(!run.trace().contains("wf_test close fd=2 "));
 }
 
 #[test]
 fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
-    // Allocator refusal and `write_once` both reach a write facility, but only
-    // the operation row has a target column: the resource-record writer is the
-    // compiler's own and must never be scriptable, or a forced short write
-    // could truncate the record. One module declares both.
-    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+    // The resource-exhaustion recorder stays independent of the ordinary
+    // library's substituted write implementation. Both paths remain callable.
+    let source = br#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let bytes = buffer_new(1_u64, 65_u8);
-  region 'o {
+  region {
     region {
-      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {
-        Ok(value: next) => {
-        }
-        Err(error: problem) => {
+      let ordinary_source_4 = slice_of(&bytes);
+      region {
+        match write_once(factory: &uniq entry_factory, output: &uniq out, source: &ordinary_source_4, start: 0_u64, end: 1_u64) {
+          Ok(value: next) => {
+          }
+          Err(error: problem) => {
+          }
         }
       }
     }
@@ -1281,11 +1237,12 @@ fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
 }
 "#;
     let module = emit_for_deterministic_target(source);
-    assert!(module.contains("declare void @wf_test_write_submit(i32, ptr, i64, ptr)"));
+    assert!(module.contains("declare void @wf_write_once(ptr %wf.result,"));
     assert!(module.contains("declare i64 @write(i32, ptr, i64)"));
     assert!(module.contains("%written = call i64 @write(i32 2, ptr %cursor"));
     assert!(module.contains("call void @wf_resource_record_abort("));
-    assert!(module.contains("call void @wf_test_write_submit(i32 %output"));
+    assert!(module.contains("call void @wf_write_once("));
+    assert!(!module.contains("@wf_test_write_submit"));
 
     // And the native target still declares exactly one `@write` for both.
     let native = super::compile(source);
@@ -1297,17 +1254,13 @@ fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
 
 #[test]
 fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
-    // [SYS-8] makes a host write that accepts zero bytes of a nonempty
-    // request `Err(WriteZero())` and never `Ok(0)`, because `Ok(0)` would
-    // report progress that did not happen and a write-until-accepted loop
-    // would spin on it forever. No real destination produces that answer for a
-    // nonempty request, so task 0012 could only establish the outcome from the
-    // emitted shape. Scripting the host to accept nothing makes it behavioural:
-    // the program observes the class itself.
-    //
-    // [SYS-7] leaves both detail fields zero for this class, because no native
-    // error code produced it, so the case reads them too — the class is not
-    // being smuggled in with a borrowed native code or facility origin.
+    assert_zero_write_outcome();
+}
+
+pub(super) fn assert_zero_write_outcome() {
+    // A linked write reporting zero progress on a nonempty request produces
+    // Err(WriteZero) with zero code/origin. This is actual source behavior,
+    // tested by substituting the native facility rather than inspecting IR.
     let arms = class_arms(
         12,
         &[(
@@ -1317,11 +1270,16 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {{
+        r#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
+  region {{
+    close_directory(factory: &uniq factory, directory: move cwd);
+  }}
   let bytes = buffer_new(2_u64, 119_u8);
-  region 'o {{
+  region {{
+    let window = slice_of(&bytes);
     region {{
-      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 2_u64) {{
+      match write_once(factory: &uniq factory, output: &uniq out, source: &window, start: 0_u64, end: 2_u64) {{
         Ok(value: written) => {{
           let narrowed = cvt::<u64, u8>(written);
           match narrowed {{
@@ -1358,7 +1316,7 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         run.trace()
     );
     // One request, one attempt: the refusal ended the operation and nothing
-    // retried it inside `write_once` [SYS-8].
+    // retried it inside the linked `write_once` implementation.
     assert_eq!(run.attempts("write"), 1);
     assert!(
         run.trace()

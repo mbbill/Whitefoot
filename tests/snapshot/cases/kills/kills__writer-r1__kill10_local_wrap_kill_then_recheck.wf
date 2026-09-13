@@ -15,7 +15,7 @@ fn scan_pair(data: own FixedVector<i16, 8>, start: own u64) -> result: own i16 r
   return first +wrap second;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let data = fixed_vector::<i16, 8>();
   region {
     place_back(vector: &uniq data, value: 2_i16);

@@ -24,7 +24,7 @@ fn step_size(mode: own Mode, table: own FixedVector<u16, 4>) -> result: own u16 
   return table[pos];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first_table = fixed_vector::<u16, 4>();
   region {
     place_back(vector: &uniq first_table, value: 0_u16);

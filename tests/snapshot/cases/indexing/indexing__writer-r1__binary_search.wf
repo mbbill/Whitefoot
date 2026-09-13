@@ -29,7 +29,7 @@ fn bsearch(table: own FixedVector<u32, 8>, spare: own u64, target: own u32, lo: 
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u32, 8>();
   region {
     place_back(vector: &uniq table, value: 0_u32);

@@ -6,7 +6,7 @@ fn magnitude(n: own i16) -> result: own i16 pure {
   return 0_i16;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = magnitude(n: -30000_i16);
   let b = magnitude(n: 12345_i16);
   if a == 30000_i16 {

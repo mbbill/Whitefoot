@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: for i in 0..5 reads data[i+1], which is data[5] (OOB) on the last iteration i=4";
   let data = fixed_vector::<u8, 5>();
   region {

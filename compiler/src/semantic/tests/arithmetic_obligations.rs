@@ -199,9 +199,7 @@ fn main() -> status: own ExitStatus pure {
                 mechanical_fix: OVERFLOW_FIX,
             },
         );
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("expected a source-node citation: {:?}", issue.location());
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(
@@ -443,7 +441,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn effect_mismatch_precedes_static_integer_domain_rejection() {
     let extra_effect_row =
-        br#"fn bump(heap: &uniq Heap, x: own u64) -> result: own u64 allocates(heap) {
+        br#"fn bump['heap](heap: &uniq Heap<'heap>, x: own u64) -> result: own u64 allocates(heap) {
   let y = x + 1_u64;
   return y;
 }
@@ -716,9 +714,7 @@ fn main() -> status: own ExitStatus pure {
                 mechanical_fix: OVERFLOW_FIX,
             },
         );
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("expected a source-node citation: {:?}", issue.location());
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(

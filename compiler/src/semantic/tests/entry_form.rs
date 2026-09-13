@@ -72,18 +72,18 @@ fn arg_get_calls_are_checked_by_the_same_general_rule() {
 
 #[test]
 fn a_bundle_without_a_build_selected_entry_is_ordinary_source() {
-    assert_complete(b"fn helper() -> result: own unit pure { return unit; }\n");
+    assert_complete(b"fn helper() -> result: own unit pure {\n  return unit;\n}\n");
 }
 
 #[test]
 fn main_has_ordinary_parameters_results_regions_and_generics() {
     for source in [
-        &b"fn main() -> result: own unit pure { return unit; }\n"[..],
-        &b"fn main(value: own i32) -> result: own i32 pure { return value; }\n"[..],
-        &b"fn main<T: affine>(value: own T) -> result: own T pure { return move value; }\n"[..],
-        &b"fn main['s](heap: own Heap<'s>) -> result: own unit pure { return unit; }\n"[..],
-        &b"fn main(env: own Args, again: own Args) -> result: own unit pure { return unit; }\n"[..],
-        &b"fn main(args: own DirectoryRead) -> result: own DirectoryRead pure { return move args; }\n"[..],
+        &b"fn main() -> result: own unit pure {\n  return unit;\n}\n"[..],
+        &b"fn main(value: own i32) -> result: own i32 pure {\n  return value;\n}\n"[..],
+        &b"fn main<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n"[..],
+        &b"fn main['s](heap: own Heap<'s>) -> result: own unit pure {\n  return unit;\n}\n"[..],
+        &b"fn main(env: own Args, again: own Args) -> result: own unit pure {\n  return unit;\n}\n"[..],
+        &b"fn main(args: own DirectoryRead) -> result: own DirectoryRead pure {\n  return move args;\n}\n"[..],
     ] {
         assert_complete(source);
     }
@@ -94,13 +94,13 @@ fn a_main_requirement_is_an_ordinary_contract_not_a_launcher_promise() {
     assert_complete(include_bytes!(
         "../../../../tests/conformance/cases/fn8-neg-entry-contract.wf"
     ));
-    let source = b"fn main(value: own u64) -> result: own u64 pure contract { requires value < 4_u64; } { return value; }\nfn call() -> result: own u64 pure { return main(value: 4_u64); }\n";
+    let source = b"fn main(value: own u64) -> result: own u64 pure contract {\n  requires value < 4_u64;\n} {\n  return value;\n}\n\nfn call() -> result: own u64 pure {\n  return main(value: 4_u64);\n}\n";
     assert_rule_kind(source, SemanticRule::Fn8, |_| true);
 }
 
 #[test]
 fn a_source_call_to_main_uses_the_ordinary_function_contract() {
-    assert_complete(b"fn main(value: own u64) -> result: own u64 pure { return value; }\nfn helper() -> result: own u64 pure { return main(value: 7_u64); }\n");
+    assert_complete(b"fn main(value: own u64) -> result: own u64 pure {\n  return value;\n}\n\nfn helper() -> result: own u64 pure {\n  return main(value: 7_u64);\n}\n");
     assert_complete(include_bytes!(
         "../../../../tests/conformance/cases/reject-sysentry-call-to-kind-entry.wf"
     ));
@@ -109,9 +109,9 @@ fn a_source_call_to_main_uses_the_ordinary_function_contract() {
 #[test]
 fn unexhibited_main_effects_are_still_rejected_by_eff2() {
     for source in [
-        &b"fn main['s](heap: own Heap<'s>) -> result: own unit allocates(heap) { return unit; }\n"
+        &b"fn main['s](heap: own Heap<'s>) -> result: own unit allocates(heap) {\n  return unit;\n}\n"
             [..],
-        &b"fn probe(args: own Args) -> result: own unit reads(args) { return unit; }\n"[..],
+        &b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n"[..],
     ] {
         assert_rule_kind(source, SemanticRule::Eff2, |kind| {
             matches!(kind, SemanticIssueKind::EffectMismatch { .. })
@@ -122,10 +122,10 @@ fn unexhibited_main_effects_are_still_rejected_by_eff2() {
 #[test]
 fn prelude_inputs_are_a_normal_linear_struct() {
     assert_complete(
-        b"fn relay(inputs: own Inputs) -> result: own Inputs pure { return move inputs; }\n",
+        b"fn relay(inputs: own Inputs) -> result: own Inputs pure {\n  return move inputs;\n}\n",
     );
     assert_rule_kind(
-        b"fn discard(inputs: own Inputs) -> result: own unit pure { return unit; }\n",
+        b"fn discard(inputs: own Inputs) -> result: own unit pure {\n  return unit;\n}\n",
         SemanticRule::Prov6,
         |_| true,
     );

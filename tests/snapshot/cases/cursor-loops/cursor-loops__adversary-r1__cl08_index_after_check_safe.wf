@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: same size-8 array and cursor as cl07 but the sentinel check runs before the index, so cursor==8 breaks before values[cursor] is ever reached";
   let values = fixed_vector::<u64, 8>();
   region {

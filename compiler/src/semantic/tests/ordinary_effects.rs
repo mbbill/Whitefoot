@@ -619,3 +619,31 @@ fn main() -> status: own ExitStatus pure {
 "#;
     assert_complete(source.as_bytes());
 }
+
+#[test]
+fn ordinary_numeric_result_facts_survive_a_later_outcome_match() {
+    assert_complete(
+        br#"enum TestError {
+  Failed();
+}
+
+fn provide(end: own u64) -> (result: own Result<unit, TestError>, next: own u64, count: own u64) pure contract {
+  ensures next <= end;
+} {
+  return Ok<unit, TestError>(value: unit), end, 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let (outcome, next, count) = provide(end: 4096_u64);
+  match move outcome {
+    Ok(value: done) => {
+      invariant bounded: next <= 4096_u64;
+    }
+    Err(error: problem) => {
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+}

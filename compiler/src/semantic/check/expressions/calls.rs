@@ -536,7 +536,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 nominal,
                 value: Box::new(value.expression),
             },
-            value.effects.union(EffectSet::ALLOCATES_HEAP),
+            value.effects,
         ))
     }
 

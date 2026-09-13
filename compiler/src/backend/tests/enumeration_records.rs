@@ -1,9 +1,9 @@
-//! The [SYS-14] portable-record decoder, over native records this module
+//! The ordinary directory library record decoder, over native records this module
 //! builds by hand.
 //!
-//! `directory_next` is the one system operation whose emitted shim reads a
+//! The linked `directory_next` body reads a
 //! record the host wrote rather than a count the host returned, and the two
-//! qualified families write different records: Darwin's `struct dirent`
+//! native implementations consume different records: Darwin's `struct dirent`
 //! states the name's length in a field of its own, and Linux's
 //! `struct linux_dirent64` states none at all and NUL-terminates the name
 //! inside the extent `d_reclen` reports. The decoder must therefore be
@@ -28,7 +28,7 @@ use super::{compile, compile_link_and_run_with};
 ///
 /// Each names a way a facility inside the trusted computing base could
 /// contradict itself. The decoder ends the walk at `abort` for every one of
-/// them [SCOPE-3, QUAL-1]: none is a source-visible outcome.
+/// them under its private native record contract: none is a source-visible outcome.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RecordDefect {
     /// The record is exactly what its family fixes.
@@ -96,7 +96,7 @@ impl ScriptedEntry {
 
     /// The portable record this entry must normalize into: one kind byte, one
     /// little-endian `u16` name length, then exactly that many name bytes
-    /// [SYS-14].
+    /// under the ordinary directory library contract.
     fn portable(self) -> Vec<u8> {
         let kind = match self.native_kind {
             0 => 0u8,
@@ -118,7 +118,7 @@ impl ScriptedEntry {
 /// The native record layout of the selected host family, as the generated
 /// unit's own constants.
 ///
-/// These are the offsets `backend/qualification.rs` states for the same
+/// These are the offsets the native library implements for the same
 /// family. Stating them independently is deliberate: a change on one side
 /// that leaves the other alone shows up as a decoded-bytes mismatch rather
 /// than as agreement between two copies of one mistake.
@@ -136,7 +136,7 @@ const fn record_layout() -> &'static str {
 }
 
 /// The longest single component the selected target's enumeration row admits
-/// [SYS-14].
+/// under the ordinary directory library contract.
 const fn component_limit() -> u16 {
     if cfg!(target_os = "macos") { 1023 } else { 255 }
 }
@@ -261,48 +261,66 @@ fn scripted_facility_defines() -> Vec<String> {
 /// Publishes one enumeration batch's portable prefix on standard output.
 ///
 /// The program is ordinary source: it names no target record and reads only
-/// the portable form [SYS-14] fixes.
-const PUBLISH_ONE_BATCH: &[u8] = br#"fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files) {
-  doc "Publishes the portable record prefix of one enumeration batch.";
+/// the portable form under the ordinary directory library contract fixes.
+const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(out, files) {
   let entries = buffer_new(4096_u64, 0_u8);
+  let available = 0_u64;
   region {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        match open_directory_source(permit: move permit, directory: &cwd) {
-          SourceOpened(value: list) => {
-            region {
-              match directory_next(source: &uniq list, destination: &uniq entries, start: 0_u64, end: 4096_u64) {
-                ListBytes(next: endpoint, entries: reported) => {
-                  region {
-                    match write_once(output: &uniq out, source: &entries, start: 0_u64, end: endpoint) {
-                      Ok(value: written) => {
-                      }
-                      Err(error: problem) => {
-                        return exit_status(code: 2_u8);
-                      }
-                    }
+    match open_directory_source(factory: &uniq deref(files), directory: cwd) {
+      SourceOpened(value: list) => {
+        region {
+          let destination = mut_slice_of(&uniq entries);
+          region {
+            let (copied, endpoint, reported) = directory_next(source: &uniq list, destination: &uniq destination, start: 0_u64, end: 4096_u64);
+            match move copied {
+              Ok(value: done) => {
+                set available = endpoint;
+              }
+              Err(error: stop) => {
+                match stop {
+                  ListEnd() => {
+                    close_directory_source(factory: &uniq deref(files), source: move list);
+                    return exit_status(code: 3_u8);
                   }
-                }
-                ListEnd() => {
-                  return exit_status(code: 3_u8);
-                }
-                ListFailed(error: problem) => {
-                  return exit_status(code: 4_u8);
+                  ListFailed(error: problem) => {
+                    close_directory_source(factory: &uniq deref(files), source: move list);
+                    return exit_status(code: 4_u8);
+                  }
                 }
               }
             }
           }
-          SourceOpenFailed(error: problem, permit: refused) => {
-            return exit_status(code: 5_u8);
+        }
+        region {
+          let source = slice_of(&entries);
+          region {
+            match write_once(factory: &uniq deref(files), output: &uniq deref(out), source: &source, start: 0_u64, end: available) {
+              Ok(value: written) => {
+              }
+              Err(error: problem) => {
+                close_directory_source(factory: &uniq deref(files), source: move list);
+                return exit_status(code: 2_u8);
+              }
+            }
           }
         }
+        close_directory_source(factory: &uniq deref(files), source: move list);
       }
-      Err(error: spent) => {
-        return exit_status(code: 8_u8);
+      SourceOpenFailed(error: problem) => {
+        return exit_status(code: 5_u8);
       }
     }
   }
   return exit_status(code: 0_u8);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, out: &uniq out, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }
 "#;
 
@@ -355,7 +373,7 @@ fn names_of_every_admitted_length_decode_to_the_portable_record() {
 
 /// The closed kind set, including the value meaning the target classified the
 /// entry as nothing more specific and a value belonging to none of the four
-/// named classes [SYS-14].
+/// named classes under the ordinary directory library contract.
 #[test]
 fn every_native_entry_kind_maps_into_the_closed_portable_set() {
     // `DT_REG`, `DT_DIR`, `DT_LNK`, `DT_UNKNOWN`, and `DT_FIFO`, which has no
@@ -420,7 +438,7 @@ fn a_batch_that_fills_the_range_decodes_every_record_it_holds() {
 }
 
 /// A batch reporting no bytes at all is the end of the enumeration, never an
-/// empty record [SYS-8].
+/// empty record (ordinary native library).
 #[test]
 fn an_empty_batch_is_the_end_of_the_enumeration() {
     let output = published_records(&[]);
@@ -435,7 +453,7 @@ fn an_empty_batch_is_the_end_of_the_enumeration() {
 
 /// A record no correct facility produces ends the walk at the
 /// trusted-computing-base defect arm rather than producing a source-visible
-/// outcome [SCOPE-3, QUAL-1, SYS-8].
+/// outcome (private native record invariant).
 #[test]
 fn a_record_that_contradicts_its_family_layout_ends_the_walk() {
     for defect in [

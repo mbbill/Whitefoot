@@ -1,42 +1,114 @@
 use super::{
-    DeclarationClass, OperationFamilyId, PreludeDeclarationId, PreludeDeclarationRecord,
+    BuiltinPreludeDeclarationRecord, BuiltinPreludeId, DeclarationClass, OperationFamilyId,
     ReservedNameClass,
 };
 
-pub(crate) const PRELUDE_DECLARATIONS: [PreludeDeclarationRecord; 24] = [
-    prelude(0, "Bool", Some(DeclarationClass::NominalType)),
-    prelude(1, "True", Some(DeclarationClass::EnumVariant)),
-    prelude(2, "False", Some(DeclarationClass::EnumVariant)),
-    prelude(3, "Option", Some(DeclarationClass::NominalType)),
-    prelude(4, "T", None),
-    prelude(5, "None", Some(DeclarationClass::EnumVariant)),
-    prelude(6, "Some", Some(DeclarationClass::EnumVariant)),
-    prelude(7, "value", None),
-    prelude(8, "Result", Some(DeclarationClass::NominalType)),
-    prelude(9, "T", None),
-    prelude(10, "E", None),
-    prelude(11, "Ok", Some(DeclarationClass::EnumVariant)),
-    prelude(12, "value", None),
-    prelude(13, "Err", Some(DeclarationClass::EnumVariant)),
-    prelude(14, "error", None),
-    prelude(15, "Overflow", Some(DeclarationClass::NominalType)),
-    prelude(16, "Overflow", Some(DeclarationClass::EnumVariant)),
-    prelude(17, "DivError", Some(DeclarationClass::NominalType)),
-    prelude(18, "DivideByZero", Some(DeclarationClass::EnumVariant)),
-    prelude(19, "DivOverflow", Some(DeclarationClass::EnumVariant)),
-    prelude(20, "NarrowError", Some(DeclarationClass::NominalType)),
-    prelude(21, "NarrowError", Some(DeclarationClass::EnumVariant)),
-    prelude(22, "Int", Some(DeclarationClass::NumericBound)),
-    prelude(23, "Float", Some(DeclarationClass::NumericBound)),
+pub(crate) const PRELUDE_DECLARATIONS: [BuiltinPreludeDeclarationRecord; 24] = [
+    prelude(
+        BuiltinPreludeId::BOOL,
+        "Bool",
+        Some(DeclarationClass::NominalType),
+    ),
+    prelude(
+        BuiltinPreludeId::TRUE,
+        "True",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(
+        BuiltinPreludeId::FALSE,
+        "False",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(
+        BuiltinPreludeId::OPTION,
+        "Option",
+        Some(DeclarationClass::NominalType),
+    ),
+    prelude(BuiltinPreludeId::OPTION_TYPE, "T", None),
+    prelude(
+        BuiltinPreludeId::NONE,
+        "None",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(
+        BuiltinPreludeId::SOME,
+        "Some",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(BuiltinPreludeId::SOME_VALUE, "value", None),
+    prelude(
+        BuiltinPreludeId::RESULT,
+        "Result",
+        Some(DeclarationClass::NominalType),
+    ),
+    prelude(BuiltinPreludeId::RESULT_VALUE_TYPE, "T", None),
+    prelude(BuiltinPreludeId::RESULT_ERROR_TYPE, "E", None),
+    prelude(
+        BuiltinPreludeId::OK,
+        "Ok",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(BuiltinPreludeId::OK_VALUE, "value", None),
+    prelude(
+        BuiltinPreludeId::ERR,
+        "Err",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(BuiltinPreludeId::ERR_ERROR, "error", None),
+    prelude(
+        BuiltinPreludeId::OVERFLOW_TYPE,
+        "Overflow",
+        Some(DeclarationClass::NominalType),
+    ),
+    prelude(
+        BuiltinPreludeId::OVERFLOW,
+        "Overflow",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(
+        BuiltinPreludeId::DIV_ERROR_TYPE,
+        "DivError",
+        Some(DeclarationClass::NominalType),
+    ),
+    prelude(
+        BuiltinPreludeId::DIVIDE_BY_ZERO,
+        "DivideByZero",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(
+        BuiltinPreludeId::DIV_OVERFLOW,
+        "DivOverflow",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(
+        BuiltinPreludeId::NARROW_ERROR_TYPE,
+        "NarrowError",
+        Some(DeclarationClass::NominalType),
+    ),
+    prelude(
+        BuiltinPreludeId::NARROW_ERROR,
+        "NarrowError",
+        Some(DeclarationClass::EnumVariant),
+    ),
+    prelude(
+        BuiltinPreludeId::INT,
+        "Int",
+        Some(DeclarationClass::NumericBound),
+    ),
+    prelude(
+        BuiltinPreludeId::FLOAT,
+        "Float",
+        Some(DeclarationClass::NumericBound),
+    ),
 ];
 
 const fn prelude(
-    ordinal: u8,
+    id: BuiltinPreludeId,
     spelling: &'static str,
     class: Option<DeclarationClass>,
-) -> PreludeDeclarationRecord {
-    PreludeDeclarationRecord {
-        id: PreludeDeclarationId::new(ordinal),
+) -> BuiltinPreludeDeclarationRecord {
+    BuiltinPreludeDeclarationRecord {
+        id,
         spelling,
         class,
     }
@@ -251,8 +323,11 @@ mod tests {
 
     fn extract_prelude_records(spec: &str) -> Vec<(String, Option<DeclarationClass>)> {
         let (block, after) = spec
-            .split_once("[PRE-1] The prelude is exactly:\n\n```\n")
+            .split_once("[PRE-1] The prelude contributes")
             .expect("exact PRE-1 opening")
+            .1
+            .split_once("```\n")
+            .expect("PRE-1 ordinary declaration fence")
             .1
             .split_once("\n```\n")
             .expect("exact PRE-1 closing");
@@ -260,6 +335,9 @@ mod tests {
         let mut in_enum = false;
         for line in block.lines() {
             let trimmed = line.trim();
+            if trimmed.starts_with("struct ") {
+                break;
+            }
             if let Some(header) = trimmed.strip_prefix("enum ") {
                 in_enum = true;
                 let name_end = header
@@ -298,20 +376,9 @@ mod tests {
                 }
             }
         }
-        let bounds = after
-            .split_once("The two built-in numeric bounds ")
-            .expect("PRE-1 numeric bound inventory")
-            .1
-            .split_once(" follow those enum records")
-            .expect("PRE-1 numeric bound order")
-            .0;
-        for bound in bounds.split(" and ") {
-            let spelling = bound
-                .strip_prefix('`')
-                .and_then(|text| text.strip_suffix('`'))
-                .expect("PRE-1 quoted numeric bound");
-            records.push((spelling.to_owned(), Some(DeclarationClass::NumericBound)));
-        }
+        assert!(after.contains("The two built-in numeric bounds `Int` and `Float`"));
+        records.push(("Int".to_owned(), Some(DeclarationClass::NumericBound)));
+        records.push(("Float".to_owned(), Some(DeclarationClass::NumericBound)));
         records
     }
 

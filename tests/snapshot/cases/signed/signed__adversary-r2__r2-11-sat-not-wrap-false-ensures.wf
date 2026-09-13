@@ -20,7 +20,7 @@ fn add_sat_true_ensures(x: own i8, y: own i8) -> result: own i8 pure contract {
   return x +sat y;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let clamped = add_sat_true_ensures(x: 100_i8, y: 100_i8);
   if clamped == 127_i8 {
   } else {

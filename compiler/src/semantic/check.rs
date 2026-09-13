@@ -412,9 +412,7 @@ struct LocalBinding {
     declaration: DeclarationId,
     mode: CheckedMode,
     ty: CheckedType,
-    /// Structural incoming-formal attribution for this affine value. `None`
-    /// is reserved for a value with no ownership identity; a fresh owner has a
-    /// present empty set.
+    /// Whether the binding still owns or borrows a usable value [OWN-1].
     live: bool,
     loop_depth: usize,
     /// Compiler-updated counted binders are readable source bindings but are
@@ -587,11 +585,6 @@ struct EffectSet {
     /// [S23] the declared and exhibited `allocates` paths: one formal-rooted
     /// path per store whose provider is a value.
     allocates: Vec<super::model::CheckedStatePath>,
-    /// The ambient heap of `box<T>` and `buffer<T>` [STOR-1]. Its store has no
-    /// provider value, so [EFF-1] gives it no `effect_path` and no written
-    /// entry; the flag is derived, never declared, and never compared, and it
-    /// exists because [PROG-1]'s resource closure still reads it.
-    allocates_heap: bool,
     allocates_arenas: Vec<DeclarationId>,
 }
 
@@ -600,14 +593,6 @@ impl EffectSet {
         reads: Vec::new(),
         writes: Vec::new(),
         allocates: Vec::new(),
-        allocates_heap: false,
-        allocates_arenas: Vec::new(),
-    };
-    const ALLOCATES_HEAP: Self = Self {
-        reads: Vec::new(),
-        writes: Vec::new(),
-        allocates: Vec::new(),
-        allocates_heap: true,
         allocates_arenas: Vec::new(),
     };
     fn union(mut self, other: Self) -> Self {
@@ -620,7 +605,6 @@ impl EffectSet {
         for path in other.allocates {
             self.add_allocation(path);
         }
-        self.allocates_heap |= other.allocates_heap;
         for region in other.allocates_arenas {
             self.add_arena_allocation(region);
         }
@@ -639,16 +623,6 @@ impl EffectSet {
         if !paths.contains(&contribution.path) {
             paths.push(contribution.path);
             paths.sort_unstable();
-        }
-    }
-
-    /// The row a writer declares. The ambient heap [STOR-1] has no
-    /// `effect_path` and therefore no written entry [EFF-1, S23], so it is not
-    /// part of the row [EFF-2] compares in either direction.
-    fn written_row(&self) -> Self {
-        Self {
-            allocates_heap: false,
-            ..self.clone()
         }
     }
 
@@ -1272,7 +1246,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        let nominal_count_before_function_checking = self.nominals.len();
 
         // Phase A completes every reachable concrete function before any
         // acceptance-bearing entailment judgment runs. This makes forward,
@@ -1282,41 +1255,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for index in 0..self.signatures.len() {
             function_inventory.push(self.check_function_interning_nominals(index)?);
         }
-        // Function checking discovers the instances a derived type names: a
-        // purely local `box<T>` [STOR-2], the `Result<T, E>` a checked row
-        // produces, and — since a call substitutes its region arguments into
-        // every position of the callee's signature, results included
-        // [FN-2] — a *source* instance of a declaration this unit already
-        // names at another region. That last class is admitted here on one
-        // condition: it is one representation with an instance the written
-        // text already interned [S20], so lowering still erases it onto that
-        // instance's own IR nominal and the executable prefix closes over a
-        // complete set of representations. A source instance discovered here
-        // that is related to no earlier one would be a representation no
-        // written type produced, and is a compiler defect.
-        for index in nominal_count_before_function_checking..self.nominals.len() {
-            let id = NominalId(
-                u32::try_from(index)
-                    .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?,
-            );
-            if self.source_nominal_instance_entry(id)?.is_none() {
-                continue;
-            }
-            let mut related = false;
-            for earlier in 0..nominal_count_before_function_checking {
-                let earlier = NominalId(
-                    u32::try_from(earlier)
-                        .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?,
-                );
-                if self.nominals_differ_only_in_region(id, earlier)? {
-                    related = true;
-                    break;
-                }
-            }
-            if !related {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-        }
+        // Body checking may first instantiate a nominal through the fields of
+        // an ordinary constructor. FN-6 has already checked the written finite
+        // dependency graph, and ensure_source_nominal_instance has completed
+        // each discovered instance. Lowering reads this completed inventory;
+        // no hidden entry-store instance is required to seed a representation.
 
         self.check_behavior_bindings()?;
 
@@ -1425,6 +1368,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         Ok(CheckedProgramData {
             nominals: self.nominals.clone(),
+            nominal_confinement: self
+                .nominals
+                .iter()
+                .map(|nominal| self.confinement_regions(CheckedType::Nominal(nominal.id)))
+                .collect::<Result<_, _>>()?,
             elements: self.elements.borrow().clone(),
             executable_nominal_count,
             nominal_lowering_alias: self.nominal_lowering_aliases()?,
@@ -1633,10 +1581,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Cvalue)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if self
-            .tree
-            .direct_token_with(value, crate::TerminalPredicate::Identifier)?
-            .is_some()
+        if self.tree.direct_token_indices(value)?.len() == 1
+            && self
+                .tree
+                .direct_token_with(value, crate::TerminalPredicate::Identifier)?
+                .is_some()
         {
             let path = self.tree.path(value)?;
             if !self.resolved.lexical_uses().iter().any(|usage| {
@@ -1866,7 +1815,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mut exhibited = self.written_body_effects(signature, checked.effects.clone());
         self.collect_release_effects(signature, &checked.statements, &mut exhibited)?;
-        if exhibited.written_row() != signature.declared_effects.written_row() {
+        if exhibited != signature.declared_effects {
             let (missing, extra) =
                 self.effect_row_difference(&exhibited, &signature.declared_effects, signature)?;
             return self.issue_node(
@@ -1940,7 +1889,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             result_mode: signature.result_mode,
             result: signature.result,
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
-            reaches_ambient_heap: checked.effects.allocates_heap,
             declared_state_writes: signature.declared_effects.writes.clone(),
             requirements,
             postconditions,

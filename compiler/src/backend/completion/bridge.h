@@ -99,7 +99,7 @@ void wf__completion_directory_next_submit(
     void *record
 );
 
-/* The six TCP submits [SYS-17, SYS-18].
+/* The six TCP submits (ordinary native library).
  *
  * A listen and a connect name one address and no descriptor, because each
  * creates its own socket from the address's family; the address arrives as

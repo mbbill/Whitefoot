@@ -134,13 +134,28 @@ was written to record. The last two allocate at a runtime count in an entry
 with no store, and their successor's entry row carries `command.heap`, which is
 a different program. Their sources are deleted with their rows.
 
+## The v0.58 ordinary-value migration
+
+All 484 source files replace `command fn` with ordinary `fn`; input labels
+become ordinary parameters, and the one `Heap` argument writes its region
+under FORM-8. The two range diagnostics now exercise ordinary PRE-1
+`requires` under FN-8, with the factory argument supplied where the selected
+`write_once` interface requires it. Their reference rule cells and explanatory
+text change from the retired SYS-8 to FN-8; verdict cells do not change.
+
+`indexing__writer-r1__reverse_inplace` and `indexing__writer-r1__ring_slot`
+move the input run into a local before accessing it. Their rows become
+`pure`: v0.58 EFF-2 attributes the accesses to that local storage rather than
+following the incoming owner's value history. The executable statements,
+proofs and recorded accept verdicts remain intact. No case is retired by this
+migration.
+
 ## The case sources
 
-Case files are the sweep programs unchanged, except that each carries a leading
-`doc` statement that is true of the file. Thirteen of them — the disagreeing
-rows — had a `doc` asserting an expectation this compiler does not meet; those
-lines now state the snapshot verdict and what the author expected instead. The
-programs themselves were not touched.
+Each file carries a leading `doc` statement that describes its actual shape.
+The source migrations above preserve the property each snapshot watches;
+they are recorded here so a later reader can distinguish a language amendment
+from a changed compiler verdict.
 
 ## When to remove this directory
 

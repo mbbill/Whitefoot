@@ -2648,11 +2648,11 @@ fn open_directory(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Sli
   requires end <= len_of(deref(name));
 };
 fn open_directory_source(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own SourceOpenOutcome reads(factory, directory), writes(factory);
-fn directory_next(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<u64, ListStop>, entries: own u64) reads(source, destination), writes(source, destination) contract {
+fn directory_next(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) reads(source, destination), writes(source, destination) contract {
   requires start <= end;
   requires end <= len_of(deref(destination));
-  ensures when result is Ok(value: next): start <= next;
-  ensures when result is Ok(value: next): next <= end;
+  ensures start <= next;
+  ensures next <= end;
 };
 fn open_file(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own FileOpenOutcome reads(factory, root, name), writes(factory) contract {
   requires start <= end;
@@ -2761,7 +2761,7 @@ Two occurrences of the same admitted typed tree therefore have the same value id
 
 An evaluated-value datum is the finite occurrence-local identity for a value that has already been evaluated but has no admitted value expression.
 FN-8's call-argument form is identified by `(concrete caller instance, call NodePath, argument ordinal, exact captured type, ordered projections, final result type)` and may occur only in the instantiated goal of that one ordinary call.
-An [ENT-6] obligation-operand form is identified by `(concrete function instance, owning obligation NodePath, operand ordinal, exact captured type, ordered projections, final result type)` and may occur only in the canonical Goal queried for that one obligation; both SystemRange conjuncts reuse the same end-operand datum.
+An [ENT-6] obligation-operand form is identified by `(concrete function instance, owning obligation NodePath, operand ordinal, exact captured type, ordered projections, final result type)` and may occur only in the canonical Goal queried for that one obligation.
 Both forms are neither places nor L0 terms, have no direct or complete ordinary source goal origin, add no flow fact or place support, and cannot be established by naming or reevaluating their source expression.
 Goal equality is exact typed tree equality, including every selected row and datum field, and therefore may hold across two source occurrences or concrete callee instances only when their complete typed trees are identical.
 The finite goal universe of one concrete function is exactly the goals formed from its admitted Bool origins, requirement S4 sources, instantiated ordinary-call requirements, and the canonical OP-2 and OP-9 operation obligations, together with the finite parent and child trees their fixed decomposition and reconstruction rules visit.
@@ -2962,10 +2962,10 @@ Run mutation uses the exclusive boundary rows [BLK-3]; a source helper over an e
 *Amends:* [ENT-5]'s clause (b), whose projected-callee-write kill is now classified by [CALL-1] through [CALL-3] and by nothing else.
 
 [ENT-3] The fact state is defined constructively over the conservative structural normal-control graph [FN-1]: each source below establishes its L0 and signed-goal facts at its stated point; facts flow forward along normal edges; kill events apply on the edges where [ENT-5] places them, with scope-exit kills applied before any join; merge points take the [ENT-5] join and loop heads the [ENT-5] loop rule; and the state queried at any point is the [ENT-4] closure of that flow.
-retired: S8
+retired: S8, S10
 Dominated straight-line establishment is a consequence of this construction, not a second definition.
-Nothing else is a fact: an `ensures_clause` is only an FN-9 proof obligation, never a trusted source; a written header or local invariant conclusion has no authority until INV-1 and any applicable PRF-1 certificate prove it; no struct invariant, compiler-invented loop proposition, inferred summary, or unverified user-function result exists.
-S11 is only the compiler-owned consequence of the counted operations [FN-1] actually executes, and S12 exists only from a separately verified earlier-SCC summary under the publication formula below.
+Nothing else is a fact: a writer's `ensures_clause` is only an FN-9 proof obligation, never a trusted source; a written header or local invariant conclusion has no authority until INV-1 and any applicable PRF-1 certificate prove it; no struct invariant, compiler-invented loop proposition, inferred summary, or unverified user-function result exists.
+S11 is only the compiler-owned consequence of the counted operations [FN-1] actually executes, and S12 exists only from the declaration relations available under FN-9: a separately verified earlier-SCC summary or a PRE-1 supplied declaration, under the publication formula below.
 Each accepted fact retains the constructor identity and direct parents that already produced it; this diagnostic information establishes and kills no additional relation or signed goal, and no [ENT-4] answer depends on a second provenance state.
 
 A comparison origin is defined first.
@@ -3047,9 +3047,9 @@ The capture-to-endpoint equalities are established once in the preheader only: n
 The false header edge, every `break` edge, and the counted continuation establish no S11 fact and in particular no raw `binder = upper_capture` postcondition.
 Before the binder and captures leave scope, [INV-1]'s separately proved exact-exhaustion rule may use the false guard to form a binder-free affine conclusion; that conclusion is an INV-1 fact, not S11 and not a retained binder equality.
 [ENT-3.S12]
-- S12 (verified user normal results).
+- S12 (ordinary declared normal results).
 S12 has one owning `CallResultPublication(c,q)` judgment in the ordinary semantic flow.
-That judgment succeeds only when q belongs to a summary atomically published by a strictly earlier call-graph component; every actual-expression obligation and instantiated FN-8 requirement of c is discharged in the caller before transfer; every referenced formal has its exact pre-transfer substitution; ordinary consumes, borrow commits, projected effects, writes, target commits, and kills have run in the fixed order below; and every support of the substituted result relation remains live.
+That judgment succeeds only when q belongs to a declaration relation available under FN-9, either supplied by PRE-1 or atomically published by a strictly earlier call-graph component; every actual-expression obligation and instantiated FN-8 requirement of c is discharged in the caller before transfer; every referenced formal has its exact pre-transfer substitution; ordinary consumes, borrow commits, projected effects, writes, target commits, and kills have run in the fixed order below; and every support of the substituted result relation remains live.
 The candidate relation and all of those parent derivations remain private until every source-semantic judgment in the compilation unit succeeds, then enter the checked program in the same failure-atomic publication as their call and function.
 Failure of any premise or any later source-semantic judgment discards the candidate and the complete prospective checked program.
 This is the original construction of S12, not a second provenance pass or a check of compiler-generated data.

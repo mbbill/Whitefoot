@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: fast cursor advances by 2 each step but is only guarded by fast < len; it can equal len+1 relative index and read data[fast] out of bounds when len is odd";
   let data = fixed_vector::<u8, 5>();
   region {

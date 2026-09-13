@@ -18,12 +18,12 @@ const line_end: FixedVector<u8, 1> =[10_u8];
 
 const digit_glyphs: FixedVector<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
 
-enum Grown {
-  Grew(value: Vector<u8>);
-  Refused(value: Vector<u8>);
+enum Grown['heap] {
+  Grew(value: Vector<'heap, u8>);
+  Refused(value: Vector<'heap, u8>);
 }
 
-fn bs_reserve['heap](s: own Vector<'heap, u8>, store: &uniq Heap<'heap>, total: own u64) -> grown: own Grown reads(s, store), writes(s, store), allocates(store) contract {
+fn bs_reserve['heap](s: own Vector<'heap, u8>, store: &uniq Heap<'heap>, total: own u64) -> grown: own Grown<'heap> reads(s, store), writes(s, store), allocates(store) contract {
   requires total >= len_of(s);
 } {
   doc "Grows the backing run to total slots, preserving byte order, or reports that the store refused. Growth is the drain-front, append-back walk, and the superseded run is disposed before the wider one is handed back. The four measures the Grew arm carries are not published here: a variant-routed measure clause is a deferred contract route, so the caller reads them back instead.";
@@ -104,14 +104,14 @@ fn bs_from['heap](store: &uniq Heap<'heap>, text: own Slice<u8>) -> made: own Op
   region {
     match heap_vector::<u8>(store: &uniq deref(store), count: count) {
       None() => {
-        return None<Vector<u8>>();
+        return None<Vector<'heap, u8>>();
       }
       Some(value: fresh) => {
         region {
           bs_append_slice(s: &uniq fresh, text: text);
         }
         let built = move fresh;
-        return Some<Vector<u8>>(value: move built);
+        return Some<Vector<'heap, u8>>(value: move built);
       }
     }
   }
@@ -249,7 +249,7 @@ fn bs_push_decimal['heap](s: &uniq Vector<'heap, u8>, value: own u64) -> result:
   return unit;
 }
 
-fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(factory, output, source), writes(factory, output) contract {
   define source_length = len_of(source);
   requires length <= source_length;
 } {
@@ -262,7 +262,7 @@ fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u6
       break @publish;
     }
     region {
-      match write_once(output: &uniq deref(output), source: &source, start: sent, end: length) {
+      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -275,8 +275,12 @@ fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u6
   return Ok<unit, IoError>(value: unit);
 }
 
-fn main['heap](command.stdout as out: own OutputStream, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(out, heap), writes(out, heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Builds one byte string from literals, grows its backing run, concatenates, searches it, and publishes the measured report.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     let head_view = slice_of(&subject_head);
     match bs_from(store: &uniq heap, text: head_view) {
@@ -443,7 +447,7 @@ fn main['heap](command.stdout as out: own OutputStream, command.heap as heap: ow
                                         let within_window = published <= window_length;
                                         if within_window {
                                           region {
-                                            match publish_all(output: &uniq out, source: window, length: published) {
+                                            match publish_all(factory: &uniq entry_factory, output: &uniq out, source: window, length: published) {
                                               Ok(value: done) => {
                                               }
                                               Err(error: problem) => {

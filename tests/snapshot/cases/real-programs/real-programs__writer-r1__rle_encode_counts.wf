@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- run-length encodes a fixed byte buffer with a bounds-checked output-slot write";
   let input = fixed_vector::<u8, 5>();
   region {

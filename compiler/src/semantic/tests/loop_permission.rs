@@ -1144,79 +1144,58 @@ fn main() -> status: own ExitStatus pure {
 }
 
 // ----------------------------------------------------------------------
-// Completion actualization boundary
+// Ordinary callable loan boundary
 // ----------------------------------------------------------------------
 
-/// A wrapper which deliberately keeps a unique factory loan across a
-/// may-suspend open cannot overlap across loop iterations. This is an ordinary
-/// loan consequence of that wrapper signature, not a property of the system
-/// open API, whose permit and directory inputs are independent.
+/// An ordinary helper keeps its unique factory loan until return. PRE-1
+/// open/close declarations and a WF wrapper obey the same PAR-2 condition.
 #[test]
-fn a_may_suspend_directory_wrapper_keeps_its_unique_loan() {
-    let source = b"fn probe(factory: &uniq HandleFactory, root: &DirectoryRead) -> result: own u64 reads(factory, root), writes(factory) {
+fn an_ordinary_directory_wrapper_keeps_its_unique_loan() {
+    let source = br#"fn probe(factory: &uniq HandleFactory, root: &DirectoryRead) -> result: own u64 reads(factory, root), writes(factory) {
   region {
-    match reserve_handle(factory: move factory) {
-      Ok(value: permit) => {
-        match open_directory_source(permit: move permit, directory: root) {
-          SourceOpened(value: listing) => {
-            return 1_u64;
-          }
-          SourceOpenFailed(error: refused, permit: refused_2) => {
-            return 0_u64;
-          }
+    match open_directory_source(factory: &uniq deref(factory), directory: root) {
+      SourceOpened(value: listing) => {
+        region {
+          let closed = close_directory_source(factory: &uniq deref(factory), source: move listing);
         }
+        return 1_u64;
       }
-      Err(error: spent) => {
+      SourceOpenFailed(error: refused) => {
         return 0_u64;
       }
     }
   }
 }
 
-fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+fn main(root: &DirectoryRead, factory: &uniq HandleFactory) -> result: own unit reads(root, factory), writes(factory) {
   let total = 0_u64;
   for @scan (i in 0_u64..4_u64) {
-    let seen = probe(factory: &uniq files, root: &cwd);
+    let seen = probe(factory: &uniq deref(factory), root: root);
     set total = total +wrap seen;
   }
-  return exit_status(code: 0_u8);
+  return unit;
 }
-";
+"#;
     assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
 }
 
-/// A direct advancing Source operation follows the same boundary. Its unique
-/// Source and destination loans, rather than a system-only relation, prevent
-/// loop-iteration overlap.
+/// The direct declaration's ordinary unique factory, source and destination
+/// loans prevent loop-iteration overlap under the same condition. v0.58
+/// directory_next returns multiple results, outside PAR-2's direct-let shape;
+/// read_next preserves this test's single-result loan trigger.
 #[test]
-fn a_direct_directory_state_transition_keeps_its_unique_loan() {
-    let source = b"fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let destination = buffer_new(1_u64, 0_u8);
-  region {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        match open_directory_source(permit: move permit, directory: &cwd) {
-          SourceOpened(value: listing) => {
-            let total = 0_u64;
-            for @scan (i in 0_u64..4_u64) {
-              region {
-                let outcome = directory_next(source: &uniq listing, destination: &uniq destination, start: 0_u64, end: 1_u64);
-              }
-              set total = total +wrap 1_u64;
-            }
-          }
-          SourceOpenFailed(error: refused, permit: refused_2) => {
-          }
-        }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 8_u8);
-      }
-    }
+fn a_direct_read_state_transition_keeps_its_unique_loan() {
+    let source = br#"fn main(factory: &uniq HandleFactory, input: &uniq InputStream, destination: &uniq MutSlice<u8>) -> result: own unit reads(factory, input, destination), writes(factory, input, destination) contract {
+  requires 1_u64 <= len_of(deref(destination));
+} {
+  let total = 0_u64;
+  for @scan (i in 0_u64..4_u64) {
+    let outcome = read_next(factory: &uniq deref(factory), input: &uniq deref(input), destination: &uniq deref(destination), start: 0_u64, end: 1_u64);
+    set total = total +wrap 1_u64;
   }
-  return exit_status(code: 0_u8);
+  return unit;
 }
-";
+"#;
     assert!(matches!(denied(source, "main", 2), LoopDenial::Loan { .. }));
 }
 

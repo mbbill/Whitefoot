@@ -112,9 +112,10 @@ fn io_class(error: own IoError) -> result: own u8 pure {
   }
 }
 
-fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
+fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own Slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
   define capacity = len_of(deref(destination));
   ensures result <= capacity;
+  ensures len_of(deref(destination)) == len_of(deref(entry(destination)));
 } {
   doc "Appends as much of one static message as the destination still holds.";
   let capacity = len_of(deref(destination));
@@ -139,6 +140,7 @@ fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<
 fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) contract {
   define destination_room = len_of(deref(destination));
   ensures result <= destination_room;
+  ensures len_of(deref(destination)) == len_of(deref(entry(destination)));
 } {
   doc "Copies one half-open source range into the destination at one offset.";
   let source_room = len_of(deref(source));
@@ -268,25 +270,28 @@ fn line_matches(source: &buffer<u8>, start: own u64, stop: own u64, pattern: &bu
   return False();
 }
 
-fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(factory, output, source), writes(factory, output) contract {
   define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
-  loop @publish {
-    let pending = sent < length;
-    if pending {
-    } else {
-      break @publish;
-    }
-    region {
-      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
-        Ok(value: written) => {
-          set sent = written;
-        }
-        Err(error: problem) => {
-          return Err<unit, IoError>(error: move problem);
+  region {
+    let source_window = slice_of(&deref(source));
+    loop @publish {
+      let pending = sent < length;
+      if pending {
+      } else {
+        break @publish;
+      }
+      region {
+        match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &source_window, start: sent, end: length) {
+          Ok(value: written) => {
+            set sent = written;
+          }
+          Err(error: problem) => {
+            return Err<unit, IoError>(error: move problem);
+          }
         }
       }
     }
@@ -294,16 +299,17 @@ fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64)
   return Ok<unit, IoError>(value: unit);
 }
 
-fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>, status: own u8, position: own u64) -> result: own unit reads(args, err, report), writes(err, report) contract {
+fn report_failure(factory: &uniq HandleFactory, args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>, status: own u8, position: own u64) -> result: own unit reads(factory, args, err, report), writes(factory, err, report) contract {
   define report_room = len_of(deref(report));
   requires 256_u64 <= report_room;
+  ensures len_of(deref(report)) == len_of(deref(entry(report)));
 } {
   doc "Assembles one `wfgrep: NAME: reason` diagnostic in the reusable report buffer and publishes it to standard error.";
   let length = 0_u64;
   region {
     let view = slice_of(&error_prefix);
     region {
-      set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+      set length = append_slice(destination: &uniq deref(report), filled: length, text: view);
     }
   }
   match arg_get(args: args, position: position) {
@@ -311,11 +317,14 @@ fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>
       let name_start_ok = length <= 256_u64;
       if name_start_ok {
         region {
-          match host_copy_bytes(value: &text, destination: &uniq deref(report), start: length, end: 256_u64) {
-            Ok(value: copied) => {
-              set length = copied;
-            }
-            Err(error: too_small) => {
+          let report_window = mut_slice_of(&uniq deref(report));
+          region {
+            match host_copy_bytes(value: &text, destination: &uniq report_window, start: length, end: 256_u64) {
+              Ok(value: copied) => {
+                set length = copied;
+              }
+              Err(error: too_small) => {
+              }
             }
           }
         }
@@ -327,7 +336,7 @@ fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>
   region {
     let view = slice_of(&error_separator);
     region {
-      set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+      set length = append_slice(destination: &uniq deref(report), filled: length, text: view);
     }
   }
   let named = 0_u8;
@@ -336,7 +345,7 @@ fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>
     region {
       let view = slice_of(&reason_missing);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), filled: length, text: view);
       }
     }
   }
@@ -345,7 +354,7 @@ fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>
     region {
       let view = slice_of(&reason_denied);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), filled: length, text: view);
       }
     }
   }
@@ -354,7 +363,7 @@ fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>
     region {
       let view = slice_of(&reason_directory);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), filled: length, text: view);
       }
     }
   }
@@ -363,7 +372,7 @@ fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>
     region {
       let view = slice_of(&reason_invalid_path);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), filled: length, text: view);
       }
     }
   }
@@ -372,7 +381,7 @@ fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>
     region {
       let view = slice_of(&reason_long_line);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), filled: length, text: view);
       }
     }
   }
@@ -380,12 +389,12 @@ fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>
     region {
       let view = slice_of(&reason_unreadable);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), filled: length, text: view);
       }
     }
   }
   region {
-    match publish_all(output: &uniq deref(err), source: &deref(report), length: length) {
+    match publish_all(factory: &uniq deref(factory), output: &uniq deref(err), source: &deref(report), length: length) {
       Ok(value: published) => {
       }
       Err(error: problem) => {
@@ -395,7 +404,7 @@ fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files) {
+fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(out, err, files) {
   doc "Publishes every line of every named file that contains the literal pattern bytes; 0 matched, 1 none, 2 error.";
   let input = buffer_new(4096_u64, 0_u8);
   let batch = buffer_new(4096_u64, 0_u8);
@@ -403,22 +412,25 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let report = buffer_new(512_u64, 0_u8);
   let arguments = 0_u64;
   region {
-    set arguments = args_count(args: &args);
+    set arguments = args_count(args: args);
   }
   let startup = 0_u8;
   let pattern_length = 0_u64;
   let usable = arguments >= 3_u64;
   if usable {
     region {
-      match arg_get(args: &args, position: 1_u64) {
+      match arg_get(args: args, position: 1_u64) {
         Ok(value: text) => {
           region {
-            match host_copy_bytes(value: &text, destination: &uniq pattern, start: 0_u64, end: 4096_u64) {
-              Ok(value: copied) => {
-                set pattern_length = copied;
-              }
-              Err(error: too_small) => {
-                set startup = 2_u8;
+            let native_window_182 = mut_slice_of(&uniq pattern);
+            region {
+              match host_copy_bytes(value: &text, destination: &uniq native_window_182, start: 0_u64, end: 4096_u64) {
+                Ok(value: copied) => {
+                  set pattern_length = copied;
+                }
+                Err(error: too_small) => {
+                  set startup = 2_u8;
+                }
               }
             }
           }
@@ -437,16 +449,16 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     if startup == 1_u8 {
       region {
         let view = slice_of(&usage_text);
-        set length = append_slice(destination: &uniq report, filled: length, text: move view);
+        set length = append_slice(destination: &uniq report, filled: length, text: view);
       }
     } else {
       region {
         let view = slice_of(&reason_pattern_too_long);
-        set length = append_slice(destination: &uniq report, filled: length, text: move view);
+        set length = append_slice(destination: &uniq report, filled: length, text: view);
       }
     }
     region {
-      match publish_all(output: &uniq err, source: &report, length: length) {
+      match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: &report, length: length) {
         Ok(value: published) => {
         }
         Err(error: problem) => {
@@ -461,7 +473,9 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let write_failed = 0_u8;
   let write_class = 0_u8;
   let position = 2_u64;
-  loop @files {
+  loop @files (
+    invariant batch_files_room: len_of(batch) >= 4096_u64
+  ) {
     let more = position < arguments;
     if more {
     } else {
@@ -469,159 +483,167 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
     let status = 0_u8;
     region {
-      match arg_get(args: &args, position: position) {
+      match arg_get(args: args, position: position) {
         Ok(value: text) => {
           match relative_path(value: move text) {
             Ok(value: path) => {
               region {
-                match reserve_handle(factory: &uniq files) {
-                  Ok(value: permit) => {
-                    match open_read(permit: move permit, root: &cwd, path: &path) {
-                      FileOpened(value: file) => {
-                        let carry = 0_u64;
-                        let file_offset = 0_u64;
-                        loop @chunks {
-                          let carry_fits = carry < 4096_u64;
-                          if carry_fits {
-                          } else {
-                            set status = 6_u8;
-                            break @chunks;
-                          }
-                          let room = 4096_u64 -wrap carry;
-                          let overlong = room == 0_u64;
-                          if overlong {
-                            set status = 6_u8;
-                            break @chunks;
-                          }
-                          let available = 0_u64;
-                          let ended = 0_u8;
-                          region {
-                            match read_at(file: &file, destination: &uniq input, file_offset: file_offset, start: carry, end: 4096_u64) {
-                              ReadBytes(next: taken) => {
-                                set available = taken;
-                                let delivered = taken -wrap carry;
-                                set file_offset = file_offset +wrap delivered;
-                              }
-                              ReadEnd() => {
-                                set ended = 1_u8;
-                              }
-                              ReadFailed(error: problem) => {
-                                set status = io_class(error: move problem);
-                                set ended = 2_u8;
-                              }
+                match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
+                  FileOpened(value: file) => {
+                    let carry = 0_u64;
+                    let file_offset = 0_u64;
+                    loop @chunks (
+                      invariant batch_chunks_room: len_of(batch) >= 4096_u64
+                    ) {
+                      let carry_fits = carry < 4096_u64;
+                      if carry_fits {
+                      } else {
+                        set status = 6_u8;
+                        break @chunks;
+                      }
+                      let room = 4096_u64 -wrap carry;
+                      let overlong = room == 0_u64;
+                      if overlong {
+                        set status = 6_u8;
+                        break @chunks;
+                      }
+                      let available = 0_u64;
+                      let ended = 0_u8;
+                      region {
+                        let native_window_183 = mut_slice_of(&uniq input);
+                        region {
+                          match read_at(factory: &uniq deref(files), file: &uniq file, destination: &uniq native_window_183, file_offset: file_offset, start: carry, end: 4096_u64) {
+                            Ok(value: taken) => {
+                              set available = taken;
+                              let delivered = taken -wrap carry;
+                              set file_offset = file_offset +wrap delivered;
                             }
-                          }
-                          if ended == 2_u8 {
-                            break @chunks;
-                          }
-                          if ended == 1_u8 {
-                            let trailing = carry > 0_u64;
-                            if trailing {
-                              set input[carry] = 10_u8;
-                              set available = carry +wrap 1_u64;
-                            }
-                          }
-                          let available_fits = available <= 4096_u64;
-                          if available_fits {
-                          } else {
-                            set status = 6_u8;
-                            break @chunks;
-                          }
-                          let scan = 0_u64;
-                          loop @lines {
-                            let terminator = available;
-                            let probe = scan;
-                            loop @find {
-                              let done = probe >= available;
-                              if done {
-                                break @find;
-                              }
-                              let byte = input[probe];
-                              let newline = byte == 10_u8;
-                              if newline {
-                                set terminator = probe;
-                                break @find;
-                              }
-                              set probe = probe +wrap 1_u64;
-                            }
-                            let complete = terminator < available;
-                            if complete {
-                            } else {
-                              break @lines;
-                            }
-                            let hit = False();
-                            region {
-                              set hit = line_matches(source: &input, start: scan, stop: terminator, pattern: &pattern, length: pattern_length);
-                            }
-                            if hit {
-                              set matched = 1_u8;
-                              let stop = terminator +wrap 1_u64;
-                              let span = stop -wrap scan;
-                              let need = filled +wrap span;
-                              let overfull = need > 4096_u64;
-                              if overfull {
-                                let filled_fits = filled <= 4096_u64;
-                                if filled_fits {
-                                  region {
-                                    match publish_all(output: &uniq out, source: &batch, length: filled) {
-                                      Ok(value: published) => {
-                                      }
-                                      Err(error: problem) => {
-                                        set write_failed = 1_u8;
-                                        set write_class = io_class(error: move problem);
-                                      }
-                                    }
-                                  }
-                                } else {
-                                  set write_failed = 1_u8;
+                            Err(error: read_stop_181) => {
+                              match read_stop_181 {
+                                ReadEnd() => {
+                                  set ended = 1_u8;
                                 }
-                                set filled = 0_u64;
-                              }
-                              if write_failed == 0_u8 {
-                                region {
-                                  set filled = copy_range(destination: &uniq batch, at: filled, source: &input, from: scan, to: stop);
+                                ReadFailed(error: problem) => {
+                                  set status = io_class(error: move problem);
+                                  set ended = 2_u8;
                                 }
-                              } else {
-                                break @files;
                               }
                             }
-                            set scan = terminator +wrap 1_u64;
                           }
-                          if ended == 1_u8 {
-                            break @chunks;
-                          }
-                          let tail = available -wrap scan;
-                          let moved = 0_u64;
-                          loop @shift {
-                            let done = moved >= tail;
-                            if done {
-                              break @shift;
-                            }
-                            let source_index = scan +wrap moved;
-                            let source_fits = source_index < 4096_u64;
-                            let target_fits = moved < 4096_u64;
-                            if source_fits {
-                            } else {
-                              break @shift;
-                            }
-                            if target_fits {
-                            } else {
-                              break @shift;
-                            }
-                            let byte = input[source_index];
-                            set input[moved] = byte;
-                            set moved = moved +wrap 1_u64;
-                          }
-                          set carry = tail;
                         }
                       }
-                      FileOpenFailed(error: problem, permit: refused_2) => {
-                        set status = io_class(error: move problem);
+                      if ended == 2_u8 {
+                        break @chunks;
                       }
+                      if ended == 1_u8 {
+                        let trailing = carry > 0_u64;
+                        if trailing {
+                          set input[carry] = 10_u8;
+                          set available = carry +wrap 1_u64;
+                        }
+                      }
+                      let available_fits = available <= 4096_u64;
+                      if available_fits {
+                      } else {
+                        set status = 6_u8;
+                        break @chunks;
+                      }
+                      let scan = 0_u64;
+                      loop @lines (
+                        invariant batch_lines_room: len_of(batch) >= 4096_u64
+                      ) {
+                        let terminator = available;
+                        let probe = scan;
+                        loop @find {
+                          let done = probe >= available;
+                          if done {
+                            break @find;
+                          }
+                          let byte = input[probe];
+                          let newline = byte == 10_u8;
+                          if newline {
+                            set terminator = probe;
+                            break @find;
+                          }
+                          set probe = probe +wrap 1_u64;
+                        }
+                        let complete = terminator < available;
+                        if complete {
+                        } else {
+                          break @lines;
+                        }
+                        let hit = False();
+                        region {
+                          set hit = line_matches(source: &input, start: scan, stop: terminator, pattern: &pattern, length: pattern_length);
+                        }
+                        if hit {
+                          set matched = 1_u8;
+                          let stop = terminator +wrap 1_u64;
+                          let span = stop -wrap scan;
+                          let need = filled +wrap span;
+                          let overfull = need > 4096_u64;
+                          if overfull {
+                            let filled_fits = filled <= 4096_u64;
+                            if filled_fits {
+                              region {
+                                match publish_all(factory: &uniq deref(files), output: &uniq deref(out), source: &batch, length: filled) {
+                                  Ok(value: published) => {
+                                  }
+                                  Err(error: problem) => {
+                                    set write_failed = 1_u8;
+                                    set write_class = io_class(error: move problem);
+                                  }
+                                }
+                              }
+                            } else {
+                              set write_failed = 1_u8;
+                            }
+                            set filled = 0_u64;
+                          }
+                          if write_failed == 0_u8 {
+                            region {
+                              set filled = copy_range(destination: &uniq batch, at: filled, source: &input, from: scan, to: stop);
+                            }
+                          } else {
+                            region {
+                              close_read(factory: &uniq deref(files), file: move file);
+                            }
+                            break @files;
+                          }
+                        }
+                        set scan = terminator +wrap 1_u64;
+                      }
+                      if ended == 1_u8 {
+                        break @chunks;
+                      }
+                      let tail = available -wrap scan;
+                      let moved = 0_u64;
+                      loop @shift {
+                        let done = moved >= tail;
+                        if done {
+                          break @shift;
+                        }
+                        let source_index = scan +wrap moved;
+                        let source_fits = source_index < 4096_u64;
+                        let target_fits = moved < 4096_u64;
+                        if source_fits {
+                        } else {
+                          break @shift;
+                        }
+                        if target_fits {
+                        } else {
+                          break @shift;
+                        }
+                        let byte = input[source_index];
+                        set input[moved] = byte;
+                        set moved = moved +wrap 1_u64;
+                      }
+                      set carry = tail;
                     }
+                    close_read(factory: &uniq deref(files), file: move file);
                   }
-                  Err(error: spent) => {
-                    set status = io_class(error: move spent);
+                  FileOpenFailed(error: problem) => {
+                    set status = io_class(error: move problem);
                   }
                 }
               }
@@ -640,7 +662,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     if reportable {
       set failed = 1_u8;
       region {
-        report_failure(args: &args, err: &uniq err, report: &uniq report, status: status, position: position);
+        report_failure(factory: &uniq deref(files), args: args, err: &uniq deref(err), report: &uniq report, status: status, position: position);
       }
     }
     set position = position +wrap 1_u64;
@@ -649,7 +671,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     let filled_fits = filled <= 4096_u64;
     if filled_fits {
       region {
-        match publish_all(output: &uniq out, source: &batch, length: filled) {
+        match publish_all(factory: &uniq deref(files), output: &uniq deref(out), source: &batch, length: filled) {
           Ok(value: published) => {
           }
           Err(error: problem) => {
@@ -669,16 +691,16 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     if write_class == 4_u8 {
       region {
         let view = slice_of(&reason_broken_pipe);
-        set length = append_slice(destination: &uniq report, filled: length, text: move view);
+        set length = append_slice(destination: &uniq report, filled: length, text: view);
       }
     } else {
       region {
         let view = slice_of(&reason_write_error);
-        set length = append_slice(destination: &uniq report, filled: length, text: move view);
+        set length = append_slice(destination: &uniq report, filled: length, text: view);
       }
     }
     region {
-      match publish_all(output: &uniq err, source: &report, length: length) {
+      match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: &report, length: length) {
         Ok(value: published) => {
         }
         Err(error: problem) => {
@@ -694,4 +716,14 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(args: &args, cwd: &cwd, out: &uniq out, err: &uniq err, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

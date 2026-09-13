@@ -29,10 +29,10 @@ use super::super::{DerivationRootKind, VerifiedPostconditionSummaryRef};
 use super::{Analyzer, GoalProjection, PreparedCall, PreparedCallee};
 
 /// The prelude ordinal of `Option`'s `None` variant.
-const NONE_VARIANT: u8 = 5;
+const NONE_VARIANT: crate::BuiltinPreludeId = crate::BuiltinPreludeId::NONE;
 
 /// The prelude ordinal of `Option`'s `Some` variant.
-const SOME_VARIANT: u8 = 6;
+const SOME_VARIANT: crate::BuiltinPreludeId = crate::BuiltinPreludeId::SOME;
 
 /// One declared exit of a row, as the caller reaches it [CALL-6].
 ///
@@ -260,9 +260,9 @@ impl Analyzer<'_, '_> {
         };
         // The two variants of the prelude `Option` a routed row writes its
         // clauses over [BLK-0].
-        if declaration == crate::PreludeDeclarationId::new(SOME_VARIANT) {
+        if declaration == SOME_VARIANT {
             Some(KernelRoute::Some)
-        } else if declaration == crate::PreludeDeclarationId::new(NONE_VARIANT) {
+        } else if declaration == NONE_VARIANT {
             Some(KernelRoute::None)
         } else {
             None

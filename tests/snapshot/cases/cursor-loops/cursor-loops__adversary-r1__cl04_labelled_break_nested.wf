@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: labelled break escapes an inner ordinary loop from a nested search, outer for continues to completion";
   let grid = fixed_vector::<u8, 9>();
   for (

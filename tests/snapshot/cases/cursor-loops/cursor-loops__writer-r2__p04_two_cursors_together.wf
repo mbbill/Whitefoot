@@ -35,7 +35,7 @@ fn count_equal_prefix(left: own Slice<u64>, right: own Slice<u64>) -> matched: o
   return matched;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = fixed_vector::<u64, 5>();
   region {
     place_back(vector: &uniq a, value: 0_u64);

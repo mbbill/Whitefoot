@@ -10,7 +10,7 @@ fn bucket_of<const n: u64>(table: own FixedVector<u8, n>, key: own u64) -> value
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u8, 7>();
   region {
     place_back(vector: &uniq table, value: 0_u8);

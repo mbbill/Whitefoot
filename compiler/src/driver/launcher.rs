@@ -72,7 +72,7 @@ pub(crate) fn render(
     if status.is_some() {
         output.push_str("\ndeclare i8 @wf__ordinary_exit_code(ptr)\n");
     }
-    output.push_str("\ndefine i32 @wf__main_body(i32 %argc, ptr %argv) {\nentry:\n");
+    output.push_str("\ndefine i32 @wf__main_body(i32 %argc, ptr %argv) #0 {\nentry:\n");
     if let Some(id) = inputs {
         writeln!(
             output,
@@ -90,25 +90,45 @@ pub(crate) fn render(
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         arguments.insert(0, "ptr %status".to_owned());
+    }
+    let result_type = if status.is_some() { "void" } else { "i8" };
+    let unit_assignment = if status.is_some() { "" } else { "%unit = " };
+    if let Some(sequential) =
+        crate::backend::emitter::sequential_entry_symbol(program, main.name())?
+    {
+        output.push_str("  %par.pool = call i32 @wf__par_pool_active()\n  %par.active = icmp ne i32 %par.pool, 0\n  br i1 %par.active, label %parallel, label %sequential\nparallel:\n");
+        let assignment = if status.is_some() { "" } else { "%unit.par = " };
         writeln!(
             output,
-            "  call void @\"{}\"({})",
+            "  {assignment}call {result_type} @\"{}\"({})",
             source_symbol(main.name()),
             arguments.join(", ")
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        output.push_str("  %code = call i8 @wf__ordinary_exit_code(ptr %status)\n  %exit = zext i8 %code to i32\n  ret i32 %exit\n}\n");
+        output.push_str("  br label %returned\nsequential:\n");
+        let assignment = if status.is_some() { "" } else { "%unit.seq = " };
+        writeln!(
+            output,
+            "  {assignment}call {result_type} @\"{sequential}\"({})",
+            arguments.join(", ")
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        output.push_str("  br label %returned\nreturned:\n");
     } else {
         writeln!(
             output,
-            "  %unit = call i8 @\"{}\"({})",
+            "  {unit_assignment}call {result_type} @\"{}\"({})",
             source_symbol(main.name()),
             arguments.join(", ")
         )
         .map_err(|_| BackendFailure::TextEmission)?;
+    }
+    if status.is_some() {
+        output.push_str("  %code = call i8 @wf__ordinary_exit_code(ptr %status)\n  %exit = zext i8 %code to i32\n  ret i32 %exit\n}\n");
+    } else {
         output.push_str("  ret i32 0\n}\n");
     }
-    output.push_str("\ndefine i32 @main(i32 %argc, ptr %argv) {\nentry:\n  %status = call i32 @wf__floor_run(i32 %argc, ptr %argv)\n  ret i32 %status\n}\n");
+    output.push_str("\ndefine i32 @main(i32 %argc, ptr %argv) #0 {\nentry:\n  %status = call i32 @wf__floor_run(i32 %argc, ptr %argv)\n  ret i32 %status\n}\n");
     Ok(output)
 }
 
@@ -183,10 +203,15 @@ pub(super) fn caller_source(
         .map(|parameter| format!("{}: move {}", parameter.name, parameter.name))
         .collect::<Vec<_>>()
         .join(", ");
+    let transfer = if function.result == crate::CheckedType::Unit {
+        ""
+    } else {
+        "move "
+    };
     Some((
         name,
         format!(
-            "{header} {{\n  let executable_value_{suffix} = {selected}({arguments});\n  return move executable_value_{suffix};\n}}\n"
+            "{header} {{\n  let executable_value_{suffix} = {selected}({arguments});\n  return {transfer}executable_value_{suffix};\n}}\n"
         ),
     ))
 }

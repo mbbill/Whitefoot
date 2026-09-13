@@ -422,7 +422,7 @@ int wf_linux_io_uring_carries(const wf_completion_record *record) {
         return 0;
     }
     switch (record->request.kind) {
-    /* One unpositioned stream read [SYS-15]. The ring carries it as a read at
+    /* One unpositioned stream read (ordinary native library). The ring carries it as a read at
      * offset -1, which is io_uring's own spelling for "the file's current
      * position", so the request needs no offset and the descriptor's own
      * position advances exactly as it does through `read`. */
@@ -455,7 +455,7 @@ int wf_linux_io_uring_carries(const wf_completion_record *record) {
                 <= WF_FILE_EXPECT_DIRECTORY;
     case WF_FILE_CLOSE:
         return record->request.operation.close.descriptor >= 0;
-    /* The four TCP kinds the ring carries [SYS-17, SYS-18], which is where a
+    /* The four TCP kinds the ring carries (ordinary native library), which is where a
      * program that waits on a peer first waits in the kernel rather than on a
      * helper thread.  A listen, a bind and a half-close are immediate host
      * calls with nothing to wait for, so they stay on the adapter and this
@@ -576,7 +576,7 @@ static void wf_linux_stage_entry_locked(
         case WF_FILE_READ:
             /* Offset -1 is io_uring's "use the file's current position", so
              * this is the same opcode as a positioned read with the position
-             * left to the descriptor [SYS-15]. */
+             * left to the descriptor (ordinary native library). */
             submission->opcode = IORING_OP_READ;
             submission->fd = record->request.operation.read.descriptor;
             submission->off = (uint64_t)-1;
@@ -899,7 +899,7 @@ static void wf_linux_complete_record(
          * the one this adapter created at submit, and a refusal disposes of
          * it with the one close attempt the adapter's own leaf makes, because
          * a connection that was never made holds no credit and the permit
-         * goes back to the program [SYS-10]. */
+         * goes back to the program (ordinary native library). */
         if (completion_result < 0) {
             (void)close(record->request.operation.endpoint.descriptor);
             result.value = -1;

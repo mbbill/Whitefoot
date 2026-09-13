@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: after the guard loop, cursor equals limit=5, so data[cursor] reads data[5] (OOB)";
   let data = fixed_vector::<u8, 5>();
   region {

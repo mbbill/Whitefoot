@@ -9,7 +9,7 @@ fn cross_index<const n_small: u64, const n_big: u64>(small: own FixedVector<u8, 
   return byte;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq small, value: 1_u8);

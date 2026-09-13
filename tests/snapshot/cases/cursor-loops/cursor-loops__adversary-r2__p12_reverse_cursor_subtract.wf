@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: reverse traversal back = 4 - i for i in 0..5 stays within [0,4], all reads in bounds";
   let data = fixed_vector::<u64, 5>();
   region {

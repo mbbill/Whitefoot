@@ -19,7 +19,7 @@ fn drain_into(ring: own Slice<u8>, start: own u64, count: own u64, out: &uniq Mu
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: the wrap index (start+i) % capacity is always inside [0, capacity) under [OP-2]'s remainder domain once capacity > 0; the for-loop's automatic i < count fact discharges the out[i] write [OP-4].";
   region 'w {
     let workspace = arena_frame::<9, 1, 'w>();

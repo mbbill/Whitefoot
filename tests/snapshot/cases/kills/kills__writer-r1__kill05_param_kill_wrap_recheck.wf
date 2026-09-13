@@ -15,7 +15,7 @@ fn wrap_lookup(table: own FixedVector<u16, 10>, pos: own u64) -> result: own u16
   return first +wrap second;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u16, 10>();
   region {
     place_back(vector: &uniq table, value: 3_u16);

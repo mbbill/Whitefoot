@@ -41,9 +41,7 @@ $(BUILD)/large-result$(EXE): large-result.wf $(WHITEFOOTC) | $(BUILD)
 # Keep the producer boundary to inspect aggregate materialization independently
 # of inlining. This native control is not a source acceptance path.
 $(BUILD)/retained-result.ll: $(BUILD)/large-result.ll
-	sed -e '/^define internal void @wf_make_record/s/ #0 {/ noinline #0 {/' \
-	    -e 's/define internal void @wf_make_record/define void @wf_make_record/' \
-	    -e 's/define internal void @wf_build_record/define void @wf_build_record/' $< > $@
+	sed '/^define void @wf_make_record/s/ #0 {/ noinline #0 {/' $< > $@
 
 $(BUILD)/optimized-result.ll: $(BUILD)/retained-result.ll
 	awk '/^define void @wf_make_record.*noinline/ { producer++ } /^define void @wf_build_record/ { consumer++ } END { exit(producer != 1 || consumer != 1) }' $<

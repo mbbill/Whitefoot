@@ -10,7 +10,7 @@ fn touch_count(count: own u64) -> total: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: the counted for's exact-exhaustion consequence substitutes the captured upper endpoint for the binder and is available to a body invariant_stmt right after the loop [INV-1].";
   let total = touch_count(count: 6_u64);
   if total == 6_u64 {

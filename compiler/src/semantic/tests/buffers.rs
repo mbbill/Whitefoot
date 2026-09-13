@@ -10,8 +10,8 @@
 //! target-domain ceiling `BufferFill` and `BufferVacant` install, which no
 //! container row carries; `buffer_vacant`'s all-`None` construction; the
 //! ambient heap's empty effect row; and the [CALL-5] transport a
-//! `&uniq buffer<T>` destination selects, which [BLK-4] no longer admits at
-//! all.
+//! `&uniq buffer<T>` destination selects. Run referents use the same ordinary
+//! exclusive-parameter and two-state contract rules.
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
@@ -30,7 +30,7 @@ use super::{
 fn a_failed_length_expression_prevents_the_unreached_allocation_fit_obligation() {
     let source = br#"const lengths: FixedVector<u64, 1> =[0_u64];
 
-fn allocate(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+fn allocate['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   region {
     match heap_vector::<u8>(store: &uniq deref(store), count: lengths[1_u64]) {
       Some(value: values) => {
@@ -67,7 +67,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn allocation_fit_is_static_exact_componentized_and_contradiction_closing() {
-    let unproved = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+    let unproved = br#"fn allocate['heap](n: own u64, store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   region {
     match heap_vector::<u16>(store: &uniq deref(store), count: n) {
       Some(value: values) => {
@@ -114,7 +114,7 @@ fn main() -> status: own ExitStatus pure {
   }
 }
 
-fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+fn allocate['heap](n: own u64, store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   let bounded = bounded_count(n: n);
   region {
     match heap_vector::<u16>(store: &uniq deref(store), count: bounded) {
@@ -138,7 +138,7 @@ fn main() -> status: own ExitStatus pure {
         );
     });
 
-    let component = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+    let component = br#"fn allocate['heap](n: own u64, store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   let within = n <= 9223372036854775807_u64;
   if within {
     region {
@@ -179,7 +179,7 @@ fn main() -> status: own ExitStatus pure {
         ));
     });
 
-    let refuted = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+    let refuted = br#"fn allocate['heap](n: own u64, store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   let fits = buffer_fits::<u8>(n);
   let does_not_fit = bnot(fits);
   if does_not_fit {
@@ -332,7 +332,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_affine_invariant_supplies_the_only_tight_allocation_ceiling() {
-    let source = br#"fn allocate(n: own u64, half: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) contract {
+    let source = br#"fn allocate['heap](n: own u64, half: own u64, store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) contract {
   requires half <= 500_u64;
 } {
   let doubled = half * 2_u64;
@@ -392,7 +392,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_ordinary_branch_fact_gives_the_allocation_ceiling() {
-    let source = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+    let source = br#"fn allocate['heap](n: own u64, store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   let within = n <= 777_u64;
   if within {
     region {
@@ -435,7 +435,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_exact_buffer_fits_fact_retains_its_language_ceiling_when_no_tighter_bound_exists() {
-    let source = br#"fn allocate(n: own u64, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+    let source = br#"fn allocate['heap](n: own u64, store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   let fits = buffer_fits::<u16>(n);
   if fits {
     region {
@@ -450,7 +450,7 @@ fn an_exact_buffer_fits_fact_retains_its_language_ceiling_when_no_tighter_bound_
   return unit;
 }
 
-fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     allocate(n: 4_u64, store: &uniq heap);
   }
@@ -579,9 +579,9 @@ fn zero_length_arrays_have_the_empty_sequence_layout_ceiling() {
 }
 
 /// B7c4b left this case on the retiring surface: its subject is the ambient
-/// heap's own family — `reaches_ambient_heap`, the `BufferFill` record and
-/// the two target domains it installs — none of which a store-backed run
-/// has. The run twin of its access and cleanup half is
+/// heap's `BufferFill` record and the two target domains it installs, which
+/// differ from a store-backed run. v0.58 removes the unused ambient-reach
+/// summary; allocation and element-address obligations remain explicit. The run twin of its access and cleanup half is
 /// `struct_run_paths_and_declaration_order_cleanup_are_explicit` below.
 #[test]
 fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
@@ -607,7 +607,6 @@ fn main() -> status: own ExitStatus pure {
             panic!("primitive buffer family must check: {outcome:?}");
         };
         let make = &checked.data.functions[0];
-        assert!(make.reaches_ambient_heap);
         assert!(matches!(
             &make.body.as_deref().expect("WF body")[0],
             CheckedStatement::Return {
@@ -626,7 +625,6 @@ fn main() -> status: own ExitStatus pure {
         ));
 
         let main = &checked.data.functions[1];
-        assert!(main.reaches_ambient_heap);
 
         let CheckedStatement::Set { target, .. } = &main.body.as_deref().expect("WF body")[4]
         else {
@@ -704,12 +702,12 @@ fn an_ambient_allocation_writes_no_row_and_a_store_take_is_checked_both_ways() {
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_rule_kind(
-        b"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n",
+        b"fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     with_semantics(
-        b"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n",
+        b"fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
 }
@@ -1073,7 +1071,7 @@ fn main() -> status: own ExitStatus pure {
     // type comes from its operand [S39], so that is where the recorded rule
     // and kind still fire, at the operand atom the rule names.
     assert_rule(
-        br#"fn invalid(value: own Slice<u8>, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+        br#"fn invalid['heap](value: own Slice<u8>, store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   region {
     heap_box(store: &uniq deref(store), value: value);
   }
@@ -1271,7 +1269,7 @@ fn main() -> status: own ExitStatus pure {
 fn an_indexed_buffer_fits_guard_discharges_the_same_allocation_goal() {
     let source = br#"const lengths: FixedVector<u64, 1> =[1_u64];
 
-fn make_run(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+fn make_run['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   if buffer_fits::<u8>(lengths[0_u64]) {
     region {
       match heap_vector::<u8>(store: &uniq deref(store), count: lengths[0_u64]) {
@@ -1324,4 +1322,121 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(indexed.components.len(), 1);
         assert!(indexed.components[0].left.is_none());
     });
+}
+
+#[test]
+fn complete_run_confinement_rejects_delivery_outside_its_store() {
+    for delivery in [
+        "give move run;",
+        "give Some<Vector<'a, u64>>(value: move run);",
+        "give Wrapped(value: move run);",
+        "give Token<'a>(value: 1_u64);",
+        "let runs = fixed_vector::<Vector<'a, u64>, 1>();\n            region {\n              place_back(vector: &uniq runs, value: move run);\n            }\n            give move runs;",
+        "let runs = fixed_vector::<Vector<'a, u64>, 1>();\n            region {\n              place_back(vector: &uniq runs, value: move run);\n            }\n            let complete = array_from_fixed(vector: move runs);\n            give move complete;",
+    ] {
+        let source = format!(
+            "struct Wrapped['s] {{
+  value: Vector<'s, u64>;
+}}
+
+struct Token['s] {{
+  value: u64;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  let escaped = if True() {{
+    region 'a {{
+      let store = arena_frame::<256, 16, 'a>();
+      region {{
+        match arena_vector::<u64>(store: &uniq store, count: 4_u64) {{
+          Some(value: run) => {{
+            {delivery}
+          }}
+          None() => {{
+            return exit_status(code: 1_u8);
+          }}
+        }}
+      }}
+    }}
+  }} else {{
+    return exit_status(code: 2_u8);
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("delivery {delivery}: expected confinement rejection, {outcome:?}");
+            };
+            assert_eq!(
+                issue.rule,
+                SemanticRule::Blk4,
+                "delivery {delivery}: {issue:?}"
+            );
+            assert!(matches!(
+                issue.kind,
+                SemanticIssueKind::ConfinedValueEscape { .. }
+            ));
+        });
+    }
+}
+
+#[test]
+fn a_generic_identity_preserves_a_callers_store_confinement() {
+    with_semantics(
+        br#"fn identity<T: affine>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let store = arena_frame::<256, 16, 'a>();
+    region {
+      match arena_vector::<u64>(store: &uniq store, count: 4_u64) {
+        Some(value: run) => {
+          let kept = identity::<Vector<'a, u64>>(value: move run);
+          let size = room_of(kept);
+          return exit_status(code: 0_u8);
+        }
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
+    );
+}
+
+#[test]
+fn an_empty_generic_run_retains_its_explicit_element_store_brand() {
+    with_semantics(
+        br#"fn empty<T: affine>() -> result: own FixedVector<T, 0> pure {
+  let result = fixed_vector::<T, 0>();
+  return move result;
+}
+
+fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let store = arena_frame::<256, 16, 'a>();
+    let empty_run = empty::<Vector<'a, u64>>();
+    return exit_status(code: 0_u8);
+  }
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
+    );
 }

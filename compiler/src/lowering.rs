@@ -158,7 +158,7 @@ pub struct IrStoreTake {
     /// [OP-9]'s language ceilings for that element type.
     pub layout_ceiling: IrLayoutCeiling,
     /// The upper bound [OP-9]'s accepted judgment retained for `count`, which
-    /// target qualification scales by the actual stride [STOR-6].
+    /// target layout scales by the actual stride [STOR-6].
     pub count_upper_bound: u64,
     /// The stride one slot occupies [OP-9], which is the spacing a run's
     /// window is laid out at [BLK-1].
@@ -419,9 +419,8 @@ fn lower_flat_element(
 /// Whether a value of this type derives any release work at all [STOR-3].
 ///
 /// This is the single reading of "does dropping this value do something": the
-/// target stage asks it to decide whether a drop emits a cleanup, and the
-/// staged lowering asks it to decide whether a region's fallthrough drops are
-/// work a split body would lose. A `None` answer is a malformed nominal
+/// target stage asks it to decide whether a drop emits a cleanup. A `None`
+/// answer is a malformed nominal
 /// reference, which each caller reports in its own vocabulary; no caller may
 /// read it as "no release", because unknown must never be silently inert.
 pub(crate) fn type_derives_release(
@@ -489,11 +488,7 @@ pub(crate) fn type_derives_release(
                             .map(IrField::ty),
                     );
                 }
-                // Every [SYS-5] release action is an explicit release the
-                // target stage must emit, including a logical consume that
-                // emits nothing.
                 IrNominalKind::Box { .. }
-                | IrNominalKind::Opaque
                 // The allocation-list drop is the region's storage
                 // release [STOR-3]: walk and free.
                 | IrNominalKind::ArenaStorage => {
@@ -502,6 +497,8 @@ pub(crate) fn type_derives_release(
                 // An arena value's storage is released with its region,
                 // never by an owner-scope cleanup [STOR-3, STOR-4].
                 IrNominalKind::Arena { .. } => {}
+                // Ordinary opaque values have empty release [PRE-1].
+                IrNominalKind::Opaque => {}
             },
             IrType::Unit
             | IrType::Bool
@@ -1536,23 +1533,6 @@ impl IrOverlap {
 /// numbers live in two languages and are pinned to each other by
 /// `the_compile_time_frame_bound_is_the_runtimes`.
 pub const LANE_FRAME_BYTES: u64 = 256;
-
-/// How many hand-outs one thread's lane can hold at once, and so the
-/// compiler's own ceiling on the window of a loop whose staged call is a lane
-/// hand-out.
-///
-/// Every iteration a staged loop carries in flight holds one frame slot of the
-/// offering thread's lane, so a window past this one is a window whose extra
-/// iterations are refused a frame and run inline. This restates
-/// `WF_SCHED_LANE_SLOTS` in `backend/sched/core.h` for the same reason
-/// `LANE_FRAME_BYTES` restates `WF_SCHED_FRAME_BYTES` — the ring is a static
-/// reservation the emitter makes long before a runtime exists — and the two
-/// numbers are pinned to each other by
-/// `the_staged_lane_window_ceiling_is_the_runtimes`. It is 1024 because that
-/// is the connection count the network control test keeps in flight, and a
-/// staged loop's ring in the frame is sized by it: one address, one answer
-/// and the iteration's own carries per slot.
-pub const LANE_SLOTS: u64 = 1024;
 
 /// Why a function exists, for the one consumer that has to tell the two worlds
 /// apart: a source function is emitted into both, while the two halves of a

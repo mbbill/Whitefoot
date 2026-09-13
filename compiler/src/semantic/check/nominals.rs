@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{PreludeDeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
+use crate::{BuiltinPreludeId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 
 use super::super::model::{
     CheckedConst, CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind,
@@ -503,13 +503,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 vec![
                     CheckedVariant {
                         name: "None".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(5)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::NONE),
                         tag: 0,
                         fields: Vec::new(),
                     },
                     CheckedVariant {
                         name: "Some".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(6)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::SOME),
                         tag: 1,
                         fields: vec![CheckedField {
                             name: "value".to_owned(),
@@ -527,7 +527,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 vec![
                     CheckedVariant {
                         name: "Ok".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(11)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::OK),
                         tag: 0,
                         fields: vec![CheckedField {
                             name: "value".to_owned(),
@@ -536,7 +536,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                     CheckedVariant {
                         name: "Err".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(13)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::ERR),
                         tag: 1,
                         fields: vec![CheckedField {
                             name: "error".to_owned(),
@@ -549,7 +549,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "Overflow".to_owned(),
                 vec![CheckedVariant {
                     name: "Overflow".to_owned(),
-                    constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(16)),
+                    constructor: CheckedConstructor::Prelude(BuiltinPreludeId::OVERFLOW),
                     tag: 0,
                     fields: Vec::new(),
                 }],
@@ -559,13 +559,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 vec![
                     CheckedVariant {
                         name: "DivideByZero".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(18)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::DIVIDE_BY_ZERO),
                         tag: 0,
                         fields: Vec::new(),
                     },
                     CheckedVariant {
                         name: "DivOverflow".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(19)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::DIV_OVERFLOW),
                         tag: 1,
                         fields: Vec::new(),
                     },
@@ -575,7 +575,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "NarrowError".to_owned(),
                 vec![CheckedVariant {
                     name: "NarrowError".to_owned(),
-                    constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(21)),
+                    constructor: CheckedConstructor::Prelude(BuiltinPreludeId::NARROW_ERROR),
                     tag: 0,
                     fields: Vec::new(),
                 }],

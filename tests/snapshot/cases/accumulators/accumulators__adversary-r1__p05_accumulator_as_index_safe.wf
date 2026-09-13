@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- data has length 6 but the loop only scans the first 5 slots, so count <= 5 < 6 = len_of(data); the explicit dominating in_bounds check discharges data[count] before the read.";
   let data = fixed_vector::<u8, 6>();
   region {

@@ -2,7 +2,7 @@ fn borrowed_room(b: own Slice<u8>) -> result: own u64 reads(b) {
   return len_of(b);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- a fact carried by a region-local borrow holder dies leaving the region [ENT-5](d); a fresh owned len_of() outside reestablishes it.";
   let data = fixed_vector::<u8, 4>();
   region {

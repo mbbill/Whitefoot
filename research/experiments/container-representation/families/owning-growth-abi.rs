@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+#[path = "../linkage.rs"]
+mod linkage;
+
 // Native measurement entry points for the compiler's actual helper ABIs.
 // They transfer only valid owners prepared by the C harness. No compiler or
 // source acceptance rule is changed. The complete WF construction/refusal path
@@ -304,7 +307,8 @@ fn main() {
         4,
         "usage: owning-growth-abi INPUT OUTPUT normal|retained|inlined"
     );
-    let input = fs::read_to_string(&args[1]).expect("read compiler module");
+    let input =
+        linkage::closed_helpers(&fs::read_to_string(&args[1]).expect("read compiler module"));
     let behavior = !behavior_names(&input, "put").is_empty();
     let variant = args[3].as_str();
     assert!(matches!(variant, "normal" | "retained" | "inlined"));

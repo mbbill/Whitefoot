@@ -55,6 +55,14 @@ compiler, checks the finite models, validates the expected current source outcom
 and verifies native comparisons. `measure` also records timing samples and retains
 the foundation probe's producer boundary for generated-storage inspection;
 timing is descriptive evidence, not a host-speed-dependent acceptance threshold.
+The C harnesses in `dense/` and `families/` include `native.mk` to link the
+same ordinary prelude implementations and private runtime dependencies as
+`whitefootc`. Their LLVM adapters restore the controls' closed helper linkage through
+`linkage.rs`, expose measured functions, rename the fixture launcher, and
+instrument the stated allocation sites; they do not
+substitute special host operations or fake implementations. Keep the shared
+source list aligned with the CLI's `runtime_units` when that library changes.
+
 Each subdirectory's `RESULTS.md` states its measured revision, interpretation, and
 limits. Results from different evidence levels must not be substituted for one
 another: an unsafe native control is not an accepted Whitefoot program, and a

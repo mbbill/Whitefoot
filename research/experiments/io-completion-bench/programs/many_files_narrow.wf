@@ -1,4 +1,6 @@
-fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(name), writes(name) {
+fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(name), writes(name) contract {
+  ensures len_of(deref(name)) == len_of(deref(entry(name)));
+} {
   doc "Renders the fixed ten-byte generated file name for one index as f00000.dat.";
   let room = len_of(deref(name));
   let sized = room >= 10_u64;
@@ -38,7 +40,9 @@ fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(nam
   return unit;
 }
 
-fn render_u64(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn render_u64(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) contract {
+  ensures len_of(deref(destination)) == len_of(deref(entry(destination)));
+} {
   doc "Renders one twenty-digit zero-padded decimal number and reports the position after it.";
   let room = len_of(deref(destination));
   let remaining = value;
@@ -92,7 +96,7 @@ fn fold_bytes(source: &buffer<u8>, produced: own u64, seed: own u64) -> result: 
   return sum;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
+fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(out, files) {
   doc "Opens and reads the generated file set one file at a time and publishes one folded checksum.";
   let name = buffer_new(16_u64, 0_u8);
   let data = buffer_new(65536_u64, 0_u8);
@@ -100,7 +104,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
   let sum = 0_u64;
   let bytes = 0_u64;
   let index = 0_u64;
-  loop @scan {
+  loop @scan (
+    invariant name_room: len_of(name) >= 16_u64
+  ) {
     let done = index >= 8192_u64;
     if done {
       break @scan;
@@ -108,16 +114,18 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
     region {
       let rendered = name_at(name: &uniq name, index: index);
     }
-    region 'f {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          region {
-            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 10_u64) {
-              FileOpened(value: handle) => {
-                region 'h {
+    region {
+      let native_window_68 = slice_of(&name);
+      region {
+        region {
+          match open_file(factory: &uniq deref(files), root: cwd, name: &native_window_68, start: 0_u64, end: 10_u64) {
+            FileOpened(value: handle) => {
+              region {
+                let native_window_67 = mut_slice_of(&uniq data);
+                region {
                   region {
-                    match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
-                      ReadBytes(next: produced) => {
+                    match read_at(factory: &uniq deref(files), file: &uniq handle, destination: &uniq native_window_67, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
+                      Ok(value: produced) => {
                         let digest = 0_u64;
                         region {
                           set digest = fold_bytes(source: &data, produced: produced, seed: 0_u64);
@@ -127,24 +135,27 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
                         set sum = sum +wrap digest;
                         set bytes = bytes +wrap produced;
                       }
-                      ReadEnd() => {
-                      }
-                      ReadFailed(error: problem) => {
+                      Err(error: read_stop_66) => {
+                        match read_stop_66 {
+                          ReadEnd() => {
+                          }
+                          ReadFailed(error: problem) => {
+                          }
+                        }
                       }
                     }
                   }
+                  close_read(factory: &uniq deref(files), file: move handle);
                 }
               }
-              FileOpenFailed(error: problem, permit: refused) => {
-              }
+            }
+            FileOpenFailed(error: problem) => {
             }
           }
         }
-        Err(error: spent) => {
-        }
+        set index = index +wrap 1_u64;
       }
     }
-    set index = index +wrap 1_u64;
   }
   let room = len_of(line);
   let cursor = 0_u64;
@@ -168,11 +179,14 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
   let publishable = cursor <= room;
   if publishable {
     region {
-      match write_once(output: &uniq out, source: &line, start: 0_u64, end: cursor) {
-        Ok(value: written) => {
-        }
-        Err(error: problem) => {
-          set status = 2_u8;
+      let native_window_69 = slice_of(&line);
+      region {
+        match write_once(factory: &uniq deref(files), output: &uniq deref(out), source: &native_window_69, start: 0_u64, end: cursor) {
+          Ok(value: written) => {
+          }
+          Err(error: problem) => {
+            set status = 2_u8;
+          }
         }
       }
     }
@@ -180,4 +194,14 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
     set status = 3_u8;
   }
   return exit_status(code: status);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, out: &uniq out, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

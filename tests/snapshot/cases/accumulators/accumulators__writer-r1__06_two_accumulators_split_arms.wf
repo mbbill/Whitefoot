@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: two accumulators, each bumped in exactly one arm of the same branch.";
   let data = fixed_vector::<u8, 6>();
   region {

@@ -523,8 +523,8 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn moved_owner_borrows_and_slices_keep_the_incoming_formal_effect_path() {
-    let source = br#"fn touch_after_move(value: own FixedVector<u8, 2>) -> result: own u8 reads(value), writes(value) {
+fn moved_owners_resolve_borrows_and_slices_to_their_local_storage() {
+    let source = br#"fn touch_after_move(value: own FixedVector<u8, 2>) -> result: own u8 pure {
   let moved = move value;
   region {
     let holder = &uniq moved;
@@ -540,7 +540,7 @@ fn moved_owner_borrows_and_slices_keep_the_incoming_formal_effect_path() {
   }
 }
 
-fn slice_after_move(value: own FixedVector<u8, 2>) -> result: own u8 reads(value) contract {
+fn slice_after_move(value: own FixedVector<u8, 2>) -> result: own u8 pure contract {
   requires head_of(value) <= room_of(value);
 } {
   let moved = move value;
@@ -563,7 +563,7 @@ fn main() -> status: own ExitStatus pure {
     with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
-            "a local lifetime must not erase the moved formal owner: {outcome:?}"
+            "v0.58 EFF-2 attributes the moved owner to its local storage, not its incoming value history: {outcome:?}"
         );
     });
 }
@@ -1731,4 +1731,32 @@ fn returned(view: own Slice<u8>) -> result: own u8 reads(view) contract {
             matches!(kind, SemanticIssueKind::EffectMismatch { .. })
         });
     }
+}
+
+/// The descriptor borrow and the backing loan are different places. Passing
+/// `&window` must continue the loan that formed `window`, including when its
+/// backing was reached through an exclusive parameter.
+#[test]
+fn a_borrowed_view_descriptor_keeps_its_backing_parent_permission() {
+    with_semantics(
+        br#"fn count(source: &Slice<u8>) -> result: own u64 reads(source) {
+  return len_of(deref(source));
+}
+
+fn view(scratch: &uniq buffer<u8>) -> result: own u64 reads(scratch) {
+  region {
+    let window = slice_of(&deref(scratch));
+    region {
+      return count(source: &window);
+    }
+  }
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
+    );
 }

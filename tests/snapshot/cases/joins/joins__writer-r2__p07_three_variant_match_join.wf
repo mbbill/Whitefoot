@@ -50,6 +50,6 @@ fn fetch(b: own Slice<u8>, i: own u64, mode: own Mode) -> result: own u8 reads(b
   return b[idx];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: an accumulated sum drives a table lookup only after a real branch proves it in range.";
   let data = fixed_vector::<u8, 4>();
   region {

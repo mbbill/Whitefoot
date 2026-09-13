@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: two buffers are each summed by their own bounded loop, then combined once after both.";
   let first = fixed_vector::<u8, 4>();
   region {

@@ -8,7 +8,7 @@ fn gap(x: own i32, y: own i32) -> result: own i32 pure contract {
   return difference;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = gap(x: 100_i32, y: 40_i32);
   if result == 60_i32 {
   } else {

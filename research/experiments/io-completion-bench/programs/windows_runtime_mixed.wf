@@ -1,3 +1,105 @@
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn discard_open_result(factory: &uniq HandleFactory, outcome: own FileOpenOutcome) -> result: own unit reads(factory), writes(factory) {
+  match move outcome {
+    FileOpened(value: file) => {
+      region {
+        close_read(factory: &uniq deref(factory), file: move file);
+      }
+    }
+    FileOpenFailed(error: problem) => {
+    }
+  }
+  return unit;
+}
+
 fn churn(seed: own u64) -> result: own u64 pure {
   doc "Runs a fixed integer kernel long enough for the native compute pool to do useful work.";
   let value = seed;
@@ -52,124 +154,163 @@ fn render_u64(destination: &uniq MutSlice<u8>, value: own u64) -> result: own un
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files) {
+fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(out, files) {
   doc "Pairs independent compute calls with independent positioned reads in one production runtime and publishes one deterministic checksum.";
   let left_data = buffer_new(4096_u64, 0_u8);
   let right_data = buffer_new(4096_u64, 0_u8);
   let report = buffer_new(21_u64, 10_u8);
   region {
-    match arg_get(args: &args, position: 1_u64) {
+    match arg_get(args: args, position: 1_u64) {
       Ok(value: left_text) => {
         match relative_path(value: move left_text) {
           Ok(value: left_path) => {
             region {
-              match arg_get(args: &args, position: 2_u64) {
+              match arg_get(args: args, position: 2_u64) {
                 Ok(value: right_text) => {
                   match relative_path(value: move right_text) {
                     Ok(value: right_path) => {
                       region {
-                        match reserve_handle(factory: &uniq files) {
-                          Ok(value: left_permit) => {
-                            match reserve_handle(factory: &uniq files) {
-                              Ok(value: right_permit) => {
-                                let left_opened = open_read(permit: move left_permit, root: &cwd, path: &left_path);
-                                let right_opened = open_read(permit: move right_permit, root: &cwd, path: &right_path);
-                                match move left_opened {
-                                  FileOpened(value: left_file) => {
-                                    match move right_opened {
-                                      FileOpened(value: right_file) => {
-                                        let checksum = 0_u64;
-                                        let iteration = 0_u64;
-                                        loop @work {
-                                          let done = iteration == 1024_u64;
-                                          if done {
-                                            break @work;
-                                          }
-                                          let left_seed = iteration +wrap 11400714819323198485_u64;
-                                          let right_seed = iteration +wrap 13787848793156543929_u64;
-                                          let block = iand(iteration, 4095_u64);
-                                          let offset = block *wrap 4096_u64;
-                                          region 'handles {
-                                            region {
-                                              let left_read = read_at(file: &'handles left_file, destination: &uniq left_data, file_offset: offset, start: 0_u64, end: 4096_u64);
-                                              let compute = compute_pair(left_seed: left_seed, right_seed: right_seed);
-                                              let right_read = read_at(file: &'handles right_file, destination: &uniq right_data, file_offset: offset, start: 0_u64, end: 4096_u64);
-                                              match move left_read {
-                                                ReadBytes(next: left_next) => {
-                                                  if left_next == 4096_u64 {
-                                                  } else {
-                                                    return exit_status(code: 11_u8);
-                                                  }
-                                                }
-                                                ReadEnd() => {
-                                                  return exit_status(code: 12_u8);
-                                                }
-                                                ReadFailed(error: left_problem) => {
-                                                  return exit_status(code: 13_u8);
-                                                }
-                                              }
-                                              match move right_read {
-                                                ReadBytes(next: right_next) => {
-                                                  if right_next == 4096_u64 {
-                                                  } else {
-                                                    return exit_status(code: 14_u8);
-                                                  }
-                                                }
-                                                ReadEnd() => {
-                                                  return exit_status(code: 15_u8);
-                                                }
-                                                ReadFailed(error: right_problem) => {
-                                                  return exit_status(code: 16_u8);
-                                                }
-                                              }
-                                              let left_byte = cvt::<u8, u64>(left_data[0_u64]);
-                                              let right_byte = cvt::<u8, u64>(right_data[0_u64]);
-                                              set checksum = ixor(checksum, compute);
-                                              set checksum = checksum *wrap 31_u64;
-                                              set checksum = checksum +wrap left_byte;
-                                              set checksum = checksum *wrap 31_u64;
-                                              set checksum = checksum +wrap right_byte;
-                                            }
-                                          }
-                                          set iteration = iteration +wrap 1_u64;
-                                        }
+                        let left_opened = open_read(factory: &uniq deref(files), root: cwd, path: &left_path);
+                        let right_opened = open_read(factory: &uniq deref(files), root: cwd, path: &right_path);
+                        match move left_opened {
+                          FileOpened(value: left_file) => {
+                            match move right_opened {
+                              FileOpened(value: right_file) => {
+                                let checksum = 0_u64;
+                                let iteration = 0_u64;
+                                loop @work {
+                                  let done = iteration == 1024_u64;
+                                  if done {
+                                    break @work;
+                                  }
+                                  let left_seed = iteration +wrap 11400714819323198485_u64;
+                                  let right_seed = iteration +wrap 13787848793156543929_u64;
+                                  let block = iand(iteration, 4095_u64);
+                                  let offset = block *wrap 4096_u64;
+                                  region {
+                                    let native_window_131 = mut_slice_of(&uniq left_data);
+                                    region {
+                                      region {
+                                        let left_read = read_at(factory: &uniq deref(files), file: &uniq left_file, destination: &uniq native_window_131, file_offset: offset, start: 0_u64, end: 4096_u64);
+                                        let compute = compute_pair(left_seed: left_seed, right_seed: right_seed);
                                         region {
-                                          let report_window = mut_slice_of(&uniq report);
+                                          let native_window_132 = mut_slice_of(&uniq right_data);
                                           region {
-                                            let rendered = render_u64(destination: &uniq report_window, value: checksum);
-                                          }
-                                        }
-                                        region {
-                                          match write_once(output: &uniq out, source: &report, start: 0_u64, end: 21_u64) {
-                                            Ok(value: published) => {
-                                              if published == 21_u64 {
-                                                return exit_status(code: 0_u8);
+                                            let right_read = read_at(factory: &uniq deref(files), file: &uniq right_file, destination: &uniq native_window_132, file_offset: offset, start: 0_u64, end: 4096_u64);
+                                            match move left_read {
+                                              Ok(value: left_next) => {
+                                                if left_next == 4096_u64 {
+                                                } else {
+                                                  close_read(factory: &uniq deref(files), file: move right_file);
+                                                  close_read(factory: &uniq deref(files), file: move left_file);
+                                                  return exit_status(code: 11_u8);
+                                                }
                                               }
-                                              return exit_status(code: 17_u8);
+                                              Err(error: read_stop_129) => {
+                                                match read_stop_129 {
+                                                  ReadEnd() => {
+                                                    close_read(factory: &uniq deref(files), file: move right_file);
+                                                    close_read(factory: &uniq deref(files), file: move left_file);
+                                                    return exit_status(code: 12_u8);
+                                                  }
+                                                  ReadFailed(error: left_problem) => {
+                                                    close_read(factory: &uniq deref(files), file: move right_file);
+                                                    close_read(factory: &uniq deref(files), file: move left_file);
+                                                    return exit_status(code: 13_u8);
+                                                  }
+                                                }
+                                              }
                                             }
-                                            Err(error: output_problem) => {
-                                              return exit_status(code: 18_u8);
+                                            match move right_read {
+                                              Ok(value: right_next) => {
+                                                if right_next == 4096_u64 {
+                                                } else {
+                                                  close_read(factory: &uniq deref(files), file: move right_file);
+                                                  close_read(factory: &uniq deref(files), file: move left_file);
+                                                  return exit_status(code: 14_u8);
+                                                }
+                                              }
+                                              Err(error: read_stop_130) => {
+                                                match read_stop_130 {
+                                                  ReadEnd() => {
+                                                    close_read(factory: &uniq deref(files), file: move right_file);
+                                                    close_read(factory: &uniq deref(files), file: move left_file);
+                                                    return exit_status(code: 15_u8);
+                                                  }
+                                                  ReadFailed(error: right_problem) => {
+                                                    close_read(factory: &uniq deref(files), file: move right_file);
+                                                    close_read(factory: &uniq deref(files), file: move left_file);
+                                                    return exit_status(code: 16_u8);
+                                                  }
+                                                }
+                                              }
                                             }
+                                            let left_byte = cvt::<u8, u64>(left_data[0_u64]);
+                                            let right_byte = cvt::<u8, u64>(right_data[0_u64]);
+                                            set checksum = ixor(checksum, compute);
+                                            set checksum = checksum *wrap 31_u64;
+                                            set checksum = checksum +wrap left_byte;
+                                            set checksum = checksum *wrap 31_u64;
+                                            set checksum = checksum +wrap right_byte;
                                           }
                                         }
                                       }
-                                      FileOpenFailed(error: right_problem, permit: refused) => {
-                                        return exit_status(code: 6_u8);
+                                      set iteration = iteration +wrap 1_u64;
+                                    }
+                                  }
+                                }
+                                region {
+                                  let report_window = mut_slice_of(&uniq report);
+                                  region {
+                                    let rendered = render_u64(destination: &uniq report_window, value: checksum);
+                                  }
+                                }
+                                region {
+                                  let native_window_133 = slice_of(&report);
+                                  region {
+                                    match write_once(factory: &uniq deref(files), output: &uniq deref(out), source: &native_window_133, start: 0_u64, end: 21_u64) {
+                                      Ok(value: published) => {
+                                        if published == 21_u64 {
+                                          close_read(factory: &uniq deref(files), file: move right_file);
+                                          close_read(factory: &uniq deref(files), file: move left_file);
+                                          return exit_status(code: 0_u8);
+                                        }
+                                        close_read(factory: &uniq deref(files), file: move right_file);
+                                        close_read(factory: &uniq deref(files), file: move left_file);
+                                        return exit_status(code: 17_u8);
+                                      }
+                                      Err(error: output_problem) => {
+                                        close_read(factory: &uniq deref(files), file: move right_file);
+                                        close_read(factory: &uniq deref(files), file: move left_file);
+                                        return exit_status(code: 18_u8);
                                       }
                                     }
                                   }
-                                  FileOpenFailed(error: left_problem, permit: refused) => {
-                                    return exit_status(code: 5_u8);
-                                  }
                                 }
                               }
-                              Err(error: spent) => {
-                                return exit_status(code: 20_u8);
+                              FileOpenFailed(error: right_problem) => {
+                                region {
+                                  let failure_status = if factory_refusal(error: &right_problem) {
+                                    give 20_u8;
+                                  } else {
+                                    give 6_u8;
+                                  }
+                                  close_read(factory: &uniq deref(files), file: move left_file);
+                                  return exit_status(code: failure_status);
+                                }
                               }
                             }
                           }
-                          Err(error: spent) => {
-                            return exit_status(code: 19_u8);
+                          FileOpenFailed(error: left_problem) => {
+                            region {
+                              let failure_status = if factory_refusal(error: &left_problem) {
+                                give 19_u8;
+                              } else {
+                                give 5_u8;
+                              }
+                              discard_open_result(factory: &uniq deref(files), outcome: move right_opened);
+                              return exit_status(code: failure_status);
+                            }
                           }
                         }
                       }
@@ -194,5 +335,15 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         return exit_status(code: 1_u8);
       }
     }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(args: &args, cwd: &cwd, out: &uniq out, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
 }

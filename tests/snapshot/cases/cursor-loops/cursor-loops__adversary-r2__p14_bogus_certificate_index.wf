@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: the local invariant claims cursor < 3_u64 backed only by cursor <= limit with limit=9, a certificate that does not entail the claim, then uses it to index a 3-slot array; must not be accepted as a proof";
   let data = fixed_vector::<u8, 3>();
   region {

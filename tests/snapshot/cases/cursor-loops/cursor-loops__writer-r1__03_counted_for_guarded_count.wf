@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a counted for loop increments a match counter only when a per-element guard passes, keeping the header invariant that the counter never exceeds the loop index.";
   let values = fixed_vector::<u32, 6>();
   region {

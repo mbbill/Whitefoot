@@ -21,7 +21,7 @@ fn fold_chunks(data: own Slice<u8>, chunk_size: own u64) -> result: own u32 read
   return final_total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: the buffer subscript is discharged by the for-loop's automatic i < length fact (length is the same len_of(deref(data)) expression), and every accumulator step uses +wrap so no arithmetic domain obligation remains open.";
   let data = fixed_vector::<u8, 6>();
   region {

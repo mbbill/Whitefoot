@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an outer labelled loop over grid rows and an inner labelled loop over columns search a small grid for a target value, and the inner loop breaks the outer label directly once it is found.";
   let grid = fixed_vector::<u32, 9>();
   for (

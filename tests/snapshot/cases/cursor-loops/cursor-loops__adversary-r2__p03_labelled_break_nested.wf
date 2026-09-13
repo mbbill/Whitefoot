@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: labelled break from inner loop exits both loops when target 7 is found";
   let data = fixed_vector::<u8, 4>();
   region {

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- averages eight byte-scale fixed-point samples with a checker-proved sum bound, no wraparound";
   let samples = fixed_vector::<u8, 8>();
   region {

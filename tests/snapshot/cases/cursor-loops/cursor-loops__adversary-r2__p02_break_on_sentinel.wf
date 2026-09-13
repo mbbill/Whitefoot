@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: loop breaks on sentinel 255 found at index 2, index kept in bounds";
   let data = fixed_vector::<u8, 6>();
   region {

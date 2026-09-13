@@ -61,13 +61,9 @@ typedef struct wf_sched_record {
 /* The enumerator builds with the smaller constant (design §11: two slots, a
  * power of two and never three); the runtime with this one.
  *
- * It is also the ceiling on a staged loop's window when the staged call is a
- * lane hand-out, because every iteration in flight holds one slot of the
- * offering thread's lane; the compiler restates it as `LANE_SLOTS` and a
- * test pins the two to each other. 1024 is the connection count the network
- * control test measures at (`research/investigations/io-model/NETWORK.md`
- * section 6), so a server whose fixed-trip accept loop names that many can
- * keep every one of them in flight. A lane is about 320 bytes per slot, so a
+ * This is private lane capacity, independent of any source loop rule or
+ * callee classification. Every outstanding ordinary hand-out owns one slot
+ * until its caller joins and releases it. A lane is about 320 bytes per slot, so a
  * started thread's lane is about 320 KiB, and only the started threads'
  * lanes are ever touched. */
 #if !defined(WF_SCHED_LANE_SLOTS)

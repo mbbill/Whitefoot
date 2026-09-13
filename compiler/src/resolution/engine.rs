@@ -17,6 +17,7 @@ use super::{
 mod admission;
 mod inventory;
 mod lookup;
+mod prelude;
 mod roles;
 
 use admission::check_clause_blocks;
@@ -202,6 +203,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
         return Err(BuildStop::Issue(Box::new(issue)));
     }
     let mut roles = classify_roles(syntax, &scopes)?;
+    let prelude = prelude::PreludeInventory::build(syntax, &roles)?;
     // [LIV-2] a `set` target identifier that resolves to no binding declares
     // one exactly as a `let` does. Which targets those are is not a syntactic
     // property — it is the outcome of the ordinary lookup — so the candidates
@@ -262,6 +264,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                         origin: role.origin.clone(),
                         scope: declaration_scope(role, declaration_role, &scopes)?,
                         classes: entries.clone(),
+                        diagnostic_origins: prelude.roles[role_index].clone(),
                     });
                     declaration_by_role[role_index] = Some(record_index);
                     declaration_metas.push(DeclarationMeta {
@@ -349,6 +352,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             &declaration_metas,
             &declaration_index,
             &declaration_by_role,
+            &prelude.builtins,
         )? {
             return Err(BuildStop::Issue(Box::new(issue)));
         }
@@ -384,7 +388,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
         )?;
         return Ok(Tables {
             scopes: scopes.records,
-            prelude: PRELUDE_DECLARATIONS.to_vec(),
+            prelude: prelude.records,
 
             declarations,
             dependent_declarations,
@@ -899,7 +903,10 @@ fn declaration_scope(
 ) -> Result<ScopeId, ResolutionCompilerFailure> {
     match declaration_role {
         DeclarationRole::Variant => scopes.node_scope(
-            *role.owner_chain.first().ok_or(ResolutionCompilerFailure::InvalidRoleShape)?
+            *role
+                .owner_chain
+                .first()
+                .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?,
         ),
         DeclarationRole::LoopLabel | DeclarationRole::LocalRegion => {
             scopes.declaration_scope(role.owner)

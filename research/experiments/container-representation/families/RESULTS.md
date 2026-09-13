@@ -1316,3 +1316,86 @@ make -C research/experiments/container-representation/families measure-behavior-
 The two measurement targets write fresh files under `.build`; `check` never
 overwrites the dated CSVs. Native controls, seeds and result/refusal comparison
 remain unchanged from D5.
+
+## Ordinary host values amendment (C2, v0.58)
+
+Measured on 2026-09-12 PDT in the C2 worktree based on `d695f385`, arm64
+macOS 26.6.2 (25G83), Apple Clang 21.0.0 and Rust 1.98.1. The algorithms,
+seeds, operation contracts, C controls and sample/cohort orders are the D7
+ones above. This shared host also ran compiler checks during this session;
+there is no CPU affinity or host-speed gate. Compare each WF implementation
+with its contemporaneous C controls; small changes against older samples do
+not establish a compiler speedup or regression.
+
+The experiment adapters restore closed helper linkage after v0.58 made ordinary
+WF definitions linkable, and link the real ordinary prelude implementations.
+They do not replace native functions with stubs or modify instructions. Entry
+construction and unused library functions are outside the timed traces.
+
+The source migration is confined to the ordinary entry spelling/store argument
+and these EFF-2 rows. No executable statement or proof obligation changed:
+
+| Witness/helper | Row migration and ground |
+| --- | --- |
+| `priority-behavior.wf`: `push` | Remove `reads(value), writes(value)` after moving the value into the queue; the subsequent access names `queue.heap`. |
+| `owning-growth.wf`, `owning-behavior.wf`, `owning-map.wf`: `check_put` | Remove `reads(outcome)`; after consuming the enum, its payload is local storage. Required `writes(store)` remains. |
+| `owning-growth.wf`, `owning-behavior.wf`: `cleanup` | `dispose state` writes the ordinary root `state`, plus `store`; it does not contribute a release table's field paths. |
+| `owning-map.wf`: `check_removed` | Remove `reads(removed)` after the consuming match; retain the provider write. |
+| `boxed-migration.wf`: `run_boxes` | The input owners move into local slots; only the provider write is visible in the function row. |
+| `boxed-helper-gap.wf`: `compose` | The returned owners are local destinations, so the helper is `pure`. |
+
+The family gate still executes all 15 source witnesses in default, `--par`
+and `--no-overlap` modes, all prior negative witnesses, allocation observers,
+and C comparisons. Growth and behavior each retain 1,808 matched executions
+per lowering mode, 2,736 resource releases and 1,808 backing releases; behavior
+adds 12 stateful/branded/hostile cases per mode. The fixed owning map checks
+all 192 refusal positions with 18,528 allocations and matching releases.
+
+[Priority samples](c2-priority-measurements.csv) retain all 280 observations.
+Medians are ns per trace, with both WF and C mutation helpers retained:
+
+| Trace | Prior v0.57 WF | C2 WF | C2 matched C |
+| --- | ---: | ---: | ---: |
+| Concrete, 1 round | 275.513 | 274.414 | 268.799 |
+| Concrete, 16 rounds | 4409.424 | 4359.741 | 4281.006 |
+| Generic, 1 round | 421.997 | 424.805 | 268.921 |
+| Generic, 16 rounds | 6830.444 | 6802.979 | 4288.208 |
+| Direct expansion, 16 rounds | 6853.638 | 6895.264 | 4348.999 |
+
+[Map samples](c2-map-measurements.csv) retain all 3,024 observations at the
+three original capacities and both retained/inlined boundaries. At capacity
+4,096, retained-helper medians are ns per lookup/insert and ns per doubling:
+
+| Implementation/operation | Prior v0.57 WF | C2 WF | C2 C interleaved | C2 C split |
+| --- | ---: | ---: | ---: | ---: |
+| Concrete lookup | 2.875 | 2.869 | 2.697 | 2.738 |
+| Concrete insert | 3.375 | 3.278 | 2.861 | 3.044 |
+| Concrete rehash | 15729 | 15677.125 | 13437.625 | 9937.625 |
+| Generic lookup | 3.184 | 3.229 | 2.700 | 2.744 |
+| Generic insert | 4.555 | 4.565 | 2.843 | 3.029 |
+| Generic rehash | 15719 | 15624.750 | 13432.375 | 9926.875 |
+
+The optimized-IR inspectors still find zero receiver-descriptor transfer bytes
+at the retained map bridges, and zero aggregate-copy intrinsics/vector-transfer
+bytes in the retained queue mutation helpers. Rehash retains its one 24-byte
+progress-coordinate copy. The enum-slot stride remains 24 bytes; WF requests
+32 bytes per capacity unit versus C interleaved 24 and C split 17. Neither
+source-shape cost identified in D7 has disappeared, and C2 adds no measured
+container penalty requiring another interface or layout mechanism.
+
+These timed traces make no host call, use no factory and admit no PAR-3
+completion overlap. Their lost PAR-3 overlap and factory serialization
+components are therefore zero by workload construction. Ordinary direct helper
+calls are included in both revisions; their retained costs and the existing
+layout/algorithm costs remain visible above. These samples say nothing about
+host-call latency, which belongs to the traversal/TCP/staged measurements.
+
+Reproduce with `make measure-interface` and `make measure-behavior-costs` in
+this directory. The measured optimized modules have SHA-256:
+
+| Module | SHA-256 |
+| --- | --- |
+| `priority-retained.opt.ll` | `facdfe393d493d92c8be0fa232b3ae03c81dff1fee54bbd178d0d973cd3d4f44` |
+| `priority-behavior-retained.opt.ll` | `37bed77fb3e92923ff760b8fc5462a9d55f2f2932ff196182cd1c380c00cc0b8` |
+| `owning-growth-cost-retained.opt.ll` | `d49d25af200b9af64ec1de7f1e47eebda4b9e51e78c9b135dabdc4c1ed512785` |
+| `owning-behavior-cost-retained.opt.ll` | `8319314c08c41018ebcb6add37102993bca6a774a56c5b6666c23f85d71c13db` |

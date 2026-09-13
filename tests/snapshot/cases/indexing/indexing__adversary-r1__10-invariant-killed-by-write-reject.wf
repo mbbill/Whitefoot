@@ -11,7 +11,7 @@ fn shifted_read<const n: u64>(buf: own FixedVector<u8, n>, offset: own u64, shif
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let buf = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq buf, value: 7_u8);

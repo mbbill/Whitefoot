@@ -36,11 +36,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [
-        super::OverlapLowering::Off,
-        super::OverlapLowering::On,
-        super::OverlapLowering::Completion,
-    ] {
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
         let output = super::compile_link_and_run(&module, None, &[]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");

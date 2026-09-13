@@ -1,5 +1,5 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  doc "EXPECT REJECT under Op4: the write position comes from args_count, a genuinely external world value the compiler cannot bound at compile time, so an invariant could never honestly be written here; the correct repair is a real dominating branch testing the position against the buffer length.";
+fn main(args: own Args) -> status: own ExitStatus reads(args) {
+  doc "EXPECT REJECT under OP-4: the ordinary args_count signature gives no relation to the local run length; guard the write position against that length.";
   region {
     let position = args_count(args: &args);
     let bytes = fixed_vector::<u8, 8>();

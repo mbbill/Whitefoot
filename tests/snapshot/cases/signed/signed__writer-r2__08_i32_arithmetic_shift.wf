@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: signed ishr is arithmetic and sign-extends; the shift amount obligation k < K is a literal fact.";
   let negative = -16_i32;
   let amount = 2_u32;

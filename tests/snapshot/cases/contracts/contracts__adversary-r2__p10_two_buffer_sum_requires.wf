@@ -17,7 +17,7 @@ fn fold_pair['r](left: own Slice<'r, u64>, right: own Slice<'r, u64>, length: ow
   return acc;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: requires uses two independent defines (left_length, right_length) each from len_of(deref(.)); length 3 satisfies both against buffers of len 4 and 5.";
   let left = fixed_vector::<u64, 4>();
   region {

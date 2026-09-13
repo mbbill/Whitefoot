@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: one accumulator updated in both arms with different weights, bounded by 2*i per step.";
   let data = fixed_vector::<u8, 6>();
   region {

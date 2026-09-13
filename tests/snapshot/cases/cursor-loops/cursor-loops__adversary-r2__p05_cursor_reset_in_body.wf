@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: cursor resets to 0 once when a marker is seen, then continues within bounds";
   let data = fixed_vector::<u8, 5>();
   region {
