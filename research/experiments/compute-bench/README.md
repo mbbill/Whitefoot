@@ -553,9 +553,12 @@ back-to-back cadence, and "The gap between calls" below is what a value does.
 `make programs-check` and `make verdict-test` are the two targets the
 repository's `make check` runs, and neither times anything. `programs-check`
 compiles each program in exactly the two modes the table uses and asserts that
-`--par` emits a publish site and `--no-overlap` emits none. It also links both
-emissions with the complete ordinary library, checking adapter symbols and
-strong runtime bindings. A small executed symbol test checks quoted and bare
+`--par` emits a publish site and `--no-overlap` emits none. For timed kernels,
+including stencil, it also links both emissions with the complete ordinary
+library, checking adapter symbols and strong runtime bindings. The untimed
+`range_split` witness uses its ordinary entry: both modes are built and
+executed, and the parallel executable's strong runtime bindings are checked.
+A small executed symbol test checks quoted and bare
 references, imports and weak overrides without timing a kernel. These checks
 need Clang but no third-party scheduler dependencies; kernel numerical
 correctness remains `verify`'s job. `verdict-test` feeds the
