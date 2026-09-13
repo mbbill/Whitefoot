@@ -269,7 +269,7 @@ static void wf_bridge_shutdown(void) {
  *
  * This is the whole of what the bridge cannot write once.  Everything else in
  * this unit -- the routing, the helper policy, the in-place wait, the
- * own-record run, the joins, the window, the statistics and the
+ * own-record run, the joins, the statistics and the
  * `wf__sched_host_*` seam -- is one implementation, and each of the three arms
  * below is exactly its platform's ring behind these names:
  *

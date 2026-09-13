@@ -128,6 +128,18 @@ nonexhaustive-status negatives retain OWN-1, TYPE-5 and ERR-2 respectively.
 
 ## Integrated proof-state repair
 
+The search integration's former permit-inventory/QUAL assertion is replaced by
+five exact ordinary direct-call checks. Merely finding each symbol now also
+finds an always-supplied PRE declaration, so that would no longer establish
+the operation chain. All recursive-search execution oracles remain unchanged;
+the old catalog-ordinal explanation is retired with SYS/QUAL.
+
+The private engine's positioned-read regression retains every caller-selection,
+publication and refusal assertion. Its source slice now ends at the statistics
+queries: the earlier delimiter was the unused PAR-3 window section deleted by
+C2. This repairs the inspection boundary without narrowing the submit-family
+assertion or restoring the retired hook.
+
 Ordinary contracts exposed a branch-state implementation defect: checking a
 call in one branch changed the analyzer's shared measure image, so the other
 branch could lose an entering length fact before the branches even joined.
@@ -191,3 +203,35 @@ closed and the exact factory-credit balance remains asserted. It also prints
 the ordinary error payload before the original open assertion on a refusal.
 This is a linked-library path correction under unchanged PRE-1 interfaces;
 no source acceptance rule or existing assertion is retired.
+
+## Standard-stream compiler assertions
+
+`programs/stream.rs` no longer requires a compiler-emitted
+`wf__completion_file_read_submit` / `wf__completion_file_join` pair or a
+label-derived `wf_main(i32 1, i32 0, ...)` entry ABI. C2 deletes the SYS-15
+compiler operation path and FN-7 input labels: PRE-1 supplies ordinary
+`read_next` and `write_once` signatures, and build initialization supplies an
+ordinary Inputs owner and Heap value. The replacement assertion counts exactly
+one direct call and declaration for each signature, excludes a positioned read
+and compiler completion calls, and checks the Inputs/result-destination launcher
+ABI. Pipe, redirected-file and EOF executions on both native implementation
+routes retain their complete status and byte assertions; native submit/join
+behavior remains covered by the completion implementation tests.
+
+## Ordinary public calls in the stack ledger
+
+C2 exposes WF definitions under the same ordinary public ABI as linked
+definitions. On Linux, Clang spells direct calls to those definitions with
+the ELF `@PLT` suffix. The stack ledger resolved only undecorated names, so it
+dropped those edges and reported recursive functions as isolated acyclic
+frames. The Linux gate on `812c0465` exposed this in the measured-ceiling test
+and both parallel deep-recursion tests; their physical depth assertions are
+unchanged.
+
+The graph reader now strips that linkage suffix before resolving against the
+same module's measured frame index. A compiler-independent x86 assembly case
+checks a bounded call chain and a recursive cycle with exact byte and level
+counts, and equality with the undecorated graph. A current WF spine compiled
+to x86-64 Linux assembly independently confirms the `callq wf_spine@PLT`
+trigger. This repairs non-normative build output; no source rule, signature,
+lowering, frame size, or runtime stack budget changes.

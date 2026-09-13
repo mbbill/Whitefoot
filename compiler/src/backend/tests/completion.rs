@@ -375,8 +375,8 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_runs_there() {
         .split_once("void wf__completion_file_read_submit(")
         .expect("the submit family starts at the plain read")
         .1
-        .split_once("/* ------------------------------------------------------------ the window */")
-        .expect("the submit family ends before the window query")
+        .split_once("/* ------------------------------------------------------- the statistics */")
+        .expect("the submit family ends before the statistics queries")
         .0;
     assert!(
         !submits.contains("return 0;"),

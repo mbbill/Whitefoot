@@ -1,9 +1,8 @@
-//! End-to-end evidence for `tests/programs/wfgrep.wf`, the first real
-//! Whitefoot command program, now a recursive search.
+//! End-to-end evidence for the recursive search in `tests/programs/wfgrep.wf`.
 //!
 //! wfgrep takes a pattern and one search root, walks the tree with the
-//! [SYS-14] enumeration surface, opens each regular file it reaches by the
-//! enumerated name with active [SYS-11] `open_file`, reads it, and
+//! ordinary prelude enumeration functions, opens each regular file by its
+//! enumerated name with `open_file`, reads it, and
 //! publishes `PATH:LINE:TEXT` for every matching line.
 //!
 //! Two oracles check it. The first is a trusted reference search written
@@ -431,23 +430,21 @@ fn an_enumerated_symbolic_link_is_not_followed() {
     assert_eq!(output.status.code(), Some(0));
 }
 
-/// Admission is decided by the inventory the specification declares, never by
-/// the compiler recognizing a source shape: the identical search source
-/// compiles against the complete active inventory and is an undeclared name
-/// against the pre-permit inventory.
+/// The search reaches its file and directory operations through ordinary
+/// direct calls. A supplied declaration alone does not establish a call site.
 #[test]
-fn the_search_source_requires_the_complete_file_permit_inventory() {
+fn the_search_uses_ordinary_file_and_directory_calls() {
     let llvm = compile_program("wfgrep.wf");
-    // The approved implementations, by symbol rather than by any source name
-    // [QUAL-1].
-    assert!(llvm.contains("@wf_open_file"));
-    assert!(llvm.contains("@wf_open_directory_source"));
-    assert!(llvm.contains("@wf_directory_next"));
-    assert!(llvm.contains("@wf_open_directory"));
-    assert!(llvm.contains("@wf_read_at"));
+    for name in [
+        "open_file",
+        "open_directory_source",
+        "directory_next",
+        "open_directory",
+        "read_at",
+    ] {
+        assert!(
+            llvm.contains(&format!("call void @wf_{name}(")),
+            "the search must call the ordinary {name} declaration"
+        );
+    }
 }
-
-// The old traversal/open-by-name byte differential ended when the file-permit
-// amendment changed open signatures and added nominal types. It is not muted:
-// its premise no longer exists. The active-inventory program tests and catalog
-// count/ordinal tests now cover the two separate obligations.
