@@ -72,10 +72,9 @@ probably not the next work.
   per approved tree change. `design/skill/SKILL.md` owns the procedure: a
   line enters a tree only through the owner's ruling, a decision an agent
   makes on its own is an amendment beside the tree until the owner rules on
-  it, and a pull request is checked for correspondence between the tree, its
-  amendments, and the code or specification diff. `mcts_mem/` is a frozen historical record
-  that is not written to; its content is being moved into the trees and it
-  is deleted when that is complete.
+  it. DCR runs at the triggers defined by that skill. `mcts_mem/` is a frozen
+  historical record that is not written to; its content is being moved into
+  the trees and it is deleted when that is complete.
 - Architecture dossiers, `archive/done/`, and
   `archive/governance/decision-log.md` preserve historical evidence and
   rationale. `archive/done/` is the retired per-batch record: frozen, not
@@ -106,9 +105,9 @@ Follow the four occasions in [decision practice](docs/practice.md#decision-work)
    owner-approved tree change or a pending amendment under the design-tree
    procedure.
 4. **Finish:** run applicable checks and another agent's
-   [completion review](docs/review-checklist.md), fix findings, and publish the
-   result. This is the single completion review checkpoint; no separate
-   review record is required.
+   [completion review](docs/review-checklist.md), handle findings under its
+   response rules, and publish the result. This is the single completion
+   review checkpoint; no separate review record is required.
 
 Decision practice defines the material-choice boundary, reading and writing
 locations, and affected-set procedure. Routine fixes under unchanged design
@@ -134,7 +133,8 @@ These are the complete approval and merge rules:
    specifications, conformance evidence, gate wiring, code, tests, and
    documentation, except that changes to the live design tree require the
    owner's ruling under `design/skill/SKILL.md`. Unapproved design choices
-   remain proposals or amendments while implementation continues.
+   remain amendments while implementation continues. DCR findings require
+   owner direction before follow-up changes under that skill's response rule.
 2. Every change merged into `main` requires owner approval of the exact
    revision to be merged.
 3. The exact revision merged into `main` must pass all repository tests through
@@ -149,9 +149,9 @@ What the four rules mean exactly:
 
 - **Work branch** is any branch other than `main`. Branch implementation
   proceeds without approval, including edits to a specification, conformance
-  evidence, or these rules. The live-tree approval boundary in rule 1 applies
-  on work branches as well as `main`; keep unapproved revisions beside the
-  tree while continuing the work.
+  evidence, or these rules, subject to rule 1's live-tree and DCR response
+  boundaries. Keep unapproved tree revisions as amendments while continuing
+  authorized work.
 - **Exact revision** is the complete tree that will enter `main`. If that tree
   changes after approval or after its successful test run, rules 2 and 3 apply
   to the new revision.

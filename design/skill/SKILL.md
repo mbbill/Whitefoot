@@ -1,6 +1,6 @@
 ---
 name: design-tree
-description: Discuss and revise designs, keep the live design tree to owner-approved decisions, and review implementation against it. Use when designing a change, recording a decision, proposing a tree revision, or checking design and implementation correspondence.
+description: Discuss and revise designs, keep the live design tree to owner-approved decisions, and run Design Correspondence Review (DCR). Use when designing a change, recording a decision, proposing a tree revision, or asked to run dcr.
 ---
 
 # Design tree
@@ -93,22 +93,23 @@ material discoveries with the owner when available. Otherwise choose a
 reasonable solution, record its grounds as an amendment, and continue;
 present outstanding revisions when the owner returns.
 
-## Independent completion review
+## Design Correspondence Review (DCR)
 
-Run the applicable checks below through a separate reviewing agent before
-declaring a goal or agreed work complete, moving a draft PR to ready, or
-presenting finished work as ready to merge. Opening a PR or publishing
-intermediate progress does not trigger the gate; goal completion does, even
-on a draft. Use the project's completion review if it covers these checks.
+Requests to run `dcr` invoke the bidirectional tree/code review below. Also
+run it before declaring a goal or agreed work complete, moving a draft PR to
+ready, or presenting finished work as ready to merge. Opening a PR or
+publishing progress does not trigger it; goal completion does, even on a
+draft. Reuse the project's completion review when it covers these checks.
 
-The reviewer must not have implemented the change; normally use a small or
-mid-sized model with bounded inputs. It reads actual artifacts and reports
-the reviewed scope and revision, findings, pending rulings, and uncertainty
-on the existing review surface. The implementing agent resolves findings;
-an amendment alone does not establish correctness. Reuse reviews covering
-the current scope and content, rechecking affected items after changes.
-Reviews do not approve tree changes; tests and merge rules belong to the
-project.
+Use a separate, read-only reviewer that did not implement the change,
+normally a small or mid-sized model with bounded inputs. It reads actual
+artifacts and reports scope, revision, findings, evidence, and uncertainty.
+The primary agent sends those results to the owner with its own assessment
+and recommended next steps, keeping findings and commentary distinct. Await
+the owner's direction before acting on the findings, including during
+unattended work; DCR does not authorize fixes or tree changes. Recheck affected
+items after directed changes, reusing unaffected review. Tests and merge
+rules belong to the project.
 
 ## Lint
 
@@ -123,8 +124,8 @@ log entry; pending amendments need none.
 
 ## Design checks
 
-Use these during design discussion and completion review; discussion needs
-neither finished implementation nor an independent gate at every exchange.
+Use these during discussion and DCR; discussion needs neither finished
+implementation nor an independent gate at every exchange.
 
 G1. Decision test. Check each added or changed node or amendment against
 the node format and leanness filters. Report descriptions without decisions,
