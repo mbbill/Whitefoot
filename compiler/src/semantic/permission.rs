@@ -70,7 +70,8 @@
 //! 4. **No skipping exit.** No exit edge of s1 bypasses s2, and no statement
 //!    between them carries an exit edge at all: s1's only continuation is s2.
 //!    A `propagate` right-hand side has an `Err` edge to the function-return
-//!    sink [ERR-3], so it is never a first member and never an interposed one.
+//!    sink [ERR-3], so it is never a window member on either side; standing
+//!    between two members it denies as an interposed statement instead.
 //!    This is not merely a condition about differing observables: under either
 //!    schedule a hand-out is outstanding at every interposed statement, so an
 //!    exit taken there abandons an unjoined lane still reading the caller's
@@ -342,8 +343,10 @@ pub(crate) enum Denial {
         /// The form, as the ledger names it to the writer.
         form: &'static str,
     },
-    /// Condition 4: an exit edge of s1, or of a statement between the two,
-    /// does not reach s2.
+    /// Condition 4: an exit edge of a statement between the two members does
+    /// not reach s2. No member itself carries an exit edge: [PAR-1] admits a
+    /// `let`-bound call or a scrutinee call, and the one statement shape with
+    /// an exit edge, `propagate`, is never a candidate (see `candidate_of`).
     SkippingExit { side: PairSide, kind: ExitKind },
 }
 
@@ -538,8 +541,6 @@ struct Candidate<'check> {
     /// dispatch and the arms it selects. The result is therefore live before
     /// any later statement runs.
     result_read_by_own_statement: bool,
-    /// An exit edge of this statement that does not reach its successor.
-    exit: Option<ExitKind>,
 }
 
 /// One call occurrence, reduced to what the [EFF-2] boundary projection reads.
@@ -925,9 +926,7 @@ impl<'check> Program<'check> {
         while start + 1 < candidates.len() {
             let first = &candidates[start];
             let second = &candidates[start + 1];
-            if first.exit.is_some()
-                || second.exit.is_some()
-                || first.index + 1 != second.index
+            if first.index + 1 != second.index
                 || !self.judge(windows, start, start + 1).is_eligible()
             {
                 start += 1;
@@ -936,8 +935,6 @@ impl<'check> Program<'check> {
 
             let mut end = start + 1;
             while end + 1 < candidates.len()
-                && candidates[end].exit.is_none()
-                && candidates[end + 1].exit.is_none()
                 && candidates[end].index + 1 == candidates[end + 1].index
                 && self.judge(windows, end, end + 1).is_eligible()
             {
@@ -1148,14 +1145,12 @@ impl<'check> Program<'check> {
             }
         }
 
-        // Condition 4: no exit edge of s1 bypasses s2. An exit between them
-        // denied during classification above.
-        if let Some(kind) = first.exit {
-            return PermissionVerdict::Denied(Denial::SkippingExit {
-                side: PairSide::First,
-                kind,
-            });
-        }
+        // Condition 4: no window member carries an exit edge: [PAR-1] admits a
+        // `let`-bound call or a scrutinee call as a member, and a
+        // `propagate` statement forms no candidate at all (see
+        // `candidate_of`), so a skipping exit can only come from a statement
+        // interposed between s1 and s2, already denied during classification
+        // above.
 
         // All four conditions hold. Source proof statements were checked
         // before this analysis and have no runtime exit or footprint.
@@ -1899,29 +1894,23 @@ pub(super) fn collect_consumed_places(
 /// whether the statement itself reads the result — and `judge` derives the
 /// window from that fact rather than from the statement's spelling.
 fn candidate_of(index: usize, statement: &CheckedStatement) -> Option<Candidate<'_>> {
-    let (node_path, binding, value, read_by_own_statement, exit) = match statement {
+    let (node_path, binding, value, read_by_own_statement) = match statement {
         CheckedStatement::Let {
             node_path,
             binding,
             value,
-        } => (Some(node_path), Some(*binding), value, false, None),
-        CheckedStatement::PropagateLet {
-            node_path,
-            binding,
-            scrutinee,
-            ..
-        } => (
-            Some(node_path),
-            Some(*binding),
-            scrutinee,
-            false,
-            Some(ExitKind::PropagateError),
-        ),
+        } => (Some(node_path), Some(*binding), value, false),
         // A scrutinee call. `Match` carries no statement node in the checked
         // model and `ValueMatchLet`'s binding names the match's result rather
         // than the call's, so neither supplies a defining binding here.
         CheckedStatement::Match { scrutinee, .. }
-        | CheckedStatement::ValueMatchLet { scrutinee, .. } => (None, None, scrutinee, true, None),
+        | CheckedStatement::ValueMatchLet { scrutinee, .. } => (None, None, scrutinee, true),
+        // [PAR-1] admits a `let_stmt` selecting `ordinary_let_rhs`, or a
+        // scrutinee call, as a window member. A `propagate` right-hand side selects
+        // `propagate_let_rhs` instead, so it forms no candidate here — on
+        // either side of a pair — and keeps its ordinary classification in
+        // `interposed_of`, which denies it as an interposed statement
+        // carrying an exit edge.
         _ => return None,
     };
     let call = call_projection(value)?;
@@ -1931,7 +1920,6 @@ fn candidate_of(index: usize, statement: &CheckedStatement) -> Option<Candidate<
         binding,
         call,
         result_read_by_own_statement: read_by_own_statement,
-        exit,
     })
 }
 

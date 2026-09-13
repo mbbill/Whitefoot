@@ -1308,11 +1308,13 @@ command fn main() -> status: own ExitStatus pure {
             ]
         );
 
-        // Condition 4: the first statement's `propagate` Err edge leaves the
-        // function, so the second statement's write must not run under an
-        // overlap the sequential execution skips.
-        let propagating = b"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
-  return cvt::<u32, u8>(v);
+        // Condition 4: a `propagate` is never a window member itself [PAR-1],
+        // so the one shape that still reaches condition 4 in the ledger is an
+        // interposed `propagate` whose Err edge leaves the function, standing
+        // between two ordinary calls the sequential execution would not
+        // otherwise let skip past it.
+        let propagating = b"fn peek(slot: &u8) -> result: own u64 reads(slot) {
+  return cvt::<u8, u64>(deref(slot));
 }
 
 fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
@@ -1320,9 +1322,10 @@ fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
   return 1_u64;
 }
 
-fn probe(v: own u32, slot: &uniq u8) -> result: own Result<unit, NarrowError> writes(slot) {
-  let narrowed = propagate narrow(v: v);
-  let stamped = stamp(slot: move slot);
+fn probe['o](outcome: own Result<u8, NarrowError>, a: &uniq 'o u8, b: &'o u8) -> result: own Result<unit, NarrowError> reads(b), writes(a) {
+  let seen = peek(slot: b);
+  let narrowed = propagate outcome;
+  let stamped = stamp(slot: move a);
   return Ok<unit, NarrowError>(value: unit);
 }
 
@@ -1333,7 +1336,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("propagate.wf", propagating),
             vec![
-                "PAR denied      propagate.wf:11  pair(narrow, stamp)  condition 4: the Err edge of s1 skips s2"
+                "PAR denied      propagate.wf:11  pair(peek, stamp)  condition 4: the Err edge of interposed statement 1 skips s2"
                     .to_owned()
             ]
         );

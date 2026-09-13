@@ -719,11 +719,14 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(pair.second.target_action, crate::TargetAction::MAY_SUSPEND);
 }
 
-/// Condition 4. The first statement's `propagate` right-hand side has an
-/// `Err` edge straight to the function-return sink [ERR-3]; overlapping it
-/// with the following write would run a write the sequential execution skips.
+/// [PAR-1] admits only a `let_stmt` selecting `ordinary_let_rhs` as a window
+/// member. A `propagate` right-hand side selects `propagate_let_rhs`
+/// instead, so `candidate_of` never admits it as a candidate — not even
+/// where, as here, it stands first with one ordinary call after it: with
+/// only one real candidate left in the block, `probe` reports no pair at
+/// all, so there is no verdict for `denial` to read.
 #[test]
-fn a_propagating_first_statement_is_denied_by_condition_four() {
+fn a_propagating_first_statement_forms_no_pair() {
     let source = br#"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
   return cvt::<u32, u8>(v);
 }
@@ -744,15 +747,51 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     let table = permission_of(source);
-    let pair = only_pair(&table, "probe");
-    let Denial::SkippingExit { side, kind } = denial(pair, 4) else {
-        panic!("expected a skipping-exit denial, got {:?}", pair.verdict);
-    };
-    assert_eq!(*kind, ExitKind::PropagateError);
-    assert_eq!(
-        *side,
-        PairSide::First,
-        "the propagating statement is s1 itself, not one between the two"
+    let permissions = function_table(&table, "probe");
+    assert!(
+        permissions.pairs.is_empty(),
+        "a propagating first statement is never a candidate, so probe has no analyzed pair: {:?}",
+        permissions.pairs
+    );
+}
+
+/// [PAR-1] excludes a `propagate` second member on the same terms as a first
+/// one: `let narrowed = propagate narrow(v: v);` selects `propagate_let_rhs`,
+/// not `ordinary_let_rhs`, so `candidate_of` never admits it, whichever side
+/// of a pair it would write. Before this exclusion, `judge`'s condition-4
+/// check read only the first member's exit and never the second's, so this
+/// exact shape — an ordinary call followed by a `propagate` — reached
+/// `PermittedEligible` through conditions 1-3 alone. With the propagating
+/// statement no longer a candidate, `stamped` is the block's only one and
+/// the pair it would have formed with `narrowed` does not exist to receive a
+/// verdict.
+#[test]
+fn a_propagating_second_statement_forms_no_pair() {
+    let source = br#"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
+  return cvt::<u32, u8>(v);
+}
+
+fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
+  set deref(slot) = 9_u8;
+  return 1_u64;
+}
+
+fn probe(v: own u32, slot: &uniq u8) -> result: own Result<unit, NarrowError> writes(slot) {
+  let stamped = stamp(slot: move slot);
+  let narrowed = propagate narrow(v: v);
+  return Ok<unit, NarrowError>(value: unit);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let permissions = function_table(&table, "probe");
+    assert!(
+        permissions.pairs.is_empty(),
+        "a propagating second statement is never a candidate, so probe has no analyzed pair: {:?}",
+        permissions.pairs
     );
 }
 

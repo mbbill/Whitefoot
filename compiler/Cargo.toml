@@ -12,10 +12,6 @@ name = "whitefoot-spec"
 path = "src/bin/spec.rs"
 
 [[bin]]
-name = "whitefoot-grammar"
-path = "src/bin/grammar.rs"
-
-[[bin]]
 name = "whitefoot-grammar-tables"
 path = "src/bin/grammar_tables/main.rs"
 
