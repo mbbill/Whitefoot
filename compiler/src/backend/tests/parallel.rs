@@ -2502,6 +2502,8 @@ fn main() -> status: own ExitStatus pure {
 }
 
 /// A published ordinary source body may call a linked I/O body before returning.
+/// The join observer selects an execution on another thread, rather than
+/// hoping the worker steals the single task before the caller reaches join.
 #[test]
 fn an_ordinary_worker_helper_can_call_the_linked_io_library() {
     let source = br#"fn write_byte(inputs: own Inputs) -> result: own u64 pure {
@@ -2543,33 +2545,111 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
     assert!(helper.contains("call void @wf_write_once("));
     assert!(!helper.contains("@wf__completion_"));
     let main = function_body(&module, "@wf_main");
-    assert!(main.contains("call void @wf__par_publish(ptr "));
+    let publishes = main
+        .lines()
+        .filter(|line| line.contains("call void @wf__par_publish(ptr "))
+        .collect::<Vec<_>>();
+    assert_eq!(publishes.len(), 1, "observe exactly one published task");
+    let thunk = publishes[0]
+        .rsplit_once(", ptr ")
+        .and_then(|(_, operand)| operand.trim().strip_suffix(')'))
+        .expect("the publication names its ordinary thunk");
+    assert!(
+        function_body(&module, thunk)
+            .lines()
+            .any(|line| line.contains("call ") && line.contains("@wf_write_byte(")),
+        "the observed task must be write_byte, not its sibling"
+    );
+    assert_eq!(main.matches("call void @wf__par_join(").count(), 1);
+    // Only this caller's one publication and join enter the observer. The
+    // real acquisition, release, frame, thunk and native I/O body stay intact.
+    let observed_main = main
+        .replace(
+            "call void @wf__par_publish(",
+            "call void @wf_test_io_publish(",
+        )
+        .replace("call void @wf__par_join(", "call void @wf_test_io_join(");
+    let observed = format!(
+        "{}\ndeclare void @wf_test_io_publish(ptr, ptr)\ndeclare void @wf_test_io_join(ptr)\n",
+        module.replacen(main, &observed_main, 1)
+    );
     let directory = test_directory();
-    let executable = link_counting_grants(&module, &directory);
+    let executable = build_linked_executable(&observed, Some(IO_WORKER_OBSERVER), &[], &directory);
     for workers in ["0", "4"] {
-        let mut observed_grants = 0;
-        for _ in 0..8 {
-            let (grants, output) = counted_run(&executable, Some(workers));
-            assert_eq!(
-                output.status.code(),
-                Some(0),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert_eq!(output.stdout, b"X");
-            observed_grants += grants;
-            if workers == "0" || observed_grants > 0 {
-                break;
-            }
-        }
-        if workers == "0" {
-            assert_eq!(observed_grants, 0);
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .env_remove("WF_SCHED_REPORT")
+            .output()
+            .expect("run the ordinary I/O task under the selected schedule");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, b"X");
+        let expected = if workers == "0" {
+            "published=0 entered=0 completed=0 other_thread=0\n"
         } else {
-            assert!(
-                observed_grants > 0,
-                "the linked I/O helper must actually be published"
-            );
-        }
+            "published=1 entered=1 completed=1 other_thread=1\n"
+        };
+        assert_eq!(String::from_utf8_lossy(&output.stderr), expected);
     }
     std::fs::remove_dir_all(directory).expect("remove linked worker fixture");
 }
+
+/// The production publish only queues the thunk; it never calls it inline.
+/// Acquisition starts the configured workers before returning the real frame.
+/// With join withheld, the offering thread cannot consume that queued task,
+/// so another worker enters it and releases this test-only barrier. A refused
+/// acquisition skips both observer calls and fails the final positive ledger
+/// instead of waiting. A failed worker startup fails before publication. The
+/// workers=0 clone reaches neither observer at all.
+const IO_WORKER_OBSERVER: &str = r#"#include <pthread.h>
+#include <sched.h>
+#include <stdatomic.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+extern void wf__par_publish(void *frame, void (*run)(void *));
+extern void wf__par_join(void *frame);
+extern unsigned wf__sched_pool_running(void);
+static void *published_frame;
+static void (*original_run)(void *);
+static pthread_t offering_thread;
+static _Atomic unsigned published, entered, completed, other_thread;
+
+static void run_observed(void *frame) {
+    if (frame != published_frame || pthread_equal(pthread_self(), offering_thread)) abort();
+    atomic_store(&other_thread, 1);
+    if (atomic_fetch_add_explicit(&entered, 1, memory_order_release) != 0) abort();
+    original_run(frame);
+    atomic_fetch_add(&completed, 1);
+}
+
+void wf_test_io_publish(void *frame, void (*run)(void *)) {
+    if (atomic_fetch_add(&published, 1) != 0) abort();
+    if (wf__sched_pool_running() == 0) {
+        fputs("worker publication fixture: pool startup produced no worker\n", stderr);
+        abort();
+    }
+    published_frame = frame;
+    original_run = run;
+    offering_thread = pthread_self();
+    wf__par_publish(frame, run_observed);
+}
+
+void wf_test_io_join(void *frame) {
+    if (frame != published_frame) abort();
+    while (atomic_load_explicit(&entered, memory_order_acquire) == 0) {
+        sched_yield();
+    }
+    wf__par_join(frame);
+}
+
+__attribute__((destructor)) static void report(void) {
+    fprintf(stderr, "published=%u entered=%u completed=%u other_thread=%u\n",
+        atomic_load(&published), atomic_load(&entered),
+        atomic_load(&completed), atomic_load(&other_thread));
+}
+"#;

@@ -77,9 +77,24 @@ branch, or explicitly re-derive the retired permit assertion in CASES.md.
 The generic scheduler publishes ordinary callees using one `wf__par_publish`
 protocol. Its callback may call a linked body and park; no suspension class
 selects publication. The ordinary worker-helper regression writes `X` through
-the linked library with zero/four workers and verifies an actual lane grant.
-The runtime's private completion-record layout distinction grants no source
-overlap permission.
+the linked library with zero/four workers. It identifies the published thunk
+that calls `write_byte`, then records exactly one publication, entry on another
+thread, and completion. The zero-worker control records none, with the same
+`X` output and successful exit. The runtime's private completion-record layout
+distinction grants no source overlap permission.
+
+The previous detector incorrectly treated `wf__par_grants` (a count of steals)
+as a count of publications. A submitting thread can legally execute its own
+published task during join, so repeated fresh processes did not establish the
+claimed observation. The fixture now intercepts only this main-body publish
+and join pair: it calls the real publication, waits for callback entry on a
+different thread, then calls the real join. Entry is recorded before invoking
+the original thunk, allowing the caller to join while linked I/O parks and
+resumes. Actual worker startup is checked before waiting; acquisition refusal
+skips the observer and fails the positive ledger rather than waiting. The real
+frame, acquire/release, thunk, native body and scheduler completion protocol
+are unchanged. This deterministically exercises one legal schedule without
+changing the runtime or claiming that every publication must be stolen.
 
 Sequential clones now plan storage in the sequential world, including callee
 reuse, instead of retaining deferred-operand interference from the parallel
