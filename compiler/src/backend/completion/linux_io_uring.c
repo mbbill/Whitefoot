@@ -897,9 +897,8 @@ static void wf_linux_complete_record(
     } else if (record->request.kind == WF_FILE_SOCKET_CONNECT) {
         /* The ring's connect answers zero, not the descriptor: the socket is
          * the one this adapter created at submit, and a refusal disposes of
-         * it with the one close attempt the adapter's own leaf makes, because
-         * a connection that was never made holds no credit and the permit
-         * goes back to the program (ordinary native library). */
+         * it with the one close attempt the adapter's own leaf makes. The
+         * ordinary linked caller restores the factory's credit on failure. */
         if (completion_result < 0) {
             (void)close(record->request.operation.endpoint.descriptor);
             result.value = -1;

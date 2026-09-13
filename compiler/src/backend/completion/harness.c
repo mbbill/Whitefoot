@@ -2736,9 +2736,9 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
 
-    /* A connect nobody is listening for takes no handle at all: the host
-     * refuses it and the runtime disposes of the socket it made, so the
-     * program's own permit comes back rather than a descriptor (ordinary native library). */
+    /* A connect nobody is listening for returns no descriptor: the host
+     * refuses it and the runtime disposes of the socket it made. The ordinary
+     * library can therefore return failure and restore the factory's credit. */
     wf__completion_socket_connect_submit(0x0100007fu, 0, port, record.bytes);
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value < 0 && error_code == ECONNREFUSED);

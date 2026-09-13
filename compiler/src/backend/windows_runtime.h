@@ -143,7 +143,7 @@ int wf__windows_socket_open(int family);
 uintptr_t wf__windows_socket_handle(int descriptor);
 
 /* Ends one socket: `closesocket` on the Winsock object, then the release of
- * the descriptor number the program's permit accounting is written in.
+ * its CRT descriptor number.
  * Returns 0, or -1 with the host's own refusal recorded. */
 int wf__windows_socket_close(int descriptor);
 

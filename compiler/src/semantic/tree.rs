@@ -462,9 +462,8 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
 
     /// Returns every IDENT token owned directly by one node, in source order.
     ///
-    /// The single-token reader rejects a second match, which is right for the
-    /// productions carrying one name; an `input_label` carries two [GRAM-2],
-    /// and its prefix and tail are distinct checked table facts [FN-7].
+    /// Unlike the single-token reader, this leaves the expected number of
+    /// identifiers to the owning production's checker.
     pub(super) fn direct_identifiers(
         &self,
         node: NodeId,

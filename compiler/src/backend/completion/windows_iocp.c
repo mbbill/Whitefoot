@@ -439,10 +439,9 @@ static void wf_windows_complete_record(
         error_code = (DWORD)wf__windows_error_from_socket((int)error_code);
     }
     if (record->request.kind == WF_FILE_SOCKET_CONNECT) {
-        /* This ring's connect answers the descriptor of the socket it created
-         * at submit, and a refusal disposes of it, because a connection that
-         * was never made holds no credit and the permit goes back to the
-         * program (ordinary native library).  A connection that was made needs
+        /* This port's connect answers the descriptor of the socket it created
+         * at submit, and a refusal disposes of it. The ordinary linked caller
+         * restores the factory's credit on failure. A connection that was made needs
          * SO_UPDATE_CONNECT_CONTEXT before it behaves like any other socket:
          * until it is set, the socket carries none of the properties the
          * connect established, which `shutdown` and every later transfer

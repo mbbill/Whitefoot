@@ -1,5 +1,5 @@
 fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Require one argument's complete target-native code-unit byte sequence to be the exact two bytes selected by the native target fixture, qualifying host_bytes_len and host_copy_bytes together [HOST-2, SYS-9].";
+  doc "Require one argument's complete target-native code-unit byte sequence to be the exact two bytes selected by the native fixture, exercising the ordinary host_bytes_len and host_copy_bytes implementations together [PRE-1].";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   region {
     close_directory(factory: &uniq entry_factory, directory: move unused_cwd);

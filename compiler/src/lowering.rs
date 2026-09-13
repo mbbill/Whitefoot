@@ -1397,9 +1397,8 @@ pub enum IrDropSubject {
 /// Every drop and every release is represented before lowering. The IR places
 /// these records on `Jump` and `Return` terminators and as `Drops` instructions
 /// in straight-line position. Their order inside one edge is the checked
-/// program's reverse declaration order, and their position relative to
-/// surrounding calls is the order [EFF-5] requires of every conforming
-/// lowering.
+/// program's reverse declaration order. Their position relative to calls
+/// preserves the ordinary scope-exit release sequence [STOR-3].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IrDrop {
     subject: IrDropSubject,

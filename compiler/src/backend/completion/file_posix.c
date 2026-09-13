@@ -94,10 +94,9 @@ _Static_assert(
  * and one socket of that address's family.
  *
  * Both endpoint kinds do exactly these two things before their own host call,
- * and both dispose of the socket on any refusal, because a listener or a
- * connection that was never created holds no credit and the permit goes back
- * to the program (ordinary native library).  Returns -1 with `errno` set when the host refused
- * the socket. */
+ * and both dispose of the socket on any refusal. The ordinary linked caller
+ * restores the factory's reserved credit on failure. Returns -1
+ * with `errno` set when the host refused the socket. */
 static int wf_socket_endpoint(
     const wf_file_request *request,
     wf_socket_native_address *native,
@@ -299,9 +298,8 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
 #endif
         break;
 #endif
-    /* The six socket kinds (ordinary native library).  Each is exactly the host calls
-     * its operation names and nothing else; the descriptor accounting is the
-     * emitted program's, through the permit it holds. */
+    /* The six private socket request kinds perform their named host calls.
+     * The ordinary linked caller maintains the factory's descriptor credit. */
     case WF_FILE_SOCKET_LISTEN: {
         wf_socket_native_address native;
         unsigned length = 0;

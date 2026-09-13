@@ -475,8 +475,8 @@ jobs:
           & $compiler "tests/programs/tcp_refused.wf" -o $refused
           if ($LASTEXITCODE -ne 0) { Fail "tcp_refused.wf did not compile or link" }
 
-          # The specification declares no operation reporting a listener's own
-          # local address ([SYS-17]), so the harness picks the port and passes
+          # The prelude declares no function reporting a listener's own
+          # local address, so the harness picks the port and passes
           # it as an argument, exactly as `compiler/tests/programs/network.rs`
           # does. A listener that never accepted leaves no connection in
           # TIME_WAIT, so the port is free the moment this releases it.
@@ -541,7 +541,7 @@ jobs:
             $stream.Flush()
             # The connection's receiving direction ends where this peer stops
             # sending, and the server's `receive_next` answers `ReadEnd` for
-            # exactly that [SYS-8, SYS-18].
+            # exactly that under the ordinary receive function's contract.
             $client.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
             $returned = New-Object System.IO.MemoryStream
             $chunk = New-Object byte[] 4096
@@ -576,8 +576,8 @@ jobs:
             # A port this step reserved and released: nothing is listening on
             # it, so the host answers the connect with its own refusal. The
             # program exits zero only when both attempts answered
-            # `ConnectFailed(ConnectionRefused, permit)` and the second used
-            # the very permit the first handed back [SYS-10, SYS-17].
+            # `ConnectFailed(ConnectionRefused)` and the second reused the same factory
+            # after the first refusal returned its open credit.
             $run = Start-Program $refused (Get-FreePort) $stem $variable
             if (-not $run.Process.WaitForExit(60000)) {
               Show-Run $label $run.Out $run.Err "still running"
@@ -607,7 +607,7 @@ jobs:
       # U+4241 is one native UTF-16 code unit whose little-endian memory bytes
       # are 0x41, 0x42. The program measures the HostString, copies its complete
       # lossless route, and requires bytes 0x41, 0x42. This is the native
-      # qualification record for the wider-code-unit [SYS-9] target row.
+      # library representation check for wider host code units under PRE-1.
       - name: Run the Windows HostString raw-code-unit boundary
         shell: pwsh
         run: |

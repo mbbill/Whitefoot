@@ -285,7 +285,7 @@ fn assemble_reason(report: own MutSlice<u8>, capacity: own u64, reason: own u8) 
 }
 
 fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(out, err, files) {
-  doc "Reads one raw DEFLATE file named on the command line through the system read path; every boundary outcome reaches its own status.";
+  doc "Reads one raw DEFLATE file named on the command line through ordinary read_at calls; every boundary outcome reaches its own status.";
   region 'workspace {
     let workspace = arena_frame::<131072, 1, 'workspace>();
     region {

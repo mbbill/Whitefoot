@@ -88,7 +88,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
 }
 
 fn socket_class(error: own IoError) -> result: own u8 pure {
-  doc "Reduces one portable IoError class to the distinctions a loopback program reports [SYS-7].";
+  doc "Matches an ordinary IoError value to the distinctions a loopback program reports [PRE-1, ERR-2].";
   match error {
     NotFound(code: c, origin: o) => {
       return 9_u8;
@@ -247,7 +247,7 @@ fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result:
 }
 
 fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Listens on the loopback port named by the invocation, takes one connection, and returns every byte the peer sends until the peer stops sending [SYS-17, SYS-18]. The specification declares no operation reporting a listener's own local address, so the port is the caller's choice and arrives as an argument. The argument scratch and the echo chunk are store-resident runs, each viewed exclusively where it is written and shared where it is read.";
+  doc "Listens on the loopback port named by the invocation, takes one connection, and returns every byte the peer sends until the peer stops sending through ordinary prelude calls [PRE-1]. The prelude declares no operation reporting a listener's own local address, so the port is the caller's choice and arrives as an argument. The argument scratch and the echo chunk are store-resident runs, each viewed exclusively where it is written and shared where it is read.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
   region {
     close_directory(factory: &uniq handles, directory: move unused_cwd);

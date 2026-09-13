@@ -25,7 +25,7 @@ fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source:
 }
 
 fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Reads the entry's standard input to its end with read_next and publishes every byte it observed to standard output, so one run states both halves of the stream pair [SYS-8, SYS-12, SYS-15]. The chunk is a store-resident run: the read fills it through an exclusive view of it and the publish reads it back through a shared one, and the two views live in sibling regions because a run is viewed one way at a time [VIEW-2, OWN-5].";
+  doc "Reads the invocation's standard input to its end with read_next and publishes every byte it observed to standard output through ordinary prelude calls [PRE-1]. The chunk is a store-resident run: the read fills it through an exclusive view of it and the publish reads it back through a shared one, and the two views live in sibling regions because a run is viewed one way at a time [VIEW-2, OWN-5].";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: input) = move inputs;
   region {
     close_directory(factory: &uniq entry_factory, directory: move unused_cwd);

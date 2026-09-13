@@ -183,7 +183,7 @@ fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source:
 }
 
 fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Connects to the loopback port named by the invocation, sends eight bytes through the connection's sending direction, and publishes every byte the peer returns through its receiving direction until the peer stops sending [SYS-17, SYS-18]. The argument scratch and the receive chunk are store-resident runs viewed exclusively where they are written and shared where they are read; the eight-byte payload is an inline run whose shared view is all the send needs.";
+  doc "Connects to the loopback port named by the invocation, sends eight bytes through the connection's sending direction, and publishes every byte the peer returns through its receiving direction until the peer stops sending. Each direction is an ordinary linear owner [PRE-1, PROV-6]. The argument scratch and the receive chunk are store-resident runs viewed exclusively where they are written and shared where they are read; the eight-byte payload is an inline run whose shared view is all the send needs.";
   let Inputs(args: args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
   region {
     close_directory(factory: &uniq handles, directory: move unused_cwd);

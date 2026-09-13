@@ -88,7 +88,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
 }
 
 fn socket_class(error: own IoError) -> result: own u8 pure {
-  doc "Reduces one portable IoError class to the distinctions a loopback program reports [SYS-7].";
+  doc "Matches an ordinary IoError value to the distinctions a loopback program reports [PRE-1, ERR-2].";
   match error {
     NotFound(code: c, origin: o) => {
       return 9_u8;
@@ -221,7 +221,7 @@ fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digi
 }
 
 fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "Connects twice to a loopback port nobody listens on, with the very permit the first refusal handed back, so a refused connect is shown to take no handle and to leave the program's own capacity untouched [SYS-10, SYS-17]. The argument scratch is a store-resident run, viewed exclusively where the argument is copied into it and shared where the port is read out.";
+  doc "Connects twice to a loopback port nobody listens on through the same ordinary factory, so a refused connect is shown to leave its capacity available for the next attempt. The argument scratch is a store-resident run, viewed exclusively where the argument is copied into it and shared where the port is read out.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
   region {
     close_directory(factory: &uniq handles, directory: move unused_cwd);

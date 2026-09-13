@@ -981,10 +981,9 @@ impl<'check> Program<'check> {
             CheckedStatement::Return { .. }
             | CheckedStatement::Give { .. }
             | CheckedStatement::Break { .. } => Err(InterposedRefusal::Exit(ExitKind::BlockExit)),
-            // An expression statement is a call [GRAM-4], which may be a
-            // system call whose reach no row projects, and a discarded one
-            // carries its own [STOR-3] release. Admitting these needs that
-            // release classified first, so today they deny.
+            // PAR-1's admitted intervening forms exclude expression
+            // statements [GRAM-4], including calls with ordinary exact rows.
+            // A discarded result also carries its own [STOR-3] release.
             CheckedStatement::Evaluate(_) => {
                 Err(InterposedRefusal::Form("an expression statement"))
             }

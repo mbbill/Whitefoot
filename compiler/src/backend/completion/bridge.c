@@ -1233,13 +1233,12 @@ void wf__completion_file_open_join(
     *open_outcome = (unsigned)held->result.open_outcome;
 }
 
-/* The accept's join.  The peer address is three scalars because that is what
- * an emitted `SocketAddress` value is, so the emitted wrapper builds its own
- * value out of them and neither side holds a pointer into the other's layout.
+/* The accept's join returns the peer address as three scalars. The ordinary
+ * linked implementation builds its SocketAddress value from them, so neither
+ * side holds a pointer into the other's layout.
  *
- * A refused accept publishes the all-zero address, which the emitted mapper
- * never reads: `AcceptFailed` carries the error and the permit and no peer
- * (ordinary native library). */
+ * A refused accept publishes the all-zero address, which the linked caller
+ * ignores: AcceptFailed carries an error and no peer address. */
 void wf__completion_socket_accept_join(
     const void *record,
     int64_t *value,
@@ -1501,9 +1500,8 @@ void wf__completion_file_read_submit(
  * one of them is what an offset the target ABI cannot express deserves: the
  * writer may spell any `u64` offset, and the host answers an offset above
  * `INT64_MAX` with EINVAL.  The record is completed with exactly that answer,
- * so the emitted mapper builds the same failed outcome it built when this
- * shape still went to the direct wrapper (design section 8, "One lowering for
- * every I/O operation").  Nothing is executed, so the inline-execution count
+ * so the ordinary linked caller builds its failed outcome from that error.
+ * No host request is executed, so the inline-execution count
  * is untouched; the publication count is not, because this is one record's
  * one terminal completion. */
 static void wf_bridge_complete_refused(

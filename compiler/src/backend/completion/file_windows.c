@@ -349,10 +349,9 @@ static int wf_file_windows_socket_error(void) {
  * and one socket of that address's family.
  *
  * Both endpoint kinds do exactly these two things before their own host call,
- * and both dispose of the socket on any refusal, because a listener or a
- * connection that was never created holds no credit and the permit goes back
- * to the program (ordinary native library).  This is `file_posix.c`'s `wf_socket_endpoint` with
- * this platform's socket call in place of that platform's. */
+ * and both dispose of the socket on any refusal. The ordinary linked caller
+ * restores the factory's reserved credit on failure. This is
+ * `file_posix.c`'s `wf_socket_endpoint` with this platform's socket call. */
 static int wf_file_windows_endpoint(
     const wf_file_request *request,
     wf_socket_native_address *native,

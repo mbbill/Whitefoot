@@ -1,5 +1,12 @@
 # 0095 — staged loop pipeline, narrow bounded-batch actualization
 
+The implementation described below is historical. v0.58 deletes PAR-3,
+source suspension classifications and the compiler-generated staged driver,
+including `wf__completion_window`. The retained text records the former
+implementation and its measurements; it is not current compiler guidance.
+Current calls use the ordinary interfaces described in the
+[compiler README](../../compiler/README.md#parallel-calls-and-native-implementations).
+
 The design is `research/investigations/io-model/LOOP-PIPELINE.md` §1, §3 and §7
 "Batch 2", with its §9 probe results as the measurement of record, and
 `research/investigations/io-model/FIRST-PRINCIPLES.md` §13-16 as the ownership
