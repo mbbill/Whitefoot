@@ -284,3 +284,48 @@ complete the existing program suite: sandboxed loopback listeners were refused
 and the process's 256-descriptor soft limit stopped its deep-tree fixture.
 The complete gate is rerun with loopback access and a 4096-descriptor soft
 limit; neither change alters a test or compiler setting.
+
+## Native follow-up, 2026-09-13
+
+At `3f6db217f0cf47123d64817c3bd7999e229dae22`, canonical `make check` passed:
+1601 library tests, the complete program and research suites, native
+conformance Pass=758/Xfail=1/Skip=1, and snapshot Pass=484/Flip=0. The existing
+loopback and deep-tree fixtures passed with the host permissions described
+above. The corpus's expected failure and pending case are unchanged.
+
+The first saturated measurement used Apple M1 Pro, eight physical/logical
+CPUs, Apple clang 21.0.0, the bundle's unchanged flags and pinned references,
+five rotated/reversed passes and five warm calls per process. Its
+[complete call stream](../../experiments/compute-bench/stencil-2026-09-13-before.tsv)
+is retained as the pre-correction observation and is read by the existing
+`reduce.awk` with `passes=5` and `calls=5`. WF's wall/process-CPU medians in
+microseconds at W=1/2/4 were 18234.5/18228.0, 10877.7/20725.0 and
+7463.5/24060.0. The W=4 paired best-reference ratio was 1.172, above the
+predeclared attribution threshold; the sequential WF control was 14182.0 us.
+
+Inspecting the nested parallel module exposed a specification discrepancy:
+the existing element-map selector also admitted direct `SliceIndex` writes,
+although PAR-2's element family names direct array/buffer storage. Such view
+writes must use the new adjacent-range assignment or remain sequential. The
+stencil helper's inner loop was therefore actualized outside the specified
+permission, even though its independently checked outputs were correct. The
+regression `direct_view_element_writes_need_a_range_assignment` fails on that
+implementation with `PermittedEligible`. The element selector is corrected
+without changing source acceptance, the written program, the range family,
+or any measured scheduler constant. The row assignment and its helper effects
+retain their PAR-2 permission. Timing after this correction is a new
+measurement, not a replacement of this observation or selection of a faster
+language rule. The measured call streams serve this comparison and may be
+removed when the benchmark question is retired or superseded by an equivalent
+retained measurement.
+
+The separate [CI regression run 34755631998](https://github.com/mbbill/Whitefoot/actions/runs/34755631998)
+failed at `records` W=2 (baseline/new wall ratio 0.969, baseline lower in 4/5
+pairs). Its retained manifest identifies the synthetic PR merge revision
+`b1ad35cf73142f0e2215e2e2d24ba3a1a6df4704` and baseline `8909feb1`.
+Both `records` executables have SHA-256
+`4034a588eff3c08974f588e2717c6142b12d8ad5d85e8ed3e9d4710168071429`
+before and after the run; every other old kernel's paired executable hashes
+also match exactly. Thus this reported slowdown is a difference between two
+executions of identical bytes, not generated-code regression. The failed run
+and its raw artifact remain the evidence; no threshold or check is weakened.

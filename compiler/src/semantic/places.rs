@@ -477,9 +477,10 @@ impl PlaceMap {
     /// storage its operand names, which is the place [`super::permission::
     /// slice_source_place`] already resolves for an inline formation; and a
     /// copy of a shared view is a second loan on the same range [VIEW-1], so
-    /// it carries its source's origin unchanged. Everything else — a view
-    /// parameter, a view a callee returned — leaves this `None`, and the
-    /// judgments that read it deny rather than guess.
+    /// it carries its source's origin unchanged. Incoming formal origins are
+    /// installed separately at the function boundary. A view a callee returns
+    /// leaves this `None`, and the judgments that read it deny rather than
+    /// guess.
     pub(super) fn view_origin_of(&self, value: &CheckedExpression) -> Option<ResolvedPlace> {
         match value {
             CheckedExpression::SliceOf {

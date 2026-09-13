@@ -709,8 +709,10 @@ impl<'check> Survey<'check, '_> {
                 })?;
                 (target.binding, &index.obligation)
             }
-            CheckedSetTarget::SliceIndex(target) => (target.root.binding, &target.obligation),
-            CheckedSetTarget::Place(_) => return None,
+            // PAR-2's element family names direct storage, not a view's
+            // relative index frame. View writes use the independently proved
+            // adjacent-range assignment in `written_target` instead.
+            CheckedSetTarget::SliceIndex(_) | CheckedSetTarget::Place(_) => return None,
         };
         self.proven_affine_map_at(root, obligation)
     }

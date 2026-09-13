@@ -130,6 +130,14 @@ command fn main() -> status: own ExitStatus pure {
 "#;
 
 #[test]
+fn direct_view_element_writes_need_a_range_assignment() {
+    assert!(matches!(
+        denied(RUNTIME_PARTITION_SOURCE.as_bytes(), "paint", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+#[test]
 fn runtime_stride_sum_base_and_descendant_helper_calls_are_permitted() {
     with_semantics(RUNTIME_PARTITION_SOURCE.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
