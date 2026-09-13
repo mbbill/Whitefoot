@@ -92,8 +92,8 @@ alone do not prove that two host effects are independent.
 Do not replace the removed ancestry analysis by a renamed host-origin table,
 an opaque-type observability bit, or a purity exception for native functions.
 The interface choices must survive the same move, framing and call rules as
-ordinary values. The treatment of owned state operands and the factory/permit
-choice need to be settled together; DECISIONS.md states the corresponding
+ordinary values. DECISIONS.md selects direct exclusive factory operands
+together with storage-place effects and states the corresponding
 counterexample tests rather than assuming framing is harmless.
 
 ## Range contracts and result facts
@@ -104,18 +104,18 @@ the ordinary view first. CALL-3's existing first sentence already classifies
 the write as a backing-range write. Its separate SYS-8 extension is redundant
 once no legacy buffer is accepted at that same signature position.
 
-The following is an interface fragment using existing signature and contract
-forms. `ReadStop` is an ordinary enum distinguishing end from a reported
-failure; `file` is an ordinary opaque nominal. The exact host-state operand is
-one of the decisions still to be selected.
+The following selected PRE-1 signature uses the existing signature and
+contract forms. `ReadStop` is an ordinary enum distinguishing end from a
+reported failure; `ReadFile` and `HandleFactory` are ordinary opaque nominals.
+The factory and file are explicit exclusive state operands.
 
 ```wf
-fn read_bytes(file: &uniq ReadFile, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> reads(file, destination), writes(file, destination) contract {
+fn read_at(factory: &uniq HandleFactory, file: &uniq ReadFile, destination: &uniq MutSlice<u8>, file_offset: own u64, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> reads(factory, file, destination), writes(factory, file, destination) contract {
   requires start <= end;
   requires end <= len_of(deref(destination));
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
-}
+};
 ```
 
 This is a `fn_sig` record, using the existing GRAM-2 contract punctuation;
@@ -215,3 +215,51 @@ are included. The reviewer found no remaining publication blocker in that
 bounded review and no proved counterexample to ordinary-model expressibility.
 Factory contention, native alias/credit/lifetime validation and lost staged
 overlap remain implementation evidence to obtain, not completed proofs.
+
+## Proposed reconciliation with the live design tree
+
+[TREE.patch](TREE.patch) is the unapplied tree revision for the combined
+container and ordinary-host work. It targets the tree imported from main
+`8909feb1`, which is byte-identical in work revision `5e6ce458`. It supersedes
+the earlier local 17-file proposal: main subsequently recorded dependent
+decisions that the smaller patch did not cover. The live tree is unchanged.
+Remove the patch and this proposal section when the owner applies or withdraws
+the revision; the surviving reasons then belong in the tree and its log.
+
+The proposal changes 29 existing nodes and adds one prospective log entry.
+It removes four nodes and adds none: 59 nodes become 55, with depth unchanged
+at 3; decisions change from 173 to 176 and rejected alternatives from 61 to 70.
+The two existing implementation amendments stay separate. The patch applies
+cleanly to the named tree and the reconstructed proposal passes structural
+lint; those checks establish form and applicability, not design approval.
+
+| Affected records | Change and selection ground |
+| --- | --- |
+| `language/contracts`, `language/generics` | Record D7's explicit function arguments, authoritative formal rows, structural contracts, direct instance calls and member-region boundary. C2 removes the freshness requirement with its owned-history summaries. [Behavior design and retained witnesses](../containers-and-resources/BEHAVIOR.md) supply the selected alternatives; finiteness alone does not settle the cost issue below. |
+| `language/checks-and-proofs/requires-entry-contract`, `language/effects` | Record exclusive entry/exit measures and exact projected kill before publication, plus ordinary requirements on build-selected functions. D5's run-transfer evidence and its generic replacement negatives justify the contract boundary; legacy ambient allocation stays distinct from branded Heap/Arena provider effects. |
+| `language/ownership`, `language/ownership/no-reborrow`, `language/ownership/slice-result-provenance` | Enumerated temporary-loan endpoints replace the one-statement region ceiling without general lifetime inference; plain store brands are distinguished from hidden loans/providers. Writer finalizers and body-derived borrow provenance remain refused. |
+| `language/data-model`, `language/data-model/kernel-minimality` | Record owned full arrays, exclusive run helpers, the measured enum-slot baseline and the uniform opaque layout ceiling. Remove the dead comparison to a fourth system-derived declaration domain. [Foundation evidence](../containers-and-resources/FOUNDATION.md) and [DECISIONS.md](DECISIONS.md#7-opaque-layout-and-range-results) own these grounds. |
+| `language/system-interface` and its surviving children | Record ordinary declarations and entry inputs, explicit linear closes and factory accounting, reconstructible TCP directions, invocation-backed text, ordinary outcome data, range contracts and directory multi-results. The seven selected [interface decisions](DECISIONS.md) and [paired backend evidence](BACKEND-TESTS.md) replace the privileged system-domain grounds. |
+| `language/checks-and-proofs/automatic-facts` | Replace the SYS-8 family fact with ordinary declaration postconditions; the linked/WF behavior-actual pair tests the same range and contract boundary. |
+| `language/parallelism`, `compiler/parallel-lowering` and its two children | Retire source staged permission and classification-based eligibility while keeping the ordinary permission, current-stack scheduler and measured offer policies. [C2 measurements](../../experiments/io-completion-bench/C2-RESULTS.md) state the lost overlap and their attribution limits. |
+| `compiler`, `compiler/completion-runtime`, `compiler/resource-exhaustion-floor` | Record one callable ABI, native request storage inside that call, strong implementation linkage and ordinary factory accounting. Preserve main's runtime choices and their measured grounds; do not infer a throughput or concurrency guarantee from a native engine's presence. |
+| Deleted `language/parallelism/staged-permission`, `language/system-interface/completion-policy`, `language/system-interface/qualification-guarantees`, `compiler/target-qualification` | C2 explicitly removes the source distinctions these nodes justify. Their refusal reasons move to the surviving ancestors rather than leaving unsupported decisions or silently losing the alternatives. |
+
+Approval of this patch would approve those record changes only. It would not
+settle the following questions or certify completion of C2:
+
+- The [consumed result destination](../../../design/amendments/consumed-result-destinations.md)
+  and [continuing view loan](../../../design/amendments/continuing-view-loans.md)
+  implementation choices remain pending amendments.
+- D7's finite acyclic expansion can still be exponential in written source
+  size, contrary to the newer language-root objective. The recorded
+  [cost conflict](../containers-and-resources/BEHAVIOR.md#shared-semantic-boundary-and-exact-deltas)
+  needs a ruling; this proposal neither weakens that objective nor adds a
+  budget, cutoff or new rejection.
+- The separately reported concurrent TCP close-ordering risk remains
+  unverified and awaits direction. Sequential crossed-direction execution
+  and credit accounting do not settle that interleaving or establish that
+  the ordinary model is insufficient. No native lifetime repair is included.
+- The cross-version compute instrument needs version-appropriate entry and
+  library adapters before it can measure the retained kernels. The proposal
+  does not approve that adaptation or substitute a same-version comparison.
