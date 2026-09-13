@@ -8,6 +8,8 @@ Decision: Under `--par`, a scalar leaf with at most 16 nonconstant operations is
 
 Decision: Sequential refusal is off unless asked for, the scalar-leaf threshold is provisional, and no universal grain policy is selected, because one exploratory result on one workload supports the provisional default and establishes neither that every workload benefits nor that refusal should be on by default, instead of a default grain policy chosen from that one measurement.
 
+Decision: A denied [PAR-3] verdict is reported without a flag on every ordinary and `--par` compile, a denied [PAR-2] verdict only when the same loop's [PAR-3] judgment also denied it, and a [PAR-1] pair or chain never, with `--no-overlap` silencing the notice and `--par-ledger` printing everything, because the 2026-08-28 blind-writer trial found every I/O loop in five ordinary utilities denied with nothing said, the flag they needed being the flag they had no reason to run, while a `--no-overlap` build has already asked for no overlap so a loop without a pipeline is the build it asked for, instead of surfacing every denial or none.
+
 Rejected:
 - Splitting a parallel range down to leaves of one iteration with grain left to the runtime: rejected because it destroys the body's own optimization, measured at 3.6 to 7.6 times slower on light bodies.
 - Passing `-falign-functions=64 -falign-loops=32` to clang for the emitted module and the runtime sources: rejected because the flags did not remove the code-placement sensitivity they were meant to remove, a padded twin still moving a median 1.7 percent against 0.8 unaligned, and their own A/B held every line within one to five percent, less than the same instrument does to arms that execute identical code.

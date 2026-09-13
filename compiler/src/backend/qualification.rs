@@ -383,7 +383,12 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // entry forms, and host mappings retain their outgoing v0.52 semantics. The
 // qualified table therefore carries forward unchanged; the version tripwire
 // remains in force.
-const REVIEWED_FOR: &str = "v0.53";
+// v0.54 qualification review: the specification admits a scrutinee call as a
+// [PAR-1] window member and names the whole [SYS-8] range-bearing family in
+// [ENT-3.S10]. Neither touches a system row, representation, release action,
+// entry form, or host mapping, so the qualified table carries forward
+// unchanged; the version tripwire remains in force.
+const REVIEWED_FOR: &str = "v0.54";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

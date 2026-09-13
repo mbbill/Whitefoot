@@ -199,3 +199,33 @@ proposed class. Nothing here is decided until the owner rules.
 32. The descriptor floor's reserve and ceiling in `wf_floor.c` are a third
     resource limit that `resource-exhaustion-floor` does not mention.
     Proposed: a decision line in that node. (sched 5)
+
+### Round 2 rulings (2026-09-13)
+
+- 1, 3, 9, 29: fixed as proposed (switches deleted, fail-closed, static
+  assertion, comment).
+- 2: attribution recorded in `docs/todo.md`; the fix is not taken up now.
+- 4: the specification is amended to name the [SYS-8] family (v0.54).
+- 5: excluded as the specification says; a `propagate` second member is a
+  future investigation, recorded in `docs/todo.md`.
+- 6: the specification is amended to admit a scrutinee member (v0.54), with
+  a decision in `language/parallelism/permission-judgment`; the owner's
+  ground is performance first, since narrowing the compiler loses a real
+  overlap.
+- 7: ruled a fundamental error. A resource's state is carried entirely by
+  its type at the API boundary; the compiler derives nothing from callee
+  bodies. Decision and rejection in `language/system-interface`; the
+  mechanism's removal is the owner's ongoing cleanup, tracked in
+  `docs/todo.md`.
+- 8: `TCP_NODELAY` set on every socket; decision in
+  `compiler/completion-runtime`.
+- 10: the copy-struct clause is dropped from `language/data-model`.
+- 11: `whitefoot-grammar` deleted.
+- 12: no decision; noted only.
+- 13 to 20: recorded in the tree as drafted, with the new nodes
+  `compiler/completion-runtime` and `compiler/target-qualification`; the
+  eight-peer bound (13) and the [PAR-3] replication gap (25) go to
+  `docs/todo.md` rather than the tree.
+- 21 to 27, 31 (the lane count and frame cap), 32: no decision, except that
+  the one-gibibyte stack (31) and the descriptor floor (32) are recorded.
+- 30: `WF_PLACEMENT_PAD` stays, as `WF_PAR_TRACE` did.

@@ -1,6 +1,6 @@
-# Kernel Specification v0.54
+# Kernel Specification v0.53
 
-Status: ACTIVE v0.54
+Status: ACTIVE v0.53
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -2576,7 +2576,7 @@ This version defines no thread construct. A later thread construct must derive t
 
 [PAR-1] An implementation may execute two statements of one block with overlapping execution only when the permission this rule defines holds for that ordered pair.
 Permission holds for the ordered pair (s1, s2), where s1 precedes s2 in one block, exactly when all of the following hold.
-Each of s1 and s2 is one call of a declared function [FN-1] or one system operation [SYS-2], written either as a `let_stmt` whose selected `ordinary_let_rhs` is that call or as the scrutinee of a `match_stmt` or of a `let_stmt` selecting `value_match` or `value_if`; a scrutinee member is judged exactly as a `let`-bound member is and is the last member of any chain it belongs to, because its arm blocks are not statements of the enclosing block; a recursive or mutually recursive user callee is admitted on the same terms as any other.
+Each of s1 and s2 is a `let_stmt` whose selected `ordinary_let_rhs` is one call of a declared function [FN-1] or one system operation [SYS-2]; a recursive or mutually recursive user callee is admitted on the same terms as any other.
 No argument of s2 reads a binding s1 defines.
 The two calls have disjoint footprints under [OWN-7]: one call's written footprint is the places its callee row's `writes` paths reach through its actual arguments under the [EFF-2] call-boundary projection, together with the places its consumed `own` arguments name and the caller region each `allocates(arena 'r)` entry names after region substitution, and its read footprint is the places that row's `reads` paths reach under the same projection; the written footprint of s1 overlaps neither footprint of s2, and the written footprint of s2 overlaps neither footprint of s1.
 Evaluating a statement's own argument expressions is part of that statement and therefore part of the overlap, so each call's written footprint also overlaps no place the other statement's argument expressions read; taking the address of a place is not reading it, and both directions are required because which statement's argument evaluation an overlap moves is the implementation's choice.
@@ -3720,8 +3720,8 @@ The index's own bounds obligation [ENT-6] is judged separately and is unaffected
 Deeper const shapes establish nothing in this version.
 [ENT-3.S10]
 - S10 (boundary endpoint facts).
-For a `match_stmt` or `value_match` whose scrutinee is directly a call to one of the range-bearing operations [SYS-2, SYS-8], `read_at`, `read_next`, `receive_next`, `write_once`, `send_once`, `directory_next`, `host_copy_bytes`, or `host_copy_utf8`, or a bare IDENT naming a `let` binding of that call's outcome type under the same no-kill, no-`set` path discipline as S7's checked-arithmetic origin: let s and e be the exact actuals bound to `start` and `end`, each read as a term or constant and still live at the match.
-The `ReadBytes(next: w)` arm of `read_at`, `read_next`, and `receive_next`, the `ListBytes(next: w, entries: n)` arm of `directory_next`, and the `Ok(value: w)` arm of `write_once`, `send_once`, `host_copy_bytes`, and `host_copy_utf8` independently establish `s <= w` and `w <= e` at arm entry; every other arm establishes neither endpoint fact.
+For a `match_stmt` or `value_match` whose scrutinee is directly a call to `read_at`, `write_once`, `directory_next`, `host_copy_bytes`, or `host_copy_utf8` [SYS-2, SYS-8], or a bare IDENT naming a `let` binding of that call's outcome type under the same no-kill, no-`set` path discipline as S7's checked-arithmetic origin: let s and e be the exact actuals bound to `start` and `end`, each read as a term or constant and still live at the match.
+The `ReadBytes(next: w)` arm of `read_at`, the `ListBytes(next: w, entries: n)` arm of `directory_next`, and the `Ok(value: w)` arm of the other three independently establish `s <= w` and `w <= e` at arm entry; every other arm establishes neither endpoint fact.
 Each result endpoint relation is derived from the operation contract with the concrete start actual as an explicit parent, so a runtime-origin start creates no unstated fact.
 These facts carry the same trust class as S6's allocation-length equality — a declared operation contract, never a writer statement.
 The remaining [SYS-9] relations are retained checked-program facts and are not L0 fact sources in this version.
