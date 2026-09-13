@@ -3,11 +3,11 @@
 Status: HISTORICAL INVESTIGATION SNAPSHOT. This document preserves the
 2026-08-21 feasibility argument and then-current candidate state; its corpus
 counts, remaining-work list, approval-packet language, and candidate identity
-below do not describe the completed tree or impose a workflow. The implemented
-active v0.34 specification is `spec/kernel-spec.md`, SHA-256
+below do not describe the completed tree or impose a workflow. The historical
+v0.34 specification is [`spec/kernel-spec-v0.34.md`](../../../spec/kernel-spec-v0.34.md), SHA-256
 `cb747505cb043ac0c71861f4fe2df0e159b7b877ff920bc7a31ec60c454ddb03`.
-Current status lives in `docs/roadmap.md`, `docs/current-plan.md`, and
-`docs/done/0075-claim-residual-canonicality.md`.
+The [active specification](../../../spec/kernel-spec.md) defines current
+language rules; conformance results state what the compiler implements.
 
 ## 1. Conclusion
 

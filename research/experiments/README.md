@@ -7,9 +7,9 @@ bundles below still name the retired democ toolchain; their RESULTS and source
 evidence remain useful, but their old runner is not replayable from HEAD and is
 not a current compiler gate. Historical chronology and decisions are indexed
 by `../../archive/governance/decision-log.md`; current design decisions live in
-`../../design/`, current direction status in `../../docs/roadmap.md`, and known
-compiler defects in `../../docs/todo.md`. Plans do not grant or withhold branch
-permission.
+`../../design/`, research questions in [ideas](../../docs/ideas.md), and known
+compiler defects in [todo](../../docs/todo.md). Research notes do not grant or
+withhold branch permission.
 
 ## Current flagship experiment evidence
 
@@ -250,5 +250,5 @@ still execute against HEAD are included by the root `make check` target.
 ## Earlier corpus-era studies
 Moved to `../../archive/experiments/` (scatter residual, guarded-plan
 measurements). Their durable conclusions and current dispositions are
-summarized in `../archive-promotion-audit.md`; the old protocols grant no
-current Direction Outline or Current Plan authority.
+summarized in `../archive-promotion-audit.md`; the old protocols add no current
+workflow requirements.

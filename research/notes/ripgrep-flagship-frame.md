@@ -1,15 +1,13 @@
 # Ripgrep Flagship Project Frame
 
-Status: OWNER-SELECTED UMBRELLA TARGET — no implementation is authorized by
-this note
+Status: OWNER-SELECTED UMBRELLA TARGET.
 
 Ripgrep was selected on 2026-08-04 as Whitefoot's primary external validation
 project. The target is deliberately the product result, **2x ripgrep**, rather
-than one opportunity guessed before measurement. The rolling
-[`docs/current-plan.md`](../../docs/current-plan.md) is the only execution
-proposal or plan. This note owns the durable upstream pin, product claim,
-architecture findings, comparison rules, and reverse direction map that should
-not be recopied into each step.
+than one opportunity guessed before measurement. This note owns the durable
+upstream pin, product claim, architecture findings, comparison rules, and
+compiler questions that should not be recopied into each step.
+[AGENTS.md](../../AGENTS.md) owns the workflow.
 
 ## Pinned upstream and authorities
 
@@ -27,9 +25,8 @@ not be recopied into each step.
   same target. Beating a generic distributed binary alone is not a language or
   compiler result.
 
-A newer ripgrep release does not silently move the pin. Re-pinning requires a
-new Current Plan that reruns the frozen comparator suite before claiming the
-same ratio.
+A newer ripgrep release does not silently move the pin. Re-pinning requires
+rerunning the frozen comparator suite before claiming the same ratio.
 
 ## The claim
 
@@ -141,38 +138,34 @@ The list stays open. Evidence may add, merge, reject, or reprioritize an
 opportunity. An early loss does not lower the 2x target or turn one convenient
 case into the flagship.
 
-## Reverse direction map
+## Compiler and language questions
 
-The product target supplies pressure; it does not pre-authorize these answers:
+The product target supplies concrete questions for the current language and
+compiler:
 
-- `PERF-1` owns the zero-change baseline, comparable work, profiling, final
-  machine shape, and attribution before a new optimizer mechanism is selected.
-- `BOUND-1` is required for a real executable receiving `argv`, patterns,
-  paths, stdin and filesystem data and producing stdout, stderr and exit status.
-- `VERIFY-1` covers malformed patterns, arbitrary file bytes, concurrent file
-  changes, resource failure, cleanup, and eventual race freedom.
-- `PAR-1` is the candidate source request for writer-declared,
-  compiler-verified parallel search. The project must determine its task,
-  determinism, failure, cancellation, and profitability contract.
-- `PAR-2` enters only if measured work requires disjoint partitions within one
-  file, output buffer, queue, or other shared object.
-- `PAR-3` enters only for an actual regrouped summary or deterministic
-  concurrent failure selection; not every merge is an algebraic reduction.
-- `PAR-4` owns the worker set, work distribution, allocation, scheduling,
-  bounded fan-out, and runtime overhead.
-- `PROOF-1`, `PROOF-2`, `PROOF-3`, and `PROOF-7` remain candidate consumers for
-  retained checks, opaque-call effects, checked uniqueness, or verified
-  strategy selection only after a profile exhibits the exact pressure.
-- `FLOOR-1` through `FLOOR-4` compare the first accepted AI-written search path
-  with the best measured shape and repair accepted slow forms.
-- `STORE-1` and `STORE-2` enter when the real matcher, traversal, queue, result,
-  or dynamic-buffer representation exposes their exact ownership or growth
-  blocker.
+- A real executable receives `argv`, patterns, paths, stdin and filesystem
+  data and produces stdout, stderr and exit status. Its checks cover malformed
+  patterns, arbitrary file bytes, concurrent file changes, resource failure,
+  cleanup, and race freedom.
+- Parallel search must account for tasks, determinism, failure, cancellation,
+  work distribution, bounded fan-out, and profitability. A
+  [wider proof domain](../../docs/ideas.md#wider-parallel-proof-domains) matters
+  only when measured work needs an unsupported partition or regrouping; not
+  every merge is an algebraic reduction.
+- [Optimizer facts](../../docs/ideas.md#proof-derived-optimizer-facts) or
+  verified strategy selection need a profile showing the exact lost fact,
+  alongside the zero-change baseline, comparable work, and final machine
+  shape. A source proof alone does not establish a performance advantage.
+- Compare the first accepted AI-written search path with the best measured
+  shape and investigate accepted slow forms.
+- [Storage transitions](../../docs/ideas.md#storage-transitions-and-representation-privileges)
+  become concrete when a matcher, traversal, queue, result, or dynamic buffer
+  exposes an ownership or growth blocker under the current language.
 
 The first valid project attempt is allowed to stop on the first current-language
 or compiler blocker. That is a delivery boundary, not a reduction of the
-flagship. Later Current Plans resolve one measured blocker or opportunity at a
-time and return to the same frozen product comparison.
+flagship. Later investigations resolve one measured blocker or opportunity at
+a time and return to the same frozen product comparison.
 
 ## Comparison and attribution rules
 
@@ -210,8 +203,8 @@ changing the benchmark after seeing the result.
 The target is persistent until the owner reselects it. It is not abandoned
 because the first implementation is slow or the first suspected optimization
 fails. It is also not declared successful by accumulating unrelated favorable
-microbenchmarks. Every Current Plan advances one independently reviewable
-product path, blocker, or attributed optimization and states how it returns to
+microbenchmarks. Each selected investigation advances one independently
+reviewable product path, blocker, or attributed optimization and states how it returns to
 the 2x comparison.
 
 Reevaluate the flagship only if the owner changes the product objective, the

@@ -30,11 +30,12 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   grain panel and recursion-frontier evidence, and what the compute scoreboard
   replaced.
 
-The [roadmap](../docs/roadmap.md) is reference material outside the working
-loop. Research does not update its status or wait for it. Dated results state
-what their recorded program, toolchain, and environment established; they are
-not descriptions of current compiler capabilities. Historical approval or
-phase language in evidence does not add current workflow requirements.
+Open research questions and evidence links are in [ideas](../docs/ideas.md);
+known compiler defects and implementation costs are in [todo](../docs/todo.md).
+Dated results state what their recorded program, toolchain, and environment
+established; they are not descriptions of current compiler capabilities.
+Historical approval or phase language in evidence does not add current
+workflow requirements.
 
 The root `make check` owns the maintained research test inventory. A deferred
 prototype that depends on a retired compiler is evidence, not an executable

@@ -31,6 +31,17 @@ of them is a decision. Remove an item when its fix and test land.
   the implementation or the accepted proof rules; the
   [selection-ground assessment](../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
   separates the unresolved costs from the safety obligations.
+- **Pre-kill L0 closure has an unresolved compilation cost.** Before an
+  [ENT-5] invalidation batch, `materialize_before_event_kill` in
+  [`semantic/entailment/flow.rs`](../compiler/src/semantic/entailment/flow.rs)
+  calls `materialize_closure_before_kill` in
+  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs).
+  A non-closed state with explicit relations takes the complete closure;
+  already-closed, contradictory, and empty-relation states have fast paths.
+  The cost on real programs needs stage attribution before changing this
+  path. A narrower projection must preserve every surviving consequence,
+  including implicit type edges and disequality strengthening; filtering
+  explicit edges alone is insufficient. No speedup is established.
 - **Connection-level concurrency through suspended user calls is missing, and
   silently.** A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting

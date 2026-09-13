@@ -2,10 +2,10 @@
 
 Status: NON-AUTHORITATIVE DETAIL.
 
-The [reference roadmap](roadmap.md) groups long-range directions and candidate
-projects; it is outside the working loop and may be stale. This file preserves
-candidate mechanisms, unresolved costs, and possible experiments. A selected
-question belongs in `research/investigations/`, and settled choices in
+This file preserves candidate mechanisms, unresolved research questions, and
+possible experiments. Known compiler defects and open implementation costs
+belong in [todo](todo.md). A selected question belongs in
+`research/investigations/`, and settled choices in
 `design/`, under the reading and workflow rules in [AGENTS.md](../AGENTS.md).
 Current capabilities are what the conformance report states. An idea here
 does not change the language or select implementation work.
@@ -20,6 +20,40 @@ advantage over another language. The [constitution](constitution.md) owns the
 objectives against which a candidate would be judged.
 
 ## Candidate directions
+
+### Proof-derived optimizer facts
+
+Checked bounds, effects, usable exclusive borrows, and algebraic laws may
+carry information an optimizer cannot recover from ordinary emitted code.
+The question is which exact fact improves a real program beyond its ordinary
+lowering, and at what checking and compilation cost.
+
+Candidate consumers include memory-effect attributes at opaque call
+boundaries, alias metadata for loaded data pointers, and regrouping a
+reduction whose exact operation domain supports the required laws. Each needs
+its own mapping from a checked proposition to a backend consequence under the
+active ABI. `pure` does not prove termination or justify `willreturn`.
+Likewise, checking a law for source acceptance does not grant every
+transformation that mentions that law: operand domains, ordering, effects,
+and intermediate arithmetic must all survive the proposed rewrite.
+
+The historical [bounds](../research/experiments/port-study/base64/RESULTS.md),
+[effect](../research/experiments/effect-attrs-channel/RESULTS.md),
+[alias](../research/experiments/scoped-alias-channel/RESULTS.md), and
+[checked-law](../research/experiments/checked-law-channel/RESULTS.md)
+experiments retain concrete workloads and controls from the retired compiler.
+Their ABI, proof rules, and measured ratios are not current compiler results.
+The effect experiment used a separate totality derivation; the alias and law
+experiments include conditions where an expert baseline erased the advantage.
+
+First experiment: identify one lost fact in a real hot path, keep the accepted
+source fixed, and compare one optional consumer enabled and disabled. Inspect
+the expected IR and final instruction change, use the
+[differential checks](#fact-consumer-differential-checks) below, and measure
+runtime and compilation against a useful expert baseline. Stop if ordinary
+lowering already recovers the fact or if its consumer adds no measured value.
+A termination proof is a separate candidate only when an optimization or
+resource-bound consumer actually needs it.
 
 ### A portable C backend
 
@@ -121,6 +155,13 @@ caller to reproduce Whitefoot's lifetime and alias rules. Arbitrary C code can
 still corrupt its own process, so stronger isolation would require a process or
 sandbox boundary.
 
+Calling an opaque foreign binary poses the reverse boundary question. It
+needs an explicit contract for ownership, layout, callbacks, foreign threads,
+failure, and what foreign behavior the compiler must trust. A checked wrapper
+and a source-level replacement are alternatives to compare for one real
+dependency. Compiler-owned system operations do not establish that a general
+FFI is specified or implemented.
+
 First experiment: export one stateful component through an opaque-handle API.
 Generate misuse tests for stale handles, double drop, overlapping buffers,
 short outputs, and allocation failure. Require deterministic rejection and no
@@ -160,6 +201,46 @@ First experiment: define a tiny abstract effect set and one sandbox target.
 Generate policies for pure, read-only, and network-using fixtures. Mutation
 tests should add one hidden effect at a time and require either a broader
 manifest or compiler rejection.
+
+### Storage transitions and representation privileges
+
+A real container can expose a missing transition even when its element type
+and ordinary access are expressible. Evaluate growth and backing replacement,
+move-out and destruction order, initialized versus vacant slots, sparse
+occupancy, stable versus recyclable identity, stale handles, and relocation
+under live loans separately. These are questions to check against the active
+language and the program, not a list of mechanisms presumed absent.
+
+The [rejected owning-sequence experiment](../research/experiments/data-layout-owning-sequence/RESULTS.md)
+shows why a passing prototype or a fast layout does not settle affine element
+use, initialization, target layout, and complete lifecycle behavior.
+First try ordinary source functions over the existing storage operations. If
+a concrete representation remains impossible, state the minimal additional
+privilege and the exact invariant a deterministic checker would have to
+establish, including failed construction and cleanup. Compare it with the
+ordinary representation under the same workload; stop if the benefit does
+not justify the extra proof boundary. No general privileged proof system or
+sealed container catalog is selected by this question.
+
+### Wider parallel proof domains
+
+A useful extension starts with a real loop whose required independent work
+the current proof domain cannot express. Candidate pressure includes symbolic
+strides and disjoint subranges, multiple access maps, projected callee
+accesses, and regrouping operations outside the admitted reduction domain.
+Each requires an exact deterministic rule with counterexamples for overlap,
+effects, operation domains, and changed output order. An associative
+non-commutative operation or a floating-point reduction cannot inherit a rule
+whose argument also requires commutativity and exact bytes.
+
+The [parallelism study](../research/experiments/auto-parallelism-feasibility/RESULTS.md)
+and [loop investigation](../research/investigations/proof-derived-parallelism/loop/DESIGN.md)
+preserve the earlier witnesses and limits. A broader domain should be tested
+against the same sequential source, with runtime grain, skew, locality, and
+bounded task/completion storage measured separately from proof permission.
+Dynamic fan-out also needs ownership and resource accounting for every live
+task, result, and cancellation path. Stop if the proposed domain does not
+unlock useful work or ordinary execution is cheaper.
 
 ### Narrow semantic domains and automatic niches
 
@@ -304,6 +385,12 @@ Compare against a maintained safe implementation as well as a native baseline.
 Stop if the supposed drop-in requires callers to change the protected contract
 or if a toy kernel no longer exercises the promised component.
 
+The [ripgrep project frame](../research/notes/ripgrep-flagship-frame.md#the-claim)
+keeps the selected full-tool comparison boundary; its
+[experiment index](../research/experiments/README.md#current-flagship-experiment-evidence)
+leads to the existing measurements. A component win does not establish that
+full-project result.
+
 ### Compiler-guided synthesis and rejection data
 
 A deterministic checker and canonical source could support program search,
@@ -324,6 +411,41 @@ illustrates executable disagreement witnesses, not evidence that this search
 or a learned writer is effective.
 
 ## Open questions and experiments
+
+### Fact-consumer differential checks
+
+An optional optimizer consumer should change only justified code shape.
+Compare accepted programs with that consumer enabled and disabled while
+retaining every required source proof, and compare values, typed outcomes,
+external effects, and cleanup. Vary source structure and valid inputs as well
+as optimizer settings; the
+[differential corpus work](../research/experiments/differential-fuzz/README.md)
+provides existing executable disagreement witnesses.
+
+Mutating or removing a premise should make the corresponding transformation
+unavailable, or make the program reject when that premise was required for
+safety. A disabled optional consumer must never disable a required proof.
+For each proposed fact family, pair an independent behavior oracle with an
+inspection of the expected IR or instruction consequence before attributing
+a timing result. Agreement between two executions cannot establish that
+their shared source checker or lowering is sound.
+
+### Reproducible compiler outputs
+
+Deterministic source checking does not by itself establish byte-identical
+objects or executables across machines. A useful experiment first names the
+consumer and artifact: diagnostics, checked state, LLVM IR, an object, or a
+linked program. It then fixes source, specification and compiler bytes,
+dependencies, target features, build flags, and linker inputs, and varies only
+the environment dimension whose reproducibility is being tested.
+
+First compare clean builds in separate checkout paths with the same tools;
+extend to host or toolchain changes only when the consumer needs that promise.
+Keep byte identity distinct from equivalent runtime behavior, and inspect
+path, timestamp, ordering, or toolchain differences before adding metadata
+normalization or caching. No complete cross-machine object reproducibility
+result is claimed here. Stop at the artifact boundary the build, audit, or
+backend-comparison consumer actually needs.
 
 ### AI authoring and proof costs
 
@@ -403,4 +525,3 @@ would stop the work. For a consumer of checked facts, ask:
 
 Record a selected experiment and its discriminating criterion in its existing
 research home, following [decision practice](practice.md#decision-work).
-The roadmap remains an orientation aid outside that work.
