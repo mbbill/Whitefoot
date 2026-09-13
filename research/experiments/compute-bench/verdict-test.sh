@@ -64,14 +64,47 @@ TABLE
 expect "pass" 0 "VERDICT: PASS"
 
 # The regression the gate exists for: the baseline faster by more than the band
-# in four of five pairs.
+# in four of five pairs, at two of the kernel's three widths.
 cat > "$work/table.txt" <<'TABLE'
 fir           2 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
 fir           2 A/B  wf-b/wf  wall 0.940 [0.90-0.99]  lower 4/5  cpu 0.995
 fir           4 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
-fir           4 A/B  wf-b/wf  wall 0.998 [0.97-1.02]  lower 2/5  cpu 1.001
+fir           4 A/B  wf-b/wf  wall 0.948 [0.91-0.98]  lower 5/5  cpu 0.991
 TABLE
-expect "fail" 1 "VERDICT: FAIL"
+expect "two-block-fail" 1 "VERDICT: FAIL"
+
+# One adverse block and nothing else is the false positive this rule was
+# rewritten for: pull request #50's first attempt read records W=1 at 0.938
+# with five of five lower on a branch that changes no unit the compute path
+# compiles, and run 34671025894 read the same kernel at 0.912 at W=1 with the
+# code it added present in neither arm. Both are one block, both are code
+# placement, and a single block is reported rather than acted on.
+cat > "$work/table.txt" <<'TABLE'
+records       1 BEST REFERENCE = n/a          FASTEST = wf           WF fastest: yes
+records       1 A/B  wf-b/wf  wall 0.938 [0.92-0.95]  lower 5/5  cpu 0.996
+records       2 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
+records       2 A/B  wf-b/wf  wall 0.998 [0.97-1.02]  lower 2/5  cpu 1.001
+records       4 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
+records       4 A/B  wf-b/wf  wall 1.004 [0.99-1.03]  lower 1/5  cpu 1.000
+TABLE
+expect "one-block-suspect" 0 "suspect: records W=1: wall 0.938 with 5/5 pairs lower"
+
+# The two-block count is per kernel and is not pooled across the table. One
+# adverse block in each of two kernels is two suspects, not a failure: a
+# regression in the shared runtime shows at more than one width of the kernel
+# it slows, which is the thing being asked, and two unrelated single blocks are
+# what a placement-sensitive host produces on its own.
+cat > "$work/table.txt" <<'TABLE'
+fir           1 BEST REFERENCE = n/a          FASTEST = wf           WF fastest: yes
+fir           1 A/B  wf-b/wf  wall 0.940 [0.90-0.99]  lower 4/5  cpu 0.995
+fir           2 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
+fir           2 A/B  wf-b/wf  wall 1.000 [0.99-1.02]  lower 2/5  cpu 1.000
+records       1 BEST REFERENCE = n/a          FASTEST = wf           WF fastest: yes
+records       1 A/B  wf-b/wf  wall 0.951 [0.93-0.97]  lower 4/5  cpu 0.998
+records       2 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
+records       2 A/B  wf-b/wf  wall 1.002 [0.99-1.03]  lower 1/5  cpu 1.001
+TABLE
+expect "two-kernels-one-block-each" 0 "2 suspect(s)"
 
 # Both halves of the rule are required. A median under the band with two
 # adverse pairs is one arm of a noisy host, not a regression.

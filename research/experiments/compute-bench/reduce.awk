@@ -168,7 +168,7 @@ END {
         run ? run : "local", compiler ? compiler : "unknown",
         clang ? clang : "unknown", rustc ? rustc : "unknown"
     if (refflags) printf "reference flags=%s\n      (identical for every reference implementation of every kernel)\n", refflags
-    if (wfflags) printf "WF flags=%s\n      (module and runtime, as whitefootc links them: no -march, no loop\n      alignment -- see README)\n", wfflags
+    if (wfflags) printf "WF flags=%s\n      (module and runtime, as whitefootc links them -- no -march -- plus the\n      alignment flags, which are placement control applied identically to both\n      arms and are not what whitefootc passes clang; see README)\n", wfflags
     # Printed only when the bundle's A/B control was set, so a table with this
     # line is not a plain `--par` table and can never be recorded as one. Its
     # absence is the ordinary case and says the `wf` row is plain `--par`;

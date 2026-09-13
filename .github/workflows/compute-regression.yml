@@ -21,9 +21,14 @@
 # reads exactly the same numbers it read before.
 #
 # THE RULE, and what it excludes.
-#   FAIL when a block's paired `A/B wf-b/wf wall` median is below 0.97 and the
-#   baseline was the faster arm in at least four of the five pairs, at W in
-#   {1, 2, 4}.
+#   A block is ADVERSE when its paired `A/B wf-b/wf wall` median is below 0.97
+#   and the baseline was the faster arm in at least four of the five pairs, at
+#   W in {1, 2, 4}.
+#   A kernel FAILs on two adverse blocks. One adverse block alone is a
+#   `suspect`: printed in the job summary, and it fails nothing, because one
+#   width does not separate a slower program from a differently placed one --
+#   two images linked from byte-identical sources do not land their functions
+#   at the same offsets, and width one is where that shows.
 #   A paired CPU ratio below 0.90 under the same count is REPORTED and fails
 #   nothing.
 #   W=8 and above are excluded: four-CPU runners oversubscribe there and
