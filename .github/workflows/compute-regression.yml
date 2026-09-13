@@ -295,6 +295,11 @@ jobs:
       # fence that is closed whatever the rule decided: `set -e` would
       # otherwise take the step out between the opening fence and the closing
       # one and leave the summary unreadable on exactly the runs worth reading.
+      # Every `suspect` line is also raised as an annotation. A suspect leaves
+      # the job green, so without one it exists only as text inside a passing
+      # step and nothing in the checks list distinguishes that run from a clean
+      # one -- which would make the report the two-width rule relies on the
+      # easiest thing in the job to miss.
       - name: Read the verdict
         if: steps.scope.outputs.measure == 'true'
         run: |
@@ -305,8 +310,15 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           set +e
           make -C research/experiments/compute-bench verdict \
-            RESULTS="$RUNNER_TEMP/results" | tee -a "$GITHUB_STEP_SUMMARY"
+            RESULTS="$RUNNER_TEMP/results" | tee "$RUNNER_TEMP/verdict.txt"
           status=${PIPESTATUS[0]}
           set -e
+          cat "$RUNNER_TEMP/verdict.txt" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          suspects=$(grep '^suspect: ' "$RUNNER_TEMP/verdict.txt" || true)
+          if [ -n "$suspects" ]; then
+            while IFS= read -r line; do
+              echo "::warning::$line"
+            done <<< "$suspects"
+          fi
           exit "$status"

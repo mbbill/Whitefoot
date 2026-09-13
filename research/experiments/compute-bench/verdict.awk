@@ -46,9 +46,10 @@
 # EXIT STATUS. 0 when no kernel fails -- suspects included, which is the whole
 # point of the word -- 1 when one or more kernels fail, and 2 when the table
 # cannot answer the question at all: no A/B line (the twin was never built,
-# which would otherwise pass vacuously), no A/B line at a recorded width, or
-# fewer pairs behind a line than the rule names. A refusal is not a pass and is
-# not a regression; it is a broken run.
+# which would otherwise pass vacuously), no A/B line at a recorded width, fewer
+# pairs behind a line than the rule names, or no kernel with the two readable
+# blocks the rule needs to reach FAIL. A refusal is not a pass and is not a
+# regression; it is a broken run.
 
 BEGIN {
     if (widths == "") widths = "1 2 4"
@@ -91,6 +92,7 @@ $3 == "A/B" && $4 == "wf-b/wf" && $5 == "wall" {
     if ((kernel, width) in oversubscribed) { skipped_over++; next }
 
     read_rows++
+    read_blocks[kernel]++
     if (paircount < pairs + 0) {
         underpowered++
         thin[underpowered] = sprintf("%s W=%d: %d pairs, the rule names %d",
@@ -192,6 +194,23 @@ END {
     if (underpowered > 0) {
         for (i = 1; i <= underpowered; i++) printf "REFUSED: %s\n", thin[i]
         printf "REFUSED: a verdict from fewer pairs than the rule names is not the rule.\n"
+        exit 2
+    }
+
+    # The refusal the two-block rule brings with it. A rule that fails on two
+    # blocks of one kernel cannot reach FAIL at all when no kernel contributed
+    # two readable blocks -- a table read at one width, a host that
+    # oversubscribed every width but one -- and a table that can only pass is
+    # the gate switched off, which is what every other REFUSED here exists to
+    # prevent. It is counted over READABLE blocks, not adverse ones: a run
+    # where every block passed is a pass, not a refusal.
+    widest = 0
+    for (k in read_blocks)
+        if (read_blocks[k] > widest) widest = read_blocks[k]
+    if (widest < 2) {
+        printf "REFUSED: no kernel has two readable blocks in {%s}; the widest has %d,\n",
+            widths, widest
+        printf "         so no table of this shape can fail and a pass from it says nothing.\n"
         exit 2
     }
 

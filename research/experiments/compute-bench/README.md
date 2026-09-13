@@ -396,11 +396,11 @@ of two kernels is two suspects.
 
 This is the half of the problem a rule can answer. The other half is answered
 in the build — `WF_ALIGN` gives both arms `-falign-functions=64
--falign-loops=32` on x86_64, so their internal alignment is identical by
-construction (see "The two flag sets" below). Neither measure is sufficient
-alone, and the record is explicit that alignment is not a cure: with both arms
-aligned and one deliberately shifted by a 587-byte pad, the twin lines read no
-closer to 1.000 than unaligned.
+-falign-loops=32` on x86_64, so the internal alignment of their **Whitefoot
+translation units** is identical by construction (see "The two flag sets"
+below). Neither measure is sufficient alone, and the record is explicit that
+alignment is not a cure: with both arms aligned and one deliberately shifted by
+a 587-byte pad, the twin lines read no closer to 1.000 than unaligned.
 
 **CPU is a report and never a failure.** A paired `cpu` ratio below 0.90 under
 the same count is printed under the table, marked `*` on its row, and changes
@@ -427,7 +427,10 @@ and is not worth failing a branch over.
 **It refuses rather than passing vacuously.** A table with no `A/B` line means
 no twin was built; a table whose only `A/B` lines are at unrecorded widths
 means nothing the rule reads; a line backed by fewer than five pairs is not the
-rule. Each of those exits non-zero with `REFUSED`, because a gate that reads
+rule; and a table where **no kernel has two readable blocks** — one width asked
+for, or a host that oversubscribed all but one — is a table the two-block rule
+cannot fail whatever it says, which is the same defect wearing the new rule's
+clothes. Each of those exits non-zero with `REFUSED`, because a gate that reads
 absent evidence as good news is a gate that switches itself off.
 
 There is **no automatic re-run**. A re-run is a person's decision: a job that
@@ -511,10 +514,10 @@ repository's `make check` runs, and neither times anything. `programs-check`
 compiles each program in exactly the two modes the table uses and asserts that
 `--par` emits a publish site and `--no-overlap` emits none; it takes about two
 seconds, links nothing, and needs no dependency. `verdict-test` feeds the
-regression rule thirteen crafted table fragments and asserts the exit status
+regression rule fourteen crafted table fragments and asserts the exit status
 and the verdict text of each — the pass, the two-block failure, the one-block
 `suspect`, one adverse block in each of two kernels, both halves of the adverse
-test on their own, the two exclusions, the four refusals and the CPU report;
+test on their own, the two exclusions, the five refusals and the CPU report;
 it needs no compiler at all.
 
 ## Where results go, and the fresh-directory rule
@@ -1064,11 +1067,15 @@ translation unit of **both** images starts its functions on a 64-byte boundary
 and its hot loops on a 32-byte one. It exists for the regression gate's paired
 comparison: the gate's two arms are separate images linked from separate
 objects, their functions do not land at the same offsets even from
-byte-identical sources, and under these flags the arms' internal alignment is
-identical **by construction** and the residual offset difference is a multiple
-of the boundary rather than an arbitrary number of bytes. There is no way to
-set it on one arm; it is not an A/B handle and the three handles above are not
-how to ask for it.
+byte-identical sources, and under these flags **those translation units'**
+internal alignment is identical **by construction** and the residual offset
+difference between the arms is a multiple of the boundary rather than an
+arbitrary number of bytes. It reaches no further into either image: the
+harness, the kernel object, the references and the prebuilt libraries are built
+at `CFLAGS`/`CXXFLAGS`, with `-falign-loops=32` and no function alignment, and
+all of those but the kernel object are literally the same objects in both arms.
+There is no way to set it on one arm; it is not an A/B handle and the three
+handles above are not how to ask for it.
 
 Two things it is **not**. It does not make code placement a solved confound —
 with both arms aligned and one shifted by a deliberate 587-byte pad the twin
@@ -1089,8 +1096,19 @@ this bundle's largest confound, and six byte-identical kernel bodies at
 different offsets once split a width-one median 7.3 ms against 10.7 ms with no
 scheduler involved.
 
+**And it adds one asymmetry while closing another, which is the first that runs
+the WF row's way.** `-falign-functions=64` now reaches the Whitefoot
+translation units and no reference, no oracle and not the harness, in a bundle
+whose own record says function placement once split a width-one median 7.3 ms
+against 10.7 ms. Every other line of this section runs against the WF row; this
+one does not, and a WF-versus-reference ratio recorded from this commit onward
+carries it. It is not normalized the other way because `-falign-functions=64`
+on the references would move every reference row in every recorded table for a
+gate's benefit, which is a worse trade than disclosing it here.
+
 **What is not normalized, and cannot be.** `-march=x86-64-v3` reaches the C and
-C++ kernels and no Whitefoot translation unit. The separately built oneTBB
+C++ kernels and no Whitefoot translation unit, and `-falign-functions=64`
+reaches the Whitefoot units and nothing else. The separately built oneTBB
 shared library gets only the three scalar flags, with no `-march` and no
 alignment. The Rust staticlib gets only its four rustflags plus `target-cpu`
 where `BENCH_ARCH` names it, and Rust's precompiled standard library is not

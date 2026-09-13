@@ -75,10 +75,17 @@ RFLAGS := -C no-vectorize-loops -C no-vectorize-slp -C lto=off \
 # the other, and this bundle's largest confound is exactly that: six
 # byte-identical kernel bodies at 0/16/48 mod 64 once split a width-one median
 # 7.3 ms against 10.7 ms with no scheduler involved. Under -falign-functions=64
-# every function in either image starts on a 64-byte boundary and every hot
-# loop on a 32-byte one, so the arms' INTERNAL alignment is identical BY
-# CONSTRUCTION and the residual offset difference between them is a multiple of
-# the boundary rather than an arbitrary number of bytes.
+# every function OF THE WHITEFOOT TRANSLATION UNITS starts on a 64-byte
+# boundary in either image and every hot loop of theirs on a 32-byte one, so
+# their internal alignment is identical BY CONSTRUCTION and the residual offset
+# difference between the arms is a multiple of the boundary rather than an
+# arbitrary number of bytes. It says nothing about the rest of either image:
+# the harness, the kernel object, the references and the prebuilt libraries are
+# built at $(CFLAGS)/$(CXXFLAGS), which carry -falign-loops=32 and no function
+# alignment. The harness, the references and the seq object are literally the
+# same objects in both arms; the kernel object is the one doubled thing on that
+# side of the line, compiled twice from one source against its own arm's
+# generated split header.
 #
 # What it does NOT do is remove code placement as a confound, and the record is
 # explicit about that: with both arms aligned and one deliberately shifted by a
@@ -105,6 +112,25 @@ WF_ALIGN := $(if $(filter x86_64,$(ARCH)),-falign-functions=64 -falign-loops=32,
 # paragraph says so with its date rather than leaving it to be inferred from
 # this line.
 WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module $(WF_ALIGN)
+
+# WF_FLAGS is kept in a stamp for the reason the three control flags below are,
+# and it matters more here than it does for them. $(BUILD) survives across runs
+# -- only `clean` removes it -- and the Whitefoot objects depend on their
+# sources, not on the flags that compiled them. So a work directory built
+# before $(WF_ALIGN) existed would recompile only the objects whose sources
+# moved: on a regression run against a new merge base that is the twin's four,
+# recompiled ALIGNED, while the plain image's four are reused UNALIGNED,
+# because the branch did not touch wf_floor.c or sched/*.c. That is exactly the
+# asymmetric placement this variable exists to prevent, and manifest.txt and
+# the table header would both print one flag set as if both arms had it. Every
+# object compiled with $(WF_FLAGS) therefore depends on this stamp: a changed
+# flag set recompiles BOTH arms, and an unchanged one rebuilds nothing.
+WF_FLAGS_STAMP := $(BUILD)/wf-flags.txt
+$(WF_FLAGS_STAMP): FORCE
+	@mkdir -p $(BUILD)
+	@printf '%s\n' '$(WF_FLAGS)' > $@.new
+	@cmp -s $@.new $@ || mv -f $@.new $@
+	@rm -f $@.new
 
 # An A/B control, and nothing else. Whatever is set here is appended to the
 # `--par` emission of the B TWIN below -- never to the plain image, which is
@@ -499,38 +525,38 @@ endef
 $(foreach k,$(KERNELS),$(eval $(call kernel-modules,$(k))))
 
 # --------------------------------------------------------------- objects ----
-$(BUILD)/%-par.o: $(BUILD)/%-par.ll
+$(BUILD)/%-par.o: $(BUILD)/%-par.ll $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/%-par-b.o: $(BUILD)/%-par-b.ll $(MODULE_CONTROL)
+$(BUILD)/%-par-b.o: $(BUILD)/%-par-b.ll $(MODULE_CONTROL) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/%-seq.o: $(BUILD)/%-seq.ll
+$(BUILD)/%-seq.o: $(BUILD)/%-seq.ll $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
 
 # The plain image's four Whitefoot runtime units. NO CONTROL FLAG REACHES
 # THESE, whatever WF_RUNTIME_CONTROL_FLAGS is set to: the `wf` row is the
 # runtime this tree ships, and an A/B run must not quietly move both arms.
-$(BUILD)/floor.o: $(FLOOR)
+$(BUILD)/floor.o: $(FLOOR) $(WF_FLAGS_STAMP)
 	@mkdir -p $(BUILD)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_core.o: $(SCHED)/core.c
+$(BUILD)/sched_core.o: $(SCHED)/core.c $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_prim_host.o: $(SCHED)/prim_host.c
+$(BUILD)/sched_prim_host.o: $(SCHED)/prim_host.c $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_entry.o: $(SCHED)/entry.c
+$(BUILD)/sched_entry.o: $(SCHED)/entry.c $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
 
 # The twin's four. The same four translation units, read from $(WF_B_SCHED_DIR)
 # and $(WF_B_FLOOR) -- this tree's own unless a baseline named another tree --
-# with the runtime control appended and the two stamps that recompile them when
-# a control value or the baseline's bytes change.
-$(BUILD)/floor-b.o: $(WF_B_FLOOR) $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+# with the runtime control appended and the stamps that recompile them when a
+# control value, the flag set or the baseline's bytes change.
+$(BUILD)/floor-b.o: $(WF_B_FLOOR) $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP) $(WF_FLAGS_STAMP)
 	@mkdir -p $(BUILD)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_core-b.o: $(WF_B_SCHED_DIR)/core.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+$(BUILD)/sched_core-b.o: $(WF_B_SCHED_DIR)/core.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_prim_host-b.o: $(WF_B_SCHED_DIR)/prim_host.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+$(BUILD)/sched_prim_host-b.o: $(WF_B_SCHED_DIR)/prim_host.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_entry-b.o: $(WF_B_SCHED_DIR)/entry.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+$(BUILD)/sched_entry-b.o: $(WF_B_SCHED_DIR)/entry.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
 
 $(BUILD)/%_bench.o: %_bench.c harness.h backend.h $(BUILD)/%_split.h

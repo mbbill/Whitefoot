@@ -168,7 +168,16 @@ END {
         run ? run : "local", compiler ? compiler : "unknown",
         clang ? clang : "unknown", rustc ? rustc : "unknown"
     if (refflags) printf "reference flags=%s\n      (identical for every reference implementation of every kernel)\n", refflags
-    if (wfflags) printf "WF flags=%s\n      (module and runtime, as whitefootc links them -- no -march -- plus the\n      alignment flags, which are placement control applied identically to both\n      arms and are not what whitefootc passes clang; see README)\n", wfflags
+    # The parenthetical follows the flags rather than asserting them: WF_ALIGN
+    # is empty off x86_64, and a note claiming alignment over a line that does
+    # not show it would be the disclosure lying about the build it describes.
+    if (wfflags) {
+        printf "WF flags=%s\n", wfflags
+        if (wfflags ~ /-falign/)
+            printf "      (module and runtime, as whitefootc links them -- no -march -- plus the\n      alignment flags, which are placement control applied identically to both\n      arms and are not what whitefootc passes clang; see README)\n"
+        else
+            printf "      (module and runtime, as whitefootc links them: no -march, and no\n      alignment -- the placement control is x86_64 only; see README)\n"
+    }
     # Printed only when the bundle's A/B control was set, so a table with this
     # line is not a plain `--par` table and can never be recorded as one. Its
     # absence is the ordinary case and says the `wf` row is plain `--par`;

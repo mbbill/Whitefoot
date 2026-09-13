@@ -107,10 +107,14 @@ TABLE
 expect "two-kernels-one-block-each" 0 "2 suspect(s)"
 
 # Both halves of the rule are required. A median under the band with two
-# adverse pairs is one arm of a noisy host, not a regression.
+# adverse pairs is one arm of a noisy host, not a regression. The kernel's
+# second block is here so the two-block rule has the two readable blocks it
+# refuses without; it is the W=2 line that is under test.
 cat > "$work/table.txt" <<'TABLE'
 fir           2 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
 fir           2 A/B  wf-b/wf  wall 0.900 [0.60-1.30]  lower 2/5  cpu 1.000
+fir           4 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
+fir           4 A/B  wf-b/wf  wall 1.000 [0.99-1.01]  lower 2/5  cpu 1.000
 TABLE
 expect "wall-band-without-adverse-pairs" 0 "VERDICT: PASS"
 
@@ -118,6 +122,8 @@ expect "wall-band-without-adverse-pairs" 0 "VERDICT: PASS"
 cat > "$work/table.txt" <<'TABLE'
 fir           2 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
 fir           2 A/B  wf-b/wf  wall 0.985 [0.97-1.00]  lower 4/5  cpu 1.000
+fir           4 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
+fir           4 A/B  wf-b/wf  wall 1.000 [0.99-1.01]  lower 2/5  cpu 1.000
 TABLE
 expect "adverse-pairs-inside-band" 0 "VERDICT: PASS"
 
@@ -134,6 +140,8 @@ expect "no-twin" 2 "REFUSED: the table carries no"
 # two-CPU host emits W=4 oversubscribed, and the reducer's own mark is what
 # says so.
 cat > "$work/table.txt" <<'TABLE'
+fir           1 BEST REFERENCE = n/a          FASTEST = wf           WF fastest: yes
+fir           1 A/B  wf-b/wf  wall 1.000 [0.99-1.01]  lower 2/5  cpu 1.000
 fir           2 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
 fir           2 A/B  wf-b/wf  wall 1.001 [0.99-1.02]  lower 2/5  cpu 1.000
 fir           4 BEST REFERENCE = tbb          FASTEST = tbb          WF fastest: n/a (oversubscribed)
@@ -144,6 +152,8 @@ expect "oversubscribed-excluded" 0 "VERDICT: PASS"
 # W=8 and above are not resolvable on a four-CPU runner and are not in the
 # recorded set, so a failure there is read, printed as skipped, and ignored.
 cat > "$work/table.txt" <<'TABLE'
+fir           1 BEST REFERENCE = n/a          FASTEST = wf           WF fastest: yes
+fir           1 A/B  wf-b/wf  wall 1.000 [0.99-1.01]  lower 2/5  cpu 1.000
 fir           2 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
 fir           2 A/B  wf-b/wf  wall 1.004 [0.99-1.02]  lower 1/5  cpu 1.002
 fir           8 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
@@ -173,8 +183,22 @@ expect "under-powered" 2 "2 pairs, the rule names 5"
 cat > "$work/table.txt" <<'TABLE'
 fir           2 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
 fir           2 A/B  wf-b/wf  wall 0.990 [0.98-1.00]  lower 4/5  cpu 0.850
+fir           4 BEST REFERENCE = tbb          FASTEST = wf           WF fastest: yes
+fir           4 A/B  wf-b/wf  wall 1.000 [0.99-1.01]  lower 2/5  cpu 1.000
 TABLE
 expect "cpu-reported-never-failing" 0 "cpu report: fir W=2"
+
+# No kernel has two readable blocks, so the two-block rule cannot reach FAIL on
+# a table of this shape however bad the readings are. Both blocks here are
+# adverse and the exit status is a refusal, not the pass a rule that could only
+# pass would report: a gate that cannot fail is a gate that is switched off.
+cat > "$work/table.txt" <<'TABLE'
+fir           1 BEST REFERENCE = n/a          FASTEST = wf           WF fastest: yes
+fir           1 A/B  wf-b/wf  wall 0.930 [0.91-0.95]  lower 5/5  cpu 0.990
+records       1 BEST REFERENCE = n/a          FASTEST = wf           WF fastest: yes
+records       1 A/B  wf-b/wf  wall 0.940 [0.92-0.96]  lower 4/5  cpu 0.995
+TABLE
+expect "one-readable-block-per-kernel" 2 "no kernel has two readable blocks"
 
 # A table with no rows at all is the same refusal as a table with no twin.
 : > "$work/table.txt"
