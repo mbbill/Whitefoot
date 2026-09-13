@@ -29,6 +29,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   the two-runtime comparison behind the 2026-09-09 current-stack selection, the
   grain panel and recursion-frontier evidence, and what the compute scoreboard
   replaced.
+- [Compute expression and cost](investigations/compute-model/DESIGN.md):
+  blocked and irregular algorithm consumers, independent correctness criteria,
+  and the runtime costs that test the compute model after range loans.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).
