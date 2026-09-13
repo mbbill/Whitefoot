@@ -90,7 +90,12 @@ static void file_probe(wf_inputs *inputs) {
     wf_close_result closed;
     wf_value receiving_factory = {{0, 0, 0, 0}};
     uint64_t saved = inputs->handles.words[0];
-    FILE *fixture = fopen(filename, "wb");
+    FILE *fixture = NULL;
+#if defined(_WIN32)
+    assert(fopen_s(&fixture, filename, "wb") == 0);
+#else
+    fixture = fopen(filename, "wb");
+#endif
     assert(fixture != NULL);
     assert(fwrite("hello", 1, 5, fixture) == 5);
     assert(fclose(fixture) == 0);
