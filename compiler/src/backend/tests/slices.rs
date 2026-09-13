@@ -1,6 +1,184 @@
 use super::*;
 
 #[test]
+fn borrowed_storage_subranges_write_the_original_array_and_run() {
+    let source = r#"struct Packet {
+  before: u64;
+  values: STORAGE;
+  after: u64;
+}
+
+fn fill(values: &uniq STORAGE) -> result: own unit writes(values) contract {
+  requires len_of(deref(values)) == 8_u64;
+  requires head_of(deref(values)) == 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values)));
+  ensures head_of(deref(values)) == head_of(deref(entry(values)));
+} {
+  region {
+    let left = mut_slice_of(&uniq deref(values), 0_u64, 4_u64);
+    let right = mut_slice_of(&uniq deref(values), 4_u64, 8_u64);
+    set left[0_u64] = 11_u64;
+    set left[3_u64] = 13_u64;
+    set right[0_u64] = 17_u64;
+    set right[3_u64] = 19_u64;
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let initial = array_new::<u64, 8>(7_u64);
+  let values = INITIAL;
+  let packet = Packet(before: 53_u64, values: move values, after: 59_u64);
+  region {
+    let done = fill(values: &uniq packet.values);
+  }
+  if packet.before != 53_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if packet.after != 59_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if packet.values[0_u64] != 11_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if packet.values[3_u64] != 13_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if packet.values[4_u64] != 17_u64 {
+    return exit_status(code: 5_u8);
+  }
+  if packet.values[7_u64] != 19_u64 {
+    return exit_status(code: 6_u8);
+  }
+  if packet.values[1_u64] != 7_u64 {
+    return exit_status(code: 7_u8);
+  }
+  if packet.values[6_u64] != 7_u64 {
+    return exit_status(code: 8_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for (storage, initial) in [
+        ("array<u64, 8>", "move initial"),
+        (
+            "FixedVector<u64, 8>",
+            "fixed_from_array(values: move initial)",
+        ),
+    ] {
+        let source = source
+            .replace("STORAGE", storage)
+            .replace("INITIAL", initial);
+        for overlap in [OverlapLowering::Off, OverlapLowering::On] {
+            let module = emit_lowered(source.as_bytes(), overlap);
+            for module in [&module, &super::owned_places::retain_calls(&module)] {
+                let output = compile_and_run(module);
+                assert_eq!(
+                    output.status.code(),
+                    Some(0),
+                    "{storage}: {overlap:?}: {output:?}"
+                );
+                assert!(output.stdout.is_empty(), "{output:?}");
+                assert!(output.stderr.is_empty(), "{output:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn runtime_stencil_ranges_reach_their_backing_buffers() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    let parallel = emit_with_overlap(source);
+    assert!(parallel.contains("call void @wf__par_publish("));
+    let output = compile_and_run(&parallel);
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
+fn stencil_matches_an_independent_dimension_and_step_matrix() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
+    let adapter = include_str!("../../../../research/experiments/compute-bench/stencil_host.ll");
+    let oracle = format!(
+        "#define WFB_STENCIL_ORACLE\n{}",
+        include_str!("../../../../research/experiments/compute-bench/stencil_bench.c")
+    );
+    for emitted in [compile(source), emit_with_overlap(source)] {
+        let llvm = format!(
+            "{}\n{adapter}",
+            emitted.replace("@main(", "@wf_stencil_smoke_main(")
+        );
+        let directory = test_directory();
+        let executable = build_linked_executable(&llvm, Some(&oracle), &[], &directory);
+        for workers in [1, 2, 4] {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers.to_string())
+                .env_remove("WF_SPLIT_WORK")
+                .output()
+                .expect("run independent stencil oracle");
+            assert!(output.status.success(), "workers={workers}: {output:?}");
+            assert!(String::from_utf8_lossy(&output.stdout).contains("stencil oracle PASS:"));
+        }
+        std::fs::remove_dir_all(directory).expect("remove native stencil test files");
+    }
+}
+
+#[test]
+fn recursive_child_ranges_restore_parent_access() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/range_split.wf");
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    let parallel = emit_with_overlap(source);
+    assert!(parallel.contains("call void @wf__par_publish("));
+    let output = compile_and_run(&parallel);
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
+fn range_endpoints_are_captured_and_empty_ranges_are_admitted() {
+    let source = br#"const values: FixedVector<u64, 8> =[1_u64, 2_u64, 3_u64, 4_u64, 5_u64, 6_u64, 7_u64, 8_u64];
+
+fn window_sum(start: own u64, end: own u64) -> result: own u64 pure contract {
+  requires start <= end;
+  requires end <= 8_u64;
+} {
+  region {
+    let view = slice_of(&values, start, end);
+    set start = end;
+    let count = len_of(view);
+    let total = 0_u64;
+    for (i in 0_u64..count) {
+      let value = view[i];
+      set total = total +wrap value;
+    }
+    return total;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  let middle = window_sum(start: 2_u64, end: 5_u64);
+  let empty = window_sum(start: 8_u64, end: 8_u64);
+  if middle != 12_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if empty != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
 fn borrowed_array_views_preserve_delegation_and_original_storage_across_calls() {
     let source = br#"struct Packet {
   before: u64;

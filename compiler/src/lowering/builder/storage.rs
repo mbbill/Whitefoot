@@ -153,12 +153,15 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
             bindings.extend(root.binding());
             collect_place(root, bindings);
         }
-        CheckedExpression::SliceOf {
-            source: crate::semantic::CheckedSliceSource::Run(root),
-            ..
-        } => {
-            bindings.extend(root.binding());
-            collect_place(root, bindings);
+        CheckedExpression::SliceOf { source, range, .. } => {
+            if let crate::semantic::CheckedSliceSource::Run(root) = source {
+                bindings.extend(root.binding());
+                collect_place(root, bindings);
+            }
+            if let Some(range) = range {
+                collect_expression(&range.start, bindings);
+                collect_expression(&range.end, bindings);
+            }
         }
         CheckedExpression::ContainerMeasure { root, .. } => collect_place(root, bindings),
         CheckedExpression::UserCall { arguments, .. }
@@ -200,7 +203,6 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::ArrayMeasure { .. }
         | CheckedExpression::BufferMeasure { .. }
         | CheckedExpression::PostconditionResultMeasure { .. }
-        | CheckedExpression::SliceOf { .. }
         | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::ReborrowAddressed { .. }

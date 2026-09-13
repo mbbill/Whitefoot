@@ -1,9 +1,11 @@
 # Can XL effect+region give "write sequential, get safe automatic parallelism" that beats Rust? (2026-07-08)
 
-> **PARTIALLY SUPERSEDED 2026-07-25.** The current disposition now lives in
-> `docs/roadmap.md` under items PAR-1 through PAR-4 (the interim
-> `docs/parallelism.md` investigation note was folded into that section and
-> deleted on 2026-07-27, per its own disposition clause). The verdict below
+> **PARTIALLY SUPERSEDED 2026-07-25.** The
+> [active specification](../../../spec/kernel-spec.md) owns current parallel
+> permission rules; open extension questions are in
+> [ideas](../../../docs/ideas.md#wider-parallel-proof-domains).
+> The interim `docs/parallelism.md` note was
+> folded into the former roadmap and deleted on 2026-07-27. The verdict below
 > stands, but two supporting arguments do not. The Campanoni/HELIX citation is
 > misattributed — cbench/MiBench, not SPEC — and states a narrower claim than
 > quoted here. The Trap 2 assertion that granularity kills the strong claim

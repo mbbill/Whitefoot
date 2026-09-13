@@ -2,7 +2,7 @@
 
 This records the ordinary-value design selected for C2, researched against
 `20043721f68eff0c3bdda72762d8b5221473e600` (the branch's former v0.57).
-The combined publication is v0.55 over main's v0.54; the former branch version
+The combined publication is v0.56 over main's v0.55; the former branch version
 names identify historical research, not released archives. The inventory and
 migration estimates remain in [INVENTORY.md](INVENTORY.md) and
 [EXECUTION.md](EXECUTION.md); the selected alternatives are in
@@ -227,15 +227,16 @@ overlap remain implementation evidence to obtain, not completed proofs.
 
 [TREE.patch](TREE.patch) is the unapplied tree revision for the combined
 container and ordinary-host work. It targets the tree imported from main
-`8909feb1`, which is byte-identical in work revision `5e6ce458`. It supersedes
-the earlier local 17-file proposal: main subsequently recorded dependent
-decisions that the smaller patch did not cover. The live tree is unchanged.
+`d17e7e0d`, retaining its approved range-loan and recursive-partition decisions.
+It supersedes the earlier local 17-file proposal: main subsequently recorded
+dependent decisions that the smaller patch did not cover. The live tree keeps
+main's approved bytes; this proposal is not applied to it.
 Remove the patch and this proposal section when the owner applies or withdraws
 the revision; the surviving reasons then belong in the tree and its log.
 
 The proposal changes 29 existing nodes and adds one prospective log entry.
 It removes four nodes and adds none: 59 nodes become 55, with depth unchanged
-at 3; decisions change from 173 to 176 and rejected alternatives from 61 to 70.
+at 3; decisions change from 177 to 180 and rejected alternatives from 62 to 71.
 The two existing implementation amendments stay separate. The patch applies
 cleanly to the named tree and the reconstructed proposal passes structural
 lint; those checks establish form and applicability, not design approval.

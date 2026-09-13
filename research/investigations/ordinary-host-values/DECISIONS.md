@@ -4,7 +4,7 @@ The owner selected all seven recommendations for C2, with PAR-3 deleted
 outright and no suspension classification retained. The alternatives below
 preserve the reasons for those selections. Baseline source coordinates use
 `20043721`; [DESIGN.md](DESIGN.md) fixes the common ordinary-value boundary.
-The combined publication is v0.55 over main's v0.54. No option below reinstates
+The combined publication is v0.56 over main's v0.55. No option below reinstates
 an external declaration class, semantic ID, finalizer, suspension contract or
 trusted proof source.
 
@@ -51,13 +51,13 @@ conversions. Use Result instead of preserving the historical enum shapes.
 Aggregate payloads use ordinary layout and ownership; this adds no allocation,
 source syntax, acceptance rule or operation-specific lowering path.
 
-This refines the combined v0.55 amendment. Delta: numbered rules, grammar,
+This refines the combined v0.56 amendment. Delta: numbered rules, grammar,
 tokens and exceptions unchanged; six enum names and twelve variant names
 removed, one ordinary struct/constructor name `AcceptedConnection` added;
 seven prelude signatures now return Result. Selection ground:
 minimality-selected, using the same success/error data and ordinary
 propagation rather than equivalent acquisition-specific variants. Released
-v0.54 bytes remain unchanged.
+v0.55 bytes remain unchanged.
 
 ### Factory state
 

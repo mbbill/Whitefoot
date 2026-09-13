@@ -11,7 +11,7 @@ use super::super::model::{
     CheckedBufferRoot, CheckedContainerRoot, CheckedExpression, CheckedMode, CheckedNominalKind,
     CheckedPlaceStep, CheckedSliceOrigin, CheckedStatePath, CheckedType, LoanStrength,
 };
-use super::super::places::{PlaceProjection, PlaceStep, paths_diverge};
+use super::super::places::{PlaceProjection, PlaceStep, paths_diverge, range_pair};
 use super::linearity::LinearityClass;
 use super::{
     CheckStop, Checker, EffectPath, FunctionSignature, LocalBinding, ParameterSignature,
@@ -140,9 +140,11 @@ impl ResolvedPlace {
             root,
             storage_path: path
                 .iter()
-                .map(|step| match step {
-                    PlaceStep::Field(field) => PlaceProjection::Field(*field),
-                    PlaceStep::Subscript(offset) => PlaceProjection::Subscript(*offset),
+                .filter_map(|step| match step {
+                    PlaceStep::Field(field) => Some(PlaceProjection::Field(*field)),
+                    PlaceStep::Subscript(offset) => Some(PlaceProjection::Subscript(*offset)),
+                    // A captured loan extent is not a source value selector.
+                    PlaceStep::Range(_) => None,
                 })
                 .collect(),
             path,
@@ -178,7 +180,7 @@ impl ResolvedPlace {
             .iter()
             .map_while(|step| match step {
                 PlaceStep::Field(field) => Some(*field),
-                PlaceStep::Subscript(_) => None,
+                PlaceStep::Subscript(_) | PlaceStep::Range(_) => None,
             })
             .collect()
     }
@@ -227,6 +229,23 @@ pub(super) struct SliceLoanKey {
     pub(super) place: ResolvedPlace,
     pub(super) parent: Option<DeclarationId>,
     pub(super) strength: LoanStrength,
+}
+
+impl SliceLoanKey {
+    /// [VIEW-2, VIEW-6] Checked child formation either appends a captured
+    /// range or returns a shared child at its parent's result ceiling.
+    /// Both retain the exact backing storage and checked parent route.
+    /// This relation is directional: an exclusive parent cannot use its
+    /// child's authority, even when both protect the same extent.
+    fn is_child_of(&self, parent: &Self) -> bool {
+        self.parent == parent.parent
+            && self.place.root == parent.place.root
+            && self.place.storage_path == parent.place.storage_path
+            && self.place.path.starts_with(&parent.place.path)
+            && (self.place.path.len() > parent.place.path.len()
+                || (self.strength == LoanStrength::Shared
+                    && parent.strength == LoanStrength::Exclusive))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -294,13 +313,15 @@ impl SliceLoan {
     /// while the child lives, and the parent resumes where the child's own
     /// liveness ends [PROV-3].
     ///
-    /// A read of the origin is admitted at both strengths, which is what lets
-    /// a view's own element read reach the storage it views.
+    /// An exclusive loan also refuses reads. A view's own reads and those
+    /// of its checked children use their carried authority; an overlapping
+    /// parent read remains frozen while an exclusive child is live.
     pub(super) const fn refuses(&self, access: AccessKind) -> bool {
-        matches!(
-            access,
-            AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow
-        )
+        match access {
+            AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow => true,
+            AccessKind::Read => matches!(self.strength, LoanStrength::Exclusive),
+            AccessKind::SharedBorrow => false,
+        }
     }
 }
 
@@ -333,6 +354,9 @@ enum Simultaneity {
     /// A use anywhere in the access's own `let`, `set`, expression, or
     /// `return` statement is simultaneous with the access.
     OneStatementIsOneMoment,
+    /// A consumed affine descriptor can retain a call's loan through the
+    /// current statement, but contributes no later lexical or loop use.
+    OnlyCurrentStatement,
 }
 
 #[derive(Clone, Copy)]
@@ -383,7 +407,15 @@ impl SliceInfo {
                     ResolvedPlace::from_path(*root, path.clone()),
                     *origin_region,
                 )),
-                CheckedSliceOrigin::ImmutableConst | CheckedSliceOrigin::FormalSlice { .. } => None,
+                CheckedSliceOrigin::FormalSlice {
+                    parameter,
+                    region,
+                    path,
+                } => Some((
+                    ResolvedPlace::from_path(*parameter, path.clone()),
+                    Some(*region),
+                )),
+                CheckedSliceOrigin::ImmutableConst => None,
             })
             .collect()
     }
@@ -395,9 +427,9 @@ impl SliceInfo {
                 CheckedSliceOrigin::SourcePlace { root, path, .. } => {
                     Some(ResolvedPlace::from_path(*root, path.clone()))
                 }
-                CheckedSliceOrigin::FormalSlice { parameter, .. } => {
-                    Some(ResolvedPlace::fields(*parameter, Vec::new()))
-                }
+                CheckedSliceOrigin::FormalSlice {
+                    parameter, path, ..
+                } => Some(ResolvedPlace::from_path(*parameter, path.clone())),
                 CheckedSliceOrigin::ImmutableConst => None,
             };
             if let Some(place) = place
@@ -1067,6 +1099,7 @@ absent when it writes none",
             origins: vec![CheckedSliceOrigin::FormalSlice {
                 parameter: parameter.declaration,
                 region,
+                path: Vec::new(),
             }],
             // An incoming view supplies its own permission. No local
             // formation loan is registered until it forms a shared child.
@@ -1131,6 +1164,7 @@ inside the `region` block whose region it takes",
             }
             return self.check_child_reborrow(
                 node, place_node, pbase, region, kind, bindings, function, loop_depth, position,
+                None,
             );
         }
         if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
@@ -1567,7 +1601,7 @@ inside the `region` block whose region it takes",
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn check_child_reborrow(
+    pub(super) fn check_child_reborrow(
         &self,
         node: NodeId,
         place_node: NodeId,
@@ -1578,6 +1612,7 @@ inside the `region` block whose region it takes",
         function: &FunctionSignature,
         loop_depth: usize,
         position: ReborrowPosition,
+        view_range: Option<super::super::places::RangeId>,
     ) -> Result<TypedExpression, CheckStop> {
         let carrier = self
             .tree
@@ -1703,6 +1738,9 @@ inside the `region` block whose region it takes",
         let mut place = parent.place.clone();
         if parent.exact_place {
             place.extend_storage(&path);
+        }
+        if let Some(range) = view_range {
+            place.path.push(PlaceStep::Range(range));
         }
         let fields = path
             .iter()
@@ -2242,6 +2280,9 @@ and name it on the returned reborrow"
             .and_then(|holder| bindings.get(&holder))
             .and_then(|holder| holder.borrow.as_ref())
             .map(|borrow| &borrow.place);
+        let through_slice = through_holder
+            .and_then(|holder| bindings.get(&holder))
+            .and_then(|holder| holder.slice.as_ref());
         // A view continues the permission its formation obtained from an
         // actual checked child borrow [VIEW-2]. Copies and permitted returns
         // register their descriptors on that same loan. Matching an origin
@@ -2278,7 +2319,26 @@ and name it on the returned reborrow"
                     AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow => true,
                     AccessKind::SharedBorrow => loan.kind == BorrowKind::Unique,
                 };
-                if conflicts && !suspended_ancestor && !view_parents.contains(declaration) {
+                // An incoming view's origin and its descriptor share a
+                // formal root. Authenticate a local descriptor holder's
+                // child through their carried keys, not that root alone.
+                let through_view_child = through_slice.is_some_and(|child| {
+                    local.slice.as_ref().is_some_and(|parent| {
+                        child.loans.iter().any(|key| {
+                            place.root == key.place.root
+                                && place.path.starts_with(&key.place.path)
+                                && parent
+                                    .loans
+                                    .iter()
+                                    .any(|ancestor| key.is_child_of(ancestor))
+                        })
+                    })
+                });
+                if conflicts
+                    && !suspended_ancestor
+                    && !view_parents.contains(declaration)
+                    && !through_view_child
+                {
                     return self.issue_node(
                         SemanticRule::Own5,
                         node,
@@ -2287,10 +2347,24 @@ and name it on the returned reborrow"
                 }
             }
             for loan in &local.slice_loans {
+                let own_authority = through_slice.is_some_and(|slice| {
+                    slice.loans.iter().any(|key| {
+                        place.root == key.place.root
+                            && place.path.starts_with(&key.place.path)
+                            && (*key == loan.key()
+                                || (loan.strength == LoanStrength::Exclusive
+                                    && key.is_child_of(&loan.key())))
+                    })
+                });
                 if places_overlap(&loan.place, place)
+                    && !own_authority
                     && loan.refuses(access)
+                    && (!matches!(access, AccessKind::Read) || through_holder.is_some())
                     && self.slice_loan_is_live(loan, bindings, node)?
                 {
+                    if self.defer_range_conflict(&loan.place, place, node)? {
+                        continue;
+                    }
                     return self.issue_node(
                         SemanticRule::Own5,
                         node,
@@ -2341,6 +2415,14 @@ and name it on the returned reborrow"
                     }
                 }
             }
+            // An access within incoming view storage keeps its actual
+            // subrange here. A descriptor access still protects the complete
+            // backing origin. Both paths retain every child-loan check.
+            for origin in &mut frozen {
+                if origin.root == place.root && place.path.starts_with(&origin.path) {
+                    *origin = place.clone();
+                }
+            }
             if !frozen.is_empty() {
                 self.check_child_reborrow_freeze_at(
                     bindings,
@@ -2383,12 +2465,25 @@ and name it on the returned reborrow"
     ) -> Result<(), CheckStop> {
         for local in bindings.values() {
             for loan in &local.slice_loans {
-                if loan.strength == LoanStrength::Shared
-                    && origins
-                        .iter()
-                        .any(|origin| places_overlap(&loan.place, origin))
-                    && self.slice_loan_is_live_at(loan, bindings, node, simultaneity)?
-                {
+                if !self.slice_loan_is_live_at(loan, bindings, node, simultaneity)? {
+                    continue;
+                }
+                for origin in origins {
+                    if !places_overlap(&loan.place, origin) {
+                        continue;
+                    }
+                    // A view uses the authority its own loan and suspended
+                    // ancestors supply. Only descendants and other ranges
+                    // can freeze that use.
+                    if loan.place.root == origin.root
+                        && origin.path.starts_with(&loan.place.path)
+                        && loan.strength == LoanStrength::Exclusive
+                    {
+                        continue;
+                    }
+                    if self.defer_range_conflict(&loan.place, origin, node)? {
+                        continue;
+                    }
                     return self.issue_node(
                         SemanticRule::Own5,
                         node,
@@ -2400,15 +2495,34 @@ and name it on the returned reborrow"
         Ok(())
     }
 
+    fn defer_range_conflict(
+        &self,
+        left: &ResolvedPlace,
+        right: &ResolvedPlace,
+        node: NodeId,
+    ) -> Result<bool, CheckStop> {
+        let Some((left, right)) = range_pair(&left.path, &right.path) else {
+            return Ok(false);
+        };
+        let conflict = super::super::model::CheckedRangeConflict {
+            site: self.tree.path(node)?.clone(),
+            left: left.min(right),
+            right: left.max(right),
+        };
+        let mut conflicts = self.range_conflicts.borrow_mut();
+        if !conflicts.contains(&conflict) {
+            conflicts.push(conflict);
+        }
+        Ok(true)
+    }
+
     /// [PROV-3] whether one loan is still live at this access.
     ///
     /// A loan begins where its value is formed or copied and ends where that
     /// value's own liveness ends: for an **affine** view its consume or
-    /// release, and for a **copy** view its last use. The affine case keeps
-    /// [OWN-4]'s named-region extent, which is the conservative reading of a
-    /// consume this checker has no separate program point for; the copy case
-    /// is decided here, and is what admits an append to a run after the view
-    /// of it went dead.
+    /// release, and for a **copy** view its last use. A consume ends an
+    /// affine loan after the complete consuming statement, so earlier
+    /// argument evaluation cannot release a loan the same call still uses.
     ///
     /// A loan no binding holds is live for its region, because the value that
     /// held it was consumed inside its own statement and this checker states
@@ -2429,10 +2543,22 @@ and name it on the returned reborrow"
         node: NodeId,
         simultaneity: Simultaneity,
     ) -> Result<bool, CheckStop> {
-        if loan.strength != LoanStrength::Shared || loan.descriptors.is_empty() {
+        if loan.descriptors.is_empty() {
             return Ok(true);
         }
         for holder in &loan.descriptors {
+            if loan.strength == LoanStrength::Exclusive {
+                if bindings.get(holder).is_some_and(|binding| binding.live)
+                    || self.declaration_is_used_at_or_after(
+                        *holder,
+                        node,
+                        Simultaneity::OnlyCurrentStatement,
+                    )?
+                {
+                    return Ok(true);
+                }
+                continue;
+            }
             let live = bindings.get(holder).is_none_or(|binding| binding.live);
             if live && self.declaration_is_used_at_or_after(*holder, node, simultaneity)? {
                 return Ok(true);
@@ -2474,8 +2600,7 @@ and name it on the returned reborrow"
                 | Production::SetStmt
                 | Production::ExprStmt
                 | Production::ReturnStmt
-                    if simultaneous.is_none()
-                        && simultaneity == Simultaneity::OneStatementIsOneMoment =>
+                    if simultaneous.is_none() && simultaneity != Simultaneity::Sequential =>
                 {
                     simultaneous = Some(self.tree.path(ancestor)?.components().to_vec());
                 }
@@ -2500,7 +2625,7 @@ and name it on the returned reborrow"
                 continue;
             }
             let path = usage.origin().node().components();
-            if path >= here.as_slice() {
+            if simultaneity != Simultaneity::OnlyCurrentStatement && path >= here.as_slice() {
                 return Ok(true);
             }
             if simultaneous
@@ -2509,9 +2634,10 @@ and name it on the returned reborrow"
             {
                 return Ok(true);
             }
-            if repeated
-                .as_ref()
-                .is_some_and(|body| path.starts_with(body.as_slice()))
+            if simultaneity != Simultaneity::OnlyCurrentStatement
+                && repeated
+                    .as_ref()
+                    .is_some_and(|body| path.starts_with(body.as_slice()))
             {
                 return Ok(true);
             }

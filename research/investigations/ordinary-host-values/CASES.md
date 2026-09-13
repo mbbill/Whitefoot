@@ -30,11 +30,18 @@ The native engine gives no permission to overlap source calls; common factory
 state on read_at/read_next/write_once accounts for stream and file aliasing.
 
 The pre-merge C2 structure gate reported 25 runner tests and 130/130 active
-rules covered. The combined v0.55 publication also retires META-6 under main's
+rules covered. The combined v0.56 publication also retires META-6 under main's
 approved deletion of the derivation ledger; that coverage record is removed
 with its rule. These older counts do not report the merged revision's gate.
 The canonical adapter and native host CI report execution against their exact
 revision. This register records rule grounds, not a substitute gate result.
+
+The main integration at `d17e7e0d` retains all eleven range-loan cases and
+their manifest rows unchanged: VIEW-2 endpoint bounds, OWN-5 parent exclusion
+and range separation, OWN-6 strength, OWN-10 result lifetime, and PAR-2 runtime
+stride permission. Their only source migration is `command fn main` to
+ordinary `fn main`, under C2's removal of FN-7's program-kind distinction.
+No range assertion, source verdict or expected execution is changed.
 
 The native adapter reuses identical compiled library object bytes within its
 test process; every case still compiles its own module and links every native

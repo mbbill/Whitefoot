@@ -5,7 +5,7 @@ on PR #30's existing line. The paused D8 library, gate and regression drafts
 remain excluded. The [inventory](INVENTORY.md) pins the research baseline;
 [CASES.md](CASES.md) gives each conformance migration and its rule change.
 Main's documentation migration supersedes the original README, ledger and
-memory destinations below; the combined publication is v0.55 over v0.54.
+memory destinations below; the combined publication is v0.56 over v0.55.
 
 ## First settle the ordinary interfaces
 

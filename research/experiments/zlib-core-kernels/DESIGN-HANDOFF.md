@@ -439,9 +439,10 @@ It does not require a general affine, Presburger, or loop theorem prover.
 
 ## 9. Production `wfc` readiness
 
-Production implementation is premature in this record. The Direction Outline
-owns current status and an `ACTIVE` Current Plan owns execution sequencing;
-this experiment changes neither.
+This readiness assessment describes the experiment's baseline, not current
+compiler capabilities. The [active specification](../../../spec/kernel-spec.md)
+defines current language rules, conformance results state what the compiler
+implements, and [AGENTS.md](../../../AGENTS.md) owns the workflow.
 
 Before these consumers can exist, production `wfc` needs:
 

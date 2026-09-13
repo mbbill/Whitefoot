@@ -31,6 +31,17 @@ of them is a decision. Remove an item when its fix and test land.
   the implementation or the accepted proof rules; the
   [selection-ground assessment](../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
   separates the unresolved costs from the safety obligations.
+- **Pre-kill L0 closure has an unresolved compilation cost.** Before an
+  [ENT-5] invalidation batch, `materialize_before_event_kill` in
+  [`semantic/entailment/flow.rs`](../compiler/src/semantic/entailment/flow.rs)
+  calls `materialize_closure_before_kill` in
+  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs).
+  A non-closed state with explicit relations takes the complete closure;
+  already-closed, contradictory, and empty-relation states have fast paths.
+  The cost on real programs needs stage attribution before changing this
+  path. A narrower projection must preserve every surviving consequence,
+  including implicit type edges and disequality strengthening; filtering
+  explicit edges alone is insufficient. No speedup is established.
 - **Connection-level concurrency is not supplied by ordinary source order.**
   A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting
@@ -61,6 +72,15 @@ of them is a decision. Remove an item when its fix and test land.
   propagate g();` never overlaps. Allowing a `propagate` second member would
   need the lowering to join the hand-out before the `Err` return; a future
   investigation, taken up when a real program shows the gap.
+- **Parallel stencil lowering has a one-worker cost and a grain cliff.**
+  The runtime-sized stencil's parallel build is about 15–20% slower than its
+  sequential build at one worker on the measured M1 Pro, while granting no
+  tasks. At 2046 interior rows, the current estimated row cost affords only
+  two chunks even with four workers. The
+  [range-loan measurements](../research/investigations/range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
+  retain both that size and the larger four-chunk case. The one-worker cause
+  within lowering/code generation is not isolated; the finite range proofs
+  add no runtime range checks.
 
 ## Open language questions
 

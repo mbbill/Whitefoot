@@ -813,15 +813,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         effects.add_read(path);
                     }
                 }
-                for (place, _) in slice.slice.source_places() {
-                    self.check_loan_access(
-                        bindings,
-                        Some(slice.declaration),
-                        &place,
-                        AccessKind::Read,
-                        atoms[0],
-                    )?;
-                }
+                // A view measure reads the immutable descriptor, not its
+                // elements. Live child loans do not freeze these cells.
                 for place in slice.slice.effect_places() {
                     for path in self.effect_paths_for_place(atoms[0], &place, bindings)? {
                         effects.add_read(path);

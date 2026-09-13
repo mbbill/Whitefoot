@@ -34,6 +34,10 @@ its previous form with the requested change rather than judging only against
 the newly edited rule.
 
 Put a compact report in the existing PR, or the task reply when there is no PR.
+Also check the conversation handoff required by `design/skill/SKILL.md`:
+the reply explains each outstanding amendment and presents the DCR results
+with the primary agent's assessment. Publishing the report in the PR does
+not replace that explanation to the owner.
 Use the [PR template](../.github/pull_request_template.md)'s three bullets:
 
 - **Scope:** reviewer/model, base and head, checked groups and any skipped
@@ -68,9 +72,7 @@ or self-description merely to satisfy this table.
 | `AGENTS.md` / `CLAUDE.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
 | `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
 | `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule |
-| `docs/ideas.md`; `docs/bargain.md`, `docs/why-whitefoot.md` | Candidate mechanisms; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
-| `docs/roadmap.md` | Long-range reference directions | Required task sequencing, approval, an authoritative current capability inventory; routine work does not require updating it |
-| `docs/ongoing/` | Existing, bounded implementation notes for their named subsystem | A new per-task reporting system, a second project-wide status inventory |
+| `docs/ideas.md`; `docs/why-whitefoot.md` | Candidate mechanisms, open questions and experiment sketches; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
 | `design/` | Live design decisions with their reasons and refused alternatives, one log entry per approved tree change, and the procedure that maintains them | Module inventories, implementation transcripts, task progress, history |
 | PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
 
@@ -232,6 +234,8 @@ Use `design/skill/SKILL.md`; this section does not replace it.
 
 - [ ] **M1 — Design, tree, and amendments.** The design and proposed tree
   revision explain the choices and their differences from the current tree.
+  The owner-facing reply explains each outstanding amendment as the skill's
+  Workflow section requires.
   Every live-tree change follows the owner's approval of that revision,
   whenever it occurs during the work, and has a concise traceability log.
   Decisions the agent makes on its own remain amendments under
@@ -243,8 +247,9 @@ Use `design/skill/SKILL.md`; this section does not replace it.
   directions across the agreed delivery scope. Include relevant existing
   commitments and pending revisions, not just changed tree nodes. Check for
   missing or partial implementation as well as unrecorded or contradictory
-  choices. The owner receives the findings and primary agent's assessment
-  before any action on them. Pending rulings remain explicit; an amendment
+  choices. The owner receives the results and primary agent's assessment
+  in the conversation before any action on findings, as the skill's DCR
+  handoff requires. Pending rulings remain explicit; an amendment
   alone does not establish correctness. Ongoing discussion needs neither a
   finished implementation nor a separate completion review.
 - [ ] **M3 — Form.** `make design-lint` passes on the head revision.
@@ -263,8 +268,10 @@ Source: [evidence practice](practice.md#evidence-guidance) and
   a causal claim has isolating evidence. A historical result or another agent's
   report is not silently presented as a fresh independent measurement.
 - [ ] **V3 — Delivery.** The reply/PR describes the current result and remaining
-  limitations. For spec/conformance changes, it explains what changed and its
-  selection ground. If merging is requested, verify owner approval and root
+  limitations. For specification revisions, check the conversation explanation
+  required by `AGENTS.md`: affected rules, before/after behavior, and selection
+  grounds. Conformance changes explain what changed and their selection
+  ground. If merging is requested, verify owner approval and root
   `make check` for the exact merge tree under the existing four rules; neither
   a fast review nor a focused test run substitutes for them.
 - [ ] **V4 — Existing PR updated.** Before reporting completion, commit and

@@ -9,10 +9,10 @@ not a description of the current compiler or a promise of global optimality.
 
 For current objectives and tradeoffs, read the [constitution](constitution.md).
 The conformance report owns implementation status and the
-[active specification](../spec/kernel-spec.md) owns language semantics. The
-[roadmap](roadmap.md) is reference material outside the working loop. Original
-measurements below retain their conditions; this essay adds no approval or
-workflow requirements.
+[active specification](../spec/kernel-spec.md) owns language semantics.
+[Research ideas](ideas.md) collect open questions and links to their evidence.
+Original measurements below retain their conditions; this essay adds no
+approval or workflow requirements.
 
 ---
 
@@ -617,10 +617,10 @@ What that buys, labeled by evidence status:
   artifact design require byte-stable results for the same source and pinned
   toolchain. The retired compiler prototypes exercised deterministic parsing
   and selected IR fixtures, but Whitefoot does not yet have a complete
-  self-hosted compiler or a production-object reproducibility result. The Rust
-  Direction Outline therefore keeps complete artifact reproducibility open
-  until a real build, distribution, caching, or audit consumer needs it rather
-  than treating it as an already earned claim.
+  self-hosted compiler or a production-object reproducibility result.
+  [Complete artifact reproducibility](ideas.md#reproducible-compiler-outputs)
+  remains an open question for a real build, distribution, caching, or audit
+  consumer rather than an already earned claim.
 - **Semantic diff and merge (by construction).** No formatting variance exists, so every diff is a semantic diff. There is no "reformatted, 2,000 lines changed" commit, no style debate, and nowhere for an unintended edit to hide in noise. For AI-written code this is the review story: what changed is what the diff says changed.
 - **Caching and build speed (projected, labeled).** Source-to-tree is a bijection, the canonical artifact is deterministic, and effect rows already decouple optimization from body visibility (§ 4, the measured half of this claim). Those are the preconditions content-addressed build caching wants, designed in on purpose. The honest status: the design removes the classical obstacles to very fast incremental compilation, and no build-speed number is measured yet.
 - **The repair loop (by construction, exercised daily).** Deterministic, rule-citing, byte-stable diagnostics are an API, not prose. The writer that consumes them is a machine: same mistake, same message, same fix, every time. This is what "the AI can act on failure" means in practice.
@@ -633,14 +633,15 @@ The through-line: in most toolchains, formatting, diffing, caching, and diagnost
 
 ## 12. The proposed ten sealed building blocks, and a proof lane in
 
-*Current status: the Constitution records D17's representation-invariant proof
-lane as a long-term rule. The Direction Outline defers the exact sealed
-catalog, proof mechanism, and storage mechanism; none is a current language
-feature.*
+*Historical direction: D17 selected a representation-invariant proof lane
+while deferring the exact sealed catalog and mechanism. The retained
+[storage questions](ideas.md#storage-transitions-and-representation-privileges)
+do not select a concrete proof or privilege mechanism; the active specification
+defines current language features.*
 
 An expert asks the right question next: *"Some structures cannot be written in checked code in any language. A production hash table's reality, one thousand slots, thirty-seven live, liveness tracked in side-band control bytes, is not expressible in your type system. Where's the escape hatch?"*
 
-There is no writer-accessible escape hatch. The selected long-term answer is a
+There is no writer-accessible escape hatch. The long-term answer considered here is a
 proof lane; the short list considered beside it is a deferred candidate, and
 the distinction is the point.
 
@@ -707,7 +708,7 @@ Claims earn belief by naming their edges. The current honest ledger:
 - **The frequency question is open.** The fact channels win on kernels that exercise them. How often those patterns dominate real medium-to-large codebases is not established yet, and an early survey attempt was directional at best. This is the biggest honest unknown in the performance story.
 - **The sealed-kernel numbers are shape validations, not shipped-product benchmarks.** The catalog dry runs were C implementations of the specified kernel shapes against mature Rust baselines on one Apple development machine: sequence push-then-sum about 1.5x over `Vec`, table iteration about 1.4x over hashbrown, steady-state insert modestly behind, 4 of 5 workloads inside the preregistered band; the queue beats `rtrb` by about 20% on round-trip latency while `rtrb` leads by about 25% on batched-32 throughput, both far above the band's floor. None of this is whitefoot-emitted code yet, and magnitudes will be re-established on the deploy target.
 - **Single-shot writability is not solved.** The current clean baseline for one research kernel is roughly a quarter of programs correct on the first attempt, with the failure modes catalogued and fixes staged. The design answer has always been the diagnostic feedback loop (§ 11), and the loop's measured effect is the next experiment, not a completed one.
-- **Several announced mechanisms are deferred designs, not shipped features.** The ten-kernel catalog is a historical candidate whose exact storage mechanism is deferred; D17's user representation-proof lane is recorded as long-term project law but has no current proof language or production path. This document describes the design and the evidence gathered so far; only the active specification defines current language capability, while the Direction Outline records direction and evidence status.
+- **Several announced mechanisms are deferred designs, not shipped features.** The ten-kernel catalog and D17's user representation-proof lane are historical directions, with concrete mechanisms still open in the [storage questions](ideas.md#storage-transitions-and-representation-privileges). This document describes those designs and their evidence; only the active specification defines current language capability.
 
 ---
 
@@ -741,7 +742,7 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Shipped-library floor: 1.653x [1.631, 1.667] vs `percent-encoding` 2.3.2; 1.098x [1.085, 1.145] vs `utf8parse` 0.2.2; bounds retained | `research/experiments/default-floor/RESULTS.md` |
 | Kernel-shape dry runs (C mockups vs `Vec`/hashbrown; bands) | `archive/research/systems-performance-coverage/m3a-kernel-dryrun/RESULTS.md` |
 | Queue: exhaustive model check, all 4 weakened-ordering mutants caught; zero-RMW hot path; latency vs throughput vs `rtrb` | `archive/research/systems-performance-coverage/m6a-spsc-dryrun/RESULTS.md` |
-| Reproducibility direction and the absence of a complete object claim | `docs/roadmap.md`, item `VERIFY-4` |
+| Reproducibility direction and the absence of a complete object claim | [Reproducible compiler outputs](ideas.md#reproducible-compiler-outputs) |
 | Source-language rules cited (one spelling; reject-not-reformat; checked effects; static contracts; exact integer domains; prove-or-reject partial operations; source invariants and finite use steps) | `spec/kernel-spec.md` |
 | Pattern doctrine (command buffer, SoA pool, boolean classifier, proof at the maintained boundary) | `docs/patterns.md` |
 | Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `archive/research/phase2-notes/verified-findings.md`, `archive/research/phase2-notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |

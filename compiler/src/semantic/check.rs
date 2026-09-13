@@ -188,6 +188,7 @@ fn derive_slice_return_ceiling(
             ceiling.push(CheckedSliceOrigin::FormalSlice {
                 parameter: parameter.declaration,
                 region,
+                path: Vec::new(),
             });
         }
     }
@@ -705,6 +706,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// or non-escaping control header ends [OWN-6]. Nested checking retains
     /// loans created before its own evaluation boundary.
     statement_loans: RefCell<Vec<borrows::TemporaryLoan>>,
+    range_conflicts: RefCell<Vec<super::model::CheckedRangeConflict>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
     nominal_templates: Vec<NominalTemplate>,
@@ -1170,6 +1172,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             statement_loans: RefCell::new(Vec::new()),
+            range_conflicts: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             prelude_types: Vec::new(),
             nominal_templates: Vec::new(),
@@ -1683,6 +1686,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
         self.check_entry_formers(signature)?;
+        self.range_conflicts.borrow_mut().clear();
         let mut bindings = HashMap::new();
         let mut parameters = Vec::with_capacity(signature.parameters.len());
         let mut next_binding = 0_u32;
@@ -1852,6 +1856,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             result_mode: signature.result_mode,
             result: signature.result,
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
+            range_conflicts: {
+                let mut conflicts = std::mem::take(&mut *self.range_conflicts.borrow_mut());
+                conflicts.sort_by_key(|conflict| {
+                    (
+                        conflict.site.components().to_vec(),
+                        conflict.left,
+                        conflict.right,
+                    )
+                });
+                conflicts
+            },
             declared_state_writes: signature.declared_effects.writes.clone(),
             requirements,
             postconditions,
@@ -3171,6 +3186,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
+                        super::entailment::ObligationFamily::ViewRange => SemanticRule::View2,
+                        super::entailment::ObligationFamily::RangeSeparation => SemanticRule::Own5,
                         super::entailment::ObligationFamily::KernelRequirement => {
                             SemanticRule::Blk0
                         }
@@ -3483,6 +3500,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             kind: SemanticIssueKind::UndischargedAllocationFitObligation {
                                 residual,
                                 mechanical_fix: "when the allocation must fit, establish `buffer_fits::<T>(n)` with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when allocation shortage is intended program behavior; otherwise restructure the allocation",
+                            },
+                        },
+                        super::entailment::ObligationFamily::RangeSeparation => SemanticIssue {
+                            rule: SemanticRule::Own5,
+                            location,
+                            kind: SemanticIssueKind::UndischargedRangeSeparation {
+                                residual,
+                                mechanical_fix: "prove the captured ranges disjoint, or end the conflicting child loan before this access",
+                            },
+                        },
+                        super::entailment::ObligationFamily::ViewRange => SemanticIssue {
+                            rule: SemanticRule::View2,
+                            location,
+                            kind: SemanticIssueKind::UndischargedViewRangeObligation {
+                                residual,
+                                mechanical_fix: "establish start <= end <= len_of(source) with a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the view range",
                             },
                         },
                         // [BLK-0]: a diagnostic arising in this domain cites

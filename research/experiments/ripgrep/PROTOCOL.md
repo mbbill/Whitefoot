@@ -2,8 +2,8 @@
 
 Status: FROZEN BEFORE UPSTREAM COMPARATOR SELECTION
 
-This bundle implements the upstream-only RG-BASE step authorized by the active
-Current Plan. It freezes the target, inputs, command bytes, output oracle,
+This bundle implements the upstream-only RG-BASE measurement. It freezes the
+target, inputs, command bytes, output oracle,
 statistics, comparator-selection rule, and future 2x acceptance rule before
 reading official-versus-native timing. It does not authorize a Whitefoot
 search implementation, compiler change, specification change, or benchmark
@@ -48,8 +48,8 @@ earlier choice.
 5. A separate three-warmup, 31-repetition baseline is then run. Separating it
    from selection prevents reporting the same noise that picked the winner.
 6. Resource sidecars and sampling traces attribute the selected baseline.
-   Only then are RESULTS.md, the Direction Outline, and the next proposed
-   Current Plan updated.
+   RESULTS.md records the resulting measurements and attribution; subsequent
+   investigations use that evidence.
 
 If the fixed 31 samples do not satisfy the preregistered precision gate, the
 case is inconclusive. No samples are appended until the result looks good, and

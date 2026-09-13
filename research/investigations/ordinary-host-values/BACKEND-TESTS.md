@@ -252,7 +252,7 @@ caller: its only calls were the boundary assertions in
 The old compiler's staged loop lowering had been its consumer; ordinary linked
 functions and the native engines do not query it.
 
-Deleting PAR-3 in the combined v0.55 publication removes the lowering contract those assertions tested.
+Deleting PAR-3 in the combined v0.56 publication removes the lowering contract those assertions tested.
 This revision therefore deletes the hook, its two private window constants,
 the test's two mirrored constants, that single test function and its runner
 invocation. It does not change the native submit/join protocol, progress,
@@ -353,7 +353,7 @@ changes accompany this build repair.
 
 ## Combined publication over the current-stack runtime
 
-The v0.55 integration adopts main's persistent native worker stacks and
+The v0.56 integration adopts main's persistent native worker stacks and
 64-slot deques, asymmetric-core idle-window rule, recursive offer budgets,
 scalar-leaf and sequential-refusal controls, and native IOCP/io_uring repairs.
 Earlier C2 measurements remain measurements of their named pre-merge

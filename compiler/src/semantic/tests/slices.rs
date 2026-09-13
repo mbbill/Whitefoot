@@ -6,6 +6,99 @@ use super::super::model::{
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 #[test]
+fn distinct_relative_indices_do_not_separate_unknown_range_frames() {
+    use super::super::places::{PlaceOffset, PlaceStep, RangeId, paths_diverge};
+    // The first range may begin at 0 and the second at 1: their relative
+    // indices 1 and 0 then reach the same element despite unequal literals.
+    let left = [
+        PlaceStep::Range(RangeId(0)),
+        PlaceStep::Subscript(PlaceOffset::Literal(1)),
+    ];
+    let right = [
+        PlaceStep::Range(RangeId(1)),
+        PlaceStep::Subscript(PlaceOffset::Literal(0)),
+    ];
+    assert!(!paths_diverge(&left, &right));
+}
+
+#[test]
+fn bounded_view_formation_proves_both_domain_conjuncts() {
+    for endpoints in ["3_u64, 2_u64", "0_u64, 5_u64", "5_u64, 5_u64"] {
+        let source = format!(
+            "fn main() -> status: own ExitStatus pure {{\n  let values = buffer_new(4_u64, 0_u64);\n  region {{\n    let view = mut_slice_of(&uniq values, {endpoints});\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::View2, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::UndischargedViewRangeObligation { .. }
+            )
+        });
+    }
+}
+
+#[test]
+fn recursive_range_overlap_and_parent_misuse_are_rejected() {
+    let source =
+        include_str!("../../../../research/experiments/compute-bench/programs/range_split.wf");
+    let overlap = source.replace("&uniq output, middle, count", "&uniq output, 0_u64, count");
+    assert_rule_kind(overlap.as_bytes(), SemanticRule::Own5, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedRangeSeparation { .. })
+    });
+    for misuse in ["set output[0_u64] = 9_u64;", "let early = output[0_u64];"] {
+        let invalid = source.replace(
+            "    let a = fill_recursive",
+            &format!("    {misuse}\n    let a = fill_recursive"),
+        );
+        assert_rule(
+            invalid.as_bytes(),
+            SemanticRule::Own5,
+            SemanticIssueKind::BorrowConflict,
+        );
+    }
+}
+
+#[test]
+fn assigning_an_endpoint_cannot_retarget_an_existing_exclusive_loan() {
+    let source = br#"fn main() -> status: own ExitStatus pure {
+  let values = buffer_new(8_u64, 0_u64);
+  let cut = 4_u64;
+  region {
+    let left = mut_slice_of(&uniq values, 0_u64, cut);
+    set cut = 0_u64;
+    let right = mut_slice_of(&uniq values, cut, 8_u64);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Own5, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedRangeSeparation { .. })
+    });
+}
+
+#[test]
+fn an_earlier_argument_consume_does_not_release_a_child_within_its_call() {
+    let source = br#"fn discard(first: own MutSlice<u64>, second: own MutSlice<u64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = buffer_new(8_u64, 0_u64);
+  region {
+    let parent = mut_slice_of(&uniq values, 0_u64, 8_u64);
+    let child = mut_slice_of(&uniq parent, 0_u64, 4_u64);
+    let result = discard(first: move child, second: move parent);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Own5,
+        SemanticIssueKind::BorrowConflict,
+    );
+}
+
+#[test]
 fn region_substitution_does_not_implicitly_shorten_direct_view_values() {
     let prefix = "const data: array<u8, 2> =[7_u8, 9_u8];\n\nfn choose['r](first: own Slice<'r, u8>, second: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {\n  return first;\n}\n\n";
     let distinct = format!(
@@ -275,6 +368,84 @@ fn main() -> status: own ExitStatus pure {
             matches!(kind, SemanticIssueKind::BorrowConflict)
         });
     }
+}
+
+#[test]
+fn borrowed_storage_subranges_keep_overlap_and_parent_access_checked() {
+    let template = r#"fn split(values: &uniq STORAGE) -> result: own unit reads(values), writes(values) contract {
+  requires len_of(deref(values)) == 8_u64;
+  requires head_of(deref(values)) == 0_u64;
+} {
+  region {
+    let left = mut_slice_of(&uniq deref(values), 0_u64, 4_u64);
+    let right = mut_slice_of(&uniq deref(values), 4_u64, 8_u64);
+    set left[0_u64] = 11_u64;
+    set right[0_u64] = 19_u64;
+    let observed = left[0_u64];
+    return unit;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for storage in ["array<u64, 8>", "FixedVector<u64, 8>"] {
+        let source = template.replace("STORAGE", storage);
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            );
+        });
+        let overlap = source.replace("4_u64, 8_u64", "3_u64, 8_u64");
+        assert_rule_kind(overlap.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::UndischargedRangeSeparation { .. })
+        });
+        let parent_read = source.replace(
+            "    set left[0_u64]",
+            "    let premature = deref(values)[0_u64];\n    set left[0_u64]",
+        );
+        assert_rule_kind(parent_read.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+    }
+}
+
+#[test]
+fn formal_view_child_permission_requires_the_live_descriptor_holder() {
+    let source = r#"fn inspect(view: own MutSlice<u8>) -> result: own unit reads(view), writes(view) contract {
+  requires len_of(view) == 1_u64;
+} {
+  region {
+    let holder = &uniq view;
+    region {
+      let child = mut_slice_of(&uniq deref(holder), 0_u64, 1_u64);
+      let observed = child[0_u64];
+      set child[0_u64] = observed;
+    }
+    let remaining = len_of(deref(holder));
+    return unit;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    let bypass = source.replace(
+        "mut_slice_of(&uniq deref(holder),",
+        "mut_slice_of(&uniq view,",
+    );
+    assert_rule_kind(bypass.as_bytes(), SemanticRule::Own5, |kind| {
+        matches!(kind, SemanticIssueKind::BorrowConflict)
+    });
 }
 
 #[test]

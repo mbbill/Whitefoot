@@ -253,6 +253,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferFits { length, .. } => {
                 self.collect_expression_release_effects(function, length, effects)?;
             }
+            CheckedExpression::SliceOf { .. } => {
+                for child in super::super::model::expression_children(expression) {
+                    self.collect_expression_release_effects(function, child, effects)?;
+                }
+            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -260,7 +265,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }

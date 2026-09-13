@@ -1734,6 +1734,10 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::RangeSeparation => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::ViewRange => {
+                        assert!(outcome.conjunct <= 1)
+                    }
                     // [BLK-0]: one root per declared requirement of the row,
                     // whose conjunct is that requirement's position in the
                     // row's own list.
@@ -1787,7 +1791,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         DerivationConclusion::Goal {
                             goal,
                             sign: GoalSign::Positive,
-                        } if matches!(outcome.family, ObligationFamily::AllocationFit) => {
+                        } if matches!(
+                            outcome.family,
+                            ObligationFamily::AllocationFit | ObligationFamily::ViewRange
+                        ) =>
+                        {
                             assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
                             assert!(!outcome.contradictory);
                         }
@@ -1799,6 +1807,28 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         }
                     }
                 }
+            }
+            DerivationRootKind::RangePartition {
+                obligation,
+                partition,
+                base,
+            } => {
+                let outcome = &summary.obligations[obligation as usize];
+                assert_eq!(outcome.family, ObligationFamily::ViewRange);
+                assert!(outcome.discharged);
+                let partition = &outcome.range_partitions[partition as usize];
+                assert_eq!(
+                    root.node,
+                    if base {
+                        partition.base_nonnegative
+                    } else {
+                        partition.stride_nonnegative
+                    }
+                );
+                assert!(matches!(
+                    conclusion,
+                    DerivationConclusion::AffineConsequence | DerivationConclusion::Contradiction
+                ));
             }
             DerivationRootKind::AllocationUpperBound(ordinal) => {
                 let outcome = summary

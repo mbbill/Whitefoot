@@ -7,7 +7,7 @@ The [design](DESIGN.md), [owner selections](DECISIONS.md),
 [execution plan](EXECUTION.md), and [case register](CASES.md) use this inventory.
 
 The register records the C1 baseline, including its then-live documentation.
-For the combined v0.55 publication, main's later retirement of the compiler
+For the combined v0.56 publication, main's later retirement of the compiler
 README and derivation ledger takes precedence over their original update
 dispositions. Its frozen mcts_mem bytes remain historical; current decisions
 and proposed amendments belong in design. The linked baseline files and line
