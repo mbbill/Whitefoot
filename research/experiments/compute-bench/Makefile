@@ -48,9 +48,10 @@ SHA256 := $(shell if command -v shasum > /dev/null 2>&1; then echo "shasum -a 25
 BENCH_ARCH := $(if $(filter x86_64,$(ARCH)),-march=x86-64-v3,)
 # Not cosmetic. The investigation traces a large core-time swing to whether one
 # 32-byte hot loop crosses a 32-byte boundary. It must reach every translation
-# unit of a reference implementation or none of it. It deliberately does not
-# reach the WF side, which is built below the way whitefootc builds it; the
-# comment on WF_FLAGS states that asymmetry and why it is admitted.
+# unit of a reference implementation or none of it. The WF side gets its own
+# alignment through WF_ALIGN below, on both arms of the twin and for a
+# different reason; the comment there says what that reason is and what part of
+# the asymmetry with the references it does and does not close.
 LOOP       := $(if $(filter x86_64,$(ARCH)),-falign-loops=32,)
 TARGET_CPU := $(if $(filter x86_64,$(ARCH)),-C target-cpu=x86-64-v3,)
 
@@ -63,17 +64,73 @@ CXXFLAGS := -std=c++17 -DNDEBUG $(BASE)
 RFLAGS := -C no-vectorize-loops -C no-vectorize-slp -C lto=off \
           -C symbol-mangling-version=v0 $(TARGET_CPU)
 
-# Exactly what whitefootc itself passes clang. VERIFIED in
-# compiler/src/bin/whitefootc.rs and compiler/src/driver.rs: -std=c11,
-# TARGET_COMPILE_ARGUMENTS = -pthread, HOST_OPTIMIZATION_ARGUMENTS = -O2,
-# HOST_LINK_LIBRARIES = -lm, plus -Wno-override-module on the IR input.
-# The Whitefoot runtime and the emitted module are built the way the compiler
-# builds them, not the way the kernels are built, because anything else would
-# measure a runtime no Whitefoot program ever gets. THIS IS AN ADMITTED
-# ASYMMETRY: the WF module and the runtime are built at -O2 with no -march and
-# no loop alignment while every reference is built at -O3 with both. It cuts
-# against the WF row, and README.md states it in its own paragraph.
-WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
+# PLACEMENT CONTROL FOR THE PAIRED COMPARISON, and nothing else. It is not a
+# performance flag and it is not an A/B handle: it is appended to the Whitefoot
+# side of BOTH images below, identically, and there is no way to set it on one
+# arm alone.
+#
+# The reason is the regression gate. Its two arms are two separate images
+# linked from two sets of objects under two sets of names, so even when the
+# sources are byte-identical the functions of one do not land at the offsets of
+# the other, and this bundle's largest confound is exactly that: six
+# byte-identical kernel bodies at 0/16/48 mod 64 once split a width-one median
+# 7.3 ms against 10.7 ms with no scheduler involved. Under -falign-functions=64
+# every function OF THE WHITEFOOT TRANSLATION UNITS starts on a 64-byte
+# boundary in either image and every hot loop of theirs on a 32-byte one, so
+# their internal alignment is identical BY CONSTRUCTION and the residual offset
+# difference between the arms is a multiple of the boundary rather than an
+# arbitrary number of bytes. It says nothing about the rest of either image:
+# the harness, the kernel object, the references and the prebuilt libraries are
+# built at $(CFLAGS)/$(CXXFLAGS), which carry -falign-loops=32 and no function
+# alignment. The harness, the references and the seq object are literally the
+# same objects in both arms; the kernel object is the one doubled thing on that
+# side of the line, compiled twice from one source against its own arm's
+# generated split header.
+#
+# What it does NOT do is remove code placement as a confound, and the record is
+# explicit about that: with both arms aligned and one deliberately shifted by a
+# 587-byte pad, the twin lines read no closer to 1.000 than unaligned
+# (research/investigations/compute-runtime/RESULTS.md, the same shifted null arm
+# with both arms aligned). Alignment closes the one component of the difference
+# a compiler flag can reach. The rest is the verdict rule's problem, and
+# verdict.awk answers it by requiring two widths rather than one.
+WF_ALIGN := $(if $(filter x86_64,$(ARCH)),-falign-functions=64 -falign-loops=32,)
+
+# What whitefootc itself passes clang, plus $(WF_ALIGN). The first four are
+# VERIFIED in compiler/src/bin/whitefootc.rs and compiler/src/driver.rs:
+# -std=c11, TARGET_COMPILE_ARGUMENTS = -pthread, HOST_OPTIMIZATION_ARGUMENTS =
+# -O2, HOST_LINK_LIBRARIES = -lm, plus -Wno-override-module on the IR input.
+# The Whitefoot runtime and the emitted module are otherwise built the way the
+# compiler builds them, not the way the kernels are built, because anything
+# else would measure a runtime no Whitefoot program ever gets. THIS IS AN
+# ADMITTED ASYMMETRY: the WF module and the runtime are built at -O2 with no
+# -march while every reference is built at -O3 with -march=x86-64-v3. It cuts
+# against the WF row, and README.md states it in its own paragraph. The
+# alignment half of that asymmetry is closed by $(WF_ALIGN), on both arms and
+# on the plain image alike, so a table recorded from the commit that added it
+# onward times a WF side the driver does not build; RESULTS.md's status
+# paragraph says so with its date rather than leaving it to be inferred from
+# this line.
+WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module $(WF_ALIGN)
+
+# WF_FLAGS is kept in a stamp for the reason the three control flags below are,
+# and it matters more here than it does for them. $(BUILD) survives across runs
+# -- only `clean` removes it -- and the Whitefoot objects depend on their
+# sources, not on the flags that compiled them. So a work directory built
+# before $(WF_ALIGN) existed would recompile only the objects whose sources
+# moved: on a regression run against a new merge base that is the twin's four,
+# recompiled ALIGNED, while the plain image's four are reused UNALIGNED,
+# because the branch did not touch wf_floor.c or sched/*.c. That is exactly the
+# asymmetric placement this variable exists to prevent, and manifest.txt and
+# the table header would both print one flag set as if both arms had it. Every
+# object compiled with $(WF_FLAGS) therefore depends on this stamp: a changed
+# flag set recompiles BOTH arms, and an unchanged one rebuilds nothing.
+WF_FLAGS_STAMP := $(BUILD)/wf-flags.txt
+$(WF_FLAGS_STAMP): FORCE
+	@mkdir -p $(BUILD)
+	@printf '%s\n' '$(WF_FLAGS)' > $@.new
+	@cmp -s $@.new $@ || mv -f $@.new $@
+	@rm -f $@.new
 
 # An A/B control, and nothing else. Whatever is set here is appended to the
 # `--par` emission of the B TWIN below -- never to the plain image, which is
@@ -144,12 +201,14 @@ $(RUNTIME_CONTROL): FORCE
 # $(WF_FLAGS) alone whatever this is set to -- so a run can measure what a code
 # generation flag is worth on exactly the translation units whitefootc itself
 # builds, against the shipped flag set in the same passes: for example
-# `make compare WF_MODULE_CONTROL_FLAGS='-falign-functions=64 -falign-loops=32'`,
-# which gives the twin's WF side the loop alignment the references already get
-# and the WF side does not (see the asymmetry paragraph in README.md). It
-# reaches no reference, no oracle, not the harness and not the `--no-overlap`
-# control object, because none of those is the Whitefoot side of the link, and
-# the seq object is shared with the plain image.
+# `make compare WF_MODULE_CONTROL_FLAGS='-fno-omit-frame-pointer'`, which gives
+# the twin's WF side a frame pointer the plain image's does not have. The
+# alignment flags were this handle's first use and are no longer an example of
+# it: $(WF_ALIGN) now reaches both arms, so asking this handle for them again
+# would set them twice on one arm and change nothing. It reaches no reference,
+# no oracle, not the harness and not the `--no-overlap` control object, because
+# none of those is the Whitefoot side of the link, and the seq object is shared
+# with the plain image.
 #
 # It is EMPTY BY DEFAULT and must stay empty for any table that is recorded,
 # exactly as the two above: the `wf` row of a recorded table is the program
@@ -466,38 +525,38 @@ endef
 $(foreach k,$(KERNELS),$(eval $(call kernel-modules,$(k))))
 
 # --------------------------------------------------------------- objects ----
-$(BUILD)/%-par.o: $(BUILD)/%-par.ll
+$(BUILD)/%-par.o: $(BUILD)/%-par.ll $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/%-par-b.o: $(BUILD)/%-par-b.ll $(MODULE_CONTROL)
+$(BUILD)/%-par-b.o: $(BUILD)/%-par-b.ll $(MODULE_CONTROL) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/%-seq.o: $(BUILD)/%-seq.ll
+$(BUILD)/%-seq.o: $(BUILD)/%-seq.ll $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
 
 # The plain image's four Whitefoot runtime units. NO CONTROL FLAG REACHES
 # THESE, whatever WF_RUNTIME_CONTROL_FLAGS is set to: the `wf` row is the
 # runtime this tree ships, and an A/B run must not quietly move both arms.
-$(BUILD)/floor.o: $(FLOOR)
+$(BUILD)/floor.o: $(FLOOR) $(WF_FLAGS_STAMP)
 	@mkdir -p $(BUILD)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_core.o: $(SCHED)/core.c
+$(BUILD)/sched_core.o: $(SCHED)/core.c $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_prim_host.o: $(SCHED)/prim_host.c
+$(BUILD)/sched_prim_host.o: $(SCHED)/prim_host.c $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_entry.o: $(SCHED)/entry.c
+$(BUILD)/sched_entry.o: $(SCHED)/entry.c $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
 
 # The twin's four. The same four translation units, read from $(WF_B_SCHED_DIR)
 # and $(WF_B_FLOOR) -- this tree's own unless a baseline named another tree --
-# with the runtime control appended and the two stamps that recompile them when
-# a control value or the baseline's bytes change.
-$(BUILD)/floor-b.o: $(WF_B_FLOOR) $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+# with the runtime control appended and the stamps that recompile them when a
+# control value, the flag set or the baseline's bytes change.
+$(BUILD)/floor-b.o: $(WF_B_FLOOR) $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP) $(WF_FLAGS_STAMP)
 	@mkdir -p $(BUILD)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_core-b.o: $(WF_B_SCHED_DIR)/core.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+$(BUILD)/sched_core-b.o: $(WF_B_SCHED_DIR)/core.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_prim_host-b.o: $(WF_B_SCHED_DIR)/prim_host.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+$(BUILD)/sched_prim_host-b.o: $(WF_B_SCHED_DIR)/prim_host.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
-$(BUILD)/sched_entry-b.o: $(WF_B_SCHED_DIR)/entry.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+$(BUILD)/sched_entry-b.o: $(WF_B_SCHED_DIR)/entry.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
 
 $(BUILD)/%_bench.o: %_bench.c harness.h backend.h $(BUILD)/%_split.h
@@ -840,9 +899,13 @@ $(CHECK)/checked_%: programs/%.wf $(WFC)
 # The one target in this bundle whose exit status is decided by a measured
 # number, and it is NOT part of the repository's `make check`: it reads the
 # `A/B  wf-b/wf` lines of a table produced by a baseline-twin run and fails
-# when the merge-base was faster. `.github/workflows/compute-regression.yml`
-# runs it as a required PR check; `make check` runs `programs-check` and
-# `verdict-test` and neither of those times anything.
+# when the merge-base was faster at two of a kernel's widths -- one width alone
+# is reported as a `suspect` and fails nothing, because one width does not
+# separate a slower program from a differently placed one, and verdict.awk's
+# own comment carries the two runs that showed it.
+# `.github/workflows/compute-regression.yml` runs it as a required PR check;
+# `make check` runs `programs-check` and `verdict-test` and neither of those
+# times anything.
 #
 # RESULTS is expanded once per make invocation and defaults to a timestamped
 # directory, so `make compare && make verdict` as two invocations would look

@@ -245,6 +245,16 @@ own W=4 with the window gone, a loss the rule never claimed, and the section
 flags a `cpu` reading to check on the instrument, the twin arm recording one
 lane's worth of process CPU at two lanes while it is the arm that spins.
 
+2026-09-13: the bundle's `WF_FLAGS` now carries `-falign-functions=64
+-falign-loops=32` on x86_64 through `WF_ALIGN`, as placement control for the
+regression gate's paired comparison, so **every table recorded from that commit
+onward has its `wf`, `wf-seq` and `wf-b` rows built at flags `whitefootc` does
+not pass clang** — the earlier tables in this file were not, and none of them
+was touched. The measured cost of those flags on the Whitefoot side of this
+host is the "loop and function alignment on the Whitefoot side" section below,
+sixteen twin lines inside [0.954, 1.010]; the decision they were rejected for
+was a change to the compiler driver, which is still unchanged.
+
 Each run that matters is added the same way, newest last.
 
 The question every table here answers is the bundle's: for each kernel, at each
