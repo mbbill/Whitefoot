@@ -8,7 +8,7 @@ of them is a decision. Remove an item when its fix and test land.
   fixture because the outer weight prices an inner loop with a fixed factor.
   Lowering the global work unit from 150,000 to 10,000 speeds those fixtures
   but makes the width-17 stencil 36 percent slower at four workers. The
-  [compute-model controls](../research/investigations/compute-model/DESIGN.md#grain-attribution-control)
+  [compute-model controls](../research/investigations/compute-model/DESIGN.md#measurements-and-assessment-2026-09-13)
   retain the runtime dimensions, threshold sweep, process CPU and grants.
   A replacement estimate must distinguish actual helper extents and preserve
   the adverse cases; no dynamic estimator has been selected or implemented.
