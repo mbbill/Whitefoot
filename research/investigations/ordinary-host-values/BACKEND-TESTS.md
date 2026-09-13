@@ -115,7 +115,8 @@ line itself. The three observed/control/sanitized WF links in native CI include
 both ordinary library units and the shell import library, matching the driver.
 Native probes with their own entry remain independent of that launcher choice.
 
-These are intermediate local results, not a claim that C2 or host CI is done.
+These are local results; the PR's canonical gate and native host CI record
+whether its exact revision satisfies the complete C2 acceptance criteria.
 
 The traversal integration's compiler-IR component-validation test is retired
 with QUAL-1/SYS-14 compiler wrappers: the body is now a linked ordinary

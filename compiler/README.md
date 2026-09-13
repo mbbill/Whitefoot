@@ -192,8 +192,11 @@ Native launcher and per-host linkage tests validate that boundary.
 
 `--par-ledger` reports permission and actualization, while `--stack-ledger`
 reports physical frame costs. Neither report participates in source acceptance.
-The C2 migration is being validated; earlier completion or staged measurements
-are historical evidence and do not establish current native parity.
+The [ordinary-call measurements](../research/experiments/io-completion-bench/C2-RESULTS.md)
+record traversal, compute and TCP observations, including the retained TCP
+protocol's noncompletion under sequential service. Earlier completion or
+staged measurements do not establish current native parity. Exact-revision
+validation is reported by the canonical gate and native host CI.
 
 ## Implemented language surface
 

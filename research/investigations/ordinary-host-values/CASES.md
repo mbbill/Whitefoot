@@ -30,8 +30,16 @@ The native engine gives no permission to overlap source calls; common factory
 state on read_at/read_next/write_once accounts for stream and file aliasing.
 
 The structure gate has passed: 25 runner tests and 130/130 active rules covered.
-Native/compiler execution is pending the integrated C2 implementation; this
-register does not report an unrun acceptance check as passed.
+The canonical adapter and native host CI report execution against their exact
+revision. This register records rule grounds, not a substitute gate result.
+
+The grammar binary's census is 86 productions, 136 decisions and 111 terminal
+predicates. C2 removes `program_kind`, `input_label`, their two optional use
+sites, and the `command`/`as` terminals. Its
+`changed_input_label_spelling_fails_closed` assertion is retired with those
+grammar productions; mutating an absent rule would not test the active grammar.
+The ordinary grammar-mutation checks and parser's
+`retired_entry_kind_and_input_labels_are_not_grammar` rejection remain.
 
 ### Changed source verdicts
 

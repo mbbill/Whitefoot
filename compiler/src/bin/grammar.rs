@@ -389,9 +389,11 @@ mod tests {
     #[test]
     fn active_compiler_grammar_is_consistent() {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
-        assert_eq!(report.productions, 88);
-        assert_eq!(report.decisions, 138);
-        assert_eq!(report.terminals, 113);
+        // C2 removes program_kind and input_label, their two optional sites,
+        // and the command/as terminals; every remaining decision is checked.
+        assert_eq!(report.productions, 86);
+        assert_eq!(report.decisions, 136);
+        assert_eq!(report.terminals, 111);
         run_parser_probes().expect("the compiler must parse its own probes");
     }
 
@@ -455,21 +457,6 @@ mod tests {
         | "writes" "(" effect_path ("," effect_path)* ")""#,
             r#"effect := "writes" "(" effect_path ("," effect_path)* ")"
         | "reads" "(" effect_path ("," effect_path)* ")""#,
-            1,
-        );
-        assert_ne!(changed, active);
-        assert!(matches!(
-            verify_candidate(ACTIVE_KERNEL_SPEC_BYTES, changed.as_bytes()),
-            Err(VerifyError::ChangedFrontendContract)
-        ));
-    }
-
-    #[test]
-    fn changed_input_label_spelling_fails_closed() {
-        let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
-        let changed = active.replacen(
-            "input_label  := \"command\" \".\" IDENT \"as\"",
-            "input_label  := \"command\" \".\" IDENT \"from\"",
             1,
         );
         assert_ne!(changed, active);
