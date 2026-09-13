@@ -404,12 +404,11 @@ fn a_pattern_that_is_not_text_travels_the_lossless_route_unchanged() {
 
 /// A symbolic link the walk enumerates is not followed.
 ///
-/// [SYS-14] reports it as kind `3 symbolic link`, and the program acts on
+/// The ordinary directory entry reports kind `3 symbolic link`; the program acts on
 /// exactly the kinds it was told about — a regular file it opens, a directory
-/// it descends, and everything else it leaves alone. That is a property of
-/// this program, not of the capability: [PATH-2]'s resolution is still
-/// process-equivalent and would follow a link a program actually named. This
-/// case has no `grep` side, because the two grep families disagree about
+/// it descends, and everything else it leaves alone. This checks that the
+/// program skips the link before attempting a component open. The case has
+/// no `grep` side, because the two grep families disagree about
 /// links found during a traversal.
 #[test]
 fn an_enumerated_symbolic_link_is_not_followed() {

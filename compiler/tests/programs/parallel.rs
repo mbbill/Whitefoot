@@ -324,7 +324,7 @@ fn the_corpus_units_cover_every_program_file() {
 ///
 /// What the comparison reaches varies by program. Most of the corpus publishes
 /// an exit status, so a successful run with an empty record channel checks its
-/// normal completion under that schedule. `wfgrep.wf` is a command entry that reports its
+/// normal completion under that schedule. `wfgrep.wf` reports its
 /// usage when invoked with no arguments, so for that one unit this case
 /// reaches the argument-handling path only and the link is what carries it;
 /// its search path is covered with real arguments in `wfgrep.rs`.

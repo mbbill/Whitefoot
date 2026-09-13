@@ -193,15 +193,9 @@ pub fn compile_programs(names: &[&str]) -> String {
     compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
 }
 
-/// [`compile_programs_with_overlap`] where a target that cannot compile the
-/// unit is an answer rather than a panic.
-///
-/// The one caller is the case that walks the whole corpus. A target with no
-/// approved [SYS-14] directory-enumeration row does not compile the programs
-/// that walk a directory, and that is the compiler's own report about the
-/// target rather than something a test may paper over — so the case reads the
-/// report, names the units it covers, and still fails on every other kind of
-/// failure.
+/// [`compile_programs_with_overlap`] returning a compilation failure to the
+/// caller. The complete corpus walk names the failing unit in its assertion;
+/// every source or target failure fails that test.
 pub fn try_compile_programs_with_overlap(names: &[&str]) -> Result<String, CompilationFailure> {
     let sources = names
         .iter()
@@ -430,7 +424,7 @@ pub fn build_program(llvm: &str) -> CompiledProgram {
 impl CompiledProgram {
     /// Runs the program in `working_directory` with `arguments` as argv[1..].
     ///
-    /// Arguments are raw bytes, because a command entry reads them through the
+    /// Arguments are raw bytes, because the program reads them through the
     /// lossless host-string route and a case must be able to supply an
     /// argument that is not valid UTF-8.
     pub fn run(&self, working_directory: &Path, arguments: &[&[u8]]) -> Output {
@@ -564,7 +558,7 @@ impl CompiledProgram {
     /// Runs the program with its standard input redirected from a pipe this
     /// process fills with `bytes` and then closes.
     ///
-    /// This is one of the two shapes a real standard input takes [SYS-15]: a
+    /// This is one of the two standard-input implementations exercised here: a
     /// stream whose end the writer decides, where a read may return less than
     /// the requested range and the end arrives only when the writer closes.
     /// `native_ring` selects the runtime route — `true` is the shipped
@@ -594,7 +588,7 @@ impl CompiledProgram {
     /// Runs the program with its standard input redirected from a regular
     /// file holding `bytes`.
     ///
-    /// This is the other shape [SYS-15] admits, and it is a different runtime
+    /// This is the other implementation exercised here, and a different runtime
     /// path on Linux: a regular file's descriptor is one the kernel ring
     /// completes without any readiness wait, while a pipe's is not.
     pub fn run_with_file_input(&self, bytes: &[u8], native_ring: bool) -> Output {
