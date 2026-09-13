@@ -316,7 +316,10 @@ WFB_GAP_US ?=
 GAP_ENV := $(if $(strip $(WFB_GAP_US)),WFB_GAP_US=$(strip $(WFB_GAP_US)),)
 
 CHECK   := $(WORK)/check
-CHECKED := $(addprefix $(CHECK)/checked_,$(KERNELS))
+# New-language consumers also run in the untimed gate. Select KERNELS=stencil
+# for its full reference comparison; the default four remain compilable by
+# the pre-range-loan compiler used by the existing baseline regression twin.
+CHECKED := $(addprefix $(CHECK)/checked_,$(sort $(KERNELS) stencil range_split))
 JOBS    ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
 # The ParlayLib probe in `deps` decides whether this object exists at all.

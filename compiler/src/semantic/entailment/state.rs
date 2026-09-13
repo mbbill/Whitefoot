@@ -801,6 +801,11 @@ pub(crate) enum DerivationRootKind {
     /// obligation. Present only when its derivation differs from the
     /// obligation's admission root.
     AllocationUpperBound(u32),
+    RangePartition {
+        obligation: u32,
+        partition: u32,
+        base: bool,
+    },
     IntegerDomainObligation(u32),
     CallGoal(u32),
     BitAndBound(u32),

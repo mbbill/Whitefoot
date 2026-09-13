@@ -1788,6 +1788,28 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     }
                 }
             }
+            DerivationRootKind::RangePartition {
+                obligation,
+                partition,
+                base,
+            } => {
+                let outcome = &summary.obligations[obligation as usize];
+                assert_eq!(outcome.family, ObligationFamily::ViewRange);
+                assert!(outcome.discharged);
+                let partition = &outcome.range_partitions[partition as usize];
+                assert_eq!(
+                    root.node,
+                    if base {
+                        partition.base_nonnegative
+                    } else {
+                        partition.stride_nonnegative
+                    }
+                );
+                assert!(matches!(
+                    conclusion,
+                    DerivationConclusion::AffineConsequence | DerivationConclusion::Contradiction
+                ));
+            }
             DerivationRootKind::AllocationUpperBound(ordinal) => {
                 let outcome = summary
                     .obligations

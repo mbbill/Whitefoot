@@ -87,8 +87,8 @@ impl PlaceOffset {
     }
 }
 
-/// One step of a tracked place's path below its root: a field selection, or
-/// one subscript of an indexable base [OP-4].
+/// One step below a tracked place's root: a field, an indexable subscript
+/// [OP-4], or a captured relative view range [VIEW-2].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum PlaceStep {
     Field(u32),
@@ -180,6 +180,19 @@ impl ResolvedPlace {
         self.root == other.root
             && self.path.len() <= other.path.len()
             && !paths_diverge(&self.path, &other.path)
+    }
+
+    /// Positive containment requires matching selections, not merely an
+    /// absence of proved divergence. In particular, two different range
+    /// frames may overlap without either containing the other.
+    pub(crate) fn contains_path(&self, other: &Self) -> bool {
+        self.root == other.root
+            && self.path.len() <= other.path.len()
+            && self
+                .path
+                .iter()
+                .zip(&other.path)
+                .all(|(left, right)| left.provably_same(*right))
     }
 
     /// The whole storage of one binding, with no selection below the root.
@@ -280,7 +293,8 @@ pub(crate) struct BindingSummary {
     /// written at the call does.
     ///
     /// `None` means this binding is not a view, or is a view whose origin this
-    /// prepass does not resolve — a view parameter, or one a callee returned.
+    /// prepass does not resolve, such as one a callee returned. A formal view
+    /// anchors its incoming origin at the parameter's binding.
     /// Every consumer reads that as unresolved and fails closed.
     pub(crate) view_origin: Option<ResolvedPlace>,
 }

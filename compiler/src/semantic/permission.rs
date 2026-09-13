@@ -2141,8 +2141,8 @@ pub(super) fn collect_operand_reads(
         // A read through a view is a read of the storage the view was formed
         // over [VIEW-1]: the element the subscript selects is a byte of that
         // origin, and a measure read is a read of the same claim. Where this
-        // prepass does not resolve the origin — a view parameter, or one a
-        // callee returned — the read fails closed exactly as it did before.
+        // prepass does not resolve the origin, such as one a callee returned,
+        // the read fails closed. A formal view anchors its incoming origin.
         CheckedExpression::SliceMeasure { root, .. }
         | CheckedExpression::SliceIndex { root, .. } => match places.view_origin(root.binding) {
             Some(place) => read(footprint, node, place),

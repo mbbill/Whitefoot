@@ -7,6 +7,39 @@ fn runtime_stencil_ranges_reach_their_backing_buffers() {
     let llvm = compile(source);
     let output = compile_and_run(&llvm);
     assert!(output.status.success(), "{output:?}");
+    let parallel = emit_with_overlap(source);
+    assert!(parallel.contains("call void @wf__par_publish("));
+    let output = compile_and_run(&parallel);
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
+fn stencil_matches_an_independent_dimension_and_step_matrix() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
+    let adapter = include_str!("../../../../research/experiments/compute-bench/stencil_host.ll");
+    let oracle = format!(
+        "#define WFB_STENCIL_ORACLE\n{}",
+        include_str!("../../../../research/experiments/compute-bench/stencil_bench.c")
+    );
+    for emitted in [compile(source), emit_with_overlap(source)] {
+        let llvm = format!(
+            "{}\n{adapter}",
+            emitted.replace("@main(", "@wf_stencil_smoke_main(")
+        );
+        let directory = test_directory();
+        let executable = build_linked_executable(&llvm, Some(&oracle), &[], &directory);
+        for workers in [1, 2, 4] {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers.to_string())
+                .env_remove("WF_SPLIT_WORK")
+                .output()
+                .expect("run independent stencil oracle");
+            assert!(output.status.success(), "workers={workers}: {output:?}");
+            assert!(String::from_utf8_lossy(&output.stdout).contains("stencil oracle PASS:"));
+        }
+        std::fs::remove_dir_all(directory).expect("remove native stencil test files");
+    }
 }
 
 #[test]

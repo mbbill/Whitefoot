@@ -32,6 +32,31 @@ measures.
 
 ## What "WF" means here, and what it does not
 
+The range-loan consumer is selected with `make KERNELS=stencil verify` or
+`make KERNELS=stencil compare`. Its runtime-sized grids use distinct positive
+finite bit patterns derived from squared positions and retain their initial
+boundary values across repeated Jacobi steps. The C oracle uses column-major storage and compares every
+binary64 result bit with the row-major implementations. The compiler's native
+tests run that same dimension/step matrix in sequential and parallel modes at
+one, two, and four workers; `programs-check` also includes `stencil.wf` and the
+recursive `range_split.wf` consumer.
+
+The timed stencil is 1024 by 2048 for 16 steps. Set `WFB_STENCIL_SMALL=1` for the
+separate 17 by 13, three-step overhead measurement; the exact dimensions are
+printed in every process's workload header. Both WF and references allocate
+and zero two grids, initialize them, compute and join every step, and release
+the inactive grid inside the timed interval. The returned grid is checked and
+released outside it. Native references submit one interior row per callback;
+WF uses the compiler's default decomposition. Several nested loops and
+initialization have different spans, so the stencil reports no single chunk
+count, while actual scheduler grants are still measured.
+
+The default comparison retains the four existing kernels so that its baseline
+twin can compile them with the outgoing language version. Stencil requires the
+range-loan amendment and has no executable result under that baseline. Its
+native comparison and evidence are recorded in
+[`range-loans/DESIGN.md`](../../investigations/range-loans/DESIGN.md).
+
 The `wf` row is the module `whitefootc` emits from the kernel's `.wf` source
 under **plain `--par --emit-llvm` and no other flag**, linked with
 `compiler/src/backend/sched/{core,prim_host,entry}.c` and

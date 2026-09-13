@@ -137,6 +137,10 @@ struct LoopFrame {
     /// The compiler-owned counted binder while this is a `for` frame. An
     /// ordinary `loop` has no binder and contributes no affine index image.
     counted_binder: Option<BindingId>,
+    /// Immutable numeric values available after the preheader's continuing
+    /// kills. Atoms first read or produced in the body are not invariant
+    /// merely because their source binding has one spelling.
+    invariant_atoms: HashSet<AffineTermId>,
     /// Present only for a counted range. A break through this frame leaves
     /// the private endpoint-capture scope as well as source binding scopes.
     capture_path: Option<Vec<u32>>,
@@ -241,6 +245,14 @@ struct CapturedRange {
     source: crate::NodePath,
     start: AffineForm,
     end: AffineForm,
+}
+
+/// Exact `stride * i + base` decomposition for one counted binder. Both
+/// components are invariant affine values; no general polynomial search is
+/// involved in recognizing this deliberately finite PAR-2 family.
+struct CountedValueImage {
+    stride: AffineForm,
+    base: AffineForm,
 }
 
 /// The numeric/logical proof state at one exact control-flow point.
@@ -986,6 +998,19 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
         outcome.allocation_length_upper_bound_derivation = outcome
             .allocation_length_upper_bound_derivation
             .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
+        for partition in &mut outcome.range_partitions {
+            for parent in [
+                &mut partition.stride_nonnegative,
+                &mut partition.base_nonnegative,
+            ] {
+                *parent = remap
+                    .nodes
+                    .get(parent.0 as usize)
+                    .copied()
+                    .flatten()
+                    .expect("required range partition proof retained by finish");
+            }
+        }
     }
     for outcome in &mut entailment.call_goals {
         outcome.derivation = outcome
@@ -6495,6 +6520,37 @@ impl Analyzer<'_, '_> {
                             .map(|term| (AffineForm::constant(0), self.measure_atom(term)))
                     };
                     if let Some((start, end)) = images {
+                        if range.is_some() {
+                            let partitions =
+                                self.proved_range_partitions(*loan, &start, &end, states);
+                            if let Some(index) = self.obligations[obligation_start..]
+                                .iter()
+                                .position(|outcome| {
+                                    outcome.family == ObligationFamily::ViewRange
+                                        && outcome.conjunct == 1
+                                })
+                            {
+                                let obligation = obligation_start + index;
+                                for (index, partition) in partitions.iter().enumerate() {
+                                    for (base, parent) in [
+                                        (false, partition.stride_nonnegative),
+                                        (true, partition.base_nonnegative),
+                                    ] {
+                                        self.derivations.add_root(
+                                            DerivationRootKind::RangePartition {
+                                                obligation: u32::try_from(obligation)
+                                                    .expect("obligation identity fits u32"),
+                                                partition: u32::try_from(index)
+                                                    .expect("partition identity fits u32"),
+                                                base,
+                                            },
+                                            parent,
+                                        );
+                                    }
+                                }
+                                self.obligations[obligation].range_partitions = partitions;
+                            }
+                        }
                         states.affine.ranges.insert(
                             *loan,
                             CapturedRange {
@@ -6688,6 +6744,7 @@ impl Analyzer<'_, '_> {
             affine_index_maps: Vec::new(),
             kernel_row: Some(operation),
             formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
         discharged.then_some(derivation).flatten()
     }
@@ -8120,6 +8177,7 @@ impl Analyzer<'_, '_> {
             },
             kernel_row: None,
             formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
     }
 
@@ -8150,6 +8208,185 @@ impl Analyzer<'_, '_> {
                 })
             })
             .collect()
+    }
+
+    /// Retains PAR-2's adjacent-range family after both VIEW-2 domain goals
+    /// succeeded. Each active counted loop is considered once, and both sign
+    /// goals run to completion for every matching exact image.
+    fn proved_range_partitions(
+        &mut self,
+        range: RangeId,
+        start: &AffineForm,
+        end: &AffineForm,
+        states: &ProofFlowState,
+    ) -> Vec<super::ProvedRangePartition> {
+        let candidates = self
+            .loops
+            .iter()
+            .filter_map(|frame| {
+                let binder = states
+                    .affine
+                    .values
+                    .get(&frame.counted_binder?)?
+                    .unit_term()?;
+                let mut visiting = HashSet::new();
+                let start =
+                    self.counted_value_image(start, binder, &frame.invariant_atoms, &mut visiting)?;
+                let end =
+                    self.counted_value_image(end, binder, &frame.invariant_atoms, &mut visiting)?;
+                let after = start
+                    .base
+                    .add(&start.stride, &mut AffineCheckState::new())
+                    .ok()?;
+                (start.stride == end.stride && after == end.base).then_some((frame.id, start))
+            })
+            .collect::<Vec<_>>();
+        let mut partitions = Vec::new();
+        for (loop_id, image) in candidates {
+            let Some(stride_target) =
+                Self::affine_less_equal(&AffineForm::constant(0), &image.stride)
+            else {
+                continue;
+            };
+            let Some(base_target) = Self::affine_less_equal(&AffineForm::constant(0), &image.base)
+            else {
+                continue;
+            };
+            let stride = self.prove(
+                ProofContext::new(&states.facts, &states.affine),
+                ProofGoal::Affine {
+                    inequality: &stride_target,
+                },
+            );
+            let base = self.prove(
+                ProofContext::new(&states.facts, &states.affine),
+                ProofGoal::Affine {
+                    inequality: &base_target,
+                },
+            );
+            if stride.disposition == ProofDisposition::Proved
+                && base.disposition == ProofDisposition::Proved
+            {
+                partitions.push(super::ProvedRangePartition {
+                    loop_id,
+                    range,
+                    stride: image.stride,
+                    base: image.base,
+                    stride_nonnegative: stride
+                        .derivation
+                        .expect("a proved stride has a derivation"),
+                    base_nonnegative: base.derivation.expect("a proved base has a derivation"),
+                });
+            }
+        }
+        partitions
+    }
+
+    /// Decomposes a finite checked value graph, expanding handles and exact
+    /// product records only. Multiplication allows one binder-dependent
+    /// operand and one invariant operand; its two resulting components must
+    /// stay affine. Unknown body values and nonlinear binder uses fail closed.
+    fn counted_value_image(
+        &self,
+        form: &AffineForm,
+        binder: AffineTermId,
+        invariant: &HashSet<AffineTermId>,
+        visiting: &mut HashSet<AffineTermId>,
+    ) -> Option<CountedValueImage> {
+        let mut image = CountedValueImage {
+            stride: AffineForm::constant(0),
+            base: AffineForm::constant(form.constant_value()),
+        };
+        let mut check = AffineCheckState::new();
+        for coefficient in form.terms() {
+            let term = coefficient.term();
+            if !visiting.insert(term) {
+                return None;
+            }
+            let term_image = self.counted_atom_image(term, binder, invariant, visiting)?;
+            visiting.remove(&term);
+            image.stride = image
+                .stride
+                .add(
+                    &term_image
+                        .stride
+                        .scale(coefficient.coefficient(), &mut check)
+                        .ok()?,
+                    &mut check,
+                )
+                .ok()?;
+            image.base = image
+                .base
+                .add(
+                    &term_image
+                        .base
+                        .scale(coefficient.coefficient(), &mut check)
+                        .ok()?,
+                    &mut check,
+                )
+                .ok()?;
+        }
+        Some(image)
+    }
+
+    fn counted_atom_image(
+        &self,
+        term: AffineTermId,
+        binder: AffineTermId,
+        invariant: &HashSet<AffineTermId>,
+        visiting: &mut HashSet<AffineTermId>,
+    ) -> Option<CountedValueImage> {
+        if term == binder {
+            return Some(CountedValueImage {
+                stride: AffineForm::constant(1),
+                base: AffineForm::constant(0),
+            });
+        }
+        if invariant.contains(&term) {
+            return Some(CountedValueImage {
+                stride: AffineForm::constant(0),
+                base: AffineForm::term(term),
+            });
+        }
+        if let Some(image) = self.handle_images.get(&term) {
+            return self.counted_value_image(image, binder, invariant, visiting);
+        }
+        let (left, right) = *self.product_atoms.get(&term)?;
+        let left =
+            self.counted_value_image(&AffineForm::term(left), binder, invariant, visiting)?;
+        let right =
+            self.counted_value_image(&AffineForm::term(right), binder, invariant, visiting)?;
+        let zero = AffineForm::constant(0);
+        let (varying, fixed) = if left.stride == zero && right.stride == zero {
+            // A pure exact product of fixed values is itself fixed, even
+            // when the source computes it in the body. Keep its exact atom.
+            return Some(CountedValueImage {
+                stride: zero,
+                base: AffineForm::term(term),
+            });
+        } else if right.stride == zero {
+            (left, right.base)
+        } else if left.stride == zero {
+            (right, left.base)
+        } else {
+            return None;
+        };
+        let multiply = |left: &AffineForm, right: &AffineForm| {
+            if left.terms().is_empty() {
+                right
+                    .scale(left.constant_value(), &mut AffineCheckState::new())
+                    .ok()
+            } else if right.terms().is_empty() {
+                left.scale(right.constant_value(), &mut AffineCheckState::new())
+                    .ok()
+            } else {
+                None
+            }
+        };
+        Some(CountedValueImage {
+            stride: multiply(&varying.stride, &fixed)?,
+            base: multiply(&varying.base, &fixed)?,
+        })
     }
 
     /// Forms the exact `offset <= N - 1` target for a fixed-size array.
@@ -8404,6 +8641,7 @@ impl Analyzer<'_, '_> {
             affine_index_maps: Vec::new(),
             kernel_row: None,
             formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
     }
 
@@ -8537,6 +8775,7 @@ impl Analyzer<'_, '_> {
             derivation, allocation_length_upper_bound: None, allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(), kernel_row: None,
             formed_range_separation,
+            range_partitions: Vec::new(),
         });
     }
 
@@ -8864,6 +9103,7 @@ impl Analyzer<'_, '_> {
             affine_index_maps: Vec::new(),
             kernel_row: None,
             formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
     }
 
@@ -8995,6 +9235,7 @@ impl Analyzer<'_, '_> {
             affine_index_maps: Vec::new(),
             kernel_row: None,
             formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
     }
 
@@ -13744,6 +13985,7 @@ impl Analyzer<'_, '_> {
                     invariant_declarations: invariant_declarations.clone().into_boxed_slice(),
                     scope_depth: self.scopes.len(),
                     counted_binder: None,
+                    invariant_atoms: HashSet::new(),
                     capture_path: None,
                     breaks: Vec::new(),
                 });
@@ -13890,6 +14132,15 @@ impl Analyzer<'_, '_> {
                 }
                 self.apply_loop_kills(state, &kills, Some(snapshot));
 
+                let invariant_atoms = state
+                    .affine
+                    .values
+                    .values()
+                    .chain(state.affine.opaque_values.values())
+                    .chain(self.measure_atoms.values())
+                    .flat_map(|form| form.terms().iter().map(|coefficient| coefficient.term()))
+                    .collect();
+
                 // Values killed by a possible continuing iteration now read
                 // as fresh header atoms.  The written expressions themselves
                 // are unchanged; only their program-point value images differ
@@ -13910,6 +14161,7 @@ impl Analyzer<'_, '_> {
                     invariant_declarations: invariant_declarations.clone().into_boxed_slice(),
                     scope_depth: outer_scope_depth,
                     counted_binder: Some(*binder),
+                    invariant_atoms,
                     capture_path: Some(range_path.clone()),
                     breaks: Vec::new(),
                 });

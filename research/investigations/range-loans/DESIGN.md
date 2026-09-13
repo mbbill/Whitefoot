@@ -81,6 +81,16 @@ supply no proof. Reads and writes through the iteration's view stay within
 that assignment. An access outside it, an unresolved range, or an enclosing
 write not covered by the existing accumulator rule denies loop permission.
 
+The selected image mechanism traverses recorded exact products and transparent
+copy handles, with affine sums as its ordinary representation. Preheader
+values surviving continuing kills are fixed; a pure exact product of fixed
+operands is fixed as well. A product with one index-dependent operand is
+admitted only when its resulting stride and base remain affine. This covers a
+runtime stride derived as `width + padding`, an invariant runtime base, and
+equivalent endpoint computations without adding general nonlinear search.
+Unknown body loads and loop-carried replacements cannot become fixed values
+merely by retaining the same binding name.
+
 Ordinary recursive sibling calls instead consume the normal range judgment:
 for a proved `lo <= mid <= hi`, their output ranges
 `[lo, mid)` and `[mid, hi)` are disjoint regardless of how mid was computed.
@@ -123,6 +133,18 @@ because a convenient caller has one possible origin.
 
 These are proposed grounds, not a claim of measured speed or a general
 solution for arbitrary scatter, irregular task dependencies, or early exit.
+
+The v0.55 specification delta is numbered rules +0/-0 (revising OWN-5,
+OWN-7, VIEW-2, VIEW-6, OP-1, PAR-2, ENT-3.S6 and ENT-6), lexical tokens
++0/-0, operation spellings +0/-0, grammar productions +0/-0, and exceptions
++0/-0. Bounded operands and reborrows extend the same two operation records;
+no workload-specific exception or additional declaration record is added.
+The selection ground is evidence-selected for bounded child loans: the two
+complete consumers below are blocked by the outgoing rules. Reusing those
+view formers and limiting automatic partition images to the stated finite
+family are minimality-selected, given the required runtime rows and recursive
+subdivision. Performance superiority is not a selection ground for this
+language amendment.
 
 ## Validation criteria, fixed before measurement
 
@@ -213,3 +235,52 @@ The library suite passed 1591 tests before the final same-statement lifetime
 refinement; the 25 targeted slice tests then passed with that refinement.
 PAR-2 range permission, the independent dimension-matrix oracle, conformance
 integration, and performance measurements remain in progress.
+
+## Counted ranges and independent native oracle, 2026-09-13
+
+PAR-2 now consumes the retained adjacent-range images and their two sign
+proofs, with both proofs rooted and remapped in the existing derivation
+ledger. The loop survey traces helper effects and descendant loans through
+the shared place representation. Positive containment requires matching path
+selections; absence of proved divergence alone is insufficient. A shifted
+second partition can be disjoint in one iteration and overlap the first in a
+different iteration, and the permission tests reject that case.
+
+Incoming formal views now anchor their storage origins so recursive ranges
+remain attributable. Two shared calls through one formal origin may overlap;
+two exclusive calls still conflict. The previous unknown-parameter fixture
+was changed to a returned view, whose origin remains unresolved, and its
+fail-closed verdict is retained. This is a representation extension with
+paired positive and negative coverage, not removal of the unresolved-origin
+check.
+
+The stencil now initializes both grids with distinct positive finite
+binary64 encodings derived from squared positions. This makes missing work
+and mistaken row offsets observable throughout the grid, beyond the initial
+impulse smoke test. The C oracle stores its grid column-major and compares
+every result bit. Its 42 dimension/step combinations cover narrow/tall,
+wide/short, rectangular and larger grids with 0, 1, 2, 3, 7 and 16 steps.
+Sequential and parallel native modules pass that matrix at widths 1, 2 and 4.
+All benchmark reference forms also passed it at every emitted host width.
+
+Before timing, the saturated fixture was fixed at 1024 by 2048 for 16 steps.
+The row loop's emitted weight is 294 and the shipped scheduler's work unit is
+150000, so its split floor is 1022 rows. A 768-row grid would leave the row
+loop unsplit; 2046 interior rows afford four chunks and exercise the requested
+one/two/four-worker comparison. This selection follows the emitted mechanism,
+not a measured ranking. The separate small fixture is 17 by 13 for 3 steps.
+Neither measurement changes a compiler flag, runtime work unit, or source
+chunk count.
+
+The corpus adds eleven cases for range domains, captured endpoints, empty
+backing lifetime, strength and escape errors, recursive parent restoration,
+and runtime-stride helper calls. The native conformance adapter passed 758
+cases with the one existing expected failure and one pending case unchanged;
+coverage remains 160/160 rules. Full repository checks and timing are still
+pending at this checkpoint.
+
+The first canonical gate attempt passed all 1601 library tests but could not
+complete the existing program suite: sandboxed loopback listeners were refused
+and the process's 256-descriptor soft limit stopped its deep-tree fixture.
+The complete gate is rerun with loopback access and a 4096-descriptor soft
+limit; neither change alters a test or compiler setting.
