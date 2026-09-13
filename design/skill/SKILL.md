@@ -1,17 +1,23 @@
 ---
 name: design-tree
-description: Maintain a project's live design tree, its amendments, and its change log; keep the tree to what the owner has ruled; and check code against the tree at pull-request time. Use when planning a change, recording a design decision, proposing an amendment, reviewing a tree diff, or checking that code and design still correspond.
+description: Develop and review complete designs with proposed revisions to the live design tree, keep the tree to the owner's rulings, and carry implementation discoveries as amendments while work continues. Use when designing a change, recording a decision, proposing an amendment, or checking that code and design correspond.
 ---
 
 # Design tree
 
 A design tree records the decisions a project is built on: what was chosen,
 because of what, instead of what. It is organized by concept, not by code
-structure, so it survives refactors. It holds only live decisions; git holds
-history and the change log holds the reasons for each change. The tree is
+structure, so it survives refactors. It holds only live decisions with their
+reasons; git holds history and the change log provides a short trace of each
+approved change. The tree is
 the owner's: every line in it is something the owner has ruled, and a choice
 an agent makes on its own stands beside the tree as an amendment until the
 owner rules on it.
+
+The purpose of this procedure is to help the owner judge whether a design is
+reasonable and what must change in the current design. The complete design
+and its proposed tree revision are the design deliverables. Choose the
+research and implementation methods to answer the actual design questions.
 
 Four parts:
 
@@ -24,9 +30,9 @@ Four parts:
   the node form with a first line naming the node it amends or adds. An
   amendment is a proposal, not a decision, until the owner accepts it; the
   directory is empty when nothing is pending.
-- `design/log.md`: one entry per approved tree change, newest first. It
-  carries the discussion summary and the reasons. Nobody reads it routinely;
-  it answers "why" when a node is questioned.
+- `design/log.md`: one concise entry per approved tree change, newest first,
+  for later traceability. It records the ruling after review; it is not a
+  separate design deliverable or approval checkpoint.
 - `design/skill/`: this procedure, with its check prompts, and the
   structural lint.
 
@@ -68,8 +74,8 @@ and the owner tunes it when the record grows too fine or too thin.
 
 ## Keeping the tree lean
 
-The tree is read in full by the reviewer and carried in full into the
-writer's context. It must stay small. Apply three filters at every change:
+Keep the tree small enough that its decisions and their relationships stay
+easy to review. Apply three filters at every change:
 
 1. Decision, not description. A node without `because` or `instead of` is
    documentation and is removed.
@@ -83,21 +89,26 @@ Every tree diff review reports node count, depth, and net change.
 
 ## Amendments
 
-An agent never edits a node the owner has settled. When implementation needs
-a decision the tree does not cover, or finds a decision of the tree that
-cannot be followed, the agent chooses the reasonable option itself, writes it
-as an amendment, and continues; it does not wait for the owner.
+An agent applies a change to the settled tree only after the owner's ruling.
+During design or implementation, a proposed addition, replacement, or
+retirement stays in the proposed tree revision until that ruling. When the
+agent chooses a design change on its own, it records an amendment and keeps
+working. Owner availability changes when that choice is discussed, not
+whether authorized branch work may continue.
 
 An amendment is a file `design/amendments/<name>.md` whose first line is
 `Node: <tree path>`, naming the existing node it amends or the new node it
 would add, followed by a blank line and the node form: `Decision:` lines and
-an optional `Rejected:` list. A decision that replaces one the tree holds
-says so in its reason. The lint checks the form and reports the count.
+an optional `Rejected:` list. A decision that replaces or retires one the tree
+holds identifies that decision and says why it changes. Keep the proposal
+current as the design evolves, so the owner can review the complete
+difference from the settled tree. The lint checks the form and reports the
+count.
 
 The owner rules on every amendment at the next review. Accepted: the agent
-moves its lines into the node, writes the log entry, and deletes the file.
-Rejected: the agent changes the code to the owner's ruling, or the work
-stops there. Nothing merges with an open amendment.
+applies the revision to the node, writes the short log entry, and deletes the
+file. Rejected: the agent revises the design and code to follow the owner's
+ruling, continuing wherever the remaining work permits.
 
 ## Log format
 
@@ -111,25 +122,47 @@ entries, newest first.
 
 ## Workflow
 
-1. Discuss. The owner and the agent discuss the change. The agent writes
-   the conclusion as a tree diff and its log entry, the owner confirms it,
-   and it is committed. This is the only way a line enters a tree. Work that
-   starts without such a discussion starts with no tree diff, and every
-   decision it needs is an amendment.
-2. Implement. The agent keeps the subtree it is working in, plus the chain
-   of ancestors to the root, in its context. It edits no node. A decision the
-   tree does not cover, or one the tree gets wrong, becomes an amendment, and
-   the work goes on. Before the pull request the agent runs the lint and the
-   design-gate checks below over its amendments.
-3. Pull request. The lint and the gate run. The agent runs the
-   correspondence checks below over the tree, the amendments, and the code
-   diff, and writes the report. The review covers the tree revision, which
-   is the tree diff since the last review together with every open
-   amendment, and the correspondence report. The owner accepts or rejects
-   each amendment and each finding; the agent moves an
-   accepted amendment into the tree with a log entry and changes the code for
-   a rejected one. Nothing merges with an open amendment or an unresolved
-   finding.
+### Phase 1: Design
+
+Develop a complete design for the agreed scope and a proposed revision of
+the current design tree. The design explains the proposed mechanism, why it
+meets the requirements, the alternatives considered, and the evidence and
+uncertainty behind the choice. The tree revision is the central review
+surface: show exactly which decisions would be added, changed, or retired,
+and why. A design document alone does not supply that comparison.
+
+Use `research/investigations/` for design documents, alternatives, and
+supporting analysis, and the existing experiment homes for measurements.
+Prototypes and changes to repository code, specifications, and tests on a
+work branch may be used to investigate the design. Choose the order and
+extent of these activities as needed; there is no prescribed sequence of
+documents, programs, or experiments.
+
+Deliver both the complete design and the proposed tree revision to the
+owner. The owner's confirmation completes phase 1. Apply the confirmed
+revision to the tree and commit it with a concise log entry for traceability.
+Work that proceeds before confirmation keeps its design choices as
+proposals or amendments; it does not claim that phase 1 is complete.
+
+### Phase 2: Implement and revise
+
+Keep the affected subtree and its ancestor chain in context, extending to
+related decisions when the problem requires it. Implementation continues to
+test the design, and a problem may require changing it. Discuss material
+design problems with the owner when available. When the owner is unavailable,
+including during unattended goal work, choose a reasonable solution, record
+the changed decision and its grounds as an amendment, and continue the
+authorized work. Present the complete outstanding tree revision when the
+owner returns. Do not infer approval of a tree change from their absence.
+
+At implementation delivery, run the lint, design-gate checks, and
+correspondence checks below over the tree, amendments, and code or
+specification diff. Put the design revision and findings on the PR review
+surface. The owner rules on the amendments and findings there; apply the
+accepted revisions and adjust the implementation for rejected ones. Resolve
+open amendments and findings before merging under the repository's existing
+approval and test rules. These phases do not add permission requirements to
+work-branch changes.
 
 ## Lint
 
@@ -146,7 +179,11 @@ The prompts below are written for a mid-sized model reading a bounded input
 and answering one question. Their findings are review input, never
 acceptance authority.
 
-## Design gate: run on a tree diff or an amendment before the pull request
+## Design gate: review a proposed tree revision
+
+Use these checks when presenting a design revision and before an
+implementation pull request. Their purpose is to assess the choices and
+their grounds; a phase-1 proposal does not need a finished implementation.
 
 G1. Decision test. For each added or changed node or amendment: does every
 `Decision:` line name a choice and either a reason or a refused alternative,
@@ -164,7 +201,7 @@ in the tree or governs a whole concept, read that whole subtree. Report the
 nodes read and every conflict, narrowing, or broken dependency found, naming
 both nodes.
 
-## Correspondence: run at pull request time
+## Correspondence: run at implementation delivery
 
 Inputs: the tree diff since the last review, the open amendments, the code
 diff of the pull request, and the existing tree nodes in the concept areas

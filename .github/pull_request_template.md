@@ -6,9 +6,10 @@ under AGENTS.md rule 4. -->
 
 ## Design tree
 
-<!-- List the log entries this branch adds, every open amendment under
-design/amendments/, and the correspondence report's findings, or "none"
-when the change touches no decision. -->
+<!-- Explain the proposed or approved changes to the current design tree
+and link the complete design for a design-phase delivery. List every open
+amendment under design/amendments/ and the applicable review findings.
+Link log entries for traceability. Use "none" when no decision changes. -->
 
 ## Agent review
 
