@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-1, what a slot may hold: a run's element type is any nameable type, a run included, so a FixedVector<FixedVector<u8, 4>, 2> holds complete inner runs, each with its own two descriptor words in its own slot. An element that is a run is affine, so it leaves the outer window through a boundary row and comes back with its own measures and its own window intact.";
   let outer = fixed_vector::<FixedVector<u8, 4>, 2>();
   let inner = fixed_vector::<u8, 4>();

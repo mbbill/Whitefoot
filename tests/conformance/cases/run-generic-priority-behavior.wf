@@ -143,7 +143,7 @@ fn sift_sink<Order<T, E>>(queue: &uniq Queue<Order<T, E>>, count: own u64, env: 
   }
 }
 
-fn push<Order<T, E>>(queue: &uniq Queue<Order<T, E>>, value: own T, env: &E) -> result: own unit reads(queue.heap, value, env), writes(queue.heap, value) contract {
+fn push<Order<T, E>>(queue: &uniq Queue<Order<T, E>>, value: own T, env: &E) -> result: own unit reads(queue.heap, env), writes(queue.heap) contract {
   requires room_of(deref(queue).heap) >= 1_u64;
   requires head_of(deref(queue).heap) <= 0_u64;
   ensures len_of(deref(queue).heap) == len_of(deref(entry(queue)).heap) + 1_u64;
@@ -297,7 +297,7 @@ fn directed_demo() -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let code = directed_demo();
   if code != 0_u8 {
     return exit_status(code: code);

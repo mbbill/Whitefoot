@@ -62,7 +62,7 @@ fn wide_frame_source(depth: u64) -> Vec<u8> {
   return a +wrap b;
 }}
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{
+fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{
   let count = 0_u64;
   region {{
     set count = args_count(args: &args);
@@ -347,7 +347,7 @@ fn boxed_branch['s](store: &uniq Heap<'s>, left: own Box<'s, Tree<'s>>, right: o
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match boxed_leaf(store: &uniq heap) {
       None() => {

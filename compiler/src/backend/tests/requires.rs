@@ -29,7 +29,7 @@ fn forward(value: &u64) -> result: own u64 reads(value) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let zero = 0_u64;
   let one = 1_u64;
   region {
@@ -83,7 +83,7 @@ const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq MutSlice<u8>, source
   return length;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let length = 4_u64;
   region {
     match heap_vector::<u8>(store: &uniq heap, count: length) {
@@ -145,7 +145,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
 #[test]
 fn command_entry_rejects_a_contract_instead_of_emitting_a_wrapper_check() {
     let failure = compile_rejection(
-        br#"command fn main() -> status: own ExitStatus pure contract {
+        br#"fn main() -> status: own ExitStatus pure contract {
   requires True();
 } {
   return exit_status(code: 0_u8);
@@ -165,7 +165,7 @@ fn contradictory_requirements_emit_an_unreachable_body_without_a_trap() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -186,7 +186,7 @@ fn contract_define_is_symbolic_and_not_emitted_as_runtime_work() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bits = ipopcount(0_u8);
   if bits == 0_u32 {
     let zero = identity(value: 0_u8);
@@ -213,7 +213,7 @@ fn contract_define_can_hold_a_float_endpoint_conversion_without_runtime_code() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let converted = cvt::<u8, f32>(1_u8);
   if feq(converted, 1.0_f32) {
     let one = identity(value: 1_u8);
@@ -245,7 +245,7 @@ fn ordinary_requirement_is_not_emitted_as_a_callee_prologue() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = 7_i32;
   let returned = bounded(value: value);
   if returned != 7_i32 {
@@ -275,7 +275,7 @@ fn a_requirement_must_be_discharged_at_each_ordinary_call() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let unknown = 0_i32;
   let returned = positive(value: unknown);
   return exit_status(code: 0_u8);

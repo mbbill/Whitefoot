@@ -53,7 +53,7 @@ fn pool_release['s: affine](pool: own BlockPool<'s>, lease: own Lease<'s>) -> re
   return move pool;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Runs 3.L.4's block pool over a bump extent.";
   region 'a {
     let workspace = arena_frame::<65536, 16, 'a>();

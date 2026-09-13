@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn guards_every_integer_error_before_llvm() {
-    let template = r#"command fn main() -> status: own ExitStatus pure {
+    let template = r#"fn main() -> status: own ExitStatus pure {
   let quotient = 84_$TYPE /checked 2_$TYPE;
   match move quotient {
     Ok(value: quotient_value) => {

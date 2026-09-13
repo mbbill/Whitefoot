@@ -9,7 +9,7 @@ fn append<T: affine, const n: u64>(values: &uniq FixedVector<T, n>, value: own T
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let scalar = fixed_vector::<u64, 2>();
   let nested = fixed_vector::<FixedVector<u64, 2>, 2>();
   region {

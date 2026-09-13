@@ -546,6 +546,19 @@ pub fn follow_sets(grammar: &Grammar, first: &First, start: usize) -> Follow {
     let mut initial = WordSet::new();
     initial.insert(Vec::new());
     follow.production[start] = initial;
+    // PRE-1 supplies ordinary signature records independently of writer
+    // items. Their record terminator is a semicolon followed by source end;
+    // the same fn_sig production checks the declaration itself. This root
+    // continuation does not add fn_sig to the writer's item production.
+    if let Some(signature) = grammar.index.get("fn_sig") {
+        follow.production[*signature].insert(vec![Tok {
+            pred: Pred::Fixed("Semicolon"),
+            prov: None,
+            tname: None,
+            atom_only: false,
+            inside: false,
+        }]);
+    }
 
     loop {
         let mut changed = false;

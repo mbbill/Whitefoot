@@ -108,7 +108,7 @@ fn evaluate['s](expression: &Box<'s, Expression<'s>>) -> result: own Result<u64,
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     let input = slice_of(&prefix_input);
     let parsed = parse_expression(store: &uniq heap, input: input, offset: 0_u64);

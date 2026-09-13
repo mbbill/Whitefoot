@@ -27,7 +27,7 @@ fn build_record(seed: own u8) -> result: own FixedVector<Record, 2> pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let built = build_record(seed: 9_u8);
   let count = len_of(built);
   if count == 1_u64 {

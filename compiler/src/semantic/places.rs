@@ -264,7 +264,7 @@ impl PlaceMap {
             summary.implicit_deref = implicit_deref;
             summary.delivery_carrier = matches!(parameter.mode, CheckedMode::Own);
         }
-        map.collect_block_bindings(&function.body);
+        map.collect_block_bindings(function.body.as_deref().unwrap_or_default());
         map
     }
 
@@ -577,19 +577,6 @@ impl PlaceMap {
                 };
                 Some((self.resolve(&place), false))
             }
-            // A borrowed system resource that is a struct field names that
-            // field, so a write through it kills the facts on the field and
-            // not on its siblings [SYS-18, ENT-5].
-            CheckedExpression::BorrowSystemResource {
-                binding, fields, ..
-            } => {
-                let place = PlaceTerm {
-                    root: PlaceRoot::Binding(*binding),
-                    deref: self.is_holder(*binding),
-                    fields: fields.clone(),
-                };
-                Some((self.resolve(&place), false))
-            }
             CheckedExpression::BorrowAddressed { root, .. } => {
                 let mut resolved = match root.root {
                     PlaceRoot::Binding(binding) if self.is_holder(binding) => {
@@ -624,12 +611,6 @@ impl PlaceMap {
 
 pub(crate) fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
     match value {
-        CheckedExpression::BorrowSystemResource {
-            binding, fields, ..
-        } => Some(HolderReferent::Place {
-            root: PlaceRoot::Binding(*binding),
-            path: fields.iter().copied().map(PlaceStep::Field).collect(),
-        }),
         CheckedExpression::BorrowAddressed { root, .. } => Some(HolderReferent::Place {
             root: root.root,
             path: root.place_path(),
@@ -670,7 +651,6 @@ pub(crate) const fn value_has_implicit_deref(value: &CheckedExpression) -> bool 
         CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::UserCall {
                 result_borrow: Some(_),

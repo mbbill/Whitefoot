@@ -34,7 +34,7 @@ fn missing(code: own u64) -> result: own Result<Extent, u64> pure {
   return Err<Extent, u64>(error: code);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let found = locate(offset: 3_u64, width: 4_u64);
   match move found {
     Ok(value: found_extent) => {

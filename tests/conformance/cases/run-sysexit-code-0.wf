@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "SYS-13: exit_status is total and pure, and the target maps the returned code exactly onto the host process status.";
+fn main() -> status: own ExitStatus pure {
+  doc "The ordinary exit_status function returns a value whose selected native launcher observes exit 0. This is library/build adapter behavior under PROG-3, with no entry program kind or target qualification.";
   return exit_status(code: 0_u8);
 }

@@ -8,7 +8,7 @@ fn append(vector: &uniq FixedVector<u8, 4>, value: own u8) -> result: own unit r
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-0: written arguments are decided per argument; one the criterion does not require is a hard error naming the operation.";
   return exit_status(code: 0_u8);
 }

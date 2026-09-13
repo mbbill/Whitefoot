@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.args as again: own Args) -> status: own ExitStatus pure {
-  doc "Each standard input row may be selected at most once; a repeated `command.args` label is a hard error citing FN-7 at that input_label node.";
+fn main(args: own Args, again: own Args) -> status: own ExitStatus pure {
+  doc "FN-7: two ordinary parameters may have the same nominal type. They are separate owned values with distinct binder names.";
   return exit_status(code: 0_u8);
 }

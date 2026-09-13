@@ -93,7 +93,7 @@ fn publish_all(output: &uniq OutputStream, source: &Slice<u8>, length: own u64) 
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own OutputStream, command.handles as handles: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, out, handles, heap), writes(out, handles, heap), allocates(heap) {
+fn main['heap](command.args as args: own Args, command.stdout as out: own OutputStream, command.handles as handles: own HandleFactory, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(args, out, handles, heap), writes(out, handles, heap), allocates(heap) {
   doc "Connects to the loopback port named by the invocation, sends eight bytes through the connection's sending direction, and publishes every byte the peer returns through its receiving direction until the peer stops sending [SYS-17, SYS-18]. The argument scratch and the receive chunk are store-resident runs viewed exclusively where they are written and shared where they are read; the eight-byte payload is an inline run whose shared view is all the send needs.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 16_u64) {

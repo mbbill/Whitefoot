@@ -15,7 +15,7 @@ fn filled<const n: u64>(value: own u8) -> result: own FixedVector<u8, n> pure co
   return move built;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-6: the loop invariant names the const generic directly, which is the fourth position in which a const generic is a value.";
   let bytes = filled::<4>(value: 7_u8);
   let held = len_of(bytes);

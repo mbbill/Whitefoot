@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-1: an admitted measure place is formed with subscripts as well as field selections, so `len_of(grid[0])` is a term over a run of runs. The subscript inside the place is an ordinary OP-4 occurrence and is discharged from the length the outer place_back published; the element read then reads the inner run's own descriptor out of the slot it occupies.";
   region 'a {
     let workspace = arena_frame::<8192, 16, 'a>();

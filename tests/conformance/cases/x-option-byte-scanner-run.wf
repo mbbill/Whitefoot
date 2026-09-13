@@ -10,7 +10,7 @@ fn find_byte(input: own Slice<u8>, needle: own u8) -> function_result: own Optio
   return None<u64>();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bytes = fixed_vector::<u8, 6>();
   region {
     place_back(vector: &uniq bytes, value: 10_u8);

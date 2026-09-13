@@ -4,7 +4,7 @@ fn measure(cell: own FixedVector<u8, 4>) -> size: own u64 reads(cell) {
   return n;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "LIV-1: one branch consumes the run and the other does not, so the two predecessors of the join disagree about whether it is live there.";
   let empty = fixed_vector::<u8, 4>();
   region {

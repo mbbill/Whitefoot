@@ -282,7 +282,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration,
                         mode: crate::semantic::model::CheckedMode::Own,
                         ty,
-                        state_origins: None,
                         live: false,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
@@ -583,56 +582,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn commit_bindings(
         &self,
         targets: &[FormedTarget],
-        values: &[super::super::TypedExpression],
+        _values: &[super::super::TypedExpression],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
-        // Every RHS was evaluated before the atomic commit. In particular a
-        // result list's ordinals all use the one returned image, and installing
-        // one field cannot change the origin substituted for another field.
-        let images = values
-            .iter()
-            .map(|value| self.state_origins_of_value(value, bindings))
-            .collect::<Result<Vec<_>, _>>()?;
-        for (index, target) in targets.iter().enumerate() {
+        for target in targets {
             if self.commit_reinitializes_binding(target) {
                 bindings
                     .get_mut(&target.mutation.declaration)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?
                     .live = true;
             }
-            if !self.type_carries_identity(target.mutation.target.ty())? {
-                continue;
-            }
-            let image = if values.len() == targets.len() {
-                images.get(index).cloned().flatten()
-            } else {
-                let field =
-                    u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-                images
-                    .first()
-                    .cloned()
-                    .flatten()
-                    .map(|image| image.projected(&[field]))
-            };
-            let selection = self.state_selection_of_target(
-                &target.mutation.target,
-                &target.mutation.place,
-                bindings,
-            )?;
-            let local = bindings
-                .get_mut(&target.mutation.place.root)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let current = local.state_origins.take().unwrap_or_else(|| {
-                if selection.exact {
-                    crate::semantic::model::CheckedStateOrigins::fresh()
-                } else {
-                    crate::semantic::model::CheckedStateOrigins::unknown()
-                }
-            });
-            local.state_origins = Some(selection.replace(
-                current,
-                image.unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh),
-            ));
         }
         Ok(())
     }

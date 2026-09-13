@@ -8,7 +8,7 @@ fn take_static['s: affine](free: &uniq FixedVector<Box<'s, FixedVector<u8, 4>>, 
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'a {
     let store = arena_frame::<64, 8, 'a>();
     region {

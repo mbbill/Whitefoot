@@ -9,7 +9,7 @@ fn empty_table() -> table: own Table pure contract {
   return Table(slots: move slots);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = empty_table();
   return exit_status(code: 0_u8);
 }

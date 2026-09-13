@@ -1,4 +1,4 @@
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "A runtime-length store-backed run is taken, filled, folded, and released; counted-loop range facts discharge every indexed access.";
   region {
     match heap_vector::<u64>(store: &uniq heap, count: 8_u64) {

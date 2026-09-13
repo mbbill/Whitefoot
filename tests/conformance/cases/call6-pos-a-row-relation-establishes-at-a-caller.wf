@@ -9,7 +9,7 @@ fn two_in_a_row(vector: &uniq FixedVector<u8, 4>) -> result: own unit reads(vect
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "CALL-6: a kernel-domain row's declared relation is instantiated at the call and established on its continuation, exactly as a source contract's is.";
   return exit_status(code: 0_u8);
 }

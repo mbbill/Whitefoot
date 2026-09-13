@@ -49,7 +49,7 @@ fn filled_buffer<T: Int>(store: &uniq Heap, length: own u64, value: own T) -> re
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let small_maximum = maximum::<u8>(left: 4_u8, right: 9_u8);
   let signed_maximum = maximum::<i64>(left: -7_i64, right: -2_i64);
   let short_input = fixed_vector::<u8, 2>();

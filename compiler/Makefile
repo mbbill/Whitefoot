@@ -239,7 +239,7 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test: completion-core-read-test completion-default-route-test sched-smoke \
+completion-test: completion-core-read-test completion-default-route-test ordinary-values-test sched-smoke \
 	sched-enumerate
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
@@ -292,6 +292,15 @@ completion-test: completion-core-read-test completion-default-route-test sched-s
 # `unset` rather than a bare invocation because make inherits this shell's
 # environment, and the probe refuses an inherited value rather than quietly
 # testing the arm the harness already covers.
+ordinary-values-test:
+	@mkdir -p "$(COMPLETION_TMP)/ordinary-values"
+	$(CC) $(COMPLETION_BASE_CFLAGS) \
+		$(filter-out %/harness.c %/native_contract.c,$(COMPLETION_SOURCES)) \
+		src/backend/ordinary_values.c src/backend/ordinary_values_probe.c \
+		-o "$(COMPLETION_TMP)/ordinary-values-probe"
+	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/ordinary-values-probe" "$(COMPLETION_TMP)/ordinary-values"
+	WF_IO_HELPERS=2 "$(COMPLETION_TMP)/ordinary-values-probe" "$(COMPLETION_TMP)/ordinary-values"
+
 completion-default-route-test:
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_BASE_CFLAGS) $(COMPLETION_DEFAULT_ROUTE_SOURCES) \
@@ -498,7 +507,7 @@ WINDOWS_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
 # libraries a link takes by default, so a link that carries the TCP routes
 # names it (`src/bin/whitefootc.rs`, TARGET_LINK_LIBRARIES, says the same for
 # the driver's own links).
-WINDOWS_LINK_LIBRARIES := -lws2_32
+WINDOWS_LINK_LIBRARIES := -lws2_32 -lshell32
 
 # These two are deliberately explicit qualification-development targets rather
 # than part of `check`, and they are two rather than one because they prove
@@ -675,7 +684,7 @@ park-on-miss-measurements:
 	completion-core-read-source-boundary completion-core-read-test \
 	completion-core-read-stress completion-core-read-tsan completion-tsan \
 	completion-sanitize \
-	completion-core-read-sanitize completion-default-route-test \
+	completion-core-read-sanitize completion-default-route-test ordinary-values-test \
 	completion-default-route-sanitize completion-default-route-tsan sched-smoke \
 	sched-enumerate completion-windows-cross completion-windows-wine \
 	park-on-miss-measurements

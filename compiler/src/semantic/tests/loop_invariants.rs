@@ -72,7 +72,7 @@ fn assert_invariant_required_relation(source: &[u8], expected: &str) {
 
 #[test]
 fn source_invariant_is_checked_at_base_and_arbitrary_backedge() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant limit: i <= 1_u64
@@ -95,7 +95,7 @@ fn source_invariant_is_checked_at_base_and_arbitrary_backedge() {
 
 #[test]
 fn a_body_local_invariant_is_not_a_counted_header_invariant() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for (i in 0_u64..1_u64) {
     let value = i;
     invariant limit: i <= 1_u64;
@@ -119,7 +119,7 @@ fn a_body_local_invariant_is_not_a_counted_header_invariant() {
 
 #[test]
 fn ordered_invariant_roots_have_exact_integer_normalization() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant nonstrict_forward: i <= 1_u64,
@@ -146,7 +146,7 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
     });
 
     for source in [
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant limit: i < 1_u64
@@ -156,7 +156,7 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
 }
 "#
         .as_slice(),
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant limit: 1_u64 > i
@@ -187,7 +187,7 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
 #[test]
 fn equality_and_disequality_are_not_invariant_roots() {
     for source in [
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant same: i == i
@@ -197,7 +197,7 @@ fn equality_and_disequality_are_not_invariant_roots() {
 }
 "#
         .as_slice(),
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant different: i != 2_u64
@@ -240,7 +240,7 @@ fn ordinary_loop_invariant_is_inductive_at_an_arbitrary_header() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -275,7 +275,7 @@ fn ordinary_loop_without_a_break_has_a_contradictory_continuation() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -315,7 +315,7 @@ fn a_body_local_invariant_is_not_an_ordinary_loop_header_invariant() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -355,7 +355,7 @@ fn ordinary_loop_write_must_preserve_the_next_header_invariant() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -380,7 +380,7 @@ fn ordinary_backedge_diagnostic_prints_the_source_relation() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -402,7 +402,7 @@ fn counted_backedge_diagnostic_prints_the_hidden_next_binder() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -427,7 +427,7 @@ fn ordinary_loop_break_does_not_export_its_header_invariant() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -474,7 +474,7 @@ fn ordinary_loop_batch_uses_all_invariants_for_each_backedge() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -536,7 +536,7 @@ fn a_failed_base_batch_grants_no_ordinary_header_assumption() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -563,7 +563,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn zero_trip_range_still_requires_the_invariant_base_case() {
     assert_invariant_issue(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..0_u64,
     invariant limit: 1_u64 <= i
@@ -579,7 +579,7 @@ fn zero_trip_range_still_requires_the_invariant_base_case() {
 #[test]
 fn normal_body_fallthrough_must_preserve_the_invariant() {
     assert_invariant_issue(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let sum = 0_u64;
   for (
     i in 0_u64..1_u64,
@@ -609,7 +609,7 @@ fn a_conditional_unit_step_preserves_the_invariant_through_an_affine_join() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -647,7 +647,7 @@ fn an_affine_join_does_not_hide_a_branch_that_advances_too_far() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -672,7 +672,7 @@ fn an_affine_join_retains_a_negative_constant_delta() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -715,7 +715,7 @@ fn separate_joined_bindings_do_not_share_one_delta_atom() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -725,7 +725,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_matching_break_is_not_a_backedge() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant limit: i <= 0_u64
@@ -759,7 +759,7 @@ fn requirement_facts_seed_the_originating_invariant_context() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -790,7 +790,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -828,7 +828,7 @@ fn add_one(weights: &buffer<u8>, count: own u64) -> result: own u32 reads(weight
   return incremented;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -953,7 +953,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn later_invariant_backedge_can_use_an_earlier_invariant() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let x = 0_u64;
   let y = 0_u64;
   for (
@@ -979,7 +979,7 @@ fn later_invariant_backedge_can_use_an_earlier_invariant() {
     });
 
     assert_invariant_issue(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let x = 0_u64;
   let y = 0_u64;
   for (
@@ -1010,7 +1010,7 @@ fn descending_range_does_not_publish_a_false_exhaustion_substitution() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1059,7 +1059,7 @@ fn matching_break_removes_false_header_exhaustion_facts_at_the_join() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1105,7 +1105,7 @@ fn no_backedge_invariant_can_finish_with_a_safe_false_header_exit() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1178,7 +1178,7 @@ fn right(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1229,7 +1229,7 @@ command fn main() -> status: own ExitStatus pure {
 fn active_invariant_proves_a_real_array_index_obligation() {
     let source = br#"const values: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let at = 0_u64;
   for (
     i in 0_u64..4_u64,
@@ -1308,7 +1308,7 @@ fn finish(count: own u64) -> result: own u32 pure contract {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1404,7 +1404,7 @@ fn finish_or_stop(stop: own Bool) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1447,7 +1447,7 @@ fn active_invariant_proves_a_dynamic_buffer_index_obligation() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1516,7 +1516,7 @@ fn exhaustion_fact_proves_filled_and_vacant_buffer_allocation_fit() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1579,8 +1579,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn exhaustion_facts_prove_both_system_range_components() {
-    let source = br#"fn publish_prefix(output: &uniq OutputStream, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
+fn exhaustion_facts_prove_both_ordinary_range_requirements() {
+    let source = br#"fn publish_prefix(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, limit: own u64) -> result: own unit reads(factory, output, source), writes(factory, output) contract {
   define capacity = len_of(deref(source));
   requires limit <= capacity;
 } {
@@ -1595,18 +1595,18 @@ fn exhaustion_facts_prove_both_system_range_components() {
     set end = end + 1_u64;
   }
   region {
-    let outcome = write_once(output: &uniq deref(output), source: source, start: start, end: end);
+    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: start, end: end);
   }
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the exported invariants must prove both system ranges: {outcome:?}");
+            panic!("the exported invariants must prove both ordinary ranges: {outcome:?}");
         };
         let function = checked
             .data
@@ -1615,21 +1615,22 @@ command fn main() -> status: own ExitStatus pure {
             .find(|function| function.name == "publish_prefix")
             .expect("publish_prefix function exists");
         super::entailment::validate_derivations(&function.entailment);
-        let ranges = function
-            .entailment
-            .obligations
-            .iter()
-            .filter(|outcome| outcome.family == ObligationFamily::SystemRange)
-            .collect::<Vec<_>>();
-        assert_eq!(ranges.len(), 2, "write_once retains both SYS-8 components");
-        assert_eq!(ranges[0].conjunct, 0);
-        assert_eq!(ranges[1].conjunct, 1);
+        let ranges = &function.entailment.call_goals;
+        assert_eq!(
+            ranges.len(),
+            2,
+            "write_once retains both ordinary requires clauses"
+        );
+        assert!(ranges[0].requires_clause.components() < ranges[1].requires_clause.components());
         assert_eq!(ranges[0].node_path, ranges[1].node_path);
-        for range in &ranges {
-            assert!(range.discharged);
+        for range in ranges {
+            assert_eq!(
+                range.disposition,
+                super::super::entailment::CallGoalDisposition::Discharged
+            );
             let root = range
                 .derivation
-                .expect("each accepted SYS-8 component retains a derivation root");
+                .expect("each accepted CALL-6 requirement retains a derivation root");
             let mut seen = vec![false; function.entailment.derivations.nodes.len()];
             let mut stack = vec![root];
             let mut used_expected_invariant = false;
@@ -1678,7 +1679,7 @@ fn independent_invariant_intervals_discharge_two_operand_exact_multiplication() 
   return left;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1754,7 +1755,7 @@ fn admitted_product_publishes_its_interval_to_the_following_operation() {
   return at;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1810,7 +1811,7 @@ fn interval_product_checks_the_two_cross_endpoint_pairs() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1864,7 +1865,7 @@ fn caller(rows: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2028,7 +2029,7 @@ fn a_local_proof_fact_can_discharge_an_ordinary_loop_backedge() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2089,7 +2090,7 @@ fn automatic_residual_reduction_composes_two_live_l0_facts() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2165,7 +2166,7 @@ fn count_or_stop(stop: own Bool) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2238,7 +2239,7 @@ fn count_or_stop(stop: own Bool) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2312,7 +2313,7 @@ fn a_published_guard_discharges_an_ordinary_loop_cursor_increment() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2372,7 +2373,7 @@ fn an_unguarded_cursor_increment_fails_the_ordinary_loop_backedge() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2429,7 +2430,7 @@ fn a_guarded_cursor_increment_reaches_the_ordinary_loop_backedge() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2473,7 +2474,7 @@ fn a_direct_cursor_increment_and_its_let_spelling_agree() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2493,7 +2494,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2543,7 +2544,7 @@ fn a_body_invariant_after_the_write_and_the_ordinary_header_are_both_proved() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2588,7 +2589,7 @@ fn a_break_only_body_creates_no_ordinary_loop_backedge_obligation() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2640,7 +2641,7 @@ fn a_failing_body_probe_is_reported_before_the_header_backedge() {
   return hi;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let t = True();
   let v = narrow(spare: 8_u64, cand: 3_u64, flag: t);
   return exit_status(code: 0_u8);
@@ -2694,7 +2695,7 @@ fn a_measure_former_is_an_affine_factor_of_a_header_invariant() {
   return seen;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let run = buffer_new(8_u64, 0_u8);
   let total = headroom(run: move run);
   return exit_status(code: 0_u8);
@@ -2717,7 +2718,7 @@ command fn main() -> status: own ExitStatus pure {
 /// would discharge from a length the run no longer has.
 #[test]
 fn a_write_that_kills_a_measure_retargets_the_invariant_image() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   doc "The measure the header names is replaced inside the body.";
   let data = buffer_new(4_u64, 0_u8);
   for (

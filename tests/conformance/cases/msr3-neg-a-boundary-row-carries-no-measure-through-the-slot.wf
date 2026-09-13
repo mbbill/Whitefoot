@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-3: the element placement reaches a written element position and no other. place_back stores its value at position len_of(vector) and take_back takes one from position len_of(rest), and a measure term is not an offset a place relation may name, so a run put into a slot by a boundary row and taken back out by one arrives with no measures of its own and the next placement into it is undischarged.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

@@ -4,7 +4,7 @@ fn record['s](destination: &uniq Arena<'s, 4, 1>) -> available: own u64 reads(de
   return room_of(deref(destination));
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<4, 1, 'w>();
     region {

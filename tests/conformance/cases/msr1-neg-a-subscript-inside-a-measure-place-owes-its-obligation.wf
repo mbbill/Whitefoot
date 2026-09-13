@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-1, OP-4: a subscript inside a measure place is an ordinary OP-4 occurrence and owes `i < len_of(base)` where the place is formed. One row was placed, so `1 < len_of(grid)` is not derivable and the measure term never exists.";
   region 'a {
     let workspace = arena_frame::<8192, 16, 'a>();

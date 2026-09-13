@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn every_direct_float_operation_executes_for_both_widths() {
-    let template = r#"command fn main() -> status: own ExitStatus pure {
+    let template = r#"fn main() -> status: own ExitStatus pure {
   let sum = fadd.strict(1.5_$TYPE, 2.25_$TYPE);
   if feq(sum, 3.75_$TYPE) {
   } else {
@@ -184,7 +184,7 @@ fn right(a: own f32, b: own f32, c: own f32) -> result: own f32 pure {
   return fadd.strict(a, bc);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let one = 1.0_f32;
   let half_ulp = 4.0e-8_f32;
   let stepwise = left(a: one, b: half_ulp, c: half_ulp);
@@ -223,7 +223,7 @@ fn float_constants_work_in_aggregates_and_runs() {
 
 const values: FixedVector<f32, 2> =[1.5_f32, 2.5_f32];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let sample = Sample(value: values[0_u64]);
   let empty = fixed_vector::<f32, 2>();
   region {

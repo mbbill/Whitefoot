@@ -6,7 +6,7 @@ fn measure(taken: own FixedVector<u8, 4>) -> measured: own u64 reads(taken) cont
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "CALL-6: a contract whose published relations instantiate to a contradiction is refused at the declaration.";
   let empty = fixed_vector::<u8, 4>();
   region {

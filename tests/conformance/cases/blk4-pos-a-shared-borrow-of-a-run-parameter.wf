@@ -5,7 +5,7 @@ fn first_of(table: &FixedVector<u32, 4>) -> value: own u32 reads(table) contract
   return deref(table)[0_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u32, 4>();
   region {
     place_back(vector: &uniq table, value: 7_u32);

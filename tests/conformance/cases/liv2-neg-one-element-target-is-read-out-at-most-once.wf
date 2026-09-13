@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "LIV-2: one target is read out at most once, because after its read-out the target is dead for the remainder of the evaluation. The second `move grid[1_u64]` is therefore an ordinary use of what the first read-out consumed, and an ordinary affine subscript read is TYPE-2's rejection.";
   region 'a {
     let workspace = arena_frame::<65536, 16, 'a>();

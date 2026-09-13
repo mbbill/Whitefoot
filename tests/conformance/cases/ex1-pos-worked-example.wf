@@ -15,7 +15,7 @@ fn sign_of(x: own i32) -> result: own Sign pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "let-initializer match with give: a conditional value bound, then reused.";
   let a = 40_i32;
   region {

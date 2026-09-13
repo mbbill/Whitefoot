@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-3, OWN-7: an element placement writes the element position it names and no other. A measure written at P[0] is a fact about P[0], and the value displaced out of P[1] carries what P[1] had, which nothing established; the two literal offsets are provably distinct, so the placement at the second position is undischarged.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

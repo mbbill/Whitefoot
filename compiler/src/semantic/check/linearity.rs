@@ -129,9 +129,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .collect(),
             CheckedNominalKind::Box { referent, .. } => vec![*referent],
             CheckedNominalKind::Arena { content, .. } => vec![*content],
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::SystemResource { .. } => {
-                Vec::new()
-            }
+            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => Vec::new(),
         })
     }
 
@@ -298,11 +296,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if self.scope_holds_store_capability(bindings, store) {
                 continue;
             }
-            let phrase = if store.is_entry_heap_region() {
-                "the entry heap's store region".to_owned()
-            } else {
-                self.region_phrase(store)?
-            };
+            let phrase = self.region_phrase(store)?;
             return self
                 .issue_node::<()>(
                     SemanticRule::Prov6,
@@ -520,9 +514,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         region: crate::DeclarationId,
     ) -> Result<Option<LinearityClass>, CheckStop> {
-        if region.is_entry_heap_region() {
-            return Ok(Some(LinearityClass::Linear));
-        }
         let record = self
             .resolved
             .declarations()
@@ -556,7 +547,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// It is the store class read fail-closed: an `affine`-bounded region
     /// parameter and a `region_stmt` region are bump extents, whose
     /// reclamation is the region's own reset, and every other region — the
-    /// entry heap, an unbounded region parameter, a `linear`-bounded one — is
+    /// an unbounded region parameter or a `linear`-bounded one — is
     /// a general store whose run is released by spending a provider. A
     /// misclassification in the extent direction would drop a free, so the
     /// two extent cases are the ones that must be positively identified.
@@ -565,9 +556,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         region: crate::DeclarationId,
     ) -> Result<super::super::model::CheckedReleaseClass, CheckStop> {
         use super::super::model::CheckedReleaseClass;
-        if region.is_entry_heap_region() {
-            return Ok(CheckedReleaseClass::General);
-        }
         let Some(record) = self
             .resolved
             .declarations()
@@ -654,11 +642,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             SemanticIssueKind::LinearityBoundMismatch {
                 parameter: parameter.to_owned(),
                 bound: bound.spelling(),
-                argument: if argument.is_entry_heap_region() {
-                    "the entry heap's store region".to_owned()
-                } else {
-                    self.region_phrase(argument)?
-                },
+                argument: self.region_phrase(argument)?,
                 actual: actual.map_or("a region that names no store", LinearityClass::spelling),
             },
         )?;
@@ -758,11 +742,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ) {
                 continue;
             }
-            let phrase = if store.is_entry_heap_region() {
-                "the entry heap's store region".to_owned()
-            } else {
-                self.region_phrase(store)?
-            };
+            let phrase = self.region_phrase(store)?;
             return self.issue_node(
                 SemanticRule::Prov6,
                 node,

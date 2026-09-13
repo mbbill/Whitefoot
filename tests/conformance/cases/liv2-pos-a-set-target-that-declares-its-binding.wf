@@ -11,7 +11,7 @@ fn split(value: own u64) -> (low: own u64, high: own u64) pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "LIV-2: a target identifier that resolves to no binding declares one exactly as a `let` binder does - a fresh declaration of the enclosing block, visible after the complete `set` statement and not inside it, with the mode and type of its own ordinal.";
   let start = 8_u64;
   set (low, high) = split(value: start);

@@ -3,7 +3,7 @@ fn exchange<T: affine>(target: &uniq T, incoming: own T) -> previous: own T read
   return move previous;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let scalar = 3_u64;
   let values = fixed_vector::<u64, 2>();
   let fresh = fixed_vector::<u64, 2>();

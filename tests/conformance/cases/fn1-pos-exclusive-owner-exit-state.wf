@@ -8,7 +8,7 @@ fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previou
   return move previous;
 }
 
-fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own Observed reads(owner, incoming), writes(owner, store) {
+fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own Observed reads(owner), writes(owner, store) {
   let previous_value = 0_u64;
   region {
     let previous = exchange(slot: &uniq owner, incoming: move incoming);
@@ -18,8 +18,8 @@ fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq
   return Observed(previous: previous_value, current: current_value);
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
-  doc "FN-1, EFF-2, SET-2: a helper returns the old ordinary Box and installs the incoming Box in the exclusive actual. A second helper reads both values using entry-rooted effects and releases each through its ordinary Heap capability.";
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "FN-1, EFF-2, SET-2: a helper returns the old ordinary Box and installs the incoming Box in the exclusive actual. A second helper reads both values using ordinary storage-place effects and releases each through its ordinary Heap capability.";
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: first_failure) => {

@@ -1,4 +1,4 @@
-fn total(run: own Vector<u8>, store: &uniq Heap) -> sum: own u8 reads(run), writes(store) contract {
+fn total['heap](run: own Vector<'heap, u8>, store: &uniq Heap<'heap>) -> sum: own u8 reads(run), writes(store) contract {
   requires len_of(run) >= 4_u64;
 } {
   doc "Adds the run's first four bytes and releases the run here. D3: this scope holds the store's provider, so the run is affine and the release is derived on the return edge; the row's writes(store) is the capability that release spends.";
@@ -12,7 +12,7 @@ fn total(run: own Vector<u8>, store: &uniq Heap) -> sum: own u8 reads(run), writ
   return all;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "The general store hands out one run of four slots, a counted loop fills it, and a helper holding the provider adds the bytes and takes the derived release.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {

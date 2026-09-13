@@ -21,7 +21,7 @@ struct Frame {
   tail: FixedVector<u8, 8>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[MSR-2] the support of a measure term over P is P's descriptor storage, not P's root binding. `frame.flags` and `frame.tail` are two disjoint parts of one struct, so a [SET-1] commit to the sibling field overlaps neither the descriptor storage of `frame.tail` nor any holder reached to it, and `len_of(frame.tail)` survives the write. The subscript after the write therefore still discharges against that fact. Under the root-granular reading this rule replaces, the same program was an [OP-4] rejection with the residual 3_u64 < len_of(frame.tail).";
   let body = filled::<u8, 8>(value: 0_u8);
   let frame = Frame(flags: 0_u64, tail: move body);

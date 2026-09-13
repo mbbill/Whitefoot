@@ -132,7 +132,6 @@ enum StableCheckedType {
         region: DeclarationId,
         content: Box<StableCheckedType>,
     },
-    System(u8),
     Array {
         element: StableElement,
         length: CheckedConst,
@@ -352,7 +351,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         regions: &[(DeclarationId, DeclarationId)],
     ) -> Result<(), CheckStop> {
         match ty {
-            StableCheckedType::Scalar(_) | StableCheckedType::System(_) => {}
+            StableCheckedType::Scalar(_) => {}
             StableCheckedType::SourceNominal { substitution, .. } => {
                 self.substitute_stable_regions(substitution, regions)?
             }
@@ -431,9 +430,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .copied()
             .filter(|node| {
-                self.tree
-                    .production(*node)
-                    .is_ok_and(|production| production == Production::FnDecl)
+                self.tree.production(*node).is_ok_and(|production| {
+                    matches!(production, Production::FnDecl | Production::FnSig)
+                })
             })
             .collect::<Vec<_>>();
         for node in nodes {
@@ -454,9 +453,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .copied()
             .filter(|node| {
-                self.tree
-                    .production(*node)
-                    .is_ok_and(|production| production == Production::FnDecl)
+                self.tree.production(*node).is_ok_and(|production| {
+                    matches!(production, Production::FnDecl | Production::FnSig)
+                })
             })
             .collect::<Vec<_>>();
         for node in nodes {
@@ -825,12 +824,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 class: DeclarationClass::FunctionParameter,
                 ..
             } => return Ok(None),
-            // A system operation and a kernel-domain row [BLK-0] are not user
-            // function templates; recursion through either is impossible, so
+            // An OP family and a kernel-domain row [BLK-0] have no function
+            // template; recursion through either is impossible, so
             // neither contributes a cycle edge.
-            ResolvedTarget::Operation(_)
-            | ResolvedTarget::System(_)
-            | ResolvedTarget::Kernel(_) => {
+            ResolvedTarget::Operation(_) | ResolvedTarget::Kernel(_) => {
                 return Ok(None);
             }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
@@ -1227,7 +1224,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // zero, so it must build and later discard its own selector table
         // rather than aliasing the real concrete entries by accident.
         self.admit_postcondition_selectors()?;
-        self.derive_result_state_origins()?;
         let mut phase_a = Vec::with_capacity(self.signatures.len());
         for index in 0..self.signatures.len() {
             // Symbolic generic validation may discover a derived box or
@@ -1479,10 +1475,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .cloned()
                     .flatten();
                 let prelude = self.prelude_types.get(id.0 as usize).cloned().flatten();
-                let system = self
-                    .system_nominals
-                    .iter()
-                    .find_map(|(index, candidate)| (*candidate == id).then_some(*index));
                 let kind = self
                     .nominals
                     .get(id.0 as usize)
@@ -1515,8 +1507,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return Ok(None);
                     };
                     StableCheckedType::Prelude(prelude)
-                } else if let Some(system) = system {
-                    StableCheckedType::System(system)
                 } else {
                     match kind {
                         CheckedNominalKind::Box {
@@ -1553,7 +1543,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 content: Box::new(content),
                             }
                         }
-                        CheckedNominalKind::SystemResource { .. } => {
+                        CheckedNominalKind::Opaque => {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
                         CheckedNominalKind::Struct { .. }
@@ -1833,9 +1823,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             StableCheckedType::Arena { region, content } => {
                 let content = self.reify_concrete_type(content)?;
                 CheckedType::Nominal(self.intern_arena_nominal(*region, content)?)
-            }
-            StableCheckedType::System(index) => {
-                CheckedType::Nominal(self.intern_system_nominal(*index)?)
             }
             StableCheckedType::Array { element, length } => CheckedType::Array {
                 element: self.reify_element(element)?,

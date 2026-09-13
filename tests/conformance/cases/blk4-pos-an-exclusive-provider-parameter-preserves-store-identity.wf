@@ -5,7 +5,7 @@ fn take_one['s: affine](store: &uniq Arena<'s, 256, 16>) -> made: own Option<Vec
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The extent is reserved in this activation's own frame and the helper carves one run out of it.";
   region 'a {
     let workspace = arena_frame::<256, 16, 'a>();

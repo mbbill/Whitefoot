@@ -24,7 +24,7 @@ fn probe(taken: own FixedVector<u8, 8>) -> (outcome: own Result<u64, Overflow>, 
   return Ok<u64, Overflow>(value: measured), measured;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "CALL-4: the ordinal binder may be omitted exactly when one declared ordinal has the route's enum type.";
   let run = filled::<u8, 8>(value: 0_u8);
   let (outcome, spare) = probe(taken: move run);

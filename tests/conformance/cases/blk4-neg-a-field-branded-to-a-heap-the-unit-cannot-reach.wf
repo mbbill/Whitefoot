@@ -1,8 +1,8 @@
-struct Bytes {
+struct Bytes['heap] {
   v: Vector<u8>;
 }
 
-command fn main() -> status: own ExitStatus pure {
-  doc "BLK-4: the entry heap's store region is minted before `main` in every unit, but this entry selects no `command.heap` row, so the unit carries the whole-program fact `heap-unreachable` and can form no value of this nominal at all. The declaration is refused where it is written.";
+fn main() -> status: own ExitStatus pure {
+  doc "PROV-1 and BLK-4: the nominal has its own explicit store region parameter. Declaring this type needs no implicit entry heap and no selected provider input.";
   return exit_status(code: 0_u8);
 }

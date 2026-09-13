@@ -6,7 +6,7 @@ fn bounded_index(values: own FixedVector<u8, 8>, index: own u64) -> output: own 
   return index;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u8, 8>();
   region {
     place_back(vector: &uniq values, value: 0_u8);

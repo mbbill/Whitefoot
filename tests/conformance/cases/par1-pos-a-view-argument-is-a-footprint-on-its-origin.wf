@@ -7,7 +7,7 @@ fn fill(destination: &uniq MutSlice<u8>, value: own u8) -> result: own unit writ
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[PAR-1] a view argument is a footprint on the storage the view was formed over [VIEW-1, VIEW-2], whether the formation is written at the call or bound by a `let` and handed on. The two `fill` calls hand on two views bound above them; their written footprints resolve to `left` and `right`, which are disjoint, so the pair is permitted. Before the footprint resolver reached a bound view, both calls carried an unresolved element and every pair handing a view on was denied for that instead of for its own reason.";
   region 'a {
     let workspace = arena_frame::<8, 1, 'a>();

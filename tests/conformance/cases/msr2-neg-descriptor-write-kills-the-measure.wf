@@ -16,7 +16,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> 
   return move built;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[MSR-2] a write to P's own descriptor storage kills every measure of P. The [SET-2] replace exchanges the whole run for one whose window holds two slots, which overlaps the descriptor storage the length fact is supported by, so `len_of(run) = 10` does not survive it and the later subscript of offset nine has nothing to discharge against. This is the other side of the element-position sentence: descriptor storage and element storage are disjoint parts of one value, and a write kills exactly the measures whose support it overlaps.";
   let run = filled::<u8, 10>(value: 0_u8);
   let empty = fixed_vector::<u8, 10>();

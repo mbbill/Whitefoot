@@ -1,4 +1,4 @@
-fn digest(run: &Vector<u8>, status: own u64) -> result: own u64 reads(run) contract {
+fn digest['heap](run: &Vector<'heap, u8>, status: own u64) -> result: own u64 reads(run) contract {
   requires head_of(deref(run)) <= 0_u64;
 } {
   let result = status;
@@ -12,7 +12,7 @@ fn digest(run: &Vector<u8>, status: own u64) -> result: own u64 reads(run) contr
   return result;
 }
 
-fn growth_trace(store: &uniq Heap, seed: own u8, initial: own u64, count: own u64, limit: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
+fn growth_trace['heap](store: &uniq Heap<'heap>, seed: own u8, initial: own u64, count: own u64, limit: own u64) -> result: own u64 reads(store), writes(store), allocates(store) contract {
   requires initial >= 1_u64;
   requires initial <= count;
   requires count <= 1048576_u64;
@@ -87,7 +87,7 @@ fn growth_trace(store: &uniq Heap, seed: own u8, initial: own u64, count: own u6
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     let result = growth_trace(store: &uniq heap, seed: 19_u8, initial: 16_u64, count: 32_u64, limit: 64_u64);
     if result == 0_u64 {

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "A move of a copy value is the OWN-1 error, and VIEW-1 makes Slice copy: the shared view is used bare. The rejection is at the use, not at the formation, and its restructuring is to drop the move spelling.";
   let data = fixed_vector::<u8, 2>();
   region {

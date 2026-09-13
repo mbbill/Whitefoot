@@ -36,7 +36,7 @@ fn read<const n: u64>['s](bytes: &SmallBytes<'s, n>) -> result: own u64 reads(by
   return checksum::<n>(bytes: bytes);
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
       None() => {
@@ -159,7 +159,7 @@ fn read_entry(value: &Entry) -> result: own u64 reads(value.tag) {
   return deref(value).tag;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   if entries[1_u64].samples[1_u64][1_u64] != 53_u64 {
     return exit_status(code: 1_u8);
   }
@@ -244,7 +244,7 @@ const rows: array<array<u64, 2>, 2> =[[7_u64, 9_u64],[11_u64, 13_u64]];
 
 const entries: array<Entry, 2> =[Entry(tag: 17_u64, samples:[19_u64, 23_u64]), Entry(tag: 29_u64, samples:[31_u64, 37_u64])];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -310,7 +310,7 @@ fn read(values: &array<Record, 3>, index: own u64) -> result: own u64 reads(valu
   return deref(values)[index].payload[7_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = make_record(tag: 11_u64);
   let second_tag = first.payload[0_u64] +wrap 11_u64;
   let second = make_record(tag: second_tag);
@@ -446,7 +446,7 @@ fn build['s](store: &uniq Heap<'s>) -> result: own Result<array<Record<'s>, 3>, 
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match build(store: &uniq heap) {
       Err(error: refused) => {
@@ -578,7 +578,7 @@ fn recursive_full_arrays_merge_without_a_postcondition_summary() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left = array_new::<u32, 3>(0_u32);
   set left[0_u64] = 1_u32;
   set left[1_u64] = 4_u32;
@@ -640,7 +640,7 @@ fn relay['s](values: own array<Record<'s>, 1>) -> result: own array<Record<'s>, 
   return array_from_fixed(vector: move full);
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region 'a {
     let store = arena_frame::<8, 8, 'a>();
     region {
@@ -710,7 +710,7 @@ fn relay<T: affine>(value: own T) -> result: own T pure {
   return move value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let none = fixed_vector::<box<u64>, 0>();
   let zero_owners = array_from_fixed(vector: move none);
   let zero_returned = relay::<array<box<u64>, 0>>(value: move zero_owners);
@@ -807,7 +807,7 @@ fn read(values: own array<u16, 4>, offset: own u64) -> result: own u16 reads(val
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = make();
   let length = len_of(values);
   if length != 4_u64 {
@@ -843,7 +843,7 @@ fn an_out_of_bounds_run_read_is_an_op4_compile_rejection() {
     // [ENT-6] residual.
     let source = br#"const values: FixedVector<u8, 2> =[7_u8, 7_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = values[2_u64];
   return exit_status(code: 0_u8);
 }
@@ -869,7 +869,7 @@ fn indexed_set_checks_before_rhs_and_updates_the_run() {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq empty, value: 0_u8);
@@ -919,7 +919,7 @@ fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq empty, value: 0_u8);
@@ -950,7 +950,7 @@ fn a_long_loop_over_a_dynamically_indexed_run_keeps_the_frame_bounded() {
     // and now fits inside the 1 GiB stack the runtime gives every thread. A
     // run's length is not a fact of its type [BLK-1], so the two loops carry
     // the `len_of` invariant the array place had standing.
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   doc "Nested counted loops read and write one fixed run for two hundred thousand iterations.";
   let built = fixed_vector::<u64, 8>();
   for @fill (
@@ -1033,7 +1033,7 @@ fn replacement() -> result: own u8 pure {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq empty, value: 0_u8);
@@ -1105,7 +1105,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn general_run_elements_preserve_array_places_and_standing_extents() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let row = array_new::<u64, 2>(7_u64);
   let empty = fixed_vector::<array<u64, 2>, 2>();
   region {
@@ -1160,7 +1160,7 @@ fn general_run_elements_preserve_nested_owners_across_generic_calls() {
   return move value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = box_new(17_u64);
   let second = box_new(29_u64);
   let leaf = fixed_vector::<box<u64>, 2>();
@@ -1227,7 +1227,7 @@ fn carry['s](value: own FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>
   return pass::<FixedVector<FixedVector<FixedVector<Box<'s, u64>, 1>, 1>, 1>>(value: move value);
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region 'a {
     let store = arena_frame::<8, 8, 'a>();
     region {
@@ -1310,7 +1310,7 @@ fn build['s](store: &uniq Heap<'s>) -> result: own Option<Tree<'s>> reads(store)
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match build(store: &uniq heap) {
       None() => {
@@ -1384,7 +1384,7 @@ fn update['s](storage: own Box<'s, array<Record, 2>>) -> (result: own Box<'s, ar
   return move storage, move previous;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let first = make_record(tag: 11_u64);
   let second_tag = first.payload[0_u64] +wrap 11_u64;
   let second = make_record(tag: second_tag);

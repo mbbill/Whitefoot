@@ -18,7 +18,7 @@ fn assert_checks(source: &[u8]) {
 
 #[test]
 fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for @items (i in 2_u64..1_u64) {
   }
   return exit_status(code: 0_u8);
@@ -36,7 +36,7 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
             body,
             backedge_drops,
             ..
-        } = &checked.data.functions[0].body[0]
+        } = &checked.data.functions[0].body.as_deref().expect("WF body")[0]
         else {
             panic!("counted source must retain its dedicated checked node");
         };
@@ -61,7 +61,7 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
     });
 
     assert_checks(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for @items (i in 18446744073709551614_u64..18446744073709551615_u64) {
   }
   return exit_status(code: 0_u8);
@@ -73,7 +73,7 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
 #[test]
 fn counted_endpoints_require_exact_own_u64_with_type7_exclusive() {
     assert_rule_kind(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u32..1_u64) {
   }
   return exit_status(code: 0_u8);
@@ -90,7 +90,7 @@ fn counted_endpoints_require_exact_own_u64_with_type7_exclusive() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -104,7 +104,7 @@ command fn main() -> status: own ExitStatus pure {
     // endpoint is still a value that holds a `u64` instead of being one, so
     // [TYPE-7] cites the same missing `deref` at the same operand.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   region 'a {
     let workspace = arena_frame::<64, 8, 'a>();
     region {
@@ -128,7 +128,7 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   region 'a {
     let workspace = arena_frame::<64, 8, 'a>();
     region {
@@ -161,7 +161,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -178,7 +178,7 @@ fn probe() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -202,7 +202,7 @@ fn probe(bounds: own Bounds, upper: &u64) -> result: own unit reads(bounds.lower
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -212,7 +212,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     set i = 1_u64;
   }
@@ -227,7 +227,7 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
     );
 
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     let exclusive = &uniq i;
   }
@@ -244,7 +244,7 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     overwrite(target: &uniq i);
   }
@@ -263,7 +263,7 @@ fn counted_body_inherits_own11_and_accepts_body_local_ownership() {
   value: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let token = Token(value: 1_u64);
   for @items (i in 0_u64..1_u64) {
     let consumed = move token;
@@ -283,7 +283,7 @@ command fn main() -> status: own ExitStatus pure {
     // [OWN-11] the loop body's own region is the one an elided borrow takes,
     // so naming an outer region is now the only way to write this fault.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let value = 0_u64;
   region 'r {
     for @items (i in 0_u64..1_u64) {
@@ -304,7 +304,7 @@ command fn main() -> status: own ExitStatus pure {
   value: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     region {
       let shared = &i;
@@ -320,7 +320,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_cleanup_is_attached_only_to_taken_body_exits() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     let values = fixed_vector::<u8, 1>();
     break @items;
@@ -336,7 +336,7 @@ fn counted_cleanup_is_attached_only_to_taken_body_exits() {
             body,
             backedge_drops,
             ..
-        } = &checked.data.functions[0].body[0]
+        } = &checked.data.functions[0].body.as_deref().expect("WF body")[0]
         else {
             panic!("expected counted range");
         };
@@ -375,7 +375,7 @@ fn forward() -> result: own Result<unit, Fail> pure {
   return Ok<unit, Fail>(value: unit);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -393,7 +393,7 @@ command fn main() -> status: own ExitStatus pure {
             body,
             backedge_drops,
             ..
-        } = &leave.body[0]
+        } = &leave.body.as_deref().expect("WF body")[0]
         else {
             panic!("leave must retain its counted range");
         };
@@ -414,7 +414,7 @@ command fn main() -> status: own ExitStatus pure {
             body,
             backedge_drops,
             ..
-        } = &forward.body[0]
+        } = &forward.body.as_deref().expect("WF body")[0]
         else {
             panic!("forward must retain its counted range");
         };
@@ -435,7 +435,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_forwards_breaks_to_an_enclosing_loop() {
     assert_checks(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   loop @outer {
     for (i in 0_u64..1_u64) {
       break @outer;
@@ -449,7 +449,7 @@ fn counted_range_forwards_breaks_to_an_enclosing_loop() {
 
 #[test]
 fn optional_labels_preserve_structural_break_targets_and_invariant_parentage() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   loop @outer {
     loop {
       break;
@@ -473,7 +473,7 @@ fn optional_labels_preserve_structural_break_targets_and_invariant_parentage() {
             id: outer_id,
             body: outer_body,
             ..
-        } = &checked.data.functions[0].body[0]
+        } = &checked.data.functions[0].body.as_deref().expect("WF body")[0]
         else {
             panic!("expected the labeled outer loop");
         };
@@ -530,7 +530,7 @@ fn optional_labels_preserve_structural_break_targets_and_invariant_parentage() {
 #[test]
 fn an_unlabeled_break_requires_an_enclosing_loop() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   break;
 }
 "#,

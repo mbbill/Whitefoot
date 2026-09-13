@@ -8,7 +8,7 @@ fn fill(destination: &uniq MutSlice<u8>, value: own u8) -> written: own u64 writ
   return 2_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[CALL-3] a projected callee write through a view reaches the viewed range's element storage and no measure term over the origin place nor over the view. The helper fills its &uniq MutSlice<u8> destination; after the call the caller still holds len_of(window) and len_of(table), so the length check and both subscripts of the origin are discharged, and the bytes the callee wrote are the ones the caller reads back. This is the destination [CALL-5] leaves a helper that writes a caller's storage.";
   region 'a {
     let workspace = arena_frame::<4, 1, 'a>();

@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn executes_width_sensitive_integer_edges_for_every_unsigned_width() {
-    let template = r#"command fn main() -> status: own ExitStatus pure {
+    let template = r#"fn main() -> status: own ExitStatus pure {
   let shifted = ishl.wrap(1_$TYPE, $AMOUNT_u32);
   if shifted == 2_$TYPE {
   } else {
@@ -64,7 +64,7 @@ $BSWAP  return exit_status(code: 0_u8);
 
 #[test]
 fn executes_the_remaining_integer_family_and_defined_edges() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let anded = iand(240_u8, 15_u8);
   if anded == 0_u8 {
   } else {
@@ -234,7 +234,7 @@ fn executes_the_remaining_integer_family_and_defined_edges() {
 
 #[test]
 fn defined_shift_reports_false_without_executing_an_invalid_shift() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let is_defined = ishl.defined(1_u8, 8_u32);
   if bnot(is_defined) {
   } else {
@@ -257,7 +257,7 @@ fn defined_division_checks_zero_and_signed_overflow_without_dividing() {
   return n /defined d;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let zero = 0_i32;
   let one = 1_i32;
   let zero_defined = division_is_defined(n: one, d: zero);

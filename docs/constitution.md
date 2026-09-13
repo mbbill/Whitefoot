@@ -74,9 +74,9 @@ environment failures must have defined program behavior.
 I/O and external resources must be represented through the same object,
 ownership, borrowing, effect, and proof abstractions as other program state.
 Their required relations belong in ordinary callable contracts. An external
-role alone grants no source-language exception. A departure requires a
-demonstrated inability to meet required behavior, safety, and performance
-through this model.
+role grants no source-language exception. No declaration, type, ownership,
+effect, proof, diagnostic or semantic rule distinguishes a value or function
+by whether its implementation crosses the host boundary.
 
 ## Compatibility and evolution
 

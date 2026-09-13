@@ -1,5 +1,5 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "`open_directory`'s success class: a name range holding one real component of the invocation directory yields a fresh owned `DirectoryRead` value [SYS-14] by changing the explicitly supplied root state rather than consulting ambient authority [SYS-7]. Exit 0 is reached only through `Ok`, so a build that answered every open with a validation failure would not pass.";
+fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
+  doc "The ordinary open_directory operation returns a linear DirectoryRead for an existing component; the program uses and explicitly closes the returned owner through its factory.";
   let name = fixed_vector::<u8, 3>();
   region {
     place_back(vector: &uniq name, value: 115_u8);
@@ -10,109 +10,113 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
   region {
     place_back(vector: &uniq name, value: 98_u8);
   }
-  region 'c {
+  region {
     let component = slice_of(&name);
     region {
-      match reserve_handle(factory: &uniq 'c files) {
-        Ok(value: permit) => {
-          match open_directory(permit: move permit, root: &'c cwd, name: &component, start: 0_u64, end: 3_u64) {
-            DirectoryOpened(value: opened) => {
-              return exit_status(code: 0_u8);
+      match open_directory(factory: &uniq deref(files), root: cwd, name: &component, start: 0_u64, end: 3_u64) {
+        DirectoryOpened(value: opened) => {
+          close_directory(factory: &uniq deref(files), directory: move opened);
+          return exit_status(code: 0_u8);
+        }
+        DirectoryOpenFailed(error: problem) => {
+          match problem {
+            NotFound(code: c, origin: o) => {
+              return exit_status(code: 9_u8);
             }
-            DirectoryOpenFailed(error: problem, permit: refused) => {
-              match problem {
-                NotFound(code: c, origin: o) => {
-                  return exit_status(code: 9_u8);
-                }
-                PermissionDenied(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                AlreadyExists(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                NotDirectory(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                IsDirectory(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                DirectoryNotEmpty(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                ReadOnly(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                ResourceBusy(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                InvalidInput(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                InvalidPath(code: c, origin: o) => {
-                  return exit_status(code: 8_u8);
-                }
-                Unsupported(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                TimedOut(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                BrokenPipe(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                WriteZero(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                UnexpectedEnd(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                ConnectionRefused(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                ConnectionReset(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                ConnectionAborted(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                NotConnected(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                AddressInUse(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                AddressUnavailable(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                ResourceExhausted(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                FileTooLarge(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                NoSpace(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                QuotaExceeded(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                CrossDevice(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                DeviceFailure(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-                Other(code: c, origin: o) => {
-                  return exit_status(code: 11_u8);
-                }
-              }
+            PermissionDenied(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            AlreadyExists(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            NotDirectory(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            IsDirectory(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            DirectoryNotEmpty(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            ReadOnly(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            ResourceBusy(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            InvalidInput(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            InvalidPath(code: c, origin: o) => {
+              return exit_status(code: 8_u8);
+            }
+            Unsupported(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            TimedOut(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            BrokenPipe(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            WriteZero(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            UnexpectedEnd(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            ConnectionRefused(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            ConnectionReset(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            ConnectionAborted(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            NotConnected(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            AddressInUse(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            AddressUnavailable(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            ResourceExhausted(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            FileTooLarge(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            NoSpace(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            QuotaExceeded(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            CrossDevice(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            DeviceFailure(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
+            }
+            Other(code: c, origin: o) => {
+              return exit_status(code: 11_u8);
             }
           }
         }
-        Err(error: spent) => {
-          return exit_status(code: 12_u8);
-        }
       }
     }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
 }

@@ -58,7 +58,7 @@ fn insert_once['s](store: &uniq Heap<'s>, tree: &uniq Box<'s, RuntimeGapNode<'s>
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Expected success is exit 0; allocator refusal is exit 70.";
   region {
     match boxed_empty(store: &uniq heap) {

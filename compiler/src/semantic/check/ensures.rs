@@ -1229,7 +1229,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedExpression::BorrowAddressed { .. }
                             | CheckedExpression::BorrowBuffer { .. }
                             | CheckedExpression::BorrowBox { .. }
-                            | CheckedExpression::BorrowSystemResource { .. }
                             | CheckedExpression::ReborrowAddressed { .. }
                     ) || match value {
                         CheckedExpression::Binding { binding, .. } => bindings

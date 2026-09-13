@@ -11,7 +11,7 @@ fn same_brand['s](pair: &Pair<'s, 's>) -> value: own u64 reads(pair.first.value)
   return deref(pair).first.value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "TYPE-5: two occurrences of one formal brand inside a single parameter type must match exactly. The outer region outliving the inner one does not permit replacing two distinct nominal brands with one.";
   region 'outer {
     let first = Marker<'outer>(value: 7_u64);

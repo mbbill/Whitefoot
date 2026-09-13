@@ -5,7 +5,7 @@ use super::super::scopes::ScopeBuild;
 use super::super::{
     DeclarationClass, DeclarationOrigin, DeclarationRecord, LexicalUseRecord, LexicalUseRole,
     ResolutionCompilerFailure, ResolutionIssue, ResolutionIssueKind, ResolutionRule,
-    ResolvedTarget, ScopeId, SystemDeclarationRecord,
+    ResolvedTarget,
 };
 use super::inventory::conflict_key;
 use super::{DeclarationIndex, DeclarationMeta, UseMeta, is_visible};
@@ -16,7 +16,6 @@ pub(super) fn resolve_uses_deferred(
     metas: &[DeclarationMeta],
     index: &DeclarationIndex,
     uses: &[UseMeta],
-    system: &[SystemDeclarationRecord],
 ) -> Result<(Vec<LexicalUseRecord>, Option<ResolutionIssue>), ResolutionCompilerFailure> {
     let mut resolved = Vec::with_capacity(uses.len());
     for use_record in uses {
@@ -31,7 +30,7 @@ pub(super) fn resolve_uses_deferred(
             .filter_map(|candidate| metas.get(*candidate))
         {
             let declaration = &declarations[meta.record_index];
-            if meta.scope != ScopeId(0)
+            if !scopes.is_unit_scope(meta.scope)
                 && meta
                     .owner
                     .is_some_and(|owner| !use_record.owner_chain.contains(&owner))
@@ -75,29 +74,6 @@ pub(super) fn resolve_uses_deferred(
                 }
             }
         }
-        // The third admitted declaration source [SYS-1]: every system entry
-        // is a compilation-root entry of its domain in every lexical use's
-        // candidate universe [SYS-3]. TYPE-6 and [SYS-2] admit a system entry
-        // only at a `type` TYPEID, a `construct` or `arm` TYPEID, and a
-        // `callee` IDENT — never at a `fn_bind` right IDENT, which admits
-        // only a top-level source function; there the visible system entry
-        // still contributes its class to the available set.
-        for record in system {
-            let Some(class) = record.lookup_class() else {
-                continue;
-            };
-            if record.spelling() == use_record.spelling && universe.contains(&class) {
-                available.insert(class);
-                if admissible.contains(&class) && system_admissible(use_record.role) {
-                    candidates.push(ResolvedTarget::System(record.id()));
-                }
-            }
-        }
-        // The fourth admitted declaration source [BLK-0], plus the [TYPE-2]
-        // container and provider nominals. Both enter every unit on [SYS-3]'s
-        // terms, and both are admitted at exactly the roles a system entry
-        // is: a `type` TYPEID for a nominal and a `callee` IDENT for an
-        // operation.
         for (ordinal, nominal) in crate::CONTAINER_NOMINALS.iter().enumerate() {
             if nominal.spelling != use_record.spelling {
                 continue;
@@ -108,7 +84,7 @@ pub(super) fn resolve_uses_deferred(
                 }
                 available.insert(class);
                 if admissible.contains(&class)
-                    && system_admissible(use_record.role)
+                    && kernel_admissible(use_record.role)
                     && let Ok(ordinal) = u8::try_from(ordinal)
                 {
                     candidates.push(ResolvedTarget::Container(crate::ContainerNominalId::new(
@@ -123,7 +99,7 @@ pub(super) fn resolve_uses_deferred(
             {
                 available.insert(crate::KERNEL_OPERATION_CLASS);
                 if admissible.contains(&crate::KERNEL_OPERATION_CLASS)
-                    && system_admissible(use_record.role)
+                    && kernel_admissible(use_record.role)
                     && let Ok(ordinal) = u8::try_from(ordinal)
                 {
                     candidates.push(ResolvedTarget::Kernel(crate::KernelOperationId::new(
@@ -226,14 +202,8 @@ pub(super) fn resolve_uses_deferred(
     Ok((resolved, None))
 }
 
-/// Whether one lexical-use role admits an admitted system entry at all.
-///
-/// TYPE-6's admitted-uses column and [SYS-2]'s own exclusion are
-/// entry-source-specific, not only class-specific: a `callee` IDENT admits a
-/// top-level function or an admitted system operation, while a `fn_bind`
-/// right IDENT admits only a top-level function, so the shared `Function`
-/// class cannot make that distinction by itself.
-fn system_admissible(role: LexicalUseRole) -> bool {
+/// Kernel rows are not function-kind actual arguments.
+fn kernel_admissible(role: LexicalUseRole) -> bool {
     matches!(
         role,
         LexicalUseRole::Type

@@ -1,5 +1,9 @@
-command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
-  doc "HOST-1: an argument that is not valid text retains its complete original code-unit sequence. host_bytes_len reports the exact native byte count and host_copy_bytes transfers exactly those bytes with no validation, no Unicode restriction, and no substitution [HOST-2, SYS-9].";
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "The ordinary host_copy_bytes implementation preserves the arranged raw argument bytes, returns absolute endpoint three and leaves the byte beyond the transferred prefix unchanged. Its range admission uses ordinary requires clauses.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
       None() => {
@@ -20,7 +24,7 @@ command fn main(command.args as args: own Args, command.heap as heap: own Heap) 
           region {
             match arg_get(args: &args, position: 1_u64) {
               Ok(value: text) => {
-                region 'v {
+                region {
                   let length = host_bytes_len(value: &text);
                   let exact = length == 3_u64;
                   if exact {
@@ -28,7 +32,7 @@ command fn main(command.args as args: own Args, command.heap as heap: own Heap) 
                     return exit_status(code: 10_u8);
                   }
                   region {
-                    match host_copy_bytes(value: &'v text, destination: &uniq window, start: 0_u64, end: 4_u64) {
+                    match host_copy_bytes(value: &text, destination: &uniq window, start: 0_u64, end: 4_u64) {
                       Ok(value: copied) => {
                         let counted = copied == 3_u64;
                         if counted {

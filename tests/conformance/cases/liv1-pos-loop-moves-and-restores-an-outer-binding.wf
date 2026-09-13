@@ -22,7 +22,7 @@ fn measure(cell: own FixedVector<u8, 4>) -> size: own u64 reads(cell) {
   return n;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "LIV-1, OWN-11, LIV-2: the body consumes an outer binding and commits a value back into it, so the backedge agrees with the entering edge.";
   let c = filled::<u8, 4>(value: 0_u8);
   for (i in 0_u64..2_u64) {

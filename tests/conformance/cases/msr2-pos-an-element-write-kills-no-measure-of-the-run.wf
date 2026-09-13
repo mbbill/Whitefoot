@@ -5,7 +5,7 @@ fn second_of(run: own FixedVector<u8, 4>) -> got: own u8 reads(run) contract {
   return run[1_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-2: a write at an element position overlaps the descriptor storage of that element and none of the run's own, so it kills every measure of the element and no measure of the run; the run's length bound survives the store and discharges the callee's requirement.";
   let empty = fixed_vector::<u8, 4>();
   region {

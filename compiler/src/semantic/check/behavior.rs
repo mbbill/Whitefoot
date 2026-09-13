@@ -13,9 +13,7 @@ use crate::{
 };
 
 use super::super::model::FunctionId;
-use super::super::model::{
-    CheckedMode, CheckedResultStateOrigin, CheckedStatePath, CheckedStateStep,
-};
+use super::super::model::{CheckedMode, CheckedStatePath};
 use super::generics::{
     GenericArgument, GenericParameter, GenericParameterKey, GenericSubstitution,
     StableGenericSubstitution,
@@ -1617,43 +1615,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(effective)
     }
 
-    fn check_behavior_fresh_results(
-        &self,
-        node: NodeId,
-        formal: &FunctionSignature,
-        actual: &FunctionSignature,
-    ) -> Result<(), CheckStop> {
-        if actual.formal_parameter.is_some() {
-            return Ok(());
-        }
-        let origins = self.result_state_origins.borrow();
-        let origin = origins
-            .get(actual.id.0 as usize)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        for (ordinal, result) in formal.results.iter().enumerate() {
-            if result.mode != CheckedMode::Own
-                || self.is_copy_type(result.ty)?
-                || matches!(result.ty, super::super::model::CheckedType::Slice { .. })
-            {
-                continue;
-            }
-            let fresh = match origin {
-                CheckedResultStateOrigin::NoState => true,
-                CheckedResultStateOrigin::Finite { formals, .. } => formals.iter().all(|route| {
-                    formal.results.len() > 1
-                        && !route.result_fields.is_empty()
-                        && route.result_fields.first()
-                            != Some(&CheckedStateStep::Field(ordinal as u32))
-                }),
-                CheckedResultStateOrigin::Unknown => false,
-            };
-            if !fresh {
-                return self.behavior_mismatch(SemanticRule::Fn4, node, "every non-copy owned formal result is fresh, including its contained owned leaves");
-            }
-        }
-        Ok(())
-    }
-
     pub(super) fn check_behavior_bindings(&self) -> Result<(), CheckStop> {
         let mut groups = self.behavior.actuals.values().collect::<Vec<_>>();
         groups.sort_by_key(|group| group.node.index());
@@ -1684,7 +1645,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     target,
                 )?;
                 self.behavior_call_signature(*binding, &signature, actual)?;
-                self.check_behavior_fresh_results(*binding, &signature, actual)?;
             }
         }
         let mut contexts = self
@@ -1710,7 +1670,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let formal = self.formal_signature(*key, substitution, target)?;
                 let source = self.behavior_binding_site(node, *key, substitution)?;
                 self.behavior_call_signature(source, &formal, actual)?;
-                self.check_behavior_fresh_results(source, &formal, actual)?;
             }
         }
         Ok(())

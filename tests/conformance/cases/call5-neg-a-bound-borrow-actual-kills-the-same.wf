@@ -5,7 +5,7 @@ fn reserve['s](store: &uniq Arena<'s, 64, 1>) -> taken: own Option<Vector<'s, u8
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[CALL-5] no transport reads the actual's spelling. This is the extent program with the borrow bound to a name and moved into the call rather than written at the argument position, which is a different checked argument shape reaching the same declared parameter. The two spellings differ in nothing a transport may read, so this program reaches the same [BLK-0] rejection with the residual room_of(workspace) >= 64_u64 that the directly spelled one does: the classification belongs to the callee's declaration and the caller's borrow form moves nothing.";
   region 'w {
     let workspace = arena_frame::<64, 1, 'w>();

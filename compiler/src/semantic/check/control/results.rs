@@ -100,22 +100,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if ordinals.len() != declarations.len() {
             return self.result_list_shape_rejection(call, declarations.len(), &value);
         }
-        let whole_origins = self.state_origins_of_value(&value, bindings)?;
         let mut binder_ids = Vec::with_capacity(ordinals.len());
-        for (ordinal, ((declaration_id, spelling), ty)) in
-            declarations.into_iter().zip(ordinals).enumerate()
-        {
+        for ((declaration_id, spelling), ty) in declarations.into_iter().zip(ordinals) {
             let binding = Self::allocate_binding(counters.next_binding)?;
             counters.binding_names.push(spelling);
-            let field =
-                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-            let state_origins = if self.type_carries_identity(ty)? {
-                whole_origins
-                    .clone()
-                    .map(|origins| origins.projected(&[field]))
-            } else {
-                None
-            };
             if bindings
                 .insert(
                     declaration_id,
@@ -124,7 +112,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration: declaration_id,
                         mode: CheckedMode::Own,
                         ty,
-                        state_origins,
                         live: true,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
@@ -220,9 +207,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if binders.len() != fields.len() {
             return self.invalid_destructuring_fields(&written, &fields, node);
         }
-        let whole_origins = self.state_origins_of_value(&value, bindings)?;
         let mut binder_ids = Vec::with_capacity(fields.len());
-        for (ordinal, (written_binder, field)) in binders.into_iter().zip(&fields).enumerate() {
+        for (written_binder, field) in binders.into_iter().zip(&fields) {
             if self
                 .deferred_use_at(written_binder, crate::DeferredUseRole::MatchField)?
                 .spelling()
@@ -235,16 +221,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             counters
                 .binding_names
                 .push(declaration.spelling().to_owned());
-            let ordinal =
-                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-            let state_origins = if self.type_carries_identity(field.ty)? {
-                let selector = self.destructured_state_step(value.expression.ty(), ordinal)?;
-                whole_origins
-                    .clone()
-                    .map(|origins| origins.projected_value(&[selector]))
-            } else {
-                None
-            };
             if bindings
                 .insert(
                     declaration.id(),
@@ -253,7 +229,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration: declaration.id(),
                         mode: CheckedMode::Own,
                         ty: field.ty,
-                        state_origins,
                         live: true,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
@@ -431,10 +406,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.invalid_propagation(propagate);
         }
         let error_drops = self.live_affine_drops(bindings, &HashSet::new(), propagate)?;
-        let result_state_origins = self.state_origins_of_value(&value, bindings)?;
-        let ok_state_origins = result_state_origins
-            .clone()
-            .map(|origins| origins.enum_payload(0, 0));
         if bindings
             .insert(
                 declaration,
@@ -443,10 +414,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration,
                     mode: CheckedMode::Own,
                     ty: ok_type,
-                    state_origins: self
-                        .type_carries_identity(ok_type)?
-                        .then_some(ok_state_origins)
-                        .flatten(),
                     live: true,
                     loop_depth: scope.loops.len(),
                     compiler_updated: false,

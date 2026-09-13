@@ -106,11 +106,11 @@ fn complete_inventory_is_pinned() {
 }
 
 #[test]
-fn active_inventory_carries_the_system_interface_grammar() {
-    assert!(productions().contains(&Production::ProgramKind));
-    assert!(productions().contains(&Production::InputLabel));
-    let predicate = LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::As));
-    assert!(diagnostic_terminal_order().contains(&predicate));
+fn active_inventory_has_only_ordinary_function_parameters() {
+    assert!(productions().contains(&Production::FnDecl));
+    assert!(productions().contains(&Production::FnSig));
+    assert!(FixedTerminal::from_spelling(b"command").is_none());
+    assert!(FixedTerminal::from_spelling(b"as").is_none());
 }
 
 #[test]
@@ -164,27 +164,16 @@ fn program_is_one_repeat_decision_over_items() {
 }
 
 #[test]
-fn fn_decl_opens_with_the_optional_program_kind() {
-    let Some(root) = grammar_node(Production::FnDecl.root()) else {
-        panic!("fn_decl root must exist");
-    };
+fn fn_decl_opens_with_the_ordinary_fn_terminal() {
+    let root = grammar_node(Production::FnDecl.root()).expect("fn_decl root");
     assert_eq!(root.kind(), GrammarNodeKind::Sequence);
-    let [program_kind, ..] = root.children() else {
-        panic!("fn_decl root must have children");
-    };
-    let Some(program_kind) = grammar_node(*program_kind) else {
-        panic!("fn_decl program_kind child must exist");
-    };
-    assert_eq!(program_kind.kind(), GrammarNodeKind::Optional);
-    let Some(content) = program_kind.children().first().copied() else {
-        panic!("the second optional must contain the program_kind reference");
-    };
-    let Some(content) = grammar_node(content) else {
-        panic!("the program_kind reference must exist");
-    };
+    let first = grammar_node(root.children()[0]).expect("first fn_decl child");
+    assert_eq!(first.kind(), GrammarNodeKind::TerminalSequence);
     assert_eq!(
-        content.kind(),
-        GrammarNodeKind::Production(Production::ProgramKind)
+        first.terminals(),
+        &[LookaheadPredicate::Terminal(TerminalPredicate::Fixed(
+            FixedTerminal::Fn
+        ))]
     );
 }
 

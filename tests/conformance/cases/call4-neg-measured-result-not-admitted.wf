@@ -5,7 +5,7 @@ fn hold(taken: own FixedVector<u8, 4>) -> kept: own FixedVector<u8, 4> pure cont
   return move taken;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "CALL-4: a measured result and a measure over its bare result place are admitted operands, so the refusal is the ordinary FN-9 proof at the selected return rather than the admission or the grammar.";
   let empty = fixed_vector::<u8, 4>();
   region {

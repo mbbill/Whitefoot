@@ -210,7 +210,7 @@ fn parse(out: &uniq MutSlice<u32>, src: own Slice<u8>) -> result: own u64 reads(
   return count;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<64, 4, 'w>();
     region {

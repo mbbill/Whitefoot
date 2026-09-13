@@ -1,5 +1,9 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  doc "PATH-1: a Unix-family leading separator is a member of that target's target-root prefix set, so construction fails and yields no path value. This is a runtime PathInvalid outcome the program matches, not a compile-time rejection: PathError is an ordinary outcome type [SYS-6], and it never substitutes for IoError's InvalidPath.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "The ordinary relative_path implementation returns PathInvalid for the arranged absolute name. This is an ordinary runtime error value, not a source rejection.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {

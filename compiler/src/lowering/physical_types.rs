@@ -45,7 +45,7 @@ pub(super) fn base_elements(
             ),
             CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
             CheckedNominalKind::Arena { content, .. } => pending.push(*content),
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::SystemResource { .. } => {}
+            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
         }
     }
     let mut needed = BTreeSet::new();
@@ -277,7 +277,7 @@ impl<'a> PhysicalTypes<'a> {
             CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
                 content: self.ty(content, releases)?,
             },
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::SystemResource { .. } => {
+            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {
                 self.nominals[id.index()].kind.clone()
             }
         };
@@ -439,10 +439,7 @@ impl<'a> PhysicalTypes<'a> {
                             }
                         }
                         (CheckedNominalKind::ArenaStorage, CheckedNominalKind::ArenaStorage) => {}
-                        (
-                            CheckedNominalKind::SystemResource { nominal: left },
-                            CheckedNominalKind::SystemResource { nominal: right },
-                        ) if left == right => {}
+                        (CheckedNominalKind::Opaque, CheckedNominalKind::Opaque) => {}
                         _ => return Ok(false),
                     }
                 }

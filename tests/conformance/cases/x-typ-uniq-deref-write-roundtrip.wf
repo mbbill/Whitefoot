@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Writing through a &uniq borrow via set deref(p) and reading the value back [TYPE-7].";
   let a = 40_i32;
   region {

@@ -10,7 +10,7 @@ fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq
   return deref(owner);
 }
 
-command fn main() -> status: own ExitStatus pure {
-  doc "EFF-2: after exchange the Box left in owner is the incoming value. Reading it requires reads(incoming), even though the caller's binding and borrow target retained the spelling owner. A call must preserve this identity exactly as a direct replace does.";
+fn main() -> status: own ExitStatus pure {
+  doc "EFF-2: replacement changes the value at owner without changing that storage place. Its later read names owner, and provider reclamation writes store; no input ancestry is retained.";
   return exit_status(code: 0_u8);
 }

@@ -60,7 +60,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .declarations()
             .iter()
             .find(|declaration| declaration.role() == role && declaration.origin().node() == path)
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     /// Every declaration of one role at one node, in written order.
@@ -170,7 +170,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .lexical_uses()
             .iter()
             .find(|usage| roles.contains(&usage.role()) && usage.origin().node() == path)
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     pub(super) fn dependent_declaration_at(
@@ -183,7 +183,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .dependent_declarations()
             .iter()
             .find(|declaration| declaration.role() == role && declaration.origin().node() == path)
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     pub(super) fn deferred_use_at(
@@ -196,7 +196,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .deferred_uses()
             .iter()
             .find(|usage| usage.role() == role && usage.origin().node() == path)
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     pub(super) fn issue_value(

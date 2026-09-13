@@ -138,7 +138,7 @@ fn checksum(left: own Slice<u64>, right: own Slice<u64>, root: own u64) -> funct
   return Ok<u64, PoolError>(value: total);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Two parallel store runs and a count are lent as views and a scalar borrow. The tree builder takes the two exclusive element views its writes need, and the checksum walk takes shared views; element-only effects preserve the run windows.";
   let capacity = 64_u64;
   region 'w {

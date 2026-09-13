@@ -12,7 +12,7 @@ fn rebuild(vector: own FixedVector<u8, 4>) -> result: own FixedVector<u8, 4> rea
   return move vector;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-3: an own parameter's measure in ensures keeps its entry datum even after a freshly constructed value replaces that local binding.";
   let input = fixed_vector::<u8, 4>();
   region {

@@ -2,7 +2,7 @@ struct Cell {
   value: i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left = Cell(value: 1_i32);
   let right = Cell(value: 2_i32);
   set left = move right;

@@ -7,7 +7,7 @@ fn fill_and_publish['r](destination: &uniq MutSlice<'r, u8>, value: own u8) -> f
   return slice_of(&'r deref(destination));
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[OWN-5] the child the helper published is a shared loan on the caller's own storage, and the parent may not write the elements it views while that child lives. The write through `window` stands between the call and the last use of `published`, so it is refused at the target.";
   region 'a {
     let workspace = arena_frame::<4, 1, 'a>();

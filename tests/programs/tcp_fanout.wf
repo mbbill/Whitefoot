@@ -146,7 +146,7 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit) -> result: own u8
   return outcome;
 }
 
-command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles) {
+fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles) {
   doc "Listens on the loopback port named by the invocation and serves four connections in a fixed-trip loop the staged permission admits: each iteration takes its own permit before its accept and leaves the loop only from its prologue, so the four accepts may be in flight at once and several peers reach one listener together [PAR-3, SYS-17]. The argument scratch is an arena extent viewed exclusively where the argument is copied into it and shared where the port is read out. The per-connection scratch is not this loop's at all: `serve_one` reserves its own extent, because the container surface has no run an iteration can build here and hand to its staged call, and the reason is written at that function.";
   region 'arguments {
     let names = arena_frame::<16, 8, 'arguments>();

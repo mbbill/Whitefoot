@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "A take at a bump extent cannot hide a direct slice in extent-resident content; STOR-5 owns the region-bearing content rejection before unsupported extent execution or lowering matters.";
   let data = fixed_vector::<u8, 2>();
   region {

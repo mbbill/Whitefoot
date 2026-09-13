@@ -123,21 +123,6 @@ impl CallTransport {
     /// element storage; the operand class carrying that extent is the
     /// declared type of that parameter, so the row itself selects [CALL-3]'s
     /// transport. Every other parameter selects from its declared mode.
-    pub(crate) fn of_system_parameter(operation: &crate::SystemOperation, ordinal: usize) -> Self {
-        let Some(parameter) = operation.parameters.get(ordinal) else {
-            return Self::Conservative;
-        };
-        match parameter.ty {
-            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
-                Self::ViewedRange
-            }
-            _ => match parameter.mode {
-                crate::SystemParameterMode::Borrow(_) => Self::SharedBorrow,
-                crate::SystemParameterMode::Own => Self::Value,
-                crate::SystemParameterMode::UniqueBorrow(_) => Self::Conservative,
-            },
-        }
-    }
 
     /// The transport one declared kernel-domain parameter selects [BLK-0].
     ///
@@ -293,8 +278,6 @@ pub(crate) enum ObligationFamily {
     IntegerDomain,
     /// A runtime-sized buffer allocation's canonical fit predicate [OP-9].
     AllocationFit,
-    /// One independent half-open system range goal [SYS-8].
-    SystemRange,
     /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
     /// a call to that row and judged under [MSR-4] exactly as every other
     /// consumer's obligation is.
@@ -1159,7 +1142,11 @@ pub(crate) fn postcondition_schedule<'function>(
             return None;
         }
         let start = calls.len();
-        collect_statement_calls(function.id, &function.body, &mut calls);
+        collect_statement_calls(
+            function.id,
+            function.body.as_deref().unwrap_or_default(),
+            &mut calls,
+        );
         calls[start..].sort_by(|left, right| {
             left.node_path
                 .components()

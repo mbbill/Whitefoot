@@ -16,7 +16,7 @@ fn overfill() -> result: own FixedVector<u8, 2> pure {
   return move three;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-0: the per-row requirement discharge under MSR-4 is part of this rule's judgment, and the diagnostic names the operation rather than citing a source clause.";
   return exit_status(code: 0_u8);
 }

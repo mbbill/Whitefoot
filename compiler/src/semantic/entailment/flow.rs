@@ -70,7 +70,6 @@ use super::{
     SourceProofCheck, SourceProofOutcome, VerifiedPostconditionSummary,
     VerifiedPostconditionSummaryRef, fragment_type, overflow_conjuncts_for_values,
 };
-use crate::SYSTEM_OPERATIONS;
 
 /// One [ENT-5] kill event gathered from a statement or expression.
 #[derive(Clone, Debug)]
@@ -918,7 +917,9 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
     ) {
         analyzer.initialize_postcondition_proofs();
     }
-    analyzer.walk_block(&function.body, &mut state);
+    if let Some(body) = &function.body {
+        analyzer.walk_block(body, &mut state);
+    }
     analyzer.scopes.pop();
     analyzer.finalize_postcondition_aggregates();
     assert_eq!(
@@ -1221,13 +1222,13 @@ impl Analyzer<'_, '_> {
         relation_ordinal: u32,
         parents: Option<Vec<DerivationId>>,
     ) -> PostconditionAggregate {
-        if self.function.formal_hypothesis {
-            let node =
-                self.derivations
-                    .intern(super::state::DerivationNode::FunctionFormalContract {
-                        block: block.clone(),
-                        relation_ordinal,
-                    });
+        if self.function.formal_hypothesis || self.function.body.is_none() {
+            let node = self
+                .derivations
+                .intern(super::state::DerivationNode::SignatureContract {
+                    block: block.clone(),
+                    relation_ordinal,
+                });
             self.derivations.add_root(
                 DerivationRootKind::PostconditionAggregate { relation_ordinal },
                 node,
@@ -2067,7 +2068,6 @@ impl Analyzer<'_, '_> {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::Project { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
-            | CheckedExpression::BorrowSystemResource { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
             | CheckedExpression::DerefAddressed { binding, .. } => {
                 self.append_holder_chain(*binding, holders);
@@ -5123,7 +5123,6 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::BoxDeref { .. }
             | CheckedExpression::ProjectValue { .. }
             | CheckedExpression::UserCall { .. }
-            | CheckedExpression::SystemCall { .. }
             | CheckedExpression::KernelCall { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::ReadStorage { .. }
@@ -5139,7 +5138,6 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::ConstructStruct { .. }
             | CheckedExpression::ConstructEnum { .. } => None,
@@ -6189,59 +6187,6 @@ impl Analyzer<'_, '_> {
                     }
                 }
             }
-            CheckedExpression::SystemCall {
-                operation,
-                call,
-                arguments,
-                ..
-            } => {
-                let operation_row = SYSTEM_OPERATIONS.get(usize::from(*operation));
-                let writes = operation_row
-                    .map(|operation| crate::operation_state_effects(operation).1)
-                    .unwrap_or_default();
-                for argument in arguments {
-                    self.collect_expression_kills(argument, events);
-                }
-                for (index, argument) in arguments.iter().enumerate() {
-                    let written =
-                        u8::try_from(index).is_ok_and(|ordinal| writes.contains(&ordinal));
-                    if !written {
-                        continue;
-                    }
-                    // [CALL-5] a system operation has no body: its [SYS-2]
-                    // record is the whole of its declared contract, and
-                    // [SYS-8] declares that its range-bearing family's
-                    // `[start, end)` extent is the complete extent it may
-                    // change and is element storage, so that parameter is a
-                    // viewed range [CALL-3].
-                    let transport = operation_row.map_or(CallTransport::Conservative, |row| {
-                        CallTransport::of_system_parameter(row, index)
-                    });
-                    if transport == CallTransport::SharedBorrow {
-                        continue;
-                    }
-                    let element = transport.writes_element_storage();
-                    if element {
-                        self.collect_view_write_kills(argument, call, events);
-                        continue;
-                    }
-                    if let Some((place, entry_image_only)) = self.argument_referent(argument) {
-                        if entry_image_only {
-                            events.push(KillEvent::EntryImageHolderWrite {
-                                place,
-                                element,
-                                source: call.clone(),
-                            });
-                        } else {
-                            events.push(KillEvent::Write {
-                                place,
-                                element,
-                                source: call.clone(),
-                            });
-                        }
-                    }
-                }
-            }
             _ => {
                 for child in expression_children(expression) {
                     self.collect_expression_kills(child, events);
@@ -6386,22 +6331,6 @@ impl Analyzer<'_, '_> {
                 ExpressionJudgment {
                     prepared_call,
                     reached,
-                }
-            }
-            CheckedExpression::SystemCall {
-                operation,
-                call,
-                arguments,
-                ..
-            } => {
-                let reaches_call = self.judge_children_reach_parent(arguments, states);
-                let obligation_start = self.obligations.len();
-                if reaches_call {
-                    self.judge_system_ranges(*operation, call, arguments, states);
-                }
-                ExpressionJudgment {
-                    prepared_call: None,
-                    reached: reaches_call && self.obligations_since_discharged(obligation_start),
                 }
             }
             // One [BLK-0] kernel-domain row. Its declared requirement list is
@@ -8517,233 +8446,6 @@ impl Analyzer<'_, '_> {
             derivation,
             allocation_length_upper_bound,
             allocation_length_upper_bound_derivation,
-            affine_index_maps: Vec::new(),
-            kernel_row: None,
-        });
-    }
-
-    fn judge_system_ranges(
-        &mut self,
-        operation: u8,
-        node_path: &crate::NodePath,
-        arguments: &[CheckedExpression],
-        states: &ProofFlowState,
-    ) {
-        let Some(row) = SYSTEM_OPERATIONS.get(usize::from(operation)) else {
-            return;
-        };
-        let Some(start_ordinal) = row
-            .parameters
-            .iter()
-            .position(|parameter| parameter.name == "start")
-        else {
-            return;
-        };
-        let Some(end_ordinal) = row
-            .parameters
-            .iter()
-            .position(|parameter| parameter.name == "end")
-        else {
-            return;
-        };
-        // [SYS-8] the row's own range-bearing parameter: the operand
-        // class this row writes or reads, whose `len_of` the second
-        // obligation is stated over.
-        let Some((buffer_ordinal, buffer_parameter)) =
-            row.parameters.iter().enumerate().find(|(_, parameter)| {
-                matches!(
-                    parameter.ty,
-                    crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8
-                )
-            })
-        else {
-            return;
-        };
-        let (Some(start), Some(end), Some(buffer)) = (
-            arguments.get(start_ordinal),
-            arguments.get(end_ordinal),
-            arguments.get(buffer_ordinal),
-        ) else {
-            return;
-        };
-        let start_goal =
-            self.obligation_goal_operand(node_path, start_ordinal, start, &states.facts);
-        let end_goal = self.obligation_goal_operand(node_path, end_ordinal, end, &states.facts);
-        let start_term = self.read_operand(start);
-        let end_term = self.read_operand(end);
-        let comparison = |left, right| GoalExpression::Operation {
-            row: GoalOperation::Integer {
-                operation: super::super::model::CheckedIntegerOperation::LessEqual,
-                operand_type: CheckedType::Integer(IntegerType::U64),
-            },
-            type_arguments: Vec::new(),
-            const_arguments: Vec::new(),
-            result: CheckedType::Bool,
-            arguments: vec![left, right],
-        };
-
-        self.judge_exact_relation_obligation(
-            ObligationFamily::SystemRange,
-            0,
-            node_path.clone(),
-            comparison(start_goal, end_goal.clone()),
-            start_term,
-            end_term,
-            format!(
-                "{} <= {}",
-                self.render_expression(start),
-                self.render_expression(end)
-            ),
-            states,
-        );
-
-        // The second conjunct bounds the end against the caller's own buffer,
-        // so the residual names the caller's place — `wide <= len_of(header)` —
-        // the way [OP-4]'s bounds residual does. Printing the operation's
-        // declared parameter name instead leaves a writer with two buffers in
-        // scope unable to tell which one the bound is about. The declared name
-        // remains the fallback for an argument that carries no place at all.
-        let buffer_root = match buffer {
-            CheckedExpression::BorrowBuffer { root, .. } => {
-                Some((root.binding, root.fields.clone()))
-            }
-            CheckedExpression::Binding {
-                binding,
-                ty: CheckedType::Buffer { .. } | CheckedType::Slice { .. },
-                ..
-            } => Some((*binding, Vec::new())),
-            _ => None,
-        };
-        let buffer_spelling = match &buffer_root {
-            Some((binding, fields)) => self.render_place(&PlaceTerm {
-                root: PlaceRoot::Binding(*binding),
-                deref: self.is_holder(*binding),
-                fields: fields.clone(),
-            }),
-            None => buffer_parameter.name.to_owned(),
-        };
-        // [SYS-8] the obligation is `end <= len_of(<the range-bearing
-        // operand>)`, stated over the measure-table row that operand's own
-        // type has [MSR-1]: a view is measured as a view and a `buffer` as a
-        // buffer, and neither reading is the other's.
-        let range_type = buffer.ty();
-        let (measure_row, measured_kind) = match range_type {
-            CheckedType::Buffer { element } => (
-                GoalOperation::BufferMeasure {
-                    measure: CheckedMeasure::Length,
-                    element,
-                },
-                MeasuredKind::Buffer,
-            ),
-            CheckedType::Slice {
-                region, element, ..
-            } => (
-                GoalOperation::SliceMeasure {
-                    measure: CheckedMeasure::Length,
-                    region,
-                    element,
-                },
-                MeasuredKind::Slice,
-            ),
-            _ => return,
-        };
-        let buffer_goal = match buffer_root.as_ref() {
-            None => self.obligation_goal_operand(node_path, buffer_ordinal, buffer, &states.facts),
-            Some((buffer_binding, buffer_fields)) => self.goal_binding_place(
-                *buffer_binding,
-                buffer_fields.iter().copied().map(GoalProjection::Field),
-                range_type,
-            ),
-        };
-        let length_goal = GoalExpression::Operation {
-            row: measure_row,
-            type_arguments: Vec::new(),
-            const_arguments: Vec::new(),
-            result: CheckedType::Integer(IntegerType::U64),
-            arguments: vec![buffer_goal],
-        };
-        let length_term = buffer_root.map(|(buffer_binding, buffer_fields)| {
-            let base = PlaceTerm {
-                root: PlaceRoot::Binding(buffer_binding),
-                deref: self.is_holder(buffer_binding),
-                fields: buffer_fields,
-            };
-            self.place_measure_term(
-                CheckedMeasure::Length,
-                projected_place(base),
-                measured_kind,
-                None,
-            )
-        });
-        self.judge_exact_relation_obligation(
-            ObligationFamily::SystemRange,
-            1,
-            node_path.clone(),
-            comparison(end_goal, length_goal),
-            end_term,
-            length_term,
-            format!(
-                "{} <= len_of({buffer_spelling})",
-                self.render_expression(end)
-            ),
-            states,
-        );
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn judge_exact_relation_obligation(
-        &mut self,
-        family: ObligationFamily,
-        conjunct: u8,
-        node_path: crate::NodePath,
-        root: GoalExpression,
-        left: Option<TermId>,
-        right: Option<TermId>,
-        residual: String,
-        states: &ProofFlowState,
-    ) {
-        let canonical_goal = root.clone();
-        let request = left.zip(right).map(|(left, right)| BoundsRequest {
-            left: Some(left),
-            right,
-            bound: 0,
-            distinct: false,
-        });
-        let direct_affine = self.affine_goal_ordering_target(&root, &states.affine);
-        let affine_left = left.and_then(|term| self.affine_term_value(term, &states.affine));
-        let proof = self.prove(
-            ProofContext::new(&states.facts, &states.affine),
-            ProofGoal::BoundedRelation(BoundedRelationGoal {
-                canonical: Some(&root),
-                request,
-                direct_affine: direct_affine.as_ref(),
-                fixed_affine_bridge: None,
-                affine_left: affine_left.as_ref(),
-            }),
-        );
-        let discharged = proof.disposition == ProofDisposition::Proved;
-        let refuted = proof.disposition == ProofDisposition::Refuted;
-        let contradictory = proof.route == Some(ProofRoute::Contradiction);
-        let derivation = proof.derivation;
-        let ordinal = u32::try_from(self.obligations.len())
-            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
-        if let Some(root) = derivation {
-            self.derivations
-                .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
-        }
-        self.obligations.push(ObligationOutcome {
-            node_path: node_path.clone(),
-            family,
-            conjunct,
-            canonical_goal: Some(canonical_goal),
-            components: request.into_iter().collect(),
-            discharged,
-            refuted,
-            contradictory,
-            residual: (!discharged).then(|| residual.clone()),
-            derivation,
-            allocation_length_upper_bound: None,
-            allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             kernel_row: None,
         });

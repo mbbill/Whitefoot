@@ -109,7 +109,7 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   return total;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let value = folded(lo: 0_u64, hi: 400000_u64);
   let report = buffer_new(8_u64, 0_u8);
   region {
@@ -165,7 +165,7 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Every degenerate range folds to the accumulator it arrived with, and one wide range folds to the same value split or not.";
   let empty = folded(lo: 5_u64, hi: 5_u64);
   if empty == 7_u64 {
@@ -212,7 +212,7 @@ const WIDE_FRAME: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Thirty-two live scalars stand between the loop and a frame that fits.";
   let a0 = 0_u64;
   let a1 = 1_u64;
@@ -331,7 +331,7 @@ fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pu
   return total;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
   let report = buffer_new(8_u64, 0_u8);
   region {
@@ -400,7 +400,7 @@ fn mapped() -> result: own buffer<u8> pure {
   return move out;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let report = mapped();
   let size = len_of(report);
   region 'o {
@@ -1309,7 +1309,7 @@ fn admitted_combine_source() -> Vec<u8> {
     }
     let width = 8 * ADMITTED_COMBINES.len();
     source.push_str(&format!(
-        "\ncommand fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus \
+        "\nfn main(command.stdout as out: own OutputStream) -> status: own ExitStatus \
          reads(out), writes(out) {{\n  \
          let report = buffer_new({width}_u64, 0_u8);\n  region {{\n    \
          let window = mut_slice_of(&uniq report);\n"

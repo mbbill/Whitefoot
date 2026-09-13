@@ -23,7 +23,7 @@ enum Grown {
   Refused(value: Vector<u8>);
 }
 
-fn bs_reserve(s: own Vector<u8>, store: &uniq Heap, total: own u64) -> grown: own Grown reads(s, store), writes(s, store), allocates(store) contract {
+fn bs_reserve['heap](s: own Vector<'heap, u8>, store: &uniq Heap<'heap>, total: own u64) -> grown: own Grown reads(s, store), writes(s, store), allocates(store) contract {
   requires total >= len_of(s);
 } {
   doc "Grows the backing run to total slots, preserving byte order, or reports that the store refused. Growth is the drain-front, append-back walk, and the superseded run is disposed before the wider one is handed back. The four measures the Grew arm carries are not published here: a variant-routed measure clause is a deferred contract route, so the caller reads them back instead.";
@@ -55,12 +55,12 @@ fn bs_reserve(s: own Vector<u8>, store: &uniq Heap, total: own u64) -> grown: ow
   }
 }
 
-fn bs_len(s: &Vector<u8>) -> result: own u64 reads(s) {
+fn bs_len['heap](s: &Vector<'heap, u8>) -> result: own u64 reads(s) {
   doc "Reports how many bytes the string holds.";
   return len_of(deref(s));
 }
 
-fn bs_byte(s: &Vector<u8>, index: own u64) -> result: own Option<u8> reads(s) {
+fn bs_byte['heap](s: &Vector<'heap, u8>, index: own u64) -> result: own Option<u8> reads(s) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = len_of(deref(s));
   let within = index < stored;
@@ -71,7 +71,7 @@ fn bs_byte(s: &Vector<u8>, index: own u64) -> result: own Option<u8> reads(s) {
   return None<u8>();
 }
 
-fn bs_append_slice(s: &uniq Vector<u8>, text: own Slice<u8>) -> result: own unit reads(s, text), writes(s) contract {
+fn bs_append_slice['heap](s: &uniq Vector<'heap, u8>, text: own Slice<u8>) -> result: own unit reads(s, text), writes(s) contract {
   requires head_of(deref(s)) <= 0_u64;
   ensures head_of(deref(s)) <= 0_u64;
 } {
@@ -98,7 +98,7 @@ fn bs_append_slice(s: &uniq Vector<u8>, text: own Slice<u8>) -> result: own unit
   return unit;
 }
 
-fn bs_from(store: &uniq Heap, text: own Slice<u8>) -> made: own Option<Vector<u8>> reads(store, text), writes(store), allocates(store) {
+fn bs_from['heap](store: &uniq Heap<'heap>, text: own Slice<u8>) -> made: own Option<Vector<'heap, u8>> reads(store, text), writes(store), allocates(store) {
   doc "Builds one byte string holding exactly the bytes of one static message.";
   let count = len_of(text);
   region {
@@ -117,7 +117,7 @@ fn bs_from(store: &uniq Heap, text: own Slice<u8>) -> made: own Option<Vector<u8
   }
 }
 
-fn bs_concat(destination: &uniq Vector<u8>, source: &Vector<u8>) -> result: own unit reads(destination, source), writes(destination) contract {
+fn bs_concat['heap](destination: &uniq Vector<'heap, u8>, source: &Vector<'heap, u8>) -> result: own unit reads(destination, source), writes(destination) contract {
   requires head_of(deref(destination)) <= 0_u64;
   ensures head_of(deref(destination)) <= 0_u64;
 } {
@@ -144,7 +144,7 @@ fn bs_concat(destination: &uniq Vector<u8>, source: &Vector<u8>) -> result: own 
   return unit;
 }
 
-fn bs_find(haystack: &Vector<u8>, needle: &Vector<u8>) -> result: own Option<u64> reads(haystack, needle) {
+fn bs_find['heap](haystack: &Vector<'heap, u8>, needle: &Vector<'heap, u8>) -> result: own Option<u64> reads(haystack, needle) {
   doc "Reports the first position where the needle bytes occur, by the naive left-to-right scan.";
   let hay_length = len_of(deref(haystack));
   let needle_length = len_of(deref(needle));
@@ -200,7 +200,7 @@ fn bs_find(haystack: &Vector<u8>, needle: &Vector<u8>) -> result: own Option<u64
   return None<u64>();
 }
 
-fn bs_push_decimal(s: &uniq Vector<u8>, value: own u64) -> result: own unit reads(s), writes(s) contract {
+fn bs_push_decimal['heap](s: &uniq Vector<'heap, u8>, value: own u64) -> result: own unit reads(s), writes(s) contract {
   requires head_of(deref(s)) <= 0_u64;
   ensures head_of(deref(s)) <= 0_u64;
 } {
@@ -275,7 +275,7 @@ fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u6
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.stdout as out: own OutputStream, command.heap as heap: own Heap) -> status: own ExitStatus reads(out, heap), writes(out, heap), allocates(heap) {
+fn main['heap](command.stdout as out: own OutputStream, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(out, heap), writes(out, heap), allocates(heap) {
   doc "Builds one byte string from literals, grows its backing run, concatenates, searches it, and publishes the measured report.";
   region {
     let head_view = slice_of(&subject_head);

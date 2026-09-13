@@ -3,8 +3,7 @@
 //!
 //! [BLK-0] states that the container and store operations are one
 //! compiler-owned generic declaration domain, admitted to every compilation
-//! unit on exactly [SYS-3]'s terms. Like the system domain it is data of the
-//! specification rather than a source record: no source construct declares,
+//! unit. It is specification data rather than a source record: no source construct declares,
 //! redeclares, extends, or overrides an entry, and a source declaration whose
 //! spelling equals an entry's in the same domain is the ordinary [DIAG-1]
 //! collision.
@@ -274,7 +273,7 @@ pub const KERNEL_OPERATION_CLASS: DeclarationClass = DeclarationClass::Function;
 #[cfg(test)]
 mod tests {
     use super::{CONTAINER_NOMINALS, KERNEL_OPERATIONS};
-    use crate::resolution::catalog::{MODE_WORDS, OPERATION_FAMILIES, SYSTEM_NOMINALS};
+    use crate::resolution::catalog::{MODE_WORDS, OPERATION_FAMILIES};
 
     /// [BLK-0]: a kernel-domain operation spelling is IDENT-shaped, contains
     /// no dot, and is no member of `ReservedLowerNames` [OP-1], so adding the
@@ -330,7 +329,7 @@ mod tests {
     }
 
     /// [TYPE-6]: spellings are unique within each domain and disjoint from
-    /// the system inventory's spellings of the same domain.
+    /// the ordinary prelude declarations of the same domain.
     #[test]
     fn kernel_spellings_are_unique_and_disjoint() {
         let mut nominals: Vec<_> = CONTAINER_NOMINALS
@@ -341,15 +340,6 @@ mod tests {
         let count = nominals.len();
         nominals.dedup();
         assert_eq!(nominals.len(), count);
-        for nominal in CONTAINER_NOMINALS {
-            assert!(
-                !SYSTEM_NOMINALS
-                    .iter()
-                    .any(|system| system.spelling == nominal.spelling),
-                "{} collides with a system nominal",
-                nominal.spelling
-            );
-        }
         let mut operations: Vec<_> = KERNEL_OPERATIONS
             .iter()
             .map(|operation| operation.spelling)

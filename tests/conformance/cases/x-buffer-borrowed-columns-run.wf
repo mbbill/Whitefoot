@@ -33,7 +33,7 @@ fn fold['r](left: own Slice<'r, u64>, right: own Slice<'r, u64>, length: own u64
   return total;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Two store runs held in one struct are written and read through views of their fields. Exclusive views lend only the element storage; shared views read it back, and the caller keeps both window lengths across these element-only calls [CALL-3].";
   let length = 4_u64;
   region {

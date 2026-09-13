@@ -23,7 +23,7 @@ fn with_holder(rest: &[u8]) -> Vec<u8> {
 #[test]
 fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 4>();
   for @fill_first (
     at in 0_u64..4_u64,
@@ -56,7 +56,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
         let main = &checked.data.functions[0];
         let CheckedStatement::Replace {
             binding, target, ..
-        } = &main.body[5]
+        } = &main.body.as_deref().expect("WF body")[5]
         else {
             panic!("the sixth statement must be the SET-2 commit");
         };
@@ -73,7 +73,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
 #[test]
 fn replace_of_a_copy_place_rejects_citing_set2() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 4>();
   for @fill_first (
     at in 0_u64..1_u64,
@@ -102,7 +102,7 @@ fn replace_of_a_copy_place_rejects_citing_set2() {
 #[test]
 fn set_of_an_affine_place_still_rejects_and_names_replace() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 4>();
   for @fill_first (
     at in 0_u64..1_u64,
@@ -145,7 +145,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
     // capacity now, because a `FixedVector`'s capacity is its type; what the
     // commit changes is `len_of`, which is the measure the stale fact names.
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 4>();
   for @fill_first (
     at in 0_u64..4_u64,
@@ -188,7 +188,7 @@ fn the_same_subscript_discharges_without_the_replace() {
     // The control for the kill test: identical program minus the commit.
     // Rejection above plus acceptance here attributes the kill to SET-2.
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 4>();
   for @fill_first (
     at in 0_u64..4_u64,
@@ -225,7 +225,7 @@ fn replace_leaves_the_target_root_live() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 4>();
   for @fill_first (
     at in 0_u64..2_u64,
@@ -268,7 +268,7 @@ fn replace_of_a_dead_root_rejects_citing_own1() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 4>();
   for @fill_first (
     at in 0_u64..2_u64,
@@ -305,7 +305,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn replace_through_a_shared_borrow_rejects() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 4>();
   for @fill_first (
     at in 0_u64..2_u64,
@@ -343,7 +343,7 @@ fn replace_through_a_shared_borrow_rejects() {
 
 #[test]
 fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_obligations() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let slots = fixed_vector::<Option<u32>, 4>();
   for @fill (
     at in 0_u64..4_u64,
@@ -366,7 +366,8 @@ fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_oblig
             panic!("an affine element replace must check: {outcome:?}");
         };
         let main = &checked.data.functions[0];
-        let CheckedStatement::Replace { target, .. } = &main.body[3] else {
+        let CheckedStatement::Replace { target, .. } = &main.body.as_deref().expect("WF body")[3]
+        else {
             panic!("the fourth statement must be the SET-2 element commit");
         };
         let CheckedSetTarget::Storage(target) = target else {
@@ -383,7 +384,7 @@ fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_oblig
             matches!(target.path.as_slice(), [super::super::model::CheckedPlaceStep::Subscript(index)] if !index.obligation.components().is_empty())
         );
         assert!(matches!(
-            &main.body[5],
+            &main.body.as_deref().expect("WF body")[5],
             CheckedStatement::Replace {
                 target: CheckedSetTarget::Storage(_),
                 ..
@@ -416,7 +417,7 @@ fn push(v: &uniq OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), w
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = buffer_vacant::<u32>(2_u64);
   let v = OptVec(buf: move empty, fill: 0_u64);
   region {
@@ -441,7 +442,7 @@ fn element_position_replace_keeps_the_bounds_obligation() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   hollow::<2>();
   return exit_status(code: 0_u8);
 }
@@ -456,7 +457,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn element_replacement_rhs_must_be_the_exact_element_type() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let slots = fixed_vector::<Option<u32>, 4>();
   for @fill (
     at in 0_u64..4_u64,
@@ -483,7 +484,7 @@ fn element_replacement_rhs_must_be_the_exact_element_type() {
 fn affine_elements_leave_their_slots_only_through_replace() {
     // SET-1 on an affine element names replace [STOR-1].
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let slots = fixed_vector::<Option<u32>, 4>();
   let none = None<u32>();
   set slots[0_u64] = move none;
@@ -498,7 +499,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     );
     // A bare element read would mint a second owner [OWN-1].
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let slots = fixed_vector::<Option<u32>, 4>();
   let observed = slots[0_u64];
   return exit_status(code: 0_u8);
@@ -511,7 +512,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     );
     // `move` out of a slot is not an admitted element exit [TYPE-2].
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let slots = fixed_vector::<Option<u32>, 4>();
   let observed = move slots[0_u64];
   return exit_status(code: 0_u8);
@@ -527,7 +528,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
 #[test]
 fn element_position_replace_rejects_while_every_element_is_copy() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 2>();
   let old = replace first[0_u64] = 3_u8;
   return exit_status(code: 0_u8);
@@ -547,7 +548,7 @@ fn element_position_replace_rejects_while_every_element_is_copy() {
 #[test]
 fn replace_rhs_type_mismatch_rejects_citing_type5() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let first = fixed_vector::<u8, 4>();
   for @fill_first (
     at in 0_u64..1_u64,
@@ -589,7 +590,7 @@ fn replace_of_a_region_bearing_place_rejects_citing_set2() {
 
 const right: FixedVector<u8, 2> =[29_u8, 29_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&left);
     let previous = replace view = slice_of(&right);
@@ -604,7 +605,7 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   region 'r {
     let first = arena_new::<'r, u64>(1_u64);
     let second = arena_new::<'r, u64>(2_u64);
@@ -626,7 +627,7 @@ command fn main() -> status: own ExitStatus pure {
 /// accepted and the fresh binding owns the previous box.
 #[test]
 fn replace_of_a_cell_descriptor_accepts() {
-    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 1_u64) {
       Ok(value: first) => {
@@ -656,7 +657,7 @@ fn replace_of_a_cell_descriptor_accepts() {
         };
         let main = &checked.data.functions[0];
         assert!(
-            replace_reachable(&main.body),
+            replace_reachable(&main.body.as_deref().expect("WF body")),
             "the exchange must remain a checked Replace"
         );
     });

@@ -65,7 +65,7 @@ use crate::{
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
-    max_sources: 4,
+    max_sources: 64,
     max_logical_path_bytes: 128,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
@@ -73,7 +73,7 @@ const SOURCE_LIMITS: SourceLimits = SourceLimits {
 };
 
 const LEX_LIMITS: LexLimits = LexLimits {
-    max_sources: 4,
+    max_sources: 64,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
     max_token_bytes: 16_384,
@@ -95,7 +95,7 @@ const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
     max_nodes: 131_072,
     max_child_edges: 131_072,
     max_terminals: 131_072,
-    max_sources: 4,
+    max_sources: 64,
 };
 
 const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
@@ -149,39 +149,8 @@ fn compile_permission_ledger(source: &[u8]) -> Vec<String> {
 /// named overlap-lowering choice.
 fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
-    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
-    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
-        panic!("backend test source must lex");
-    };
-    let TerminalOutcome::Complete(classified) = classify_terminals(
-        &lexed,
-        ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits {
-            max_tokens: LEX_LIMITS.max_tokens,
-        },
-    ) else {
-        panic!("backend test source must classify");
-    };
-    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
-        panic!("backend test source must parse");
-    };
-    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
-        panic!("backend test source must finalize");
-    };
-    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
-        panic!("backend test source must be canonical");
-    };
-    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
-        panic!("backend test source must resolve");
-    };
-    let checked = match check_semantics(resolved) {
-        SemanticOutcome::Complete(checked) => checked,
-        other => panic!("backend test source must check: {other:?}"),
-    };
-    let ir = lower_checked(*checked, overlap).expect("checked program must lower");
-    emit_llvm(&ir)
-        .expect("lowered program must emit")
-        .into_string()
+    crate::compile_with_overlap(&inputs, crate::CompilerLimits::default(), overlap)
+        .expect("ordinary compiler and executable builder must emit")
 }
 
 /// [`emit`] through the test-only checker entry that forces the
@@ -190,7 +159,7 @@ fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
 /// default v0.30 emission of the same source.
 fn emit_arithmetic_obligations(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
-    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
         panic!("backend test source must lex");
     };
@@ -219,10 +188,14 @@ fn emit_arithmetic_obligations(source: &[u8]) -> String {
     else {
         panic!("backend test source must check under the arithmetic switch");
     };
+    assert!(checked.data.functions.iter()
+        .filter(|function| function.name == "main")
+        .all(|function| function.requirements.is_empty()),
+        "the test build caller must discharge every selected precondition");
     let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
-    emit_llvm(&ir)
-        .expect("lowered program must emit")
-        .into_string()
+    let mut llvm = emit_llvm(&ir).expect("lowered program must emit").into_string();
+    llvm.push_str(&crate::driver::launcher::render(&ir, "main").expect("ordinary test launcher"));
+    llvm
 }
 
 /// [`emit`] through the test-only checker entry that forces the division
@@ -231,7 +204,7 @@ fn emit_arithmetic_obligations(source: &[u8]) -> String {
 /// its callers mean.
 fn emit_division_obligations(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
-    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
         panic!("backend test source must lex");
     };
@@ -259,10 +232,14 @@ fn emit_division_obligations(source: &[u8]) -> String {
     let SemanticOutcome::Complete(checked) = check_semantics_division_obligations(resolved) else {
         panic!("backend test source must check under the division switch");
     };
+    assert!(checked.data.functions.iter()
+        .filter(|function| function.name == "main")
+        .all(|function| function.requirements.is_empty()),
+        "the test build caller must discharge every selected precondition");
     let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
-    emit_llvm(&ir)
-        .expect("lowered program must emit")
-        .into_string()
+    let mut llvm = emit_llvm(&ir).expect("lowered program must emit").into_string();
+    llvm.push_str(&crate::driver::launcher::render(&ir, "main").expect("ordinary test launcher"));
+    llvm
 }
 
 fn compile(source: &[u8]) -> String {
@@ -275,7 +252,7 @@ fn compile(source: &[u8]) -> String {
 /// mean.
 fn emit_reborrow_extension(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
-    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
         panic!("backend test source must lex");
     };
@@ -306,10 +283,14 @@ fn emit_reborrow_extension(source: &[u8]) -> String {
             panic!("backend test source must check under the reborrow extension: {outcome:?}")
         }
     };
+    assert!(checked.data.functions.iter()
+        .filter(|function| function.name == "main")
+        .all(|function| function.requirements.is_empty()),
+        "the test build caller must discharge every selected precondition");
     let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
-    emit_llvm(&ir)
-        .expect("lowered program must emit")
-        .into_string()
+    let mut llvm = emit_llvm(&ir).expect("lowered program must emit").into_string();
+    llvm.push_str(&crate::driver::launcher::render(&ir, "main").expect("ordinary test launcher"));
+    llvm
 }
 
 /// Compiles a source that must be rejected, returning the failure for rule
@@ -708,7 +689,7 @@ enum Payload {
   Value(number: i32);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let flag = On();
   match flag {
     Off() => {
@@ -825,7 +806,7 @@ fn cleanup_match(value: own Holder, flag: own Bool) -> result: own i32 pure {
   return selected;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   cleanup();
   let cell = Cell(value: 8_i32);
   let holder = Held(cell: move cell);
@@ -864,7 +845,7 @@ struct Outer {
   other: i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
   let outer = Outer(inner: move inner, other: 7_i32);
@@ -945,7 +926,7 @@ command fn main() -> status: own ExitStatus pure {
 /// here is observable: a wrong one returns a distinct nonzero status.
 #[test]
 fn bool_conditionals_execute_through_the_existing_match_lowering() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   let other = False();
   let seen = False();
@@ -998,7 +979,7 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
 /// content reads back, and it is released. `box<u64>` is spelled nowhere.
 #[test]
 fn a_derived_box_nominal_allocates_reads_back_and_releases() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   let owner = box_new(flag);
   let loaded = deref(owner);
@@ -1022,7 +1003,7 @@ fn a_derived_box_nominal_allocates_reads_back_and_releases() {
 /// mis-selected row returns a distinct nonzero status here.
 #[test]
 fn infix_operators_execute_the_rows_they_name() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let a = 20_i32;
   let b = a + 22_i32;
   let want = 42_i32;
@@ -1084,7 +1065,7 @@ fn eq(a: own i32, b: own i32) -> result: own Bool pure {
   return a == b;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let sum = add(a: 20_i32, b: 22_i32);
   if sum != 42_i32 {
     return exit_status(code: 1_u8);
@@ -1111,7 +1092,7 @@ command fn main() -> status: own ExitStatus pure {
 /// is no implicit runtime fallback.
 #[test]
 fn bare_infix_overflow_is_a_static_op2_rejection() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let hi = 2147483647_i32;
   let one = 1_i32;
   let overflowed = hi + one;
@@ -1207,7 +1188,7 @@ fn make_pair() -> result: own Result<Pair, StepError> pure {
   return Ok<Pair, StepError>(value: move pair);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match move arithmetic_result {
     Ok(value: sum) => {
@@ -1316,7 +1297,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let outer = 0_i32;
   loop @outer_loop {
     set outer = outer +wrap 1_i32;
@@ -1380,7 +1361,7 @@ fn compiler_independent_nominal_data_cases_execute_through_host_llvm() {
 
 #[test]
 fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let aw = 127_i8 +wrap 1_i8;
   let sw = 0_u8 -wrap 1_u8;
   let mw = 65535_u16 *wrap 2_u16;
@@ -1447,7 +1428,7 @@ fn unit_is_a_first_class_parameter_result_and_local() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = identity(value: unit);
   return exit_status(code: 0_u8);
 }
@@ -1468,7 +1449,7 @@ fn a_failing_contract_is_a_static_fn8_rejection() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   only_one(value: 0_u8);
   return exit_status(code: 0_u8);
 }
@@ -1479,7 +1460,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn integer_overflow_has_no_op2_runtime_record_path() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let hi = 127_i8;
   let one = 1_i8;
   let overflow = hi + one;

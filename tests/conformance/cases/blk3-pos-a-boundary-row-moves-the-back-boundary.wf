@@ -8,7 +8,7 @@ fn append(vector: &uniq FixedVector<u8, 4>, value: own u8) -> result: own unit r
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Declares the placement helper above and returns.";
   return exit_status(code: 0_u8);
 }

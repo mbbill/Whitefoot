@@ -1,4 +1,4 @@
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "OWN-11: a loop body is its own region, so a borrow written directly in it needs no region block.";
   let a = 0_i32;
   loop @l {

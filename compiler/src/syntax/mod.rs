@@ -7,7 +7,6 @@
 //! This crate does not perform semantic checking or create portable artifacts.
 
 mod classifier;
-mod entry_form;
 /// Grammar tables derived from the active specification.
 pub mod grammar;
 mod outcome;
@@ -31,7 +30,6 @@ pub use parser::{
     SyntaxCoordinate, SyntaxIssue, SyntaxRule, audit_canonical, finalize, parse, render_canonical,
 };
 
-pub(crate) use entry_form::unit_program_kind;
 pub(crate) use parser::{FinalizedExtent, FinalizedTopology, NodeId};
 
 #[cfg(test)]

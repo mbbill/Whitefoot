@@ -14,10 +14,10 @@ use crate::CheckedProgram;
 use crate::NodePath;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
-    BindingId, CheckedArrayRoot, CheckedCommitValues, CheckedConstructor, CheckedDrop,
-    CheckedEntryForm, CheckedExpression, CheckedMatchArm, CheckedMeasure, CheckedMode,
-    CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
-    CheckedStatement, CheckedValue, FunctionPermissions, MeasureCell, MeasuredKind,
+    BindingId, CheckedArrayRoot, CheckedCommitValues, CheckedDrop, CheckedExpression,
+    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedParameter,
+    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue, FunctionPermissions,
+    MeasureCell, MeasuredKind,
 };
 
 use super::*;
@@ -29,7 +29,6 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
-    let entry = lower_entry(&checked.data.entry);
     // [S20, PROV-1] the region erasure: where a nominal instance's region
     // arguments leave the program. Two instances of one declaration that
     // differ only in them are two checked types and one IR nominal.
@@ -85,22 +84,13 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
-    // Each function's compiler-owned suspension summary, indexed the same way.
-    // A staged loop whose cut is a user call needs it: whether that call may
-    // suspend is the callee's declared contract, not something a call site can
-    // read off its own shape.
-    let function_actions = physical
-        .variants
-        .iter()
-        .map(|variant| checked.data.functions[variant.source.0 as usize].target_action)
-        .collect::<Vec<_>>();
     // The [PAR-1 candidate] permission table, read exactly as the checker
     // produced it. Lowering selects which permitted groups it can actualize
     // and never widens one — and reads the table at all only when this
     // compilation asked for overlap lowering, so the default emits the same
     // module a compiler with no such lowering emits.
     let permission = match overlap {
-        OverlapLowering::On | OverlapLowering::Completion => Some(&checked.data.permission),
+        OverlapLowering::On => Some(&checked.data.permission),
         OverlapLowering::Off => None,
     };
     // Where a synthesized function's ordinal starts. A [PAR-2] split appends
@@ -145,7 +135,6 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
                 elements: &elements,
                 constants: &constants,
                 function_results: &function_results,
-                function_actions: &function_actions,
                 synthesis: &synthesis,
             };
             lower_function(
@@ -162,13 +151,11 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     functions.extend(synthesized);
     split::assign_weights(&mut functions);
     Ok(IrProgram {
-        main: physical.main,
         _checked: checked,
         nominals,
         elements,
         constants,
         functions,
-        entry,
         actualization,
     })
 }
@@ -191,21 +178,7 @@ struct LoweringContext<'program> {
     constants: &'program [IrGlobalConstant],
     /// Every physical function's declared IR result, indexed by its IR ordinal.
     function_results: &'program [IrType],
-    /// Every source function's suspension summary, indexed the same way.
-    function_actions: &'program [crate::TargetAction],
     synthesis: &'program SynthesisCell,
-}
-
-/// Carries the [FN-7] entry form into the IR.
-///
-/// [PROG-3] starts an instance by supplying exactly the standard inputs the
-/// entry declares and invoking it once. Target-independent lowering records
-/// which inputs those are; constructing the values and mapping the returned
-/// `ExitStatus` belongs to the target stage.
-fn lower_entry(entry: &CheckedEntryForm) -> IrEntry {
-    IrEntry::Command {
-        inputs: entry.inputs.clone(),
-    }
 }
 
 fn lower_scalar_constant(value: &CheckedValue) -> Result<IrConstant, LoweringFailure> {
@@ -285,67 +258,6 @@ fn lower_nominals(
             if nominal.id.0 as usize != index {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
-            let identity = match &nominal.kind {
-                CheckedNominalKind::SystemResource { nominal } => {
-                    IrNominalIdentity::System(*nominal)
-                }
-                CheckedNominalKind::Enum { variants }
-                    if matches!(
-                        variants.as_slice(),
-                        [ok, err]
-                            if ok.constructor
-                                == CheckedConstructor::Prelude(
-                                    crate::PreludeDeclarationId::new(11)
-                                )
-                                && err.constructor
-                                    == CheckedConstructor::Prelude(
-                                        crate::PreludeDeclarationId::new(13)
-                                    )
-                    ) =>
-                {
-                    IrNominalIdentity::PreludeResult
-                }
-                CheckedNominalKind::Enum { variants } if !variants.is_empty() => {
-                    let mut owner = None;
-                    for variant in variants {
-                        let CheckedConstructor::System(declaration) = variant.constructor else {
-                            owner = None;
-                            break;
-                        };
-                        let constructor =
-                            crate::system_constructor_index(declaration, data.inventory)
-                                .and_then(|index| {
-                                    crate::SYSTEM_CONSTRUCTORS.get(usize::from(index))
-                                })
-                                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                        match owner {
-                            Some(existing) if existing != constructor.owner => {
-                                return Err(LoweringFailure::InvalidCheckedProgram);
-                            }
-                            Some(_) => {}
-                            None => owner = Some(constructor.owner),
-                        }
-                    }
-                    owner.map_or(IrNominalIdentity::Ordinary, IrNominalIdentity::System)
-                }
-                // A system-declared struct is an ordinary checked struct, so
-                // the fact that it came from a catalog row is carried beside
-                // the nominals rather than inside one [SYS-18]. Keeping its
-                // system identity here is what lets the backend resolve the
-                // operation-table type of `close_connection`'s parameter by
-                // the same route every other exact system type takes.
-                CheckedNominalKind::Struct { .. } => data
-                    .system_structs
-                    .iter()
-                    .find(|(_, id)| id.0 as usize == index)
-                    .map_or(IrNominalIdentity::Ordinary, |(nominal, _)| {
-                        IrNominalIdentity::System(*nominal)
-                    }),
-                CheckedNominalKind::Enum { .. }
-                | CheckedNominalKind::Box { .. }
-                | CheckedNominalKind::Arena { .. }
-                | CheckedNominalKind::ArenaStorage => IrNominalIdentity::Ordinary,
-            };
             let kind = match &nominal.kind {
                 CheckedNominalKind::Struct { fields } => IrNominalKind::Struct {
                     fields: fields
@@ -386,20 +298,13 @@ fn lower_nominals(
                     content: lower_type(erasure, *content)?,
                 },
                 CheckedNominalKind::ArenaStorage => IrNominalKind::ArenaStorage,
-                // The opaque type's own [SYS-2] identity, [SYS-5] release
-                // action and row, and [HOST-3] backing class travel into the
-                // IR unchanged. A target representation for it is target
-                // qualification's business, not this stage's.
-                CheckedNominalKind::SystemResource { nominal } => IrNominalKind::SystemResource(
-                    crate::system_resource_contract(*nominal)
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                ),
+                CheckedNominalKind::Opaque => IrNominalKind::Opaque,
             };
             Ok(IrNominal {
+                name: nominal.name.clone(),
                 id: IrNominalId(
                     u32::try_from(index).map_err(|_| LoweringFailure::CounterOverflow)?,
                 ),
-                identity,
                 kind,
             })
         })
@@ -419,7 +324,7 @@ fn lower_function<'program>(
         crate::semantic::CheckedBodyDisposition::Uninhabited { .. }
     );
     // An uninhabited body must not be traversed even for storage planning.
-    let addressed_bindings = if uninhabited {
+    let addressed_bindings = if uninhabited || function.body.is_none() {
         std::collections::HashSet::new()
     } else {
         collect_addressed_bindings(function)
@@ -447,21 +352,18 @@ fn lower_function<'program>(
         }
         builder.promote_binding_if_needed(parameter.binding)?;
     }
-    if uninhabited {
-        builder.terminate(IrTerminator::Unreachable)?;
+    if let Some(body) = &function.body {
+        if uninhabited {
+            builder.terminate(IrTerminator::Unreachable)?;
+        } else {
+            builder.lower_statements(body, None)?;
+        }
     } else {
-        builder.lower_statements(&function.body, None)?;
+        builder.blocks.clear();
+        builder.current = None;
     }
-    builder.materialize_staged_driver_plan()?;
     let overlaps = builder.overlaps();
-    let completion_steps = builder.completion_steps();
-    let mut lowered = builder.finish(
-        symbol.to_owned(),
-        overlaps,
-        completion_steps,
-        None,
-        function.target_action,
-    )?;
+    let mut lowered = builder.finish(symbol.to_owned(), overlaps, None)?;
     lowered.source_signature = Some(IrSourceSignature {
         parameters: function
             .parameters
@@ -492,7 +394,6 @@ fn lower_source_argument(argument: &CheckedExpression) -> IrSourceArgument {
         CheckedExpression::BorrowAddressed { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::BorrowSystemResource { .. }
         | CheckedExpression::ReborrowAddressed { .. } => IrSourceArgument::Borrow,
         CheckedExpression::ReadStorage { .. }
         | CheckedExpression::DerefAddressed { .. }
@@ -539,7 +440,7 @@ fn lower_borrow_mode_type(
             IrNominalKind::Struct { .. }
                 | IrNominalKind::Enum { .. }
                 | IrNominalKind::Box { .. }
-                | IrNominalKind::SystemResource(_)
+                | IrNominalKind::Opaque
         )
     {
         return Ok(ty);
@@ -551,16 +452,6 @@ struct BuildingBlock {
     parameters: Vec<(IrValueId, IrType)>,
     instructions: Vec<IrInstruction>,
     terminator: Option<IrTerminator>,
-}
-
-fn block_successors(block: &BuildingBlock) -> Vec<IrBlockId> {
-    match block.terminator.as_ref() {
-        Some(IrTerminator::Jump { target, .. }) => vec![*target],
-        Some(IrTerminator::Match { targets, .. }) => {
-            targets.iter().map(|target| target.block()).collect()
-        }
-        Some(IrTerminator::Return { .. } | IrTerminator::Unreachable) | None => Vec::new(),
-    }
 }
 
 struct IrBuilder<'program> {
@@ -584,10 +475,6 @@ struct IrBuilder<'program> {
     /// call defines exactly the callee's declared result type — an address
     /// for a borrow of addressed content [OWN-2, TYPE-7].
     function_results: &'program [IrType],
-    /// Every function's compiler-owned suspension summary, indexed the same
-    /// way, so a staged cut that is a user call can be recognized by the
-    /// callee's declared contract rather than by its shape.
-    function_actions: &'program [crate::TargetAction],
     /// For each statement holding exactly one named-function call in call
     /// position — a `let` right-hand side or a `match` scrutinee — the block
     /// the call's definition landed in and the value it defined. The
@@ -609,14 +496,6 @@ struct IrBuilder<'program> {
     /// Which subset of the pure permission judgment this compilation may
     /// actualize.
     overlap: OverlapLowering,
-    /// The one permitted staged loop whose checked identity has reached this
-    /// function's IR. It remains permission-only unless lowering materializes
-    /// either the complete one-slot edge or the bounded-batch driver.
-    completion_pipeline: Option<IrCompletionPipeline>,
-    /// The selected loop's submitted call occurrence. The loop has already
-    /// been selected by [`CheckedLoopId`]; this path is only the existing call
-    /// identity used to map that cut to its IR value.
-    staged_cut: Option<NodePath>,
     /// Where a split's synthesized halves are filed, shared with every builder
     /// this one creates.
     synthesis: &'program SynthesisCell,
@@ -647,7 +526,6 @@ impl<'program> IrBuilder<'program> {
             elements,
             constants,
             function_results,
-            function_actions,
             synthesis,
         } = context;
         let mut builder = Self {
@@ -666,12 +544,9 @@ impl<'program> IrBuilder<'program> {
             result,
             addressed_bindings,
             function_results,
-            function_actions,
             call_results: HashMap::new(),
             permissions,
             overlap,
-            completion_pipeline: None,
-            staged_cut: None,
             synthesis,
             function_name,
         };
@@ -702,7 +577,6 @@ impl<'program> IrBuilder<'program> {
             elements: self.elements,
             constants: self.constants,
             function_results: self.function_results,
-            function_actions: self.function_actions,
             synthesis: self.synthesis,
         }
     }
@@ -719,9 +593,7 @@ impl<'program> IrBuilder<'program> {
         self,
         name: String,
         overlaps: Vec<IrOverlap>,
-        completion_steps: Vec<IrCompletionStep>,
         synthesis: Option<IrSynthesis>,
-        target_action: crate::TargetAction,
     ) -> Result<IrFunction, LoweringFailure> {
         if self.current.is_some() || self.blocks.iter().any(|block| block.terminator.is_none()) {
             return Err(LoweringFailure::InvalidCheckedProgram);
@@ -747,10 +619,7 @@ impl<'program> IrBuilder<'program> {
                 })
                 .collect::<Result<Vec<_>, LoweringFailure>>()?,
             overlaps,
-            completion_pipeline: self.completion_pipeline,
-            completion_steps,
             synthesis,
-            target_action,
         })
     }
 
@@ -760,137 +629,6 @@ impl<'program> IrBuilder<'program> {
         );
         self.values.push(ty);
         Ok(id)
-    }
-
-    /// Connects a permitted [PAR-3] verdict to IR by checked loop identity.
-    ///
-    /// The loop is selected only by `id`. After that selection, `cut` keeps its
-    /// existing role as the identity of the permitted call occurrence; it is
-    /// never used to recognize a loop or a source shape. The descriptor stays
-    /// pending, so this records authority without changing execution.
-    fn note_staged_pipeline(
-        &mut self,
-        id: CheckedLoopId,
-        entry: IrBlockId,
-        window: IrCompletionWindow,
-    ) {
-        let cut = self.unique_staged_cut(id);
-        let Some(cut) = cut else {
-            return;
-        };
-        match self.completion_pipeline.as_ref() {
-            None => {
-                self.completion_pipeline = Some(IrCompletionPipeline::pending(id, entry, window));
-                self.staged_cut = Some(cut);
-            }
-            Some(existing) if existing.source_loop() == id => {}
-            Some(_) => {}
-        }
-    }
-
-    /// Returns the cut only when this function has exactly one permitted
-    /// staged loop and it is `id`.
-    ///
-    /// The IR currently stores one pipeline descriptor per function. Making
-    /// this choice before lowering prevents an earlier loop from being
-    /// transformed and then losing the descriptor when a second permitted
-    /// loop is encountered later in the body.
-    fn unique_staged_cut(&self, id: CheckedLoopId) -> Option<NodePath> {
-        let mut permitted = self
-            .permissions?
-            .staged
-            .iter()
-            .filter(|permission| permission.verdict.is_permitted());
-        let selected = permitted.next()?;
-        if permitted.next().is_some() || selected.id != id {
-            return None;
-        }
-        Some(selected.cut.clone())
-    }
-
-    /// Materializes the first driver topology without yet changing execution.
-    ///
-    /// The selected operation remains an ordinary synchronous `SystemCall` in
-    /// this step. Splitting its result dispatch onto a fresh block therefore
-    /// changes no value, effect, cleanup, or ordering; it establishes and
-    /// records the edge the asynchronous form will later use.
-    fn materialize_staged_driver_plan(&mut self) -> Result<(), LoweringFailure> {
-        let Some(cut) = self.staged_cut.as_ref() else {
-            return Ok(());
-        };
-        let Some((feeder, result)) = self.call_results.get(cut).copied() else {
-            return Ok(());
-        };
-        let Some(block) = self.blocks.get(feeder.index()) else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        };
-        let call_is_last = matches!(
-            block.instructions.last(),
-            Some(IrInstruction::Define {
-                result: defined,
-                operation: IrOperation::SystemCall { target_action, .. },
-                ..
-            }) if *defined == result && target_action.may_suspend()
-        );
-        let Some(IrTerminator::Match {
-            scrutinee, targets, ..
-        }) = block.terminator.as_ref()
-        else {
-            return Ok(());
-        };
-        if !call_is_last || *scrutinee != result {
-            return Ok(());
-        }
-
-        // Each arm block is created for this dispatch and has no other entry.
-        // After the split, that makes the drain dominate every projection of
-        // the delayed result. Decline rather than infer this from numbering.
-        let targets = targets
-            .iter()
-            .map(|target| target.block())
-            .collect::<Vec<_>>();
-        let each_target_is_private = targets.iter().all(|target| {
-            self.blocks
-                .iter()
-                .enumerate()
-                .filter(|(_, candidate)| {
-                    block_successors(candidate)
-                        .iter()
-                        .any(|successor| successor == target)
-                })
-                .map(|(index, _)| index)
-                .eq(std::iter::once(feeder.index()))
-        });
-        if !each_target_is_private {
-            return Ok(());
-        }
-
-        let original = self
-            .blocks
-            .get_mut(feeder.index())
-            .and_then(|block| block.terminator.take())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        let (drain, parameters) = self.new_block(&[])?;
-        if !parameters.is_empty() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        self.blocks
-            .get_mut(feeder.index())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?
-            .terminator = Some(IrTerminator::Jump {
-            target: drain,
-            arguments: Vec::new(),
-            drops: Vec::new(),
-        });
-        self.blocks
-            .get_mut(drain.index())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?
-            .terminator = Some(original);
-        self.completion_pipeline
-            .as_mut()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?
-            .plan_one_slot(feeder, drain, result);
-        Ok(())
     }
 
     fn new_block(
@@ -1033,110 +771,6 @@ impl<'program> IrBuilder<'program> {
         overlaps
     }
 
-    /// Lowers consecutive-call completion schedules after every source
-    /// binding has acquired its final IR value.
-    ///
-    /// Permission records ordinary dependencies for every call in a schedule.
-    /// This stage narrows submission to direct may-suspend system calls. Inline
-    /// and user calls remain ordinary steps so independent writer work can run
-    /// between a submission and the schedule's final join.
-    fn completion_steps(&self) -> Vec<IrCompletionStep> {
-        let Some(permissions) = self.permissions else {
-            return Vec::new();
-        };
-        let mut lowered = Vec::new();
-        let mut start = 0;
-        while start < permissions.completion_steps.len() {
-            let Some(relative_end) = permissions.completion_steps[start..]
-                .iter()
-                .position(|step| !step.has_later_independent_call)
-            else {
-                break;
-            };
-            let end = start + relative_end;
-            let source = &permissions.completion_steps[start..=end];
-            let resolved = source
-                .iter()
-                .map(|step| {
-                    self.call_results
-                        .get(&step.site.call)
-                        .copied()
-                        .map(|(block, value)| (step, block, value))
-                })
-                .collect::<Option<Vec<_>>>();
-            let Some(resolved) = resolved else {
-                start = end + 1;
-                continue;
-            };
-            let Some(home) = resolved.first().map(|(_, block, _)| *block) else {
-                start = end + 1;
-                continue;
-            };
-            if resolved.iter().any(|(_, block, _)| *block != home) {
-                start = end + 1;
-                continue;
-            }
-
-            let submitted = resolved
-                .iter()
-                .filter(|(step, _, value)| {
-                    step.has_later_independent_call && self.direct_may_suspend_system_call(*value)
-                })
-                .map(|(step, _, value)| (&step.site.call, *value))
-                .collect::<HashMap<_, _>>();
-            if submitted.is_empty() {
-                start = end + 1;
-                continue;
-            }
-            for (ordinal, (step, _, value)) in resolved.iter().enumerate() {
-                let wait_for = step
-                    .wait_for
-                    .iter()
-                    .filter_map(|call| submitted.get(call).copied())
-                    .collect();
-                lowered.push(IrCompletionStep::new(
-                    *value,
-                    wait_for,
-                    submitted.contains_key(&step.site.call),
-                    ordinal + 1 == resolved.len(),
-                ));
-            }
-            start = end + 1;
-        }
-
-        // A permitted staged cut whose one-slot or bounded-batch driver was
-        // materialized is itself a complete completion schedule. It may not
-        // occur in the ordinary consecutive-call table: that table requires a
-        // later independent call, while this driver deliberately submits and
-        // retires the cut before its result dispatch.  Preserve any ordinary
-        // dependency set when the call is already present; otherwise add the
-        // single finite step.  The `driver_ready` gate is what prevents a
-        // permission-only descriptor from changing emitted execution.
-        //
-        // The cut may be a may-suspend user call rather than a system
-        // operation. That is the same schedule with a lane frame in the slot
-        // instead of a completion record, so it is the same step: what the
-        // backend puts in the slot is the backend's choice over one accepted
-        // program, exactly as the choice between a typed adapter and a
-        // qualified wrapper is.
-        if self
-            .completion_pipeline
-            .as_ref()
-            .is_some_and(IrCompletionPipeline::driver_ready)
-            && let Some(cut) = self.staged_cut.as_ref()
-            && let Some((_, result)) = self.call_results.get(cut).copied()
-            && self.may_suspend_staged_call(result)
-        {
-            if let Some(step) = lowered.iter_mut().find(|step| step.call == result) {
-                step.submit = true;
-                step.finish = true;
-            } else {
-                lowered.push(IrCompletionStep::new(result, Vec::new(), true, true));
-            }
-        }
-        lowered
-    }
-
     /// Records where a named-function call in call position landed, whatever
     /// written position it was in.
     ///
@@ -1151,9 +785,7 @@ impl<'program> IrBuilder<'program> {
         expression: &CheckedExpression,
         value: IrValueId,
     ) -> Result<(), LoweringFailure> {
-        let (CheckedExpression::UserCall { call, .. } | CheckedExpression::SystemCall { call, .. }) =
-            expression
-        else {
+        let CheckedExpression::UserCall { call, .. } = expression else {
             return Ok(());
         };
         // The block the call's own definition landed in, which is the block
@@ -1161,56 +793,6 @@ impl<'program> IrBuilder<'program> {
         let block = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
         self.call_results.insert(call.clone(), (block, value));
         Ok(())
-    }
-
-    fn direct_may_suspend_system_call(&self, value: IrValueId) -> bool {
-        self.blocks.iter().any(|block| {
-            block.instructions.iter().any(|instruction| {
-                matches!(
-                    instruction,
-                    IrInstruction::Define {
-                        result,
-                        operation: IrOperation::SystemCall { target_action, .. },
-                        ..
-                    } if *result == value && target_action.may_suspend()
-                )
-            })
-        })
-    }
-
-    /// Whether this value is a may-suspend call of either kind.
-    ///
-    /// A staged cut is a call the checker judged may suspend, and that is a
-    /// property of the operation for a system call and of the callee's
-    /// declared contract for a user call. Both reach the same schedule: the
-    /// system call is submitted to the completion runtime, the user call is
-    /// handed to a compute lane, and the pipeline holds one address per
-    /// in-flight iteration either way.
-    fn may_suspend_staged_call(&self, value: IrValueId) -> bool {
-        self.blocks.iter().any(|block| {
-            block
-                .instructions
-                .iter()
-                .any(|instruction| match instruction {
-                    IrInstruction::Define {
-                        result,
-                        operation: IrOperation::SystemCall { target_action, .. },
-                        ..
-                    } => *result == value && target_action.may_suspend(),
-                    IrInstruction::Define {
-                        result,
-                        operation: IrOperation::Call { function, .. },
-                        ..
-                    } => {
-                        *result == value
-                            && self
-                                .function_actions
-                                .get(*function as usize)
-                                .is_some_and(|action| action.may_suspend())
-                    }
-                    _ => false,
-                })
-        })
     }
 
     fn lower_statements(
@@ -1341,15 +923,12 @@ impl<'program> IrBuilder<'program> {
                     self.append_drops(lowered)?;
                 }
                 CheckedStatement::DropExpression {
-                    value: expression,
-                    release,
-                    ..
+                    value: expression, ..
                 } => {
                     let value = self.expression(expression)?;
                     let drop = IrDrop {
                         subject: IrDropSubject::Value(value),
                         ty: self.value_type(value)?,
-                        release: *release,
                     };
                     self.append_drops(vec![drop])?;
                 }
@@ -1505,16 +1084,14 @@ impl<'program> IrBuilder<'program> {
             .iter()
             .flat_map(|arm| &arm.binders)
             .any(|binder| binder.mode != CheckedMode::Own);
-        let (scrutinee, borrowed_address, one_slot_driver) = if borrowed_payloads {
+        let (scrutinee, borrowed_address) = if borrowed_payloads {
             let address = self.lower_borrowed_place_address(scrutinee_expression)?;
             self.note_call_result(scrutinee_expression, address)?;
-            let driver = self.begin_staged_match_drain(address)?;
-            (self.load_storage_value(address)?, Some(address), driver)
+            (self.load_storage_value(address)?, Some(address))
         } else {
             let value = self.expression(scrutinee_expression)?;
             self.note_call_result(scrutinee_expression, value)?;
-            let driver = self.begin_staged_match_drain(value)?;
-            (value, None, driver)
+            (value, None)
         };
         self.lower_match_from_value(
             scrutinee,
@@ -1525,78 +1102,9 @@ impl<'program> IrBuilder<'program> {
             value_binding,
             outer_give_target,
         )?;
-        if let Some((feeder, drain)) = one_slot_driver {
-            self.completion_pipeline
-                .as_mut()
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                .plan_one_slot(feeder, drain, scrutinee);
-        }
         Ok(())
     }
 
-    /// Places the one-slot drain immediately after its feeder in block order.
-    ///
-    /// The selected call may be the match scrutinee itself or a value bound
-    /// immediately before the match. In either spelling the checked cut maps
-    /// to the same SSA result and feeder. Creating the drain before the match
-    /// creates its arm blocks makes the emitter's single forward walk mirror
-    /// the generated CFG: submit in `feeder`, cross its only edge, join and
-    /// dispatch in `drain`, then emit the arms. No unrelated block has to
-    /// carry compiler emission state merely because it was numbered between
-    /// the two cut points.
-    fn begin_staged_match_drain(
-        &mut self,
-        scrutinee: IrValueId,
-    ) -> Result<Option<(IrBlockId, IrBlockId)>, LoweringFailure> {
-        let Some(cut) = self.staged_cut.as_ref() else {
-            return Ok(None);
-        };
-        let Some((feeder, selected)) = self.call_results.get(cut).copied() else {
-            return Ok(None);
-        };
-        if selected != scrutinee
-            || self.current != Some(feeder)
-            || self
-                .completion_pipeline
-                .as_ref()
-                .is_none_or(IrCompletionPipeline::driver_ready)
-        {
-            return Ok(None);
-        }
-        let call_is_last = matches!(
-            self.blocks
-                .get(feeder.index())
-                .and_then(|block| block.instructions.last()),
-            Some(IrInstruction::Define {
-                result,
-                operation: IrOperation::SystemCall { target_action, .. },
-                ..
-            }) if *result == scrutinee && target_action.may_suspend()
-        );
-        if !call_is_last {
-            return Ok(None);
-        }
-
-        let (drain, parameters) = self.new_block(&[])?;
-        if !parameters.is_empty() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        self.terminate(IrTerminator::Jump {
-            target: drain,
-            arguments: Vec::new(),
-            drops: Vec::new(),
-        })?;
-        self.current = Some(drain);
-        Ok(Some((feeder, drain)))
-    }
-
-    /// Lowers the dispatch and arms after another control-flow owner has
-    /// arranged where the scrutinee becomes available.
-    ///
-    /// Ordinary matches define the value immediately before this call. A
-    /// bounded completion batch defines it in its drain block after joining
-    /// the slot named by that block, then uses this same arm lowering. No
-    /// source rule or ownership decision is repeated here.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn lower_match_from_value(
         &mut self,
@@ -1819,52 +1327,6 @@ impl<'program> IrBuilder<'program> {
                 });
                 Ok(result)
             }
-            // A system operation is identified by its target-independent
-            // semantic identity [QUAL-1]; no source spelling reaches the IR.
-            CheckedExpression::SystemCall {
-                operation,
-                target_action,
-                arguments,
-                result,
-                ..
-            } => {
-                let arguments = arguments
-                    .iter()
-                    .map(|argument| {
-                        let value = self.expression(argument)?;
-                        // Source borrows address their owner's storage, while
-                        // the qualified system ABI receives the resource value.
-                        // Loading here also preserves the ordinary argument
-                        // evaluation point before a possibly suspended call.
-                        self.load_storage_value(value)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                self.define(
-                    lower_type(self.erasure, *result)?,
-                    IrOperation::SystemCall {
-                        operation: IrSystemOperation(*operation),
-                        target_action: *target_action,
-                        arguments,
-                    },
-                )
-            }
-            // Opaque content does not make the owning slot immutable: SET-2
-            // may replace the resource through an exclusive borrow. Retain
-            // that slot's address across calls, returns and reborrows.
-            CheckedExpression::BorrowSystemResource {
-                binding,
-                fields,
-                nominal,
-                ..
-            } => self.lower_place_address(&crate::semantic::CheckedContainerRoot {
-                root: crate::semantic::CheckedPlaceRoot::Binding(*binding),
-                path: fields
-                    .iter()
-                    .copied()
-                    .map(crate::semantic::CheckedPlaceStep::Field)
-                    .collect(),
-                ty: CheckedType::Nominal(*nominal),
-            }),
             CheckedExpression::IntegerOperation {
                 operation,
                 operand_type,
@@ -2487,7 +1949,7 @@ impl<'program> IrBuilder<'program> {
                 | IrNominalKind::Box { .. }
                 | IrNominalKind::Arena { .. }
                 | IrNominalKind::ArenaStorage
-                | IrNominalKind::SystemResource(_) => {
+                | IrNominalKind::Opaque => {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
             };
@@ -2534,7 +1996,7 @@ impl<'program> IrBuilder<'program> {
             | IrNominalKind::Box { .. }
             | IrNominalKind::Arena { .. }
             | IrNominalKind::ArenaStorage
-            | IrNominalKind::SystemResource(_) => {
+            | IrNominalKind::Opaque => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };
@@ -2580,12 +2042,7 @@ impl<'program> IrBuilder<'program> {
         root: IrValueId,
         drop: &CheckedProjectedDrop,
     ) -> Result<IrDrop, LoweringFailure> {
-        self.lower_drop_subject(
-            root,
-            &drop.fields,
-            lower_type(self.erasure, drop.ty)?,
-            drop.release,
-        )
+        self.lower_drop_subject(root, &drop.fields, lower_type(self.erasure, drop.ty)?)
     }
 
     fn lower_drop_subject(
@@ -2593,7 +2050,6 @@ impl<'program> IrBuilder<'program> {
         root: IrValueId,
         fields: &[u32],
         ty: IrType,
-        release: SystemRelease,
     ) -> Result<IrDrop, LoweringFailure> {
         // [PROV-6] the empty path is the value's own release-graph node.
         // A checked release of an addressed binding needs its place, not an
@@ -2620,11 +2076,7 @@ impl<'program> IrBuilder<'program> {
         if actual != ty {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        Ok(IrDrop {
-            subject,
-            ty,
-            release,
-        })
+        Ok(IrDrop { subject, ty })
     }
 
     fn value_type(&self, value: IrValueId) -> Result<IrType, LoweringFailure> {
@@ -2665,7 +2117,7 @@ impl<'program> IrBuilder<'program> {
             // The checked program already fixed what this release performs
             // [STOR-3]; lowering preserves the record and the edge's reverse
             // declaration order rather than rederiving either.
-            lowered.push(self.lower_drop_subject(root, &drop.fields, ty, drop.release)?);
+            lowered.push(self.lower_drop_subject(root, &drop.fields, ty)?);
         }
         Ok(lowered)
     }

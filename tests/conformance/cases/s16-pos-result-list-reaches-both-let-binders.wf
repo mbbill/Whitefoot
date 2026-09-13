@@ -14,7 +14,7 @@ fn needs_eight(bound: own u64) -> ok: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "S16, CALL-4: a two-result contract reaches both binders of a destructuring let, and each binder discharges a later requirement from its own ordinal's relation.";
   let run = fixed_vector::<u8, 8>();
   region {

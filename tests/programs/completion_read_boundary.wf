@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
+fn main['heap](command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(args, cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
   doc "Reads two argument-named files through independent positioned operations and publishes their first bytes in argument order.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {

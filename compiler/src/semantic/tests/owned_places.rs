@@ -14,7 +14,7 @@ fn identity['r](value: &'r Row) -> result: &'r Row pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 4>();
   let first = Row(left: 3_u64, right: 4_u64);
   region {
@@ -59,7 +59,7 @@ fn fresh['s](owner: own Box<'s, Payload>, store: &uniq Heap<'s>) -> result: own 
 fn box_read_out(body: &str) -> String {
     let body = body.trim().replace("}\nfn", "}\n\nfn");
     format!(
-        "{}\n\n{body}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n",
+        "{}\n\n{body}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n",
         BOX_READ_OUT.trim()
     )
 }
@@ -346,7 +346,7 @@ struct Table {
   rows: FixedVector<Row, 1>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 1>();
   let item = Row(left: 3_u64, right: 4_u64);
   region {
@@ -394,7 +394,7 @@ fn scalar_element_field_selection_keeps_its_type_error_on_legacy_storage() {
         "  set values[0_u64].missing = 1_u8;\n",
     ] {
         let source = format!(
-            "command fn main() -> status: own ExitStatus pure {{\n  let values = buffer_new(1_u64, 0_u8);\n{body}  return exit_status(code: 0_u8);\n}}\n"
+            "fn main() -> status: own ExitStatus pure {{\n  let values = buffer_new(1_u64, 0_u8);\n{body}  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Type5, |kind| {
             matches!(kind, SemanticIssueKind::TypeMismatch { .. })
@@ -453,8 +453,8 @@ fn returned_scalar_borrow_writes_preserve_the_enclosing_run_measure() {
 "#,
     )
     .replace(
-        "command fn main()",
-        "fn exclusive['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {\n  return &uniq 'r deref(value);\n}\n\ncommand fn main()",
+        "fn main()",
+        "fn exclusive['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {\n  return &uniq 'r deref(value);\n}\n\nfn main()",
     );
     accepts(&source);
     rejects(
@@ -477,7 +477,7 @@ struct Entry {
   other: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Entry, 2>();
   let payload = Payload(value: 3_u64);
   let stored_entry = Entry(payload: move payload, other: 5_u64);
@@ -523,7 +523,7 @@ fn update(value: &uniq u64) -> result: own Payload writes(value) {
   return move replacement;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Payload, 1>();
   let payload = Payload(value: 3_u64);
   region {
@@ -541,7 +541,7 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-const INLINE_VIEW: &str = r#"command fn main() -> status: own ExitStatus pure {
+const INLINE_VIEW: &str = r#"fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq empty, value: 7_u8);
@@ -566,7 +566,7 @@ fn inspect(value: &u64) -> result: own u64 reads(value) {
   return deref(value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = 3_u64;
   let left = 0_u64;
   let right = 0_u64;
@@ -600,8 +600,8 @@ fn argument_loans_cover_later_rhs_accesses_and_the_commit() {
 #[test]
 fn owned_match_headers_end_their_non_escaping_temporary_loans() {
     let source = TEMPORARY_SCALARS.replace(
-        "command fn main()",
-        "fn decide(value: &uniq u64) -> result: own Option<u64> pure {\n  return Some<u64>(value: 7_u64);\n}\n\ncommand fn main()",
+        "fn main()",
+        "fn decide(value: &uniq u64) -> result: own Option<u64> pure {\n  return Some<u64>(value: 7_u64);\n}\n\nfn main()",
     );
     let arms = "      None() => {\n      }\n      Some(value: chosen) => {\n        set value = chosen;\n      }\n    }";
     accepts(&source.replace(
@@ -653,7 +653,7 @@ fn sink(value: &uniq Pair) -> result: own u64 pure {
   return 11_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 3_u64, right: 5_u64);
   let left = 0_u64;
   let right = 0_u64;
@@ -725,7 +725,7 @@ fn view_descriptor_loans_cover_element_reads_measures_and_commits() {
   return 7_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
   region {
     place_back(vector: &uniq empty, value: 3_u8);
@@ -784,7 +784,7 @@ fn exclusive_inline_field_view_keeps_sibling_storage_independent() {
   other: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq empty, value: 3_u8);
@@ -834,7 +834,7 @@ fn read_if_valid(index: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   read_if_valid(index: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -865,7 +865,7 @@ const BORROWED_BUFFER_REPLACEMENT: &str = r#"fn renew(values: &uniq buffer<u64>,
   return 11_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = buffer_new(1_u64, 3_u64);
   let second = buffer_new(1_u64, 7_u64);
   region {
@@ -905,7 +905,7 @@ fn borrowed_buffer_descriptor_replacement_is_an_explicit_capability_stop() {
         |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
     );
     accepts(
-        r#"command fn main() -> status: own ExitStatus pure {
+        r#"fn main() -> status: own ExitStatus pure {
   let first = buffer_new(1_u64, 3_u64);
   let second = buffer_new(1_u64, 7_u64);
   let previous = replace first = move second;
@@ -927,7 +927,7 @@ fn renew(holder: &uniq Holder, replacement: own buffer<u64>) -> result: own unit
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

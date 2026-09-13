@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
   let name = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq name, value: 105_u8);
@@ -12,24 +12,28 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
   region {
     place_back(vector: &uniq name, value: 109_u8);
   }
-  region 'c {
+  region {
     let component = slice_of(&name);
     region {
-      match reserve_handle(factory: &uniq 'c files) {
-        Ok(value: permit) => {
-          match open_file(permit: move permit, root: &'c cwd, name: &component, start: 0_u64, end: 4_u64) {
-            FileOpened(value: file) => {
-              return exit_status(code: 0_u8);
-            }
-            FileOpenFailed(error: problem, permit: refused) => {
-              return exit_status(code: 1_u8);
-            }
-          }
+      match open_file(factory: &uniq deref(files), root: cwd, name: &component, start: 0_u64, end: 4_u64) {
+        FileOpened(value: file) => {
+          close_read(factory: &uniq deref(files), file: move file);
+          return exit_status(code: 0_u8);
         }
-        Err(error: spent) => {
-          return exit_status(code: 2_u8);
+        FileOpenFailed(error: problem) => {
+          return exit_status(code: 1_u8);
         }
       }
     }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
 }

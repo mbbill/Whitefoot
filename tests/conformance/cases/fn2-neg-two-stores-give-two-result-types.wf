@@ -17,7 +17,7 @@ fn hold['s: affine](store: &uniq Arena<'s, 4096, 16>) -> made: own Option<Holder
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "FN-2: a call's region arguments are substituted into every position of the callee's signature, results included, so two calls of one declaration at two extents hand back two types. The set below would put a Holder<'b> into a binding of Holder<'a>, whose run lives in an extent that is not the binding's, and is the ordinary TYPE-5 mismatch.";
   region 'a {
     let first = arena_frame::<4096, 16, 'a>();

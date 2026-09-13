@@ -47,7 +47,7 @@ fn success_matches(value: own FixedVector<u8, 3>) -> result: own Bool reads(valu
   return band(first_expected, middle_expected);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let success_input = fixed_vector::<u8, 3>();
   region {
     place_back(vector: &uniq success_input, value: 1_u8);

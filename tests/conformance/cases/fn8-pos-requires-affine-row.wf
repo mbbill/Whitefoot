@@ -8,7 +8,7 @@ fn scaled(out: &uniq MutSlice<u8>, src: own Slice<u8>) -> written: own u64 pure 
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The destination and the source cross as views, which is what [BLK-4] admits of a run, and a view's own measure row is what the clause reads [VIEW-1, MSR-1]. A run carries its length as a descriptor word rather than as a fact of its type, so the caller reads both lengths back and branches on them before the call; the view formations publish those same lengths onto the two views, and the affine clause is discharged from them.";
   region 'a {
     let workspace = arena_frame::<16, 1, 'a>();

@@ -38,7 +38,7 @@ fn a_verified_requirement_discharges_the_literal_site() {
   return y;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -95,7 +95,7 @@ fn a_guarded_two_value_subtraction_uses_the_l0_affine_bridge() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -122,7 +122,7 @@ command fn main() -> status: own ExitStatus pure {
   return difference;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -147,7 +147,7 @@ command fn main() -> status: own ExitStatus pure {
 /// index obligation uses.
 #[test]
 fn the_counted_binder_increment_discharges_by_transitive_closure() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let n = 10_u64;
   for @steps (i in 0_u64..n) {
     let next = i + 1_u64;
@@ -182,7 +182,7 @@ fn an_unbounded_literal_site_rejects_citing_op2_with_the_folded_residual() {
   return y;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -225,7 +225,7 @@ fn a_dominating_branch_discharges_the_site() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -249,7 +249,7 @@ command fn main() -> status: own ExitStatus pure {
 /// pure, and the checked program keeps its wrap identity.
 #[test]
 fn a_wrap_site_attaches_no_obligation() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let x = 6_u64;
   let y = x +wrap 1_u64;
   return exit_status(code: 0_u8);
@@ -275,7 +275,7 @@ fn a_wrap_site_attaches_no_obligation() {
 /// upper interval and still require proof at the exact site.
 #[test]
 fn exact_local_values_discharge_a_two_variable_sum_but_parameters_remain_bounded() {
-    let exact_locals = br#"command fn main() -> status: own ExitStatus pure {
+    let exact_locals = br#"fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = a + b;
@@ -301,7 +301,7 @@ fn exact_local_values_discharge_a_two_variable_sum_but_parameters_remain_bounded
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -317,7 +317,7 @@ command fn main() -> status: own ExitStatus pure {
 /// discharges, while an inevitable overflow is a compile-time rejection.
 #[test]
 fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() {
-    let in_range = br#"command fn main() -> status: own ExitStatus pure {
+    let in_range = br#"fn main() -> status: own ExitStatus pure {
   let x = 254_u8 + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -336,7 +336,7 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
         assert_eq!(overflow.len(), 1, "one exact site, one obligation");
         assert!(overflow[0].discharged, "the ground obligation is true");
     });
-    let overflowing = br#"command fn main() -> status: own ExitStatus pure {
+    let overflowing = br#"fn main() -> status: own ExitStatus pure {
   let x = 255_u8 + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -365,7 +365,7 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
 fn a_subscripted_class_operand_is_underivable_and_rejects() {
     let source = br#"const a: FixedVector<u8, 2> =[7_u8, 7_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let y = a[0_u64] + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -388,7 +388,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_owning_box_index_renders_only_its_written_dereference() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 2>(7_u8);
   let boxed = box_new(move values);
   let result = deref(boxed)[0_u64] + 1_u8;
@@ -417,7 +417,7 @@ fn a_borrowed_array_index_preserves_its_holder_dereference() {
   return deref(values)[0_u64] + 1_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -448,7 +448,7 @@ fn effect_mismatch_precedes_static_integer_domain_rejection() {
   return y;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -468,7 +468,7 @@ command fn main() -> status: own ExitStatus pure {
   return y;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -486,7 +486,7 @@ command fn main() -> status: own ExitStatus pure {
             },
         );
     });
-    let ground = br#"command fn main() -> status: own ExitStatus pure {
+    let ground = br#"fn main() -> status: own ExitStatus pure {
   let x = 255_u8 + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -518,7 +518,7 @@ fn a_defined_guard_reuses_the_complete_identity_of_an_exact_let_operand() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -694,7 +694,7 @@ fn a_body_domain_failure_precedes_the_backedge_it_breaks() {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = accumulate(step: 1_u32);
   return exit_status(code: 0_u8);
 }

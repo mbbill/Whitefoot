@@ -34,7 +34,7 @@ fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updat
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {

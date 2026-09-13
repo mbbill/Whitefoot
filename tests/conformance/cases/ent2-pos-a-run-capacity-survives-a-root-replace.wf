@@ -16,7 +16,7 @@ fn filled_four(value: own u32) -> result: own FixedVector<u32, 4> pure contract 
   return move built;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[ENT-2] the implicit `cap_of(P) = n` of a `FixedVector<T, n>` place holds at every program point. An element read feeding a branch condition puts a join on the path, and the SET-2 replace of the run's root binding then kills every relation supported by that place [ENT-5]. The capacity equality is a function of the place's type rather than a fact that had to survive, so it still reads back on both sides of the exchange [ENT-4]; the honest difference from the retiring array is that `len_of` is a descriptor word rather than a type constant, so the length does not survive the replace and the subscripts stand before it.";
   let samples = filled_four(value: 1_u32);
   let before = samples[0_u64];

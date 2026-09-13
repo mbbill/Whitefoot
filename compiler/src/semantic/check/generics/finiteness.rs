@@ -49,7 +49,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut templates = Vec::new();
         for node in items {
             let role = match self.tree.production(*node)? {
-                Production::FnDecl => DeclarationRole::Function,
+                Production::FnDecl | Production::FnSig => DeclarationRole::Function,
                 Production::StructDecl => DeclarationRole::Struct,
                 Production::EnumDecl => DeclarationRole::Enum,
                 _ => continue,

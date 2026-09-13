@@ -478,7 +478,7 @@ fn behavior_contract['s](store: &uniq Heap<'s>, variant: own u64) -> code: own u
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   for (variant in 0_u64..3_u64) {
     let code = behavior_contract(store: &uniq heap, variant: variant);
     if code != 0_u8 {

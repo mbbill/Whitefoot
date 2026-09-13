@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "SET-1, OP-4: the subscript of an element-position store is judged at the target place exactly as in read position, so an offset the program has not bounded against len_of is refused.";
   let empty = fixed_vector::<u8, 4>();
   region {

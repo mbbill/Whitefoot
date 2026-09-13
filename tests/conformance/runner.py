@@ -34,10 +34,10 @@ Manifest line (JSON):
 toolchain-readiness axis. An unimplemented compiler capability is a `status`
 fact and never rewrites `expect`.
 
-The `unsupported` expectation is for the stops the specification itself fixes
-as non-rejections citing no language rule — target qualification failure and
-pre-entry startup refusal ([QUAL-1], [QUAL-2], [PROG-3]). It is not a place to
-record that this compiler has not implemented something yet.
+The `unsupported` outcome belongs only to build/link or invocation failure, never
+to source-language rejection. No target qualification or host-specific acceptance
+class exists. An unimplemented compiler capability remains a toolchain readiness
+fact and cannot replace an ordinary source verdict.
 
 ARRANGE describes the invocation a `run` case needs; a case that is
 never executed must not carry one. Every byte string is lowercase hex so the
@@ -51,10 +51,9 @@ readably:
   FIXTURE = {"path":"<hex>", "bytes":"<hex>"} | {"path":"<hex>", "directory":true}
 
 `argv` is the COMPLETE native argument vector, position 0 included, exactly as
-the language's own argument value delivers it: `argv[i]` is what the program
+the ordinary Args library value delivers it: `argv[i]` is what the program
 reads at position i, and the vector's length is the count the program reads.
-This is the only lossless reading. `Args` carries the complete native vector
-[HOST-1, SYS-9], so a schema that listed only the arguments after the invoked
+This is the only lossless reading. `Args` carries the complete native vector in the selected library API, so a schema that listed only the arguments after the invoked
 name would leave the vector's first element — an element a program can count
 and read — unstated by a case that purports to fix its invocation. Position 0
 is therefore a case's own datum rather than the harness's incidental choice of

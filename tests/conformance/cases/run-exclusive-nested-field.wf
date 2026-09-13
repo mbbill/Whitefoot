@@ -13,7 +13,7 @@ fn push(pair: &uniq Pair, value: own u64) -> result: own unit reads(pair.changed
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let changed = fixed_vector::<u64, 4>();
   let untouched = fixed_vector::<u64, 4>();
   let pair = Pair(changed: move changed, untouched: move untouched);

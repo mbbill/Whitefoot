@@ -76,7 +76,7 @@ fn depth(chain: &box<Chain>) -> result: own u64 reads(chain) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let end = End();
   let bottom = box_new(move end);
   let one = More(next: move bottom);
@@ -184,7 +184,7 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {{
   return fadd.strict(a, b);
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let total = spine(depth: {depth}_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
   let low = iand(bits, 1_u64);
@@ -793,7 +793,7 @@ fn both(n: own u64) -> result: own u64 pure {
   return a +wrap c;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let r = both(n: 5_u64);
   let ok = r > 0_u64;
   if ok {
@@ -850,7 +850,7 @@ const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 pure
   return element;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let count = 0_u64;
   region {
     set count = args_count(args: &args);
@@ -890,7 +890,7 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure 
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = shapes(n: 4_u64);
   match cvt::<u64, u8>(total) {
     Ok(value: byte) => {
@@ -1032,7 +1032,7 @@ fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
   }
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let count = 0_u64;
   region {
     set count = args_count(args: &args);
@@ -1283,7 +1283,7 @@ fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tr
   return box_new(move branch);
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let seed = boxed_leaf();
   let held = Holder(node: move seed);
   for @grow (i in 0_u64..{depth}_u64) {{
@@ -1333,7 +1333,7 @@ fn nest(inner: own Chain) -> result: own Chain pure {{
   return Cons(kids: move held);
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let holder = buffer_vacant::<Chain>(1_u64);
   let seed = Nil();
   let seeded = Some<Chain>(value: move seed);
@@ -1372,7 +1372,7 @@ command fn main() -> status: own ExitStatus pure {{
 
 /// A value whose ownership graph is a chain rather than a cycle: deep in
 /// nothing, and reached by the same emitter.
-const SHALLOW_OWNERSHIP: &[u8] = br#"command fn main() -> status: own ExitStatus pure {
+const SHALLOW_OWNERSHIP: &[u8] = br#"fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<box<u64>>(2_u64);
   let boxed = box_new(7_u64);
   let wrapped = Some<box<u64>>(value: move boxed);
@@ -1582,7 +1582,7 @@ const BUFFER_CYCLE: &[u8] = br#"enum Chain {
   Cons(kids: box<buffer<Option<Chain>>>);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let inner = buffer_vacant::<Chain>(2_u64);
   let b = box_new(move inner);
   let node = Cons(kids: move b);
@@ -1651,7 +1651,7 @@ fn leafy() -> result: own Chain pure {
   return Cons(kids: move held);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<Chain>(4_u64);
   let child0 = leafy();
   let first = Some<Chain>(value: move child0);

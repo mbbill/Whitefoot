@@ -59,7 +59,7 @@ fn dispositions(proof: &FunctionPostconditionProof) -> Vec<PostconditionDisposit
 }
 
 const COMMAND_MAIN: &str =
-    "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn command_entry_smoke() {
@@ -118,7 +118,7 @@ fn a_computed_constant_offset_is_not_an_fn9_relation_operand() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -139,7 +139,7 @@ fn a_true_computed_constant_offset_is_still_outside_the_fn9_relation_form() {
   return next;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -168,7 +168,7 @@ fn select(index: own u64) -> result: own u8 pure contract {
   return values[selected];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -203,7 +203,7 @@ fn caller(table: own FixedVector<u8, 8>) -> result: own u8 reads(table) contract
   return lookup[value];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -247,7 +247,7 @@ fn caller(value: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -441,7 +441,7 @@ fn a_checked_plain_postcondition_is_proved_at_its_selected_exit() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -462,7 +462,7 @@ fn entry_requirements_prove_postconditions_in_the_originating_context() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -484,7 +484,7 @@ fn entry_image_writes_are_retained_and_prevent_false_discharge() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -520,7 +520,7 @@ fn plain(out: &uniq i32) -> result: own i32 reads(out), writes(out) {
   return before;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -550,6 +550,8 @@ command fn main() -> status: own ExitStatus pure {
 
         let (call, carrier) = transfer
             .body
+            .as_deref()
+            .expect("WF body")
             .iter()
             .find_map(|statement| {
                 let call = match statement {
@@ -612,7 +614,7 @@ fn an_ordinary_loop_uses_the_exact_first_invalidation_event_without_a_snapshot()
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -641,6 +643,8 @@ command fn main() -> status: own ExitStatus pure {
         );
         let set = function
             .body
+            .as_deref()
+            .expect("WF body")
             .iter()
             .find_map(|statement| match statement {
                 CheckedStatement::Loop { body, .. } => body.iter().find_map(|statement| {
@@ -690,7 +694,7 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -730,7 +734,7 @@ fn measure_entry_datums_survive_element_writes_and_root_replacement() {
   return len_of(values);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -760,7 +764,7 @@ fn replaced(values: own FixedVector<u8, 2>) -> result: own u64 reads(values) con
   return size;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -786,7 +790,7 @@ command fn main() -> status: own ExitStatus pure {
   return count;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -815,7 +819,7 @@ fn selected_exits_aggregate_only_when_every_exit_in_the_view_discharges() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -846,7 +850,7 @@ fn caller(value: own i32) -> result: own i32 pure contract {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -865,7 +869,7 @@ fn caller(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -905,7 +909,7 @@ fn delivered(value: own i32) -> result: own i32 pure {
   return selected;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -931,7 +935,7 @@ fn caller(pair: &Pair) -> result: own i32 reads(pair.value) contract {
   return observed;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -962,7 +966,7 @@ fn caller(pair: own Pair) -> result: own i32 reads(pair.kept), writes(pair.chang
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1038,7 +1042,7 @@ fn caller(heap: own Heap) -> result: own i32 reads(heap), writes(heap), allocate
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1108,7 +1112,7 @@ fn caller(heap: own Heap) -> result: own unit reads(heap), writes(heap), allocat
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1181,7 +1185,7 @@ fn caller() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1232,7 +1236,7 @@ fn caller(heap: own Heap) -> result: own unit reads(heap), writes(heap), allocat
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1279,7 +1283,7 @@ fn caller(choose: own Bool, heap: own Heap) -> result: own unit reads(heap), wri
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1306,7 +1310,7 @@ fn caller(slot: own i32, replacement: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1366,7 +1370,7 @@ fn distinct_receiver(slot: own i32, other: own i32, replacement: own i32) -> res
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1427,7 +1431,7 @@ fn caller(outer: own i32, replacement: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1525,7 +1529,7 @@ fn computed(outer: own i32, replacement: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1570,7 +1574,7 @@ fn a_checked_ok_postcondition_selects_its_direct_payload() {
   return Ok<i32, Overflow>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1586,7 +1590,7 @@ fn an_ok_selector_rejects_an_empty_selected_exit_set() {
   return Err<i32, Overflow>(error: error);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1608,7 +1612,7 @@ fn an_ok_selector_rejects_a_stored_whole_result_return() {
   return move outcome;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1626,7 +1630,7 @@ fn length() -> result: own u64 pure contract {
   return 1_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1641,7 +1645,7 @@ fn projected_result_is_rejected_at_the_complete_final_relation() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1656,7 +1660,7 @@ fn a_nonbare_result_use_in_an_ensures_expression_is_still_rejected() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1692,7 +1696,7 @@ fn field_length(values: own Values) -> result: own u64 reads(values.items) contr
   return len_of(values.items);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1712,7 +1716,7 @@ fn measured_call_return_source(generic: bool, bind_result: bool, expected: u64) 
         format!("return build{build_arguments}(value: move value);")
     };
     format!(
-        "fn build{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  let vacant = fixed_vector::<{element}, 1>();\n  region {{\n    place_back(vector: &uniq vacant, value: move value);\n  }}\n  return move vacant;\n}}\n\nfn singleton{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == {expected}_u64;\n}} {{\n  {returned}\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  let value = box_new(17_u64);\n  let items = singleton{arguments}(value: move value);\n  return exit_status(code: 0_u8);\n}}\n"
+        "fn build{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  let vacant = fixed_vector::<{element}, 1>();\n  region {{\n    place_back(vector: &uniq vacant, value: move value);\n  }}\n  return move vacant;\n}}\n\nfn singleton{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == {expected}_u64;\n}} {{\n  {returned}\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  let value = box_new(17_u64);\n  let items = singleton{arguments}(value: move value);\n  return exit_status(code: 0_u8);\n}}\n"
     )
 }
 
@@ -1872,7 +1876,7 @@ fn from_shared_alias(owner: &Pair) -> result: own i32 reads(owner.value) contrac
   return deref(alias).value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1893,7 +1897,7 @@ fn a_concrete_const_substitution_is_retained_with_a_selected_length() {
   return len_of(values);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u8, 1>();
   let one = count::<1>(values: move values);
   return exit_status(code: 0_u8);
@@ -1918,7 +1922,7 @@ actual Made : Maker {
   make = make;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1936,7 +1940,7 @@ fn identity(value: own i32) -> result: own i32 pure contract {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1963,7 +1967,7 @@ fn identity(value: own i32) -> result: own i32 pure contract {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1980,7 +1984,7 @@ fn invalid_selector_precedes_an_unresolved_name_in_its_entry() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2005,7 +2009,7 @@ fn second() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2024,7 +2028,7 @@ fn admitted_selector_forwards_the_original_entry_lookup_issue() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2053,7 +2057,7 @@ fn entry_inventory_precedes_a_poisoned_body_constructor() {
   return Missing();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2077,7 +2081,7 @@ fn unused_generic_entry_issue_precedes_its_body_semantics() {
   return fixed_vector::<u8, 1>();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2101,7 +2105,7 @@ fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
   return Ok<i32, Overflow>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2131,7 +2135,7 @@ fn concrete_generic_instances_do_not_reuse_symbolic_selector_class() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let good = identity::<i32>(value: 1_i32);
   let flag = True();
   let bad = identity::<Bool>(value: flag);
@@ -2196,7 +2200,7 @@ fn unused_numeric_bounds_preserve_selector_class_information() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2216,7 +2220,7 @@ fn unavailable_generic_type_argument_does_not_invent_a_selector_instance() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let unavailable = generic::<Missing>(value: unit);
   return exit_status(code: 0_u8);
 }
@@ -2241,7 +2245,7 @@ fn unavailable_const_argument_does_not_invent_a_selector_instance() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let unavailable = generic::<unit, missing>(value: unit);
   return exit_status(code: 0_u8);
 }
@@ -2266,7 +2270,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2289,7 +2293,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2315,7 +2319,7 @@ fn unavailable<T: affine>(value: own CopyOnly<T>) -> result: own T pure contract
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2353,7 +2357,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2372,7 +2376,7 @@ fn malformed_trailing_argument_does_not_enter_final_selector_metadata() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bad = generic::<i32, i32>(value: 1_i32);
   return exit_status(code: 0_u8);
 }
@@ -2397,7 +2401,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2427,7 +2431,7 @@ fn probe(value: own Invalid<i32>) -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2463,7 +2467,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2501,7 +2505,7 @@ fn bridge(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2604,7 +2608,7 @@ fn second(value: own i32) -> result: own i32 pure contract {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2654,7 +2658,7 @@ fn an_independently_proved_self_recursive_component_publishes_its_summary() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2703,7 +2707,7 @@ fn right(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2778,7 +2782,7 @@ fn second(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2815,7 +2819,7 @@ fn concrete_generic_instances_receive_distinct_verified_summary_identities() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = identity::<i32>(value: 1_i32);
   let wide = identity::<u64>(value: 1_u64);
   return exit_status(code: 0_u8);
@@ -2862,7 +2866,7 @@ fn wrapper<U: affine>() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2888,7 +2892,7 @@ fn a_unit_without_postconditions_keeps_the_empty_schedule_fast_path() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let ignored = helper(value: 1_i32);
   return exit_status(code: 0_u8);
 }

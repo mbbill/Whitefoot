@@ -60,7 +60,7 @@ fn split_full_leaf['s](store: &uniq Heap<'s>, first: own u64, second: own u64, t
   return allocate_split(store: move store, first: first, second: second, third: third, fourth: candidate);
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Independent expected behavior: inserting 25 into [10,20,30] yields owning leaves [10,20] and [25,30] with separator 25; inserting 5 exercises the leading position and yields [5,10] and [20,30] with separator 20; inserting duplicate 20 returns Duplicate without allocation. Any allocation refusal exits 70.";
   region {
     match split_full_leaf(store: &uniq heap, first: 10_u64, second: 20_u64, third: 30_u64, candidate: 25_u64) {

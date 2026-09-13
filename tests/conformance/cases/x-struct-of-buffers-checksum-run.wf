@@ -1,9 +1,9 @@
-struct Columns {
+struct Columns['heap] {
   left: Vector<u64>;
   right: Vector<u64>;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Parallel runtime-length columns are filled, folded, and released through one struct owner; counted-loop range facts discharge the indexing.";
   region {
     match heap_vector::<u64>(store: &uniq heap, count: 6_u64) {

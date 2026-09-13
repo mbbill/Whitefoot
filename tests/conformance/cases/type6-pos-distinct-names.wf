@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Distinct value names and a break to a lexically enclosing loop [TYPE-6].";
   let i = 0_i32;
   let total = 0_i32;

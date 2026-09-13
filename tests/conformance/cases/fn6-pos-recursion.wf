@@ -9,7 +9,7 @@ fn sumto(n: own i32) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let s = sumto(n: 4_i32);
   if s == 10_i32 {
   } else {

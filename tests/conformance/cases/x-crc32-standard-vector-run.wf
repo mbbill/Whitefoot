@@ -19,7 +19,7 @@ fn crc32<const n: u64>(bytes: own FixedVector<u8, n>) -> function_result: own u3
   return ixor(crc, 4294967295_u32);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bytes = fixed_vector::<u8, 9>();
   region {
     place_back(vector: &uniq bytes, value: 49_u8);

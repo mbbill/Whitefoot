@@ -1,6 +1,6 @@
 const table: FixedVector<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[CONST-2, S34] the const form of the inline run. A `FixedVector<T, n>` of const-eligible `T` with exactly `n` literal entries is const-eligible: it is read-only static rodata that lowers to element storage only, and its descriptor is the four standing facts `len_of = cap_of = n` and `room_of = head_of = 0`, materialized at each use. All four measures read those constants, a subscript's bounds obligation discharges from `len_of = n`, and the const is the immutable-const origin of a shared view.";
   let v = table[2_u64];
   if v == 30_u8 {

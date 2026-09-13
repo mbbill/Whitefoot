@@ -3,7 +3,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   ensures room_of(made) <= 0_u64;
   ensures head_of(made) <= 0_u64;
 } {
-  doc "Each iteration constructs the name, the extent and the destination it uses, so the only storage outside the loop the body reaches is the factory it reserves through, the directory it reads, and the total it commits. This is the shape PAR-3 is meant to grant: read-only cwd, prologue-serialized files, remainder-serialized total, and per-iteration storage nothing outside the iteration names. The judgment grants it: a view is a claim on the storage it was formed over [VIEW-1], so the per-iteration destination resolves to the extent-reserved run, and that run is storage the iteration introduces [BLK-2].";
+  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
   let built = fixed_vector::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,
@@ -16,8 +16,8 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   return move built;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "Each iteration constructs the name, the extent and the destination it uses, so the only storage outside the loop the body reaches is the factory it reserves through, the directory it reads, and the total it commits. This is the shape PAR-3 is meant to grant: read-only cwd, prologue-serialized files, remainder-serialized total, and per-iteration storage nothing outside the iteration names.";
+fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
+  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = component();
@@ -33,21 +33,21 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
         ) {
           place_back(vector: &uniq data, value: 0_u8);
         }
-        region 'f {
-          match reserve_handle(factory: &uniq files) {
-            Ok(value: permit) => {
-              let window = slice_of(&name);
-              region {
-                match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
-                  FileOpened(value: handle) => {
-                    region 'h {
-                      region {
-                        let destination = mut_slice_of(&uniq data);
-                        region {
-                          match read_at(file: &'h handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                            ReadBytes(next: produced) => {
-                              set total = total +wrap produced;
-                            }
+        region {
+          let window = slice_of(&name);
+          region {
+            match open_file(factory: &uniq deref(files), root: cwd, name: &window, start: 0_u64, end: 4_u64) {
+              FileOpened(value: handle) => {
+                region {
+                  region {
+                    let destination = mut_slice_of(&uniq data);
+                    region {
+                      match read_at(factory: &uniq deref(files), file: &uniq handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                        Ok(value: produced) => {
+                          set total = total +wrap produced;
+                        }
+                        Err(error: read_stop_20) => {
+                          match read_stop_20 {
                             ReadEnd() => {
                             }
                             ReadFailed(error: problem) => {
@@ -57,13 +57,11 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
                       }
                     }
                   }
-                  FileOpenFailed(error: problem, permit: refused) => {
-                  }
                 }
+                close_read(factory: &uniq deref(files), file: move handle);
               }
-            }
-            Err(error: spent) => {
-              return exit_status(code: 1_u8);
+              FileOpenFailed(error: problem) => {
+              }
             }
           }
         }
@@ -71,4 +69,14 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
     }
   }
   return exit_status(code: 0_u8);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

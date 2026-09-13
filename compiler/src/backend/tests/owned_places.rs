@@ -73,7 +73,7 @@ fn repeat(value: own Row, count: own u64) -> result: own Row reads(value.left, v
   return move value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let input = Row(left: 11_u64, right: 29_u64);
   let result = relay(value: move input, bias: 5_u64);
   if result.left != 19_u64 {
@@ -129,7 +129,7 @@ fn split(items: own array<u64, 2>) -> (before: own u8, updated: own array<u64, 2
   return 7_u8, move items, 513_u16;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let original = array_new::<u64, 2>(29_u64);
   let packet = Packet(items: move original, stamp: 97_u64);
   let replacement = array_new::<u64, 2>(61_u64);
@@ -202,7 +202,7 @@ fn update(points: &uniq array<Point, 2>, index: own u64) -> result: own unit wri
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = Point(x: 17_u64, y: 29_u64);
   let second = Point(x: 41_u64, y: 53_u64);
   let empty = fixed_vector::<Point, 2>();
@@ -267,7 +267,7 @@ fn once(first: own box<u64>, second: own box<u64>) -> result: own u64 reads(firs
   return deref(first);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = box_new(17_u64);
   let b = box_new(29_u64);
   let zero = rotate(first: move a, second: move b, count: 0_u64);
@@ -329,7 +329,7 @@ fn relay(seed: own u64) -> result: own Result<Record, u8> pure {
   return make_record(seed: seed);
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<Record>(store: &uniq heap, count: 1_u64) {
       None() => {
@@ -434,7 +434,7 @@ fn choose_borrowed(seed: own u64) -> result: own array<u64, 512> pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = choose_live(seed: 0_u64);
   let second = choose_live(seed: 17_u64);
   let third = choose_borrowed(seed: 0_u64);
@@ -494,7 +494,7 @@ fn append(items: own Row, value: own u64, watch: &u64) -> updated: own Row reads
   return move items;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let watch = 5_u64;
   let payload = array_new::<u64, 16>(41_u64);
   let same = Row(payload: move payload, value: 0_u64);
@@ -577,7 +577,7 @@ fn relay(held: own Row, watch: &u64, offered: own u64) -> result: own Row reads(
   return choose(left: move fresh.row, right: move held, watch: watch);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let watch = 29_u64;
   let first_input = Row(value: 29_u64);
   let second_input = Row(value: 31_u64);
@@ -625,7 +625,7 @@ fn replace_empty(target: &uniq Envelope, value: own array<u64, 0>) -> result: ow
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = array_new::<u64, 0>(0_u64);
   let envelope = Envelope(before: 17_u64, empty: move empty, after: 29_u64);
   let replacement = array_new::<u64, 0>(43_u64);
@@ -657,7 +657,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn general_and_extent_boxes_keep_distinct_cleanup_actions() {
-    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -739,7 +739,7 @@ fn extract['s](cell: own Box<'s, u64>, witness: &Box<'s, u64>) -> value: own u64
   return value;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region 'a {
     let store = arena_frame::<16, 8, 'a>();
     region {
@@ -860,7 +860,7 @@ fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq
   return Observed(previous: previous_value, current: current_value);
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -911,7 +911,7 @@ fn borrowed_box_replacement_updates_the_owner_and_releases_each_cell_once() {
   return move displaced;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -982,7 +982,7 @@ fn relay['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: 
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -1067,7 +1067,7 @@ fn read_child['s](tree: &Box<'s, Node<'s>>) -> result: own u64 reads(tree) {
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: back) => {
@@ -1155,7 +1155,7 @@ fn finish(offset: &uniq u64, trace: &uniq u64) -> result: own u64 reads(offset, 
   return captured +wrap 50_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty_left = fixed_vector::<u64, 2>();
   region {
     place_back(vector: &uniq empty_left, value: 3_u64);
@@ -1247,7 +1247,7 @@ fn replacement(offset: &uniq u64) -> result: own Row writes(offset) {
   return Row(left: 19_u64, right: 23_u64);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 2>();
   let first = Row(left: 3_u64, right: 5_u64);
   region {
@@ -1315,7 +1315,7 @@ fn rewrite(input: own Entry) -> result: own Entry reads(input.row.left, input.ro
   return move input;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Entry, 2>();
   let first_row = Row(left: 3_u64, right: 5_u64);
   let first = Entry(row: move first_row, tag: 7_u64);
@@ -1383,7 +1383,7 @@ struct Table {
   tag: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = Row(left: 1_u64, right: 10_u64);
   let second = Row(left: 2_u64, right: 20_u64);
   for (round in 0_u64..5_u64) {
@@ -1459,7 +1459,7 @@ fn exclusive['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {
   return &uniq 'r deref(value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 2>();
   let first = Row(left: 3_u64, right: 5_u64);
   region {
@@ -1569,7 +1569,7 @@ fn finish['s](value: own Pair<'s>, store: &uniq Heap<'s>) -> result: own ExitSta
   return exit_status(code: 0_u8);
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let counter = 0_u64;
   region {
     match construct(store: &uniq heap, counter: &uniq counter) {
@@ -1651,7 +1651,7 @@ fn choose['s](left: own Cell<'s>, right: own Cell<'s>, flag: own Bool, store: &u
   return deref(selected.value);
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   for (round in 0_u64..2_u64) {
     match heap_box(store: &uniq heap, value: 11_u64) {
       Err(error: first_back) => {
@@ -1721,7 +1721,7 @@ fn release['s](value: own Holder<'s>, store: &uniq Heap<'s>, early: own Bool) ->
   return 0_u8;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   for (round in 0_u64..2_u64) {
     match heap_box(store: &uniq heap, value: 17_u64) {
       Err(error: returned) => {
@@ -1773,7 +1773,7 @@ enum Packet {
   Empty();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region {
     let first = box_new(11_u64);
     let second = box_new(22_u64);
@@ -1933,7 +1933,7 @@ fn exercise['s](storage: own Box<'s, FixedVector<box<u64>, 2>>) -> result: own C
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region 'a {
     let store = arena_frame::<128, 16, 'a>();
     let empty_heap = fixed_vector::<box<u64>, 2>();
@@ -2031,7 +2031,7 @@ fn read(value: &u64) -> result: own u64 reads(value) {
   return deref(value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 11_u64, right: 29_u64);
   let owner = box_new(move pair);
   region {
@@ -2079,7 +2079,7 @@ fn boxed_run_contracts_keep_the_referent_projection_through_a_holder() {
   return deref(values)[0_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let initial = array_new::<u64, 2>(29_u64);
   let values = fixed_from_array(values: move initial);
   let owner = box_new(move values);

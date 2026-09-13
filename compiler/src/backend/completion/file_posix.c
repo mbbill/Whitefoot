@@ -396,7 +396,10 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
          * calls below land in. */
         int last = wf_file_connection_release(descriptor);
         (void)shutdown(descriptor, direction);
-        result.head.value = last ? close(descriptor) : 0;
+        if (last && close(descriptor) < 0) result.head.error_code = errno;
+        // A linked close returns the released descriptor credit to its passed
+        // factory. Preserve the last-half fact in this private native result.
+        result.head.value = last ? 1 : 0;
         break;
     }
     default:

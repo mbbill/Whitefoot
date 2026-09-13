@@ -2,10 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind,
-    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId, SystemIntegerResultBound,
+    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId,
 };
-
-use super::qualification::Qualification;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TargetObject {
@@ -329,13 +327,11 @@ impl TargetFramePlan {
 /// field list is the sole input from which the emitter may form that frame.
 pub(super) fn plan_target_frame(
     target: TargetLayout,
-    qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
     slots: &[TargetFrameSlot],
 ) -> Result<TargetFramePlan, TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
-        qualification,
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
@@ -386,13 +382,11 @@ pub(super) fn plan_target_frame(
 
 pub(super) fn validate_static_storage(
     target: TargetLayout,
-    qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
     ty: &TargetStorageType,
 ) -> Result<TargetAggregateLayout, TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
-        qualification,
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
@@ -449,13 +443,11 @@ pub(super) const PARALLEL_LANE_FRAME_ALIGNMENT: u64 = 16;
 /// failure, and malformed IR remains a compiler failure.
 pub(super) fn parallel_lane_frame_layout(
     target: TargetLayout,
-    qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
     function: &IrFunction,
 ) -> Result<Option<TargetAggregateLayout>, TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
-        qualification,
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
@@ -486,12 +478,10 @@ pub(super) fn parallel_lane_frame_layout(
 
 pub(super) fn validate_program(
     target: TargetLayout,
-    qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
 ) -> Result<(), TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
-        qualification,
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
@@ -558,8 +548,7 @@ fn validate_function(
 }
 
 /// Attaches selected-target integer bounds to the exact SSA values that carry
-/// them. Qualified system-operation rows contribute their declared bounds;
-/// buffer lengths contribute the representation invariant established by
+/// them. Buffer lengths contribute the representation invariant established by
 /// target validation. This metadata never becomes an ambient source fact.
 fn target_integer_result_bounds(
     layouts: &mut LayoutComputer<'_, '_, '_, '_>,
@@ -581,19 +570,6 @@ fn target_integer_result_bounds(
                 continue;
             };
             let upper_bound = match operation {
-                IrOperation::SystemCall { operation, .. } => {
-                    let implementation = layouts
-                        .qualification
-                        .operation(*operation)
-                        .map_err(|_| TargetLayoutFailure::InvalidIr)?;
-                    implementation
-                        .integer_result_bound()
-                        .map(|bound| match bound {
-                            SystemIntegerResultBound::AddressIndexMaximum => {
-                                layouts.target.address_index_max()
-                            }
-                        })
-                }
                 IrOperation::BufferMeasure { buffer } => {
                     let Some(IrType::Buffer { element }) = function.value_type(*buffer) else {
                         return Err(TargetLayoutFailure::InvalidIr);
@@ -924,7 +900,6 @@ fn validate_target_obligation(
 
 struct LayoutComputer<'program, 'classified, 'lexed, 'source> {
     target: TargetLayout,
-    qualification: &'program Qualification,
     program: &'program IrProgram<'classified, 'lexed, 'source>,
     nominal: HashMap<IrNominalId, Layout>,
     visiting: HashSet<IrNominalId>,
@@ -1078,18 +1053,10 @@ impl LayoutComputer<'_, '_, '_, '_> {
             .program
             .nominal(id)
             .ok_or(TargetLayoutFailure::InvalidIr)?;
-        // [QUAL-1] fixes an opaque system resource's representation in its
-        // qualification record, which qualification resolved before layout
-        // ran, so the selected target has an exact size and alignment for it.
-        if let IrNominalKind::SystemResource(contract) = nominal.kind() {
-            let representation = self
-                .qualification
-                .resource(contract.resource)
-                .map_err(|_| TargetLayoutFailure::InvalidIr)?
-                .representation();
+        if matches!(nominal.kind(), IrNominalKind::Opaque) {
             let layout = Layout {
-                size: representation.size(),
-                align: representation.align(),
+                size: 32,
+                align: 16,
             };
             self.visiting.remove(&id);
             self.nominal.insert(id, layout);
@@ -1128,13 +1095,13 @@ impl LayoutComputer<'_, '_, '_, '_> {
                     );
                 }
                 // A box, arena, or allocation list has its own pointer
-                // layout above, and an opaque system resource returned with
-                // its qualified representation before this match; none
+                // layout above, and an opaque nominal returned with its
+                // uniform representation before this match; none
                 // reaches the field walk.
                 IrNominalKind::Box { .. }
                 | IrNominalKind::Arena { .. }
                 | IrNominalKind::ArenaStorage
-                | IrNominalKind::SystemResource(_) => {
+                | IrNominalKind::Opaque => {
                     return Err(TargetLayoutFailure::InvalidIr);
                 }
             }

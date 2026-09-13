@@ -480,14 +480,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// which is exactly how the source spells it, and every caller that
     /// splices a region into a longer form drops the separator with it.
     pub(in crate::semantic::check) fn region_spelling(&self, region: DeclarationId) -> String {
-        // [PROV-1] the entry heap's store region has no written spelling at
-        // all: `main` declares no region parameter, so every position that
-        // names it names it by elision, and rendering the identity the
-        // compiler holds it under would name a region the writer cannot
-        // write.
-        if region.is_entry_heap_region() {
-            return String::new();
-        }
         let spelling = self
             .declaration_spelling(region)
             .unwrap_or_else(|_| format!("'region#{}", region.index()));
@@ -1358,7 +1350,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         expression: CheckedExpression::Binding {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
-                            state_origins: local.state_origins.clone(),
                             ty: local.ty,
                             slice_origins,
                             consume_root: !copy,
@@ -1445,17 +1436,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Vec::new()
                 } else {
                     let paths = self.residual_drop_paths(local.ty, &fields)?;
-                    self.released_paths(paths)?
+                    paths
                         .into_iter()
-                        .map(|(fields, ty, release)| CheckedProjectedDrop {
-                            state_origins: local
-                                .state_origins
-                                .clone()
-                                .map(|origins| origins.projected(&fields)),
-                            fields,
-                            ty,
-                            release,
-                        })
+                        .map(|(fields, ty)| CheckedProjectedDrop { fields, ty })
                         .collect()
                 };
                 // [LIV-2] after its read-out the target is dead for the
@@ -1501,10 +1484,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedExpression::Binding {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
-                            state_origins: local
-                                .state_origins
-                                .clone()
-                                .map(|origins| origins.projected(&fields)),
                             ty,
                             slice_origins,
                             consume_root: !copy,
@@ -1525,10 +1504,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedExpression::Project {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
-                            state_origins: local
-                                .state_origins
-                                .clone()
-                                .map(|origins| origins.projected(&fields)),
                             fields,
                             ty,
                             consume_root: !copy && !read_out,
@@ -1817,8 +1792,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
                     CheckedNominalKind::Arena { content, .. } => pending.push(*content),
-                    CheckedNominalKind::ArenaStorage
-                    | CheckedNominalKind::SystemResource { .. } => {}
+                    CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
                 },
                 _ => {}
             }
@@ -2230,22 +2204,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .unsupported(UnsupportedSemanticFeature::PreludeNominalValues, node);
                 }
             },
-            ResolvedTarget::System(id) => {
-                let index = crate::system_constructor_index(id, self.inventory())
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let record = crate::SYSTEM_CONSTRUCTORS
-                    .get(usize::from(index))
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let tag = crate::SYSTEM_CONSTRUCTORS[..usize::from(index)]
-                    .iter()
-                    .filter(|candidate| candidate.owner == record.owner)
-                    .count();
-                Constructor::Enum {
-                    nominal: self.system_nominal(record.owner)?,
-                    variant: u32::try_from(tag)
-                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-                }
-            }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
         let declared_fields = match constructor {

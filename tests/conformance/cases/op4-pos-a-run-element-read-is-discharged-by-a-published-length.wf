@@ -14,7 +14,7 @@ fn two() -> made: own FixedVector<u8, 4> pure contract {
   return move filled;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "OP-4: the same obligation a target owes, discharged at a read. The callee's verified relation puts two elements in the window, so `1 < len_of(built)` holds at the subscript and the read executes with no runtime check.";
   let built = two();
   let second = built[1_u64];

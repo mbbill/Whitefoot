@@ -14,7 +14,7 @@ fn read_pair(table: own FixedVector<u8, 8>, low: own u64, high: own u64) -> resu
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 8>();
   region {
     place_back(vector: &uniq empty, value: 3_u8);

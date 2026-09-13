@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "OWN-1: an affine value (own enum) is consumed by exactly one match-move.";
   let s = Pos();
   match s {

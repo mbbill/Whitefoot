@@ -753,7 +753,7 @@ fn map_contract['s](store: &uniq Heap<'s>, seed: own u64, scenario: own u64, bud
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     let observed = map_contract(store: &uniq heap, seed: 0_u64, scenario: 0_u64, budget: 100_u64);
     if observed <= 70_u64 {

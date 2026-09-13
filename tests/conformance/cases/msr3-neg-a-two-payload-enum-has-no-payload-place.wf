@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-3, ENT-2: a tracked place's path is field selections, deref wrappings and subscripts, and none of those names a variant. Result's Ok(value) and Err(error) are two storages one field path cannot separate, so the payload placement is not stated over it and the arm binder carries no measure of its own; the placement into it is undischarged.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

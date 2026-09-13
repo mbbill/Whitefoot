@@ -297,7 +297,7 @@ fn directed_demo() -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let code = directed_demo();
   if code != 0_u8 {
     return exit_status(code: code);

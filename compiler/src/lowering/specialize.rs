@@ -26,7 +26,6 @@ pub(super) struct PhysicalVariant {
 
 #[derive(Debug)]
 pub(super) struct PhysicalFunctions {
-    pub(super) main: u32,
     pub(super) variants: Vec<PhysicalVariant>,
 }
 
@@ -94,20 +93,10 @@ impl PhysicalFunctions {
             .map(|regions| regions.into_iter().collect::<Vec<_>>())
             .collect::<Vec<_>>();
         let mut plan = Self {
-            main: 0,
             variants: Vec::new(),
         };
         let mut interned = HashMap::new();
         let mut represented = vec![false; program.functions.len()];
-        let main_regions = regions
-            .get(program.main.0 as usize)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-        plan.main = plan.intern(
-            program.main,
-            default_environment(main_regions, &defaults),
-            &mut interned,
-            &mut represented,
-        )?;
         let mut next = 0;
         loop {
             while next < plan.variants.len() {
@@ -166,7 +155,6 @@ impl PhysicalFunctions {
         for (new, old) in order.iter().enumerate() {
             remapping[*old] = u32::try_from(new).map_err(|_| LoweringFailure::CounterOverflow)?;
         }
-        self.main = remapping[self.main as usize];
         for variant in &mut self.variants {
             for (_, callee) in &mut variant.calls {
                 *callee = remapping[*callee as usize];
@@ -313,7 +301,7 @@ fn collect_regions(
                 CheckedNominalKind::Arena { content, .. } => {
                     collect_regions(program, *content, regions, visited, defaults)?;
                 }
-                CheckedNominalKind::ArenaStorage | CheckedNominalKind::SystemResource { .. } => {}
+                CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
             }
         }
         CheckedType::Vector {
@@ -390,7 +378,7 @@ impl FunctionDependencies {
             .types
             .extend(function.parameters.iter().map(|parameter| parameter.ty));
         if matches!(function.body_disposition, CheckedBodyDisposition::Inhabited) {
-            dependencies.statements(&function.body);
+            dependencies.statements(function.body.as_deref().unwrap_or_default());
         }
         dependencies
     }

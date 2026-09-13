@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "SYS-13: the third distinguished command code, pinning the mapping as the identity over the closed 0..255 range rather than a success or failure collapse.";
+fn main() -> status: own ExitStatus pure {
+  doc "The ordinary exit_status function returns a value whose selected native launcher observes exit 2. This is library/build adapter behavior under PROG-3, with no entry program kind or target qualification.";
   return exit_status(code: 2_u8);
 }

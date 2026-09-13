@@ -1,10 +1,9 @@
-use crate::backend::qualification::{SystemTarget, qualify_program};
 use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
 
 use super::system::with_ir;
 use super::*;
 
-const BYTE_ARENA_NODE: &[u8] = br#"command fn main() -> status: own ExitStatus pure {
+const BYTE_ARENA_NODE: &[u8] = br#"fn main() -> status: own ExitStatus pure {
   region 'r {
     let item = arena_new::<'r, u8>(7_u8);
     let value = deref(item);
@@ -25,17 +24,13 @@ const BYTE_ARENA_NODE: &[u8] = br#"command fn main() -> status: own ExitStatus p
 fn selected_target_validates_the_complete_padded_arena_node() {
     with_ir(BYTE_ARENA_NODE, |program| {
         let host = TargetLayout::host().expect("the backend test runs on a qualified host");
-        let system_target = SystemTarget::for_triple(host.triple())
-            .expect("the host triple has one qualified system target");
-        let qualification =
-            qualify_program(system_target, program).expect("the arena fixture must qualify");
 
         let exact = host.with_runtime_allocation_limits_for_test(16, 8);
-        assert_eq!(validate_program(exact, &qualification, program), Ok(()));
+        assert_eq!(validate_program(exact, program), Ok(()));
 
         let one_byte_short = host.with_runtime_allocation_limits_for_test(15, 8);
         assert_eq!(
-            validate_program(one_byte_short, &qualification, program),
+            validate_program(one_byte_short, program),
             Err(TargetLayoutFailure::Unrepresentable(
                 TargetObject::RuntimeSizedAllocation
             ))
@@ -43,7 +38,7 @@ fn selected_target_validates_the_complete_padded_arena_node() {
 
         let under_aligned = host.with_runtime_allocation_limits_for_test(16, 4);
         assert_eq!(
-            validate_program(under_aligned, &qualification, program),
+            validate_program(under_aligned, program),
             Err(TargetLayoutFailure::Unrepresentable(
                 TargetObject::RuntimeSizedAllocation
             ))
@@ -141,7 +136,7 @@ fn arena_release_covers_loop_reentry_early_return_and_nested_regions() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   for @turns (i in 0_u64..200_u64) {
     region 'r {
       let a = arena_new::<'r, i32>(1_i32);
@@ -197,7 +192,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
     let llvm = compile(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   for @turns (i in 0_u64..4_u64) {
     region 'r {
       let a = arena_new::<'r, i32>(9_i32);
@@ -238,7 +233,7 @@ fn arena_release_covers_break_edges_and_enclosing_region_allocation() {
 #[test]
 fn a_within_region_arena_delivery_executes() {
     let llvm = compile(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   region 'r {
     let picked = if flag {

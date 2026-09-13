@@ -1,4 +1,3 @@
-use crate::backend::qualification::{SystemTarget, qualify_program};
 use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
 
 use super::system::with_ir;
@@ -11,7 +10,7 @@ fn generic_allocation_fit_uses_each_concrete_element_ceiling() {
   return fits;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
   let scalar_boundary = fits_element::<u64>(count: 2305843009213693951_u64);
   if scalar_boundary {
   } else {
@@ -59,12 +58,12 @@ const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
 
-const U64_STORE_TAKE: &[u8] = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+const U64_STORE_TAKE: &[u8] = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "One eight-byte slot taken from the general store, whose actual alignment the selected allocator has to promise.";
   region {
     match heap_vector::<u64>(store: &uniq heap, count: 1_u64) {
@@ -80,7 +79,7 @@ const U64_STORE_TAKE: &[u8] = br#"command fn main(command.heap as heap: own Heap
 }
 "#;
 
-const U64_STORE_CELL: &[u8] = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+const U64_STORE_CELL: &[u8] = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "One eight-byte cell taken from the same store, the other half of the same obligation S39.";
   region {
     match heap_box(store: &uniq heap, value: 7_u64) {
@@ -109,17 +108,13 @@ const U64_STORE_CELL: &[u8] = br#"command fn main(command.heap as heap: own Heap
 fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
     with_ir(AFFINE_INVARIANT_BOUNDED_ALLOCATION, |program| {
         let host = TargetLayout::host().expect("the backend test runs on a qualified host");
-        let system_target = SystemTarget::for_triple(host.triple())
-            .expect("the host triple has one qualified system target");
-        let qualification = qualify_program(system_target, program)
-            .expect("the invariant-bounded allocation fixture must qualify");
 
         let exact = host.with_runtime_allocation_limits_for_test(2000, 8);
-        assert_eq!(validate_program(exact, &qualification, program), Ok(()));
+        assert_eq!(validate_program(exact, program), Ok(()));
 
         let one_byte_short = host.with_runtime_allocation_limits_for_test(1999, 8);
         assert_eq!(
-            validate_program(one_byte_short, &qualification, program),
+            validate_program(one_byte_short, program),
             Err(TargetLayoutFailure::Unrepresentable(
                 TargetObject::RuntimeSizedAllocation
             ))
@@ -141,7 +136,7 @@ fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
 /// — at any element type whose stride makes the fit goal underivable.
 #[test]
 fn a_store_take_of_an_unbounded_runtime_count_emits_rather_than_stopping_at_the_target() {
-    const UNBOUNDED_STORE_TAKE: &[u8] = br#"command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
+    const UNBOUNDED_STORE_TAKE: &[u8] = br#"fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
   doc "The count is the invocation's own argument count, which no source fact bounds.";
   let n = 0_u64;
   region {
@@ -162,11 +157,7 @@ fn a_store_take_of_an_unbounded_runtime_count_emits_rather_than_stopping_at_the_
 "#;
     with_ir(UNBOUNDED_STORE_TAKE, |program| {
         let host = TargetLayout::host().expect("the backend test runs on a qualified host");
-        let system_target = SystemTarget::for_triple(host.triple())
-            .expect("the host triple has one qualified system target");
-        let qualification =
-            qualify_program(system_target, program).expect("the unbounded store take must qualify");
-        assert_eq!(validate_program(host, &qualification, program), Ok(()));
+        assert_eq!(validate_program(host, program), Ok(()));
     });
     let output = compile_and_run(&compile(UNBOUNDED_STORE_TAKE));
     assert!(output.status.success());
@@ -187,10 +178,6 @@ fn a_store_take_and_a_store_cell_must_fit_the_selected_allocator_alignment() {
     for fixture in [U64_STORE_TAKE, U64_STORE_CELL] {
         with_ir(fixture, |program| {
             let host = TargetLayout::host().expect("the backend test runs on a qualified host");
-            let system_target = SystemTarget::for_triple(host.triple())
-                .expect("the host triple has one qualified system target");
-            let qualification = qualify_program(system_target, program)
-                .expect("the store-alignment fixture must qualify");
 
             // The byte domain stays the host's own: a store take is not judged
             // against an allocator byte ceiling at all, and cutting the
@@ -199,12 +186,12 @@ fn a_store_take_and_a_store_cell_must_fit_the_selected_allocator_alignment() {
             // reached. Only the alignment guarantee moves here.
             let byte_domain = i64::MAX as u64;
             let exact = host.with_runtime_allocation_limits_for_test(byte_domain, 8);
-            assert_eq!(validate_program(exact, &qualification, program), Ok(()));
+            assert_eq!(validate_program(exact, program), Ok(()));
 
             let one_alignment_step_short =
                 host.with_runtime_allocation_limits_for_test(byte_domain, 4);
             assert_eq!(
-                validate_program(one_alignment_step_short, &qualification, program),
+                validate_program(one_alignment_step_short, program),
                 Err(TargetLayoutFailure::Unrepresentable(
                     TargetObject::RuntimeSizedAllocation
                 ))
@@ -233,7 +220,7 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq empty, value: 7_u8);
@@ -305,7 +292,7 @@ fn replacement() -> result: own u16 pure {
   return 9_u16;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = make(n: 4_u64);
   let length = len_of(values);
   let stored = 0_u16;
@@ -379,7 +366,7 @@ fn buffer_length_qualifies_same_element_reallocation_without_a_target_guard() {
   return buffer_new(length, 0_u8);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let initial = buffer_new(4_u64, 7_u8);
   let copied = refill(source: move initial);
   let length = len_of(copied);
@@ -411,7 +398,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn op9_overflow_is_rejected_before_lowering() {
-    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<u64>(store: &uniq heap, count: 18446744073709551615_u64) {
       None() => {
@@ -443,7 +430,7 @@ fn an_out_of_bounds_run_set_is_an_op4_compile_rejection() {
   return 9_u8;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
       None() => {
@@ -465,7 +452,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
 
 #[test]
 fn an_empty_run_has_zero_length_and_a_normal_release() {
-    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 0_u64) {
       None() => {
@@ -520,7 +507,7 @@ fn run_cleanup_is_explicit_on_return_and_break_edges() {
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let true_value = True();
   let false_value = False();
   region {
@@ -624,7 +611,7 @@ fn observe(pool: &Pool) -> result: own u64 reads(pool.left, pool.count) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left = buffer_new(2_u64, 0_u64);
   let right = buffer_new(2_u64, 0_u64);
   let pool = Pool(left: move left, right: move right, count: 0_u64);
@@ -772,7 +759,7 @@ fn update(columns: own Columns) -> result: own Columns reads(columns.left), writ
   return move columns;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left = buffer_new(2_u64, 0_u16);
   let right = buffer_new(2_u64, 0_u16);
   let columns = Columns(left: move left, right: move right);
@@ -843,7 +830,7 @@ fn release['s](owner: own Owner<'s>, store: &uniq Heap<'s>) -> result: own unit 
   return unit;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
       None() => {
@@ -917,7 +904,7 @@ fn take['s](owner: own Owner<'s>) -> result: own Vector<'s, u8> pure {
   return move owner.pair.first;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
       None() => {
@@ -987,7 +974,7 @@ fn compiler_independent_struct_of_buffers_checksum_executes() {
 
 #[test]
 fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<box<u64>>(3_u64);
   let first = box_new(11_u64);
   let wrapped = Some<box<u64>>(value: move first);
@@ -1063,7 +1050,7 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
 
 #[test]
 fn trivially_droppable_affine_elements_keep_the_single_free() {
-    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<Option<u32>>(store: &uniq heap, count: 4_u64) {
       None() => {
@@ -1103,7 +1090,7 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
 
 #[test]
 fn a_vacant_run_op9_overflow_is_rejected_before_lowering() {
-    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<Option<u32>>(store: &uniq heap, count: 18446744073709551615_u64) {
       None() => {

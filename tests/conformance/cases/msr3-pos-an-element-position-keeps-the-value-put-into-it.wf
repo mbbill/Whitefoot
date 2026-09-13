@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-3: the element placement, in both directions. A measured value committed at an element position keeps its measures as facts about P[i], and the SET-2 replace that displaces the value at that position gives the displaced value those facts, so a run that passed through a written slot keeps its figure and the placement into it is discharged with no read of room_of.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

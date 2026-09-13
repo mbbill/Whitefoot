@@ -109,7 +109,7 @@ fn priority_trace(seed: own u64, rounds: own u64) -> checksum: own u64 pure {
   return checksum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let heap = array_new::<u64, 16>(0_u64);
   let count = 0_u64;
   region {

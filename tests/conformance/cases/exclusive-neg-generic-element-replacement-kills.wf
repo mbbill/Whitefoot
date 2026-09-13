@@ -6,7 +6,7 @@ fn replace_first<T: affine, const n: u64>(values: &uniq FixedVector<T, n>, incom
   return move previous;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let child = fixed_vector::<u64, 2>();
   let values = fixed_vector::<FixedVector<u64, 2>, 2>();
   let fresh = fixed_vector::<u64, 2>();

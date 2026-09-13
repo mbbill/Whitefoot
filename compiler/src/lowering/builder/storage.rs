@@ -15,7 +15,7 @@ use super::*;
 
 pub(super) fn collect_addressed_bindings(function: &CheckedFunction) -> HashSet<BindingId> {
     let mut bindings = HashSet::new();
-    collect_statements(&function.body, &mut bindings);
+    collect_statements(function.body.as_deref().unwrap_or_default(), &mut bindings);
     bindings
 }
 
@@ -124,8 +124,7 @@ fn collect_borrowed_place_expression(
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. }
         | CheckedExpression::ReborrowAddressed { binding, .. }
-        | CheckedExpression::BorrowBox { binding, .. }
-        | CheckedExpression::BorrowSystemResource { binding, .. } => {
+        | CheckedExpression::BorrowBox { binding, .. } => {
             bindings.insert(*binding);
         }
         CheckedExpression::Project { binding, .. } => {
@@ -146,8 +145,7 @@ fn collect_borrowed_place_expression(
 
 fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<BindingId>) {
     match expression {
-        CheckedExpression::BorrowBox { binding, .. }
-        | CheckedExpression::BorrowSystemResource { binding, .. } => {
+        CheckedExpression::BorrowBox { binding, .. } => {
             bindings.insert(*binding);
         }
         CheckedExpression::BorrowAddressed { root, .. }
@@ -164,7 +162,6 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         }
         CheckedExpression::ContainerMeasure { root, .. } => collect_place(root, bindings),
         CheckedExpression::UserCall { arguments, .. }
-        | CheckedExpression::SystemCall { arguments, .. }
         | CheckedExpression::KernelCall { arguments, .. }
         | CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::FloatOperation { arguments, .. }
@@ -509,7 +506,7 @@ impl IrBuilder<'_> {
                 IrNominalKind::Struct { .. }
                     | IrNominalKind::Enum { .. }
                     | IrNominalKind::Box { .. }
-                    | IrNominalKind::SystemResource(_)
+                    | IrNominalKind::Opaque
             )
         {
             return Err(LoweringFailure::InvalidCheckedProgram);

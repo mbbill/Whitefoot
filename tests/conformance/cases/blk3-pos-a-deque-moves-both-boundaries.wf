@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-3: place_front moves the front boundary backwards and take_back moves the back one, so all four boundary operations are exercised over one run.";
   let empty = fixed_vector::<u8, 4>();
   region {

@@ -131,7 +131,7 @@ fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digi
   return port;
 }
 
-command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, handles, heap), writes(handles, heap), allocates(heap) {
+fn main['heap](command.args as args: own Args, command.handles as handles: own HandleFactory, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(args, handles, heap), writes(handles, heap), allocates(heap) {
   doc "Connects twice to a loopback port nobody listens on, with the very permit the first refusal handed back, so a refused connect is shown to take no handle and to leave the program's own capacity untouched [SYS-10, SYS-17]. The argument scratch is a store-resident run, viewed exclusively where the argument is copied into it and shared where the port is read out.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 16_u64) {

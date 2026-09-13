@@ -6,7 +6,7 @@ fn carry['s](marker: own Marker<'s>, loan: &'s u64) -> result: own Marker<'s> pu
   return move marker;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "OWN-4: an invariant input brand fixes the formal even when the same name appears at a loan position. A shorter loan cannot shorten that brand and change the result type.";
   region 'outer {
     let marker = Marker<'outer>(value: 7_u64);

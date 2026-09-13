@@ -122,7 +122,7 @@ fn priority_trace(seed: own u64, rounds: own u64) -> checksum: own u64 pure {
   return checksum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let heap = fixed_vector::<u64, 16>();
   region {
     push(heap: &uniq heap, value: 9_u64);

@@ -11,8 +11,12 @@ fn sentinel_status(bytes: &MutSlice<u8>, failure: own u8) -> result: own u8 read
   return 0_u8;
 }
 
-command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
-  doc "SYS-8: the other refusal of the text route. Valid text too long for the destination range reports the exact encoded length through Utf8CopyTooSmall and writes nothing, so the sentinel survives; the two refusals are kept as separate cases because one is a validation failure and the other a capacity failure [SYS-6].";
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "The ordinary UTF-8 copy library operation reports Utf8CopyTooSmall with the encoded length and leaves the sentinel destination unchanged.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
       None() => {
@@ -33,9 +37,9 @@ command fn main(command.args as args: own Args, command.heap as heap: own Heap) 
           region {
             match arg_get(args: &args, position: 1_u64) {
               Ok(value: text) => {
-                region 'v {
+                region {
                   region {
-                    match host_copy_utf8(value: &'v text, destination: &uniq window, start: 0_u64, end: 4_u64) {
+                    match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: 4_u64) {
                       Ok(value: encoded) => {
                         return exit_status(code: 10_u8);
                       }

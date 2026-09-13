@@ -1,135 +1,31 @@
-use crate::{SemanticCompilerFailure, SystemRelease, SystemReleaseRow};
+use crate::SemanticCompilerFailure;
 
 use super::super::model::{
-    BindingId, CheckedConst, CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedSetTarget,
-    CheckedStateOrigins, CheckedStateStep, CheckedStatement, CheckedType, NominalId,
+    CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedSetTarget, CheckedStatement,
+    CheckedType,
 };
 use super::{CheckStop, Checker, EffectSet};
 
-/// The owner whose compiler-derived release contributed one release site.
-pub(super) enum ReleaseOwner {
-    /// A named parameter, let binding, or match binder.
-    Binding(BindingId),
-    /// An unnamed discarded expression result.
-    ExpressionResult,
-}
-
-/// One compiler-derived release recorded in the checked function, with the
-/// [SYS-5] row its released type contributes to [EFF-2]'s release
-/// contribution. Sites are collected in deterministic statement traversal
-/// order, which is DIAG-1's implementation-defined deterministic traversal.
-pub(super) struct ReleaseSite {
-    pub(super) owner: ReleaseOwner,
-    pub(super) effects: EffectSet,
-}
-
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// Returns the complete [STOR-3] release record of one value of this
-    /// type: its own [SYS-5] action when it is a system resource, and the
-    /// union of the fixed [SYS-5] rows of every system resource the value may
-    /// transitively own. `buffer`, `box`, arena, and `const` releases carry
-    /// the empty row [STOR-3], so only a contained system resource family
-    /// contributes anything.
-    pub(super) fn release_of_type(&self, ty: CheckedType) -> Result<SystemRelease, CheckStop> {
-        let mut visited = HashSet::new();
-        let row = self.release_row_of_type(ty, &mut visited)?;
-        let action = match ty {
-            CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
-                CheckedNominalKind::SystemResource { nominal } => {
-                    crate::system_resource_contract(*nominal).map(|contract| contract.action)
-                }
-                CheckedNominalKind::Struct { .. }
-                | CheckedNominalKind::Enum { .. }
-                | CheckedNominalKind::Box { .. }
-                | CheckedNominalKind::Arena { .. }
-                | CheckedNominalKind::ArenaStorage => None,
-            },
-            _ => None,
-        };
-        Ok(SystemRelease { action, row })
-    }
-
-    fn release_row_of_type(
-        &self,
-        ty: CheckedType,
-        visited: &mut HashSet<NominalId>,
-    ) -> Result<SystemReleaseRow, CheckStop> {
-        if let CheckedType::Buffer { element } = ty {
-            // An affine buffer element drops with its owning buffer
-            // [STOR-3], so a contained resource row reaches the buffer's
-            // release contribution exactly as a box referent's does.
-            return self.release_row_of_type(element.ty(), visited);
-        }
-        if matches!(
-            ty,
-            CheckedType::Array {
-                length: CheckedConst::Value(0),
-                ..
-            }
-        ) {
-            return Ok(SystemReleaseRow::EMPTY);
-        }
-        if let CheckedType::FixedVector { element, .. }
-        | CheckedType::Vector { element, .. }
-        | CheckedType::Array { element, .. } = ty
-        {
-            return self.release_row_of_type(self.element_type(element)?, visited);
-        }
-        let CheckedType::Nominal(id) = ty else {
-            // Scalars and borrowed views carry no owning release action.
-            return Ok(SystemReleaseRow::EMPTY);
-        };
-        if !visited.insert(id) {
-            return Ok(SystemReleaseRow::EMPTY);
-        }
-        let component_types: Vec<CheckedType> = match &self.nominal(id)?.kind {
-            CheckedNominalKind::SystemResource { nominal } => {
-                return Ok(crate::system_release_row(*nominal));
-            }
-            CheckedNominalKind::Struct { fields } => fields.iter().map(|field| field.ty).collect(),
-            CheckedNominalKind::Enum { variants } => variants
-                .iter()
-                .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
-                .collect(),
-            CheckedNominalKind::Box { referent, .. } => vec![*referent],
-            // The region release walks the arena content exactly as an owner
-            // drop walks a box referent, so a contained resource row still
-            // reaches [EFF-2]'s release contribution.
-            CheckedNominalKind::Arena { content, .. } => vec![*content],
-            // The allocation list frees flat memory only [STOR-3]; content
-            // with its own release action is gated before arena_new admits it.
-            CheckedNominalKind::ArenaStorage => Vec::new(),
-        };
-        let mut row = SystemReleaseRow::EMPTY;
-        for ty in component_types {
-            let component = self.release_row_of_type(ty, visited)?;
-            row = row.union(component);
-        }
-        Ok(row)
-    }
-
-    /// Collects every compiler-derived release the checked statements carry
-    /// whose released type contributes a nonempty release row, in
-    /// deterministic traversal order. The checked program records exactly
-    /// one disposition per owner per normal edge [STOR-3], so these drop
-    /// records are the complete release contribution of [EFF-2].
-    pub(super) fn collect_release_sites(
+    /// [STOR-3, PROV-6, EFF-2] Derived memory reclamation writes each
+    /// required provider. An opaque value contributes no release effect.
+    pub(super) fn collect_release_effects(
         &self,
         function: &super::FunctionSignature,
         statements: &[CheckedStatement],
-        sites: &mut Vec<ReleaseSite>,
+        effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
         for statement in statements {
             match statement {
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. } => {
-                    self.collect_expression_release_sites(value, sites)?;
+                    self.collect_expression_release_effects(function, value, effects)?;
                 }
                 // [PROV-6, EFF-2] `dispose p;` is a written statement, so the
                 // walk it runs contributes to the body-syntactic row where
                 // the checker formed it, not to the release contribution.
                 CheckedStatement::Dispose { value, .. } => {
-                    self.collect_expression_release_sites(value, sites)?;
+                    self.collect_expression_release_effects(function, value, effects)?;
                 }
                 CheckedStatement::SetList {
                     targets, values, ..
@@ -138,23 +34,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         match target {
                             CheckedSetTarget::Place(_) => {}
                             CheckedSetTarget::ArrayIndex(target) => {
-                                self.collect_expression_release_sites(&target.offset, sites)?;
+                                self.collect_expression_release_effects(
+                                    function,
+                                    &target.offset,
+                                    effects,
+                                )?;
                             }
                             CheckedSetTarget::BufferIndex(target) => {
-                                self.collect_expression_release_sites(&target.offset, sites)?;
+                                self.collect_expression_release_effects(
+                                    function,
+                                    &target.offset,
+                                    effects,
+                                )?;
                             }
                             CheckedSetTarget::Storage(target) => {
                                 for offset in target.offsets() {
-                                    self.collect_expression_release_sites(offset, sites)?;
+                                    self.collect_expression_release_effects(
+                                        function, offset, effects,
+                                    )?;
                                 }
                             }
                             CheckedSetTarget::SliceIndex(target) => {
-                                self.collect_expression_release_sites(&target.offset, sites)?;
+                                self.collect_expression_release_effects(
+                                    function,
+                                    &target.offset,
+                                    effects,
+                                )?;
                             }
                         }
                     }
                     for value in values.expressions() {
-                        self.collect_expression_release_sites(value, sites)?;
+                        self.collect_expression_release_effects(function, value, effects)?;
                     }
                 }
                 CheckedStatement::PropagateLet {
@@ -162,8 +72,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     error_drops,
                     ..
                 } => {
-                    self.collect_expression_release_sites(scrutinee, sites)?;
-                    self.collect_drop_release_sites(function, error_drops, sites)?;
+                    self.collect_expression_release_effects(function, scrutinee, effects)?;
+                    self.collect_drop_release_effects(function, error_drops, effects)?;
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {
@@ -173,53 +83,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => {
-                            self.collect_expression_release_sites(&target.offset, sites)?;
+                            self.collect_expression_release_effects(
+                                function,
+                                &target.offset,
+                                effects,
+                            )?;
                         }
                         CheckedSetTarget::BufferIndex(target) => {
-                            self.collect_expression_release_sites(&target.offset, sites)?;
+                            self.collect_expression_release_effects(
+                                function,
+                                &target.offset,
+                                effects,
+                            )?;
                         }
                         CheckedSetTarget::Storage(target) => {
                             for offset in target.offsets() {
-                                self.collect_expression_release_sites(offset, sites)?;
+                                self.collect_expression_release_effects(function, offset, effects)?;
                             }
                         }
                         CheckedSetTarget::SliceIndex(target) => {
-                            self.collect_expression_release_sites(&target.offset, sites)?;
+                            self.collect_expression_release_effects(
+                                function,
+                                &target.offset,
+                                effects,
+                            )?;
                         }
                     }
-                    self.collect_expression_release_sites(value, sites)?;
+                    self.collect_expression_release_effects(function, value, effects)?;
                 }
                 CheckedStatement::Evaluate(value) => {
-                    self.collect_expression_release_sites(value, sites)?;
+                    self.collect_expression_release_effects(function, value, effects)?;
                 }
-                CheckedStatement::DropExpression {
-                    value,
-                    state_origins,
-                    release,
-                } => {
-                    self.collect_expression_release_sites(value, sites)?;
-                    // A discarded affine result comes from an expression
-                    // statement's call, whose checked carrier is its source.
-                    let source = value
-                        .carrier()
-                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                    let effects = self.effects_of_row(
-                        value.ty(),
-                        release.row,
-                        state_origins.as_ref(),
-                        source,
-                    )?;
-                    if effects != EffectSet::NONE {
-                        sites.push(ReleaseSite {
-                            owner: ReleaseOwner::ExpressionResult,
-                            effects,
-                        });
+                CheckedStatement::DropExpression { value } => {
+                    self.collect_expression_release_effects(function, value, effects)?;
+                    for path in self.resolved_provider_writes(function, value.ty())? {
+                        effects.add_write(path);
                     }
                 }
                 CheckedStatement::Proof(_) => {}
                 CheckedStatement::Return { value, drops, .. } => {
-                    self.collect_expression_release_sites(value, sites)?;
-                    self.collect_drop_release_sites(function, drops, sites)?;
+                    self.collect_expression_release_effects(function, value, effects)?;
+                    self.collect_drop_release_effects(function, drops, effects)?;
                 }
                 CheckedStatement::Match {
                     scrutinee, arms, ..
@@ -227,23 +131,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::ValueMatchLet {
                     scrutinee, arms, ..
                 } => {
-                    self.collect_expression_release_sites(scrutinee, sites)?;
+                    self.collect_expression_release_effects(function, scrutinee, effects)?;
                     for arm in arms {
-                        self.collect_release_sites(function, &arm.body, sites)?;
-                        self.collect_drop_release_sites(function, &arm.fallthrough_drops, sites)?;
+                        self.collect_release_effects(function, &arm.body, effects)?;
+                        self.collect_drop_release_effects(
+                            function,
+                            &arm.fallthrough_drops,
+                            effects,
+                        )?;
                     }
                 }
                 CheckedStatement::Give { value, drops, .. } => {
-                    self.collect_expression_release_sites(value, sites)?;
-                    self.collect_drop_release_sites(function, drops, sites)?;
+                    self.collect_expression_release_effects(function, value, effects)?;
+                    self.collect_drop_release_effects(function, drops, effects)?;
                 }
                 CheckedStatement::Loop {
                     body,
                     backedge_drops,
                     ..
                 } => {
-                    self.collect_release_sites(function, body, sites)?;
-                    self.collect_drop_release_sites(function, backedge_drops, sites)?;
+                    self.collect_release_effects(function, body, effects)?;
+                    self.collect_drop_release_effects(function, backedge_drops, effects)?;
                 }
                 CheckedStatement::CountedRange {
                     lower,
@@ -252,87 +160,56 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     backedge_drops,
                     ..
                 } => {
-                    self.collect_expression_release_sites(lower, sites)?;
-                    self.collect_expression_release_sites(upper, sites)?;
-                    self.collect_release_sites(function, body, sites)?;
-                    self.collect_drop_release_sites(function, backedge_drops, sites)?;
+                    self.collect_expression_release_effects(function, lower, effects)?;
+                    self.collect_expression_release_effects(function, upper, effects)?;
+                    self.collect_release_effects(function, body, effects)?;
+                    self.collect_drop_release_effects(function, backedge_drops, effects)?;
                 }
                 CheckedStatement::Break { drops, .. } => {
-                    self.collect_drop_release_sites(function, drops, sites)?;
+                    self.collect_drop_release_effects(function, drops, effects)?;
                 }
                 CheckedStatement::Region {
                     body,
                     fallthrough_drops,
                     ..
                 } => {
-                    self.collect_release_sites(function, body, sites)?;
-                    self.collect_drop_release_sites(function, fallthrough_drops, sites)?;
+                    self.collect_release_effects(function, body, effects)?;
+                    self.collect_drop_release_effects(function, fallthrough_drops, effects)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn collect_drop_release_sites(
+    fn collect_drop_release_effects(
         &self,
         function: &super::FunctionSignature,
         drops: &[CheckedDrop],
-        sites: &mut Vec<ReleaseSite>,
+        effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
         for drop in drops {
-            // The drop record already carries its [SYS-5] row, so attribution
-            // reads the checked program rather than rederiving it.
-            let mut effects = self.effects_of_row(
-                drop.ty,
-                drop.release.row,
-                drop.state_origins.as_ref(),
-                &drop.source_edge,
-            )?;
-            // [PROV-6, D3] a derived release of store-backed storage spends
-            // that store's provider capability, and the scope it runs in says
-            // so in its own row.
             for path in self.resolved_provider_writes(function, drop.ty)? {
                 effects.add_write(path);
-            }
-            if effects != EffectSet::NONE {
-                sites.push(ReleaseSite {
-                    owner: ReleaseOwner::Binding(drop.binding),
-                    effects,
-                });
             }
         }
         Ok(())
     }
 
-    fn collect_expression_release_sites(
+    fn collect_expression_release_effects(
         &self,
+        function: &super::FunctionSignature,
         expression: &CheckedExpression,
-        sites: &mut Vec<ReleaseSite>,
+        effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
         match expression {
-            CheckedExpression::Project {
-                carrier,
-                binding,
-                residual_drops,
-                ..
-            } => {
+            CheckedExpression::Project { residual_drops, .. } => {
                 for drop in residual_drops {
-                    let effects = self.effects_of_row(
-                        drop.ty,
-                        drop.release.row,
-                        drop.state_origins.as_ref(),
-                        carrier,
-                    )?;
-                    if effects != EffectSet::NONE {
-                        sites.push(ReleaseSite {
-                            owner: ReleaseOwner::Binding(*binding),
-                            effects,
-                        });
+                    for path in self.resolved_provider_writes(function, drop.ty)? {
+                        effects.add_write(path);
                     }
                 }
             }
             CheckedExpression::UserCall { arguments, .. }
-            | CheckedExpression::SystemCall { arguments, .. }
             | CheckedExpression::KernelCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
@@ -345,7 +222,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 fields: arguments, ..
             } => {
                 for argument in arguments {
-                    self.collect_expression_release_sites(argument, sites)?;
+                    self.collect_expression_release_effects(function, argument, effects)?;
                 }
             }
             CheckedExpression::NumericConversion { value, .. }
@@ -356,25 +233,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::ArenaNew { value, .. }
             | CheckedExpression::ArenaDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
-                self.collect_expression_release_sites(value, sites)?;
+                self.collect_expression_release_effects(function, value, effects)?;
             }
             CheckedExpression::ReadStorage { root, .. } => {
                 for offset in root.offsets() {
-                    self.collect_expression_release_sites(offset, sites)?;
+                    self.collect_expression_release_effects(function, offset, effects)?;
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
-                self.collect_expression_release_sites(offset, sites)?;
+                self.collect_expression_release_effects(function, offset, effects)?;
             }
             CheckedExpression::BufferFill { length, value, .. } => {
-                self.collect_expression_release_sites(length, sites)?;
-                self.collect_expression_release_sites(value, sites)?;
+                self.collect_expression_release_effects(function, length, effects)?;
+                self.collect_expression_release_effects(function, value, effects)?;
             }
             CheckedExpression::BufferVacant { length, .. }
             | CheckedExpression::BufferFits { length, .. } => {
-                self.collect_expression_release_sites(length, sites)?;
+                self.collect_expression_release_effects(function, length, effects)?;
             }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
@@ -388,137 +265,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. } => {}
         }
         Ok(())
     }
-}
-
-impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// Releases carry target execution metadata, not source effect atoms. A
-    /// state-writing release must carry the ordinary structural origins of
-    /// every state leaf it releases.
-    pub(super) fn effects_of_row(
-        &self,
-        ty: CheckedType,
-        row: SystemReleaseRow,
-        origins: Option<&super::super::model::CheckedStateOrigins>,
-        source: &crate::NodePath,
-    ) -> Result<EffectSet, CheckStop> {
-        let mut effects = EffectSet::NONE;
-        if row.state_write {
-            let Some(origins) = origins else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            let origins = self.release_state_origins(ty, origins.clone(), &mut HashSet::new())?;
-            if origins.lacks_exact_origins() && !self.deriving_result_state_origin.get() {
-                let node = self
-                    .tree
-                    .node_with_path(source)
-                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                return self
-                    .unsupported(crate::UnsupportedSemanticFeature::OwnerStateRouting, node);
-            }
-            for origin in &origins.formals {
-                effects.add_write(origin.source.clone());
-            }
-        }
-        Ok(effects)
-    }
-
-    /// Select the value components whose ordinary release contracts write
-    /// state. A container's nonempty release row does not write every stored
-    /// field, and its backing allocation is not a contained resource.
-    fn release_state_origins(
-        &self,
-        ty: CheckedType,
-        origins: CheckedStateOrigins,
-        visited: &mut HashSet<CheckedType>,
-    ) -> Result<CheckedStateOrigins, CheckStop> {
-        if !self.release_of_type(ty)?.row.state_write {
-            return Ok(CheckedStateOrigins::fresh());
-        }
-        if !visited.insert(ty) {
-            // Recursive release can visit further contents. No finite typed
-            // route for them is supplied by reaching the type a second time.
-            return Ok(origins.unlocated());
-        }
-        let children = match ty {
-            CheckedType::Buffer { element } => {
-                vec![(CheckedStateStep::AnyElement, element.ty())]
-            }
-            CheckedType::FixedVector { element, .. }
-            | CheckedType::Vector { element, .. }
-            | CheckedType::Array { element, .. } => {
-                if !origins.unknown && origins.run_lengths.root() == Some(0) {
-                    Vec::new()
-                } else {
-                    vec![(CheckedStateStep::AnyElement, self.element_type(element)?)]
-                }
-            }
-            CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
-                CheckedNominalKind::SystemResource { .. } => {
-                    visited.remove(&ty);
-                    return Ok(origins);
-                }
-                CheckedNominalKind::Struct { fields } => fields
-                    .iter()
-                    .enumerate()
-                    .map(|(field, value)| {
-                        u32::try_from(field)
-                            .map(|field| (CheckedStateStep::Field(field), value.ty))
-                            .map_err(|_| SemanticCompilerFailure::CounterOverflow.into())
-                    })
-                    .collect::<Result<Vec<_>, CheckStop>>()?,
-                CheckedNominalKind::Enum { variants } => {
-                    let mut children = Vec::new();
-                    for (variant, value) in variants.iter().enumerate() {
-                        let variant = u32::try_from(variant)
-                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-                        for (field, value) in value.fields.iter().enumerate() {
-                            let field = u32::try_from(field)
-                                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-                            children.push((
-                                CheckedStateStep::VariantField { variant, field },
-                                value.ty,
-                            ));
-                        }
-                    }
-                    children
-                }
-                CheckedNominalKind::Box { referent, .. } => {
-                    vec![(CheckedStateStep::Referent, *referent)]
-                }
-                CheckedNominalKind::Arena { content, .. } => {
-                    vec![(CheckedStateStep::Referent, *content)]
-                }
-                CheckedNominalKind::ArenaStorage => Vec::new(),
-            },
-            _ => Vec::new(),
-        };
-        let mut released = CheckedStateOrigins::fresh();
-        for (selector, child) in children {
-            let image = origins.clone().projected_value(&[selector]);
-            released.compose(&self.release_state_origins(child, image, visited)?);
-        }
-        visited.remove(&ty);
-        Ok(released)
-    }
-
-    /// Attaches the [STOR-3] release record to each derived drop path, so
-    /// every construction site records the same fact for the same type.
-    pub(super) fn released_paths(
-        &self,
-        paths: Vec<(Vec<u32>, CheckedType)>,
-    ) -> Result<Vec<(Vec<u32>, CheckedType, SystemRelease)>, CheckStop> {
-        paths
-            .into_iter()
-            .map(|(fields, ty)| Ok((fields, ty, self.release_of_type(ty)?)))
-            .collect()
-    }
-
     pub(super) fn drop_paths(
         &self,
         ty: CheckedType,
@@ -574,7 +325,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         CheckedNominalKind::Enum { .. }
                         | CheckedNominalKind::Box { .. }
-                        | CheckedNominalKind::SystemResource { .. }
+                        | CheckedNominalKind::Opaque
                         // The region's allocation list drops at the region
                         // block's exits, and that drop IS the region's
                         // storage release [STOR-3].
@@ -703,4 +454,3 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(drops)
     }
 }
-use std::collections::HashSet;

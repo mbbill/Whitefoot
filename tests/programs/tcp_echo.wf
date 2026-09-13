@@ -157,7 +157,7 @@ fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result:
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, handles, heap), writes(handles, heap), allocates(heap) {
+fn main['heap](command.args as args: own Args, command.handles as handles: own HandleFactory, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(args, handles, heap), writes(handles, heap), allocates(heap) {
   doc "Listens on the loopback port named by the invocation, takes one connection, and returns every byte the peer sends until the peer stops sending [SYS-17, SYS-18]. The specification declares no operation reporting a listener's own local address, so the port is the caller's choice and arrives as an argument. The argument scratch and the echo chunk are store-resident runs, each viewed exclusively where it is written and shared where it is read.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 16_u64) {

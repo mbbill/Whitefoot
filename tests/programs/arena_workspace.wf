@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Reserves one bump extent in this activation's frame, takes two runs of slots from it, fills one of them, reads the window back, and observes the refusal the extent gives a take it has no room for.";
   region 'a {
     let workspace = arena_frame::<256, 16, 'a>();

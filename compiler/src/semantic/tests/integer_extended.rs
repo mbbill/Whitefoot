@@ -7,7 +7,7 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
 fn retains_the_complete_nonfloating_integer_family() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let a = 8_i32 / 2_i32;
   let b = 9_i32 % 2_i32;
   let c = iand(a, b);
@@ -41,6 +41,8 @@ fn retains_the_complete_nonfloating_integer_family() {
         };
         let operations = checked.data.functions[0]
             .body
+            .as_deref()
+            .expect("WF body")
             .iter()
             .filter_map(|statement| match statement {
                 CheckedStatement::Let {
@@ -61,12 +63,12 @@ fn retains_the_complete_nonfloating_integer_family() {
     });
 
     assert_rule(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = ibswap(1_i8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = ibswap(1_i8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = ishl.wrap(1_i8, 1_i8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = ishl.wrap(1_i8, 1_i8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -89,7 +91,7 @@ fn exhaustion_invariant_proves_exact_shift_counts_below_the_value_width() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

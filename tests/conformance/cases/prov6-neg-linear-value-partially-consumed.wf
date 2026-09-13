@@ -3,7 +3,7 @@ linear struct Chunk {
   spare: u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "PROV-6: a consume of a proper sub-place of a value linear in this scope, with no commit reinitialising that sub-place, abandons the residual the obligation was written for. The refusal is stated over the consume and names the destructuring consume as its repair.";
   let empty = fixed_vector::<u8, 4>();
   region {

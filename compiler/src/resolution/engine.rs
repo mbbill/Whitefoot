@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
 use crate::{ByteOffset, CanonicalSyntaxUnit, Production, SourceId};
 
-use super::catalog::{PRELUDE_DECLARATIONS, system_declarations};
+use super::catalog::PRELUDE_DECLARATIONS;
 use super::scopes::ScopeBuild;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationId, DeclarationRecord, DeclarationRole,
@@ -11,7 +11,7 @@ use super::{
     LexicalUseRecord, LexicalUseRole, PostconditionCandidateRecord, PostconditionFieldRecord,
     PostconditionResolutionRecord, PostconditionSelectorClass, PostconditionSelectorUseRecord,
     PreludeDeclarationRecord, ResolutionCompilerFailure, ResolutionIssue, ResolutionIssueKind,
-    ResolutionOutcome, ResolvedSyntaxUnit, ScopeId, SourceOrigin, SystemDeclarationRecord,
+    ResolutionOutcome, ResolvedSyntaxUnit, ScopeId, SourceOrigin,
 };
 
 mod admission;
@@ -55,11 +55,6 @@ enum RawRoleKind {
     Selector(SelectorRole),
     LexicalUse(LexicalUseRole),
     DeferredUse(DeferredUseRole),
-    /// A DIAG-1 table-checked carrier: the `program_kind` IDENT and both
-    /// IDENTs of an `input_label`. It declares nothing and enters no lexical
-    /// name domain; its FN-7 kind-table judgment is an unimplemented compiler
-    /// capability, so classification produces no retained record yet.
-    TableChecked,
 }
 
 impl RawRoleKind {
@@ -69,7 +64,6 @@ impl RawRoleKind {
             Self::Selector(_) => 1,
             Self::LexicalUse(_) => 2,
             Self::DeferredUse(_) => 3,
-            Self::TableChecked => 4,
         }
     }
 }
@@ -156,7 +150,6 @@ struct UseMeta {
 struct Tables {
     scopes: Vec<super::ScopeRecord>,
     prelude: Vec<PreludeDeclarationRecord>,
-    system: Vec<SystemDeclarationRecord>,
     declarations: Vec<DeclarationRecord>,
     dependent_declarations: Vec<DependentDeclarationRecord>,
     lexical_uses: Vec<LexicalUseRecord>,
@@ -180,31 +173,16 @@ impl From<ResolutionCompilerFailure> for BuildStop {
 pub fn resolve<'classified, 'lexed, 'source>(
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> ResolutionOutcome<'classified, 'lexed, 'source> {
-    resolve_with_inventory(syntax, crate::Inventory::ACTIVE)
-}
-
-/// [`resolve`] against one named [SYS-2] inventory state.
-///
-/// `inventory` selects which prefix of the [SYS-2] tables this unit resolves
-/// against; [`crate::Inventory::ACTIVE`] is the active specification's and is
-/// what [`resolve`] passes outside a candidate path.
-#[must_use]
-pub fn resolve_with_inventory<'classified, 'lexed, 'source>(
-    syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
-    inventory: crate::Inventory,
-) -> ResolutionOutcome<'classified, 'lexed, 'source> {
-    match build_tables(&syntax, inventory) {
+    match build_tables(&syntax) {
         Ok(tables) => ResolutionOutcome::Complete(ResolvedSyntaxUnit {
             syntax,
             scopes: tables.scopes,
             prelude: tables.prelude,
-            system: tables.system,
             declarations: tables.declarations,
             dependent_declarations: tables.dependent_declarations,
             lexical_uses: tables.lexical_uses,
             deferred_uses: tables.deferred_uses,
             postconditions: tables.postconditions,
-            inventory,
         }),
         Err(BuildStop::Issue(issue)) => ResolutionOutcome::SourceIssue {
             syntax,
@@ -214,22 +192,15 @@ pub fn resolve_with_inventory<'classified, 'lexed, 'source>(
     }
 }
 
-fn build_tables(
-    syntax: &CanonicalSyntaxUnit<'_, '_, '_>,
-    inventory: crate::Inventory,
-) -> Result<Tables, BuildStop> {
+fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, BuildStop> {
     let topology = &syntax.finalized.topology;
-    let scopes = ScopeBuild::build(topology)?;
+    let scopes = ScopeBuild::build(topology, syntax.finalized.parsed.classified.source_bundle())?;
     // [DIAG-1] fixes this order: complete unit-wide FN-8 admission precedes
     // declaration inventory, and only complete inventory permits lexical
     // resolution.
     if let Some(issue) = check_clause_blocks(topology, &scopes)? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
-    // [SYS-3] admits the complete [SYS-2] inventory into every compilation
-    // unit as the third declaration source [SYS-1]. Entry-form validation is
-    // deliberately later and cannot change which system names exist.
-    let system = system_declarations(inventory);
     let mut roles = classify_roles(syntax, &scopes)?;
     // [LIV-2] a `set` target identifier that resolves to no binding declares
     // one exactly as a `let` does. Which targets those are is not a syntactic
@@ -265,11 +236,24 @@ fn build_tables(
                             .get(1)
                             .and_then(|owner| topology.node(*owner))
                             .is_some_and(|record| record.production == Production::FormalDecl);
-                    let entries = if grouped_member {
+                    let mut entries = if grouped_member {
                         Vec::new()
                     } else {
                         declaration_classes(declaration_role)
                     };
+                    if declaration_role == DeclarationRole::Struct
+                        && syntax
+                            .finalized
+                            .parsed
+                            .classified
+                            .source_bundle()
+                            .file(role.origin.coordinate.source())
+                            .is_some_and(|file| {
+                                file.prelude() == Some(crate::source::PreludeSource::Opaque)
+                            })
+                    {
+                        entries.retain(|class| *class != DeclarationClass::StructConstructor);
+                    }
                     let record_index = declarations.len();
                     declarations.push(DeclarationRecord {
                         id,
@@ -298,7 +282,24 @@ fn build_tables(
                             role.owner_chain.first().copied()
                         },
                         region_owner: region_scope_owner(topology, role.owner),
-                        visibility: declaration_visibility(topology, role, declaration_role)?,
+                        visibility: if matches!(
+                            declaration_role,
+                            DeclarationRole::Function
+                                | DeclarationRole::Struct
+                                | DeclarationRole::Enum
+                                | DeclarationRole::Variant
+                        ) && syntax
+                            .finalized
+                            .parsed
+                            .classified
+                            .source_bundle()
+                            .file(role.origin.coordinate.source())
+                            .is_some_and(|file| file.prelude().is_some())
+                        {
+                            Visibility::Always
+                        } else {
+                            declaration_visibility(topology, role, declaration_role)?
+                        },
                         entries,
                     });
                 }
@@ -334,7 +335,7 @@ fn build_tables(
                     origin: role.origin.clone(),
                 }),
                 // Table-checked carriers await the FN-7 kind-table capability, and
-                RawRoleKind::Selector(_) | RawRoleKind::TableChecked => {}
+                RawRoleKind::Selector(_) => {}
             }
         }
 
@@ -348,7 +349,6 @@ fn build_tables(
             &declaration_metas,
             &declaration_index,
             &declaration_by_role,
-            &system,
         )? {
             return Err(BuildStop::Issue(Box::new(issue)));
         }
@@ -358,7 +358,6 @@ fn build_tables(
             &declaration_metas,
             &declaration_index,
             &uses,
-            &system,
         )?;
         if let Some(issue) = unresolved {
             // [LIV-2] exactly one candidate is promoted per pass, and only the one
@@ -382,12 +381,11 @@ fn build_tables(
             &declaration_index,
             &postcondition_entry_uses,
             &lexical_uses,
-            &system,
         )?;
         return Ok(Tables {
             scopes: scopes.records,
             prelude: PRELUDE_DECLARATIONS.to_vec(),
-            system,
+
             declarations,
             dependent_declarations,
             lexical_uses,
@@ -497,7 +495,6 @@ fn build_postcondition_records(
     declaration_index: &DeclarationIndex,
     entry_uses: &[UseMeta],
     lexical_uses: &[LexicalUseRecord],
-    system: &[SystemDeclarationRecord],
 ) -> Result<Vec<PostconditionResolutionRecord>, BuildStop> {
     let mut blocks = Vec::new();
     for (index, record) in topology.nodes.iter().enumerate() {
@@ -704,7 +701,6 @@ fn build_postcondition_records(
                 declaration_metas,
                 declaration_index,
                 &ordinary_entry_uses,
-                system,
             )?;
             if issue.is_some() {
                 (Vec::new(), issue)
@@ -748,7 +744,7 @@ fn build_postcondition_candidate(
         .iter()
         .filter_map(|candidate| metas.get(*candidate))
     {
-        if meta.scope != ScopeId(0)
+        if !scopes.is_unit_scope(meta.scope)
             && meta
                 .owner
                 .is_some_and(|owner| !role.owner_chain.contains(&owner))
@@ -902,7 +898,9 @@ fn declaration_scope(
     scopes: &ScopeBuild,
 ) -> Result<ScopeId, ResolutionCompilerFailure> {
     match declaration_role {
-        DeclarationRole::Variant => Ok(ScopeId(0)),
+        DeclarationRole::Variant => scopes.node_scope(
+            *role.owner_chain.first().ok_or(ResolutionCompilerFailure::InvalidRoleShape)?
+        ),
         DeclarationRole::LoopLabel | DeclarationRole::LocalRegion => {
             scopes.declaration_scope(role.owner)
         }

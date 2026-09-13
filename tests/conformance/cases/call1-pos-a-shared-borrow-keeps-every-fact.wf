@@ -6,7 +6,7 @@ fn inspect<const n: u64>(source: &FixedVector<u8, n>, i: own u64) -> seen: own u
   return deref(source)[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[CALL-1] a call is a kill event for no fact supported by a shared-borrow actual's place. [OWN-5] admits no write through a shared holder, so a body can exhibit none and [EFF-2]'s both-ways row check admits none in the declared row; no writes occurrence therefore projects onto line and no [MSR-2] kill fires. The length the two placements established survives the call, so the second call proves its own requirement from the same fact and the subscript inside the callee is discharged.";
   let line = fixed_vector::<u8, 4>();
   region {

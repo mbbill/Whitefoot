@@ -2771,15 +2771,15 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
     CHECK(value == 0 && error_code == 0);
     CHECK(fcntl(taken, F_GETFD) >= 0);
 
-    /* The second releases the target's object, which is the release that
-     * spends the credit. */
+    /* The second releases the descriptor. The private joined value records
+     * that one credit can be returned to the ordinary close's passed factory. */
     wf__completion_socket_shutdown_submit(
         taken,
         WF_SOCKET_DIRECTION_SEND,
         record.bytes
     );
     wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
+    CHECK(value == 1 && error_code == 0);
     errno = 0;
     CHECK(fcntl(taken, F_GETFD) < 0 && errno == EBADF);
 
@@ -2800,7 +2800,7 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
         record.bytes
     );
     wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
+    CHECK(value == 1 && error_code == 0);
     errno = 0;
     CHECK(fcntl(connected, F_GETFD) < 0 && errno == EBADF);
 

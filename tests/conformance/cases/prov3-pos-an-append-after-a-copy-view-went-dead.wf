@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "A copy view is consumed by nothing, so its loan ends at its last use rather than at the end of its region: the run is appended to after the view of it went dead, inside the region block the view was formed in. The program reads the run's length back afterwards, so an append the checker admitted but the lowering placed wrongly is visible.";
   let empty = fixed_vector::<u8, 4>();
   region {

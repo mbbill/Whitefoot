@@ -1,4 +1,4 @@
-fn consume(run: own Vector<u8>, store: &uniq Heap) -> code: own u8 reads(run), writes(store) contract {
+fn consume['heap](run: own Vector<'heap, u8>, store: &uniq Heap<'heap>) -> code: own u8 reads(run), writes(store) contract {
   requires len_of(run) > 0_u64;
 } {
   doc "D3, PROV-6: the same helper holding the store's provider is where the run is affine again. The release the scope exit runs is derived, and the row says so: writes(store) is the provider place that release spends [EFF-2].";
@@ -6,7 +6,7 @@ fn consume(run: own Vector<u8>, store: &uniq Heap) -> code: own u8 reads(run), w
   return byte;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
       None() => {

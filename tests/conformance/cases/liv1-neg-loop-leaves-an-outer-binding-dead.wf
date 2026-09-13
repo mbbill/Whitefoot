@@ -4,7 +4,7 @@ fn measure(cell: own FixedVector<u8, 4>) -> size: own u64 reads(cell) {
   return n;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "OWN-11: the body consumes an outer binding and does not commit a value back into it, so the backedge disagrees with the entering edge.";
   let empty = fixed_vector::<u8, 4>();
   region {

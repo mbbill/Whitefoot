@@ -15,7 +15,7 @@ fn read(values: &array<array<u64, 2>, 1>) -> result: own u64 reads(values) {
   return deref(values)[0_u64][1_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let direct = rows[0_u64][1_u64];
   region {
     let value = read(values: &rows);
@@ -37,7 +37,7 @@ fn nested_fixed_vector_constants_keep_an_explicit_capability_boundary() {
     super::assert_unsupported(
         br#"const rows: array<FixedVector<u64, 2>, 1> =[[7_u64, 9_u64]];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -49,7 +49,7 @@ command fn main() -> status: own ExitStatus pure {
 fn constant_struct_field_reads_preserve_their_scalar_proof_facts() {
     for offset in [1_u64, 2_u64] {
         let source = format!(
-            "struct Limits {{\n  offset: u64;\n}}\n\nstruct Settings {{\n  limits: Limits;\n}}\n\nconst settings: Settings = Settings(limits: Limits(offset: {offset}_u64));\n\ncommand fn main() -> status: own ExitStatus pure {{\n  let values = array_new::<u64, 2>(7_u64);\n  let index = settings.limits.offset;\n  let successor = index + 1_u64;\n  let value = values[index];\n  return exit_status(code: 0_u8);\n}}\n"
+            "struct Limits {{\n  offset: u64;\n}}\n\nstruct Settings {{\n  limits: Limits;\n}}\n\nconst settings: Settings = Settings(limits: Limits(offset: {offset}_u64));\n\nfn main() -> status: own ExitStatus pure {{\n  let values = array_new::<u64, 2>(7_u64);\n  let index = settings.limits.offset;\n  let successor = index + 1_u64;\n  let value = values[index];\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             if offset == 1 {
@@ -77,7 +77,7 @@ fn constant_typed_places_remain_immutable_and_proof_checked() {
         "region {\n    let target = &uniq rows[0_u64];\n  }",
     ] {
         let source = format!(
-            "{prefix}command fn main() -> status: own ExitStatus pure {{\n  {action}\n  return exit_status(code: 0_u8);\n}}\n"
+            "{prefix}fn main() -> status: own ExitStatus pure {{\n  {action}\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Const2, |kind| {
             matches!(kind, SemanticIssueKind::ImmutableSetTarget)
@@ -94,7 +94,7 @@ fn constant_typed_places_remain_immutable_and_proof_checked() {
         ),
     ] {
         let source = format!(
-            "{prefix}command fn main() -> status: own ExitStatus pure {{\n  {action}\n  return exit_status(code: 0_u8);\n}}\n"
+            "{prefix}fn main() -> status: own ExitStatus pure {{\n  {action}\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -112,7 +112,7 @@ fn normalized_constant_run_storage_is_not_an_array_borrow() {
     super::assert_unsupported(
         br#"const table: FixedVector<u64, 2> =[7_u64, 9_u64];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region {
     let shared = &table;
   }
@@ -131,7 +131,7 @@ fn read(values: &array<u64, 2>) -> result: own u64 reads(values) {
   return deref(values)[1_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region {
     let value = read(values: &table);
   }
@@ -151,7 +151,7 @@ fn constant_array_entries_follow_the_type_directed_value_shapes() {
         ("FixedVector<u64, 2>", "FixedVector<u64, 2>"),
     ] {
         let source = format!(
-            "const inner: {inner} =[7_u64, 9_u64];\n\nconst rows: array<{element}, 1> =[inner];\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "const inner: {inner} =[7_u64, 9_u64];\n\nconst rows: array<{element}, 1> =[inner];\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Const2, |kind| {
             matches!(kind, SemanticIssueKind::InvalidConstValue)
@@ -162,7 +162,7 @@ fn constant_array_entries_follow_the_type_directed_value_shapes() {
 
 const rows: array<u64, 1> =[scalar];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -183,7 +183,7 @@ fn constant_array_eligibility_closes_recursive_types_before_checking_the_value()
 
 const invalid: Recursive = Recursive(children:[unit]);
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -206,7 +206,7 @@ command fn main() -> status: own ExitStatus pure {
     });
     let forbidden = br#"const forbidden: array<array<box<u64>, 0>, 1> =[unit];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -228,7 +228,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn full_array_conversion_requires_fullness_and_preserves_linear_obligations() {
     assert_rule_kind(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u64, 2>();
   region {
     place_back(vector: &uniq empty, value: 7_u64);
@@ -250,7 +250,7 @@ fn abandon(values: own array<Token, 0>) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -266,7 +266,7 @@ fn convert(values: own array<Token, 0>) -> result: own FixedVector<Token, 0> pur
   return fixed_from_array(values: move values);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -282,7 +282,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn general_array_views_remain_an_explicit_capability_gap() {
     super::assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let inner = array_new::<u64, 2>(7_u64);
   let empty = fixed_vector::<array<u64, 2>, 1>();
   region {
@@ -306,7 +306,7 @@ fn incoming_array_element_reads_exhibit_the_resolved_formal_effect() {
   return values[0_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -346,7 +346,7 @@ fn read(values: &array<Record, 2>) -> result: own u64 reads(values) {
   return deref(values)[0_u64].value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -395,18 +395,18 @@ command fn main() -> status: own ExitStatus pure {
 fn full_arrays_preserve_storage_exclusions_and_inline_layout_boundaries() {
     for content in ["Slice<'r, u8>", "Heap<'r>", "Arena<'r, 64, 8>"] {
         let source = format!(
-            "struct Forbidden['r] {{\n  values: array<{content}, 0>;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "struct Forbidden['r] {{\n  values: array<{content}, 0>;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Stor5, |kind| {
             matches!(kind, SemanticIssueKind::RegionBearingStorage { .. })
         });
     }
     super::assert_unsupported(
-        b"struct Recursive {\n  values: array<Recursive, 1>;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Recursive {\n  values: array<Recursive, 1>;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         crate::UnsupportedSemanticFeature::RecursiveNominalLayout,
     );
     with_semantics(
-        b"struct Empty {\n  values: array<Empty, 0>;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Empty {\n  values: array<Empty, 0>;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else { panic!("zero extent has no recursive layout edge: {outcome:?}"); };
             crate::lower_checked(*checked, crate::lowering::OverlapLowering::Off).expect("zero extent recursive type lowers");
@@ -420,7 +420,7 @@ fn full_arrays_preserve_storage_exclusions_and_inline_layout_boundaries() {
 /// slot or a copied run value.
 #[test]
 fn an_owned_box_referent_is_an_admitted_measured_place() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   region 'a {
     let store = arena_frame::<64, 8, 'a>();
     region {
@@ -447,7 +447,7 @@ fn an_owned_box_referent_is_an_admitted_measured_place() {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("an own Box referent is a measure place: {outcome:?}");
         };
-        let arm = &checked.data.functions[0].body[0];
+        let arm = &checked.data.functions[0].body.as_deref().expect("WF body")[0];
         let CheckedStatement::Region { body, .. } = arm else {
             panic!("outer store region must remain checked");
         };
@@ -474,7 +474,7 @@ fn an_owned_box_referent_is_an_admitted_measured_place() {
 #[test]
 fn a_bare_owned_box_still_requires_explicit_dereference_to_measure_its_referent() {
     assert_rule_kind(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
   let block = box_new(move empty);
   let capacity = cap_of(block);
@@ -491,7 +491,7 @@ fn a_bare_owned_box_still_requires_explicit_dereference_to_measure_its_referent(
 /// read from the new empty run.
 #[test]
 fn replacing_an_owned_box_kills_its_referents_old_measure() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   region 'a {
     let store = arena_frame::<128, 8, 'a>();
     region {
@@ -550,7 +550,7 @@ fn constants_fill_length_and_index_share_exact_run_types() {
 
 const table: FixedVector<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<i32, count>();
   region {
     place_back(vector: &uniq empty, value: 7_i32);
@@ -583,7 +583,7 @@ command fn main() -> status: own ExitStatus pure {
         };
         assert_eq!(elements.len(), 4);
 
-        let body = &checked.data.functions[0].body;
+        let body = &checked.data.functions[0].body.as_deref().expect("WF body");
         assert!(matches!(
             &body[5],
             CheckedStatement::Let {
@@ -645,7 +645,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
-        b"const table: FixedVector<u8, 2> =[1_u8];\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"const table: FixedVector<u8, 2> =[1_u8];\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Const2,
         SemanticIssueKind::InvalidConstValue,
     );
@@ -655,7 +655,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::InvalidConstValue,
     );
     assert_rule(
-        b"struct Cell {\n  value: i32;\n}\n\nconst bad: Cell = unit;\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Cell {\n  value: i32;\n}\n\nconst bad: Cell = unit;\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Const2,
         SemanticIssueKind::InvalidConstValue,
     );
@@ -665,7 +665,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::ImmutableSetTarget,
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let items = fixed_vector::<u8, 2>();\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let items = fixed_vector::<u8, 2>();\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -684,7 +684,7 @@ struct Holder {
   flags: FixedVector<Flag, count>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -712,14 +712,14 @@ command fn main() -> status: own ExitStatus pure {
     // TYPE-2 now admits complete owning elements in full arrays too; the
     // former flat-only rejection is superseded by that explicit amendment.
     with_semantics(
-        b"enum Payload {\n  Item(value: i32);\n}\n\nstruct Holder {\n  values: array<Payload, 2>;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Payload {\n  Item(value: i32);\n}\n\nstruct Holder {\n  values: array<Payload, 2>;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_)), "owning array member: {outcome:?}"),
     );
 }
 
 #[test]
 fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq empty, value: 0_u8);
@@ -738,7 +738,9 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("indexed fixed-run set must check: {outcome:?}");
         };
-        let CheckedStatement::Set { target, .. } = &checked.data.functions[0].body[5] else {
+        let CheckedStatement::Set { target, .. } =
+            &checked.data.functions[0].body.as_deref().expect("WF body")[5]
+        else {
             panic!("sixth statement must be the indexed set");
         };
         let CheckedSetTarget::Storage(target) = target else {
@@ -770,7 +772,7 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
     // A discharged subscript adds no runtime effect: the indexed set with a
     // constant in-range offset is accepted in a `pure` function.
     with_semantics(
-        b"command fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -779,12 +781,12 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
         },
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"fn consume(values: own FixedVector<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn consume(values: own FixedVector<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let empty = fixed_vector::<u8, 2>();\n  region {\n    place_back(vector: &uniq empty, value: 0_u8);\n  }\n  let values = move empty;\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
@@ -802,7 +804,7 @@ struct Outer {
   inner: Inner;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq empty, value: 0_u8);
@@ -824,7 +826,7 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("nested struct run places must check: {outcome:?}");
         };
-        let body = &checked.data.functions[0].body;
+        let body = &checked.data.functions[0].body.as_deref().expect("WF body");
         let CheckedStatement::Set { target, .. } = &body[8] else {
             panic!("ninth statement must be the projected indexed set");
         };
@@ -864,7 +866,7 @@ fn replacement(value: own Outer) -> result: own u8 pure {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq empty, value: 0_u8);
@@ -895,7 +897,7 @@ struct Outer {
   inner: Inner;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq empty, value: 0_u8);
@@ -935,7 +937,7 @@ fn region_bearing_array_content_rejects_under_stor5() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -948,7 +950,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -959,7 +961,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn general_elements_allow_an_array_value_inside_a_run_slot() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let row = array_new::<u64, 2>(7_u64);
   let empty = fixed_vector::<array<u64, 2>, 2>();
   region {
@@ -985,11 +987,16 @@ fn general_elements_allow_an_array_value_inside_a_run_slot() {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("an array is a complete nameable run element: {outcome:?}");
         };
-        let main = &checked.data.functions[checked.data.main.0 as usize];
+        let main = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
         let CheckedStatement::Set {
             target: CheckedSetTarget::Storage(target),
             ..
-        } = &main.body[4]
+        } = &main.body.as_deref().expect("WF body")[4]
         else {
             panic!("nested array mutation must use the ordinary typed storage path");
         };
@@ -1008,11 +1015,11 @@ fn general_elements_reject_deep_stored_views_and_providers() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let invalid = fixed_vector::<FixedVector<FixedVector<Heap, 1>, 1>, 1>();
   return exit_status(code: 0_u8);
 }

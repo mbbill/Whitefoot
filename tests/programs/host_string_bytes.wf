@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
+fn main['heap](command.args as args: own Args, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
   doc "Require one argument's complete target-native code-unit byte sequence to be the exact two bytes selected by the native target fixture, qualifying host_bytes_len and host_copy_bytes together [HOST-2, SYS-9].";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {

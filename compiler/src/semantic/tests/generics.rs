@@ -20,7 +20,7 @@ fn read['a, 'b](value: &Wrapped<'a, 'b>) -> result: own u64 reads(value.value.ta
   return deref(value).value.tag;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'outer {
     region 'inner {
       let value = Phantom<'inner, 'outer>(tag: 17_u64);
@@ -54,7 +54,7 @@ fn relay['x, 'y](values: &FixedVector<Vector<'x, Box<'y, u8>>, 2>) -> result: ow
   return read(values: values);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -76,11 +76,11 @@ fn package['s](value: own Vector<'s, u8>) -> result: own Wrap<'s> pure {
   return Wrap(value: move value);
 }
 
-fn entry_heap_reader(value: &Vector<u8>) -> result: own u64 reads(value) {
+fn reader['s](value: &Vector<'s, u8>) -> result: own u64 reads(value) {
   return len_of(deref(value));
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -99,7 +99,7 @@ fn brand_parameters_do_not_change_single_loan_spelling_or_legacy_arena_support()
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -111,7 +111,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -121,53 +121,15 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn brand_parameters_do_not_leak_nominal_defaults_into_nested_declarations() {
+    // v0.58 PROV-1 removes the hidden entry-heap brand. A zero-/two-region
+    // nested nominal must write its store argument instead of borrowing the
+    // enclosing nominal's single-brand context.
     for (field, region_parameters) in [("Inner<u64>", ""), ("Inner<'s, 's, u64>", "['a, 'b]")] {
-        // Inner's symbolic instance is checked first; Outer later completes
-        // concrete Inner<u64> under its sole-region field context. Both
-        // Inner's fields and a later parameter keep their entry-heap brand.
         let source = format!(
-            "struct Inner<T: affine>{region_parameters} {{\n  values: Vector<u8>;\n  payload: T;\n}}\n\nstruct Outer['s] {{\n  inner: {field};\n}}\n\nfn read(value: &Vector<u8>) -> result: own u64 reads(value) {{\n  return len_of(deref(value));\n}}\n\nfn inspect['s](value: &Outer<'s>) -> result: own u64 pure {{\n  return 0_u64;\n}}\n\ncommand fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "struct Inner<T: affine>{region_parameters} {{\n  values: Vector<u8>;\n  payload: T;\n}}\n\nstruct Outer['s] {{\n  inner: {field};\n}}\n"
         );
-        with_semantics(source.as_bytes(), |outcome| {
-            let SemanticOutcome::Complete(checked) = outcome else {
-                panic!("nested defaults must remain declaration-local: {outcome:?}");
-            };
-            let inner = checked
-                .data
-                .nominals
-                .iter()
-                .filter(|nominal| nominal.name.starts_with("Inner<"))
-                .collect::<Vec<_>>();
-            assert!(!inner.is_empty());
-            for nominal in inner {
-                let CheckedNominalKind::Struct { fields } = &nominal.kind else {
-                    panic!("Inner is a struct");
-                };
-                assert!(
-                    matches!(
-                        fields[0].ty,
-                        CheckedType::Vector {
-                            region: crate::DeclarationId::ENTRY_HEAP_REGION,
-                            ..
-                        }
-                    ),
-                    "a zero-/two-region declaration keeps the entry-heap default: {:?}",
-                    fields[0].ty
-                );
-            }
-            let read = checked
-                .data
-                .functions
-                .iter()
-                .find(|function| function.name == "read")
-                .unwrap();
-            assert!(matches!(
-                read.parameters[0].ty,
-                CheckedType::Vector {
-                    region: crate::DeclarationId::ENTRY_HEAP_REGION,
-                    ..
-                }
-            ));
+        assert_rule_kind(source.as_bytes(), SemanticRule::Form8, |kind| {
+            matches!(kind, SemanticIssueKind::RegionSpelling { .. })
         });
     }
 }
@@ -187,7 +149,7 @@ fn brand_parameters_reject_different_actuals_inside_one_operand() {
         ),
     ] {
         let source = format!(
-            "{declarations}fn inspect['s](value: &{expected}) -> result: own u64 pure {{\n  return 0_u64;\n}}\n\nfn caller['a, 'b](value: &{actual}) -> result: own u64 pure {{\n  return inspect(value: value);\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "{declarations}fn inspect['s](value: &{expected}) -> result: own u64 pure {{\n  return 0_u64;\n}}\n\nfn caller['a, 'b](value: &{actual}) -> result: own u64 pure {{\n  return inspect(value: value);\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Type5, |kind| {
             matches!(kind, SemanticIssueKind::TypeMismatch { .. })
@@ -209,7 +171,7 @@ fn pack<T: affine>['s](value: own T) -> result: own Wrap<'s, T> pure {
   return Wrap<'s, T>(payload: move value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'outer {
     let value = Mark<'outer>(value: 9_u64);
     region 'inner {
@@ -249,7 +211,7 @@ fn brand_parameters_cannot_be_shortened_by_a_mode_loan_in_either_order() {
             )
         };
         let source = format!(
-            "struct Mark['s] {{\n  value: u64;\n}}\n\nfn carry['s]({parameters}) -> result: own Mark<'s> pure {{\n  return move marker;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  region 'outer {{\n    let marker = Mark<'outer>(value: 7_u64);\n    let number = 9_u64;\n    region {{\n      let result = carry({arguments});\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+            "struct Mark['s] {{\n  value: u64;\n}}\n\nfn carry['s]({parameters}) -> result: own Mark<'s> pure {{\n  return move marker;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  region 'outer {{\n    let marker = Mark<'outer>(value: 7_u64);\n    let number = 9_u64;\n    region {{\n      let result = carry({arguments});\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Own4, |kind| {
             matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. })
@@ -272,7 +234,7 @@ fn brand_parameters_allow_longer_mode_loans_in_either_order() {
             )
         };
         let source = format!(
-            "struct Mark['s] {{\n  value: u64;\n}}\n\nfn carry['s]({parameters}) -> result: own Mark<'s> pure {{\n  return move marker;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  let number = 9_u64;\n  region 'outer {{\n    region 'inner {{\n      let marker = Mark<'inner>(value: 7_u64);\n      let result = carry({arguments});\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+            "struct Mark['s] {{\n  value: u64;\n}}\n\nfn carry['s]({parameters}) -> result: own Mark<'s> pure {{\n  return move marker;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  let number = 9_u64;\n  region 'outer {{\n    region 'inner {{\n      let marker = Mark<'inner>(value: 7_u64);\n      let result = carry({arguments});\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             assert!(
@@ -299,7 +261,7 @@ fn add['r](left: &'r u64, right: &'r u64) -> result: own u64 reads(left, right) 
   return first +wrap second;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = 7_u64;
   region 'outer {
     let second = 9_u64;
@@ -332,7 +294,7 @@ fn recur<T: affine, const n: u64>['s](value: own T) -> result: own Mark<'s, T> p
   return recur::<'s, T, n>(value: move value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -360,7 +322,7 @@ fn wrong['a, 'b](wanted: &Box<'a, u64>, given: own Box<'b, u64>, witness: &Box<'
   return pass::<Box<'a, u64>>(value: move given);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -375,7 +337,7 @@ fn explicit_int_generic_function_builds_each_reachable_concrete_instance() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = identity::<u32>(value: 7_u32);
   let second = identity::<i64>(value: -9_i64);
   return exit_status(code: 0_u8);
@@ -396,7 +358,7 @@ fn int_bound_selects_the_same_operation_row_for_every_concrete_instance() {
   return imax(left, right);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = maximum::<u8>(left: 4_u8, right: 9_u8);
   let signed = maximum::<i64>(left: -7_i64, right: -2_i64);
   return exit_status(code: 0_u8);
@@ -419,7 +381,7 @@ fn float_bound_selects_operations_and_identities_for_every_concrete_instance() {
   return fadd.strict(zero, shifted);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let single = nudge::<f32>(value: 2.0_f32);
   let double = nudge::<f64>(value: 4.0_f64);
   return exit_status(code: 0_u8);
@@ -439,7 +401,7 @@ fn float_bound_rejects_a_non_float_explicit_argument_under_fn3() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let invalid = identity::<u32>(value: 7_u32);
   return exit_status(code: 0_u8);
 }
@@ -455,7 +417,7 @@ fn numeric_identity_requires_an_int_or_float_bound() {
   return 0_T;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -470,7 +432,7 @@ fn int_bound_identity_is_concretized_before_lowering() {
   return 1_T;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = one::<u16>();
   return exit_status(code: 0_u8);
 }
@@ -490,7 +452,7 @@ fn generic_conversion_is_reported_as_unsupported_instead_of_invalid_source() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -503,7 +465,7 @@ fn int_bound_rejects_a_non_integer_explicit_argument_under_fn3() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let input = True();
   let invalid = identity::<Bool>(value: input);
   return exit_status(code: 0_u8);
@@ -526,7 +488,7 @@ fn a_generic_call_cycle_at_the_callers_own_parameters_monomorphizes() {
   return recursive::<T>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let seen = recursive::<u16>(value: 1_u16);
   return exit_status(code: 0_u8);
 }
@@ -554,7 +516,7 @@ fn a_generic_cycle_varying_a_const_argument_stops_before_instance_enumeration() 
   return rest +wrap 1_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = grow::<1>(at: 3_u64);
   return exit_status(code: 0_u8);
 }
@@ -594,7 +556,7 @@ fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_paramete
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -614,7 +576,7 @@ fn right<A: affine, B: affine>(first: own A, second: own B) -> result: own A pur
   return first;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -640,7 +602,7 @@ fn trampoline() -> result: own i32 pure {
   return forward;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -662,7 +624,7 @@ fn unused_int_generic_body_is_checked_for_the_complete_bound_domain() {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -688,7 +650,7 @@ fn a_move_in_an_affine_bounded_body_denotes_a_copy_at_a_copy_instance() {
   return move value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let copied = transfer::<u8>(value: 7_u8);
   let payload = Some<u8>(value: 3_u8);
   let held = transfer::<Option<u8>>(value: move payload);
@@ -714,7 +676,7 @@ fn forward<T: Int>(value: own T) -> result: own T pure {
   return select::<T>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = forward::<u8>(value: 7_u8);
   let signed = forward::<i64>(value: -9_i64);
   return exit_status(code: 0_u8);
@@ -740,7 +702,7 @@ fn forward<const n: u64>(value: own FixedVector<u8, n>) -> result: own FixedVect
   return preserve::<n>(value: move value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small_input = fixed_vector::<u8, 2>();
   let small = forward::<2>(value: move small_input);
   let large_input = fixed_vector::<u8, 5>();
@@ -770,7 +732,7 @@ fn unbounded_type_parameters_build_only_explicit_reachable_instances() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   marker::<u8>();
   marker::<Bool>();
   return exit_status(code: 0_u8);
@@ -798,7 +760,7 @@ fn generic_argument_kinds_and_const_parameter_types_are_checked() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   marker::<4>();
   return exit_status(code: 0_u8);
 }
@@ -811,7 +773,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   sized::<u8>();
   return exit_status(code: 0_u8);
 }
@@ -824,7 +786,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -844,7 +806,7 @@ fn duplicate<T: Int>(value: own T) -> result: own Pair<T> pure {
   return Pair<T>(left: value, right: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = duplicate::<u8>(value: 7_u8);
   let wide = duplicate::<i64>(value: -9_i64);
   let small_left = small.left;
@@ -875,7 +837,7 @@ fn source_generic_enums_use_the_concrete_instance_member_table() {
   Present(value: T);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = Present<u8>(value: 3_u8);
   match small {
     Missing() => {
@@ -923,7 +885,7 @@ struct Holder<T: affine> {
   value: T;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let short_bytes = fixed_vector::<u8, 2>();
   let short = Packet<2>(bytes: move short_bytes);
   let long_bytes = fixed_vector::<u8, 5>();
@@ -1007,7 +969,7 @@ fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updat
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1032,7 +994,7 @@ fn reverse['left, 'right](left: own Holder<'left>, right: own Holder<'right>) ->
   return move right, move left;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1057,7 +1019,7 @@ fn reverse['right, 'left](left: own Holder<'left>, right: own Holder<'right>) ->
   return move right, move left;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1084,7 +1046,7 @@ fn caller['s](slots: own FixedVector<Option<Entry<'s>>, 1>) -> result: own Fixed
   return pass::<'s>(slots: move slots);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1116,7 +1078,7 @@ fn inspect_positions['s](entries: own FixedVector<Option<Entry<'s>>, 4>) -> resu
   return move entries;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1156,7 +1118,7 @@ fn compose['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>
   return pass(slots: move slots);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1196,7 +1158,7 @@ fn crossed['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>
   return pass(slots: move slots, anchor: witness);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1212,7 +1174,7 @@ fn source_nominal_argument_arity_and_kinds_are_exact() {
   value: T;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let invalid = Pair<u8, u16>(value: 1_u8);
   return exit_status(code: 0_u8);
 }
@@ -1225,7 +1187,7 @@ command fn main() -> status: own ExitStatus pure {
   bytes: FixedVector<u8, n>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bytes = fixed_vector::<u8, 1>();
   let invalid = Packet<u8>(bytes: move bytes);
   return exit_status(code: 0_u8);
@@ -1243,7 +1205,7 @@ fn constructor_only_generic_instances_still_reach_normal_type_diagnostics() {
   value: T;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return Holder<u8>(value: 1_u8);
 }
 "#,
@@ -1261,7 +1223,7 @@ fn unused_generic_array_members_admit_their_declared_owning_bound() {
   values: array<T, 2>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1281,7 +1243,7 @@ fn recursive_generic_nominal_layouts_stop_before_concrete_enumeration() {
   next: Recursive<T>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1295,7 +1257,7 @@ fn generic_nominals_may_contain_symbolic_prelude_instances() {
   value: Option<T>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1313,7 +1275,7 @@ fn checked_integer_results_are_available_during_template_and_concrete_rechecking
   return left +checked right;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = checked_sum::<u8>(left: 1_u8, right: 2_u8);
   let wide = checked_sum::<i64>(left: -3_i64, right: 5_i64);
   return exit_status(code: 0_u8);
@@ -1389,7 +1351,7 @@ fn float_store_run<T: Float>(store: &uniq Heap, length: own u64) -> result: own 
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let bytes = filled_run::<u8, 2>(value: 7_u8);
   let words = filled_run::<i64, 3>(value: -5_i64);
   let byte = bytes[1_u64];
@@ -1428,7 +1390,7 @@ fn invalid() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1443,7 +1405,7 @@ fn invalid(value: own Marker<Slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1455,7 +1417,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1472,7 +1434,7 @@ fn invalid() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1500,7 +1462,7 @@ fn wrapper<U: affine>() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1548,7 +1510,7 @@ fn wrapper<U: affine>() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1612,7 +1574,7 @@ fn middle<A: Int>() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1662,7 +1624,7 @@ fn later(values: own FixedVector<u8, 4>, index: own u64) -> result: own u8 reads
   return values[index];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first_values = fixed_vector::<u8, 4>();
   let second_values = fixed_vector::<u8, 4>();
   earlier::<u8>(values: move first_values, index: 5_u64);
@@ -1707,7 +1669,7 @@ fn renamed['g](value: own Wrapped<Result<Box<'g, u64>, Vector<'g, u64>>>, spare:
   return move value, move spare;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1788,7 +1750,7 @@ fn declaration(value: own AlternateMarker<u8, 1>) -> back: own AlternateMarker<u
   return move value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1831,7 +1793,7 @@ fn nominal_physical_families_complete_deep_finite_type_graphs() {
     source.push_str(
         "fn first['a: affine](value: own Layer80<'a>) -> back: own Layer80<'a> pure {\n  return move value;\n}\n\n\
          fn second['b: affine](value: own Layer80<'b>) -> back: own Layer80<'b> pure {\n  return move value;\n}\n\n\
-         command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+         fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -1880,7 +1842,7 @@ fn mixed['e: affine, 'f](value: own Tree<'e, 'f>) -> back: own Tree<'e, 'f> pure
   return move value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1943,7 +1905,7 @@ fn legacy(cell: own box<u64>) -> result: own box<u64> pure {
   return pass::<box<u64>>(value: move cell);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2014,7 +1976,7 @@ fn pass<T: affine>(value: own T) -> result: own T pure {
   return move value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty_leaf = fixed_vector::<u64, 2>();
   region {
     place_back(vector: &uniq empty_leaf, value: 7_u64);
@@ -2089,7 +2051,7 @@ fn wrapper<U: affine>() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

@@ -25,7 +25,7 @@ fn increment(x: own u64) -> result: own u64 pure {
   return stepped;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = increment(x: 6_u64);
   if total != 7_u64 {
     return exit_status(code: 1_u8);

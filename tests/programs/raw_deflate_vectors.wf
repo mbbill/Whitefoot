@@ -1215,7 +1215,7 @@ fn check_fixed_full() -> result: own u8 pure {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Runs the recorded raw DEFLATE vectors, one case per function: every compressed input is a const table viewed as a run, and every destination is one run of that case's own bump extent, viewed exclusively for the decode and read back after the loan ends.";
   let valid_status = check_valid();
   if valid_status == 0_u8 {

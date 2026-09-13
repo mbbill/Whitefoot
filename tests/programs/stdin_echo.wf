@@ -24,7 +24,7 @@ fn publish_all(output: &uniq OutputStream, source: &Slice<u8>, length: own u64) 
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.stdout as out: own OutputStream, command.stdin as input: own InputStream, command.heap as heap: own Heap) -> status: own ExitStatus reads(out, input, heap), writes(out, input, heap), allocates(heap) {
+fn main['heap](command.stdout as out: own OutputStream, command.stdin as input: own InputStream, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(out, input, heap), writes(out, input, heap), allocates(heap) {
   doc "Reads the entry's standard input to its end with read_next and publishes every byte it observed to standard output, so one run states both halves of the stream pair [SYS-8, SYS-12, SYS-15]. The chunk is a store-resident run: the read fills it through an exclusive view of it and the publish reads it back through a shared one, and the two views live in sibling regions because a run is viewed one way at a time [VIEW-2, OWN-5].";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4096_u64) {

@@ -407,7 +407,6 @@ fn assert_source_event(summary: &FunctionEntailment, id: FlowEventId, used: &mut
             | FlowEventKind::S6
             | FlowEventKind::S7
             | FlowEventKind::S9
-            | FlowEventKind::S10
             | FlowEventKind::S11
             | FlowEventKind::S13
             | FlowEventKind::S14
@@ -1423,8 +1422,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 ));
                 conclusion
             }
-            DerivationNode::FunctionFormalContract { .. } => {
-                panic!("a conditional formal hypothesis must not reach a concrete proof inventory");
+            DerivationNode::SignatureContract { .. } => {
+                DerivationConclusion::PostconditionAggregate
             }
             DerivationNode::PostconditionAggregate { parents, .. } => {
                 assert!(!parents.is_empty());
@@ -1735,7 +1734,6 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
-                    ObligationFamily::SystemRange => assert!(outcome.conjunct <= 1),
                     // [BLK-0]: one root per declared requirement of the row,
                     // whose conjunct is that requirement's position in the
                     // row's own list.
@@ -1789,11 +1787,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         DerivationConclusion::Goal {
                             goal,
                             sign: GoalSign::Positive,
-                        } if matches!(
-                            outcome.family,
-                            ObligationFamily::AllocationFit | ObligationFamily::SystemRange
-                        ) =>
-                        {
+                        } if matches!(outcome.family, ObligationFamily::AllocationFit) => {
                             assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
                             assert!(!outcome.contradictory);
                         }
@@ -2359,7 +2353,7 @@ fn read(p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2415,7 +2409,7 @@ fn read(i: own u64, left: own Bool) -> result: own i32 pure {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2458,7 +2452,7 @@ fn read(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2492,7 +2486,7 @@ fn caller(flags: own Flags) -> result: own unit reads(flags.ready) {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2506,7 +2500,9 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "caller")
             .expect("caller function");
-        let CheckedStatement::Match { scrutinee, .. } = &caller.body[0] else {
+        let CheckedStatement::Match { scrutinee, .. } =
+            &caller.body.as_deref().expect("WF body")[0]
+        else {
             panic!("projected Bool branch must retain one checked match");
         };
         assert!(matches!(scrutinee, CheckedExpression::Project { .. }));
@@ -2551,7 +2547,7 @@ fn caller(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2587,7 +2583,7 @@ fn read() -> result: own u8 pure {
   return inside;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2661,7 +2657,7 @@ fn read(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2684,7 +2680,7 @@ fn read(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2723,7 +2719,7 @@ fn read(p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2752,7 +2748,7 @@ fn read(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2790,7 +2786,7 @@ fn reflexive(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2852,7 +2848,7 @@ fn above_maximum(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2911,7 +2907,7 @@ fn read(p: own Pair, i: own u64) -> result: own i32 reads(p.count) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2949,7 +2945,7 @@ fn assigning_a_middle_vertex_projects_a_bound_needed_after_the_write() {
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2984,7 +2980,7 @@ fn projection_does_not_preserve_a_bound_when_the_final_endpoint_is_written() {
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3014,7 +3010,7 @@ fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3048,7 +3044,7 @@ fn read(p: own Pair) -> result: own i32 reads(p.count), writes(p.count, p.other)
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3089,7 +3085,7 @@ fn read(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3128,7 +3124,7 @@ fn read(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3171,7 +3167,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return in_wide;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3231,7 +3227,7 @@ fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit p
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3294,7 +3290,7 @@ fn caller(left: own u64, right: own u64, choose: own Bool) -> result: own unit p
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3368,7 +3364,7 @@ fn killed(left: own u64, right: own u64, choose: own Bool) -> result: own unit p
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3449,7 +3445,7 @@ fn mixed(left: own u64, right: own u64, choose: own Bool) -> result: own unit pu
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3519,7 +3515,7 @@ fn caller(left: own u64, right: own u64, first: own Bool, second: own Bool, thir
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3595,7 +3591,7 @@ fn killed_input(left: own u64, right: own u64, choose: own Bool) -> result: own 
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3681,7 +3677,7 @@ fn need_distinct(left: own u64, right: own u64) -> result: own unit pure contrac
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3745,7 +3741,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3779,7 +3775,7 @@ fn read(pick: own Bool) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3814,7 +3810,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3853,7 +3849,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3882,7 +3878,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3909,7 +3905,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return picked;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -3949,7 +3945,7 @@ fn choose(value: own i32, narrow: own Bool) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4117,7 +4113,7 @@ fn matched(value: own i32, choice: own Choice) -> result: own i32 pure {
   return picked;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4180,7 +4176,7 @@ fn scoped(value: own i32, narrow: own Bool) -> result: own i32 pure {
   return picked;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4224,7 +4220,7 @@ fn a_contradictory_first_delivery_edge_cannot_launder_the_fresh_receiver() {
   return picked;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4298,7 +4294,7 @@ fn choose(value: own i32, side: own Bool) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4358,7 +4354,7 @@ fn read(position: own u64) -> result: own u8 pure contract {
   return values[position];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4403,7 +4399,7 @@ fn read(i: own u64, flag: own Bool) -> result: own Result<i32, Fail> pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4441,7 +4437,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return before;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4478,7 +4474,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4525,7 +4521,7 @@ fn return_after(i: own u64, stop: own Bool) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4560,7 +4556,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4598,7 +4594,7 @@ fn read(i: own u64, leave_outer: own Bool, leave_inner: own Bool) -> result: own
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4642,7 +4638,7 @@ fn read(i: own u64, fail: own Bool, leave: own Bool) -> result: own Result<i32, 
   return Ok<i32, Fail>(value: 0_i32);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4676,7 +4672,7 @@ fn read(i: own u64, mutate: own Bool, leave: own Bool) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4713,7 +4709,7 @@ fn read(i: own u64, mutate: own Bool, leave: own Bool) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4757,7 +4753,7 @@ fn read(i: own u64, j: own u64, stop: own Bool, leave: own Bool) -> result: own 
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4792,7 +4788,7 @@ fn read(i: own u64, leave_outer: own Bool) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4825,7 +4821,7 @@ fn read() -> result: own i32 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4856,7 +4852,7 @@ fn read(j: own u64) -> result: own i32 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4882,7 +4878,7 @@ fn read(upper: own u64) -> result: own i32 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -4920,7 +4916,7 @@ fn ordinary(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5000,7 +4996,7 @@ fn read(index: own u64, middle: own u64) -> result: own i32 pure contract {
   return values[index];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5035,7 +5031,7 @@ fn a_write_preserves_a_survivor_bound_derived_through_an_implicit_type_edge() {
   return value + 1_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5120,7 +5116,7 @@ fn mixed_edges(lower: own u64, upper: own u64, leave: own Bool, fail: own Bool) 
   return Ok<unit, Stop>(value: unit);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5199,7 +5195,7 @@ fn joined(x: own u64) -> result: own i32 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5275,7 +5271,7 @@ fn inconsistent_counted_root_metadata_fails_the_test_checker() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5358,7 +5354,7 @@ fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small_empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq small_empty, value: 0_u8);
@@ -5462,7 +5458,7 @@ fn read() -> result: own i32 pure {
   return values[9_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5490,7 +5486,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5525,7 +5521,7 @@ fn read(i: own u64, leave: own Bool) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5552,7 +5548,7 @@ fn read(h: own Holder, i: own u64) -> result: own u8 reads(h.data) {
   return h.data[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5578,7 +5574,7 @@ fn read(j: own u64) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5610,7 +5606,7 @@ fn read(j: own u64) -> result: own u8 pure {
   return lens[order[j]];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5631,7 +5627,7 @@ fn a_failed_boolean_index_publishes_no_admitted_goal_origin() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5671,7 +5667,7 @@ fn from_slice(order: own Slice<u64>) -> result: own u8 reads(order) {
   return values[order[0_u64]];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5728,7 +5724,7 @@ fn return_after_failed_set(value: own u8) -> result: own u8 pure contract {
   return current;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5825,7 +5821,7 @@ fn runtime(n: own u64) -> result: own u8 pure contract {
   return b[3_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5881,7 +5877,7 @@ fn an_allocation_length_binding_carries_the_length_into_a_branch() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5901,7 +5897,7 @@ fn read() -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -5942,7 +5938,7 @@ fn killed(n: own u64) -> result: own u8 pure contract {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6026,7 +6022,7 @@ fn killed() -> result: own u8 pure {
   return sample;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6093,7 +6089,7 @@ fn write(values: own FixedVector<u16, count>, i: own u64) -> result: own u16 wri
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6154,7 +6150,7 @@ fn through_origin(input: own u64) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6209,7 +6205,7 @@ fn read(left_raw: own u64, right_raw: own u64) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6236,7 +6232,7 @@ fn read() -> result: own i32 pure {
   return first +wrap second;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6278,7 +6274,7 @@ fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
   return out;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let input = buffer_new(4096_u64, 7_u8);
   region {
     let byte = tail_byte(data: &input);
@@ -6319,7 +6315,7 @@ fn read(i: own u64) -> result: own i32 pure {
   return values[out];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6354,7 +6350,7 @@ fn read(replacement: own u64) -> result: own i32 pure {
   return values[offset];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6392,7 +6388,7 @@ fn read(replacement: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6411,7 +6407,7 @@ fn read(replacement: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6446,7 +6442,7 @@ fn read(replacement: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6465,7 +6461,7 @@ fn read(replacement: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6503,7 +6499,7 @@ fn read(replacement: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6522,7 +6518,7 @@ fn read(replacement: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6562,7 +6558,7 @@ fn read(n: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6588,7 +6584,7 @@ fn unsigned_remainder_publishes_its_strict_divisor_bound() {
   return remainder;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6615,7 +6611,7 @@ fn signed_constant_remainders_publish_intervals_for_exact_arithmetic() {
   return left + right;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6657,7 +6653,7 @@ fn sources(left: own u32, right: own u32, count: own u32) -> result: own u32 pur
   return masked;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6762,7 +6758,7 @@ fn repeated_bit_and_operands_keep_two_ordered_s7_roots() {
   return masked;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6812,7 +6808,7 @@ fn independent(admitted: own u32) -> result: own u32 pure {
   return masked;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6859,7 +6855,7 @@ fn wrong_shift_mode(count: own u32) -> result: own u32 pure contract {
   return shifted;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let ignored = generic::<u32>(count: 2_u32);
   return exit_status(code: 0_u8);
 }
@@ -6894,7 +6890,7 @@ fn postcondition_exit_and_aggregate_roots_match_retained_metadata() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6923,7 +6919,7 @@ fn caller(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -6960,7 +6956,7 @@ fn caller() -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7022,7 +7018,7 @@ fn delivered(value: own i32) -> result: own i32 pure {
   return selected;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7126,7 +7122,7 @@ fn valued(outer: own i32, replacement: own i32) -> result: own i32 pure {
   return delivered;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7165,7 +7161,7 @@ fn read(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7225,7 +7221,7 @@ fn unguarded(p: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7295,7 +7291,7 @@ fn killed(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7344,7 +7340,7 @@ fn high(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7398,7 +7394,7 @@ fn direct_read(i: own u64) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7442,7 +7438,7 @@ fn read(i: own u64) -> result: own i32 pure contract {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7474,7 +7470,7 @@ fn read(i: own u64) -> result: own i32 pure contract {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7502,7 +7498,7 @@ fn read() -> result: own i32 pure contract {
   return values[9_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7530,7 +7526,7 @@ fn read(i: own u64) -> result: own i32 pure contract {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7542,120 +7538,90 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 // ---------------------------------------------------------------------
-// [ENT-6] SYS-8 half-open range obligations
+// [PRE-1, FN-8, CALL-6] Ordinary declaration range contracts. v0.58
+// deletes SYS-8's operand-family obligations; these preserve the endpoint
+// witnesses through the same requires path as a WF function body.
 // ---------------------------------------------------------------------
 
+fn range_contract_source(contract: &str, body: &str) -> String {
+    format!(
+        "const endpoints: FixedVector<u64, 2> =[0_u64, 0_u64];\n\nfn publish(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(factory, output, source), writes(factory, output){contract} {{\n{body}  return unit;\n}}\n"
+    )
+}
+
 #[test]
-fn a_failed_system_endpoint_expression_prevents_unreached_range_obligations() {
-    let source = br#"const endpoints: FixedVector<u64, 1> =[0_u64];
-
-fn publish(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
-  region {
-    let outcome = write_once(output: &uniq deref(output), source: source, start: 0_u64, end: endpoints[1_u64]);
-  }
-  return unit;
-}
-
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    let outcomes = obligations(source, "publish");
+fn a_failed_endpoint_expression_prevents_unreached_call_requirements() {
+    let source = range_contract_source(
+        "",
+        "  region {\n    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: endpoints[2_u64]);\n  }\n",
+    );
+    let outcomes = obligations(source.as_bytes(), "publish");
     let [endpoint_index] = outcomes.as_slice() else {
         panic!("only the reached endpoint index may retain an obligation: {outcomes:?}");
     };
     assert_eq!(endpoint_index.family, ObligationFamily::Bounds);
     assert!(!endpoint_index.discharged);
     assert!(
-        outcomes
-            .iter()
-            .all(|outcome| outcome.family != ObligationFamily::SystemRange),
-        "SYS-8 begins only after every endpoint expression succeeds"
+        call_goals(source.as_bytes(), "publish").is_empty(),
+        "CALL-6 starts after the endpoint expression succeeds"
     );
 }
 
 #[test]
-fn one_system_call_retains_two_independent_ordered_range_obligations() {
-    let source = br#"fn publish(output: &uniq OutputStream, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
-  region {
-    match write_once(output: &uniq deref(output), source: source, start: start, end: end) {
-      Ok(value: next) => {
-      }
-      Err(error: problem) => {
-      }
-    }
-  }
-  return unit;
-}
-
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    let outcomes = obligations(source, "publish");
+fn one_ordinary_call_retains_two_independent_ordered_range_requirements() {
+    let source = range_contract_source(
+        "",
+        "  region {\n    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: start, end: end);\n  }\n",
+    );
+    let outcomes = call_goals(source.as_bytes(), "publish");
     assert_eq!(outcomes.len(), 2);
     assert!(
-        outcomes.iter().all(|outcome| {
-            outcome.family == ObligationFamily::SystemRange && !outcome.discharged
-        })
+        outcomes
+            .iter()
+            .all(|outcome| outcome.disposition != CallGoalDisposition::Discharged)
     );
-    assert_eq!(outcomes[0].conjunct, 0);
-    assert_eq!(outcomes[1].conjunct, 1);
+    assert!(outcomes[0].requires_clause.components() < outcomes[1].requires_clause.components());
     assert_eq!(outcomes[0].node_path, outcomes[1].node_path);
-
-    with_semantics(source, |outcome| {
+    with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("an unproved system range must reject statically: {outcome:?}");
+            panic!("an unproved ordinary call range must reject: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Sys8);
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
         assert!(matches!(
             issue.kind(),
-            SemanticIssueKind::UndischargedSystemRangeObligation { .. }
+            SemanticIssueKind::UndischargedCallRequirement(..)
         ));
     });
 }
 
 #[test]
-fn ordinary_source_relations_discharge_both_system_ranges() {
-    let source = br#"fn publish(output: &uniq OutputStream, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) contract {
-  define capacity = len_of(deref(source));
-  requires start <= end;
-  requires end <= capacity;
-} {
-  region {
-    let outcome = write_once(output: &uniq deref(output), source: source, start: start, end: end);
-  }
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
+fn ordinary_source_relations_discharge_both_signature_ranges() {
+    let source = range_contract_source(
+        " contract {\n  requires start <= end;\n  requires end <= len_of(deref(source));\n}",
+        "  region {\n    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: start, end: end);\n  }\n",
+    );
+    with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the two source relations must discharge SYS-8: {outcome:?}");
+            panic!("ordinary source relations discharge the signature requires: {outcome:?}");
         };
         let function = checked
             .data
             .functions
             .iter()
             .find(|function| function.name == "publish")
-            .expect("publish is checked");
+            .expect("publish");
         validate_derivations(&function.entailment);
-        let ranges = function
-            .entailment
-            .obligations
-            .iter()
-            .filter(|outcome| outcome.family == ObligationFamily::SystemRange)
-            .collect::<Vec<_>>();
+        let ranges = &function.entailment.call_goals;
         assert_eq!(ranges.len(), 2);
-        assert!(ranges.iter().all(|range| range.discharged));
-
+        assert!(
+            ranges
+                .iter()
+                .all(|range| range.disposition == CallGoalDisposition::Discharged)
+        );
         for range in ranges {
             let root = range
                 .derivation
-                .expect("an accepted SYS-8 relation retains its derivation");
+                .expect("an accepted CALL-6 relation retains its derivation");
             let mut seen = vec![false; function.entailment.derivations.nodes.len()];
             let mut stack = vec![root];
             while let Some(node) = stack.pop() {
@@ -7667,7 +7633,7 @@ command fn main() -> status: own ExitStatus pure {
                 let retained = &function.entailment.derivations.nodes[position];
                 assert!(
                     !matches!(retained, DerivationNode::AffineConsequence { .. }),
-                    "ordinary source relations have priority over the affine routes"
+                    "ordinary source relations have priority over affine routes"
                 );
                 stack.extend(retained.parent_ids());
             }
@@ -7676,106 +7642,66 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn indexed_system_guards_discharge_both_structurally_identical_ranges() {
-    let source = br#"const endpoints: FixedVector<u64, 2> =[0_u64, 0_u64];
-
-fn publish(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
-  let capacity = len_of(deref(source));
-  if endpoints[0_u64] <= endpoints[1_u64] {
-    if endpoints[1_u64] <= capacity {
-      region {
-        let outcome = write_once(output: &uniq deref(output), source: source, start: endpoints[0_u64], end: endpoints[1_u64]);
-      }
-    }
-  }
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the two indexed guards must prove the exact SYS-8 goals: {outcome:?}");
-        };
-        let publish = checked
-            .data
-            .functions
+fn indexed_guards_discharge_structurally_identical_signature_ranges() {
+    let source = range_contract_source(
+        "",
+        "  let capacity = len_of(deref(source));\n  if endpoints[0_u64] <= endpoints[1_u64] {\n    if endpoints[1_u64] <= capacity {\n      region {\n        let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: endpoints[0_u64], end: endpoints[1_u64]);\n      }\n    }\n  }\n",
+    );
+    let ranges = call_goals(source.as_bytes(), "publish");
+    assert_eq!(ranges.len(), 2);
+    assert!(
+        ranges
             .iter()
-            .find(|function| function.name == "publish")
-            .expect("publish is checked");
-        let ranges = publish
-            .entailment
-            .obligations
-            .iter()
-            .filter(|outcome| outcome.family == ObligationFamily::SystemRange)
-            .collect::<Vec<_>>();
-        assert_eq!(ranges.len(), 2);
-        assert!(ranges.iter().all(|range| range.discharged));
-        let Some(GoalExpression::Operation {
-            arguments: first, ..
-        }) = &ranges[0].canonical_goal
-        else {
-            panic!("the first SYS-8 conjunct retains its canonical goal");
-        };
-        let Some(GoalExpression::Operation {
-            arguments: second, ..
-        }) = &ranges[1].canonical_goal
-        else {
-            panic!("the second SYS-8 conjunct retains its canonical goal");
-        };
-        assert!(matches!(
-            first.as_slice(),
-            [
-                GoalExpression::Operation {
-                    row: GoalOperation::ArrayIndex { .. },
-                    ..
-                },
-                GoalExpression::Operation {
-                    row: GoalOperation::ArrayIndex { .. },
-                    ..
-                }
-            ]
-        ));
-        assert_eq!(
-            first[1], second[0],
-            "both conjuncts reuse the same end value identity"
-        );
-    });
+            .all(|range| range.disposition == CallGoalDisposition::Discharged)
+    );
+    let GoalExpression::Operation {
+        arguments: first, ..
+    } = &ranges[0].goal.root
+    else {
+        panic!("first comparison");
+    };
+    let GoalExpression::Operation {
+        arguments: second, ..
+    } = &ranges[1].goal.root
+    else {
+        panic!("second comparison");
+    };
+    assert!(matches!(
+        first.as_slice(),
+        [
+            GoalExpression::Operation {
+                row: GoalOperation::ArrayIndex { .. },
+                ..
+            },
+            GoalExpression::Operation {
+                row: GoalOperation::ArrayIndex { .. },
+                ..
+            }
+        ]
+    ));
+    assert_eq!(
+        first[1], second[0],
+        "both requirements reuse the end value identity"
+    );
 }
 
 #[test]
-fn a_nonterm_system_endpoint_is_never_replaced_by_the_zero_term() {
-    let source = br#"const endpoints: FixedVector<u64, 1> =[0_u64];
-
-fn publish(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
-  region {
-    let outcome = write_once(output: &uniq deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);
-  }
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    let ranges = obligations(source, "publish")
-        .into_iter()
-        .filter(|outcome| outcome.family == ObligationFamily::SystemRange)
-        .collect::<Vec<_>>();
+fn a_nonterm_endpoint_is_never_replaced_by_the_zero_term() {
+    let source = range_contract_source(
+        "",
+        "  region {\n    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);\n  }\n",
+    );
+    let ranges = call_goals(source.as_bytes(), "publish");
     assert_eq!(ranges.len(), 2);
-    assert!(ranges[0].canonical_goal.is_some());
-    assert!(ranges[0].components.is_empty());
-    assert!(!ranges[0].discharged);
-    assert!(
-        !ranges[0].refuted,
-        "`1 <= indexed_end` is unknown, not `1 <= 0`"
+    assert_eq!(
+        ranges[0].disposition,
+        CallGoalDisposition::Unproved,
+        "the indexed end is unknown, not replaced by zero"
     );
 }
 
 // ---------------------------------------------------------------------
-// [ENT-3] S10 boundary endpoint facts
+// [ENT-3.S12, CALL-6] Declaration postcondition endpoint facts
 // ---------------------------------------------------------------------
 
 #[test]
@@ -7786,12 +7712,12 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
 
 const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn under(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
+fn under(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>) -> result: own unit reads(factory, output, source), writes(factory, output) {
   let source_length = len_of(deref(source));
   let enough = 3_u64 <= source_length;
   if enough {
     region {
-      match write_once(output: &uniq deref(output), source: source, start: 0_u64, end: 3_u64) {
+      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: 3_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -7803,12 +7729,12 @@ fn under(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit re
   return unit;
 }
 
-fn exact(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
+fn exact(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>) -> result: own unit reads(factory, output, source), writes(factory, output) {
   let source_length = len_of(deref(source));
   let enough = 4_u64 <= source_length;
   if enough {
     region {
-      match write_once(output: &uniq deref(output), source: source, start: 0_u64, end: 4_u64) {
+      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: 4_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -7818,14 +7744,6 @@ fn exact(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit re
     }
   }
   return unit;
-}
-
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
-  let batch = buffer_new(4_u64, 0_u8);
-  region {
-    under(output: &uniq out, source: &batch);
-  }
-  return exit_status(code: 0_u8);
 }
 "#;
     let under = entailment(source, "under");
@@ -7836,18 +7754,26 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
             .iter()
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![true, true, true],
-        "the range goals and next <= 3 < len_of(table) all discharge"
+        vec![true],
+        "next <= 3 < len_of(table) discharges after both ordinary requires"
     );
     let indexed = under
         .obligations
         .iter()
         .position(|outcome| outcome.family == ObligationFamily::Bounds)
         .expect("the endpoint indexes the table once");
-    assert_root_has_event_kind(&under, obligation_root(&under, indexed), FlowEventKind::S10);
+    assert!(
+        under
+            .derivations
+            .nodes
+            .iter()
+            .any(|node| matches!(node, DerivationNode::PostconditionCall { .. })),
+        "the endpoint bound comes from the ordinary supplied ensures"
+    );
+    assert!(under.obligations[indexed].discharged);
     assert_eq!(
         discharge_flags(source, "exact"),
-        vec![true, true, false],
+        vec![false],
         "next <= 4 admits next = len_of(table)"
     );
 }
@@ -7855,38 +7781,27 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
 #[test]
 fn a_transfer_endpoint_bound_enters_the_observing_arm_only() {
     // `Ok(value: next)` observes the endpoint bound; the error arm's own u64
-    // payload is an unrelated required size and gains nothing [ENT-3] S10.
-    let source = br#"const count: u64 = 4_u64;
+    // payload is an unrelated required size and gains nothing [ENT-3.S12].
+    let source = br#"const table: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
-
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  let sink = buffer_new(8_u64, 0_u8);
+fn main(text: &HostString, destination: &uniq MutSlice<u8>) -> result: own unit reads(text, destination), writes(destination) contract {
+  requires 3_u64 <= len_of(deref(destination));
+} {
   region {
-    match arg_get(args: &args, position: 0_u64) {
-      Ok(value: text) => {
-        region 'v {
-          region {
-            match host_copy_bytes(value: &'v text, destination: &uniq sink, start: 0_u64, end: 3_u64) {
-              Ok(value: copied) => {
-                let good = table[copied];
-              }
-              Err(error: problem) => {
-                match problem {
-                  CopyTooSmall(required: needed) => {
-                    let bad = table[needed];
-                  }
-                }
-              }
-            }
+    match host_copy_bytes(value: text, destination: &uniq deref(destination), start: 0_u64, end: 3_u64) {
+      Ok(value: copied) => {
+        let good = table[copied];
+      }
+      Err(error: problem) => {
+        match problem {
+          CopyTooSmall(required: needed) => {
+            let bad = table[needed];
           }
         }
       }
-      Err(error: missing) => {
-      }
     }
   }
-  return exit_status(code: 0_u8);
+  return unit;
 }
 "#;
     assert_eq!(
@@ -7902,34 +7817,23 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 
 #[test]
 fn a_host_copy_utf8_success_endpoint_is_bounded_by_end() {
-    // The UTF-8 copy producer carries the same S10 success-endpoint bound as
+    // The UTF-8 copy producer carries the same ordinary ensures success-endpoint bound as
     // the byte-preserving copy producer: copied <= 3 < len_of(table).
-    let source = br#"const count: u64 = 4_u64;
+    let source = br#"const table: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
-
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  let sink = buffer_new(8_u64, 0_u8);
+fn main(text: &HostString, destination: &uniq MutSlice<u8>) -> result: own unit reads(text, destination), writes(destination) contract {
+  requires 3_u64 <= len_of(deref(destination));
+} {
   region {
-    match arg_get(args: &args, position: 0_u64) {
-      Ok(value: text) => {
-        region 'v {
-          region {
-            match host_copy_utf8(value: &'v text, destination: &uniq sink, start: 0_u64, end: 3_u64) {
-              Ok(value: copied) => {
-                let good = table[copied];
-              }
-              Err(error: problem) => {
-              }
-            }
-          }
-        }
+    match host_copy_utf8(value: text, destination: &uniq deref(destination), start: 0_u64, end: 3_u64) {
+      Ok(value: copied) => {
+        let good = table[copied];
       }
-      Err(error: missing) => {
+      Err(error: problem) => {
       }
     }
   }
-  return exit_status(code: 0_u8);
+  return unit;
 }
 "#;
     assert_eq!(
@@ -7945,18 +7849,17 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 
 #[test]
 fn a_let_bound_transfer_outcome_carries_the_same_endpoint_bound() {
-    // The bare IDENT form of [ENT-3] S10, under the same no-kill, no-`set`
-    // path discipline as S7's checked-arithmetic origin.
+    // Ordinary CALL-6 postconditions follow a named result.
     let source = br#"const count: u64 = 4_u64;
 
 const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn deferred(output: own OutputStream, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
+fn deferred(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, limit: own u64) -> result: own unit reads(factory, output, source), writes(factory, output) contract {
   define capacity = len_of(deref(source));
   requires 3_u64 <= capacity;
 } {
   region {
-    let outcome = write_once(output: &uniq output, source: source, start: 0_u64, end: 3_u64);
+    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: 3_u64);
     match outcome {
       Ok(value: written) => {
         let sample = table[written];
@@ -7968,12 +7871,12 @@ fn deferred(output: own OutputStream, source: &buffer<u8>, limit: own u64) -> re
   return unit;
 }
 
-fn killed(output: own OutputStream, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
+fn killed(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, limit: own u64) -> result: own unit reads(factory, output, source), writes(factory, output) contract {
   define capacity = len_of(deref(source));
   requires limit <= capacity;
 } {
   region {
-    let outcome = write_once(output: &uniq output, source: source, start: 0_u64, end: limit);
+    let outcome = write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: 0_u64, end: limit);
     set limit = 9_u64;
     match outcome {
       Ok(value: written) => {
@@ -7984,14 +7887,6 @@ fn killed(output: own OutputStream, source: &buffer<u8>, limit: own u64) -> resu
     }
   }
   return unit;
-}
-
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
-  let batch = buffer_new(3_u64, 0_u8);
-  region {
-    deferred(output: move out, source: &batch, limit: 3_u64);
-  }
-  return exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -8015,59 +7910,22 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
 
 #[test]
 fn a_read_at_endpoint_is_observed_on_its_own_outcome_variant() {
-    // `read_at` reports through `ReadBytes(next: w)` rather than a
-    // `Result`, so the observing arm is named per operation [ENT-3] S10.
-    let source = br#"const count: u64 = 4_u64;
+    // PRE-1 read_at uses Result and an ordinary selected ensures.
+    let source = br#"const table: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
-
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
+fn main(factory: &uniq HandleFactory, file: &uniq ReadFile, destination: &uniq MutSlice<u8>) -> result: own unit reads(factory, file, destination), writes(factory, file, destination) contract {
+  requires 3_u64 <= len_of(deref(destination));
+} {
   region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        match relative_path(value: move text) {
-          Ok(value: path) => {
-            region 'c {
-              region {
-                match reserve_handle(factory: &uniq 'c files) {
-                  Ok(value: permit) => {
-                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                      FileOpened(value: file) => {
-                        let bytes = buffer_new(64_u64, 0_u8);
-                        region 'f {
-                          region {
-                            match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
-                              ReadBytes(next: n) => {
-                                let sample = table[n];
-                              }
-                              ReadEnd() => {
-                              }
-                              ReadFailed(error: problem) => {
-                              }
-                            }
-                          }
-                        }
-                      }
-                      FileOpenFailed(error: unopened, permit: refused) => {
-                      }
-                    }
-                  }
-                  Err(error: spent) => {
-                    return exit_status(code: 8_u8);
-                  }
-                }
-              }
-            }
-          }
-          Err(error: unresolved) => {
-          }
-        }
+    match read_at(factory: &uniq deref(factory), file: &uniq deref(file), destination: &uniq deref(destination), file_offset: 0_u64, start: 0_u64, end: 3_u64) {
+      Ok(value: next) => {
+        let sample = table[next];
       }
-      Err(error: missing) => {
+      Err(error: problem) => {
       }
     }
   }
-  return exit_status(code: 0_u8);
+  return unit;
 }
 "#;
     assert_eq!(
@@ -8077,7 +7935,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![true],
-        "the ReadBytes endpoint is at most the end actual"
+        "the Ok endpoint is at most the end actual"
     );
 }
 
@@ -8101,7 +7959,7 @@ fn caller() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -8138,7 +7996,7 @@ fn read(leave: own Bool) -> result: own i32 pure {
   return values[0_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -8170,7 +8028,7 @@ fn an_undischarged_subscript_is_an_op4_rejection_with_the_exact_residual() {
   return values[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -8192,7 +8050,7 @@ fn read() -> result: own i32 pure {
   return values[2_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -8218,7 +8076,7 @@ fn read() -> result: own i32 pure {
   return values[2_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -8253,7 +8111,7 @@ fn read() -> result: own i32 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -8354,21 +8212,13 @@ fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positiv
             include_bytes!("../../../../tests/programs/wfgrep.wf"),
         )],
     ];
-    // Every frozen source now names the active inventory. In particular,
-    // `wfgrep.wf` reserves a HandlePermit before each typed open, so the older
-    // pre-permit `OpenByName` inventory can no longer resolve that bundle.
-    let inventories = [
-        crate::Inventory::ACTIVE,
-        crate::Inventory::ACTIVE,
-        crate::Inventory::ACTIVE,
-    ];
     // Bundle 0 is `utf8parse.wf`, bundle 1 the raw DEFLATE chain, bundle 2
     // `wfgrep.wf`; the expectation is keyed on the bundle because B7c4b-1 gave
     // exactly one of the three mains a counted loop of its own — utf8parse's
     // output run is taken from a bump extent and filled by a counted `for`
     // where it was a `buffer_new` with an initial value.
-    for (bundle, (inputs, inventory)) in bundles.into_iter().zip(inventories).enumerate() {
-        super::with_semantics_inputs_for(inputs, inventory, |outcome| {
+    for (bundle, inputs) in bundles.into_iter().enumerate() {
+        super::with_semantics_inputs(inputs, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
                 panic!("frozen real source bundle must remain accepted: {outcome:?}");
             };
@@ -8443,7 +8293,11 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
     let mut calls = Vec::new();
     for (caller, function) in program.functions.iter().enumerate() {
         let mut found = Vec::new();
-        collect_direct_calls(&function.body, read_bits, &mut found);
+        collect_direct_calls(
+            &function.body.as_deref().expect("WF body"),
+            read_bits,
+            &mut found,
+        );
         for (path, arguments) in found {
             assert_eq!(arguments.len(), 4);
             let mask = match &arguments[3] {
@@ -8928,7 +8782,11 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
         .expect("publish_all function")
         .id;
     let mut publish_calls = Vec::new();
-    collect_direct_calls(&report.body, publish, &mut publish_calls);
+    collect_direct_calls(
+        &report.body.as_deref().expect("WF body"),
+        publish,
+        &mut publish_calls,
+    );
     assert_eq!(publish_calls.len(), 1);
     assert!(matches!(
         &publish_calls[0].1[2],
@@ -8952,7 +8810,7 @@ fn probe(holder: own Holder) -> result: own unit reads(holder.value) {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -8998,7 +8856,7 @@ fn probe(limit: own Limit) -> result: own unit reads(limit.upper), writes(limit.
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9022,7 +8880,7 @@ fn counted_range_preserves_multiple_deref_projections_in_one_endpoint_term() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9053,7 +8911,7 @@ fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9086,7 +8944,7 @@ fn counted_range_does_not_treat_a_read_only_box_deref_as_a_consume() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9113,7 +8971,7 @@ fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9148,7 +9006,7 @@ fn caller(value: own u8) -> result: own u8 pure {
   return shift_once(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9205,7 +9063,7 @@ fn impossible_integer_domain_true_edge_closes_to_contradiction() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9251,7 +9109,7 @@ fn impossible_integer_domain_false_edge_closes_to_contradiction() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9346,7 +9204,7 @@ fn from_false(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9398,7 +9256,7 @@ fn projected(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9477,7 +9335,7 @@ fn one(value: own u64, choose: own Bool) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9526,7 +9384,7 @@ fn probe(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9568,7 +9426,7 @@ fn caller() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9606,7 +9464,7 @@ fn caller(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9659,7 +9517,7 @@ fn through_call(first: own Bool, second: own Bool) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9713,7 +9571,7 @@ fn l0(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9772,7 +9630,7 @@ fn caller(slot: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9818,7 +9676,7 @@ fn caller(slot: own i32, replacement: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9859,7 +9717,7 @@ fn caller(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9897,7 +9755,7 @@ fn caller(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -9953,7 +9811,7 @@ fn caller() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -10014,7 +9872,7 @@ fn caller() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -10065,7 +9923,7 @@ fn caller(value: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -10114,7 +9972,7 @@ fn update(value: &uniq u64) -> result: own unit reads(value), writes(value) cont
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -10190,7 +10048,7 @@ fn caller(values: own FixedVector<u8, 2>) -> result: own unit reads(values), wri
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -10236,7 +10094,7 @@ fn probe() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -10262,7 +10120,7 @@ fn second(value: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -10287,7 +10145,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_forward_concrete_generic_call_uses_its_substituted_goal() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
@@ -10337,7 +10195,7 @@ fn concrete_const_instances_keep_function_local_derivation_inventories() {
   return values[0_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small_empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq small_empty, value: 7_u8);
@@ -10454,7 +10312,7 @@ fn preserve_right(pair: own Pair) -> result: own u8 reads(pair.right), writes(pa
   return values[pair.right];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -10475,7 +10333,7 @@ command fn main() -> status: own ExitStatus pure {
 /// must still discharge.
 #[test]
 fn a_run_length_equality_survives_a_root_replace_after_a_join() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let arr_empty = fixed_vector::<u32, 4>();
   region {
     place_back(vector: &uniq arr_empty, value: 1_u32);
@@ -10534,7 +10392,7 @@ fn a_run_length_equality_survives_a_root_replace_after_a_join() {
 /// straddle the write, so a stale memo would accept one and reject the other.
 #[test]
 fn a_run_length_verdict_is_invariant_under_an_unrelated_binding() {
-    let after_the_replace = br#"command fn main() -> status: own ExitStatus pure {
+    let after_the_replace = br#"fn main() -> status: own ExitStatus pure {
   let arr_empty = fixed_vector::<u32, 4>();
   region {
     place_back(vector: &uniq arr_empty, value: 1_u32);
@@ -10580,7 +10438,7 @@ fn a_run_length_verdict_is_invariant_under_an_unrelated_binding() {
   return exit_status(code: 0_u8);
 }
 "#;
-    let before_the_read = br#"command fn main() -> status: own ExitStatus pure {
+    let before_the_read = br#"fn main() -> status: own ExitStatus pure {
   let arr_empty = fixed_vector::<u32, 4>();
   region {
     place_back(vector: &uniq arr_empty, value: 1_u32);
@@ -10658,7 +10516,7 @@ fn a_write_still_kills_an_established_bound_on_its_target() {
   return b[offset];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

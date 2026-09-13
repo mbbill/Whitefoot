@@ -9,10 +9,10 @@ use whitefoot::{
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
     COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, OverlapLowering,
+    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
     SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
-    module_requires_parallel_runtime, stack_ledger,
+    compile_with_overlap, compile_with_permission_ledger, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -196,7 +196,7 @@ const TARGET_COMPILE_ARGUMENTS: &[&str] = &["-municode"];
 #[cfg(not(target_os = "windows"))]
 const TARGET_LINK_LIBRARIES: &[&str] = HOST_LINK_LIBRARIES;
 #[cfg(target_os = "windows")]
-const TARGET_LINK_LIBRARIES: &[&str] = &["-lws2_32"];
+const TARGET_LINK_LIBRARIES: &[&str] = &["-lws2_32", "-lshell32"];
 
 fn main() {
     let driver = match std::thread::Builder::new()
@@ -257,20 +257,8 @@ fn run() -> Result<(), String> {
         }
         module
     } else {
-        // The denied verdict of an I/O loop reaches the writer here, without a
-        // flag, because it is a missed optimization on the program they just
-        // compiled: a loop they wrote to read or write files lost its
-        // pipeline. The compilation succeeded, so the lines are notes on
-        // stderr, never a rejection, and a granted verdict says nothing at
-        // all. `--par-ledger` above already prints these lines inside the full
-        // report, so this branch is the only one that repeats them.
-        let (module, notices) =
-            compile_with_io_notices(&inputs, CompilerLimits::default(), overlap)
-                .map_err(|failure| failure.to_string())?;
-        for line in io_notice_report(options.no_overlap, &notices) {
-            eprintln!("{line}");
-        }
-        module
+        compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
+            .map_err(|failure| failure.to_string())?
     };
     if options.stack_ledger {
         for line in print_stack_ledger(&module)? {
@@ -290,36 +278,6 @@ fn run() -> Result<(), String> {
         &module,
         options.output.as_deref().unwrap_or(Path::new("a.out")),
     )
-}
-
-/// The stderr lines an ordinary compilation reports for the denied I/O loops
-/// it found: every notice prefixed `whitefootc: note:`, then one line saying
-/// the compilation succeeded and where the full report is.
-///
-/// A build that asked for no overlap lowering reports none of them. The flag
-/// is the writer stating that this build is the sequential reference one, so a
-/// loop that lost its pipeline is not news about the program in front of them
-/// — it is the build they asked for, and repeating the whole verdict on every
-/// such compile is noise they cannot act on without contradicting the flag
-/// they just wrote. Nothing else moves: the judgment still runs and reaches
-/// the same verdicts, `--par-ledger` still prints the complete report under
-/// the same flag, and the emitted module is the one `--no-overlap` always
-/// emitted. This is a channel decision and the only one taken by the flag
-/// rather than by what a line says.
-fn io_notice_report(no_overlap: bool, notices: &[String]) -> Vec<String> {
-    if no_overlap || notices.is_empty() {
-        return Vec::new();
-    }
-    let mut report: Vec<String> = notices
-        .iter()
-        .map(|notice| format!("whitefootc: note: {notice}"))
-        .collect();
-    report.push(
-        "whitefootc: note: the compilation succeeded; run --par-ledger for the \
-         complete permission report"
-            .to_owned(),
-    );
-    report
 }
 
 /// Compiles the module once more, to assembly, purely to read the two things
@@ -380,16 +338,22 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
 /// core under the union of the two predicates, the completion units under the
 /// second, and each of the three groups a shared part plus this platform's
 /// leaves.
-fn runtime_units(core: bool, completion: bool) -> (Vec<RuntimeUnit>, Vec<&'static str>) {
+fn runtime_units() -> (Vec<RuntimeUnit>, Vec<&'static str>) {
     let mut staged: Vec<RuntimeUnit> = FLOOR_SHARED_UNITS.to_vec();
+    staged.extend([
+        unit("ordinary_values.h", ORDINARY_VALUES_HEADER),
+        unit("ordinary_values.c", ORDINARY_VALUES_SOURCE),
+        unit("ordinary_values.ll", ORDINARY_VALUES_LLVM),
+    ]);
     staged.extend_from_slice(FLOOR_PLATFORM_UNITS);
     let mut compiled: Vec<&'static str> = FLOOR_COMPILE_UNITS.to_vec();
-    if core {
+    compiled.extend(["ordinary_values.c", "ordinary_values.ll"]);
+    {
         staged.extend_from_slice(CORE_SHARED_UNITS);
         staged.extend_from_slice(CORE_PLATFORM_UNITS);
         compiled.extend_from_slice(CORE_COMPILE_UNITS);
     }
-    if completion {
+    {
         staged.extend_from_slice(COMPLETION_SHARED_UNITS);
         staged.extend_from_slice(COMPLETION_PLATFORM_UNITS);
         compiled.extend_from_slice(COMPLETION_COMPILE_UNITS);
@@ -413,11 +377,10 @@ fn runtime_units(core: bool, completion: bool) -> (Vec<RuntimeUnit>, Vec<&'stati
 /// path, no build directory, and no environment decides which runtime a
 /// program gets.
 fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
-    let completion_required = module_requires_completion_runtime(llvm);
-    let core_required = module_requires_parallel_runtime(llvm) || completion_required;
+    // The ordinary prelude implementation library links its private engine.
     let directory = std::env::temp_dir().join(format!("whitefootc-{}", std::process::id()));
     let result = (|| {
-        let (staged, compiled) = runtime_units(core_required, completion_required);
+        let (staged, compiled) = runtime_units();
         std::fs::create_dir_all(&directory)
             .map_err(|error| format!("cannot create the runtime directory: {error}"))?;
         for unit in &staged {
@@ -444,13 +407,15 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
             .args(TARGET_COMPILE_ARGUMENTS)
             .arg("-I")
             .arg(&directory);
-        if completion_required {
-            command.arg("-I").arg(directory.join("completion"));
-        }
+        command.arg("-I").arg(directory.join("completion"));
         for relative_path in &compiled {
             command
                 .arg("-x")
-                .arg("c")
+                .arg(if relative_path.ends_with(".ll") {
+                    "ir"
+                } else {
+                    "c"
+                })
                 .arg(directory.join(relative_path));
         }
         link(&mut command, llvm, output)
@@ -684,7 +649,7 @@ impl Options {
         } else if self.par {
             OverlapLowering::On
         } else {
-            OverlapLowering::Completion
+            OverlapLowering::Off
         }
     }
 }
@@ -699,7 +664,6 @@ mod tests {
         compile_with_permission_ledger, io_notice_report, module_requires_parallel_runtime,
         runtime_units, source_names,
     };
-    use whitefoot::module_requires_completion_runtime;
 
     const PAR_LAYOUT: &[u8] = include_bytes!("../../../tests/programs/par_layout.wf");
 
@@ -727,29 +691,20 @@ mod tests {
     /// other target, so what the link still decides is which staging group a
     /// module needs, and that is what is asserted here.
     #[test]
-    fn the_link_stages_the_core_on_the_hand_out_marker() {
-        let plain = "define i32 @main() { ret i32 0 }";
-        assert!(!module_requires_parallel_runtime(plain));
-        assert!(!module_requires_completion_runtime(plain));
-        let (staged, compiled) = runtime_units(false, false);
-        assert_eq!(
-            staged.len(),
-            super::FLOOR_SHARED_UNITS.len() + super::FLOOR_PLATFORM_UNITS.len()
-        );
-        assert_eq!(compiled, super::FLOOR_COMPILE_UNITS.to_vec());
-
-        let layout = compile_parallel_fixture("tests/programs/par_layout.wf", PAR_LAYOUT);
-        assert!(module_requires_parallel_runtime(&layout));
-        assert!(
-            module_requires_completion_runtime(&layout),
-            "par_layout's real write_once must still require completion"
-        );
-        let (_, compiled) = runtime_units(true, true);
-        for required in ["sched/core.c", "sched/entry.c", "completion/bridge.c"] {
+    fn the_ordinary_library_links_the_same_units_for_every_source_module() {
+        let (staged, compiled) = runtime_units();
+        for required in [
+            "ordinary_values.c",
+            "ordinary_values.ll",
+            "sched/core.c",
+            "sched/entry.c",
+            "completion/bridge.c",
+        ] {
             assert!(
                 compiled.contains(&required),
-                "a module that hands out work and submits must compile `{required}`"
+                "missing library implementation {required}"
             );
+            assert!(staged.iter().any(|unit| unit.relative_path == required));
         }
     }
 
@@ -782,7 +737,7 @@ mod tests {
             Some(result)
         }
 
-        let (units, compiled) = runtime_units(true, true);
+        let (units, compiled) = runtime_units();
         let staged: HashSet<PathBuf> = units
             .iter()
             .map(|unit| PathBuf::from(unit.relative_path))
@@ -983,114 +938,5 @@ mod tests {
             .err()
             .expect("a misspelled option must be refused");
         assert!(message.contains("unknown option"), "{message}");
-    }
-
-    /// One loop that publishes to standard output per iteration. The [PAR-3]
-    /// staged judgment denies it on `&uniq 'say out`, which is storage
-    /// carrying one position, and the denial is the same under every lowering
-    /// because the judgment is pure.
-    const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
-  doc "Writes one line per iteration to standard output.";
-  let page = fixed_vector::<u8, 8>();
-  for @fill (
-    at in 0_u64..8_u64,
-    invariant grown: len_of(page) >= at,
-    invariant spare: room_of(page) + at >= 8_u64,
-    invariant flat: head_of(page) <= 0_u64
-  ) {
-    place_back(vector: &uniq page, value: 0_u8);
-  }
-  region {
-    let window = slice_of(&page);
-    for @scan (index in 0_u64..4_u64) {
-      let written = write_once(output: &uniq out, source: &window, start: 0_u64, end: 8_u64);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-
-    /// A denied I/O loop is news by default and under `--par`, and it is not
-    /// news under `--no-overlap`.
-    ///
-    /// The third blind writer's program compiled, ran correctly, and printed
-    /// the same `PAR` notes on every rebuild, including the builds that had
-    /// already said they wanted no overlap at all. A writer who wrote
-    /// `--no-overlap` has stated that this build is the sequential reference
-    /// one, so a loop without a pipeline is the build they asked for rather
-    /// than a missed optimization on it.
-    ///
-    /// Three things this pins beyond the flag. The judgment is pure, so all
-    /// three ways reach the same verdicts and it is only the channel that
-    /// closes. The three ways emit one module here, byte for byte, because a
-    /// denied loop reaches the host through ordinary direct calls under every
-    /// lowering — so the quiet costs the writer no information about the
-    /// program they built. And `--par-ledger` still carries every line the
-    /// quiet build withheld.
-    #[test]
-    fn a_no_overlap_build_reports_no_denied_io_loop() {
-        let mut modules = Vec::new();
-        let mut verdicts = Vec::new();
-        for (arguments, reported) in [
-            (vec!["value.wf"], true),
-            (vec!["--par", "value.wf"], true),
-            (vec!["--no-overlap", "value.wf"], false),
-        ] {
-            let options = parse(&arguments).expect("every invocation is complete");
-            let (module, notices) = compile_with_io_notices(
-                &[SourceInput::new("value.wf", DENIED_OUTPUT_LOOP)],
-                CompilerLimits::default(),
-                options.overlap(),
-            )
-            .expect("a denied loop is a note, never a rejection");
-            assert!(
-                notices.iter().any(|notice| notice.contains("denied")),
-                "the judgment denies this loop under every lowering: {notices:?}"
-            );
-            let report = io_notice_report(options.no_overlap, &notices);
-            if reported {
-                assert_eq!(report.len(), notices.len() + 1, "{report:?}");
-                assert!(
-                    report
-                        .iter()
-                        .all(|line| line.starts_with("whitefootc: note: ")),
-                    "{report:?}"
-                );
-                assert!(
-                    report[0].contains("PAR ") && report[0].contains("denied"),
-                    "{report:?}"
-                );
-                assert!(
-                    report[report.len() - 1].contains("--par-ledger"),
-                    "the closing line names the full report: {report:?}"
-                );
-            } else {
-                assert!(report.is_empty(), "{report:?}");
-            }
-            modules.push(module);
-            verdicts.push(notices);
-        }
-        assert!(
-            verdicts.iter().all(|notices| *notices == verdicts[0]),
-            "the judgment is pure, so the flag closes a channel and reaches no verdict"
-        );
-        assert!(
-            modules.iter().all(|module| *module == modules[0]),
-            "a denied loop compiles to one module under all three lowerings"
-        );
-
-        // The report itself is not the quiet channel: under the same
-        // `--no-overlap` lowering `--par-ledger` still prints every line,
-        // including the denials the quiet build withheld.
-        let (_, ledger) = compile_with_permission_ledger(
-            &[SourceInput::new("value.wf", DENIED_OUTPUT_LOOP)],
-            CompilerLimits::default(),
-            OverlapLowering::Off,
-        )
-        .expect("a denied loop is a note, never a rejection");
-        assert!(
-            verdicts[2].iter().all(|notice| ledger.contains(notice)),
-            "the full report keeps what the quiet build did not print: {ledger:?}"
-        );
     }
 }

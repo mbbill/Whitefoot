@@ -1,5 +1,9 @@
-command fn main(command.stdin as input: own InputStream, command.heap as heap: own Heap) -> status: own ExitStatus reads(input, heap), writes(input, heap), allocates(heap) {
-  doc "SYS-15: `read_next` reads the entry's standard input at the stream's own position, advancing it by exactly `next - start` on each `ReadBytes`, and reports `ReadEnd` exactly once the stream has no further byte [SYS-8]. The loop counts what it observed and returns 0 only when the count equals the arranged body.";
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "The ordinary read_next operation borrows the input and shared invocation factory state. Repeated Ok endpoints advance the source total to the arranged twenty-one bytes; a later Err(ReadEnd) ends the loop.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: input) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
       None() => {
@@ -22,16 +26,20 @@ command fn main(command.stdin as input: own InputStream, command.heap as heap: o
           loop @chunks {
             let ended = 0_u8;
             region {
-              match read_next(input: &uniq input, destination: &uniq window, start: 0_u64, end: 8_u64) {
-                ReadBytes(next: endpoint) => {
+              match read_next(factory: &uniq entry_factory, input: &uniq input, destination: &uniq window, start: 0_u64, end: 8_u64) {
+                Ok(value: endpoint) => {
                   set total = total +wrap endpoint;
                 }
-                ReadEnd() => {
-                  set ended = 1_u8;
-                }
-                ReadFailed(error: problem) => {
-                  set outcome = 3_u8;
-                  set ended = 1_u8;
+                Err(error: read_stop_23) => {
+                  match read_stop_23 {
+                    ReadEnd() => {
+                      set ended = 1_u8;
+                    }
+                    ReadFailed(error: problem) => {
+                      set outcome = 3_u8;
+                      set ended = 1_u8;
+                    }
+                  }
                 }
               }
             }

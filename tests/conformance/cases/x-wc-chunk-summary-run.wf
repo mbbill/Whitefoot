@@ -98,7 +98,7 @@ fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> 
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left_input = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq left_input, value: 97_u8);

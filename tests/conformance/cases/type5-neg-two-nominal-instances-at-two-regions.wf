@@ -13,7 +13,7 @@ fn chunk_take['s: affine](held: own Chunk<'s>, other: own Chunk<'s>) -> width: o
   return right;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "TYPE-5, PROV-1: two instances of one nominal at two regions are two types. Both stores are bump extents, both chunks are well formed, and the call relates the two parameters to one region, so passing a `Chunk<'a>` and a `Chunk<'b>` to it is the ordinary exact-identity mismatch and not an outlives question.";
   region 'a {
     let first = arena_frame::<4096, 16, 'a>();

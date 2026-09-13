@@ -10,13 +10,13 @@ use crate::{
 use super::catalog::OPERATION_FAMILIES;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationOrigin, DeclarationRole, DeferredUseRole,
-    DependentDeclarationRole, LexicalUseRecord, LexicalUseRole, PostconditionSelectorClass,
-    ReservedDeclarationRole, ResolutionIssue, ResolutionIssueKind, ResolutionOutcome,
-    ResolutionRule, ResolvedTarget, ScopeKind, resolve,
+    DependentDeclarationRole, LexicalUseRole, PostconditionSelectorClass, ReservedDeclarationRole,
+    ResolutionIssue, ResolutionIssueKind, ResolutionOutcome, ResolutionRule, ResolvedTarget,
+    ScopeKind, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
-    max_sources: 16,
+    max_sources: 64,
     max_logical_path_bytes: 128,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
@@ -24,7 +24,7 @@ const SOURCE_LIMITS: SourceLimits = SourceLimits {
 };
 
 const LEX_LIMITS: LexLimits = LexLimits {
-    max_sources: 16,
+    max_sources: 64,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
     max_token_bytes: 16_384,
@@ -46,7 +46,7 @@ const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
     max_nodes: 131_072,
     max_child_edges: 131_072,
     max_terminals: 131_072,
-    max_sources: 16,
+    max_sources: 64,
 };
 
 const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
@@ -63,9 +63,22 @@ fn with_resolution<ResultValue>(
         ResolutionOutcome<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
-    let Ok(bundle) = SourceBundle::with_limits(inputs, SOURCE_LIMITS) else {
-        panic!("resolver test bundle must be valid");
-    };
+    with_resolution_sources(inputs, false, run)
+}
+
+fn with_resolution_sources<ResultValue>(
+    inputs: &[SourceInput<'_>],
+    include_prelude: bool,
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        ResolutionOutcome<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
+    let bundle = if include_prelude {
+        SourceBundle::with_prelude(inputs, SOURCE_LIMITS)
+    } else {
+        SourceBundle::with_limits(inputs, SOURCE_LIMITS)
+    }
+    .expect("resolver test bundle must be valid");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
         panic!("resolver test source must lex");
     };
@@ -602,49 +615,18 @@ fn probe() -> result: own unit pure {
 }
 
 #[test]
-fn every_unit_receives_the_system_domain_before_entry_validation() {
-    // This unit deliberately lacks the `command` marker and is therefore not
-    // an admitted entry [FN-7]. Resolution nevertheless installs the complete
-    // SYS-2 inventory [SYS-3], so its system signature and constructor resolve
-    // normally. Entry validation remains a later semantic judgment.
-    let source =
-        b"fn main(command.args as args: own Args) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("entry-invalid syntax must still resolve system names: {outcome:?}");
-        };
-        assert_eq!(resolved.system_declarations().len(), 307);
-        for (role, spelling, ordinal) in [
-            (LexicalUseRole::Type, "Args", 0),
-            (LexicalUseRole::Type, "ExitStatus", 6),
-            (LexicalUseRole::IdentifierCallee, "exit_status", 216),
-        ] {
-            let usage = resolved
-                .lexical_uses()
-                .iter()
-                .find(|usage| usage.role() == role && usage.spelling() == spelling)
-                .unwrap_or_else(|| panic!("missing system use {spelling}"));
-            assert!(matches!(
-                usage.target(),
-                ResolvedTarget::System(id) if id.ordinal() == ordinal
-            ));
-        }
-    });
-}
-
-#[test]
 fn fn8_admission_precedes_declaration_inventory() {
     // DIAG-1 fixes the stage order: complete unit-wide FN-8 admission precedes
     // declaration inventory. The FN-8 rejection therefore wins before the
-    // always-present SYS-3 domain is installed for lookup.
+    // complete ordinary declaration collection is installed for lookup.
     let source = br#"fn guarded(value: own i32) -> result: own i32 pure contract {
   define unresolved = missing;
 } {
   return value;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> result: own unit pure {
+  return unit;
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -659,316 +641,35 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
     });
 
     // The same unit with an admitted internal requirement reaches declaration
-    // inventory and resolves with the complete system domain. The command
-    // entry itself carries no contract [FN-7].
+    // inventory and resolves normally.
     let admitted = br#"fn guarded(value: own i32) -> result: own i32 pure contract {
   requires value == value;
 } {
   return value;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> result: own unit pure {
+  return unit;
 }
 "#;
     with_one_resolution(admitted, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("an admitted requires block must reach system inventory: {outcome:?}");
+            panic!("an admitted requires block must reach declaration inventory: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 307);
-    });
-}
-
-#[test]
-fn a_kind_declaring_unit_resolves_the_complete_system_lookup_inventory() {
-    // Every system nominal type as a `type` TYPEID use, every operation as an
-    // IDENT callee, one constructor in construct position, and the
-    // `ReadOutcome` variants in arm position, with deterministic [SYS-2]
-    // preorder ordinals throughout. Resolution fixes callee targets only;
-    // argument-name checking against the [SYS-2] parameter lists is the
-    // later typed stage; this fixture nevertheless spells every current
-    // parameter name so catalog surface changes remain visible here.
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-
-fn types(a: own Args, b: own HostString, c: own RelativePath, d: own DirectoryRead, e: own ReadFile, f: own OutputStream, g: own ExitStatus, h: own ArgError, i: own Utf8Error, j: own CopyError, k: own Utf8CopyError, l: own PathError, m: own ReadOutcome, n: own IoError, o: own DirectorySource, p: own ListOutcome, q: own HandleFactory, r: own HandlePermit) -> result: own unit pure {
-  return unit;
-}
-
-fn calls(x: own u64) -> result: own unit pure {
-  args_count(args: x);
-  arg_get(args: x, position: x);
-  host_bytes_len(value: x);
-  host_copy_bytes(value: x, destination: x, start: x, end: x);
-  host_utf8_len(value: x);
-  host_copy_utf8(value: x, destination: x, start: x, end: x);
-  relative_path(value: x);
-  open_read(permit: x, root: x, path: x);
-  read_at(file: x, destination: x, file_offset: x, start: x, end: x);
-  write_once(output: x, source: x, start: x, end: x);
-  open_directory(permit: x, root: x, name: x, start: x, end: x);
-  open_directory_source(permit: x, directory: x);
-  directory_next(source: x, destination: x, start: x, end: x);
-  open_file(permit: x, root: x, name: x, start: x, end: x);
-  reserve_handle(factory: x);
-  return unit;
-}
-
-fn outcomes(m: own ReadOutcome) -> result: own unit pure {
-  let failed = NotFound(code: 1_u32, origin: 0_u8);
-  match m {
-    ReadBytes(next: got) => {
-      return unit;
-    }
-    ReadEnd() => {
-      return unit;
-    }
-    ReadFailed(error: cause) => {
-      return unit;
-    }
-  }
-}
-
-fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
-  match m {
-    ListBytes(next: got, entries: count) => {
-      return unit;
-    }
-    ListEnd() => {
-      return unit;
-    }
-    ListFailed(error: cause) => {
-      return unit;
-    }
-  }
-}
-"#;
-    with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::Complete(resolved) = outcome else {
-            panic!("the complete system fixture must resolve: {outcome:?}");
-        };
-        let system_target = |usage: &LexicalUseRecord| match usage.target() {
-            ResolvedTarget::System(id) => Some(id.ordinal()),
-            _ => None,
-        };
-        let expect = |role: LexicalUseRole, spelling: &str, ordinal: u16| {
-            let usage = resolved
-                .lexical_uses()
+        assert!(
+            resolved
+                .declarations()
                 .iter()
-                .find(|usage| usage.role() == role && usage.spelling() == spelling)
-                .unwrap_or_else(|| panic!("missing system use {spelling}"));
-            assert_eq!(
-                system_target(usage),
-                Some(ordinal),
-                "wrong target for {spelling}"
-            );
-        };
-        for (spelling, ordinal) in [
-            ("Args", 0),
-            ("HostString", 1),
-            ("RelativePath", 2),
-            ("DirectoryRead", 3),
-            ("ReadFile", 4),
-            ("OutputStream", 5),
-            ("ExitStatus", 6),
-            ("ArgError", 7),
-            ("Utf8Error", 8),
-            ("CopyError", 9),
-            ("Utf8CopyError", 10),
-            ("PathError", 11),
-            ("ReadOutcome", 12),
-            ("IoError", 13),
-            ("DirectorySource", 14),
-            ("ListOutcome", 15),
-            ("HandleFactory", 16),
-            ("HandlePermit", 17),
-        ] {
-            expect(LexicalUseRole::Type, spelling, ordinal);
-        }
-        for (spelling, ordinal) in [
-            ("args_count", 166),
-            ("arg_get", 169),
-            ("host_bytes_len", 173),
-            ("host_copy_bytes", 176),
-            ("host_utf8_len", 183),
-            ("host_copy_utf8", 186),
-            ("relative_path", 193),
-            ("open_read", 195),
-            ("read_at", 201),
-            ("write_once", 209),
-            ("exit_status", 216),
-            ("open_directory", 218),
-            ("open_directory_source", 226),
-            ("directory_next", 230),
-            ("open_file", 237),
-            ("reserve_handle", 245),
-        ] {
-            expect(LexicalUseRole::IdentifierCallee, spelling, ordinal);
-        }
-        expect(LexicalUseRole::Construct, "NotFound", 45);
-        expect(LexicalUseRole::ArmVariant, "ReadBytes", 40);
-        expect(LexicalUseRole::ArmVariant, "ReadEnd", 42);
-        expect(LexicalUseRole::ArmVariant, "ReadFailed", 43);
-        expect(LexicalUseRole::ArmVariant, "ListBytes", 129);
-        expect(LexicalUseRole::ArmVariant, "ListEnd", 132);
-        expect(LexicalUseRole::ArmVariant, "ListFailed", 133);
+                .any(|declaration| declaration.spelling() == "guarded")
+        );
     });
 }
 
 #[test]
-fn system_names_are_reserved_even_without_a_valid_entry() {
-    // This unit has no main, but SYS-3 still makes `args_count` a system
-    // declaration before FN-7 entry validation. The source declaration is
-    // therefore DIAG-1 rank 5, not an ordinary lookalike.
-    let source = b"fn args_count(args: own u64) -> result: own u64 pure {\n  return args;\n}\n";
-    with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a system spelling must remain reserved in every unit: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Type6);
-        let ResolutionIssueKind::DeclarationCollision {
-            spelling,
-            conflicts,
-            ..
-        } = issue.kind()
-        else {
-            panic!("expected a declaration collision: {issue:?}");
-        };
-        assert_eq!(spelling, "args_count");
-        assert_eq!(conflicts.len(), 1);
-        assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
-        assert!(matches!(
-            conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 166
-        ));
-    });
-}
-
-#[test]
-fn system_collisions_reject_deterministically_in_both_directions() {
-    // [DIAG-1] rank 5: a source declaration
-    // whose spelling equals a system entry's spelling in the same domain is a
-    // deterministic rejection at that source declaration event — before the
-    // entry declaration and after it alike — and neither name resolves.
-    let entry = "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    let lookalike = "fn args_count(args: own u64) -> result: own u64 pure {\n  return args;\n}\n";
-    for source in [
-        format!("{lookalike}\n{entry}"),
-        format!("{entry}\n{lookalike}"),
-    ] {
-        with_one_resolution(source.as_bytes(), |outcome| {
-            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("the system collision must reject: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), ResolutionRule::Type6);
-            let ResolutionIssueKind::DeclarationCollision {
-                spelling,
-                conflicts,
-                ..
-            } = issue.kind()
-            else {
-                panic!("expected a declaration collision: {issue:?}");
-            };
-            assert_eq!(spelling, "args_count");
-            assert_eq!(conflicts.len(), 1);
-            assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
-            assert_eq!(conflicts[0].class(), DeclarationClass::Function);
-            assert!(matches!(
-                conflicts[0].origin(),
-                DeclarationOrigin::System(id) if id.ordinal() == 166
-            ));
-        });
-    }
-}
-
-#[test]
-fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
-    let entry = "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-
-    // Nominal-type domain: a struct reusing an opaque-type spelling. The
-    // struct's constructor entry collides with nothing because an opaque
-    // type contributes no constructor, so exactly one conflict is reported.
-    let nominal = format!("{entry}\nstruct HostString {{\n}}\n");
-    with_one_resolution(nominal.as_bytes(), |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the nominal system collision must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Type6);
-        let ResolutionIssueKind::DeclarationCollision {
-            spelling,
-            conflicts,
-            ..
-        } = issue.kind()
-        else {
-            panic!("expected a declaration collision: {issue:?}");
-        };
-        assert_eq!(spelling, "HostString");
-        assert_eq!(conflicts.len(), 1);
-        assert_eq!(conflicts[0].domain(), DeclarationDomain::NominalType);
-        assert!(matches!(
-            conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 1
-        ));
-    });
-
-    // Constructor domain: a source enum variant reusing a system constructor
-    // spelling collides even though its enum nominal is fresh.
-    let variant = format!("{entry}\nenum Mine {{\n  ReadEnd();\n}}\n");
-    with_one_resolution(variant.as_bytes(), |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the constructor system collision must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Type6);
-        let ResolutionIssueKind::DeclarationCollision {
-            spelling,
-            conflicts,
-            ..
-        } = issue.kind()
-        else {
-            panic!("expected a declaration collision: {issue:?}");
-        };
-        assert_eq!(spelling, "ReadEnd");
-        assert_eq!(conflicts.len(), 1);
-        assert_eq!(conflicts[0].domain(), DeclarationDomain::Constructor);
-        assert!(matches!(
-            conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 42
-        ));
-    });
-
-    // A nested declaration collides at rank 5 exactly like a root one
-    // ([SYS-1]: at the compilation root and in every nested scope alike);
-    // this is a rejection, never a shadow of the system entry.
-    let nested = "command fn main() -> status: own ExitStatus pure {\n  let host_bytes_len = 0_u64;\n  return exit_status(code: 0_u8);\n}\n";
-    with_one_resolution(nested.as_bytes(), |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the nested system collision must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Type6);
-        let ResolutionIssueKind::DeclarationCollision {
-            spelling,
-            conflicts,
-            ..
-        } = issue.kind()
-        else {
-            panic!("expected a declaration collision: {issue:?}");
-        };
-        assert_eq!(spelling, "host_bytes_len");
-        assert_eq!(conflicts.len(), 1);
-        assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
-        assert!(matches!(
-            conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 173
-        ));
-    });
-}
-
-#[test]
-fn a_prelude_collision_keeps_rank_four_ahead_of_the_global_system_domain() {
-    // [DIAG-1] rank 4 precedes rank 5 at one event: a PRE-1 collision in a
-    // unit reports only its PRE-1 conflicts.
-    let source = "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n\nstruct Overflow {\n}\n";
+fn a_builtin_prelude_collision_reports_the_prelude_origin() {
+    // [DIAG-1, PRE-1] a built-in nominal collision reports its prelude origin.
+    let source =
+        "fn main() -> result: own unit pure {\n  return unit;\n}\n\nstruct Overflow {\n}\n";
     with_one_resolution(source.as_bytes(), |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("the prelude collision must reject: {outcome:?}");
@@ -989,66 +690,6 @@ fn a_prelude_collision_keeps_rank_four_ahead_of_the_global_system_domain() {
                 .all(|conflict| matches!(conflict.origin(), DeclarationOrigin::Prelude(_)))
         );
     });
-}
-
-#[test]
-fn a_system_operation_never_satisfies_a_function_binding() {
-    // [SYS-2]: a system operation is not the right IDENT of an FN-3
-    // `fn_bind`; an actual binds only an explicit source function. The
-    // visible system entry still surfaces through the available classes.
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-
-formal Task {
-  fn run(value: own u64) -> result: own u64 pure;
-}
-
-actual Selected : Task {
-  run = args_count;
-}
-"#;
-    with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a system operation must not bind a contract member: {outcome:?}");
-        };
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::UnresolvedUse { spelling, available, .. }
-                if spelling == "args_count" && available.contains(&DeclarationClass::Function)
-        ));
-    });
-}
-
-#[test]
-fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
-    let source =
-        b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    let targets = |path: &str| -> Vec<(String, u16)> {
-        with_resolution(&[SourceInput::new(path, source)], |outcome| {
-            let ResolutionOutcome::Complete(resolved) = outcome else {
-                panic!("the deterministic fixture must resolve: {outcome:?}");
-            };
-            resolved
-                .lexical_uses()
-                .iter()
-                .filter_map(|usage| match usage.target() {
-                    ResolvedTarget::System(id) => Some((usage.spelling().to_owned(), id.ordinal())),
-                    _ => None,
-                })
-                .collect()
-        })
-    };
-    let first = targets("first.wf");
-    assert_eq!(
-        first,
-        vec![
-            ("ExitStatus".to_owned(), 6),
-            ("exit_status".to_owned(), 216)
-        ]
-    );
-    assert_eq!(first, targets("first.wf"));
-    assert_eq!(first, targets("renamed/location.wf"));
 }
 
 #[test]
@@ -2645,245 +2286,91 @@ fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
     });
 }
 
+// v0.58 retires SYS-1/SYS-2/SYS-3, QUAL-1 and SYS-5 ordinal/release-table
+// assertions. PRE-1 now supplies ordinary declarations; these witnesses retain
+// visibility, collision and callable-binding coverage without an external domain.
 #[test]
-fn system_index_helpers_agree_with_the_preorder_entity_map() {
-    // The index helpers derive table positions arithmetically from the
-    // [SYS-2] preorder; this pins them to `system_entity`, the authoritative
-    // ordinal-to-entity map, across every one of the 167 records.
-    use super::SystemDeclarationId;
-    use super::catalog::{
-        SYSTEM_NOMINALS, SystemEntity, system_constructor_declaration, system_constructor_index,
-        system_constructors, system_entity, system_nominal_index, system_nominals,
-        system_operation_index, system_operations, system_release_row,
-    };
-
-    // Every inventory state: a candidate's extra nominal types shift every
-    // constructor and operation ordinal, so the helpers must agree with the
-    // entity map under each state separately.
-    for surface in [
-        crate::Inventory::Base,
-        crate::Inventory::Traversal,
-        crate::Inventory::OpenByName,
-    ] {
-        let mut nominals = 0_usize;
-        let mut constructors = 0_usize;
-        let mut operations = 0_usize;
-        for ordinal in 0..=u16::from(u8::MAX) * 2 {
-            let id = SystemDeclarationId::new(ordinal);
-            match system_entity(id, surface) {
-                Some(SystemEntity::Nominal(nominal)) => {
-                    let index = system_nominal_index(id, surface).expect("nominal index");
-                    assert_eq!(
-                        system_nominals(surface)[usize::from(index)].spelling,
-                        nominal.spelling
-                    );
-                    assert!(system_constructor_index(id, surface).is_none());
-                    assert!(system_operation_index(id, surface).is_none());
-                    nominals += 1;
-                }
-                Some(SystemEntity::Constructor(constructor)) => {
-                    let index = system_constructor_index(id, surface).expect("constructor index");
-                    assert_eq!(
-                        system_constructors(surface)[usize::from(index)].spelling,
-                        constructor.spelling
-                    );
-                    assert_eq!(system_constructor_declaration(index, surface), Some(id));
-                    assert!(system_nominal_index(id, surface).is_none());
-                    assert!(system_operation_index(id, surface).is_none());
-                    constructors += 1;
-                }
-                Some(SystemEntity::Operation(operation)) => {
-                    let index = system_operation_index(id, surface).expect("operation index");
-                    assert_eq!(
-                        system_operations(surface)[usize::from(index)].spelling,
-                        operation.spelling
-                    );
-                    assert!(system_nominal_index(id, surface).is_none());
-                    assert!(system_constructor_index(id, surface).is_none());
-                    operations += 1;
-                }
-                None => {
-                    assert!(system_constructor_index(id, surface).is_none());
-                    assert!(system_operation_index(id, surface).is_none());
-                }
+fn parsed_prelude_declarations_are_ordinary_visible_targets() {
+    let source = b"fn inspect(args: &Args) -> result: own u64 reads(args) {\n  return args_count(args: args);\n}\n";
+    with_resolution_sources(
+        &[SourceInput::new("ordinary.wf", source)],
+        true,
+        |outcome| {
+            let ResolutionOutcome::Complete(resolved) = outcome else {
+                panic!("ordinary prelude declaration resolution: {outcome:?}");
+            };
+            for (spelling, class) in [
+                ("Args", DeclarationClass::NominalType),
+                ("args_count", DeclarationClass::Function),
+            ] {
+                assert!(resolved.lexical_uses().iter().any(|usage| {
+                usage.origin().coordinate().source().ordinal() == 0 && usage.spelling() == spelling
+                    && matches!(usage.target(), ResolvedTarget::Source { class: actual, .. } if actual == class)
+            }));
             }
-        }
-        assert_eq!(nominals, system_nominals(surface).len());
-        assert_eq!(constructors, system_constructors(surface).len());
-        assert_eq!(operations, system_operations(surface).len());
-    }
-
-    // Exactly native resource closes may suspend; logical releases are inline.
-    for (index, nominal) in SYSTEM_NOMINALS.iter().enumerate() {
-        let index = u8::try_from(index).expect("nominal table fits u8");
-        let row = system_release_row(index);
-        let expected = matches!(
-            nominal.spelling,
-            "DirectoryRead"
-                | "ReadFile"
-                | "DirectorySource"
-                | "TcpListener"
-                | "TcpReceive"
-                | "TcpSend"
-        );
-        assert_eq!(
-            row.target_action.may_suspend(),
-            expected,
-            "release suspension for {}",
-            nominal.spelling
-        );
-    }
+        },
+    );
 }
 
 #[test]
-fn the_system_resource_contracts_equal_the_release_and_backing_tables() {
-    use super::catalog::{
-        SYSTEM_NOMINALS, SystemReleaseAction, SystemResourceBacking, SystemResourceType,
-        system_release_row, system_resource_contract,
-    };
-
-    // [SYS-5]'s release table and [HOST-3]'s backing rule, keyed by the
-    // [SYS-2] nominal spelling so a reordered inventory cannot silently move
-    // a contract onto another type. The seven outcome enums have no release
-    // action and take no row in the table, so they carry no contract.
-    let expected = [
-        (
-            "Args",
-            SystemResourceType::Args,
-            SystemReleaseAction::LogicalConsume,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "HostString",
-            SystemResourceType::HostString,
-            SystemReleaseAction::LogicalConsume,
-            SystemResourceBacking::CommandLifetimeLease,
-        ),
-        (
-            "RelativePath",
-            SystemResourceType::RelativePath,
-            SystemReleaseAction::LogicalConsume,
-            SystemResourceBacking::CommandLifetimeLease,
-        ),
-        (
-            "DirectoryRead",
-            SystemResourceType::DirectoryRead,
-            SystemReleaseAction::NativeCloseAttempt,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "ReadFile",
-            SystemResourceType::ReadFile,
-            SystemReleaseAction::NativeCloseAttempt,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "OutputStream",
-            SystemResourceType::OutputStream,
-            SystemReleaseAction::SourceDetach,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "ExitStatus",
-            SystemResourceType::ExitStatus,
-            SystemReleaseAction::LogicalConsume,
-            SystemResourceBacking::Opaque,
-        ),
-        // The traversal-surface candidate's enumeration handle: an opaque
-        // stateful resource whose release is one native close attempt, on the
-        // same ground as `ReadFile` [SYS-14].
-        (
-            "DirectorySource",
-            SystemResourceType::DirectorySource,
-            SystemReleaseAction::NativeCloseAttempt,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "HandleFactory",
-            SystemResourceType::HandleFactory,
-            SystemReleaseAction::LogicalConsume,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "HandlePermit",
-            SystemResourceType::HandlePermit,
-            SystemReleaseAction::LogicalConsume,
-            SystemResourceBacking::Opaque,
-        ),
-        // The v0.50 rows [SYS-15, SYS-16, SYS-17, SYS-18]. The stream detaches
-        // like `OutputStream`, the address is a value with nothing to release,
-        // the listener closes like `ReadFile`, and each connection direction
-        // half-closes its own direction.
-        (
-            "InputStream",
-            SystemResourceType::InputStream,
-            SystemReleaseAction::SourceDetach,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "SocketAddress",
-            SystemResourceType::SocketAddress,
-            SystemReleaseAction::LogicalConsume,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "TcpListener",
-            SystemResourceType::TcpListener,
-            SystemReleaseAction::NativeCloseAttempt,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "TcpReceive",
-            SystemResourceType::TcpReceive,
-            SystemReleaseAction::NativeDirectionCloseAttempt,
-            SystemResourceBacking::Opaque,
-        ),
-        (
-            "TcpSend",
-            SystemResourceType::TcpSend,
-            SystemReleaseAction::NativeDirectionCloseAttempt,
-            SystemResourceBacking::Opaque,
-        ),
-    ];
-    let mut covered = 0_usize;
-    for (index, nominal) in SYSTEM_NOMINALS.iter().enumerate() {
-        let index = u8::try_from(index).expect("nominal table fits u8");
-        let contract = system_resource_contract(index);
-        let Some(row) = expected
-            .iter()
-            .find(|(spelling, ..)| *spelling == nominal.spelling)
-        else {
-            assert!(
-                contract.is_none(),
-                "{} takes no SYS-5 release row",
-                nominal.spelling
-            );
-            // The one system struct takes no row either, and it is not an
-            // enum: releasing a `TcpConnection` is releasing its two fields
-            // [SYS-5, SYS-18].
-            assert!(!nominal.is_opaque());
-            continue;
-        };
-        covered += 1;
-        assert!(nominal.is_opaque());
-        let contract = contract.unwrap_or_else(|| panic!("{} has a contract", nominal.spelling));
-        assert_eq!(
-            contract.resource, row.1,
-            "identity for {}",
-            nominal.spelling
-        );
-        assert_eq!(contract.action, row.2, "action for {}", nominal.spelling);
-        assert_eq!(contract.backing, row.3, "backing for {}", nominal.spelling);
-        // The row is a function of the action, and the two views agree.
-        assert_eq!(contract.row, system_release_row(index));
-        assert_eq!(
-            contract.row.target_action.may_suspend(),
-            matches!(
-                row.2,
-                SystemReleaseAction::NativeCloseAttempt
-                    | SystemReleaseAction::NativeDirectionCloseAttempt
-            )
+fn ordinary_prelude_names_cannot_be_shadowed_and_opaque_types_have_no_constructor() {
+    for source in [
+        "struct HostString {\n}\n",
+        "enum Collision {\n  NotFound();\n}\n",
+        "fn helper() -> result: own unit pure {\n  let args_count = 0_u64;\n  return unit;\n}\n",
+    ] {
+        with_resolution_sources(
+            &[SourceInput::new("collision.wf", source.as_bytes())],
+            true,
+            |outcome| {
+                let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                    panic!("PRE-1 collision must reject: {outcome:?}");
+                };
+                assert!(matches!(
+                    issue.kind(),
+                    ResolutionIssueKind::DeclarationCollision { .. }
+                ));
+            },
         );
     }
-    assert_eq!(covered, expected.len());
+    let source = b"fn fabricate() -> result: own HostString pure {\n  return HostString();\n}\n";
+    with_resolution_sources(&[SourceInput::new("opaque.wf", source)], true, |outcome| {
+        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("an ordinary opaque nominal has no constructor: {outcome:?}");
+        };
+        assert!(
+            matches!(issue.kind(), ResolutionIssueKind::UnresolvedUse { spelling, .. } if spelling == "HostString")
+        );
+    });
+}
+
+#[test]
+fn an_ordinary_prelude_signature_is_eligible_for_an_actual_member() {
+    let source = b"formal Counter {\n  fn count(args: &Args) -> result: own u64 reads(args);\n}\n\nactual Selected : Counter {\n  count = args_count;\n}\n";
+    with_resolution_sources(&[SourceInput::new("actual.wf", source)], true, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("FN-4 admits ordinary declarations: {outcome:?}");
+        };
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.origin().coordinate().source().ordinal() == 0
+                && usage.spelling() == "args_count"
+                && matches!(
+                    usage.target(),
+                    ResolvedTarget::Source {
+                        class: DeclarationClass::Function,
+                        ..
+                    }
+                )
+        }));
+    });
+}
+
+#[test]
+fn supplied_signature_locals_do_not_capture_writer_global_names() {
+    // PRE-1 is an outer ordinary declaration environment. Its local `f` and
+    // `input` parameter names cannot reserve those names in the writer unit.
+    let source = b"const input: u64 = 7_u64;\n\nfn f() -> result: own u64 pure {\n  return input;\n}\n";
+    with_resolution_sources(&[SourceInput::new("ordinary.wf", source)], true, |outcome| {
+        assert!(matches!(outcome, ResolutionOutcome::Complete(_)), "{outcome:?}");
+    });
 }

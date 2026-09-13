@@ -291,7 +291,7 @@ fn exercise['s](store: &uniq Heap<'s>) -> status: own ExitStatus reads(store), w
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     return exercise(store: &uniq heap);
   }

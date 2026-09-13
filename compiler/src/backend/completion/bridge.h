@@ -148,6 +148,11 @@ void wf__completion_socket_shutdown_submit(
     void *record
 );
 
+/* A shutdown's joined value is zero for the first half and one for the
+ * descriptor-close attempt on its last half. Its error code independently
+ * reports the close outcome. The ordinary linked close uses that private
+ * result to return one descriptor credit to its explicit factory argument. */
+
 void wf__completion_file_open_join(
     const void *record,
     int64_t *value,

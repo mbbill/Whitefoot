@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The support of a length term is the descriptor storage of the place, not the place's element storage, so an element write never kills a length fact [ENT-5] -- a run's window is moved only by an operation that moves a boundary. The write through the first subscript leaves len_of(b) = 4 standing, and the later subscript still discharges [OP-4].";
   let empty = fixed_vector::<u8, 4>();
   region {

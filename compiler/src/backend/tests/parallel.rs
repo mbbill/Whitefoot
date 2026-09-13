@@ -17,8 +17,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::backend::emitter::emit_llvm_for_target;
-use crate::backend::qualification::{SystemTarget, qualify_program};
+use crate::backend::emitter::emit_llvm_with_layout;
 use crate::backend::target::{
     PARALLEL_LANE_FRAME_ALIGNMENT, TargetLayout, TargetLayoutFailure, TargetObject,
     parallel_lane_frame_layout,
@@ -339,10 +338,6 @@ fn a_program_named_like_the_runtime_still_compiles_and_links() {
 fn selected_target_proves_the_complete_ordinary_lane_frame() {
     with_ir(LANE_FRAME_LAYOUT_FUNCTIONS, |program| {
         let host = TargetLayout::host().expect("the backend test runs on a qualified host");
-        let system_target = SystemTarget::for_triple(host.triple())
-            .expect("the host triple has one qualified system target");
-        let qualification =
-            qualify_program(system_target, program).expect("the lane-frame fixture must qualify");
         let exact = program
             .functions()
             .iter()
@@ -354,21 +349,21 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
             .find(|function| function.name() == "over_frame")
             .expect("the over-boundary function must lower");
 
-        let exact_layout = parallel_lane_frame_layout(host, &qualification, program, exact)
+        let exact_layout = parallel_lane_frame_layout(host, program, exact)
             .expect("the exact frame is target-representable")
             .expect("the exact frame fits the lane slot");
         assert_eq!(exact_layout.size(), crate::LANE_FRAME_BYTES);
         assert_eq!(exact_layout.align(), 1);
         assert!(exact_layout.align() <= PARALLEL_LANE_FRAME_ALIGNMENT);
         assert_eq!(
-            parallel_lane_frame_layout(host, &qualification, program, over),
+            parallel_lane_frame_layout(host, program, over),
             Ok(None),
             "a target-representable frame beyond the lane capacity must decline overlap"
         );
 
         let short_domain = host.with_address_index_max_for_test(crate::LANE_FRAME_BYTES - 1);
         assert_eq!(
-            parallel_lane_frame_layout(short_domain, &qualification, program, exact),
+            parallel_lane_frame_layout(short_domain, program, exact),
             Err(TargetLayoutFailure::Unrepresentable(
                 TargetObject::ParallelLaneFrame
             )),
@@ -761,97 +756,11 @@ fn a_group_joins_its_compute_members_newest_first_and_continues_at_the_oldest() 
 /// site, and `C1`, `IO` and `C2` are all handed away. Every member's value
 /// reaches the exit status, so a member that were dropped, joined twice, or
 /// joined out of its dependency order moves the observed code.
-const MIXED_COMPUTE_AROUND_A_WRITE: &[u8] =
-    br#"fn choose(value: own u64) -> result: own u64 pure {
-  return imax(value, value);
-}
-
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
-  let report = buffer_new(8_u64, 0_u8);
-  region 'o {
-    region {
-      let a = choose(value: 1_u64);
-      let w = write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64);
-      let b = choose(value: 2_u64);
-      let c = choose(value: 4_u64);
-      let partial = a +wrap b;
-      let acc = partial +wrap c;
-      let i = 0_u64;
-      loop @spin {
-        let done = i >= 4_u64;
-        if done {
-          break @spin;
-        }
-        set acc = acc +wrap 1_u64;
-        set i = i +wrap 1_u64;
-      }
-      match w {
-        Ok(value: next) => {
-          match cvt::<u64, u8>(acc) {
-            Ok(value: code) => {
-              return exit_status(code: code);
-            }
-            Err(error: problem) => {
-              return exit_status(code: 255_u8);
-            }
-          }
-        }
-        Err(error: problem) => {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-}
-"#;
 
 /// The same group with its completion member published first: `[IO, C1, C2,
 /// C3]`. The compute members still reverse among their own positions, so the
 /// join order is `IO`, `C2`, `C1` and the completion member keeps the position
 /// it was published at rather than moving to either end.
-const MIXED_WRITE_BEFORE_COMPUTE: &[u8] =
-    br#"fn choose(value: own u64) -> result: own u64 pure {
-  return imax(value, value);
-}
-
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
-  let report = buffer_new(8_u64, 0_u8);
-  region 'o {
-    region {
-      let w = write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64);
-      let a = choose(value: 1_u64);
-      let b = choose(value: 2_u64);
-      let c = choose(value: 4_u64);
-      let partial = a +wrap b;
-      let acc = partial +wrap c;
-      let i = 0_u64;
-      loop @spin {
-        let done = i >= 4_u64;
-        if done {
-          break @spin;
-        }
-        set acc = acc +wrap 1_u64;
-        set i = i +wrap 1_u64;
-      }
-      match w {
-        Ok(value: next) => {
-          match cvt::<u64, u8>(acc) {
-            Ok(value: code) => {
-              return exit_status(code: code);
-            }
-            Err(error: problem) => {
-              return exit_status(code: 255_u8);
-            }
-          }
-        }
-        Err(error: problem) => {
-          return exit_status(code: 1_u8);
-        }
-      }
-    }
-  }
-}
-"#;
 
 /// The one mixed overlap group of a fixture, as its handed-out compute members
 /// in publish order and its one handed-out completion member.
@@ -860,40 +769,7 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
 /// below name are the group's own rather than a guess at value numbering. A
 /// member is a completion member exactly when its completion step submits,
 /// which is the test the emitter itself takes.
-fn mixed_group_members(source: &[u8]) -> (Vec<u32>, u32) {
-    with_parallel_ir(source, |program| {
-        let function = program
-            .functions()
-            .iter()
-            .find(|function| !function.overlaps().is_empty())
-            .expect("the source must lower to an overlap group");
-        let submitted = function
-            .completion_steps()
-            .iter()
-            .filter(|step| step.submit())
-            .map(crate::IrCompletionStep::call)
-            .collect::<Vec<_>>();
-        let [overlap] = function.overlaps() else {
-            panic!("the source must lower to exactly one overlap group");
-        };
-        let mut compute = Vec::new();
-        let mut completion = None;
-        for member in overlap.handed_out() {
-            if submitted.contains(member) {
-                assert!(
-                    completion.replace(member.ordinal()).is_none(),
-                    "the fixture must hand exactly one completion member out"
-                );
-            } else {
-                compute.push(member.ordinal());
-            }
-        }
-        (
-            compute,
-            completion.expect("the group must hand a completion member out"),
-        )
-    })
-}
+
 
 /// Runs one linked mixed fixture at three worker counts and demands the
 /// source-order exit status from each.
@@ -943,86 +819,7 @@ fn a_mixed_fixture_reports(module: &str, expected: i32) {
 /// later block must use — and a phi naming a block its predecessor does not
 /// end at is a module `clang` rejects. The loop after the group is what spends
 /// the prediction, so linking and running the fixture is part of the case.
-#[test]
-fn a_mixed_group_hands_out_both_kinds_and_joins_them_newest_compute_first() {
-    let (compute, completion) = mixed_group_members(MIXED_COMPUTE_AROUND_A_WRITE);
-    let [first, second] = compute.as_slice() else {
-        panic!("the group must hand two compute members out: {compute:?}");
-    };
 
-    let module = emit_with_overlap(MIXED_COMPUTE_AROUND_A_WRITE);
-    let body = emitted_function(&module, "main");
-    let at = |needle: &str| {
-        body.find(needle)
-            .unwrap_or_else(|| panic!("missing `{needle}`:\n{body}"))
-    };
-
-    // Both compute members take the lane protocol, and only they do: two
-    // acquisitions and two publishes for a group of three hand-outs.
-    assert_eq!(
-        body.matches("call ptr @wf__par_acquire_lane(").count(),
-        2,
-        "both compute members must acquire a lane, and the completion member none:\n{body}"
-    );
-    assert_eq!(
-        body.matches("call void @wf__par_publish(").count(),
-        2,
-        "both compute members must be published:\n{body}"
-    );
-    for member in [first, second] {
-        assert!(
-            body.contains(&format!("par.offer.v{member}:")),
-            "compute member v{member} must be handed out:\n{body}"
-        );
-    }
-    // The completion member is submitted rather than called inline.
-    assert!(
-        body.contains("call void @wf__completion_file_write_submit("),
-        "the completion member v{completion} must be submitted:\n{body}"
-    );
-
-    // Publish order is source order.
-    assert!(
-        at(&format!("par.offer.v{first}:")) < at(&format!("par.offer.v{second}:")),
-        "the compute members must be published in source order:\n{body}"
-    );
-    // Join order is §4's: the newest compute member, then the completion
-    // member where it was published, then the oldest compute member.
-    assert!(
-        at(&format!("par.wait.v{second}:")) < at("call void @wf__completion_file_join("),
-        "the newest compute member must be joined before the completion member:\n{body}"
-    );
-    assert!(
-        at("call void @wf__completion_file_join(") < at(&format!("par.wait.v{first}:")),
-        "the completion member must be joined where it was published:\n{body}"
-    );
-    // One join each: the completion member must not also be drained by the
-    // schedule's finish after the group already joined it.
-    assert_eq!(
-        body.matches("call void @wf__completion_file_join(").count(),
-        1,
-        "the completion member must be joined exactly once:\n{body}"
-    );
-
-    // The block therefore continues at the oldest compute member's `par.done`,
-    // and the loop header's phis are where that prediction is spent.
-    let carried = body
-        .lines()
-        .filter(|line| line.contains(" = phi i64 [ ") && line.contains(", %par.done."))
-        .collect::<Vec<_>>();
-    assert!(
-        !carried.is_empty(),
-        "the loop must carry values out of the group's block:\n{body}"
-    );
-    for phi in carried {
-        assert!(
-            phi.contains(&format!(", %par.done.v{first} ]")),
-            "the group's block ends at the oldest compute member's join: {phi}"
-        );
-    }
-
-    a_mixed_fixture_reports(&module, 11);
-}
 
 /// The same mixture with the completion member published first: it is joined
 /// first, and only the compute members reverse.
@@ -1032,64 +829,7 @@ fn a_mixed_group_hands_out_both_kinds_and_joins_them_newest_compute_first() {
 /// published `[IO, C1, C2]` is joined `[IO, C2, C1]` — the completion join
 /// stays at the front rather than being carried to either end by the compute
 /// reversal happening around it.
-#[test]
-fn a_mixed_group_whose_completion_member_is_first_joins_it_where_it_was_published() {
-    let (compute, completion) = mixed_group_members(MIXED_WRITE_BEFORE_COMPUTE);
-    let [first, second] = compute.as_slice() else {
-        panic!("the group must hand two compute members out: {compute:?}");
-    };
 
-    let module = emit_with_overlap(MIXED_WRITE_BEFORE_COMPUTE);
-    let body = emitted_function(&module, "main");
-    let at = |needle: &str| {
-        body.find(needle)
-            .unwrap_or_else(|| panic!("missing `{needle}`:\n{body}"))
-    };
-
-    assert_eq!(
-        body.matches("call ptr @wf__par_acquire_lane(").count(),
-        2,
-        "both compute members must acquire a lane:\n{body}"
-    );
-    assert!(
-        body.contains("call void @wf__completion_file_write_submit("),
-        "the completion member v{completion} must be submitted:\n{body}"
-    );
-    // The completion member was published first, so it is joined first.
-    assert!(
-        at("call void @wf__completion_file_join(") < at(&format!("par.wait.v{second}:")),
-        "the completion member must be joined where it was published:\n{body}"
-    );
-    // The compute members still reverse among their own positions.
-    assert!(
-        at(&format!("par.wait.v{second}:")) < at(&format!("par.wait.v{first}:")),
-        "the newest compute member must be joined before the oldest:\n{body}"
-    );
-    assert_eq!(
-        body.matches("call void @wf__completion_file_join(").count(),
-        1,
-        "the completion member must be joined exactly once:\n{body}"
-    );
-
-    // The block continues at the oldest compute member's `par.done`, which is
-    // the last join of the group either way.
-    let carried = body
-        .lines()
-        .filter(|line| line.contains(" = phi i64 [ ") && line.contains(", %par.done."))
-        .collect::<Vec<_>>();
-    assert!(
-        !carried.is_empty(),
-        "the loop must carry values out of the group's block:\n{body}"
-    );
-    for phi in carried {
-        assert!(
-            phi.contains(&format!(", %par.done.v{first} ]")),
-            "the group's block ends at the oldest compute member's join: {phi}"
-        );
-    }
-
-    a_mixed_fixture_reports(&module, 11);
-}
 
 /// A recursion that hands one of its two calls out at every level, spelled at
 /// one depth.
@@ -1439,10 +1179,10 @@ fn the_bootstrap_selects_one_world_once() {
 /// (design section 7).
 #[test]
 fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
-    let windows = SystemTarget::for_triple("x86_64-pc-windows-msvc")
+    let windows = TargetLayout::for_triple("x86_64-pc-windows-msvc")
         .expect("the supported Windows target must have a system row");
     let module = with_parallel_ir(OVERLAPPING_FOLD, |program| {
-        emit_llvm_for_target(program, windows)
+        emit_llvm_with_layout(program, windows)
             .expect("the overlap fixture must emit for Windows")
             .into_string()
     });
@@ -2439,50 +2179,6 @@ fn a_fold_whose_calls_are_separated_by_a_builtin_hands_out_and_agrees() {
 /// is a function of the trip count alone — which is what makes a run that lost
 /// an iteration, ran one twice, or read another iteration's buffer a different
 /// number rather than a different timing.
-const STAGED_MAY_SUSPEND_CALL: &[u8] = br#"fn probe(root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, scratch: &uniq buffer<u8>, mark: own u8) -> result: own u8 reads(root, permit, name, scratch), writes(permit, scratch) contract {
-  define room = len_of(deref(scratch));
-  define named = len_of(deref(name));
-  requires 1_u64 <= room;
-  requires 4_u64 <= named;
-} {
-  doc "Opens one name and answers what the open reported, marked with this iteration's own byte.";
-  let answer = mark;
-  set deref(scratch)[0_u64] = mark;
-  region {
-    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
-      FileOpened(value: handle) => {
-        set answer = answer +wrap 1_u8;
-      }
-      FileOpenFailed(error: problem, permit: refused) => {
-        set answer = answer +wrap 2_u8;
-      }
-    }
-  }
-  let stored = deref(scratch)[0_u64];
-  return answer +wrap stored;
-}
-
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "Probes four names in a fixed-trip loop whose staged call is a may-suspend user call [PAR-3].";
-  let name = buffer_new(4_u64, 97_u8);
-  let total = 0_u8;
-  for @scan (index in 0_u64..4_u64) {
-    let scratch = buffer_new(8_u64, 0_u8);
-    region {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8);
-          set total = total +wrap reported;
-        }
-        Err(error: spent) => {
-          return exit_status(code: 9_u8);
-        }
-      }
-    }
-  }
-  return exit_status(code: total);
-}
-"#;
 
 /// The staged call of a permitted loop is offered to a lane, and the refused
 /// edge is the same call publishing the same bytes.
@@ -2497,74 +2193,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
 /// where it is written, and `4` starts a pool that grants — and all of them
 /// publish the same status. The default compilation names no lane entry at
 /// all, because a hand-out exists only in the world that asked for one.
-#[test]
-fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes() {
-    let overlapped = emit_with_overlap(STAGED_MAY_SUSPEND_CALL);
-    let body = function_body(&overlapped, "@wf_main");
-    let acquisition = body
-        .find("= call ptr @wf__par_acquire_lane(i64 ")
-        .expect("the staged call must acquire a lane frame");
-    let publish = body
-        .find("call void @wf__par_publish(ptr")
-        .expect("the acquired frame must be given the outlined call");
-    let refused = body
-        .find("\npar.staged.inline.")
-        .expect("a refused acquisition must run the call where it is written");
-    let join = body
-        .find("call void @wf__par_join(ptr")
-        .expect("the drain must join the frame");
-    let release = body
-        .find("call void @wf__par_release(ptr")
-        .expect("the drain must give the frame back");
-    assert!(
-        acquisition < publish && publish < refused && refused < join && join < release,
-        "the offer is in the carrying block and the retirement in the drain:\n{body}"
-    );
-    // The retirement is in a different block from the offer, which is what
-    // says an iteration is carried across the loop's back edge.
-    assert!(
-        body[publish..join].contains("par.staged.offered."),
-        "the join must be reached only after the issue stage has left:\n{body}"
-    );
 
-    let sequential = emit(STAGED_MAY_SUSPEND_CALL);
-    for entry in [
-        "@wf__par_acquire_lane",
-        "@wf__par_publish",
-        "@wf__par_join",
-        "@wf__par_release",
-    ] {
-        assert!(
-            !sequential.contains(entry),
-            "the default compilation must name no lane entry, found {entry}"
-        );
-    }
-
-    let directory = test_directory();
-    let executable = build_executable(&overlapped, &directory);
-    let mut runs = Vec::new();
-    for workers in ["0", "1", "4"] {
-        let output = Command::new(&executable)
-            // The probed name is absent from this directory, so every
-            // iteration reports the same refusal on every run.
-            .current_dir(&directory)
-            .env("WF_WORKERS", workers)
-            .output()
-            .expect("run the staged may-suspend probe");
-        assert_eq!(
-            output.status.code(),
-            Some(32),
-            "WF_WORKERS={workers} published the wrong status"
-        );
-        runs.push((
-            format!("WF_WORKERS={workers}"),
-            output.status.code().unwrap_or(-1).to_le_bytes().to_vec(),
-        ));
-    }
-    identical(&runs).expect("a refused lane must publish the granted lane's bytes");
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
 
 /// The compile-time window ceiling of a staged lane hand-out is the runtime's
 /// own lane slot count.
@@ -2575,53 +2204,13 @@ fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes(
 /// window whose extra iterations are refused a frame and run inline, which is
 /// depth the ring paid for and never got; a ceiling below it would leave depth
 /// the lane could have granted.
-#[test]
-fn the_staged_lane_window_ceiling_is_the_runtimes() {
-    let declared = crate::SCHED_CORE_HEADER
-        .lines()
-        .find_map(|line| line.strip_prefix("#define WF_SCHED_LANE_SLOTS "))
-        .expect("the core must state its lane slot count");
-    assert_eq!(
-        declared
-            .trim()
-            .trim_end_matches('u')
-            .parse::<u64>()
-            .expect("a decimal count"),
-        crate::LANE_SLOTS,
-        "the lowering's staged window ceiling has drifted from the runtime's"
-    );
-}
+
 
 /// The same staged loop shape with a submitted *system* operation at the cut,
 /// written as a `let` and a remainder rather than as a result dispatch.
 ///
 /// [PAR-3] stages this loop exactly as it stages the one above; only the cut's
 /// kind differs.
-const STAGED_SYSTEM_OPERATION_BOUND_BY_A_LET: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "Opens four names in a fixed-trip loop whose staged call is a system operation bound by a let.";
-  let name = buffer_new(4_u64, 97_u8);
-  let total = 0_u8;
-  for @scan (index in 0_u64..4_u64) {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        let outcome = open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64);
-        match outcome {
-          FileOpened(value: handle) => {
-            set total = total +wrap 1_u8;
-          }
-          FileOpenFailed(error: problem, permit: refused) => {
-            set total = total +wrap 2_u8;
-          }
-        }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 9_u8);
-      }
-    }
-  }
-  return exit_status(code: total);
-}
-"#;
 
 /// The lane form is selected by the cut's kind, never by how the tail is
 /// written.
@@ -2634,50 +2223,7 @@ const STAGED_SYSTEM_OPERATION_BOUND_BY_A_LET: &[u8] = br#"command fn main(comman
 /// staged block, and the same status at every worker count. Without the
 /// decline the sizing alone would move, since a lane hand-out's ring is
 /// `WF_SCHED_LANE_SLOTS` elements and a submitted operation's is two.
-#[test]
-fn a_system_operation_bound_by_a_let_is_not_the_lane_form() {
-    let overlapped = emit_with_overlap(STAGED_SYSTEM_OPERATION_BOUND_BY_A_LET);
-    assert!(
-        !overlapped.contains("@wf__par_acquire_lane"),
-        "a submitted operation at the cut must take no lane:\n{overlapped}"
-    );
-    assert!(
-        !overlapped.contains("par.staged."),
-        "a submitted operation at the cut must open no staged block:\n{overlapped}"
-    );
-    // The lane hand-out's ring is an array of frame addresses, one per slot;
-    // the shape is named whole because a host may emit an array of the same
-    // length for something else (Darwin's path buffers are `[1024 x i8]`).
-    assert!(
-        !overlapped.contains(&format!("[{} x ptr]", crate::LANE_SLOTS)),
-        "a submitted operation's ring is not the lane hand-out's:\n{overlapped}"
-    );
 
-    let directory = test_directory();
-    let executable = build_executable(&overlapped, &directory);
-    let mut runs = Vec::new();
-    for workers in ["0", "1", "4"] {
-        let output = Command::new(&executable)
-            // The opened name is absent from this directory, so every
-            // iteration reports the same refusal on every run.
-            .current_dir(&directory)
-            .env("WF_WORKERS", workers)
-            .output()
-            .expect("run the let-bound system operation probe");
-        assert_eq!(
-            output.status.code(),
-            Some(8),
-            "WF_WORKERS={workers} published the wrong status"
-        );
-        runs.push((
-            format!("WF_WORKERS={workers}"),
-            output.status.code().unwrap_or(-1).to_le_bytes().to_vec(),
-        ));
-    }
-    identical(&runs).expect("the declined form must publish the bytes it always did");
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
 
 // Stored results need independent caller destinations after lane retirement;
 // scalar and descriptor-returning fixtures do not exercise that adapter.
@@ -2715,68 +2261,6 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-const STAGED_OWNED_RESULTS_AND_CLEANUP: &[u8] = br#"struct Scratch {
-  bytes: buffer<u8>;
-}
-
-struct Report {
-  answer: u8;
-  stored: u8;
-  stamp: u64;
-}
-
-fn probe(root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, scratch: &uniq buffer<u8>, mark: own u8, stamp: own u64) -> result: own Report reads(root, permit, name, scratch), writes(permit, scratch) contract {
-  define room = len_of(deref(scratch));
-  define named = len_of(deref(name));
-  requires 1_u64 <= room;
-  requires 4_u64 <= named;
-} {
-  doc "Opens one name and answers what the open reported, marked with this iteration's own byte.";
-  let answer = mark;
-  set deref(scratch)[0_u64] = mark;
-  region {
-    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
-      FileOpened(value: handle) => {
-        set answer = answer +wrap 1_u8;
-      }
-      FileOpenFailed(error: problem, permit: refused) => {
-        set answer = answer +wrap 2_u8;
-      }
-    }
-  }
-  let stored = deref(scratch)[0_u64];
-  return Report(answer: answer, stored: stored, stamp: stamp);
-}
-
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "Probes four names in a fixed-trip loop whose staged call is a may-suspend user call [PAR-3].";
-  let name = buffer_new(4_u64, 97_u8);
-  let total = 0_u8;
-  let stamp_total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    let scratch = buffer_new(8_u64, 0_u8);
-    let spare = buffer_new(3_u64, 77_u8);
-    let cleanup = Scratch(bytes: move spare);
-    region {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index);
-          let amount = reported.answer +wrap reported.stored;
-          set total = total +wrap amount;
-          set stamp_total = stamp_total +wrap reported.stamp;
-        }
-        Err(error: spent) => {
-          return exit_status(code: 9_u8);
-        }
-      }
-    }
-  }
-  if stamp_total != 6_u64 {
-    return exit_status(code: 255_u8);
-  }
-  return exit_status(code: total);
-}
-"#;
 
 #[test]
 fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
@@ -2790,98 +2274,9 @@ fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
     run_owned_lane_cases(OWNED_PAIR_RESULTS, &module, 0, 1, 0, 0, 1);
 }
 
-#[test]
-fn owned_staged_results_and_cleanup_survive_retirement_and_forced_refusal() {
-    let module = emit_with_overlap(STAGED_OWNED_RESULTS_AND_CLEANUP);
-    let main = function_body(&module, "@wf_main");
-    let issued = main
-        .find("call void @wf__par_publish(ptr ")
-        .expect("the aggregate-returning user call must be handed out");
-    let retired = main
-        .find("call void @wf__par_join(ptr ")
-        .expect("the drain must retire that hand-out");
-    assert!(issued < retired);
-    assert!(main[issued..retired].contains("par.staged.offered."));
-    assert!(main.contains("\npar.staged.inline."));
-    assert!(main.contains("\npar.staged.refused."));
-    // Both selected representations really cross the staging boundary: a
-    // Report result, and the Scratch owner released only by the drain.
-    for nominal in ["%wf.t0", "%wf.t1"] {
-        assert!(main.contains(&format!("[{} x {nominal}]", crate::LANE_SLOTS)));
-    }
-    run_owned_lane_cases(STAGED_OWNED_RESULTS_AND_CLEANUP, &module, 32, 4, 9, 4, 2);
-}
 
-#[test]
-fn owned_staged_inline_places_keep_each_iterations_backing_until_retirement() {
-    let source = br#"struct Scratch {
-  stamp: u64;
-}
 
-fn probe(root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, scratch: &uniq Scratch) -> result: own u64 reads(root, permit, name, scratch.stamp), writes(permit, scratch.stamp) contract {
-  define named = len_of(deref(name));
-  requires 4_u64 <= named;
-} {
-  let previous = deref(scratch).stamp;
-  region {
-    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
-      FileOpened(value: handle) => {
-      }
-      FileOpenFailed(error: problem, permit: refused) => {
-      }
-    }
-  }
-  set deref(scratch).stamp = previous +wrap 100_u64;
-  return previous;
-}
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let name = buffer_new(4_u64, 97_u8);
-  let total = 0_u64;
-  let updated = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    let scratch = Scratch(stamp: index);
-    region {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch);
-          set total = total +wrap reported;
-          set updated = updated +wrap scratch.stamp;
-        }
-        Err(error: spent) => {
-          return exit_status(code: 9_u8);
-        }
-      }
-    }
-  }
-  if total != 6_u64 {
-    return exit_status(code: 1_u8);
-  }
-  if updated != 406_u64 {
-    return exit_status(code: 2_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let module = emit_with_overlap(source);
-    let main = function_body(&module, "@wf_main");
-    assert!(main.contains("par.staged.offered."));
-    // Pin construction into the current iteration's backing, not merely a
-    // later copy into it. The native modes below then observe that same
-    // backing through deferred mutation, join and retirement.
-    let slot_projection = format!(
-        " = getelementptr inbounds [{} x %wf.t0], ptr ",
-        crate::LANE_SLOTS
-    );
-    assert!(main.lines().any(|line| {
-        let Some((address, _)) = line.trim().split_once(&slot_projection) else {
-            return false;
-        };
-        main.contains(&format!("store %wf.t0 zeroinitializer, ptr {address}\n"))
-    }));
-    assert!(!main.contains("load %wf.t0,"));
-    run_owned_lane_cases(source, &module, 0, 4, 1, 0, 2);
-}
 
 #[test]
 fn heap_box_loop_keeps_provider_order_and_updates_borrowed_owners() {
@@ -2958,7 +2353,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
     for overlap in [
         crate::OverlapLowering::Off,
         crate::OverlapLowering::On,
-        crate::OverlapLowering::Completion,
+        
     ] {
         let module = super::emit_lowered(source, overlap);
         let main = function_body(&module, "@wf_main");
@@ -3001,174 +2396,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
     }
 }
 
-#[test]
-fn staged_arena_box_borrows_keep_each_owner_slot_and_drain_before_refusal() {
-    let source = r#"fn probe['s](root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, cell: &uniq Box<'s, u64>, incoming: &uniq Box<'s, u64>) -> result: own u64 reads(root, permit, name, cell, incoming), writes(permit, cell, incoming) contract {
-  define named = len_of(deref(name));
-  requires 4_u64 <= named;
-} {
-  let previous = deref(deref(cell));
-  region {
-    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
-      FileOpened(value: handle) => {
-      }
-      FileOpenFailed(error: problem, permit: refused) => {
-      }
-    }
-  }
-  set (deref(cell), deref(incoming)) = move deref(incoming), move deref(cell);
-  return previous;
-}
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  region 'a {
-    let store = arena_frame::<64, 8, 'a>();
-    let name = buffer_new(4_u64, 97_u8);
-    let total = 0_u64;
-    let updated = 0_u64;
-    let displaced = 0_u64;
-    for @scan (index in 0_u64..4_u64) {
-      let replacement = index +wrap 100_u64;
-      region {
-        match arena_box(store: &uniq store, value: index) {
-          Err(error: back) => {
-            return exit_status(code: 70_u8);
-          }
-          Ok(value: cell) => {
-            match arena_box(store: &uniq store, value: replacement) {
-              Err(error: back) => {
-                return exit_status(code: 70_u8);
-              }
-              Ok(value: incoming) => {
-                region {
-                  match reserve_handle(factory: &uniq files) {
-                    Ok(value: permit) => {
-                      let reported = probe(root: &cwd, permit: move permit, name: &name, cell: &uniq cell, incoming: &uniq incoming);
-                      set total = total +wrap reported;
-                      set updated = updated +wrap deref(cell);
-                      set displaced = displaced +wrap deref(incoming);
-                    }
-                    Err(error: spent) => {
-                      return exit_status(code: 9_u8);
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    if total != 6_u64 {
-      return exit_status(code: 1_u8);
-    }
-    if updated != 406_u64 {
-      return exit_status(code: 2_u8);
-    }
-    if displaced != 6_u64 {
-      return exit_status(code: 3_u8);
-    }
-    return exit_status(code: 0_u8);
-  }
-}
-"#;
-    // Each pair takes sixteen bytes. Forty-eight bytes refuses the first
-    // cell of iteration three; forty refuses the second cell of iteration
-    // two. Both failures must drain the preceding borrowed owners before
-    // returning out of the region that holds their arena backing.
-    for (bytes, expected_status, attempts) in [(64, 0, 4), (48, 70, 3), (40, 70, 2)] {
-        let source = source.replace(
-            "arena_frame::<64, 8, 'a>()",
-            &format!("arena_frame::<{bytes}, 8, 'a>()"),
-        );
-        let source = source.as_bytes();
-        let module = emit_with_overlap(source);
-        let main = function_body(&module, "@wf_main");
-        assert!(
-            main.contains("par.staged.offered."),
-            "{:?}",
-            super::compile_permission_ledger(source)
-        );
-        assert!(main.contains("call void @wf__par_publish(ptr "));
-        assert!(main.contains("call void @wf__par_join(ptr "));
-        assert!(main.contains("\npar.staged.inline."));
-        assert!(main.contains("\npar.staged.refused."));
 
-        let directory = test_directory();
-        let sequential = super::emit_lowered(source, crate::OverlapLowering::Off);
-        assert!(!function_body(&sequential, "@wf_main").contains("par.staged.offered."));
-        let output = Command::new(build_executable(&sequential, &directory))
-            .current_dir(&directory)
-            .env("WF_WORKERS", "1")
-            .output()
-            .expect("run arena Box exchange without overlap lowering");
-        assert_eq!(output.status.code(), Some(expected_status), "{output:?}");
-        assert!(output.stdout.is_empty() && output.stderr.is_empty());
-        std::fs::remove_dir_all(&directory).expect("remove the sequential arena artifacts");
 
-        // The helper also checks default completion lowering. Its observed
-        // overlap build forces refusal, real grants, and publication delayed
-        // until join with at least two iterations live. Only name allocates
-        // on the heap: every successful Box cell shares the enclosing arena.
-        run_owned_lane_cases(source, &module, expected_status, attempts, 1, 0, 2);
-    }
-}
-
-#[test]
-fn owned_match_headers_and_staged_results_observe_completed_scratch() {
-    let source = std::str::from_utf8(STAGED_OWNED_RESULTS_AND_CLEANUP)
-        .expect("the fixture is UTF-8")
-        .replace(
-            "struct Report {\n  answer: u8;\n  stored: u8;\n  stamp: u64;\n}",
-            "struct Cell {\n  byte: u8;\n}\n\nenum Report {\n  Reported(answer: u8, stored: u8, stamp: u64);\n}",
-        )
-        .replace("return Report(", "return Reported(")
-        .replace(
-            "scratch: &uniq buffer<u8>",
-            "scratch: &uniq Cell",
-        )
-        .replace("reads(root, permit, name, scratch), writes(permit, scratch)", "reads(root, permit, name, scratch.byte), writes(permit, scratch.byte)")
-        .replace("  define room = len_of(deref(scratch));\n", "")
-        .replace("  requires 1_u64 <= room;\n", "")
-        .replace("deref(scratch)[0_u64]", "deref(scratch).byte")
-        .replace("let scratch = buffer_new(8_u64, 0_u8);", "let scratch = Cell(byte: 0_u8);")
-        .replace(
-            "          let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index);\n          let amount = reported.answer +wrap reported.stored;\n          set total = total +wrap amount;\n          set stamp_total = stamp_total +wrap reported.stamp;",
-            "          match probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index) {\n            Reported(answer: reported_answer, stored: reported_stored, stamp: reported_stamp) => {\n              set scratch[0_u64] = scratch[0_u64] +wrap 1_u8;\n              let partial = reported_answer +wrap reported_stored;\n              let amount = partial +wrap scratch[0_u64];\n              set total = total +wrap amount;\n              set stamp_total = stamp_total +wrap reported_stamp;\n            }\n          }",
-        )
-        .replace("scratch[0_u64]", "scratch.byte");
-    // The callee writes 3, then returns (5, 3). Only after its match header
-    // completes may the arm update scratch to 4: (5 + 3 + 4) * 4 = 48.
-    let directory = test_directory();
-    for module in [
-        emit(source.as_bytes()),
-        emit_with_overlap(source.as_bytes()),
-    ] {
-        let output = Command::new(build_executable(&module, &directory))
-            .current_dir(&directory)
-            .env("WF_WORKERS", "4")
-            .output()
-            .expect("run the owned match header");
-        assert_eq!(output.status.code(), Some(48), "{output:?}");
-        assert!(output.stdout.is_empty() && output.stderr.is_empty());
-    }
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-
-    // The current staged optimizer selects user calls bound by let; direct
-    // user-call match headers above use ordinary completion. Exercise the
-    // actual staged path too, retaining the same enum result and arm access.
-    let staged = source.replace(
-        "match probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index) {",
-        "let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8, stamp: index);\n          match reported {",
-    );
-    let module = emit_with_overlap(staged.as_bytes());
-    let main = function_body(&module, "@wf_main");
-    assert!(main.contains("call void @wf__par_publish(ptr "));
-    assert!(main.contains("\npar.staged.offered."));
-    // Deferred publication makes an early arm observe stale scratch, while
-    // the observer checks exact frame/source release and real overlap.
-    run_owned_lane_cases(staged.as_bytes(), &module, 48, 4, 5, 4, 2);
-}
 
 /// The native core still performs every real grant, publication, join and
 /// release. The observer can refuse acquisitions and selects the overlapped
@@ -3359,3 +2589,28 @@ __attribute__((destructor)) static void report(void) {
         atomic_load(&allocations), atomic_load(&frees), atomic_load(&spares), pending, peak);
 }
 "#;
+
+/// Linked declarations enter the same ordinary sibling group as source bodies.
+#[test]
+fn a_linked_body_and_source_bodies_use_one_ordinary_call_protocol() {
+    let source = br#"fn choose(value: own u64) -> result: own u64 pure {
+  return value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let first = choose(value: 17_u64);
+  let linked = exit_status(code: 0_u8);
+  let second = choose(value: 19_u64);
+  let third = choose(value: 23_u64);
+  let total = first +wrap second +wrap third;
+  if total != 59_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return move linked;
+}
+"#;
+    let module = emit_with_overlap(source);
+    a_mixed_fixture_reports(&module, 0);
+    assert!(module.contains("@wf_exit_status"));
+    assert!(!module.contains("@wf__completion_file_"));
+}

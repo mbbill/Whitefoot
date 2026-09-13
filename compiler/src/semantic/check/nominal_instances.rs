@@ -18,6 +18,19 @@ use super::{
 };
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn is_opaque_declaration(&self, node: NodeId) -> Result<bool, CheckStop> {
+        let source = self.tree.coordinate(node)?.source();
+        Ok(self
+            .resolved
+            .syntax()
+            .finalized
+            .parsed
+            .classified
+            .source_bundle()
+            .file(source)
+            .is_some_and(|file| file.prelude() == Some(crate::source::PreludeSource::Opaque)))
+    }
+
     pub(super) fn declare_nominals(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         let nodes = items
             .iter()
@@ -154,6 +167,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         if role == DeclarationRole::Struct
+            && !self.is_opaque_declaration(node)?
             && self
                 .constructor_templates_by_declaration
                 .insert(
@@ -447,12 +461,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.ensure_source_nominal_instance(template_index, instance)?;
                 Ok(())
             }
-            ResolvedTarget::System(id) => {
-                if let Some(index) = crate::system_nominal_index(id, self.inventory()) {
-                    self.intern_system_nominal(index)?;
-                }
-                Ok(())
-            }
             _ => Ok(()),
         }
     }
@@ -463,16 +471,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         caller: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
-        if let ResolvedTarget::System(id) = usage.target() {
-            if let Some(index) = crate::system_constructor_index(id, self.inventory()) {
-                let owner = crate::SYSTEM_CONSTRUCTORS
-                    .get(usize::from(index))
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                    .owner;
-                self.intern_system_nominal(owner)?;
-            }
-            return Ok(());
-        }
         // [TYPE-5] a prelude variant constructor writes its nominal's
         // arguments, so the instance it names is interned from those written
         // arguments here, before function checking reads it immutably.
@@ -546,38 +544,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(call, Production::Callee)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            // A call to an admitted system operation needs its written
-            // [SYS-2] parameter and result instances — including `Result`
-            // instantiations no source type spells — before function
-            // checking reads them immutably.
-            let callee_path = self.tree.path(callee)?;
-            let system_operation = self
-                .resolved
-                .lexical_uses()
-                .iter()
-                .find(|usage| {
-                    usage.origin().node() == callee_path
-                        && matches!(
-                            usage.role(),
-                            LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee
-                        )
-                })
-                .and_then(|usage| match usage.target() {
-                    ResolvedTarget::System(id) => {
-                        crate::system_operation_index(id, self.inventory())
-                    }
-                    _ => None,
-                });
-            if let Some(index) = system_operation {
-                let operation = crate::SYSTEM_OPERATIONS
-                    .get(usize::from(index))
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                for parameter in operation.parameters {
-                    self.ensure_system_type(parameter.ty)?;
-                }
-                self.ensure_system_type(operation.result)?;
-                continue;
-            }
             let spelling = self.tree.direct_spelling(callee)?;
             if spelling == b"cvt" {
                 self.ensure_conversion_result(call, substitution)?;
@@ -696,6 +662,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name,
             kind: match template.role {
+                DeclarationRole::Struct if self.is_opaque_declaration(template.node)? => {
+                    CheckedNominalKind::Opaque
+                }
                 DeclarationRole::Struct => CheckedNominalKind::Struct { fields: Vec::new() },
                 DeclarationRole::Enum => CheckedNominalKind::Enum {
                     variants: Vec::new(),
@@ -932,7 +901,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         // [PROV-1] an elided stored brand belongs to this declaration's
         // sole region, not a caller's enclosing nominal. Zero/multiple
-        // regions deliberately mask an outer default with the entry heap.
+        // regions mask any outer nominal's elision context.
         let brand = match substitution.region_arguments() {
             [(_, region)] => Some(*region),
             _ => None,
@@ -940,6 +909,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let outer_brand = self.elided_store_brand.replace(brand);
         let kind = (|| {
             Ok(match template.role {
+                DeclarationRole::Struct if self.is_opaque_declaration(template.node)? => {
+                    CheckedNominalKind::Opaque
+                }
                 DeclarationRole::Struct => CheckedNominalKind::Struct {
                     fields: self.parse_struct_fields(template.node, &substitution)?,
                 },
@@ -985,7 +957,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.reject_region_bearing_storage_type(ty, substitution)?;
             self.ensure_nominal_type(ty, substitution)?;
             let parsed = self.parse_type_with(ty, substitution)?;
-            self.reject_confined_type_without_store(parsed, ty)?;
+
             fields.push(CheckedField { name, ty: parsed });
         }
         Ok(fields)
@@ -1028,7 +1000,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.reject_region_bearing_storage_type(ty, substitution)?;
                     self.ensure_nominal_type(ty, substitution)?;
                     let parsed = self.parse_type_with(ty, substitution)?;
-                    self.reject_confined_type_without_store(parsed, ty)?;
+
                     fields.push(CheckedField {
                         name: field_name,
                         ty: parsed,
@@ -1381,7 +1353,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedNominalKind::Struct { .. }
             | CheckedNominalKind::Enum { .. }
             | CheckedNominalKind::ArenaStorage
-            | CheckedNominalKind::SystemResource { .. } => Ok(CheckedType::Nominal(id)),
+            | CheckedNominalKind::Opaque => Ok(CheckedType::Nominal(id)),
         }
     }
 
@@ -1821,8 +1793,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             self.arena_storage_nominal = None;
         }
-        self.system_nominals
-            .retain(|_, id| (id.0 as usize) < checkpoint);
         Ok(())
     }
 }

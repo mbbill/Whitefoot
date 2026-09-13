@@ -592,7 +592,7 @@ fn exercise['s](store: &uniq Heap<'s>, seed: own u64) -> code: own u8 reads(stor
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   for (seed in 0_u64..16_u64) {
     let code = exercise(store: &uniq heap, seed: seed);
     if code != 0_u8 {

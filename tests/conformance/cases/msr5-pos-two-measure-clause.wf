@@ -24,7 +24,7 @@ fn read_shared(short: own FixedVector<u8, 4>, long: own FixedVector<u8, 8>) -> v
   return long[3_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-5: a clause names a measure of a place directly on either side of its comparison.";
   let small = filled::<u8, 4>(value: 0_u8);
   let large = filled::<u8, 8>(value: 0_u8);

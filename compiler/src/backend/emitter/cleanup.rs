@@ -3,11 +3,10 @@ use std::fmt::Write;
 
 use crate::{IrFlatElement, IrReleaseClass, IrVariant};
 
-use super::super::qualification::Qualification;
 use super::super::target::TargetLayout;
 use super::{
     BackendFailure, IrNominalId, IrNominalKind, IrProgram, IrType, llvm_type, nominal_symbol,
-    system, variant_field_base,
+    variant_field_base,
 };
 
 /// One release action per node type of the release graph [PROV-6].
@@ -23,7 +22,6 @@ use super::{
 /// release path is a runtime trap the writer never wrote.
 pub(super) fn emit_resource_drop_helpers(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     _target: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let mut output = String::new();
@@ -43,14 +41,7 @@ pub(super) fn emit_resource_drop_helpers(
             "define private void @{symbol}({aggregate_ty} %value) {{"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        emit_enum_cleanup_body(
-            program,
-            qualification,
-            &mut output,
-            variants,
-            ty,
-            &aggregate_ty,
-        )?;
+        emit_enum_cleanup_body(program, &mut output, variants, ty, &aggregate_ty)?;
         output.push_str("}\n\n");
     }
     for element in cleanup_buffer_element_nominals(program)? {
@@ -68,7 +59,6 @@ pub(super) fn emit_resource_drop_helpers(
         let mut temporary = 0_u32;
         emit_value_cleanup(
             program,
-            qualification,
             &mut output,
             &mut temporary,
             element_ty,
@@ -79,7 +69,7 @@ pub(super) fn emit_resource_drop_helpers(
         );
     }
     for (index, ty) in cleanup_run_types(program)?.into_iter().enumerate() {
-        emit_run_drop_helper(program, qualification, &mut output, index, ty)?;
+        emit_run_drop_helper(program, &mut output, index, ty)?;
     }
     Ok(output)
 }
@@ -97,7 +87,6 @@ pub(super) fn emit_resource_drop_helpers(
 /// extent-backed run's storage is reclaimed by its region reset [BLK-2].
 fn emit_run_drop_helper(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     output: &mut String,
     index: usize,
     ty: IrType,
@@ -151,7 +140,6 @@ fn emit_run_drop_helper(
     let mut temporary = 0_u32;
     emit_value_cleanup(
         program,
-        qualification,
         output,
         &mut temporary,
         element_ty,
@@ -265,7 +253,7 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
                     }
                     IrNominalKind::Box { referent, .. } => pending.push(*referent),
                     IrNominalKind::Arena { content } => pending.push(*content),
-                    IrNominalKind::ArenaStorage | IrNominalKind::SystemResource(_) => {}
+                    IrNominalKind::ArenaStorage | IrNominalKind::Opaque => {}
                 }
             }
             IrType::Unit
@@ -303,8 +291,7 @@ pub(super) fn type_requires_cleanup(
     program: &IrProgram<'_, '_, '_>,
     ty: IrType,
 ) -> Result<bool, BackendFailure> {
-    // One reading, shared with the staged lowering: whether a value of this
-    // type derives any release work at all [STOR-3, PROV-6].
+    // Whether a value of this type derives release work [STOR-3, PROV-6].
     crate::lowering::type_derives_release(program.nominals(), program.elements(), ty)
         .ok_or(BackendFailure::InvalidIr)
 }
@@ -329,7 +316,6 @@ enum CleanupJob {
 
 pub(super) fn emit_value_cleanup(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     output: &mut String,
     temporary: &mut u32,
     ty: IrType,
@@ -337,7 +323,6 @@ pub(super) fn emit_value_cleanup(
 ) -> Result<(), BackendFailure> {
     emit_cleanup_jobs(
         program,
-        qualification,
         output,
         temporary,
         vec![CleanupJob::Value { ty, operand }],
@@ -346,7 +331,6 @@ pub(super) fn emit_value_cleanup(
 
 fn emit_cleanup_jobs(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     output: &mut String,
     temporary: &mut u32,
     mut jobs: Vec<CleanupJob>,
@@ -433,17 +417,7 @@ fn emit_cleanup_jobs(
                                 .map_err(|_| BackendFailure::TextEmission)?;
                             }
                         }
-                        // A resource reached through owned content releases
-                        // with its own type's action, exactly as a directly
-                        // released owner does [SYS-5].
-                        IrNominalKind::SystemResource(contract) => {
-                            system::emit_resource_release(
-                                qualification,
-                                output,
-                                *contract,
-                                &operand,
-                            )?;
-                        }
+                        IrNominalKind::Opaque => {}
                         // [PROV-6, S39] the referent is released first and
                         // the cell's own storage after it: a general store's
                         // cell frees, and a bump extent's is reclaimed by its
@@ -538,7 +512,6 @@ fn next_temporary(counter: &mut u32) -> Result<String, BackendFailure> {
 /// cleanup, from the entry label through the closing `ret`.
 fn emit_enum_cleanup_body(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     output: &mut String,
     variants: &[IrVariant],
     ty: IrType,
@@ -579,7 +552,7 @@ fn emit_enum_cleanup_body(
                 });
             }
         }
-        emit_cleanup_jobs(program, qualification, output, &mut temporary, jobs)?;
+        emit_cleanup_jobs(program, output, &mut temporary, jobs)?;
         output.push_str("  br label %done\n");
     }
 

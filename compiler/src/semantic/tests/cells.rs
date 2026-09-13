@@ -19,7 +19,7 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 
 #[test]
 fn cell_creation_dereference_and_cleanup_are_explicit() {
-    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let source = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let value = 41_u64;
   region {
     match heap_box(store: &uniq heap, value: value) {
@@ -39,7 +39,8 @@ fn cell_creation_dereference_and_cleanup_are_explicit() {
             panic!("cell creation and copy read must check: {outcome:?}");
         };
         let main = &checked.data.functions[0];
-        let CheckedStatement::Region { body, .. } = &main.body[1] else {
+        let CheckedStatement::Region { body, .. } = &main.body.as_deref().expect("WF body")[1]
+        else {
             panic!("the allocation's region must remain explicit");
         };
         let CheckedStatement::Match {
@@ -119,7 +120,7 @@ fn replace_owner(store: &uniq Heap) -> result: own Option<u64> reads(store), wri
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -134,7 +135,7 @@ command fn main() -> status: own ExitStatus pure {
             .find(|function| function.name == "replace_owner")
             .expect("replace_owner function");
         assert!(
-            statements_contain_replace(&replace_owner.body),
+            statements_contain_replace(&replace_owner.body.as_deref().expect("WF body")),
             "the whole-owner replacement must remain a checked Replace"
         );
     });
@@ -171,7 +172,7 @@ fn affine_cell_referent_move_stays_an_explicit_capability_boundary() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -211,7 +212,7 @@ fn cell_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -235,7 +236,7 @@ command fn main() -> status: own ExitStatus pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -265,7 +266,7 @@ fn cell_content_set_targets_keep_their_source_rejections() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -280,7 +281,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 4_i32) {
       Ok(value: b) => {
@@ -312,7 +313,7 @@ fn region_bearing_cell_content_rejects_under_stor5_at_both_stores() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -327,7 +328,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -348,7 +349,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -370,7 +371,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -395,7 +396,7 @@ command fn main() -> status: own ExitStatus pure {
 /// prefix, and no two instances share a region.
 #[test]
 fn a_derived_cell_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewhere() {
-    let named_nowhere = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+    let named_nowhere = br#"fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 41_u64) {
       Ok(value: owner) => {
@@ -413,7 +414,7 @@ fn a_derived_cell_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewhe
   return unit;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 41_u64) {
       Ok(value: owner) => {

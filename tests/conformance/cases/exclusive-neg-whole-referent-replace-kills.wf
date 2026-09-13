@@ -4,7 +4,7 @@ fn clear(values: &uniq FixedVector<u64, 4>) -> result: own unit reads(values), w
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u64, 4>();
   region {
     place_back(vector: &uniq values, value: 7_u64);

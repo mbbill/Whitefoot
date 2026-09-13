@@ -115,7 +115,7 @@ fn rebase<T: affine, const n: u64>(vector: own FixedVector<T, n>, spare: own Fix
   return move built;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Runs the six fixed-run library functions of the container design at a copy element type and at an affine one: the two constructions, the transposing removal, the two checked boundary forms, and the drain that returns a wrapped window to its origin.";
   let slots = vacant::<u8, 4>();
   let vacant_held = len_of(slots);

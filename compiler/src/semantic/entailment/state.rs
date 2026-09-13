@@ -209,7 +209,6 @@ pub(crate) enum FlowEventKind {
     S6,
     S7,
     S9,
-    S10,
     S11,
     /// [ENT-3.S13] one declared relation instantiated at its call.
     S13,
@@ -488,10 +487,10 @@ pub(crate) enum DerivationNode {
         relation_ordinal: u32,
         parents: Vec<DerivationId>,
     },
-    /// Conditional premise of a function-kind parameter [FN-4], confined to
-    /// the discarded symbolic spelling pass. Concrete summaries come only
-    /// from verified implementation returns.
-    FunctionFormalContract {
+    /// A signature's declared contract: a function-formal premise [FN-4]
+    /// or a prelude declaration [PRE-1]. Definitions instead discharge every
+    /// selected return under [FN-9].
+    SignatureContract {
         block: NodePath,
         relation_ordinal: u32,
     },
@@ -681,7 +680,7 @@ impl DerivationNode {
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
-            | Self::FunctionFormalContract { .. }
+            | Self::SignatureContract { .. }
             | Self::ImplicitBound { .. } => {}
         }
     }
@@ -734,7 +733,7 @@ impl DerivationNode {
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
-            | Self::FunctionFormalContract { .. }
+            | Self::SignatureContract { .. }
             | Self::ImplicitBound { .. } => 0,
         }
     }
@@ -775,7 +774,7 @@ impl DerivationNode {
             Self::MaterializedContradiction { .. } => 22,
             Self::PostconditionExit { .. } => 23,
             Self::PostconditionAggregate { .. } => 24,
-            Self::FunctionFormalContract { .. } => 35,
+            Self::SignatureContract { .. } => 35,
             Self::PostconditionCall { .. } => 25,
             Self::PostconditionDirectResult { .. } => 26,
             Self::PostconditionDirectMatch { .. } => 27,
@@ -1394,7 +1393,7 @@ impl DerivationLedger {
                 .filter_map(|node| match node {
                     DerivationNode::PostconditionExit { statement, .. } => Some(statement),
                     DerivationNode::PostconditionAggregate { block, .. }
-                    | DerivationNode::FunctionFormalContract { block, .. } => Some(block),
+                    | DerivationNode::SignatureContract { block, .. } => Some(block),
                     DerivationNode::PostconditionCall { detail } => Some(&detail.call),
                     DerivationNode::PostconditionDirectMatch { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectResult { statement, .. }
@@ -1582,7 +1581,7 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         DerivationNode::PostconditionAggregate { parents, .. } => {
             parents.get(index).map(|parent| parent.0)
         }
-        DerivationNode::FunctionFormalContract {
+        DerivationNode::SignatureContract {
             relation_ordinal, ..
         } => (index == 0).then_some(*relation_ordinal),
         DerivationNode::PostconditionCall { detail } => {
@@ -1811,7 +1810,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         | DerivationNode::SourceDistinct { .. }
         | DerivationNode::SourceGoal { .. }
         | DerivationNode::BooleanLiteral { .. }
-        | DerivationNode::FunctionFormalContract { .. }
+        | DerivationNode::SignatureContract { .. }
         | DerivationNode::ImplicitBound { .. } => {}
     }
 }
@@ -1961,25 +1960,22 @@ impl Relation {
 }
 
 /// What one match arm's value binder gains when the scrutinee is an
-/// outcome-carrying call [ENT-3] S7, S10.
+/// checked arithmetic call [ENT-3] S7.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OutcomeRelation {
     /// S7 checked arithmetic: the binder equals the base term shifted by this
     /// constant.
     Shifted(i128),
-    /// S10 absolute endpoint: `base <= binder <= upper`.
-    Between { upper: TermId },
 }
 
 /// One pending arm fact: the relation the observing arm's value binder gains,
 /// against a base term whose support must survive the path to the match.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OutcomeFact {
-    /// The variant whose arm observes it — `Ok` for checked arithmetic and
-    /// for the `Result`-shaped boundary calls, `ReadBytes` for `read_at`.
+    /// The variant whose arm observes it: `Ok` for checked arithmetic.
     /// Every other arm establishes nothing [ENT-3].
     pub(crate) variant: &'static str,
-    /// The term the binder is related to: p for S7, k for S10.
+    /// The term the binder is related to under S7.
     pub(crate) base: TermId,
     pub(crate) relation: OutcomeRelation,
     pub(crate) event_kind: FlowEventKind,

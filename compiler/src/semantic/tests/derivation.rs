@@ -13,7 +13,7 @@ fn an_ordinary_let_takes_the_type_its_right_hand_side_produces() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -36,7 +36,7 @@ fn a_derived_binding_still_faces_its_consumer_s_exactness_rule() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -59,7 +59,7 @@ fn a_value_match_derives_its_binding_from_the_delivery_set() {
   return picked;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -87,7 +87,7 @@ fn a_second_give_of_another_type_rejects_at_that_give() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -115,7 +115,7 @@ fn an_empty_delivery_set_rejects_at_the_let_statement() {
   return picked;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -129,7 +129,7 @@ command fn main() -> status: own ExitStatus pure {
 /// is; [TYPE-5] therefore makes them mandatory in every position.
 #[test]
 fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let absent = None<FixedVector<u8, 2>>();
   let present = Some<i32>(value: 7_i32);
   return exit_status(code: 0_u8);
@@ -157,7 +157,7 @@ fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
 #[test]
 fn a_prelude_construction_without_its_arguments_rejects_at_the_construct() {
     assert_rule_kind(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let absent = None();
   return exit_status(code: 0_u8);
 }
@@ -169,7 +169,7 @@ fn a_prelude_construction_without_its_arguments_rejects_at_the_construct() {
 
 #[test]
 fn a_result_construction_writes_both_of_its_arguments() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let good = Ok<i32, Overflow>(value: 1_i32);
   let flag = Overflow();
   let bad = Err<i32, Overflow>(error: flag);
@@ -203,7 +203,7 @@ fn widest(x: own u64, y: own u64) -> result: own u64 pure {
   return imin(x, y);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -225,7 +225,7 @@ fn a_written_type_argument_on_a_derived_operation_rejects() {
   return imin::<i32>(x, y);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -244,7 +244,7 @@ fn disagreeing_operands_cite_type5_at_the_second_operand_atom() {
   return imin(x, y);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -263,7 +263,7 @@ fn a_first_operand_outside_the_closed_set_cites_op1() {
   return imin(x, y);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -282,7 +282,7 @@ command fn main() -> status: own ExitStatus pure {
 /// with `buffer_new` itself.
 #[test]
 fn buffer_new_selects_its_element_from_the_fill_value() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 7_u8);
   let count = len_of(data);
   return exit_status(code: 0_u8);
@@ -311,7 +311,7 @@ fn cell_content_that_bears_a_region_still_rejects_under_stor5() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,

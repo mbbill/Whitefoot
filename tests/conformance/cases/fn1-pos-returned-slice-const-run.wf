@@ -5,7 +5,7 @@ fn fixed_view['r]() -> result: own Slice<'r, u8> pure {
   return view;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'view {
     let view = fixed_view::<'view>();
     let view_room = len_of(view);

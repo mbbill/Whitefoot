@@ -7,7 +7,7 @@ fn fill(destination: &uniq MutSlice<u8>, value: own u8) -> result: own unit writ
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The writer forms two exclusive views of one run and hands one to each member of a two-call window, so both members would write one storage. The program never reaches a permission judgment: a view holds an exclusive loan on the range it was formed over [VIEW-1], and two exclusive loans on one range are what [OWN-5] refuses, so the second formation is the rejection. What [PAR-1] would have said about the pair, that one written footprint overlaps the other's with both resolved to `run`, is the same fact one rule earlier.";
   region 'a {
     let workspace = arena_frame::<8, 1, 'a>();

@@ -15,7 +15,7 @@ fn probe(table: own FixedVector<u8, 4>, lo: own u64, hi: own u64) -> found: own 
   return byte;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq empty, value: 0_u8);

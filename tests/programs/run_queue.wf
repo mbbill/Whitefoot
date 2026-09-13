@@ -28,7 +28,7 @@ fn append(vector: &uniq FixedVector<u8, 4>, value: own u8) -> result: own unit r
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Runs a queue over one four-slot run: the window wraps, and every element comes back in the order it went in.";
   let built = pair();
   let first_of_two = built[0_u64];

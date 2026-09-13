@@ -118,9 +118,6 @@ pub(super) struct ResolvedPlace {
     /// [LIV-2] identity retains owning indirection, which [OWN-7]'s
     /// conservative path deliberately erases. Borrow provenance carries both.
     pub(super) storage_path: Vec<PlaceProjection>,
-    /// Active match tags annotate payload field steps for value-state routing.
-    /// They do not narrow the conservative loan identity or change an address.
-    pub(super) state_variants: Vec<(usize, u32)>,
 }
 
 // Existing loan identities compare the conservative origin. Exact storage
@@ -149,7 +146,6 @@ impl ResolvedPlace {
                 })
                 .collect(),
             path,
-            state_variants: Vec::new(),
         }
     }
 
@@ -464,11 +460,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// Instantiates one resolved place onto the current function's incoming
-    /// formal identities. Fresh local owners yield no enclosing effect;
-    /// moved affine owners retain their structural formal sources; a scalar
-    /// borrow parameter falls back to its direct parameter place.
-    /// A finite unresolved selection can contribute possible effect atoms;
-    /// only an exact whole-function union can discharge those possibilities.
+    /// formal places. Local owners yield no enclosing effect. View origins
+    /// identify borrowed backing even when the descriptor itself is copy.
+    /// No owned value history participates in this projection.
     pub(super) fn effect_paths_for_place(
         &self,
         node: NodeId,
@@ -502,11 +496,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn state_effect_paths_for_place(
         &self,
-        node: NodeId,
+        _node: NodeId,
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        whole: bool,
-        descriptor: bool,
+        _whole: bool,
+        _descriptor: bool,
     ) -> Result<Vec<EffectPath>, CheckStop> {
         if self.constants.contains_key(&place.root) {
             return Ok(Vec::new());
@@ -515,101 +509,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let binding = bindings
             .get(&place.root)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        if let Some(origins) = &binding.state_origins {
-            let selection = self.state_selection_of_place(place, bindings)?;
-            let mut selected = if !selection.complete {
-                selection.read(origins.clone())
-            } else if selection.exact {
-                origins.clone().projected_value(&selection.query)
-            } else {
-                let mut selected = origins.clone().projected_value(&selection.query);
-                // A dynamic selector cannot inherit intact coverage of
-                // a rearranged aggregate. Exact incoming-place routes
-                // retain their ordinary enclosing formal attribution.
-                for origin in &mut selected.formals {
-                    if origin.precision == super::super::state_origins::StateOriginPrecision::Whole
-                    {
-                        origin.precision = super::super::state_origins::StateOriginPrecision::Bound;
-                    }
-                }
-                selected
-            };
-            if descriptor {
-                selected
-                    .formals
-                    .retain(|origin| origin.value_fields.is_empty());
-            }
-            return self.effect_paths_for_origins(node, &selected, bindings, whole);
-        }
         let parameter = self.resolved.declarations().iter().any(|declaration| {
             declaration.id() == place.root && declaration.role() == DeclarationRole::Parameter
         });
         if parameter
-            && (binding.mode != CheckedMode::Own || matches!(binding.ty, CheckedType::Slice { .. }))
+            && (binding.mode != CheckedMode::Own
+                || !self.is_copy_type(binding.ty)?
+                || Self::checked_type_is_loan_bearing(binding.ty))
         {
             Ok(vec![canonical.into()])
         } else {
             Ok(Vec::new())
         }
-    }
-
-    pub(super) fn effect_paths_for_origins(
-        &self,
-        node: NodeId,
-        origins: &super::super::model::CheckedStateOrigins,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-        whole: bool,
-    ) -> Result<Vec<EffectPath>, CheckStop> {
-        use super::super::state_origins::StateOriginPrecision;
-
-        if origins.unknown && !self.deriving_result_state_origin.get() {
-            return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
-        }
-        let mut paths = Vec::new();
-        for origin in &origins.formals {
-            let certain = origin.precision == StateOriginPrecision::Exact
-                || (whole && origin.precision == StateOriginPrecision::Whole);
-            if !certain
-                && !self.deriving_result_state_origin.get()
-                && !self.effect_source_is_atomic(&origin.source, bindings)?
-            {
-                // An unknown selection below a struct can name a field rather
-                // than this root. EFF-2 compares discrete paths, not a prefix
-                // closure; the root alone would not be a sound upper bound.
-                return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, node);
-            }
-            paths.push(EffectPath {
-                path: origin.source.clone(),
-                certain,
-            });
-        }
-        Ok(paths)
-    }
-
-    fn effect_source_is_atomic(
-        &self,
-        path: &CheckedStatePath,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<bool, CheckStop> {
-        let mut ty = bindings
-            .get(&path.root)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-            .ty;
-        for field in &path.fields {
-            let CheckedType::Nominal(nominal) = ty else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            ty = fields
-                .get(*field as usize)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .ty;
-        }
-        Ok(!matches!(ty, CheckedType::Nominal(nominal)
-            if matches!(&self.nominal(nominal)?.kind,
-                CheckedNominalKind::Struct { fields } if !fields.is_empty())))
     }
 
     pub(super) fn parse_region_parameters(
@@ -1076,10 +987,10 @@ absent when it writes none",
             CheckedType::Array { .. } | CheckedType::FixedVector { .. } => true,
             CheckedType::Nominal(nominal) => matches!(
                 self.nominal(nominal)?.kind,
-                CheckedNominalKind::Struct { .. }
+                CheckedNominalKind::Opaque
+                    | CheckedNominalKind::Struct { .. }
                     | CheckedNominalKind::Enum { .. }
                     | CheckedNominalKind::Box { .. }
-                    | CheckedNominalKind::SystemResource { .. }
             ),
             CheckedType::Unit
             | CheckedType::Bool
@@ -1096,13 +1007,12 @@ absent when it writes none",
     /// A Box borrow addresses the pointer slot in its owner, so reads and
     /// replacement through the holder share that storage [OWN-5, TYPE-7].
     /// Legacy buffer/view descriptors retain their value representation.
-    /// Opaque system resources use their separate owner-slot borrow form;
-    /// that form also preserves caller storage for replacement.
     pub(super) fn borrow_addresses_storage(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Nominal(nominal) => matches!(
                 self.nominal(nominal)?.kind,
-                CheckedNominalKind::Struct { .. }
+                CheckedNominalKind::Opaque
+                    | CheckedNominalKind::Struct { .. }
                     | CheckedNominalKind::Enum { .. }
                     | CheckedNominalKind::Box { .. }
             ),
@@ -1397,33 +1307,9 @@ inside the `region` block whose region it takes",
                     nominal,
                 }
             }
-            // Opaque resources retain their owner-slot field path. A system
-            // struct's `receive` and `send` are ordinary field places
-            // [SYS-18], so [OWN-5] decides loans on disjoint fields exactly as
-            // for a source struct. Lowering addresses the selected slot;
-            // qualification still owns the resource's target value ABI.
-            CheckedType::Nominal(nominal)
-                if only_fields
-                    && matches!(
-                        self.nominal(nominal)?.kind,
-                        CheckedNominalKind::SystemResource { .. }
-                    ) =>
-            {
-                CheckedExpression::BorrowSystemResource {
-                    carrier: self.tree.path(carrier)?.clone(),
-                    binding: local.binding,
-                    fields: fields.clone(),
-                    state_origins: local
-                        .state_origins
-                        .clone()
-                        .map(|origins| origins.projected(&fields)),
-                    nominal,
-                }
-            }
             CheckedType::Slice { .. } if path.is_empty() => CheckedExpression::Binding {
                 carrier: self.tree.path(carrier)?.clone(),
                 binding: local.binding,
-                state_origins: local.state_origins.clone(),
                 ty,
                 slice_origins: slice
                     .as_ref()
@@ -1814,11 +1700,10 @@ inside the `region` block whose region it takes",
         // A returned holder may carry only its candidate's loan ceiling.
         // A field of its runtime referent is not necessarily that field of
         // the ceiling, so do not turn this projection into an exact place.
-        if !path.is_empty() && !parent.exact_place {
-            return self.unsupported(UnsupportedSemanticFeature::OwnerStateRouting, place_node);
-        }
         let mut place = parent.place.clone();
-        place.extend_storage(&path);
+        if parent.exact_place {
+            place.extend_storage(&path);
+        }
         let fields = path
             .iter()
             .map_while(|step| match step {
@@ -1850,27 +1735,6 @@ inside the `region` block whose region it takes",
                     element,
                 },
             },
-            // A child of an opaque-resource holder keeps the same owner-slot
-            // address and selected fields. Its region and suspension remain
-            // the ordinary reborrow judgment [SYS-2, OWN-6].
-            CheckedType::Nominal(nominal)
-                if only_fields
-                    && matches!(
-                        self.nominal(nominal)?.kind,
-                        CheckedNominalKind::SystemResource { .. }
-                    ) =>
-            {
-                CheckedExpression::BorrowSystemResource {
-                    carrier: self.tree.path(carrier)?.clone(),
-                    binding: local.binding,
-                    fields: fields.clone(),
-                    state_origins: local
-                        .state_origins
-                        .clone()
-                        .map(|origins| origins.projected(&fields)),
-                    nominal,
-                }
-            }
             // A view value is already a descriptor, so the child reborrow a
             // helper takes of its own view holder is that same descriptor
             // read once more: there is no content to address and nothing to
@@ -1880,7 +1744,6 @@ inside the `region` block whose region it takes",
             CheckedType::Slice { .. } if path.is_empty() => CheckedExpression::Binding {
                 carrier: self.tree.path(carrier)?.clone(),
                 binding: local.binding,
-                state_origins: local.state_origins.clone(),
                 ty,
                 slice_origins: local
                     .slice
@@ -2671,7 +2534,7 @@ and name it on the returned reborrow"
             .declarations()
             .iter()
             .find(|declaration| declaration.id() == id)
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn declaration_scope(&self, id: DeclarationId) -> Result<ScopeId, CheckStop> {
@@ -2680,7 +2543,7 @@ and name it on the returned reborrow"
             .iter()
             .find(|declaration| declaration.id() == id)
             .map(|declaration| declaration.scope())
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn scope_is_within(&self, mut scope: ScopeId, ancestor: ScopeId) -> Result<bool, CheckStop> {

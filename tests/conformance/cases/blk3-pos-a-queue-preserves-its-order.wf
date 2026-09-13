@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-3: places at the back and takes at the front, so the run is a queue and no Option is written anywhere.";
   let empty = fixed_vector::<u8, 4>();
   region {

@@ -12,7 +12,7 @@ fn head(input: &Source) -> byte: own u8 reads(input.bytes) {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bytes = fixed_vector::<u8, 5>();
   region {
     place_back(vector: &uniq bytes, value: 43_u8);

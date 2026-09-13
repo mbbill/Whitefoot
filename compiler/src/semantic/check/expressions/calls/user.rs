@@ -10,8 +10,8 @@ use super::super::super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalProjection,
 };
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow,
-    CheckedResultStateOrigin, CheckedSliceOrigin, CheckedStateOrigins, CheckedType, LoanStrength,
+    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
+    CheckedType, LoanStrength,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, TemporaryLoan, places_overlap,
@@ -223,7 +223,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut checked_borrows = Vec::with_capacity(fields.len());
         let mut checked_slices = Vec::with_capacity(fields.len());
         let mut argument_holders = Vec::with_capacity(fields.len());
-        let mut state_origins = Vec::with_capacity(fields.len());
         let mut argument_places = Vec::with_capacity(fields.len());
         let mut argument_nodes = Vec::with_capacity(fields.len());
         let mut goal_arguments = Vec::with_capacity(fields.len());
@@ -312,7 +311,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 loan_observations.push((index, actual, atom));
             }
-            state_origins.push(self.state_origins_of_value(&argument, bindings)?);
             argument_places.push(
                 argument
                     .accesses
@@ -372,7 +370,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &checked_borrows,
             &checked_slices,
             &argument_holders,
-            &state_origins,
             &argument_places,
             bindings,
             &mut effects,
@@ -380,60 +377,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let result = self.substitute_result_type(signature.result, signature, &actual_regions)?;
         let result_mode =
             self.substituted_mode(signature.result_mode, signature, &actual_regions)?;
-        // [FN-1] all components read one entry snapshot. Effects were projected
-        // above; the returned value keeps this image after referents change.
-        let result_state = self
-            .result_state_origins
-            .borrow()
-            .get(target.0 as usize)
-            .cloned()
-            .unwrap_or(CheckedResultStateOrigin::Unknown);
-        let result_origins = self
-            .type_carries_identity(result)?
-            .then(|| CheckedStateOrigins::instantiate(&result_state, &state_origins));
-        if !self.deriving_result_state_origin.get() {
-            let summaries = self
-                .borrowed_state_origins
-                .borrow()
-                .get(target.0 as usize)
-                .cloned()
-                .unwrap_or_default();
-            let mut updates = Vec::new();
-            for summary in summaries {
-                let ordinal = summary.parameter as usize;
-                let image = CheckedStateOrigins::instantiate(&summary.origin, &state_origins);
-                let before = state_origins.get(ordinal).and_then(Option::as_ref);
-                if !image.unknown && before == Some(&image) {
-                    continue;
-                }
-                let borrow = checked_borrows
-                    .get(ordinal)
-                    .and_then(Option::as_ref)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let Some(fields) = self
-                    .state_fields_of_place(&borrow.place, bindings)?
-                    .filter(|_| borrow.exact_place && !image.unknown)
-                else {
-                    return self
-                        .unsupported(crate::UnsupportedSemanticFeature::OwnerStateRouting, node);
-                };
-                updates.push((borrow.place.root, fields, image));
-            }
-            // OWN-5 already established disjoint exclusive actuals. Resolve
-            // every image before installing any of them into caller storage.
-            for (root, fields, image) in updates {
-                let local = bindings
-                    .get_mut(&root)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                local.state_origins = Some(
-                    local
-                        .state_origins
-                        .take()
-                        .unwrap_or_else(CheckedStateOrigins::fresh)
-                        .replace_value_path(&fields, Some(image)),
-                );
-            }
-        }
         let slice = self.substitute_slice_result(signature, result, &checked_slices, bindings)?;
         let slice_origins = slice
             .as_ref()
@@ -496,7 +439,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             expression: CheckedExpression::UserCall {
                 function: target,
                 formal_effects: formal_effects.map(Box::new),
-                state_origins: result_origins.map(Box::new),
                 call,
                 argument_nodes,
                 arguments,
@@ -1377,7 +1319,6 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         borrows: &[Option<BorrowInfo>],
         slices: &[Option<SliceInfo>],
         holders: &[Option<DeclarationId>],
-        state_origins: &[Option<CheckedStateOrigins>],
         argument_places: &[Vec<ResolvedPlace>],
         bindings: &HashMap<DeclarationId, LocalBinding>,
         effects: &mut EffectSet,
@@ -1480,21 +1421,12 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     .get(index)
                     .into_iter()
                     .flatten()
-                    .filter(|_| {
-                        parameter.mode == CheckedMode::Own
-                            && state_origins.get(index).and_then(Option::as_ref).is_none()
-                    })
+                    .filter(|_| parameter.mode == CheckedMode::Own)
                 {
                     let mut path = self.state_path(place, bindings)?;
                     path.fields.extend_from_slice(&formal.fields);
                     actual_paths.push(path.into());
                 }
-                if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
-                    let origins = origins.clone().projected(&formal.fields);
-                    actual_paths
-                        .extend(self.effect_paths_for_origins(node, &origins, bindings, true)?);
-                }
-
                 for path in actual_paths {
                     if !caller
                         .parameters

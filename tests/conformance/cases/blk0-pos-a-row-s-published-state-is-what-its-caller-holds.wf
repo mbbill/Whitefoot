@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-0: the other half of the same sentence. The store's pre-call measures die at the call and the row's own relations replace them, so the second take's requirement is discharged from what the first published rather than from a stale extent, and the room the writer reads back is the room the two takes left.";
   region 'a {
     let workspace = arena_frame::<8192, 16, 'a>();

@@ -3,7 +3,7 @@ fn change(index: &uniq u64) -> result: own u64 writes(index) {
   return 41_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u64, 2>();
   region {
     place_back(vector: &uniq empty, value: 3_u64);

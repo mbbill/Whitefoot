@@ -571,7 +571,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ResolvedTarget::Prelude(id) => {
                     variant.constructor == CheckedConstructor::Prelude(id)
                 }
-                ResolvedTarget::System(id) => variant.constructor == CheckedConstructor::System(id),
+
                 _ => false,
             })
             .ok_or_else(|| {
@@ -602,7 +602,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if written.len() != variant.fields.len() {
             return self.invalid_match_fields(variant, arm);
         }
-        let scrutinee_state_origins = self.state_origins_of_value(scrutinee, bindings)?;
         let mut binders = Vec::with_capacity(written.len());
         for (index, (written, field)) in written.into_iter().zip(&variant.fields).enumerate() {
             if self
@@ -641,18 +640,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let mut place = parent.place;
                 place
-                    .state_variants
-                    .push((place.storage_path.len(), variant.tag));
-                place
                     .extend_fields(&[u32::try_from(index)
                         .map_err(|_| SemanticCompilerFailure::CounterOverflow)?]);
                 Some(BorrowInfo { place, ..parent })
             };
             let field_ordinal =
                 u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-            let state_origins = scrutinee_state_origins
-                .clone()
-                .map(|origins| origins.enum_payload(variant.tag, field_ordinal));
             if bindings
                 .insert(
                     declaration.id(),
@@ -661,10 +654,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration: declaration.id(),
                         mode,
                         ty: field.ty,
-                        state_origins: self
-                            .type_carries_identity(field.ty)?
-                            .then_some(state_origins)
-                            .flatten(),
                         live: true,
                         loop_depth,
                         compiler_updated: false,

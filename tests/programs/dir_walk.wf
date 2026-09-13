@@ -26,7 +26,7 @@ fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u6
   return Ok<unit, IoError>(value: unit);
 }
 
-fn stored_byte(records: &Vector<u8>, index: own u64) -> result: own u8 reads(records) {
+fn stored_byte['heap](records: &Vector<'heap, u8>, index: own u64) -> result: own u8 reads(records) {
   doc "Reads one record byte, delivering zero for a position the record table does not hold.";
   let held = len_of(deref(records));
   let inside = index < held;
@@ -37,7 +37,7 @@ fn stored_byte(records: &Vector<u8>, index: own u64) -> result: own u8 reads(rec
   return 0_u8;
 }
 
-fn record_before(records: &Vector<u8>, left: own u64, right: own u64) -> result: own Bool reads(records) {
+fn record_before['heap](records: &Vector<'heap, u8>, left: own u64, right: own u64) -> result: own Bool reads(records) {
   doc "Orders two fixed-stride records by their stored path bytes, a shorter prefix first.";
   let left_base = left *wrap 128_u64;
   let right_base = right *wrap 128_u64;
@@ -75,7 +75,7 @@ fn record_before(records: &Vector<u8>, left: own u64, right: own u64) -> result:
   return left_count < right_count;
 }
 
-fn record_line(records: &Vector<u8>, index: own u64, destination: &uniq MutSlice<u8>, at: own u64) -> result: own u64 reads(records, destination), writes(destination) {
+fn record_line['heap](records: &Vector<'heap, u8>, index: own u64, destination: &uniq MutSlice<u8>, at: own u64) -> result: own u64 reads(records, destination), writes(destination) {
   doc "Renders one record as its kind glyph, one space, its relative path, and one newline.";
   let base = index *wrap 128_u64;
   let kind = stored_byte(records: records, index: base);
@@ -163,7 +163,7 @@ fn open_directory_from_factory(factory: &uniq HandleFactory, root: &DirectoryRea
   }
 }
 
-fn walk(factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Slice<u8>, prefix_length: own u64, records: &uniq Vector<u8>, used: own u64, depth: own u64, store: &uniq Heap) -> count: own u64 reads(factory, dir, prefix, records, store), writes(factory, records, store), allocates(store) {
+fn walk['heap](factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Slice<u8>, prefix_length: own u64, records: &uniq Vector<'heap, u8>, used: own u64, depth: own u64, store: &uniq Heap<'heap>) -> count: own u64 reads(factory, dir, prefix, records, store), writes(factory, records, store), allocates(store) {
   doc "Enumerates one directory, records every entry's relative path, and descends into every subdirectory it names. The record table stays in its caller and is lent exclusively through recursive calls; the two scratch runs are taken from the general store once per activation.";
   let total = used;
   let too_deep = depth >= 8_u64;
@@ -462,7 +462,7 @@ fn walk(factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: own Slice<u8>
   return total;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
+fn main['heap](command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap<'heap>) -> status: own ExitStatus reads(cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
   doc "Walks the invocation directory recursively and publishes every entry's kind and relative path in sorted order.";
   let status = 0_u8;
   region {

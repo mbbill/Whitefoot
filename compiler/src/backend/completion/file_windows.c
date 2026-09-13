@@ -575,10 +575,10 @@ static wf_file_result wf_file_windows_socket_shutdown(
         result.head.value = 0;
         return result;
     }
-    result.head.value = wf__windows_socket_close(descriptor);
-    if (result.head.value < 0) {
+    if (wf__windows_socket_close(descriptor) < 0) {
         result.head.error_code = *wf__windows_error_location();
     }
+    result.head.value = 1;
     return result;
 }
 

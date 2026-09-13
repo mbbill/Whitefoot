@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-0 must discharge the BLK-3 conversion's len(vector) == n requirement. One initialized slot in a capacity-two run does not form a complete array; type formation must not expose its raw second slot.";
   let empty = fixed_vector::<u64, 2>();
   region {

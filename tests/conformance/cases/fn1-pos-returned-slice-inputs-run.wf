@@ -10,7 +10,7 @@ fn choose_slice['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Sli
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left_empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq left_empty, value: 11_u8);

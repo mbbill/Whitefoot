@@ -7,7 +7,7 @@ fn update(value: &uniq u64) -> result: own Payload writes(value) {
   return Payload(value: 7_u64);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Payload, 1>();
   let payload = Payload(value: 3_u64);
   region {

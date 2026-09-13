@@ -29,7 +29,7 @@ fn forward(x: own i32) -> result: own Result<i32, StepError> pure {
   return Ok<i32, StepError>(value: next);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let accepted = forward(x: 41_i32);
   match move accepted {
     Ok(value: accepted_value) => {

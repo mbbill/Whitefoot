@@ -15,7 +15,7 @@ fn second_value['a, 'b](wrapped: &Wrapped<'a, 'b>) -> value: own u64 reads(wrapp
   return deref(wrapped).pair.second.value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "FORM-8 and TYPE-5: a constructor field and a function parameter each determine all explicit brand positions of their declared nominal type. The wrapper's one field supplies both brands; neither construction nor the reader call writes a determined argument.";
   region 'outer {
     let first = Marker<'outer>(value: 7_u64);

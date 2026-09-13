@@ -26,7 +26,7 @@ fn countdown<T: Int>(at: own u64) -> total: own u64 pure {
   return rest +wrap 1_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "3 + 4 from the run, then 3 from the countdown.";
   let run = fixed_vector::<u8, 2>();
   region {

@@ -72,7 +72,7 @@ fn revise(values: &uniq array<u64, 3>) -> result: own u64 reads(values), writes(
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = array_new::<u64, 3>(7_u64);
   let before0 = values[0_u64];
   let before1 = values[1_u64];
@@ -206,7 +206,7 @@ fn overwrite(view: &uniq MutSlice<u64>, index: own u64, value: own u64) -> resul
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = array_new::<u64, 4>(7_u64);
   let before0 = values[0_u64];
   let before2 = values[2_u64];
@@ -316,7 +316,7 @@ fn reuse(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) c
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
   region {
     place_back(vector: &uniq empty, value: 3_u8);
@@ -378,7 +378,7 @@ fn sum(values: own Slice<u8>) -> result: own u64 reads(values) {
   return total;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let code = 0_u8;
   region {
     let view = slice_of(&bytes);
@@ -462,7 +462,7 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
     // The slice carries its source run's window length, so the constant
     // offset is refutable at compile time and the program rejects with the
     // residual [OP-4, ENT-6] — the same residual the array origin gave.
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq empty, value: 0_u8);
@@ -511,7 +511,7 @@ fn borrowed_first(value: &Slice<u8>) -> result: own u8 reads(value) contract {
   return deref(value)[0_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left_empty = fixed_vector::<u8, 2>();
   region {
     place_back(vector: &uniq left_empty, value: 11_u8);
@@ -602,7 +602,7 @@ command fn main() -> status: own ExitStatus pure {
 /// loop wrote.
 #[test]
 fn a_view_of_a_frame_resident_run_reaches_its_own_slots_across_a_may_suspend_call() {
-    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+    let source = br#"fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   doc "Publishes a frame-resident run through a shared view held across the may-suspend write.";
   let page = fixed_vector::<u8, 4>();
   for @fill (

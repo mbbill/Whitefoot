@@ -5,7 +5,7 @@ fn size_of(taken: own FixedVector<u8, 8>) -> measured: own u64 reads(taken) cont
   return len_of(taken);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let run = fixed_vector::<u8, 8>();
   region {
     place_back(vector: &uniq run, value: 3_u8);

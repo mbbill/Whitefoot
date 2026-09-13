@@ -1,4 +1,8 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     let index = args_count(args: &args);
     let empty = fixed_vector::<u8, 4>();

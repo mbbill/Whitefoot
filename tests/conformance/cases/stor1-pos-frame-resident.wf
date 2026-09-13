@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Storage class is a function of type [STOR-1]: an i32 local is frame-resident with no per-binding storage annotation and no default clause.";
   let a = 7_i32;
   let b = a +wrap 3_i32;

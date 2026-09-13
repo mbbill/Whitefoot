@@ -16,15 +16,12 @@ mod permission_ledger;
 mod places;
 pub(crate) use places::PlaceRoot as CheckedPlaceRoot;
 mod postcondition;
-mod staged_permission;
-mod state_origins;
-mod target_action;
 mod tree;
 
 #[cfg(test)]
 mod tests;
 
-use crate::{BundleSourceExtent, NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
+use crate::{NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
 
 pub use check::check_semantics;
 #[cfg(test)]
@@ -46,15 +43,14 @@ pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission}
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
     CheckedBufferRoot, CheckedCommitValues, CheckedConst, CheckedConstructor, CheckedContainerRoot,
-    CheckedDrop, CheckedElement, CheckedEntryForm, CheckedEnumType, CheckedExpression,
-    CheckedFlatElement, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
-    CheckedKernelInstance, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
-    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType,
-    CheckedParameter, CheckedPlaceStep, CheckedProgramData, CheckedProjectedDrop,
-    CheckedReleaseClass, CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
-    CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
-    CheckedWritablePlace, FunctionId, MeasureCell, MeasuredKind, NominalId, PropagationContext,
-    expression_children,
+    CheckedDrop, CheckedElement, CheckedEnumType, CheckedExpression, CheckedFlatElement,
+    CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedKernelInstance,
+    CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure,
+    CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedPlaceStep,
+    CheckedProgramData, CheckedProjectedDrop, CheckedReleaseClass, CheckedRuntimeTargetObligations,
+    CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource, CheckedStatement,
+    CheckedTargetDomainObligation, CheckedType, CheckedValue, CheckedWritablePlace, FunctionId,
+    MeasureCell, MeasuredKind, NominalId, PropagationContext, expression_children,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -164,8 +160,6 @@ pub enum SemanticRule {
     Fn5,
     /// Polymorphic recursion in a call cycle among generic functions.
     Fn6,
-    /// Closed-program `main` contract.
-    Fn7,
     /// Finite atomic function requirement goal.
     Fn8,
     /// Verified narrow normal-return relation.
@@ -193,13 +187,6 @@ pub enum SemanticRule {
     Eff1,
     /// Exact exhibited-versus-declared effect row.
     Eff2,
-    /// The system inventory, and the region arguments a system operation's
-    /// call site must state. [TYPE-5] assigns the written arguments by callee
-    /// class — "region arguments for system operations [SYS-2]" — so this rule
-    /// owns that argument list exactly as FN-2 owns a user generic's.
-    Sys2,
-    /// Half-open system buffer-range discharge.
-    Sys8,
     /// Counted endpoint admission to the closed term-or-constant vocabulary.
     Ent2,
     /// One denotation per operand position, keyed on the parameter's mode.
@@ -261,7 +248,7 @@ impl SemanticRule {
             Self::Fn4 => "FN-4",
             Self::Fn5 => "FN-5",
             Self::Fn6 => "FN-6",
-            Self::Fn7 => "FN-7",
+
             Self::Fn8 => "FN-8",
             Self::Fn9 => "FN-9",
             Self::Call4 => "CALL-4",
@@ -275,8 +262,7 @@ impl SemanticRule {
             Self::Give1 => "GIVE-1",
             Self::Eff1 => "EFF-1",
             Self::Eff2 => "EFF-2",
-            Self::Sys2 => "SYS-2",
-            Self::Sys8 => "SYS-8",
+
             Self::Ent2 => "ENT-2",
             Self::Msr3 => "MSR-3",
             Self::Call6 => "CALL-6",
@@ -351,17 +337,14 @@ impl SemanticRule {
             Self::Fn3 => Self::Fn4,
             Self::Fn4 => Self::Fn5,
             Self::Fn5 => Self::Fn6,
-            Self::Fn6 => Self::Fn7,
-            Self::Fn7 => Self::Fn8,
+            Self::Fn6 => Self::Fn8,
             Self::Fn8 => Self::Fn9,
             Self::Fn9 => Self::Call4,
             Self::Call4 => Self::Eff1,
             Self::Eff1 => Self::Eff2,
             Self::Eff2 => Self::Err2,
             Self::Err2 => Self::Err3,
-            Self::Err3 => Self::Sys2,
-            Self::Sys2 => Self::Sys8,
-            Self::Sys8 => Self::Ent2,
+            Self::Err3 => Self::Ent2,
             Self::Ent2 => Self::Msr3,
             Self::Msr3 => Self::Call6,
             Self::Call6 => Self::Inv1,
@@ -430,21 +413,20 @@ impl SemanticRule {
             Self::Fn4 => 46,
             Self::Fn5 => 47,
             Self::Fn6 => 48,
-            Self::Fn7 => 49,
-            Self::Fn8 => 50,
-            Self::Fn9 => 51,
-            Self::Call4 => 52,
-            Self::Eff1 => 53,
-            Self::Eff2 => 54,
-            Self::Err2 => 55,
-            Self::Err3 => 56,
-            Self::Sys2 => 57,
-            Self::Sys8 => 58,
-            Self::Ent2 => 59,
-            Self::Msr3 => 60,
-            Self::Call6 => 61,
-            Self::Inv1 => 62,
-            Self::Prf1 => 63,
+
+            Self::Fn8 => 49,
+            Self::Fn9 => 50,
+            Self::Call4 => 51,
+            Self::Eff1 => 52,
+            Self::Eff2 => 53,
+            Self::Err2 => 54,
+            Self::Err3 => 55,
+
+            Self::Ent2 => 56,
+            Self::Msr3 => 57,
+            Self::Call6 => 58,
+            Self::Inv1 => 59,
+            Self::Prf1 => 60,
         }
     }
 }
@@ -454,8 +436,6 @@ impl SemanticRule {
 pub enum SemanticLocation {
     /// One source-backed production node and its rule-selected coordinate.
     SourceNode(NodePath, SyntaxCoordinate),
-    /// The closed compilation-unit root when no source declaration exists.
-    BundleRoot(Vec<BundleSourceExtent>),
 }
 
 /// One non-discharged static source obligation disposition [ENT-6].
@@ -681,12 +661,6 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by PROV-6.
         mechanical_fix: &'static str,
     },
-    /// [BLK-4] a stored position whose brand resolves to the entry heap's
-    /// store region in a unit whose entry selects no `command.heap` row.
-    ConfinedTypeWithoutStore {
-        /// Exact restructuring required by BLK-4.
-        mechanical_fix: &'static str,
-    },
     /// [PROV-6] a `dispose` whose operand releases to a store no live
     /// binding of this scope holds the provider of.
     DisposeHasNoProvider {
@@ -908,11 +882,6 @@ pub enum SemanticIssueKind {
         residual: String,
         mechanical_fix: &'static str,
     },
-    /// One half-open system buffer-range conjunct lacks a SYS-8 proof.
-    UndischargedSystemRangeObligation {
-        residual: String,
-        mechanical_fix: &'static str,
-    },
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),
@@ -1073,59 +1042,6 @@ pub enum SemanticIssueKind {
     /// A selected normal return's complete instantiated FN-9 relation is
     /// refuted or unproved after entry-image stability and ordinary kills.
     UndischargedPostcondition(Box<UndischargedPostconditionDetail>),
-    /// The unique source `main` declaration has a header shape FN-7 admits in
-    /// neither entry form.
-    InvalidMain,
-    /// No source `main` declaration exists.
-    MissingMain,
-    /// A declaration other than the unit's entry carries a `program_kind`.
-    NonEntryProgramKind {
-        /// Function that declared the program kind.
-        function: String,
-    },
-    /// A standard-input label is unknown, repeated, out of table-ordinal
-    /// order, or carries a foreign kind prefix.
-    InvalidStandardInputLabel {
-        /// Complete written label spelling.
-        label: String,
-        /// The kind's closed standard-input labels in table-ordinal order.
-        declared_labels: Vec<String>,
-    },
-    /// An `input_label` was written outside a kind-declaring entry's own
-    /// parameters, including in a `fn_sig`.
-    StandardInputLabelOutsideEntry {
-        /// Complete written label spelling.
-        label: String,
-    },
-    /// A selected standard input's written mode and type differ from its row.
-    InvalidStandardInput {
-        /// Complete written label spelling.
-        label: String,
-        /// The row's exact written mode and type.
-        declared: &'static str,
-    },
-    /// A kind-declaring entry declared a value parameter with no
-    /// `input_label`.
-    UnlabelledEntryParameter {
-        /// Binder spelling of the unlabelled parameter.
-        parameter: String,
-    },
-    /// The entry's written result differs from its form's fixed result.
-    InvalidEntryResult {
-        /// The form's exact written result.
-        required: &'static str,
-    },
-    /// The entry's written effect row is inadmissible for its form.
-    InvalidEntryEffects {
-        /// The rows or categories the entry's form admits.
-        admitted: &'static str,
-    },
-    /// A source `call` named the kind-declaring entry, which only program
-    /// start invokes.
-    CallToKindDeclaringEntry {
-        /// Entry spelling written at the call site.
-        entry: String,
-    },
     /// Named user-call arguments differ from the parameter list.
     InvalidNamedArguments {
         /// Callee spelling at the call site.
@@ -1186,12 +1102,6 @@ pub enum SemanticIssueKind {
     },
     /// The written effect row omits a category contributed only by a
     /// compiler-derived release, which has no source occurrence [EFF-2].
-    ReleaseEffectMismatch {
-        /// The parameter or binding whose release contributed the category.
-        owner: String,
-        /// Exact restructuring required by EFF-2.
-        mechanical_fix: &'static str,
-    },
     /// A generic type parameter named a source contract as its bound.
     SourceContractGenericBound,
 }
@@ -1289,8 +1199,6 @@ pub enum UnsupportedSemanticFeature {
     BoxReferentMove,
     /// An ownership-state join not yet covered by the selected finite rule.
     OwnershipJoin,
-    /// A changed owner image whose exact caller storage cannot be represented.
-    OwnerStateRouting,
     /// Repeated match arms, whose meaning the active specification does not select.
     DuplicateMatchArm,
     /// An OP-1 family outside the implemented scalar and nominal-tag families.
@@ -1354,16 +1262,21 @@ impl CheckedProgram<'_, '_, '_> {
     #[must_use]
     #[cfg(test)]
     pub fn function_count(&self) -> usize {
-        self.data.functions.len()
+        self.data
+            .functions
+            .iter()
+            .filter(|function| function.body.is_some())
+            .count()
     }
 
-    /// Returns the exact source name of the checked entry function.
+    /// Returns main's ordinary source spelling when the test declares it.
     #[must_use]
     #[cfg(test)]
     pub fn entry_function_name(&self) -> &str {
         self.data
             .functions
-            .get(self.data.main.0 as usize)
+            .iter()
+            .find(|function| function.name == "main")
             .map_or("", |function| function.name.as_str())
     }
 }

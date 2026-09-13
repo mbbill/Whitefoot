@@ -6,7 +6,7 @@ fn get_bounded(window: own Slice<u8>, i: own u64) -> value: own u8 reads(window)
   return window[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[CALL-2] an own argument is a consuming use only where its type is affine or linear. A Slice is copy [OWN-1], so handing it at an own parameter is a duplicate and neither the caller's place nor any fact supported by it dies: the second call proves its own requirement from the same length the formation published, which a consume would have killed. This is the sentence that lets a view-taking helper be called more than once, and it is what a run passed by value does not get.";
   let line = fixed_vector::<u8, 4>();
   region {

@@ -46,7 +46,7 @@ fn exercise<T: affine>(values: &uniq FixedVector<T, 4>) -> result: own unit read
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u64, 4>();
   region {
     place_back(vector: &uniq values, value: 7_u64);
@@ -102,7 +102,7 @@ const PUSH: &str = r#"fn push(values: &uniq FixedVector<u64, 4>, value: own u64)
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u64, 4>();
   region {
     push(values: &uniq values, value: 7_u64);
@@ -171,7 +171,7 @@ fn entry_former_rejects_body_and_nonexclusive_parameter() {
   return len_of(deref(values));
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -205,7 +205,7 @@ fn whole_referent_replacement_kills_the_old_window_facts() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u64, 4>();
   region {
     place_back(vector: &uniq values, value: 7_u64);
@@ -232,7 +232,7 @@ fn exclusive_exit_facts_publish_beside_multiple_results() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u64, 4>();
   region {
     place_back(vector: &uniq values, value: 7_u64);
@@ -266,7 +266,7 @@ fn push(pair: &uniq Pair, value: own u64) -> result: own unit reads(pair.changed
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let changed = fixed_vector::<u64, 4>();
   let untouched = fixed_vector::<u64, 4>();
   let pair = Pair(changed: move changed, untouched: move untouched);
@@ -298,7 +298,7 @@ fn an_exit_only_clause_does_not_use_an_ordinary_borrow_result_as_a_datum() {
   return saved;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -308,7 +308,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn replacing_the_actual_after_a_call_kills_its_exit_only_relation() {
     let helper = PUSH
-        .split("command fn main()")
+        .split("fn main()")
         .next()
         .unwrap()
         .replace("-> result: own unit", "-> result: own FixedVector<u64, 4>")
@@ -328,7 +328,7 @@ fn replacing_the_actual_after_a_call_kills_its_exit_only_relation() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#
@@ -358,7 +358,7 @@ fn exclusive_equality_requires_both_affine_bounds() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -380,10 +380,10 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn exclusive_boxed_run_holder_publishes_to_the_typed_referent() {
-    let helper = PUSH.split("command fn main()").next().unwrap();
+    let helper = PUSH.split("fn main()").next().unwrap();
     let source = format!(
         "{helper}{}",
-        r#"command fn main() -> status: own ExitStatus pure {
+        r#"fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u64, 4>();
   let owner = box_new(move empty);
   let room = room_of(deref(owner));

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The borrow takes the region of the `region` block that most closely encloses it, so [FORM-8] leaves its region unwritten.";
   let a = 40_i32;
   region 'r {

@@ -3,7 +3,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   ensures room_of(made) <= 0_u64;
   ensures head_of(made) <= 0_u64;
 } {
-  doc "The marker byte one iteration writes into the hoisted scratch survives into the next, because stamp writes it only on odd indices. Executing the prologue in index order preserves that carried byte, but the remainder reads the same storage, so no single segment serializes it and PAR-3 denies the stage. Whole-place write-before-read would admit this program and publish a different total. The reported condition is 5 over the view surface as over the buffer one, because the view handed to the helper resolves to the run it was formed over [VIEW-1].";
+  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
   let built = fixed_vector::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,
@@ -42,8 +42,8 @@ fn first_byte(source: own Slice<u8>) -> result: own u64 reads(source) {
   return cvt::<u8, u64>(byte);
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "The marker byte one iteration writes into the hoisted scratch survives into the next, because stamp writes it only on odd indices. Executing the prologue in index order preserves that carried byte, but the remainder reads the same storage, so no single segment serializes it and PAR-3 denies with condition 5. Whole-place write-before-read would admit this program and publish a different total.";
+fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
+  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
   region 'w {
     let workspace = arena_frame::<1, 1, 'w>();
     region {
@@ -65,27 +65,21 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
             let stamped = stamp(slot: &uniq slot, index: index);
           }
         }
-        region 'f {
-          match reserve_handle(factory: &uniq files) {
-            Ok(value: permit) => {
-              let window = slice_of(&name);
-              region {
-                match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
-                  FileOpened(value: handle) => {
-                    let seen = 0_u64;
-                    region {
-                      let source = slice_of(&scratch);
-                      set seen = first_byte(source: source);
-                    }
-                    set total = total +wrap seen;
-                  }
-                  FileOpenFailed(error: problem, permit: refused) => {
-                  }
+        region {
+          let window = slice_of(&name);
+          region {
+            match open_file(factory: &uniq deref(files), root: cwd, name: &window, start: 0_u64, end: 4_u64) {
+              FileOpened(value: handle) => {
+                let seen = 0_u64;
+                region {
+                  let source = slice_of(&scratch);
+                  set seen = first_byte(source: source);
                 }
+                set total = total +wrap seen;
+                close_read(factory: &uniq deref(files), file: move handle);
               }
-            }
-            Err(error: spent) => {
-              return exit_status(code: 1_u8);
+              FileOpenFailed(error: problem) => {
+              }
             }
           }
         }
@@ -93,4 +87,14 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
     }
   }
   return exit_status(code: 0_u8);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

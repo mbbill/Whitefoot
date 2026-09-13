@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
@@ -9,18 +9,13 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
-    CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedSetTarget,
-    CheckedStateOrigins, CheckedStatePath, CheckedStateStep, CheckedStatement, CheckedType,
-    CheckedValue, ConstOperation, FloatType, IntegerType, LoanStrength, evaluate_const_operation,
+    CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedFlatElement,
+    CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType, CheckedValue, ConstOperation,
+    FloatType, IntegerType, LoanStrength, evaluate_const_operation,
 };
-use super::super::places::PlaceProjection;
-use super::super::state_origins::StateImage;
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
-use super::{
-    CheckStop, Checker, EffectSet, LocalBinding, ParameterSignature, PreludeType, TypedExpression,
-};
+use super::{CheckStop, Checker, EffectSet, ParameterSignature, PreludeType};
 
 /// [TYPE-5]'s two sides where a type spelling that takes no type arguments
 /// carries a written `<...>` list.
@@ -52,34 +47,6 @@ const EFF1_FIELD_OF_NON_STRUCT_FIX: &str = "name the parameter itself, which nam
 const EFF1_UNKNOWN_FIELD: &str = "an effect-path suffix names a field the struct does not declare";
 const EFF1_UNKNOWN_FIELD_FIX: &str =
     "name a declared field of that struct, or the parameter itself";
-
-#[derive(Clone, Debug)]
-enum StateOriginResolution {
-    Absent,
-    Finite(CheckedStateOrigins),
-    Unknown(crate::NodePath),
-}
-
-impl StateOriginResolution {
-    fn union(&mut self, other: Self) {
-        match (&mut *self, other) {
-            (Self::Unknown(_), _) => {}
-            (_, Self::Unknown(path)) => *self = Self::Unknown(path),
-            (Self::Absent, finite @ Self::Finite(_)) => *self = finite,
-            (Self::Finite(left), Self::Finite(right)) => left.union(&right),
-            (Self::Absent, Self::Absent) | (Self::Finite(_), Self::Absent) => {}
-        }
-    }
-    fn compose(&mut self, other: Self) {
-        match (&mut *self, other) {
-            (Self::Unknown(_), _) => {}
-            (_, Self::Unknown(path)) => *self = Self::Unknown(path),
-            (Self::Absent, finite @ Self::Finite(_)) => *self = finite,
-            (Self::Finite(left), Self::Finite(right)) => left.compose(&right),
-            (Self::Absent, Self::Absent) | (Self::Finite(_), Self::Absent) => {}
-        }
-    }
-}
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn parse_parameters_with(
@@ -362,21 +329,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ResolvedTarget::Container(id) => {
                     return self.parse_container_type(node, id, substitution);
                 }
-                ResolvedTarget::System(id) => {
-                    let index = crate::system_nominal_index(id, self.inventory())
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if targs.is_some() {
-                        return self.issue_node(
-                            SemanticRule::Type5,
-                            node,
-                            SemanticIssueKind::type_mismatch(
-                                TYPE5_NO_TARGS_EXPECTED,
-                                TYPE5_NO_TARGS_FOUND,
-                            ),
-                        );
-                    }
-                    return Ok(CheckedType::Nominal(self.system_nominal(index)?));
-                }
                 _ => {}
             }
         }
@@ -481,8 +433,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 .map(|field| field.ty),
                         );
                     }
-                    CheckedNominalKind::ArenaStorage
-                    | CheckedNominalKind::SystemResource { .. } => {}
+                    CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
                 },
                 CheckedType::Unit
                 | CheckedType::Bool
@@ -681,7 +632,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let referent = self.parse_type_with(referent_node, substitution)?;
         Ok((
-            written_region.unwrap_or_else(|| self.elided_store_region()),
+            match written_region {
+                Some(region) => region,
+                None => self.elided_store_region(node)?,
+            },
             referent,
         ))
     }
@@ -762,7 +716,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return mismatch("a const argument in the Vector element position");
                 }
                 let element = element_of(*element)?;
-                let region = written_region.unwrap_or_else(|| self.elided_store_region());
+                let region = match written_region {
+                    Some(region) => region,
+                    None => self.elided_store_region(node)?,
+                };
                 Ok(CheckedType::Vector {
                     region,
                     element,
@@ -798,7 +755,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return mismatch("a Heap type-argument list with a further argument");
                 }
                 Ok(CheckedType::Heap {
-                    region: written_region.unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION),
+                    region: match written_region {
+                        Some(region) => region,
+                        None => self.elided_store_region(node)?,
+                    },
                 })
             }
             // S39 one store-resident cell. Its referent is any nameable
@@ -816,7 +776,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 self.reject_region_bearing_storage_type(referent_node, substitution)?;
                 let referent = self.parse_type_with(referent_node, substitution)?;
-                let region = written_region.unwrap_or_else(|| self.elided_store_region());
+                let region = match written_region {
+                    Some(region) => region,
+                    None => self.elided_store_region(node)?,
+                };
                 self.store_box_nominal(region, referent)
                     .map(CheckedType::Nominal)
             }
@@ -866,10 +829,20 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(substitution.region_argument(region).unwrap_or(region))
     }
 
-    pub(in crate::semantic::check) fn elided_store_region(&self) -> crate::DeclarationId {
-        self.elided_store_brand
-            .get()
-            .unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION)
+    pub(in crate::semantic::check) fn elided_store_region(
+        &self,
+        node: NodeId,
+    ) -> Result<crate::DeclarationId, CheckStop> {
+        if let Some(region) = self.elided_store_brand.get() {
+            return Ok(region);
+        }
+        self.issue_node(
+            SemanticRule::Form8,
+            node,
+            SemanticIssueKind::RegionSpelling {
+                mechanical_fix: "write the store region argument",
+            },
+        )
     }
 
     pub(super) fn option_type_argument_with(
@@ -1122,585 +1095,6 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(paths)
     }
 
-    pub(super) fn type_carries_identity(&self, ty: CheckedType) -> Result<bool, CheckStop> {
-        Ok(!self.type_state_leaf_paths(ty)?.is_empty())
-    }
-
-    /// [CALL-4, S39] result lists and structs contain fields; consuming a
-    /// cell selects its referent. Construction and destructuring must use
-    /// the same value selector independently of their binder ordinal.
-    pub(super) fn destructured_state_step(
-        &self,
-        ty: CheckedType,
-        ordinal: u32,
-    ) -> Result<CheckedStateStep, CheckStop> {
-        let CheckedType::Nominal(nominal) = ty else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        };
-        match &self.nominal(nominal)?.kind {
-            CheckedNominalKind::Box { .. } if ordinal == 0 => Ok(CheckedStateStep::Referent),
-            CheckedNominalKind::Struct { fields } if (ordinal as usize) < fields.len() => {
-                Ok(CheckedStateStep::Field(ordinal))
-            }
-            _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
-        }
-    }
-
-    /// An access may name its containing storage for effects without naming
-    /// the value being replaced. In particular, legacy indexed targets retain
-    /// a root-level access projection; it never authorizes a whole-owner update.
-    pub(super) fn state_selection_of_target(
-        &self,
-        target: &CheckedSetTarget,
-        place: &super::borrows::ResolvedPlace,
-        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<super::super::state_origins::StateSelection, CheckStop> {
-        match target {
-            CheckedSetTarget::ArrayIndex(target) => {
-                self.state_selection_of_index_target(place, &target.offset, bindings)
-            }
-            CheckedSetTarget::BufferIndex(target) => {
-                self.state_selection_of_index_target(place, &target.offset, bindings)
-            }
-            CheckedSetTarget::SliceIndex(_) => Ok(super::super::state_origins::StateSelection {
-                path: Vec::new(),
-                query: Vec::new(),
-                exact: false,
-                complete: false,
-            }),
-            CheckedSetTarget::Place(_) | CheckedSetTarget::Storage(_) => {
-                self.state_selection_of_place(place, bindings)
-            }
-        }
-    }
-
-    fn state_selection_of_index_target(
-        &self,
-        base: &super::borrows::ResolvedPlace,
-        offset: &CheckedExpression,
-        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<super::super::state_origins::StateSelection, CheckStop> {
-        let Some(offset) = Self::place_offset_of(offset) else {
-            let mut selection = self.state_selection_of_place(base, bindings)?;
-            selection.push(CheckedStateStep::AnyElement);
-            return Ok(selection);
-        };
-        let mut place = base.clone();
-        place.push_subscript(offset);
-        self.state_selection_of_place(&place, bindings)
-    }
-
-    /// Value selectors distinguish an allocation's referent from its owner.
-    /// An effect-path prefix alone never authorizes a strong value update.
-    pub(super) fn state_fields_of_place(
-        &self,
-        place: &super::borrows::ResolvedPlace,
-        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<Option<Vec<CheckedStateStep>>, CheckStop> {
-        let selection = self.state_selection_of_place(place, bindings)?;
-        Ok(selection.exact.then_some(selection.path))
-    }
-
-    pub(super) fn state_selection_of_place(
-        &self,
-        place: &super::borrows::ResolvedPlace,
-        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<super::super::state_origins::StateSelection, CheckStop> {
-        let mut ty = bindings
-            .get(&place.root)
-            .map(|binding| binding.ty)
-            .or_else(|| {
-                self.constants
-                    .get(&place.root)
-                    .and_then(|id| self.checked_constants.get(id.0 as usize))
-                    .map(|constant| constant.ty)
-            })
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let mut selection = super::super::state_origins::StateSelection::exact(Vec::new());
-        for (depth, step) in place.storage_path.iter().enumerate() {
-            if let PlaceProjection::Subscript(offset) = step {
-                let selector = match offset {
-                    super::super::places::PlaceOffset::Literal(index) => {
-                        CheckedStateStep::Element(*index)
-                    }
-                    _ => CheckedStateStep::AnyElement,
-                };
-                if let CheckedType::Buffer { element } = ty {
-                    ty = element.ty();
-                    selection.push(selector);
-                    continue;
-                }
-                let element = match ty {
-                    CheckedType::Array { element, .. }
-                    | CheckedType::FixedVector { element, .. }
-                    | CheckedType::Vector { element, .. } => element,
-                    _ => {
-                        selection.exact = false;
-                        selection.complete = false;
-                        return Ok(selection);
-                    }
-                };
-                ty = self.element_type(element)?;
-                selection.push(selector);
-                continue;
-            }
-            let CheckedType::Nominal(id) = ty else {
-                selection.exact = false;
-                selection.complete = false;
-                return Ok(selection);
-            };
-            match (step, &self.nominal(id)?.kind) {
-                (PlaceProjection::Field(field), CheckedNominalKind::Struct { fields, .. }) => {
-                    ty = fields
-                        .get(*field as usize)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                        .ty;
-                    selection.push(CheckedStateStep::Field(*field));
-                }
-                (PlaceProjection::Deref, CheckedNominalKind::Box { referent, .. }) => {
-                    ty = *referent;
-                    selection.push(CheckedStateStep::Referent);
-                }
-                (PlaceProjection::Deref, CheckedNominalKind::Arena { content, .. }) => {
-                    ty = *content;
-                    selection.push(CheckedStateStep::Referent);
-                }
-                (PlaceProjection::Field(field), CheckedNominalKind::Enum { variants }) => {
-                    let Some((_, tag)) = place
-                        .state_variants
-                        .iter()
-                        .find(|(index, _)| *index == depth)
-                    else {
-                        selection.exact = false;
-                        selection.complete = false;
-                        return Ok(selection);
-                    };
-                    let selected = variants
-                        .iter()
-                        .find(|variant| variant.tag == *tag)
-                        .and_then(|variant| variant.fields.get(*field as usize))
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    ty = selected.ty;
-                    selection.push(CheckedStateStep::VariantField {
-                        variant: *tag,
-                        field: *field,
-                    });
-                }
-                _ => {
-                    selection.exact = false;
-                    selection.complete = false;
-                    return Ok(selection);
-                }
-            }
-        }
-        Ok(selection)
-    }
-
-    /// Follows a checked value through moves, borrows, and closed-world call
-    /// summaries to every direct formal path which may supply its state leaves.
-    pub(super) fn owner_image_at_place(
-        &self,
-        place: &super::borrows::ResolvedPlace,
-        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<CheckedStateOrigins, CheckStop> {
-        if self.constants.contains_key(&place.root) {
-            return Ok(CheckedStateOrigins::fresh());
-        }
-        let image = bindings
-            .get(&place.root)
-            .and_then(|binding| binding.state_origins.clone())
-            .unwrap_or_else(CheckedStateOrigins::unknown);
-        Ok(self.state_selection_of_place(place, bindings)?.read(image))
-    }
-
-    pub(super) fn state_origins_of_value(
-        &self,
-        value: &TypedExpression,
-        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<Option<CheckedStateOrigins>, CheckStop> {
-        if !self.type_carries_identity(value.expression.ty())? {
-            return Ok(None);
-        }
-        let rooted_place = value
-            .borrow
-            .as_ref()
-            .map(|borrow| &borrow.place)
-            .or_else(|| (value.accesses.len() == 1).then(|| &value.accesses[0].place));
-        let rooted = if let Some(place) = rooted_place {
-            let selection = self.state_selection_of_place(place, bindings)?;
-            bindings
-                .get(&place.root)
-                .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| selection.read(origins))
-        } else if let Some(holder) = value.holder {
-            bindings
-                .get(&holder)
-                .and_then(|binding| binding.state_origins.clone())
-        } else {
-            None
-        };
-        let origins = match value.borrow.as_ref().and(rooted.clone()).map_or_else(
-            || self.expression_state_origins(&value.expression),
-            StateOriginResolution::Finite,
-        ) {
-            StateOriginResolution::Absent => {
-                rooted.map_or(StateOriginResolution::Absent, StateOriginResolution::Finite)
-            }
-            explicit => explicit,
-        };
-        self.finish_state_origins(
-            origins,
-            value.expression.ty(),
-            value.expression.carrier().cloned(),
-        )
-    }
-
-    pub(super) fn give_state_origins(
-        &self,
-        arms: &[CheckedMatchArm],
-        result_type: CheckedType,
-    ) -> Result<Option<CheckedStateOrigins>, CheckStop> {
-        let mut origins = StateOriginResolution::Absent;
-        let mut fallback = None;
-        for arm in arms {
-            self.collect_give_state_origins(&arm.body, &mut origins, &mut fallback);
-        }
-        self.finish_state_origins(origins, result_type, fallback)
-    }
-
-    fn collect_give_state_origins(
-        &self,
-        statements: &[CheckedStatement],
-        origins: &mut StateOriginResolution,
-        fallback: &mut Option<crate::NodePath>,
-    ) {
-        for statement in statements {
-            match statement {
-                CheckedStatement::Give { value, .. } => {
-                    if fallback.is_none() {
-                        *fallback = value.carrier().cloned();
-                    }
-                    origins.union(self.expression_state_origins(value));
-                }
-                CheckedStatement::Match { arms, .. } => {
-                    for arm in arms {
-                        self.collect_give_state_origins(&arm.body, origins, fallback);
-                    }
-                }
-                // A nested value initializer owns its own give set.
-                CheckedStatement::ValueMatchLet { .. } => {}
-                CheckedStatement::Dispose { .. } => {}
-                CheckedStatement::Loop { body, .. }
-                | CheckedStatement::CountedRange { body, .. }
-                | CheckedStatement::Region { body, .. } => {
-                    self.collect_give_state_origins(body, origins, fallback);
-                }
-                CheckedStatement::Let { .. }
-                | CheckedStatement::DestructuringLet { .. }
-                | CheckedStatement::PropagateLet { .. }
-                | CheckedStatement::Set { .. }
-                | CheckedStatement::SetList { .. }
-                | CheckedStatement::Replace { .. }
-                | CheckedStatement::Evaluate(_)
-                | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Proof(_)
-                | CheckedStatement::Return { .. }
-                | CheckedStatement::Break { .. } => {}
-            }
-        }
-    }
-
-    fn finish_state_origins(
-        &self,
-        origins: StateOriginResolution,
-        ty: CheckedType,
-        _fallback: Option<crate::NodePath>,
-    ) -> Result<Option<CheckedStateOrigins>, CheckStop> {
-        if !self.type_carries_identity(ty)? {
-            return Ok(None);
-        }
-        match origins {
-            StateOriginResolution::Absent => Ok(Some(CheckedStateOrigins::fresh())),
-            StateOriginResolution::Finite(origins) => Ok(Some(origins)),
-            StateOriginResolution::Unknown(_) => Ok(Some(CheckedStateOrigins::unknown())),
-        }
-    }
-
-    fn expression_state_origins(&self, expression: &CheckedExpression) -> StateOriginResolution {
-        if self.is_copy_type(expression.ty()).unwrap_or(false) {
-            return StateOriginResolution::Absent;
-        }
-        match expression {
-            CheckedExpression::Binding { state_origins, .. }
-            | CheckedExpression::Project { state_origins, .. }
-            | CheckedExpression::BorrowSystemResource { state_origins, .. } => state_origins
-                .clone()
-                .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
-            CheckedExpression::SystemCall {
-                operation, call, ..
-            } => match crate::SYSTEM_OPERATIONS
-                .get(usize::from(*operation))
-                .map(|operation| operation.result_state_origin)
-            {
-                Some(crate::SystemResultStateOrigin::None) => StateOriginResolution::Absent,
-                Some(crate::SystemResultStateOrigin::Fresh) => {
-                    StateOriginResolution::Finite(CheckedStateOrigins::fresh())
-                }
-                None => StateOriginResolution::Unknown(call.clone()),
-            },
-            CheckedExpression::UserCall { state_origins, .. } => state_origins
-                .as_deref()
-                .cloned()
-                .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
-            CheckedExpression::ReadStorage { state_origins, .. } => state_origins
-                .as_deref()
-                .cloned()
-                .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
-            CheckedExpression::KernelCall { state_origins, .. } => state_origins
-                .as_deref()
-                .cloned()
-                .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
-            CheckedExpression::ConstructStruct { fields, .. } => {
-                let mut origins = StateOriginResolution::Absent;
-                for (ordinal, field) in fields.iter().enumerate() {
-                    let mut field_origins = self.expression_state_origins(field);
-                    if let StateOriginResolution::Finite(field_origins) = &mut field_origins {
-                        let Ok(ordinal) = u32::try_from(ordinal) else {
-                            return expression.carrier().cloned().map_or(
-                                StateOriginResolution::Absent,
-                                StateOriginResolution::Unknown,
-                            );
-                        };
-                        *field_origins = field_origins
-                            .clone()
-                            .prefixed(&[CheckedStateStep::Field(ordinal)]);
-                    }
-                    origins.compose(field_origins);
-                }
-                origins
-            }
-            CheckedExpression::ConstructEnum {
-                variant, fields, ..
-            } => {
-                let carries_length = self
-                    .type_carries_run_length(expression.ty())
-                    .unwrap_or(false);
-                let mut origins = if carries_length {
-                    StateOriginResolution::Finite(CheckedStateOrigins::fresh())
-                } else {
-                    StateOriginResolution::Absent
-                };
-                for (field, value) in fields.iter().enumerate() {
-                    let Ok(field) = u32::try_from(field) else {
-                        return expression.carrier().cloned().map_or(
-                            StateOriginResolution::Absent,
-                            StateOriginResolution::Unknown,
-                        );
-                    };
-                    let mut field_origins = self.expression_state_origins(value);
-                    if let StateOriginResolution::Finite(field_origins) = &mut field_origins {
-                        *field_origins =
-                            field_origins
-                                .clone()
-                                .prefixed(&[CheckedStateStep::VariantField {
-                                    variant: *variant,
-                                    field,
-                                }]);
-                    }
-                    origins.compose(field_origins);
-                }
-                if carries_length && let StateOriginResolution::Finite(image) = &mut origins {
-                    *image = image.clone().with_variant(*variant);
-                }
-                origins
-            }
-            CheckedExpression::BoxNew { value, .. } | CheckedExpression::ArenaNew { value, .. } => {
-                let mut origins = self.expression_state_origins(value);
-                if let StateOriginResolution::Finite(origins) = &mut origins {
-                    *origins = origins.clone().prefixed(&[CheckedStateStep::Referent]);
-                }
-                origins
-            }
-            CheckedExpression::BoxDeref { value, .. }
-            | CheckedExpression::ArenaDeref { value, .. } => {
-                let mut origin = self.expression_state_origins(value);
-                if let StateOriginResolution::Finite(origins) = &mut origin {
-                    *origins = origins
-                        .clone()
-                        .projected_value(&[CheckedStateStep::Referent]);
-                }
-                origin
-            }
-            _ => {
-                let mut origins = StateOriginResolution::Absent;
-                for child in super::super::model::expression_children(expression) {
-                    origins.union(self.expression_state_origins(child));
-                }
-                origins
-            }
-        }
-    }
-
-    pub(super) fn type_state_leaf_paths(
-        &self,
-        ty: CheckedType,
-    ) -> Result<Vec<Vec<u32>>, CheckStop> {
-        self.identity_leaf_paths(ty, false)
-    }
-
-    /// Discriminant facts are retained only to guard lengths of contained
-    /// runs. Traverse the finite type graph, never an allocation's contents.
-    pub(super) fn type_carries_run_length(&self, ty: CheckedType) -> Result<bool, CheckStop> {
-        let mut pending = vec![ty];
-        let mut visited = HashSet::new();
-        while let Some(ty) = pending.pop() {
-            if !visited.insert(ty) {
-                continue;
-            }
-            match ty {
-                CheckedType::Array { .. }
-                | CheckedType::FixedVector { .. }
-                | CheckedType::Vector { .. } => return Ok(true),
-                CheckedType::Buffer { element } => pending.push(element.ty()),
-                CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
-                    CheckedNominalKind::Struct { fields } => {
-                        pending.extend(fields.iter().map(|field| field.ty))
-                    }
-                    CheckedNominalKind::Enum { variants } => pending.extend(
-                        variants
-                            .iter()
-                            .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
-                    ),
-                    CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
-                    CheckedNominalKind::Arena { content, .. } => pending.push(*content),
-                    CheckedNominalKind::SystemResource { .. }
-                    | CheckedNominalKind::ArenaStorage => {}
-                },
-                _ => {}
-            }
-        }
-        Ok(false)
-    }
-
-    /// The path-list implementation does not unfold a recursive object graph.
-    /// A cyclic selector needs a finite recursive summary representation;
-    /// report that compiler capability as unknown instead of growing paths
-    /// without bound in a loop or callable fixed point. This is not a source
-    /// rejection or a proof-work limit.
-    pub(super) fn state_selector_is_acyclic(
-        &self,
-        mut ty: CheckedType,
-        path: &[CheckedStateStep],
-    ) -> Result<bool, CheckStop> {
-        let mut visited = HashSet::new();
-        for step in path {
-            if !visited.insert(ty) {
-                return Ok(false);
-            }
-            if matches!(
-                step,
-                CheckedStateStep::Element(_) | CheckedStateStep::AnyElement
-            ) {
-                if let CheckedType::Buffer { element } = ty {
-                    ty = element.ty();
-                    continue;
-                }
-                let element = match ty {
-                    CheckedType::Array { element, .. }
-                    | CheckedType::FixedVector { element, .. }
-                    | CheckedType::Vector { element, .. } => element,
-                    _ => return Ok(false),
-                };
-                ty = self.element_type(element)?;
-                continue;
-            }
-            let CheckedType::Nominal(id) = ty else {
-                return Ok(false);
-            };
-            ty = match (step, &self.nominal(id)?.kind) {
-                (CheckedStateStep::Field(field), CheckedNominalKind::Struct { fields }) => {
-                    let Some(field) = fields.get(*field as usize) else {
-                        return Ok(false);
-                    };
-                    field.ty
-                }
-                (CheckedStateStep::Referent, CheckedNominalKind::Box { referent, .. }) => *referent,
-                (CheckedStateStep::Referent, CheckedNominalKind::Arena { content, .. }) => *content,
-                (
-                    CheckedStateStep::VariantField { variant, field },
-                    CheckedNominalKind::Enum { variants },
-                ) => {
-                    let Some(field) = variants
-                        .iter()
-                        .find(|candidate| candidate.tag == *variant)
-                        .and_then(|variant| variant.fields.get(*field as usize))
-                    else {
-                        return Ok(false);
-                    };
-                    field.ty
-                }
-                _ => return Ok(false),
-            };
-        }
-        Ok(true)
-    }
-
-    fn identity_leaf_paths(
-        &self,
-        ty: CheckedType,
-        embedded: bool,
-    ) -> Result<Vec<Vec<u32>>, CheckStop> {
-        if self.is_copy_type(ty)? {
-            return Ok(embedded.then(Vec::new).into_iter().collect());
-        }
-        let paths = match ty {
-            CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
-                CheckedNominalKind::Struct { fields } => {
-                    if fields.is_empty() {
-                        return Ok(vec![Vec::new()]);
-                    }
-                    let mut paths = Vec::new();
-                    for (ordinal, field) in fields.iter().enumerate() {
-                        let ordinal = u32::try_from(ordinal)
-                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-                        for mut path in self.identity_leaf_paths(field.ty, true)? {
-                            path.insert(0, ordinal);
-                            paths.push(path);
-                        }
-                    }
-                    paths
-                }
-                CheckedNominalKind::Enum { .. }
-                | CheckedNominalKind::Box { .. }
-                | CheckedNominalKind::Arena { .. }
-                | CheckedNominalKind::ArenaStorage
-                | CheckedNominalKind::SystemResource { .. } => vec![Vec::new()],
-            },
-            // A slice's identity is its already-tracked backing place, never
-            // the descriptor binding. Region-bearing storage fields are
-            // rejected before this point, so the embedded case is defensive.
-            CheckedType::Slice { .. } if !embedded => Vec::new(),
-            CheckedType::Array { .. }
-            | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. }
-            | CheckedType::Generic(_) => vec![Vec::new()],
-            CheckedType::Unit
-            | CheckedType::Bool
-            | CheckedType::Integer(_)
-            | CheckedType::Float(_)
-            | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => {
-                // The copy case returned above.
-                Vec::new()
-            }
-        };
-        Ok(paths)
-    }
-
     pub(super) fn parse_const_expression_with(
         &self,
         node: NodeId,
@@ -1747,7 +1141,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 });
         }
         self.combine_const(operation, left, right)
-            .ok_or(SemanticCompilerFailure::CounterOverflow.into())
+            .ok_or_else(|| SemanticCompilerFailure::CounterOverflow.into())
     }
 
     /// The one const operation of a candidate-grammar `const` tail. The
@@ -2008,7 +1402,7 @@ extent's region is one the caller must choose, so it is written at every positio
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let ResolvedTarget::Source { declaration, .. } = usage.target() else {
-            // A prelude or system constructor never names a const-eligible
+            // A core prelude constructor never names a const-eligible
             // struct.
             return self.issue_node(
                 SemanticRule::Const2,

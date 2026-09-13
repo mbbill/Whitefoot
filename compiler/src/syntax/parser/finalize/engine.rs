@@ -437,14 +437,50 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
                 .classified
                 .source_tokens(source)
                 .ok_or(FinalizeCompilerFailure::InvalidTokenCoverage)?;
-            match verify_production_shape(
-                production,
-                &self.roots[root_start..],
-                source_tokens,
-                &mut self.shape_tasks,
-                self.limits,
-                &mut self.work,
-            ) {
+            // PRE-1 supplies a signature record, not a writer fn_decl. Its
+            // fn_sig subtree is verified normally; the surrounding record
+            // consists exactly of that signature and its semicolon.
+            let prelude_signature_record = production == Production::Item
+                && self
+                    .parsed
+                    .classified
+                    .source_bundle()
+                    .file(source)
+                    .is_some_and(|file| {
+                        file.prelude() == Some(crate::source::PreludeSource::Function)
+                    });
+            let shape = if prelude_signature_record {
+                match &self.roots[root_start..] {
+                    [
+                        Completed {
+                            kind:
+                                CompletedKind::Production {
+                                    production: Production::FnSig,
+                                    ..
+                                },
+                            ..
+                        },
+                        Completed {
+                            kind:
+                                CompletedKind::Terminal {
+                                    predicate: TerminalPredicate::Fixed(FixedTerminal::Semicolon),
+                                },
+                            ..
+                        },
+                    ] => ShapeResult::Complete,
+                    _ => ShapeResult::Compiler(FinalizeCompilerFailure::InvalidProductionShape),
+                }
+            } else {
+                verify_production_shape(
+                    production,
+                    &self.roots[root_start..],
+                    source_tokens,
+                    &mut self.shape_tasks,
+                    self.limits,
+                    &mut self.work,
+                )
+            };
+            match shape {
                 ShapeResult::Complete => {}
                 ShapeResult::Resource(failure) => return Err(failure.into()),
                 ShapeResult::Compiler(failure) => return Err(failure.into()),

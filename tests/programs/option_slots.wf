@@ -77,7 +77,7 @@ fn optvec_pop(v: own OptVec) -> (rest: own OptVec, taken: own u32) reads(v.buf, 
   }
 }
 
-fn boxed_slots(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+fn boxed_slots['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   doc "A run of optional cells at the general store: each slot holds a Box the store hands out, and each exchange leaves exactly one owner.";
   let slots = vacant::<Box<u64>, 3>();
   region {
@@ -132,7 +132,7 @@ fn boxed_slots(store: &uniq Heap) -> result: own unit reads(store), writes(store
   return unit;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let v = optvec_new();
   set v = optvec_push(v: move v, x: 10_u32);
   set v = optvec_push(v: move v, x: 20_u32);

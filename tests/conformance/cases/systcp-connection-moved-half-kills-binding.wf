@@ -1,24 +1,23 @@
-command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles) {
-  doc "OWN-1, SYS-18: moving one direction out of a connection is the language's own partial move, which kills the whole binding, so a broken pair can never reach `close_connection`. The moved half lives on as an ordinary owner and the remainder is derived-released; nothing about this is a special case for a system struct.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "The selected TcpConnection is an ordinary public linear struct. Moving one direction as a proper partial consume fails ordinary ownership; a later use cannot recover the original binding. No special system-struct constructor or close_connection rule exists.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  }
   let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9102_u16);
   region {
-    match reserve_handle(factory: &uniq handles) {
-      Ok(value: permit) => {
-        region {
-          match tcp_connect(permit: move permit, address: &address) {
-            Connected(connection: link) => {
-              let half = move link.receive;
-              let returned = close_connection(connection: move link);
-              return exit_status(code: 0_u8);
-            }
-            ConnectFailed(error: problem, permit: returned) => {
-              return exit_status(code: 4_u8);
-            }
-          }
+    region {
+      match tcp_connect(factory: &uniq handles, address: &address) {
+        Connected(connection: link) => {
+          let half = move link.receive;
+          let TcpConnection(receive: close_receive_6, send: close_send_6) = move link;
+          close_receive(factory: &uniq handles, receive: move close_receive_6);
+          close_send(factory: &uniq handles, send: move close_send_6);
+          return exit_status(code: 0_u8);
         }
-      }
-      Err(error: problem) => {
-        return exit_status(code: 5_u8);
+        ConnectFailed(error: problem) => {
+          return exit_status(code: 4_u8);
+        }
       }
     }
   }

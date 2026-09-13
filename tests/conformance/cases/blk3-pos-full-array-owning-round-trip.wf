@@ -26,7 +26,7 @@ fn first(values: &array<Record, 3>) -> result: own u64 reads(values) {
   return deref(values)[0_u64].tag;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-3 transfers every initialized owner in logical order, including a wrapped full window. Both row generics come from the operand. General array elements survive generic helpers, shared reads, affine replacement and draining after the inverse conversion; neither conversion leaves a second owner.";
   let a = record(tag: 11_u64);
   let b = record(tag: 22_u64);

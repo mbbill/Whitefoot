@@ -28,7 +28,7 @@ fn read(input: own u64) -> result: own i32 pure {
   return values[bounded];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -44,7 +44,7 @@ fn an_unproved_exact_addition_domain_rejects_under_op2() {
   return bounded + 1_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -70,7 +70,7 @@ fn caller(input: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -97,7 +97,7 @@ fn an_unproved_postcondition_rejects_under_fn9() {
   return reviewed;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -121,7 +121,7 @@ fn read(input: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -148,7 +148,7 @@ fn an_unproved_allocation_ceiling_rejects_under_op9() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -161,10 +161,10 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn unproved_system_endpoints_reject_under_sys8() {
-    let source = br#"fn publish(output: &uniq OutputStream, source: own Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
+fn unproved_prelude_endpoints_reject_under_fn8() {
+    let source = br#"fn publish(factory: &uniq HandleFactory, output: &uniq OutputStream, source: own Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(factory, output, source), writes(factory, output) {
   region {
-    match write_once(output: &uniq deref(output), source: &source, start: start, end: end) {
+    match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &source, start: start, end: end) {
       Ok(value: next) => {
       }
       Err(error: problem) => {
@@ -174,15 +174,12 @@ fn unproved_system_endpoints_reject_under_sys8() {
   return unit;
 }
 
-command fn main(command.stdout as output: own OutputStream) -> status: own ExitStatus pure {
+fn main(output: own OutputStream) -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    rejects_as(source, SemanticRule::Sys8, |kind| {
-        matches!(
-            kind,
-            SemanticIssueKind::UndischargedSystemRangeObligation { .. }
-        )
+    rejects_as(source, SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(..))
     });
 }
 
@@ -190,7 +187,7 @@ command fn main(command.stdout as output: own OutputStream) -> status: own ExitS
 fn an_external_index_needs_a_real_control_flow_fact() {
     let direct = br#"const bytes: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
     let value = bytes[index];
@@ -204,7 +201,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 
     let guarded = br#"const bytes: FixedVector<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
     let spare = len_of(bytes);
@@ -231,14 +228,14 @@ fn an_external_call_actual_needs_a_real_control_flow_fact() {
 
 "#;
     let direct = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    region {{\n      place_back(vector: &uniq empty, value: 0_u8);\n    }}\n    let bytes = move empty;\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
+        "{function}fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    region {{\n      place_back(vector: &uniq empty, value: 0_u8);\n    }}\n    let bytes = move empty;\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
     );
     rejects_as(direct.as_bytes(), SemanticRule::Fn8, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
     });
 
     let guarded = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    region {{\n      place_back(vector: &uniq empty, value: 0_u8);\n    }}\n    let bytes = move empty;\n    let spare = len_of(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
+        "{function}fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let empty = fixed_vector::<u8, 4>();\n    region {{\n      place_back(vector: &uniq empty, value: 0_u8);\n    }}\n    let bytes = move empty;\n    let spare = len_of(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
     );
     accepts(guarded.as_bytes());
 }
@@ -259,7 +256,7 @@ fn second(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -288,7 +285,7 @@ fn originating_proof_context_retains_acceptance_results_and_derivations() {
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant limit: i <= 1_u64

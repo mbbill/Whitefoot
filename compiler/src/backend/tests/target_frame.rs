@@ -1,4 +1,3 @@
-use crate::backend::qualification::{SystemTarget, qualify_program};
 use crate::backend::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetObject, TargetStorageType, plan_target_frame, validate_static_storage,
@@ -6,7 +5,7 @@ use crate::backend::target::{
 
 use super::system::with_ir;
 
-const FRAME_CONTEXT: &[u8] = br#"command fn main() -> status: own ExitStatus pure {
+const FRAME_CONTEXT: &[u8] = br#"fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -17,14 +16,10 @@ fn plan(
 ) -> Result<TargetFramePlan, TargetLayoutFailure> {
     with_ir(FRAME_CONTEXT, |program| {
         let host = TargetLayout::host().expect("the frame test runs on a qualified host");
-        let system_target = SystemTarget::for_triple(host.triple())
-            .expect("the host triple has one qualified system target");
-        let qualification =
-            qualify_program(system_target, program).expect("the frame fixture must qualify");
         let target = address_index_max
             .map(|maximum| host.with_address_index_max_for_test(maximum))
             .unwrap_or(host);
-        plan_target_frame(target, &qualification, program, slots)
+        plan_target_frame(target, program, slots)
     })
 }
 
@@ -34,12 +29,8 @@ fn validate_static(
 ) -> Result<TargetAggregateLayout, TargetLayoutFailure> {
     with_ir(FRAME_CONTEXT, |program| {
         let host = TargetLayout::host().expect("the static-storage test runs on a qualified host");
-        let system_target = SystemTarget::for_triple(host.triple())
-            .expect("the host triple has one qualified system target");
-        let qualification = qualify_program(system_target, program)
-            .expect("the static-storage fixture must qualify");
         let target = host.with_address_index_max_for_test(address_index_max);
-        validate_static_storage(target, &qualification, program, ty)
+        validate_static_storage(target, program, ty)
     })
 }
 

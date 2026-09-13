@@ -45,8 +45,6 @@ pub enum FixedTerminal {
     Fn,
     /// `->`.
     ThinArrow,
-    /// `command`.
-    Command,
     /// `contract`.
     Contract,
     /// `define`.
@@ -85,8 +83,6 @@ pub enum FixedTerminal {
     Affine,
     /// `.`.
     Dot,
-    /// `as`.
-    As,
     /// `i8`.
     I8,
     /// `i16`.
@@ -234,7 +230,7 @@ pub enum FixedTerminal {
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 105] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::Linear,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
@@ -247,7 +243,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 105] = [
     FixedTerminal::Comma,
     FixedTerminal::Fn,
     FixedTerminal::ThinArrow,
-    FixedTerminal::Command,
     FixedTerminal::Contract,
     FixedTerminal::Define,
     FixedTerminal::Equal,
@@ -267,7 +262,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 105] = [
     FixedTerminal::Copy,
     FixedTerminal::Affine,
     FixedTerminal::Dot,
-    FixedTerminal::As,
     FixedTerminal::I8,
     FixedTerminal::I16,
     FixedTerminal::I32,
@@ -416,7 +410,6 @@ impl FixedTerminal {
             Self::Reads => "reads",
             Self::Writes => "writes",
             Self::Allocates => "allocates",
-            Self::As => "as",
             Self::If => "if",
             Self::Plus => "+",
             Self::PlusWrap => "+wrap",
@@ -439,7 +432,6 @@ impl FixedTerminal {
             Self::DotDot => "..",
             Self::Ensures => "ensures",
             Self::Replace => "replace",
-            Self::Command => "command",
             Self::PlusDefined => "+defined",
             Self::MinusDefined => "-defined",
             Self::StarDefined => "*defined",
@@ -850,25 +842,25 @@ mod tests {
                 Some(terminal)
             );
         }
-        assert_eq!(FixedTerminal::PercentChecked as u8, 94);
-        assert_eq!(FixedTerminal::For as u8, 62);
-        assert_eq!(FixedTerminal::In as u8, 63);
-        assert_eq!(FixedTerminal::DotDot as u8, 64);
-        assert_eq!(FixedTerminal::Ensures as u8, 17);
-        assert_eq!(FixedTerminal::Replace as u8, 58);
-        assert_eq!(FixedTerminal::Invariant as u8, 65);
-        assert_eq!(FixedTerminal::Use as u8, 66);
-        assert_eq!(FixedTerminal::Is as u8, 19);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 92);
+        assert_eq!(FixedTerminal::For as u8, 60);
+        assert_eq!(FixedTerminal::In as u8, 61);
+        assert_eq!(FixedTerminal::DotDot as u8, 62);
+        assert_eq!(FixedTerminal::Ensures as u8, 16);
+        assert_eq!(FixedTerminal::Replace as u8, 56);
+        assert_eq!(FixedTerminal::Invariant as u8, 63);
+        assert_eq!(FixedTerminal::Use as u8, 64);
+        assert_eq!(FixedTerminal::Is as u8, 18);
         // D7 uses first grammar occurrence for the fixed-terminal inventory;
         // function signatures and member applications move several keywords.
         assert_eq!(FixedTerminal::Linear as u8, 0);
-        assert_eq!(FixedTerminal::Affine as u8, 30);
-        assert_eq!(FixedTerminal::Copy as u8, 29);
-        assert_eq!(FixedTerminal::Dispose as u8, 74);
-        assert_eq!(FixedTerminal::MutSlice as u8, 46);
-        assert_eq!(FixedTerminal::Times as u8, 67);
-        assert_eq!(TerminalPredicate::Identifier.index(), 105);
-        assert_eq!(TerminalPredicate::Digits.index(), 112);
+        assert_eq!(FixedTerminal::Affine as u8, 29);
+        assert_eq!(FixedTerminal::Copy as u8, 28);
+        assert_eq!(FixedTerminal::Dispose as u8, 72);
+        assert_eq!(FixedTerminal::MutSlice as u8, 44);
+        assert_eq!(FixedTerminal::Times as u8, 65);
+        assert_eq!(TerminalPredicate::Identifier.index(), 103);
+        assert_eq!(TerminalPredicate::Digits.index(), 110);
     }
 
     /// The inventory holds every predicate, once.

@@ -20,7 +20,7 @@ fn view_total(window: own Slice<u8>) -> total: own u64 reads(window) {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq empty, value: 3_u8);

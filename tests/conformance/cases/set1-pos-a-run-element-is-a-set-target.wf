@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "SET-1, BLK-1: a subscript of a run is a set target, and the slot it commits to is the window's, not the array's.";
   let empty = fixed_vector::<u8, 4>();
   region {

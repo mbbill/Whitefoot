@@ -6,7 +6,7 @@ fn measure<const n: u64>(source: own FixedVector<u8, n>) -> size: own u64 reads(
   return taken;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[CALL-2] the result of a call carries exactly the callee's declared relations. The own argument is affine, so the call is a consuming use and every fact supported by line dies at it; the declared relation names that operand's measure, which at the caller denotes the call datum [MSR-3], and a datum has empty support, so the consume the same statement performs cannot kill it. The caller therefore knows size == 2 after the call and knows it only from the contract.";
   let line = fixed_vector::<u8, 4>();
   region {

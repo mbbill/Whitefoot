@@ -102,7 +102,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut goal_arguments = Vec::with_capacity(fields.len());
         let mut checked_borrows = Vec::with_capacity(fields.len());
         let mut argument_holders = Vec::with_capacity(fields.len());
-        let mut state_origins = Vec::with_capacity(fields.len());
         let mut argument_places = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<TemporaryLoan> = Vec::new();
         let mut effects = EffectSet::NONE;
@@ -165,7 +164,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             let (passed_borrow, expected_mode) =
                 self.call_argument_borrow(expectation, &argument, atom)?;
-            state_origins.push(self.state_origins_of_value(&argument, bindings)?);
             argument_places.push(
                 argument
                     .accesses
@@ -202,7 +200,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             signature,
             &checked_borrows,
             &argument_holders,
-            &state_origins,
             &argument_places,
             function,
             bindings,
@@ -215,44 +212,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let result = self.kernel_result_type(node, record, signature, &instance)?;
         let requirements = self.kernel_requirements(signature, &instance, &goal_arguments)?;
-        let argument_images = state_origins
-            .into_iter()
-            .map(|origin| origin.unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh))
-            .collect::<Vec<_>>();
-        let image = crate::semantic::state_origins::kernel_state_image(
-            record.row,
-            self.is_copy_type(instance.element)?,
-            &argument_images,
-        );
-        if let Some(updated) = image.mutated_run
-            && !self.deriving_result_state_origin.get()
-        {
-            let borrow = checked_borrows
-                .first()
-                .and_then(Option::as_ref)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let Some(fields) = self
-                .state_fields_of_place(&borrow.place, bindings)?
-                .filter(|_| borrow.exact_place && !updated.unknown)
-            else {
-                return self
-                    .unsupported(crate::UnsupportedSemanticFeature::OwnerStateRouting, node);
-            };
-            let local = bindings
-                .get_mut(&borrow.place.root)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            local.state_origins = Some(
-                local
-                    .state_origins
-                    .take()
-                    .unwrap_or_else(crate::semantic::model::CheckedStateOrigins::fresh)
-                    .replace_value_path(&fields, Some(updated)),
-            );
-        }
-        let result_origins = self
-            .type_carries_identity(result)?
-            .then(|| Box::new(image.result));
-
         self.statement_loans
             .borrow_mut()
             .extend(call_scoped_borrows);
@@ -264,7 +223,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 instance: Box::new(instance),
                 argument_nodes,
                 arguments,
-                state_origins: result_origins,
                 goal_arguments,
                 requirements,
                 result,
@@ -1035,7 +993,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature: &KernelSignature,
         borrows: &[Option<BorrowInfo>],
         holders: &[Option<DeclarationId>],
-        state_origins: &[Option<super::super::super::super::model::CheckedStateOrigins>],
         argument_places: &[Vec<super::super::super::borrows::ResolvedPlace>],
         caller: &FunctionSignature,
         bindings: &HashMap<DeclarationId, LocalBinding>,
@@ -1076,15 +1033,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(index)
                 .into_iter()
                 .flatten()
-                .filter(|_| {
-                    parameter.mode == KernelMode::Own
-                        && state_origins.get(index).and_then(Option::as_ref).is_none()
-                })
+                .filter(|_| parameter.mode == KernelMode::Own)
             {
                 paths.push(self.state_path(place, bindings)?.into());
-            }
-            if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
-                paths.extend(self.effect_paths_for_origins(node, origins, bindings, true)?);
             }
             for path in paths {
                 if !caller

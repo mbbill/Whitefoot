@@ -16,8 +16,8 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
   return move built;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "An uncounted loop with its exit and its carried index written before the submission. PAR-3's unit is the iteration the statement graph gives, so a loop_stmt is admitted on the same terms as a for_stmt; the break lies in the prologue, and the short unique factory loan that reserve_handle takes is serialized by index-ordered prologues rather than replicated.";
+fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
+  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
   let opened = 0_u64;
   let index = 0_u64;
   loop @scan {
@@ -27,25 +27,29 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
     }
     set index = index +wrap 1_u64;
     let name = component();
-    region 'f {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          let window = slice_of(&name);
-          region {
-            match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                set opened = opened +wrap 1_u64;
-              }
-              FileOpenFailed(error: problem, permit: refused) => {
-              }
-            }
+    region {
+      let window = slice_of(&name);
+      region {
+        match open_file(factory: &uniq deref(files), root: cwd, name: &window, start: 0_u64, end: 4_u64) {
+          FileOpened(value: handle) => {
+            set opened = opened +wrap 1_u64;
+            close_read(factory: &uniq deref(files), file: move handle);
           }
-        }
-        Err(error: spent) => {
-          return exit_status(code: 1_u8);
+          FileOpenFailed(error: problem) => {
+          }
         }
       }
     }
   }
   return exit_status(code: 0_u8);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

@@ -2,7 +2,7 @@ struct Chunk['s] {
   page: Vector<'s, u8>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "FORM-8: a construct writes a region argument only for a region parameter no field of the constructor it names determines. `Chunk`'s one field brands the store, so the operand fixes the instance and the construct writes nothing; the instance the field determined is the one the later read measures.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

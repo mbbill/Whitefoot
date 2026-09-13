@@ -2,7 +2,7 @@ use crate::syntax::grammar::{
     DecisionKind, GrammarNodeId, GrammarNodeKind, LookaheadPredicate, Production,
     SYNTAX_DATA_SPEC_HASH, grammar_node,
 };
-use crate::syntax::terminal::TerminalPredicate;
+use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{ByteOffset, SourceId};
 
 use crate::{ClassifiedBundle, ClassifiedToken};
@@ -414,8 +414,18 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         source: SourceId,
         source_len: u64,
         tokens: &[ClassifiedToken<'source>],
+        declaration: Option<crate::source::PreludeSource>,
     ) -> Result<(), Stop> {
-        self.push_task(Task::Execute(Production::Program.root()))?;
+        if declaration == Some(crate::source::PreludeSource::Function) {
+            self.push_frame(Production::Item, false)?;
+            self.push_task(Task::Finish(Production::Item))?;
+            self.push_task(Task::Match(TerminalPredicate::Fixed(
+                FixedTerminal::Semicolon,
+            )))?;
+            self.begin_production(Production::FnSig, false)?;
+        } else {
+            self.push_task(Task::Execute(Production::Program.root()))?;
+        }
         let mut cursor = 0_usize;
         while let Some(task) = self.tasks.pop() {
             self.work.spend(1).map_err(Stop::Resource)?;
@@ -499,7 +509,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                 .classified
                 .source_tokens(source)
                 .ok_or(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData))?;
-            self.parse_source(source, file.byte_len(), tokens)?;
+            self.parse_source(source, file.byte_len(), tokens, file.prelude())?;
             if self.frames.len() != 1 || !self.tasks.is_empty() {
                 return Err(Stop::Compiler(
                     ParseCompilerFailure::ProductionFrameMismatch,

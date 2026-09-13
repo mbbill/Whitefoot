@@ -50,9 +50,7 @@ pub(in crate::backend) fn returned_storage_slot(
         || signature.parameters().get(ordinal) != Some(&crate::IrSourceMode::Own)
         || signature.result() != crate::IrSourceMode::Own
         || storage.is_exposed(returned)
-        || function.target_action().may_suspend()
         || !function.overlaps().is_empty()
-        || function.completion_pipeline().is_some()
     {
         return None;
     }
@@ -440,35 +438,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// Resolve the selected backing at the point where its contents are used.
-    /// A staged address must be recomputed from this block's slot, rather than
-    /// reusing an issue-block SSA pointer in a later retirement block.
+    /// Resolve the binding's ordinary backing storage.
     pub(super) fn binding_place(&mut self, value: IrValueId) -> Result<String, BackendFailure> {
-        if !self
-            .frame
-            .slots
-            .contains_key(&FunctionSlot::StagedAddress(value))
-        {
-            return self.entry_slot(FunctionSlot::Address(value));
-        }
-        let Some(IrType::Address(referent)) = self.value_type(value) else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        let pipeline = self.pipeline.ok_or(BackendFailure::InvalidIr)?;
-        let slot = self
-            .block_slot
-            .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
-        let backing = self.entry_slot(FunctionSlot::StagedAddress(value))?;
-        let address = format!("%{}", self.next_temporary()?);
-        writeln!(
-            self.output,
-            "  {address} = getelementptr inbounds [{} x {}], ptr {backing}, i64 0, i64 {}",
-            pipeline.slots(),
-            llvm_type(self.program, referent.ty())?,
-            self.value_name(slot)
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(address)
+        self.entry_slot(FunctionSlot::Address(value))
     }
 
     pub(super) fn value_place(&mut self, value: IrValueId) -> Result<String, BackendFailure> {

@@ -3,7 +3,7 @@ enum State {
   Done();
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "OWN-1: an explicit move in a match scrutinee cannot consume a copy tag-only enum; copy values are matched bare.";
   let state = Ready();
   match move state {

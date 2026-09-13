@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "PROV-6: the operand's root type must not be loan-bearing and its release graph must contain no loan-bearing node. A view owns nothing, contributes no release-graph node, and therefore has no release action of its own to run early.";
   let empty = fixed_vector::<u8, 4>();
   region {

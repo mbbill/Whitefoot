@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "SET-2, BLK-1: a subscript of a run is a replace target, so an affine element leaves its slot and its successor arrives in one commit and the slot is never empty.";
   let empty = fixed_vector::<Option<u8>, 4>();
   let a = Some<u8>(value: 1_u8);

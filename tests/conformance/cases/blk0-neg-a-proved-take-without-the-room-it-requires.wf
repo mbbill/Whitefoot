@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-0: the proved take's third requirement is room_of(store) >= advance<T>(count), and a store this small cannot discharge it; the general store has no proved form because no honest compile-time domain predicate exists for it.";
   region 'a {
     let workspace = arena_frame::<16, 8, 'a>();

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "SET-2 requires the target's final selected type to be region-free under STOR-5. A Slice<'r, U> binding carries a region, so `replace` on it is a hard error citing SET-2 at the complete target place: a slice's static origin set is fixed at initialization and a new view is bound under a new let.";
   let left = fixed_vector::<u8, 2>();
   region {

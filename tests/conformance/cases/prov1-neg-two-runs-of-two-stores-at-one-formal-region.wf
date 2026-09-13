@@ -9,7 +9,7 @@ fn wider['s: affine](one: own Vector<'s, u8>, two: own Vector<'s, u8>) -> width:
   return right;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "PROV-1: a store region is invariant. Two values have the same store exactly when their types name the same region, decided by exact identity, so a formal region occupying two container parameter positions is fixed by the first actual and the second must name it. Both extents are live and one outlives the other, which is what makes this a store-identity rejection rather than an outlives one.";
   region 'a {
     let first = arena_frame::<4096, 16, 'a>();

@@ -60,7 +60,7 @@ fn rotate_field(file: own ReadFile, incoming: own ReadFile) -> (current: own Rea
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -182,7 +182,7 @@ fn initial(value: &HostString) -> result: own u8 reads(value) {
   return bytes[0_u64];
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Err(error: absent) => {
@@ -278,7 +278,7 @@ fn replace_field(holder: &uniq Holder, incoming: own box<u64>) -> previous: own 
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = box_new(17_u64);
   let holder = Holder(before: 101_u64, value: move first, after: 303_u64);
   let incoming = box_new(29_u64);
@@ -368,7 +368,7 @@ fn a_discarded_borrow_returning_call_compiles_and_runs() {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let v = 5_i32;
   region {
     let h = &v;
@@ -406,7 +406,7 @@ fn bump(n: &uniq i32) -> result: own unit writes(n) {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let v = 1_i32;
   region {
     let h = &uniq v;
@@ -438,7 +438,7 @@ fn a_unique_scalar_borrow_parameter_writes_the_callers_storage() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = 0_i32;
   region {
     bump(n: &uniq a);
@@ -488,7 +488,7 @@ fn inspect(packet: &Packet) -> result: own i32 reads(packet) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 41_i32, right: 1_i32);
   let packet = Data(item: move pair);
   let fallback = Empty();
@@ -541,7 +541,7 @@ fn inspect(envelope: &Envelope) -> result: own u64 reads(envelope.packet) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bytes = buffer_new(3_u64, 7_u8);
   let packet = Data(bytes: move bytes);
   let envelope = Envelope(packet: move packet);

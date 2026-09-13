@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The same append while the view is still used is the ordinary OWN-5 conflict: the shared loan the view holds refuses the move of the run its origin names, and the loan is live because the view has a use after this statement. This is the other half of the loan's end condition, so the pair pins that the accept above is the last use and not the region.";
   let empty = fixed_vector::<u8, 4>();
   region {

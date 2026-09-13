@@ -15,24 +15,12 @@ mod tests;
 
 use crate::{CanonicalSyntaxUnit, NodePath, SyntaxCoordinate};
 
-pub use engine::{resolve, resolve_with_inventory};
+pub use engine::resolve;
 
 pub use kernel::{
     CONTAINER_NOMINAL_CLASS, CONTAINER_NOMINAL_CLASSES, CONTAINER_NOMINALS, ContainerNominal,
     ContainerNominalId, ContainerShape, KERNEL_OPERATION_CLASS, KERNEL_OPERATIONS, KernelOperation,
     KernelOperationId, KernelRow, container_nominal, kernel_operation,
-};
-
-pub use catalog::{
-    Inventory, OPEN_BY_NAME, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
-    SystemConstructor, SystemEntity, SystemField, SystemIntegerResultBound, SystemNominal,
-    SystemOperation, SystemParameter, SystemParameterMode, SystemRelease, SystemReleaseAction,
-    SystemReleaseRow, SystemResourceBacking, SystemResourceContract, SystemResourceType,
-    SystemResultPayload, SystemResultStateOrigin, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction,
-    TargetCompletion, TargetDispatch, TargetMilestones, operation_state_effects,
-    system_constructor_declaration, system_constructor_index, system_constructors, system_entity,
-    system_nominal_index, system_nominals, system_operation_index, system_operations,
-    system_release_row, system_resource_contract,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
@@ -129,23 +117,6 @@ impl DeclarationId {
     pub(crate) const fn index(self) -> usize {
         self.0 as usize
     }
-
-    /// The entry heap's store region [PROV-1].
-    ///
-    /// The general store the runtime mints before `main` is named by no
-    /// source REGIONID: `main` declares no region parameter [FN-7], so the
-    /// region has no written spelling and every elided store brand that
-    /// resolves to it reaches it by elision alone. It is one region for the
-    /// whole unit, so it is one identity rather than a per-occurrence minted
-    /// declaration, and it is disjoint from every resolver declaration
-    /// because no unit holds `u32::MAX` of them.
-    pub const ENTRY_HEAP_REGION: Self = Self(u32::MAX);
-
-    /// Whether this identity is the entry heap's store region [PROV-1].
-    #[must_use]
-    pub const fn is_entry_heap_region(self) -> bool {
-        self.0 == u32::MAX
-    }
 }
 
 /// Dense identity of one normative PRE-1 declaration record.
@@ -160,25 +131,6 @@ impl PreludeDeclarationId {
     /// Returns the zero-based PRE-1 declaration ordinal.
     #[must_use]
     pub const fn ordinal(self) -> u8 {
-        self.0
-    }
-}
-
-/// Dense identity of one normative [SYS-2] system declaration record.
-///
-/// The ordinal is a `u16` because v0.50's inventory is three hundred and seven
-/// records; it was a `u8` while the inventory fitted one byte.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SystemDeclarationId(u16);
-
-impl SystemDeclarationId {
-    pub(crate) const fn new(ordinal: u16) -> Self {
-        Self(ordinal)
-    }
-
-    /// Returns the zero-based `system_declaration_ordinal` in [SYS-2] preorder.
-    #[must_use]
-    pub const fn ordinal(self) -> u16 {
         self.0
     }
 }
@@ -433,8 +385,6 @@ pub enum DeclarationOrigin {
     Source(SourceOrigin),
     /// One normative PRE-1 record.
     Prelude(PreludeDeclarationId),
-    /// One [SYS-2] record from the system domain present in every unit [SYS-3].
-    System(SystemDeclarationId),
     /// One [TYPE-2] compiler-owned container or provider nominal.
     Container(ContainerNominalId),
     /// One [BLK-0] kernel-domain operation present in every unit [SYS-3].
@@ -532,8 +482,6 @@ pub enum ResolvedTarget {
     Prelude(PreludeDeclarationId),
     /// One exact OP-1 operation family.
     Operation(OperationFamilyId),
-    /// One admitted [SYS-2] lookup entry ([SYS-1], [SYS-3]).
-    System(SystemDeclarationId),
     /// One [TYPE-2] compiler-owned container or provider nominal, admitted at
     /// a `type` TYPEID in every unit.
     Container(ContainerNominalId),
@@ -661,34 +609,6 @@ pub(crate) struct PostconditionResolutionRecord {
     pub(crate) selector_uses: Vec<PostconditionSelectorUseRecord>,
     pub(crate) entry_inventory_issue: Option<ResolutionIssue>,
     pub(crate) entry_resolution_issue: Option<ResolutionIssue>,
-}
-
-/// One normative [SYS-2] declaration record admitted to one resolved unit.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SystemDeclarationRecord {
-    id: SystemDeclarationId,
-    spelling: &'static str,
-    class: Option<DeclarationClass>,
-}
-
-impl SystemDeclarationRecord {
-    /// Returns the [SYS-2] preorder identity.
-    #[must_use]
-    pub const fn id(self) -> SystemDeclarationId {
-        self.id
-    }
-
-    /// Returns the normative spelling.
-    #[must_use]
-    pub const fn spelling(self) -> &'static str {
-        self.spelling
-    }
-
-    /// Returns the source-lookup class, or `None` for owner-local records.
-    #[must_use]
-    pub const fn lookup_class(self) -> Option<DeclarationClass> {
-        self.class
-    }
 }
 
 /// One normative PRE-1 declaration record.
@@ -989,13 +909,11 @@ pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
     scopes: Vec<ScopeRecord>,
     prelude: Vec<PreludeDeclarationRecord>,
-    system: Vec<SystemDeclarationRecord>,
     declarations: Vec<DeclarationRecord>,
     dependent_declarations: Vec<DependentDeclarationRecord>,
     lexical_uses: Vec<LexicalUseRecord>,
     deferred_uses: Vec<DeferredUseRecord>,
     postconditions: Vec<PostconditionResolutionRecord>,
-    inventory: Inventory,
 }
 
 impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
@@ -1024,32 +942,6 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         id: PreludeDeclarationId,
     ) -> Option<&PreludeDeclarationRecord> {
         self.prelude.get(usize::from(id.ordinal()))
-    }
-
-    /// Returns the complete [SYS-2] inventory in normative preorder.
-    ///
-    /// [SYS-3] admits this fixed declaration source into every compilation
-    /// unit, independently of entry-form validity or source uses.
-    #[must_use]
-    pub fn system_declarations(&self) -> &[SystemDeclarationRecord] {
-        &self.system
-    }
-
-    /// Returns one admitted [SYS-2] record by its normative identity.
-    #[must_use]
-    pub fn system_declaration(&self, id: SystemDeclarationId) -> Option<&SystemDeclarationRecord> {
-        self.system.get(usize::from(id.ordinal()))
-    }
-
-    /// Which [SYS-2] inventory this unit's system records came from.
-    ///
-    /// Every later stage that turns a [SYS-2] declaration ordinal back into a
-    /// nominal, constructor, or operation index must read the same inventory
-    /// state the records were built from, because a candidate's extra nominal
-    /// types shift every constructor and operation ordinal.
-    #[must_use]
-    pub const fn inventory(&self) -> Inventory {
-        self.inventory
     }
 
     /// Returns all source declaration events D01 through D15.

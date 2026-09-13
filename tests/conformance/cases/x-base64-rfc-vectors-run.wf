@@ -197,7 +197,7 @@ fn encode(out: own MutSlice<u8>, input: own Slice<u8>) -> function_result: own R
   return Ok<u64, IndexError>(value: output_offset);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The three RFC 4648 vectors, with each input built as an inline run and each output taken from one bump extent so an exclusive view of it is admissible.";
   region 'w {
     let workspace = arena_frame::<12, 1, 'w>();

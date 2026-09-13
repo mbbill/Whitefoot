@@ -3,7 +3,7 @@ fn exchange(target: &uniq box<u64>, incoming: own box<u64>) -> previous: own box
   return move previous;
 }
 
-fn observe(owner: &uniq box<u64>, incoming: own box<u64>) -> (old: own u64, current: own u64) reads(owner, incoming), writes(owner) {
+fn observe(owner: &uniq box<u64>, incoming: own box<u64>) -> (old: own u64, current: own u64) reads(owner), writes(owner) {
   region {
     let previous = exchange(target: &uniq deref(owner), incoming: move incoming);
     let old = deref(previous);
@@ -52,7 +52,7 @@ fn acquire_twice['s](store: &uniq Heap<'s>) -> result: own u64 reads(store), wri
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "OWN-6: an argument child uses a local region as its type ceiling, while statement-end retirement permits sequential calls and keeps owned results alive.";
   let owner = box_new(17_u64);
   let incoming = box_new(29_u64);

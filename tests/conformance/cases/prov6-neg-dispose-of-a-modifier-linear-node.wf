@@ -7,7 +7,7 @@ struct Holder {
   page: FixedVector<u8, 4>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "PROV-6: no node of the operand's release graph, the operand's own type included, may be linear by the modifier. A type containing a modifier-linear node is taken apart by a destructuring consume first, so the marked component reaches a written statement rather than a silent walk.";
   let empty = fixed_vector::<u8, 4>();
   region {

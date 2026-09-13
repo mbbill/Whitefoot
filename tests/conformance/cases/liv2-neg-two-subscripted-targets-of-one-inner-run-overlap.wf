@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "LIV-2 condition 2: two subscripted places overlap unless some step of their common prefix provably selects two different storages. These two agree at every step, so the commit order would decide the result and the second target is refused.";
   region 'a {
     let workspace = arena_frame::<8192, 16, 'a>();

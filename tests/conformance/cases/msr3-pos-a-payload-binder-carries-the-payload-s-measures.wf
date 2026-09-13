@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-3: the payload placement over an enum exactly one of whose variants carries fields. The construct carries the run's measures into the payload, the match consumes the scrutinee and the datum minted before that consume is read at the arm binder that names the payload, so the run keeps its figure across both events and the placement into it is discharged.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

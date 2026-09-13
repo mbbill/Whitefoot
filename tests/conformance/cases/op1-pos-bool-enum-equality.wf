@@ -1,4 +1,4 @@
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   let false_value = False();
   let true_value = True();
   let eq00 = eeq(false_value, false_value);

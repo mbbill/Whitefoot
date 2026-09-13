@@ -9,7 +9,7 @@ fn look(holder: &Pair) -> size: own u64 reads(holder) {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The caller.";
   let empty = fixed_vector::<u8, 4>();
   region {

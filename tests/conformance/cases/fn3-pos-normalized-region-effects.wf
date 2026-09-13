@@ -12,6 +12,6 @@ fn add_borrowed(x: own Slice<u8>, y: own Slice<u8>) -> result: own u64 reads(y, 
   return x_length +wrap y_length;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

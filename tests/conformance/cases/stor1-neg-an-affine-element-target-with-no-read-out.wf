@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "LIV-2 condition 1 at an element target: a live affine target whose previous value the right-hand side does not read out is STOR-1's error. The element target here is live and holds a store-backed run, and the right-hand side supplies a different one, so the stored run would be overwritten without leaving.";
   region 'a {
     let workspace = arena_frame::<65536, 16, 'a>();

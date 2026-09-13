@@ -1,10 +1,8 @@
 mod behavior;
 mod borrows;
 mod cleanup;
-mod confinement;
 mod control;
 mod ensures;
-mod entry_form;
 pub(in crate::semantic::check) mod expressions;
 mod floats;
 mod generics;
@@ -13,7 +11,6 @@ mod nominal_instances;
 mod nominals;
 pub(crate) mod publication;
 mod requires;
-mod result_state_origin;
 mod support;
 mod type_regions;
 mod types;
@@ -38,12 +35,11 @@ use super::goal::{
     GoalOperation, GoalProjection, first_ephemeral_argument,
 };
 use super::model::{
-    BindingId, CheckedBorrowedStateOrigin, CheckedConst, CheckedConstant, CheckedConstantId,
-    CheckedElement, CheckedExpression, CheckedFlatElement, CheckedFunction,
-    CheckedGenericRequirement, CheckedMode, CheckedNominal, CheckedNominalKind, CheckedParameter,
-    CheckedProgramData, CheckedResultStateOrigin, CheckedSetTarget, CheckedSliceOrigin,
-    CheckedStateOrigins, CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId,
-    FunctionId, LoanStrength, NominalId, ValueInitializerKind, evaluate_const_operation,
+    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
+    CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode, CheckedNominal,
+    CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedSliceOrigin,
+    CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
+    LoanStrength, NominalId, ValueInitializerKind, evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission};
 use super::permission_ledger::{LedgerSource, render_ledger};
@@ -419,7 +415,6 @@ struct LocalBinding {
     /// Structural incoming-formal attribution for this affine value. `None`
     /// is reserved for a value with no ownership identity; a fresh owner has a
     /// present empty set.
-    state_origins: Option<CheckedStateOrigins>,
     live: bool,
     loop_depth: usize,
     /// Compiler-updated counted binders are readable source bindings but are
@@ -478,8 +473,6 @@ impl LocalBinding {
         let mut right = other.clone();
         left.slice_loans.clear();
         right.slice_loans.clear();
-        left.state_origins = None;
-        right.state_origins = None;
         left.suspended = false;
         right.suspended = false;
         // Join precision by conjunction below. Borrow holders cannot be
@@ -505,11 +498,6 @@ impl LocalBinding {
             self.push_slice_loan(loan.clone());
         }
         self.suspended |= other.suspended;
-        match (&mut self.state_origins, &other.state_origins) {
-            (Some(left), Some(right)) => left.union(right),
-            (None, Some(right)) => self.state_origins = Some(right.clone()),
-            (Some(_), None) | (None, None) => {}
-        }
     }
 }
 
@@ -580,20 +568,15 @@ impl TypedExpression {
 /// [EFF-2]'s only repair: the declaration must equal the exhibited row.
 const EFF2_ROW_FIX: &str = "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions";
 
-/// One contribution to the enclosing function's effect row. A possible path
-/// bounds an unresolved selection; it is not an exact source or a permission.
+/// One ordinary resolved-place contribution to the enclosing effect row.
 #[derive(Clone, Debug)]
 struct EffectPath {
     path: super::model::CheckedStatePath,
-    certain: bool,
 }
 
 impl From<super::model::CheckedStatePath> for EffectPath {
     fn from(path: super::model::CheckedStatePath) -> Self {
-        Self {
-            path,
-            certain: true,
-        }
+        Self { path }
     }
 }
 
@@ -604,12 +587,6 @@ struct EffectSet {
     /// [S23] the declared and exhibited `allocates` paths: one formal-rooted
     /// path per store whose provider is a value.
     allocates: Vec<super::model::CheckedStatePath>,
-    /// Upper-bound atoms not yet established by another contribution. The
-    /// ordinary category lists are the lower bound. Only their union across
-    /// the complete body can discharge these possibilities [EFF-2].
-    possible_reads: Vec<super::model::CheckedStatePath>,
-    possible_writes: Vec<super::model::CheckedStatePath>,
-    possible_allocates: Vec<super::model::CheckedStatePath>,
     /// The ambient heap of `box<T>` and `buffer<T>` [STOR-1]. Its store has no
     /// provider value, so [EFF-1] gives it no `effect_path` and no written
     /// entry; the flag is derived, never declared, and never compared, and it
@@ -623,9 +600,6 @@ impl EffectSet {
         reads: Vec::new(),
         writes: Vec::new(),
         allocates: Vec::new(),
-        possible_reads: Vec::new(),
-        possible_writes: Vec::new(),
-        possible_allocates: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
     };
@@ -633,9 +607,6 @@ impl EffectSet {
         reads: Vec::new(),
         writes: Vec::new(),
         allocates: Vec::new(),
-        possible_reads: Vec::new(),
-        possible_writes: Vec::new(),
-        possible_allocates: Vec::new(),
         allocates_heap: true,
         allocates_arenas: Vec::new(),
     };
@@ -649,24 +620,6 @@ impl EffectSet {
         for path in other.allocates {
             self.add_allocation(path);
         }
-        for path in other.possible_reads {
-            self.add_read(EffectPath {
-                path,
-                certain: false,
-            });
-        }
-        for path in other.possible_writes {
-            self.add_write(EffectPath {
-                path,
-                certain: false,
-            });
-        }
-        for path in other.possible_allocates {
-            self.add_allocation(EffectPath {
-                path,
-                certain: false,
-            });
-        }
         self.allocates_heap |= other.allocates_heap;
         for region in other.allocates_arenas {
             self.add_arena_allocation(region);
@@ -675,38 +628,18 @@ impl EffectSet {
     }
 
     fn add_read(&mut self, path: impl Into<EffectPath>) {
-        Self::add_path(&mut self.reads, &mut self.possible_reads, path.into());
+        Self::add_path(&mut self.reads, path.into());
     }
 
     fn add_write(&mut self, path: impl Into<EffectPath>) {
-        Self::add_path(&mut self.writes, &mut self.possible_writes, path.into());
+        Self::add_path(&mut self.writes, path.into());
     }
 
-    fn add_path(
-        certain: &mut Vec<super::model::CheckedStatePath>,
-        possible: &mut Vec<super::model::CheckedStatePath>,
-        contribution: EffectPath,
-    ) {
-        let EffectPath {
-            path,
-            certain: established,
-        } = contribution;
-        if established {
-            possible.retain(|candidate| candidate != &path);
-            if !certain.contains(&path) {
-                certain.push(path);
-                certain.sort_unstable();
-            }
-        } else if !certain.contains(&path) && !possible.contains(&path) {
-            possible.push(path);
-            possible.sort_unstable();
+    fn add_path(paths: &mut Vec<super::model::CheckedStatePath>, contribution: EffectPath) {
+        if !paths.contains(&contribution.path) {
+            paths.push(contribution.path);
+            paths.sort_unstable();
         }
-    }
-
-    fn is_exact(&self) -> bool {
-        self.possible_reads.is_empty()
-            && self.possible_writes.is_empty()
-            && self.possible_allocates.is_empty()
     }
 
     /// The row a writer declares. The ambient heap [STOR-1] has no
@@ -720,11 +653,7 @@ impl EffectSet {
     }
 
     fn add_allocation(&mut self, path: impl Into<EffectPath>) {
-        Self::add_path(
-            &mut self.allocates,
-            &mut self.possible_allocates,
-            path.into(),
-        );
+        Self::add_path(&mut self.allocates, path.into());
     }
 
     fn add_arena_allocation(&mut self, region: DeclarationId) {
@@ -790,13 +719,8 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// [PROV-1] the region an elided store brand denotes at the position
     /// being parsed: the enclosing nominal's sole region parameter while a
     /// `struct_decl` or `enum_decl` body is being read, and `None`
-    /// everywhere else, where the brand resolves to the entry heap's store
-    /// region.
+    /// everywhere else, where FORM-8 requires a written store argument.
     elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
-    /// [BLK-4] whether this unit's entry selects [FN-7]'s `heap` standard
-    /// input, memoized because the answer is one whole-program fact and the
-    /// scan that reads it is over the unit's own `input_label` nodes.
-    general_store_reachable: std::cell::Cell<Option<bool>>,
     /// [FN-2, OWN-1, S37] whether the body now being checked is a *concrete
     /// instance* of a generic template whose spelling one symbolic instance
     /// has already judged.
@@ -820,7 +744,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// loans created before its own evaluation boundary.
     statement_loans: RefCell<Vec<borrows::TemporaryLoan>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
-    system_nominals: HashMap<u8, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
     nominal_templates: Vec<NominalTemplate>,
     nominal_templates_by_declaration: HashMap<DeclarationId, usize>,
@@ -832,13 +755,9 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     functions_by_declaration: HashMap<DeclarationId, Vec<FunctionId>>,
     /// Closed-world structural state origins for the currently selected
     /// concrete or symbolic function inventory, indexed by FunctionId.
-    result_state_origins: RefCell<Vec<CheckedResultStateOrigin>>,
-    borrowed_state_origins: RefCell<Vec<Vec<CheckedBorrowedStateOrigin>>>,
-    loop_state_origins: RefCell<Vec<result_state_origin::LoopStateOrigins>>,
     /// The preliminary body pass records enough checked control/data flow to
     /// derive the summaries but deliberately postpones EFF-2 equality until
     /// the summaries reach a fixed point.
-    deriving_result_state_origin: Cell<bool>,
     constants: HashMap<DeclarationId, CheckedConstantId>,
     checked_constants: Vec<CheckedConstant>,
     /// Hash-consed symbolic const operations [CONST-1 candidate]. Written by
@@ -961,15 +880,6 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// Which [SYS-2] inventory this unit was resolved against.
-    ///
-    /// Every ordinal-to-index lookup must use the state the resolver built
-    /// the records from; reading it from the resolved unit keeps the two
-    /// stages from disagreeing about the inventory.
-    const fn inventory(&self) -> crate::Inventory {
-        self.resolved.inventory()
-    }
-
     fn mark_postcondition_unavailable(&mut self, declaration: DeclarationId) {
         if !self
             .postcondition_unavailable_declarations
@@ -1287,6 +1197,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         reject_entailment: bool,
         reborrow_extension: bool,
     ) -> Result<Self, CheckStop> {
+        // A semantic unit includes the fixed PRE-1 declarations before resolution.
+        // A source-only parse is useful to tools but is not a complete compiler input.
+        if !resolved
+            .syntax()
+            .finalized
+            .parsed
+            .classified
+            .source_bundle()
+            .includes_prelude()
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
         Ok(Self {
             resolved,
             reject_entailment,
@@ -1305,12 +1227,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
-            general_store_reachable: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             statement_loans: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
-            system_nominals: HashMap::new(),
             prelude_types: Vec::new(),
             nominal_templates: Vec::new(),
             nominal_templates_by_declaration: HashMap::new(),
@@ -1320,10 +1240,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             function_templates: Vec::new(),
             templates_by_declaration: HashMap::new(),
             functions_by_declaration: HashMap::new(),
-            result_state_origins: RefCell::new(Vec::new()),
-            borrowed_state_origins: RefCell::new(Vec::new()),
-            loop_state_origins: RefCell::new(Vec::new()),
-            deriving_result_state_origin: Cell::new(false),
             constants: HashMap::new(),
             checked_constants: Vec::new(),
             derived_consts: RefCell::new(Vec::new()),
@@ -1340,19 +1256,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn check_program(&mut self) -> Result<CheckedProgramData, CheckStop> {
         let items = self.item_declarations()?;
-        // The [FN-7] entry-form and [GRAM-11] system-call-argument
-        // judgments run first in DIAG-1 stage order; the former also fixes
-        // which entry shape the rest of the unit is checked under. The
-        // system semantic family — [SYS-2] call typing, [EFF-2] effect
-        // attribution including the release contribution, and the checked
-        // drop records — is implemented below, so no capability stop
-        // remains at this stage; an accepted system program stops later, at
-        // lowering, as an explicit unsupported capability.
-        let entry = match self.check_entry_form(&items) {
-            Ok(entry) => entry,
-            Err(stop) => return Err(self.reject_missing_main_last(&items, stop)),
-        };
-        self.check_system_call_arguments()?;
         self.collect_behavior_groups(&items)?;
         self.reject_instantiation_cycles(&items)?;
         self.declare_nominals(&items)?;
@@ -1369,9 +1272,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        self.derive_result_state_origins()?;
         let nominal_count_before_function_checking = self.nominals.len();
-        let main = self.main_id()?;
 
         // Phase A completes every reachable concrete function before any
         // acceptance-bearing entailment judgment runs. This makes forward,
@@ -1426,7 +1327,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.install_call_requirements(&mut function_inventory)?;
         let optimistic_batch = function_inventory.iter().any(|checked| {
             !checked.function.postconditions.is_empty()
-                || Self::statements_contain_value_if(&checked.function.body)
+                || Self::statements_contain_value_if(
+                    checked.function.body.as_deref().unwrap_or_default(),
+                )
         });
 
         let postcondition_schedule =
@@ -1492,9 +1395,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
-        // Target execution is closed compiler metadata. Derive the complete
-        // recursive summary only after all concrete bodies are final.
-        super::target_action::derive_target_actions(&mut functions);
         // Permission is a read-only legality table over the completed checked
         // program. The affine-map rule consumes a successful OP-4 disposition
         // and exact value image retained on that program; no permission rule
@@ -1509,43 +1409,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 allocates_arenas: signature.declared_effects.allocates_arenas.clone(),
             })
             .collect::<Vec<_>>();
-        let permission = analyze_permission(
-            &functions,
-            &permission_signatures,
-            &self.nominals,
-            &self.elements.borrow(),
-        );
+        let permission = analyze_permission(&functions, &permission_signatures);
         // The ledger is rendered here because only the checker still holds the
         // syntax tree the citations name. It is pure presentation over the
         // table above and reaches no decision.
-        let permission_ledger = if permission.functions.iter().any(|permissions| {
-            !permissions.pairs.is_empty()
-                || !permissions.loops.is_empty()
-                || !permissions.staged.is_empty()
-        }) {
+        let permission_ledger = if permission
+            .functions
+            .iter()
+            .any(|permissions| !permissions.pairs.is_empty() || !permissions.loops.is_empty())
+        {
             render_ledger(&permission, &PermissionLedgerSource { tree: &self.tree })?
         } else {
             Vec::new()
         };
 
         Ok(CheckedProgramData {
-            inventory: self.inventory(),
             nominals: self.nominals.clone(),
             elements: self.elements.borrow().clone(),
-            system_structs: {
-                let mut rows = self
-                    .system_nominals
-                    .iter()
-                    .filter(|(index, _)| {
-                        crate::SYSTEM_NOMINALS
-                            .get(usize::from(**index))
-                            .is_some_and(crate::SystemNominal::is_struct)
-                    })
-                    .map(|(index, id)| (*index, *id))
-                    .collect::<Vec<_>>();
-                rows.sort_unstable_by_key(|(index, _)| *index);
-                rows
-            },
             executable_nominal_count,
             nominal_lowering_alias: self.nominal_lowering_aliases()?,
             nominal_physical_alias: self.nominal_physical_aliases()?,
@@ -1563,10 +1443,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     })
                     .map(|record| Ok((record.id(), self.vector_release_class(record.id())?)))
                     .collect::<Result<Vec<_>, CheckStop>>()?;
-                defaults.push((
-                    DeclarationId::ENTRY_HEAP_REGION,
-                    super::model::CheckedReleaseClass::General,
-                ));
                 defaults.sort_unstable_by_key(|(region, _)| *region);
                 defaults
             },
@@ -1575,8 +1451,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             functions,
             postcondition_schedule,
             generic_requirements: self.generic_requirements.clone(),
-            main,
-            entry,
             permission,
             permission_ledger,
         })
@@ -1805,63 +1679,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Orders the whole-unit missing-`main` rejection after per-declaration
-    /// source rejections.
-    ///
-    /// [DIAG-1] leaves the order among rejection events at distinct nodes
-    /// implementation-defined, and this compiler reports a declaration's own
-    /// established rule violation before the [FN-7] `BundleRoot` whole-unit
-    /// rejection: when the entry is missing, the remaining declarations are
-    /// still driven through signature collection and phase-A function
-    /// checking, and the first established source rejection found there is
-    /// reported instead. Anything short of an established source rejection —
-    /// success, an unsupported capability, an internal failure — falls back
-    /// to the held missing-`main` rejection, so a capability stop never
-    /// masks the definite FN-7 violation [DIAG-1].
-    fn reject_missing_main_last(&mut self, items: &[NodeId], stop: CheckStop) -> CheckStop {
-        let missing_main = matches!(
-            &stop,
-            CheckStop::Issue(issue)
-                if issue.rule == SemanticRule::Fn7
-                    && matches!(issue.kind, SemanticIssueKind::MissingMain)
-        );
-        if !missing_main {
-            return stop;
-        }
-        let salvage = (|| -> Result<(), CheckStop> {
-            self.check_system_call_arguments()?;
-            // The diagnostic salvage path must establish the same finite
-            // expansion boundary as ordinary checking before it discovers
-            // any nominal or function instance, even without an entry.
-            self.collect_behavior_groups(items)?;
-            self.reject_instantiation_cycles(items)?;
-            self.declare_nominals(items)?;
-            self.collect_constants(items)?;
-            self.complete_nominals()?;
-            self.collect_function_signatures(items)?;
-            self.admit_postcondition_selectors()?;
-            self.validate_generic_templates()?;
-            self.derive_result_state_origins()?;
-            for index in 0..self.signatures.len() {
-                self.check_function_interning_nominals(index)?;
-            }
-            Ok(())
-        })();
-        match salvage {
-            Err(rejection @ (CheckStop::Issue(_) | CheckStop::Resolution(_))) => rejection,
-            _ => stop,
-        }
-    }
-
-    /// Returns the dense identity of the checked entry function.
-    fn main_id(&self) -> Result<FunctionId, CheckStop> {
-        self.signatures
-            .iter()
-            .find(|signature| signature.name == "main")
-            .map(|signature| signature.id)
-            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
-    }
-
     /// Checks one concrete function for the phase-A inventory, interning the
     /// nominal instances its derived types name.
     ///
@@ -2032,7 +1849,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: None,
             },
         )?;
-        if signature.formal_parameter.is_some() {
+        let declaration_only = self.tree.production(signature.node)? == Production::FnSig;
+        if declaration_only {
             checked.can_continue = false;
             checked.effects = signature.declared_effects.clone();
         }
@@ -2046,66 +1864,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 kind: SemanticIssueKind::FunctionFallthrough,
             }));
         }
-        // The exhibited row is the union of exactly two contributions
-        // [EFF-2]: the syntactic contribution of the body and the release
-        // contribution of every compiler-derived release recorded on a normal
-        // body edge [STOR-3]. A requirement is a signature obligation, not an
-        // executed declaration occurrence.
-        let syntactic = if self.deriving_result_state_origin.get() {
-            checked.effects.clone()
-        } else {
-            self.written_body_effects(signature, checked.effects.clone())
-        };
-        let mut release_sites = Vec::new();
-        self.collect_release_sites(signature, &checked.statements, &mut release_sites)?;
-        let mut release = EffectSet::NONE;
-        for site in &release_sites {
-            release = release.union(site.effects.clone());
-        }
-        let exhibited = syntactic.clone().union(release.clone());
-        if !self.deriving_result_state_origin.get() && !exhibited.is_exact() {
-            return self.unsupported(
-                UnsupportedSemanticFeature::OwnerStateRouting,
-                signature.effects_node,
-            );
-        }
-        if !self.deriving_result_state_origin.get()
-            && exhibited.written_row() != signature.declared_effects.written_row()
-        {
-            // A state transition contributed only by a release has no offending
-            // source occurrence. Keep the owner-bearing diagnostic for that
-            // case even though the current system releases have empty memory
-            // rows; later resource families may carry an ordinary memory row.
-            let release_only = release.clone().union(syntactic.clone()).written_row()
-                != syntactic.written_row()
-                && release
-                    .clone()
-                    .union(signature.declared_effects.clone())
-                    .written_row()
-                    != signature.declared_effects.written_row();
-            if release_only {
-                let owner = release_sites
-                    .iter()
-                    .find(|site| site.effects != EffectSet::NONE)
-                    .map(|site| match &site.owner {
-                        cleanup::ReleaseOwner::Binding(binding) => binding_names
-                            .get(binding.0 as usize)
-                            .cloned()
-                            .unwrap_or_else(|| "<unnamed owner>".to_owned()),
-                        cleanup::ReleaseOwner::ExpressionResult => {
-                            "<discarded expression result>".to_owned()
-                        }
-                    })
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                return self.issue_node(
-                    SemanticRule::Eff2,
-                    signature.effects_node,
-                    SemanticIssueKind::ReleaseEffectMismatch {
-                        owner,
-                        mechanical_fix: "declare the release effects of every resource this function may release, or move the owner out",
-                    },
-                );
-            }
+        let mut exhibited = self.written_body_effects(signature, checked.effects.clone());
+        self.collect_release_effects(signature, &checked.statements, &mut exhibited)?;
+        if exhibited.written_row() != signature.declared_effects.written_row() {
             let (missing, extra) =
                 self.effect_row_difference(&exhibited, &signature.declared_effects, signature)?;
             return self.issue_node(
@@ -2178,25 +1939,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             parameters,
             result_mode: signature.result_mode,
             result: signature.result,
-            result_state_origin: self
-                .result_state_origins
-                .borrow()
-                .get(signature.id.0 as usize)
-                .cloned()
-                .unwrap_or(CheckedResultStateOrigin::Unknown),
-            borrowed_state_origins: self
-                .borrowed_state_origins
-                .borrow()
-                .get(signature.id.0 as usize)
-                .cloned()
-                .unwrap_or_default(),
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
             reaches_ambient_heap: checked.effects.allocates_heap,
             declared_state_writes: signature.declared_effects.writes.clone(),
-            target_action: crate::TargetAction::INLINE,
             requirements,
             postconditions,
-            body: checked.statements,
+            body: (!declaration_only).then_some(checked.statements),
             body_disposition: super::model::CheckedBodyDisposition::Inhabited,
             entailment: super::entailment::FunctionEntailment::default(),
         };
@@ -2262,14 +2010,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         parameter: &ParameterSignature,
         binding: BindingId,
     ) -> Result<LocalBinding, CheckStop> {
-        let leaves = self.type_state_leaf_paths(parameter.ty)?;
         Ok(LocalBinding {
             binding,
             declaration: parameter.declaration,
             mode: parameter.mode,
             ty: parameter.ty,
-            state_origins: (!leaves.is_empty())
-                .then(|| CheckedStateOrigins::formal_leaves(parameter.declaration, leaves)),
             live: true,
             loop_depth: 0,
             compiler_updated: false,
@@ -2295,7 +2040,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         let optimistic_batch = functions.iter().any(|checked| {
             !checked.function.postconditions.is_empty()
-                || Self::statements_contain_value_if(&checked.function.body)
+                || Self::statements_contain_value_if(
+                    checked.function.body.as_deref().unwrap_or_default(),
+                )
         });
         self.analyze_function_inventory(functions, callees, optimistic_batch)?;
         if optimistic_batch {
@@ -2479,7 +2226,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map(|checked| checked.function.requirements.clone())
             .collect::<Vec<_>>();
         for checked in functions {
-            self.install_statement_call_requirements(&mut checked.function.body, &requirements)?;
+            if let Some(body) = &mut checked.function.body {
+                self.install_statement_call_requirements(body, &requirements)?;
+            }
         }
         Ok(())
     }
@@ -2635,8 +2384,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // A [BLK-0] row's requirement list is declaration data, so the
             // call instantiated it while it was checked and there is nothing
             // to install from the source inventory here.
-            CheckedExpression::SystemCall { arguments, .. }
-            | CheckedExpression::KernelCall { arguments, .. }
+            CheckedExpression::KernelCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
@@ -2691,7 +2439,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::Project { .. } => {}
@@ -2719,7 +2466,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Ok((outcome.node_path.clone(), upper))
                 })
                 .collect::<Result<HashMap<_, _>, SemanticCompilerFailure>>()?;
-            Self::install_statement_allocation_bounds(&mut function.body, &bounds)?;
+            if let Some(body) = &mut function.body {
+                Self::install_statement_allocation_bounds(body, &bounds)?;
+            }
         }
         Ok(())
     }
@@ -2876,7 +2625,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::UserCall { arguments, .. }
-            | CheckedExpression::SystemCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
@@ -2926,7 +2674,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::Project { .. } => {}
@@ -3446,7 +3193,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<&crate::NodePath, SemanticCompilerFailure> {
         match &issue.location {
             SemanticLocation::SourceNode(path, _) => Ok(path),
-            SemanticLocation::BundleRoot(_) => Err(SemanticCompilerFailure::InvalidResolution),
         }
     }
 
@@ -3514,7 +3260,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
-                        super::entailment::ObligationFamily::SystemRange => SemanticRule::Sys8,
                         super::entailment::ObligationFamily::KernelRequirement => {
                             SemanticRule::Blk0
                         }
@@ -3829,14 +3574,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "when the allocation must fit, establish `buffer_fits::<T>(n)` with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when allocation shortage is intended program behavior; otherwise restructure the allocation",
                             },
                         },
-                        super::entailment::ObligationFamily::SystemRange => SemanticIssue {
-                            rule: SemanticRule::Sys8,
-                            location,
-                            kind: SemanticIssueKind::UndischargedSystemRangeObligation {
-                                residual,
-                                mechanical_fix: "when the range must be valid, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the system range",
-                            },
-                        },
                         // [BLK-0]: a diagnostic arising in this domain cites
                         // BLK-0 and names the operation in its payload,
                         // exactly as an [OP-1] diagnostic names its family.
@@ -3915,10 +3652,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
         }
 
-        if matches!(
-            function.entailment.body_disposition,
-            super::model::CheckedBodyDisposition::Uninhabited { .. }
-        ) {
+        // PRE-1 signature contracts have a declaration premise, not selected
+        // WF return statements. Their ordinary aggregate was published by
+        // the same entailment schedule before caller goals were checked.
+        if function.body.is_none()
+            || matches!(
+                function.entailment.body_disposition,
+                super::model::CheckedBodyDisposition::Uninhabited { .. }
+            )
+        {
             return Ok(());
         }
         for proof in &function.entailment.postconditions {

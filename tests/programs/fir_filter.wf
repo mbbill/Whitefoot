@@ -8,7 +8,7 @@ struct FirFilter {
   delay: DelayLine;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let taps = fixed_vector::<f64, 8>();
   region {
     place_back(vector: &uniq taps, value: 0.125_f64);

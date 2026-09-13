@@ -127,9 +127,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let (binding, path) = self.explicit_container_path(&place.expression, node)?;
             CheckedExpression::ReadStorage {
                 carrier: self.tree.path(use_node)?.clone(),
-                state_origins: Some(Box::new(
-                    self.owner_image_at_place(&place.resolved, bindings)?,
-                )),
                 root: CheckedContainerRoot {
                     root: crate::semantic::CheckedPlaceRoot::Binding(binding),
                     path,
@@ -293,10 +290,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::Project {
                 carrier: self.tree.path(use_node)?.clone(),
                 binding: local.binding,
-                state_origins: local
-                    .state_origins
-                    .clone()
-                    .map(|origins| origins.projected(&fields)),
                 fields: fields.clone(),
                 ty,
                 consume_root: false,
@@ -312,7 +305,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::Binding {
                 carrier: self.tree.path(use_node)?.clone(),
                 binding: local.binding,
-                state_origins: local.state_origins.clone(),
                 ty,
                 slice_origins: Vec::new(),
                 consume_root: false,
@@ -398,7 +390,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 expression: CheckedExpression::Binding {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
-                    state_origins: local.state_origins.clone(),
                     ty: local.ty,
                     slice_origins: local
                         .slice

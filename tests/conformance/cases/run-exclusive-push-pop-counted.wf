@@ -21,7 +21,7 @@ fn pop(values: &uniq FixedVector<u64, 4>) -> (value: own u64, count: own u64) re
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u64, 4>();
   let sum = 0_u64;
   region {

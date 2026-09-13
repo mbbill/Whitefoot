@@ -12,7 +12,7 @@ fn get(table: own FixedVector<u8, 4>, symbol: own u64) -> result: own u8 reads(t
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq empty, value: 7_u8);

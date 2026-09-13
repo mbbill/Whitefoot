@@ -20,8 +20,8 @@ use crate::{
 
 use super::BackendFailure;
 
-/// These values contain their payload inline. Descriptors and opaque handles
-/// retain their ordinary SSA representation: their payload is elsewhere. This
+/// These values contain their payload inline. Descriptors retain their
+/// ordinary SSA representation: their payload is elsewhere. This
 /// choice depends on representation, not source names or a size threshold.
 pub(super) fn is_stored_aggregate(
     program: &IrProgram<'_, '_, '_>,
@@ -32,12 +32,11 @@ pub(super) fn is_stored_aggregate(
         IrType::Nominal(nominal) => {
             let nominal = program.nominal(nominal).ok_or(BackendFailure::InvalidIr)?;
             match nominal.kind() {
-                IrNominalKind::Struct { .. } => true,
+                IrNominalKind::Struct { .. } | IrNominalKind::Opaque => true,
                 IrNominalKind::Enum { .. } => !nominal.is_tag_only_enum(),
                 IrNominalKind::Box { .. }
                 | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage
-                | IrNominalKind::SystemResource(_) => false,
+                | IrNominalKind::ArenaStorage => false,
             }
         }
         IrType::Unit
@@ -83,8 +82,18 @@ impl FunctionStoragePlan {
     pub(super) fn build(
         program: &IrProgram<'_, '_, '_>,
         function: &IrFunction,
-        pipeline: Option<&crate::IrCompletionPipeline>,
     ) -> Result<Self, BackendFailure> {
+        // A signature has the same parameter/result ABI as a definition but
+        // no activation or control-flow graph to allocate storage for.
+        if function.blocks().is_empty() {
+            return Ok(Self {
+                values: vec![None; function.value_types().len()],
+                slots: Vec::new(),
+                exposed: BTreeSet::new(),
+                destinations: Vec::new(),
+                fields: Vec::new(),
+            });
+        }
         let types = function
             .value_types()
             .iter()
@@ -100,7 +109,7 @@ impl FunctionStoragePlan {
             })
             .collect();
         let mut plan = graph.plan(types, &returned)?;
-        plan.select_destinations(function, &graph, pipeline)?;
+        plan.select_destinations(function, &graph)?;
         plan.select_field_destinations(program, function, &graph)?;
         Ok(plan)
     }
@@ -140,7 +149,7 @@ impl FunctionStoragePlan {
         function: &IrFunction,
         graph: &FlowGraph,
     ) -> Result<(), BackendFailure> {
-        if !graph.coalesce || function.target_action().may_suspend() {
+        if !graph.coalesce {
             return Ok(());
         }
         let types: Vec<_> = self
@@ -304,18 +313,15 @@ impl FunctionStoragePlan {
     ///
     /// The single-use condition preserves independent snapshots and exposed
     /// views. Both definitions must execute in the same block, hence the same
-    /// dynamic iteration. A static destination must be in an acyclic block;
-    /// otherwise only the actualized pipeline's per-slot backing has a proved
-    /// retirement-before-reuse boundary. Single-use alone cannot exclude a
+    /// dynamic iteration. A static destination must be in an acyclic block.
+    /// Single-use alone cannot exclude a
     /// previous iteration's address alias during the producer's reads.
     /// AddressOf already freezes the value's storage group;
-    /// no other definition can subsequently reuse it. Staged carries count as
-    /// reads even though their stores are schedule metadata rather than IR.
+    /// no other definition can subsequently reuse it.
     fn select_destinations(
         &mut self,
         function: &IrFunction,
         graph: &FlowGraph,
-        pipeline: Option<&crate::IrCompletionPipeline>,
     ) -> Result<(), BackendFailure> {
         let mut uses = vec![0_u8; self.values.len()];
         for block in &graph.blocks {
@@ -328,25 +334,12 @@ impl FunctionStoragePlan {
                 uses[*value] = uses[*value].saturating_add(1);
             }
         }
-        if let Some(pipeline) = function.completion_pipeline() {
-            for (origin, _) in pipeline.staged_carries() {
-                let count = uses
-                    .get_mut(index(*origin))
-                    .ok_or(BackendFailure::InvalidIr)?;
-                *count = count.saturating_add(1);
-            }
-        }
         let mut members = vec![0_usize; self.slots.len()];
         for slot in self.values.iter().flatten() {
             members[*slot] += 1;
         }
         for (block_index, block) in function.blocks().iter().enumerate() {
-            let block_id = crate::IrBlockId::from_index(block_index)
-                .map_err(|_| BackendFailure::CounterOverflow)?;
-            let per_slot = pipeline.is_some_and(|pipeline| {
-                pipeline.slot_index(block_id).is_some() && !pipeline.drains(block_id)
-            });
-            if !per_slot && graph.reentered(block_index) {
+            if graph.reentered(block_index) {
                 continue;
             }
             let mut defined = BTreeSet::new();
@@ -486,9 +479,8 @@ impl FlowGraph {
                 .map(|(value, _)| index(*value))
                 .collect(),
             blocks,
-            // A refused ordinary hand-out reads its arguments at join, and a
-            // staged definition can have several dynamic values in flight.
-            coalesce: function.overlaps().is_empty() && function.completion_pipeline().is_none(),
+            // A refused ordinary hand-out reads its arguments at join.
+            coalesce: function.overlaps().is_empty(),
         })
     }
 
@@ -753,7 +745,7 @@ fn call_reuse_operand_for_type(
     else {
         return Err(BackendFailure::InvalidIr);
     };
-    if !caller.overlaps().is_empty() || caller.completion_pipeline().is_some() {
+    if !caller.overlaps().is_empty() {
         return Ok(None);
     }
     let mut source_calls = caller
@@ -773,9 +765,7 @@ fn call_reuse_operand_for_type(
     let Some(signature) = callee.source_signature() else {
         return Ok(None);
     };
-    if callee.target_action().may_suspend()
-        || !callee.overlaps().is_empty()
-        || callee.completion_pipeline().is_some()
+    if !callee.overlaps().is_empty()
         || signature.result() != IrSourceMode::Own
         || signature.parameters().len() != arguments.len()
         || callee.result() != caller.value_type(result).ok_or(BackendFailure::InvalidIr)?
@@ -897,7 +887,6 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
         | IrOperation::ArenaFrame { .. }
         | IrOperation::ArenaListNew => Vec::new(),
         IrOperation::Call { arguments, .. }
-        | IrOperation::SystemCall { arguments, .. }
         | IrOperation::Integer { arguments, .. }
         | IrOperation::Float { arguments, .. }
         | IrOperation::Boolean { arguments, .. } => arguments.clone(),
@@ -1095,7 +1084,7 @@ fn relay(value: own Row) -> result: own Row reads(value.left) {
   return move updated;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = Row(left: 3_u64, right: 5_u64);
   let result = relay(value: move value);
   if result.right != 5_u64 {
@@ -1110,7 +1099,7 @@ command fn main() -> status: own ExitStatus pure {
                     .iter()
                     .find(|function| function.name() == "relay")
                     .expect("relay");
-                let plan = FunctionStoragePlan::build(program, relay, None).expect("plan");
+                let plan = FunctionStoragePlan::build(program, relay).expect("plan");
                 let parameter = plan.slot(relay.parameters()[0].0).expect("owned input");
                 let returned = relay
                     .blocks()
@@ -1482,7 +1471,7 @@ command fn main() -> status: own ExitStatus pure {
 
         let limits = CompilerLimits::default();
         let inputs = [SourceInput::new("storage.wf", source)];
-        let bundle = SourceBundle::with_limits(&inputs, limits.source).expect("valid source");
+        let bundle = SourceBundle::with_prelude(&inputs, limits.source).expect("valid source");
         let LexOutcome::Complete(lexed) = lex(&bundle, limits.lexer) else {
             panic!("lex")
         };
@@ -1533,7 +1522,7 @@ fn exchange(old: &uniq Row) -> result: own Row reads(old.left, old.right), write
   return move previous;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = build(seed: 11_u64);
   region {
     let previous = exchange(old: &uniq first);
@@ -1551,7 +1540,7 @@ command fn main() -> status: own ExitStatus pure {
             |program| {
                 let mut direct_calls = 0;
                 for function in program.functions() {
-                    let plan = FunctionStoragePlan::build(program, function, None).expect("plan");
+                    let plan = FunctionStoragePlan::build(program, function).expect("plan");
                     for block in function.blocks() {
                         for instruction in block.instructions() {
                             let IrInstruction::Define {
@@ -1634,7 +1623,7 @@ fn relay(value: own Row) -> result: own Row pure {
   return pass(value: move value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let row = Row(left: 3_u64, right: 5_u64);
   let kept = relay(value: move row);
   if kept.left != 3_u64 {
@@ -1649,7 +1638,7 @@ command fn main() -> status: own ExitStatus pure {
                     .iter()
                     .find(|function| function.name() == "relay")
                     .expect("relay");
-                let plan = FunctionStoragePlan::build(program, relay, None).expect("plan");
+                let plan = FunctionStoragePlan::build(program, relay).expect("plan");
                 let (result, argument) = relay
                     .blocks()
                     .iter()
@@ -1684,7 +1673,7 @@ fn relay(left: own Row, right: own Row) -> result: own Row pure {
   return choose(left: move left, right: move right);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left = Row(left: 1_u64, right: 2_u64);
   let right = Row(left: 3_u64, right: 4_u64);
   let kept = relay(left: move left, right: move right);
@@ -1700,7 +1689,7 @@ command fn main() -> status: own ExitStatus pure {
                     .iter()
                     .find(|function| function.name() == "relay")
                     .expect("relay");
-                let plan = FunctionStoragePlan::build(program, relay, None).expect("plan");
+                let plan = FunctionStoragePlan::build(program, relay).expect("plan");
                 let (result, arguments) = relay
                     .blocks()
                     .iter()
@@ -1741,7 +1730,7 @@ fn relay(value: own Row) -> result: own Row reads(value.left) {
   return move updated;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let row = Row(left: 3_u64, right: 5_u64);
   let kept = relay(value: move row);
   if kept.left != 3_u64 {
@@ -1756,7 +1745,7 @@ command fn main() -> status: own ExitStatus pure {
                     .iter()
                     .find(|function| function.name() == "relay")
                     .expect("relay");
-                let plan = FunctionStoragePlan::build(program, relay, None).expect("plan");
+                let plan = FunctionStoragePlan::build(program, relay).expect("plan");
                 let (result, argument) = relay
                     .blocks()
                     .iter()
@@ -1786,7 +1775,7 @@ command fn main() -> status: own ExitStatus pure {
     #[test]
     fn checked_dense_ir_coalesces_without_changing_ownership() {
         with_program(
-            br#"command fn main() -> status: own ExitStatus pure {
+            br#"fn main() -> status: own ExitStatus pure {
   let built = fixed_vector::<u64, 8>();
   for @fill (
     at in 0_u64..8_u64,
@@ -1800,8 +1789,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
             |program| {
-                let function = &program.functions()[program.main_ordinal() as usize];
-                let plan = FunctionStoragePlan::build(program, function, None).expect("plan");
+                let function =
+                    &program.functions().iter().find(|function| function.name() == "main").expect("fixture main");
+                let plan = FunctionStoragePlan::build(program, function).expect("plan");
                 let slots: BTreeSet<_> = function
                     .blocks()
                     .iter()

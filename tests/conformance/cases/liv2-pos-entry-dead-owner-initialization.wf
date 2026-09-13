@@ -12,12 +12,12 @@ fn relay(owner: own Item) -> result: own Item pure {
   return move owner;
 }
 
-fn rebind(owner: own Item) -> result: own Item reads(owner.value), writes(owner.value) {
+fn rebind(owner: own Item) -> result: own Item reads(owner), writes(owner) {
   set owner = relay(owner: move owner);
   return move owner;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "LIV-2, EFF-2: reinitializing a complete binding already dead at statement entry writes no previous owner. In contrast, a same-statement read-out keeps its read and commit write. Both forms preserve the transferred ordinary struct values.";
   let first = Item(value: 11_u64);
   let second = Item(value: 22_u64);

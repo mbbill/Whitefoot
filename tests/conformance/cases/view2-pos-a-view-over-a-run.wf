@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "VIEW-2 widens the viewed domain to the two runs, and the formation row's own requirement head_of(vector) <= room_of(vector) is what makes the viewed window one contiguous range. This run has never had a front removal, so the requirement is discharged from the standing head_of = 0. Two shared views of the one run are formed, which OWN-5 admits without limit, and the program reads the viewed length through one and the elements back through both.";
   let empty = fixed_vector::<u8, 4>();
   region {

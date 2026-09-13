@@ -60,7 +60,6 @@ const fn fact_event_source(kind: FlowEventKind) -> Option<u8> {
         FlowEventKind::S6 => Some(6),
         FlowEventKind::S7 => Some(7),
         FlowEventKind::S9 => Some(9),
-        FlowEventKind::S10 => Some(10),
         FlowEventKind::S11 => Some(11),
         FlowEventKind::S13 => Some(13),
         FlowEventKind::S14 => Some(14),
@@ -68,14 +67,13 @@ const fn fact_event_source(kind: FlowEventKind) -> Option<u8> {
     }
 }
 
-const FACT_EVENT_KINDS: [FlowEventKind; 10] = [
+const FACT_EVENT_KINDS: [FlowEventKind; 9] = [
     FlowEventKind::S1,
     FlowEventKind::S4,
     FlowEventKind::S5,
     FlowEventKind::S6,
     FlowEventKind::S7,
     FlowEventKind::S9,
-    FlowEventKind::S10,
     FlowEventKind::S11,
     FlowEventKind::S13,
     FlowEventKind::S14,
@@ -90,8 +88,8 @@ fn ent3_labels_and_fact_event_constructors_name_the_same_sources() {
     let defined = defined_sources();
     assert_eq!(
         defined,
-        BTreeSet::from([1, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14]),
-        "ENT-3 defines the eleven originating fact sources"
+        BTreeSet::from([1, 4, 5, 6, 7, 9, 11, 12, 13, 14]),
+        "ENT-3 defines the ten originating fact sources"
     );
 
     let modelled = FACT_EVENT_KINDS
@@ -120,8 +118,8 @@ fn retired_fact_source_labels_are_never_reused() {
     let retired = retired_sources();
     assert_eq!(
         retired,
-        BTreeSet::from([8]),
-        "S8 remains the sole reserved fact-source label"
+        BTreeSet::from([8, 10]),
+        "S8 and the v0.58-retired external S10 source stay reserved"
     );
     let defined = defined_sources();
     assert!(

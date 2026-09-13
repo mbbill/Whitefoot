@@ -1,5 +1,5 @@
 use crate::syntax::{FinalizedTopology, NodeId};
-use crate::{NodePath, Production};
+use crate::{NodePath, Production, SourceBundle};
 
 use super::{ResolutionCompilerFailure, ScopeId, ScopeKind, ScopeRecord};
 
@@ -11,7 +11,7 @@ pub(crate) struct ScopeBuild {
 }
 
 impl ScopeBuild {
-    pub(crate) fn build(topology: &FinalizedTopology) -> Result<Self, ResolutionCompilerFailure> {
+    pub(crate) fn build(topology: &FinalizedTopology, sources: &SourceBundle) -> Result<Self, ResolutionCompilerFailure> {
         let mut build = Self {
             records: Vec::new(),
             node_scopes: vec![None; topology.nodes.len()],
@@ -21,7 +21,14 @@ impl ScopeBuild {
         let root_path = NodePath {
             components: Vec::new(),
         };
-        let unit = build.push_scope(None, ScopeKind::CompilationUnit, root_path.clone())?;
+        let supplied = build.push_scope(None, ScopeKind::CompilationUnit, root_path.clone())?;
+        // PRE-1 is the fixed outer environment that writer declarations
+        // extend. Its signature-local names cannot see later writer names.
+        let unit = if sources.includes_prelude() {
+            build.push_scope(Some(supplied), ScopeKind::CompilationUnit, root_path.clone())?
+        } else {
+            supplied
+        };
         let mut tasks = vec![(topology.root, unit, root_path)];
         while let Some((node_id, current_scope, path)) = tasks.pop() {
             if build
@@ -43,6 +50,16 @@ impl ScopeBuild {
 
             let mut child_scopes = vec![current_scope; children.len()];
             match node.production {
+                Production::Program => {
+                    for (index, child) in children.iter().enumerate() {
+                        let record = topology.node(*child).ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+                        if let crate::FinalizedExtent::Source { source, .. } = record.extent
+                            && sources.file(source).is_some_and(|file| file.prelude().is_some())
+                        {
+                            child_scopes[index] = supplied;
+                        }
+                    }
+                }
                 Production::StructDecl
                 | Production::EnumDecl
                 | Production::FormalDecl
@@ -270,6 +287,10 @@ impl ScopeBuild {
             .get(node.index())
             .and_then(|scope| *scope)
             .ok_or(ResolutionCompilerFailure::InvalidScopeTree)
+    }
+
+    pub(crate) fn is_unit_scope(&self, scope: ScopeId) -> bool {
+        self.records.get(scope.index()).is_some_and(|record| record.kind == ScopeKind::CompilationUnit)
     }
 
     pub(crate) fn declaration_scope(

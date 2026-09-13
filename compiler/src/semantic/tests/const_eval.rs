@@ -72,7 +72,7 @@ fn const_evaluation_rejects_every_out_of_domain_result() {
 /// is observable.
 #[test]
 fn const_position_arithmetic_parses_and_evaluates() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n  let filled = fixed_vector::<u64, 2 * 3>();\n  let count = cap_of(filled);\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn main() -> status: own ExitStatus pure {\n  let filled = fixed_vector::<u64, 2 * 3>();\n  let count = cap_of(filled);\n  return exit_status(code: 0_u8);\n}\n";
     with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),

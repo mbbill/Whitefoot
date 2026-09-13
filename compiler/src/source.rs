@@ -284,6 +284,7 @@ pub struct SourceFile {
     display_path: String,
     bytes: Vec<u8>,
     byte_len: u64,
+    prelude: Option<PreludeSource>,
 }
 
 impl fmt::Debug for SourceFile {
@@ -297,7 +298,19 @@ impl fmt::Debug for SourceFile {
     }
 }
 
+/// PRE-1 records use ordinary grammar without granting a writer a bodyless declaration form.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PreludeSource {
+    Items,
+    Opaque,
+    Function,
+}
+
 impl SourceFile {
+    pub(crate) const fn prelude(&self) -> Option<PreludeSource> {
+        self.prelude
+    }
+
     /// Returns the portable logical source name.
     #[must_use]
     pub const fn logical_path(&self) -> &LogicalPath {
@@ -451,6 +464,36 @@ fn find_duplicate_paths(
 }
 
 impl SourceBundle {
+    pub(crate) fn includes_prelude(&self) -> bool {
+        self.files
+            .iter()
+            .filter(|file| file.prelude.is_some())
+            .count()
+            == crate::prelude::DECLARATIONS.len()
+    }
+
+    /// Builds a compilation source bundle including the fixed ordinary PRE-1 declarations.
+    /// Source-only tooling can continue to use `with_limits`.
+    pub fn with_prelude(
+        inputs: &[SourceInput<'_>],
+        limits: SourceLimits,
+    ) -> Result<Self, SourceBundleError> {
+        let mut complete = inputs.to_vec();
+        complete.extend(
+            crate::prelude::DECLARATIONS
+                .iter()
+                .map(|(path, _, text)| SourceInput::new(path, text.as_bytes())),
+        );
+        let mut bundle = Self::with_limits(&complete, limits)?;
+        for (file, (_, kind, _)) in bundle.files[inputs.len()..]
+            .iter_mut()
+            .zip(crate::prelude::DECLARATIONS)
+        {
+            file.prelude = Some(*kind);
+        }
+        Ok(bundle)
+    }
+
     /// Builds a bundle under explicit toolchain resource ceilings.
     pub fn with_limits(
         inputs: &[SourceInput<'_>],
@@ -582,6 +625,7 @@ impl SourceBundle {
                 display_path,
                 bytes,
                 byte_len: source_len,
+                prelude: None,
             });
         }
 

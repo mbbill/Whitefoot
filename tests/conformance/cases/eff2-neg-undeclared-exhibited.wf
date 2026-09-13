@@ -1,4 +1,4 @@
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap) {
   doc "The body takes a run from the general store, which exhibits `allocates(heap)` over the provider its take names, and declares only the other two categories [EFF-2, S23].";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {

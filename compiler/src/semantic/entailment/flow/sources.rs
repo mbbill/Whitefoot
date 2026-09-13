@@ -33,22 +33,6 @@ use super::super::{
     S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
 use super::{Analyzer, ArmFacts, projected_place};
-use crate::SYSTEM_OPERATIONS;
-
-/// The [SYS-2] operations whose outcome carries an [ENT-3] S10 absolute
-/// endpoint, with the observing variant. Both endpoint actuals are found by
-/// parameter name in the catalog row, never by a hardcoded position.
-const BOUNDARY_ENDPOINTS: [(&str, &str); 8] = [
-    ("read_at", "ReadBytes"),
-    ("read_next", "ReadBytes"),
-    ("receive_next", "ReadBytes"),
-    ("write_once", "Ok"),
-    ("send_once", "Ok"),
-    ("host_copy_bytes", "Ok"),
-    ("host_copy_utf8", "Ok"),
-    ("directory_next", "ListBytes"),
-];
-
 /// Which term one evaluated value's [ENT-3] image is established on: the
 /// place a `let` binder introduces, or the compiler-owned commit value of one
 /// `set` occurrence, named by that statement's NodePath [ENT-2].
@@ -1591,7 +1575,6 @@ impl Analyzer<'_, '_> {
     /// `Ok(value: w)` shift, or S10's absolute endpoint on the observing arm.
     fn outcome_fact(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
         self.checked_offset_outcome(value)
-            .or_else(|| self.boundary_endpoint_outcome(value))
     }
 
     /// [ENT-3] S7: `iadd.checked::<T>(p, k)` and `isub.checked::<T>(p, k)` with a
@@ -1627,55 +1610,6 @@ impl Analyzer<'_, '_> {
         })
     }
 
-    /// [ENT-3] S10: a [SYS-2] transfer's observing arm binds the absolute
-    /// endpoint `next`, establishing `start <= next <= end`.
-    /// The fact carries the same trust class as S6's allocation-length
-    /// equality: it is a declared operation contract, never a writer
-    /// statement.
-    ///
-    /// The bounds are admitted only where no kill event on the path to the
-    /// match reaches either endpoint support. The call's own boundary writes
-    /// are on that path, so an endpoint read through a place the call writes
-    /// admits nothing — the conservative reading, which only under-derives.
-    fn boundary_endpoint_outcome(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
-        let CheckedExpression::SystemCall {
-            operation,
-            arguments,
-            ..
-        } = value
-        else {
-            return None;
-        };
-        let row = SYSTEM_OPERATIONS.get(usize::from(*operation))?;
-        let (_, variant) = BOUNDARY_ENDPOINTS
-            .iter()
-            .find(|(spelling, _)| *spelling == row.spelling)?;
-        let start_position = row
-            .parameters
-            .iter()
-            .position(|parameter| parameter.name == "start")?;
-        let end_position = row
-            .parameters
-            .iter()
-            .position(|parameter| parameter.name == "end")?;
-        let base = self.read_operand(arguments.get(start_position)?)?;
-        let upper = self.read_operand(arguments.get(end_position)?)?;
-        let mut events = Vec::new();
-        self.collect_expression_kills(value, &mut events);
-        if events
-            .iter()
-            .any(|event| self.event_kills_term(base, event) || self.event_kills_term(upper, event))
-        {
-            return None;
-        }
-        Some(OutcomeFact {
-            variant,
-            base,
-            relation: OutcomeRelation::Between { upper },
-            event_kind: FlowEventKind::S10,
-        })
-    }
-
     /// Establishes one arm's binder fact at arm entry: the value binder of
     /// the observing variant gains the recorded relation against its base.
     pub(super) fn establish_binder_fact(
@@ -1704,26 +1638,6 @@ impl Analyzer<'_, '_> {
                     bound,
                     outcome.base,
                     delta,
-                    &mut self.derivations,
-                    event,
-                );
-            }
-            OutcomeRelation::Between { upper } => {
-                state.establish(
-                    &Relation::Bound {
-                        left: outcome.base,
-                        right: bound,
-                        bound: 0,
-                    },
-                    &mut self.derivations,
-                    event,
-                );
-                state.establish(
-                    &Relation::Bound {
-                        left: bound,
-                        right: upper,
-                        bound: 0,
-                    },
                     &mut self.derivations,
                     event,
                 );

@@ -72,69 +72,6 @@ extern int wf__main_body(int argc, char **argv);
  * instead of a comment in two files. */
 size_t wf__floor_stack_bytes(void) { return WF_FLOOR_STACK_BYTES; }
 
-/* ------------------------------------------------- the descriptor factory */
-
-/* The `HandleFactory`'s one native fact: how many descriptors this program may
- * still open [SYS-10].
- *
- * The capacity is fixed the first time it is asked for: the process's soft
- * descriptor limit, less a reserve for the descriptors the runtime and the
- * entry hold themselves (the standard streams, the working directory, a
- * completion ring and its event descriptor, helper pipes). The reserve is a
- * constant rather than a scan of the descriptor table, because a scan costs
- * one system call per possible descriptor and the limit may be a million; the
- * constant only has to be at least what the runtime actually holds, which is
- * a handful. Being below the true limit is the whole promise: an open that
- * holds a permit is never refused a descriptor by this process's own
- * consumption. `reserve_handle` spends one credit without a host call, and
- * nothing raises the count again: an explicit close hands the credit back as
- * the permit it returns, and a permit or an open resource that derived
- * release consumes spends its credit for the rest of the program [SYS-10].
- * The count is atomic because a permit may be reserved on whichever thread
- * resumed the reserving frame. Nothing here allocates, blocks, or waits. */
-#define WF_FILE_RUNTIME_RESERVE 64L
-#define WF_FILE_CAPACITY_CEILING (1L << 20)
-
-static _Atomic long wf__handle_credits;
-static pthread_once_t wf__file_capacity_once = PTHREAD_ONCE_INIT;
-
-static void wf__file_capacity_init(void) {
-    struct rlimit limit;
-    long capacity = 0;
-    if (getrlimit(RLIMIT_NOFILE, &limit) == 0) {
-        if (limit.rlim_cur == RLIM_INFINITY
-            || limit.rlim_cur > (rlim_t)WF_FILE_CAPACITY_CEILING) {
-            capacity = WF_FILE_CAPACITY_CEILING;
-        } else {
-            capacity = (long)limit.rlim_cur;
-        }
-    }
-    capacity -= WF_FILE_RUNTIME_RESERVE;
-    if (capacity < 0) {
-        capacity = 0;
-    }
-    atomic_store_explicit(&wf__handle_credits, capacity, memory_order_release);
-}
-
-/* Takes one credit. Returns 1 when the factory had one, 0 when it is spent. */
-int wf__handle_reserve(void) {
-    long credits;
-    (void)pthread_once(&wf__file_capacity_once, wf__file_capacity_init);
-    credits = atomic_load_explicit(&wf__handle_credits, memory_order_acquire);
-    while (credits > 0) {
-        if (atomic_compare_exchange_weak_explicit(
-                &wf__handle_credits,
-                &credits,
-                credits - 1,
-                memory_order_acq_rel,
-                memory_order_acquire
-            )) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 /* ------------------------------------------------------- per-thread state */
 
 /* [low, high) of the stack this thread is *running on*, which is not always

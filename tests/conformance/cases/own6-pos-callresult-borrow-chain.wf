@@ -7,7 +7,7 @@ fn bump(n: &uniq i32) -> return_value: own unit writes(n) {
   return unit;
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "OWN-6 reborrow extension: `passthru` determines one provenance-candidate parameter, so binding its borrow-mode result makes `r` an ordinary borrow holder whose resolved place is the candidate actual's. The child fed to it in candidate position may take a caller-supplied region, and `r` is itself reborrowable, composing a grandchild chain of depth two. Creating the candidate-position child suspends `h` for the remainder of its life, so no point sees two usable uniq paths to `v`.";
   let v = 1_i32;
   region {

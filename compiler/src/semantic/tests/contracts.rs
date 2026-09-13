@@ -53,7 +53,7 @@ fn apply<Key<K>>(value: own K) -> out: own u64 pure contract {
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = apply::<ScalarKey>(value: 123_u64);
   let bounded = result + 1_u64;
   if bounded == 18_u64 {
@@ -65,11 +65,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn group_contracts_publish_only_after_structurally_matched_actual_proofs() {
-    for mode in [
-        OverlapLowering::Off,
-        OverlapLowering::On,
-        OverlapLowering::Completion,
-    ] {
+    for mode in [OverlapLowering::Off, OverlapLowering::On] {
         with_semantics(BOUNDED_GROUP.as_bytes(), |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else {
                 panic!("{outcome:?}");
@@ -111,7 +107,7 @@ actual Identity : Factory<FixedVector<u8, 4>> {
   make = retain;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -139,7 +135,7 @@ fn apply<fn get() -> result: own u64 pure>() -> result: own u64 pure {
   return get();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = apply::<fn zero>();
   let other = apply::<fn zero>();
   return exit_status(code: 0_u8);
@@ -176,7 +172,7 @@ fn inspect(value: &Holder<fn bad>) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -202,7 +198,7 @@ fn apply<fn pick(value: own u64) -> result: own u64 pure>(value: own u64) -> res
   return pick(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = apply::<fn bad>(value: 7_u64);
   return exit_status(code: 0_u8);
 }
@@ -213,7 +209,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn function_arguments_do_not_masquerade_as_store_regions() {
     let base = "fn spare() -> result: own unit pure {\n  return unit;\n}\n\n";
-    let main = "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let main = "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     for ty in [
         "Holder<fn spare>",
         "Box<fn spare>",
@@ -230,7 +226,7 @@ fn function_arguments_do_not_masquerade_as_store_regions() {
     );
     assert_behavior_rule(&source, SemanticRule::Fn2);
     let source = format!(
-        "{base}command fn main() -> status: own ExitStatus pure {{\n  let value = arena_new::<fn spare, u64>(1_u64);\n  return exit_status(code: 0_u8);\n}}\n"
+        "{base}fn main() -> status: own ExitStatus pure {{\n  let value = arena_new::<fn spare, u64>(1_u64);\n  return exit_status(code: 0_u8);\n}}\n"
     );
     assert_behavior_rule(&source, SemanticRule::Op1);
 }
@@ -252,7 +248,7 @@ fn unused_formal_members_obey_ordinary_signature_formation() {
         ),
     ] {
         let source = format!(
-            "formal Invalid {{\n  {signature}\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "formal Invalid {{\n  {signature}\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_behavior_rule(&source, rule);
     }
@@ -280,7 +276,7 @@ fn both<Pass>['a, 'b](left: own Slice<'a, u8>, left_peer: own Slice<'a, u8>, rig
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = array_new::<u8, 2>(0_u8);
   let second = array_new::<u8, 3>(0_u8);
   region {
@@ -295,11 +291,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for mode in [
-        OverlapLowering::Off,
-        OverlapLowering::On,
-        OverlapLowering::Completion,
-    ] {
+    for mode in [OverlapLowering::Off, OverlapLowering::On] {
         with_semantics(source, |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else {
                 panic!("{outcome:?}");
@@ -325,7 +317,7 @@ fn second<fn work() -> result: own unit pure>() -> result: own unit pure {
   return first::<fn work>();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   first::<fn second::<fn stop>>();
   return exit_status(code: 0_u8);
 }
@@ -368,7 +360,7 @@ fn accepts['h: linear](value: &Box<'h, u64>) -> result: own unit pure {
   return apply::<ExtentOnly<'h>>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -398,7 +390,7 @@ actual Narrow : Inspect {
   length = shorter;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -429,7 +421,7 @@ fn drive<Work>() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -460,7 +452,7 @@ actual ItemInspect['s] : Inspect<Box<'s, Item>> {
   inspect = ignore;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -490,7 +482,7 @@ actual Second : Factory {
   make = First::make;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -541,7 +533,7 @@ fn invoke<Work>() -> result: own u64 pure {
   return Work::run();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -575,7 +567,7 @@ fn recurse<Work>() -> result: own unit pure {
   return recurse::<fn Work::run::<u64>>();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -604,7 +596,7 @@ fn repeat<T: copy, const n: u64, fn work() -> result: own unit pure>(value: own 
   return repeat::<T, n, fn work>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = repeat::<u64, 1, fn task>(value: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -620,7 +612,7 @@ command fn main() -> status: own ExitStatus pure {
   return nested::<fn nested::<fn work>>();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -629,7 +621,7 @@ command fn main() -> status: own ExitStatus pure {
   next: box<Grow<box<T>>>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -683,7 +675,7 @@ fn wrapper(value: &Pair) -> result: own u64 reads(value.left, value.right) {
   return outer::<Left>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 3_u64, right: 5_u64);
   region {
     let observed = wrapper(value: &pair);
@@ -739,7 +731,7 @@ fn factored_member_call_grammar_preserves_constructor_boundaries() {
         ("let (left, right) = Empty();", SemanticRule::Type5),
     ] {
         let source = format!(
-            "struct Empty {{\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  {statement}\n  return exit_status(code: 0_u8);\n}}\n"
+            "struct Empty {{\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  {statement}\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_behavior_rule(&source, rule);
     }
@@ -767,7 +759,7 @@ actual Zero : Zeroed {
   zero = make_zero;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -811,7 +803,7 @@ fn empty_formal_and_actual_groups_are_valid() {
 actual Empty : Marker {
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -836,7 +828,7 @@ formal Marker<T: affine> {
 actual Wrapped : Marker<Wrapper<i32>> {
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -870,7 +862,7 @@ formal Factory {
   fn make() -> result: own Wrapper<i32> pure;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -907,7 +899,7 @@ contract InvalidIdentity {
   law identity(combine, zero);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -948,7 +940,7 @@ fn retired_closed_law_table_has_no_remaining_acceptance_path() {
   law associative(combine);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
@@ -957,7 +949,7 @@ command fn main() -> status: own ExitStatus pure {
   law distributive(combine, combine);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
@@ -975,7 +967,7 @@ conform i64: BadMonoid {
   combine = satadd_signed;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
@@ -994,7 +986,7 @@ conform u64: OpaqueMonoid {
   combine = twostep;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
@@ -1014,7 +1006,7 @@ conform u64: SatMonoid {
   combine = satadd;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
@@ -1030,7 +1022,7 @@ fn retired_law_identity_with_wrong_literal_type_is_a_grammar_error() {
   law identity(combine, unit);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1054,7 +1046,7 @@ conform u64: AddIdentity {
   combine = saturating_add;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1066,7 +1058,7 @@ fn formal_headers_are_generic_but_cannot_construct_other_groups() {
     let source = br#"formal Generic<T: affine> {
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1091,7 +1083,7 @@ fn repeated_member_points_at_the_later_signature() {
   fn value() -> result: own i32 pure;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1111,7 +1103,7 @@ fn retired_numeric_conformance_spelling_is_a_grammar_error() {
     let source = br#"conform i32: Int {
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1128,7 +1120,7 @@ fn actual_header_arguments_match_the_formal_header_arity() {
 actual Invalid : Plain<i32> {
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1154,7 +1146,7 @@ actual First : Marker<i32> {
 actual Second : Marker<i32> {
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1188,7 +1180,7 @@ actual Reversed : Pair {
   first = make_first;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1218,7 +1210,7 @@ actual Incomplete : Pair {
   first = make_first;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1242,7 +1234,7 @@ fn generic<T: Marker>() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1267,7 +1259,7 @@ actual Sum : LengthSum {
   sum = add_lengths;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1305,7 +1297,7 @@ actual Bytes : ByteReader {
   first = read_first;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1337,7 +1329,7 @@ actual Wrong : FirstLength {
   length = second_length;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1361,7 +1353,7 @@ actual Bytes : SlicePass {
   pass = preserve;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1386,7 +1378,7 @@ command fn main() -> status: own ExitStatus pure {
   fn borrowed['descriptor, 'data](value: &uniq 'descriptor Slice<'data, u8>) -> result: &uniq 'descriptor Slice<'data, u8> pure;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1418,7 +1410,7 @@ actual PairTouch : Touch {
   touch = apply;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

@@ -1,27 +1,31 @@
-fn open_two(first_permit: own HandlePermit, second_permit: own HandlePermit, directory: &DirectoryRead) -> result: own unit reads(first_permit, second_permit, directory), writes(first_permit, second_permit) {
-  let first = open_directory_source(permit: move first_permit, directory: directory);
-  let second = open_directory_source(permit: move second_permit, directory: directory);
+fn open_two(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own unit reads(factory, directory), writes(factory) {
+  doc "PRE-1 opens use two successive short exclusive loans of the same ordinary factory and shared loans of one directory; each resulting linear source is explicitly closed.";
+  region {
+    let first = open_directory_source(factory: &uniq deref(factory), directory: directory);
+    let second = open_directory_source(factory: &uniq deref(factory), directory: directory);
+    match first {
+      SourceOpened(value: source) => {
+        close_directory_source(factory: &uniq deref(factory), source: move source);
+      }
+      SourceOpenFailed(error: problem) => {
+      }
+    }
+    match second {
+      SourceOpened(value: source) => {
+        close_directory_source(factory: &uniq deref(factory), source: move source);
+      }
+      SourceOpenFailed(error: problem) => {
+      }
+    }
+  }
   return unit;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "Two short exclusive factory loans produce two independent ordinary permit owners. Once each inline reservation returns, both opens use only their moved permit and shared loans of one DirectoryRead, so no long factory or exclusive directory loan remains.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
   region {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: first_permit) => {
-        match reserve_handle(factory: &uniq files) {
-          Ok(value: second_permit) => {
-            open_two(first_permit: move first_permit, second_permit: move second_permit, directory: &cwd);
-          }
-          Err(error: spent) => {
-            return exit_status(code: 2_u8);
-          }
-        }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 1_u8);
-      }
-    }
+    open_two(factory: &uniq factory, directory: &cwd);
+    close_directory(factory: &uniq factory, directory: move cwd);
   }
   return exit_status(code: 0_u8);
 }

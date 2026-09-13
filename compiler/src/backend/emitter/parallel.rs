@@ -53,16 +53,12 @@
 //! before this module existed. That is a reserved namespace, not a name check
 //! — nothing here inspects a source function's spelling.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use super::{BackendFailure, FunctionEmitter, llvm_type, source_symbol, value_name};
-use super::{Qualification, TargetLayout};
 use crate::backend::abi::{FunctionAbi, ResultAbi};
-use crate::{
-    IrCompletionStep, IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType,
-    IrValueId,
-};
+use crate::{IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId};
 
 /// The counted loop's index type [FN-1], which fixes every width question the
 /// split could otherwise have.
@@ -213,7 +209,7 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// the call graph and the permission judgment, never of a name or a source
 /// shape.
 ///
-/// Empty when no hand-out is reachable from the entry, which includes every
+/// Empty when no hand-out is reachable from any definition, including every
 /// default compilation: the default build carries no overlap group at all, so
 /// there is one world and this changes nothing about it.
 pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u32> {
@@ -221,30 +217,11 @@ pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u
     let mut callees: Vec<Vec<u32>> = vec![Vec::new(); functions.len()];
     let mut hands_out = Vec::with_capacity(functions.len());
     for (ordinal, function) in functions.iter().enumerate() {
-        // A driven [PAR-3] loop whose staged call is handed to a lane is a
-        // hand-out like any other, so the function that carries it needs the
-        // second copy for the world that was not asked for a pool.
-        let stages_a_lane = function
-            .driven_completion_pipeline()
-            .is_some_and(crate::IrCompletionPipeline::lane_handout);
         hands_out.push(
-            stages_a_lane
-                || function.overlaps().iter().any(|overlap| {
-                    overlap.handed_out().iter().any(|member| {
-                        function.blocks().iter().any(|block| {
-                            block.instructions().iter().any(|instruction| {
-                                matches!(
-                                    instruction,
-                                    IrInstruction::Define {
-                                        result,
-                                        operation: IrOperation::Call { .. },
-                                        ..
-                                    } if result == member
-                                )
-                            })
-                        })
-                    })
-                }),
+            function
+                .overlaps()
+                .iter()
+                .any(|overlap| !overlap.handed_out().is_empty()),
         );
         for block in function.blocks() {
             for instruction in block.instructions() {
@@ -268,16 +245,11 @@ pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u
         }
     }
 
-    let mut reachable = HashSet::new();
-    let mut pending = vec![program.main_ordinal()];
-    while let Some(ordinal) = pending.pop() {
-        if !reachable.insert(ordinal) {
-            continue;
-        }
-        if let Some(called) = callees.get(ordinal as usize) {
-            pending.extend(called.iter().copied());
-        }
-    }
+    // Every ordinary definition can be selected by a linker or called by
+    // another unit. The module has no privileged source entry function.
+    let reachable: HashSet<_> = (0..functions.len())
+        .filter_map(|ordinal| u32::try_from(ordinal).ok())
+        .collect();
 
     // The other direction: a function needs a clone when a hand-out is
     // reachable *from* it, so the walk runs the call graph backwards from the
@@ -390,58 +362,8 @@ pub(crate) struct ComputeHandedOut {
     arguments: String,
 }
 
-/// One independently admitted operation awaiting the overlap join.  Compute
-/// calls use the lane frame protocol; direct finite file operations use the
-/// typed completion protocol and never put writer code on a file helper.
-#[derive(Clone, Debug)]
-pub(crate) enum HandedOut {
-    Compute(ComputeHandedOut),
-    Completion(Box<super::completion::CompletionHandedOut>),
-}
-
-/// The staged call of a [PAR-3] loop the pipeline drives, where that call is a
-/// may-suspend call handed to a compute lane.
-///
-/// This is the third thing a pipeline slot can hold and the second thing that
-/// can be in flight across a loop's back edge. A submitted system operation
-/// leaves the target its record's address; a staged lane hand-out leaves the
-/// pool its frame's address, and the ring holds that address for the iteration
-/// exactly as it holds a record for the other form. The callee then runs on a
-/// pool stack — stolen by a worker, or run by the offering thread's own
-/// scheduler loop once that thread's stack parks — and parks on its own I/O
-/// without holding the loop
-/// (`research/investigations/io-model/PARK-ON-MISS.md` §2, §5).
-///
-/// One thing is rendered here rather than at two sites: the frame's shape.
-/// The published edge stores into it, the drain reads the result out of it,
-/// and a drift between the two would be a wrong load from a live frame.
-#[derive(Clone, Debug)]
-pub(crate) struct StagedLane {
-    /// The call's result, which the drain defines and the remainder reads.
-    pub(super) result: IrValueId,
-    pub(super) result_type: IrType,
-    abi: FunctionAbi,
-    pub(super) result_llvm: String,
-    /// The callee's ordinal and symbol, and the call's operand values.
-    pub(super) callee_ordinal: u32,
-    pub(super) callee: String,
-    pub(super) arguments: Vec<IrValueId>,
-    /// The frame's LLVM struct type, `{ arguments..., result }`, and the field
-    /// the result occupies.
-    pub(super) field_types: Vec<String>,
-    pub(super) frame_type: String,
-    pub(super) result_field: usize,
-    /// How many iterations the ring holds.
-    pub(super) slots: u64,
-    /// The lane frame this world offers, in bytes, or `None` where it offers
-    /// none: a sequential clone actualizes nothing, and a frame the runtime's
-    /// slot cannot hold would be refused every lane at run time anyway. Either
-    /// way the call runs where it is written and the ring element holds its
-    /// answer, which is the permitted sequential form.
-    pub(super) frame_bytes: Option<u64>,
-    /// The issue stage's own values the drain reads back, `(origin, reload)`.
-    pub(super) carries: Vec<(IrValueId, IrValueId)>,
-}
+/// One ordinary call awaiting the overlap join.
+pub(crate) type HandedOut = ComputeHandedOut;
 
 impl FunctionEmitter<'_, '_> {
     /// Hands one member of an overlap group to a worker lane.
@@ -532,7 +454,7 @@ impl FunctionEmitter<'_, '_> {
             "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  br label %{offered}\n{offered}:"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        self.handed_out.push(HandedOut::Compute(ComputeHandedOut {
+        self.handed_out.push(ComputeHandedOut {
             result,
             result_abi: abi.result(),
             frame_type,
@@ -540,288 +462,10 @@ impl FunctionEmitter<'_, '_> {
             result_field,
             callee,
             arguments: call_arguments.join(", "),
-        }));
+        });
         Ok(())
     }
 
-    /// The ring element this block addresses for one staged-lane reservation.
-    ///
-    /// The array is an entry-block reservation and the index is the slot the
-    /// block being emitted owns — the issue stage's count for a submission,
-    /// the drain's own slot for a retirement — so a hand-out addresses the
-    /// element its iteration took and a join addresses the element it is
-    /// retiring, exactly as a completion ring is addressed.
-    fn staged_ring_element(
-        &mut self,
-        key: super::FunctionSlot,
-        element_type: &str,
-        slots: u64,
-    ) -> Result<String, BackendFailure> {
-        let array = self.frame.slot(key)?;
-        let slot = match self.block_slot {
-            Some(value) => self.value_name(value),
-            None if slots == 1 => "0".to_owned(),
-            None => return Err(BackendFailure::MisaddressedCompletionSlot),
-        };
-        let element = format!("%{}", self.next_temporary()?);
-        writeln!(
-            self.output,
-            "  {element} = getelementptr inbounds [{slots} x {element_type}], ptr {array}, \
-             i64 0, i64 {slot}"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(element)
-    }
-
-    /// Stores one issue-stage value into the ring element its iteration owns.
-    ///
-    /// A carrying block is emitted once and reached once per iteration, so a
-    /// value the prologue defines is gone by the time the drain runs that
-    /// iteration's remainder. This is where it is kept, and the drain's own
-    /// load is the only reader.
-    pub(super) fn store_staged_carry(&mut self, value: IrValueId) -> Result<(), BackendFailure> {
-        let Some(plan) = self.staged_lane.clone() else {
-            return Ok(());
-        };
-        if !plan.carries.iter().any(|(origin, _)| *origin == value) {
-            return Ok(());
-        }
-        let ty = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
-        let rendered = llvm_type(self.program, ty)?;
-        let element = self.staged_ring_element(
-            super::FunctionSlot::StagedCarry(value),
-            &rendered,
-            plan.slots,
-        )?;
-        self.store_value_at(value, &element)
-    }
-
-    /// Hands the staged call of a driven [PAR-3] loop to a compute lane.
-    ///
-    /// Acquires a frame first and fills it only inside the granted edge, as
-    /// every hand-out does; what differs is where the frame's address goes and
-    /// where the answer is read. The address goes into the iteration's ring
-    /// element, because the loop's back edge is crossed with the call still
-    /// running, and the answer is read in the exact drain rather than here.
-    /// A refused acquisition runs the same call on the same operands where it
-    /// is written and leaves its answer in the same ring element, so the drain
-    /// has one thing to do either way and the two edges cannot drift apart.
-    pub(super) fn emit_staged_lane_call(
-        &mut self,
-        result: IrValueId,
-        ty: IrType,
-        function: u32,
-        arguments: &[IrValueId],
-    ) -> Result<(), BackendFailure> {
-        let plan = self.staged_lane.clone().ok_or(BackendFailure::InvalidIr)?;
-        if plan.result != result
-            || plan.callee_ordinal != function
-            || plan.arguments != arguments
-            || plan.result_type != ty
-        {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let target = self
-            .program
-            .functions()
-            .get(function as usize)
-            .ok_or(BackendFailure::InvalidIr)?;
-        if target.result() != ty || target.parameters().len() != arguments.len() {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let mut operands = Vec::with_capacity(arguments.len());
-        let mut call_arguments = Vec::with_capacity(arguments.len());
-        for (argument, parameter) in arguments.iter().zip(plan.abi.parameters()) {
-            if self.value_type(*argument) != Some(parameter.ty()) {
-                return Err(BackendFailure::InvalidIr);
-            }
-            let parameter_type = llvm_type(self.program, parameter.ty())?;
-            let operand = self.value_operand(*argument)?;
-            operands.push(format!("{parameter_type} {operand}"));
-            call_arguments.push(if parameter.is_indirect() {
-                let address = self.value_place(*argument)?;
-                format!("ptr {address}")
-            } else {
-                format!("{parameter_type} {operand}")
-            });
-        }
-        let rendered_arguments = call_arguments.join(", ");
-        let stored_result = plan.abi.result().uses_destination();
-        let result_type = plan.result_llvm.clone();
-        let answer = self.staged_ring_element(
-            super::FunctionSlot::StagedResult(result),
-            &result_type,
-            plan.slots,
-        )?;
-        let callee = plan.callee.clone();
-        let Some(frame_bytes) = plan.frame_bytes else {
-            if stored_result {
-                call_arguments.insert(0, format!("ptr {answer}"));
-                return writeln!(
-                    self.output,
-                    "  call void @{callee}({})",
-                    call_arguments.join(", ")
-                )
-                .map_err(|_| BackendFailure::TextEmission);
-            }
-            let inline = format!("%{}", self.next_temporary()?);
-            writeln!(
-                self.output,
-                "  {inline} = call {result_type} @{callee}({rendered_arguments})\n  \
-                 store {result_type} {inline}, ptr {answer}"
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-            return Ok(());
-        };
-        let thunk = self.parallel.register(|symbol| {
-            thunk_definition(
-                symbol,
-                &plan.frame_type,
-                &plan.field_types,
-                &plan.abi,
-                &callee,
-                &result_type,
-            )
-        })?;
-        let held =
-            self.staged_ring_element(super::FunctionSlot::StagedFrame(result), "ptr", plan.slots)?;
-        let frame = format!("%{}", self.next_temporary()?);
-        let granted = format!("%{}", self.next_temporary()?);
-        let offer = par_staged_offer_label(result);
-        let inline = par_staged_inline_label(result);
-        let offered = par_staged_offered_label(result);
-        writeln!(
-            self.output,
-            "  {frame} = call ptr @wf__par_acquire_lane(i64 {frame_bytes})\n  \
-             store ptr {frame}, ptr {held}\n  \
-             {granted} = icmp ne ptr {frame}, null\n  \
-             br i1 {granted}, label %{offer}, label %{inline}\n{offer}:"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        let frame_type = plan.frame_type.clone();
-        for (index, operand) in operands.iter().enumerate() {
-            let field = format!("%{}", self.next_temporary()?);
-            writeln!(
-                self.output,
-                "  {field} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {index}\n  \
-                 store {operand}, ptr {field}"
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-        }
-        let refused = format!("%{}", self.next_temporary()?);
-        let fallback = if stored_result {
-            call_arguments.insert(0, format!("ptr {answer}"));
-            format!("call void @{callee}({})", call_arguments.join(", "))
-        } else {
-            format!(
-                "{refused} = call {result_type} @{callee}({rendered_arguments})\n  store {result_type} {refused}, ptr {answer}"
-            )
-        };
-        writeln!(
-            self.output,
-            "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  \
-             br label %{offered}\n\
-             {inline}:\n  \
-             {fallback}\n  \
-             br label %{offered}\n\
-             {offered}:"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(())
-    }
-
-    /// Retires the staged lane hand-out of the slot this drain block owns, and
-    /// reads back that iteration's own values.
-    ///
-    /// Emitted before the drain's own instructions, because the remainder they
-    /// are is what reads the retired result. A granted frame is joined, read,
-    /// and given back; a refused one already left its answer in the ring. The
-    /// remainder then runs with the result in iteration order, exactly as it
-    /// runs on a submitted operation's outcome.
-    pub(super) fn emit_staged_lane_retirement(&mut self) -> Result<(), BackendFailure> {
-        let Some(plan) = self.staged_lane.clone() else {
-            return Ok(());
-        };
-        for (origin, reload) in &plan.carries {
-            let ty = self.value_type(*origin).ok_or(BackendFailure::InvalidIr)?;
-            if self.value_type(*reload) != Some(ty) {
-                return Err(BackendFailure::InvalidIr);
-            }
-            let rendered = llvm_type(self.program, ty)?;
-            let element = self.staged_ring_element(
-                super::FunctionSlot::StagedCarry(*origin),
-                &rendered,
-                plan.slots,
-            )?;
-            writeln!(
-                self.output,
-                "  {} = load {rendered}, ptr {element}",
-                self.value_name(*reload)
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-            self.save_value_result(*reload)?;
-        }
-        let result_type = plan.result_llvm.clone();
-        let answer = self.staged_ring_element(
-            super::FunctionSlot::StagedResult(plan.result),
-            &result_type,
-            plan.slots,
-        )?;
-        if plan.frame_bytes.is_none() {
-            writeln!(
-                self.output,
-                "  {} = load {result_type}, ptr {answer}",
-                value_name(plan.result)
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-            self.save_value_result(plan.result)?;
-            return Ok(());
-        }
-        let held = self.staged_ring_element(
-            super::FunctionSlot::StagedFrame(plan.result),
-            "ptr",
-            plan.slots,
-        )?;
-        let frame = format!("%{}", self.next_temporary()?);
-        let condition = format!("%{}", self.next_temporary()?);
-        let direct = format!("%{}", self.next_temporary()?);
-        let waited = format!("%{}", self.next_temporary()?);
-        let field = format!("%{}", self.next_temporary()?);
-        let inline = par_staged_refused_label(plan.result);
-        let wait = par_staged_wait_label(plan.result);
-        let done = par_staged_done_label(plan.result);
-        // Preserve the existing value phi; copy the joined aggregate into
-        // caller backing before the runtime can reuse the released lane.
-        let save_waited = if plan.abi.result().uses_destination() {
-            let destination = self.value_place(plan.result)?;
-            format!("store {result_type} {waited}, ptr {destination}\n  ")
-        } else {
-            String::new()
-        };
-        writeln!(
-            self.output,
-            "  {frame} = load ptr, ptr {held}\n  \
-             {condition} = icmp eq ptr {frame}, null\n  \
-             br i1 {condition}, label %{inline}, label %{wait}\n\
-             {inline}:\n  {direct} = load {result_type}, ptr {answer}\n  \
-             br label %{done}\n\
-             {wait}:\n  call void @wf__par_join(ptr {frame})\n  \
-             {field} = getelementptr inbounds {}, ptr {frame}, i32 0, i32 {}\n  \
-             {waited} = load {result_type}, ptr {field}\n  \
-             {save_waited}call void @wf__par_release(ptr {frame})\n  br label %{done}\n\
-             {done}:\n  {} = phi {result_type} [ {direct}, %{inline} ], [ {waited}, %{wait} ]",
-            plan.frame_type,
-            plan.result_field,
-            value_name(plan.result),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        self.save_value_result(plan.result)?;
-        Ok(())
-    }
-
-    /// Renders one permitted counted loop [PAR-2 candidate] into the world
-    /// being emitted.
-    ///
     /// The sequential world calls the chunk — the loop itself, seeded with the
     /// accumulator's incoming value — and is therefore the code the loop always
     /// had, behind one call its only caller inlines back. The overlapped world
@@ -962,17 +606,8 @@ impl FunctionEmitter<'_, '_> {
         if !self.is_overlap_join_site(join_site) {
             return Ok(());
         }
-        let queue = compute_join_order(std::mem::take(&mut self.handed_out), |pending| {
-            matches!(pending, HandedOut::Compute(_))
-        });
-        for pending in queue {
-            let pending = match pending {
-                HandedOut::Compute(pending) => pending,
-                HandedOut::Completion(pending) => {
-                    self.emit_completion_join(*pending)?;
-                    continue;
-                }
-            };
+        let queue = std::mem::take(&mut self.handed_out);
+        for pending in queue.into_iter().rev() {
             let condition = format!("%{}", self.next_temporary()?);
             let refused = format!("%{}", self.next_temporary()?);
             let waited = format!("%{}", self.next_temporary()?);
@@ -1026,53 +661,6 @@ impl FunctionEmitter<'_, '_> {
         }
         Ok(())
     }
-}
-
-/// The order a group's members are joined in: its compute members newest
-/// first, its completion members exactly where they were published.
-///
-/// The compute deque is Chase-Lev. Its owner pushes and pops at the newest
-/// end while thieves take from the oldest, so what has been stolen is always
-/// a prefix of the publish order and what the owner still holds is the
-/// suffix. Joining in publish order therefore asks for the oldest entry
-/// first, the one entry the owner cannot reach without digging past
-/// everything it published after it. Joining the compute members newest
-/// first instead — publish J1, J2, J3, join J3, J2, J1 — means that at every
-/// compute join the target is either the newest entry of the owner's deque or
-/// it has already been stolen, and never present but buried under something
-/// newer. The runtime needs no notion of a group: it looks at the newest end
-/// once. (The property is stated for a join taken on the target's home lane
-/// with nothing else having pushed onto that lane in between; where that
-/// fails the join simply parks, which costs one park and nothing else.)
-///
-/// A completion member holds no deque entry, so the deque places no
-/// constraint on where it is joined and it keeps the position it was
-/// published at. Only the compute members move, and only among the positions
-/// they already occupy: the queue `[C1, IO1, C2, C3]` is joined as
-/// `[C3, IO1, C2, C1]`. Join order is not observable — [PAR-1] fixes every
-/// value to the source-order result — so this is an emitter choice, and it is
-/// made here once. Every site that needs a group's join order consumes this
-/// function rather than encoding one of its own.
-pub(super) fn compute_join_order<T>(
-    mut members: Vec<T>,
-    is_compute: impl Fn(&T) -> bool,
-) -> Vec<T> {
-    let compute: Vec<usize> = members
-        .iter()
-        .enumerate()
-        .filter(|(_, member)| is_compute(member))
-        .map(|(position, _)| position)
-        .collect();
-    // Reverse the compute members in place across the positions they hold,
-    // which leaves every other position untouched.
-    let mut oldest = 0;
-    let mut newest = compute.len();
-    while oldest + 1 < newest {
-        newest -= 1;
-        members.swap(compute[oldest], compute[newest]);
-        oldest += 1;
-    }
-    members
 }
 
 /// One outlined call over its frame.
@@ -1147,204 +735,6 @@ pub(super) fn par_done_label(value: IrValueId) -> String {
     format!("par.done.v{}", value.ordinal())
 }
 
-/// The staged hand-out's four labels. They are its own rather than the compute
-/// group's because a staged hand-out splits its block twice — once where it is
-/// offered and once where it is retired — and the two are different blocks.
-fn par_staged_offer_label(value: IrValueId) -> String {
-    format!("par.staged.offer.v{}", value.ordinal())
-}
-
-/// The label a refused acquisition runs the call in, at the staged point.
-fn par_staged_inline_label(value: IrValueId) -> String {
-    format!("par.staged.inline.v{}", value.ordinal())
-}
-
-/// The label both edges of the acquisition continue in, and so the block the
-/// rest of the issue stage runs in.
-pub(super) fn par_staged_offered_label(value: IrValueId) -> String {
-    format!("par.staged.offered.v{}", value.ordinal())
-}
-
-/// The label the drain reads a refused iteration's own answer in.
-fn par_staged_refused_label(value: IrValueId) -> String {
-    format!("par.staged.refused.v{}", value.ordinal())
-}
-
-/// The label the drain joins a granted frame in.
-fn par_staged_wait_label(value: IrValueId) -> String {
-    format!("par.staged.wait.v{}", value.ordinal())
-}
-
-/// The label the retired result is defined in, and so the block the drain's
-/// own remainder runs in.
-pub(super) fn par_staged_done_label(value: IrValueId) -> String {
-    format!("par.staged.done.v{}", value.ordinal())
-}
-
-/// The staged lane hand-out this world emits for this function, or `None`
-/// where the function drives no such loop.
-///
-/// The plan is built once, before any text is written, because the frame's
-/// shape has to be the same at the offer and at the retirement and those are
-/// two different blocks. `hands_out` is the world: a sequential clone
-/// actualizes nothing, so it plans no frame and every iteration runs its call
-/// where it is written — the permitted sequential form, and the same one a
-/// frame too large for the runtime's slot takes.
-pub(super) fn staged_lane_plan(
-    program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
-    target: TargetLayout,
-    function: &IrFunction,
-    pipeline: Option<&crate::IrCompletionPipeline>,
-    completion_steps: &HashMap<IrValueId, IrCompletionStep>,
-    hands_out: bool,
-) -> Result<Option<StagedLane>, BackendFailure> {
-    let Some(pipeline) = pipeline.filter(|pipeline| pipeline.lane_handout()) else {
-        return Ok(None);
-    };
-    let Some(result) = pipeline.driven_result() else {
-        return Ok(None);
-    };
-    // The step is what selects the hand-out, exactly as it selects a typed
-    // adapter's submission: a descriptor whose step does not submit keeps the
-    // ordinary call.
-    if !completion_steps
-        .get(&result)
-        .is_some_and(crate::IrCompletionStep::submit)
-    {
-        return Ok(None);
-    }
-    let Some(IrOperation::Call {
-        function: callee_ordinal,
-        arguments,
-    }) = super::definition_operation(function, result)
-    else {
-        return Ok(None);
-    };
-    let callee = program
-        .functions()
-        .get(*callee_ordinal as usize)
-        .ok_or(BackendFailure::InvalidIr)?;
-    let result_type = function
-        .value_type(result)
-        .ok_or(BackendFailure::InvalidIr)?;
-    if callee.result() != result_type || callee.parameters().len() != arguments.len() {
-        return Err(BackendFailure::InvalidIr);
-    }
-    let abi = FunctionAbi::build(program, callee)?;
-    let mut field_types = Vec::with_capacity(arguments.len() + 1);
-    for (_, parameter_type) in callee.parameters() {
-        field_types.push(llvm_type(program, *parameter_type)?);
-    }
-    let result_llvm = llvm_type(program, result_type)?;
-    let result_field = field_types.len();
-    field_types.push(result_llvm.clone());
-    let frame_bytes = if hands_out {
-        super::parallel_lane_frame_layout(target, qualification, program, callee)
-            .map_err(BackendFailure::TargetLayout)?
-            .map(|layout| layout.size())
-    } else {
-        None
-    };
-    Ok(Some(StagedLane {
-        result,
-        result_type,
-        abi,
-        result_llvm,
-        callee_ordinal: *callee_ordinal,
-        callee: source_symbol(callee.name()),
-        arguments: arguments.clone(),
-        frame_type: format!("{{ {} }}", field_types.join(", ")),
-        field_types,
-        result_field,
-        slots: pipeline.slots(),
-        frame_bytes,
-        carries: pipeline.staged_carries().to_vec(),
-    }))
-}
-
-#[cfg(test)]
-mod join_order_tests {
-    use super::compute_join_order;
-
-    /// One member of a group's publish queue, kept abstract because
-    /// `compute_join_order` is: all it may ask of a member is whether it is a
-    /// compute member.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum Member {
-        Compute(u32),
-        Completion(u32),
-    }
-
-    fn joined(queue: &[Member]) -> Vec<Member> {
-        compute_join_order(queue.to_vec(), |member| {
-            matches!(member, Member::Compute(_))
-        })
-    }
-
-    /// The three queues design §4 states the rule with.
-    ///
-    /// Compute members are joined newest first; a completion member holds no
-    /// deque entry and is joined where it was published, so the permutation
-    /// touches only the compute positions.
-    #[test]
-    fn compute_members_reverse_and_completion_members_hold_their_positions() {
-        use Member::{Completion, Compute};
-
-        assert_eq!(
-            joined(&[Compute(1), Completion(1), Compute(2), Compute(3)]),
-            vec![Compute(3), Completion(1), Compute(2), Compute(1)],
-            "the compute members reverse across the positions they hold"
-        );
-        assert_eq!(
-            joined(&[Completion(1), Compute(1), Completion(2)]),
-            vec![Completion(1), Compute(1), Completion(2)],
-            "one compute member has nothing to reverse with"
-        );
-        assert_eq!(
-            joined(&[Compute(1), Compute(2)]),
-            vec![Compute(2), Compute(1)],
-            "the newest published compute member is joined first"
-        );
-    }
-
-    /// The order is a permutation: every member is joined exactly once, and a
-    /// queue with no compute member to move is returned as it came.
-    #[test]
-    fn the_order_joins_every_member_exactly_once() {
-        use Member::{Completion, Compute};
-
-        let queue = [
-            Compute(1),
-            Completion(1),
-            Compute(2),
-            Completion(2),
-            Compute(3),
-        ];
-        let mut order = joined(&queue);
-        assert_eq!(
-            order,
-            vec![
-                Compute(3),
-                Completion(1),
-                Compute(2),
-                Completion(2),
-                Compute(1)
-            ]
-        );
-        order.sort_by_key(|member| match member {
-            Compute(index) => (0, *index),
-            Completion(index) => (1, *index),
-        });
-        let mut expected = queue.to_vec();
-        expected.sort_by_key(|member| match member {
-            Compute(index) => (0, *index),
-            Completion(index) => (1, *index),
-        });
-        assert_eq!(order, expected, "no member is dropped or duplicated");
-
-        let completions = [Completion(1), Completion(2)];
-        assert_eq!(joined(&completions), completions.to_vec());
-        assert_eq!(joined(&[]), Vec::new());
-    }
-}
+// The former mixed completion/worker join-order assertions are retired by
+// v0.58's deletion of PAR-3 and direct completion handouts. Every ordinary
+// worker group now joins in reverse publication order in emit_overlap_joins.

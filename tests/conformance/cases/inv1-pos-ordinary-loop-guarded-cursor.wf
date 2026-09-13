@@ -14,7 +14,7 @@ fn count_to(limit: own u64) -> reached: own u64 pure {
   return cursor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let reached = count_to(limit: 4_u64);
   let correct = reached == 4_u64;
   if correct {

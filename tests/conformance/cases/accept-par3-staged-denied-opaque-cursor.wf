@@ -1,31 +1,32 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "The enumeration source is a cursor with one position, opened above the loop and advanced by every iteration through a retained exclusive borrow. It is not read-only, it is not prologue-only, and an opaque system nominal has no copy element type to replicate, so PAR-3 denies it permanently rather than for a stage-one reason. This is the ownership model working, not a gap.";
+fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
+  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
   let total = 0_u64;
   region {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        match open_directory_source(permit: move permit, directory: &cwd) {
-          SourceOpened(value: list) => {
-            for @scan (index in 0_u64..4_u64) {
-              region 'w {
-                let workspace = arena_frame::<1024, 1, 'w>();
+    match open_directory_source(factory: &uniq deref(files), directory: cwd) {
+      SourceOpened(value: list) => {
+        for @scan (index in 0_u64..4_u64) {
+          region 'w {
+            let workspace = arena_frame::<1024, 1, 'w>();
+            region {
+              let entries = arena_vector_proved::<u8>(store: &uniq workspace, count: 1024_u64);
+              for @prime (
+                at in 0_u64..1024_u64,
+                invariant grown: len_of(entries) >= at,
+                invariant spare: room_of(entries) + at >= 1024_u64,
+                invariant flat: head_of(entries) <= 0_u64
+              ) {
+                place_back(vector: &uniq entries, value: 0_u8);
+              }
+              region {
+                let destination = mut_slice_of(&uniq entries);
                 region {
-                  let entries = arena_vector_proved::<u8>(store: &uniq workspace, count: 1024_u64);
-                  for @prime (
-                    at in 0_u64..1024_u64,
-                    invariant grown: len_of(entries) >= at,
-                    invariant spare: room_of(entries) + at >= 1024_u64,
-                    invariant flat: head_of(entries) <= 0_u64
-                  ) {
-                    place_back(vector: &uniq entries, value: 0_u8);
-                  }
-                  region {
-                    let destination = mut_slice_of(&uniq entries);
-                    region {
-                      match directory_next(source: &uniq list, destination: &uniq destination, start: 0_u64, end: 1024_u64) {
-                        ListBytes(next: bytes, entries: reported) => {
-                          set total = total +wrap reported;
-                        }
+                  let (list_result_15, reported) = directory_next(source: &uniq list, destination: &uniq destination, start: 0_u64, end: 1024_u64);
+                  match list_result_15 {
+                    Ok(value: bytes) => {
+                      set total = total +wrap reported;
+                    }
+                    Err(error: list_stop_15) => {
+                      match list_stop_15 {
                         ListEnd() => {
                         }
                         ListFailed(error: problem) => {
@@ -37,14 +38,22 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
               }
             }
           }
-          SourceOpenFailed(error: problem, permit: refused) => {
-          }
         }
+        close_directory_source(factory: &uniq deref(files), source: move list);
       }
-      Err(error: spent) => {
-        return exit_status(code: 1_u8);
+      SourceOpenFailed(error: problem) => {
       }
     }
   }
   return exit_status(code: 0_u8);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

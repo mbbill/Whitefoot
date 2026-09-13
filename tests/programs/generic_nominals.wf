@@ -32,7 +32,7 @@ fn checked_sum<T: Int>(left: own T, right: own T) -> result: own Result<T, Overf
   return left +checked right;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = duplicate::<u8>(value: 7_u8);
   let wide = duplicate::<i64>(value: -9_i64);
   let small_left = small.left;

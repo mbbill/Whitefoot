@@ -99,8 +99,6 @@ const ENUM_ORDER: &[&str] = &[
     "cvalue",
     "effects",
     "effect",
-    "program_kind",
-    "input_label",
     "if_stmt",
     "value_if",
     "infix_tail",

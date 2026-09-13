@@ -1,4 +1,4 @@
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "OWN-3: naming a region that was never introduced is rejected.";
   let a = 1_i32;
   let p = &'z a;

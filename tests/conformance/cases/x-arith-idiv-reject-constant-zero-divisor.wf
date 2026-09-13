@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "A signed bare `/` with one constant operand is in the divisor class [OP-2], so it carries the division obligation instead of a runtime test [ENT-6]. The constant divisor is zero, a ground false conjunct rejected at every non-contradictory point: the always-invalid exact spelling is a compile-time rejection.";
   let x = 10_i32;
   let q = x / 0_i32;

@@ -24,7 +24,7 @@ fn leave(value: own u64) -> result: own u64 pure {
   return remaining;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let returned = descend(value: 9_u64);
   let continued = leave(value: 7_u64);
   if returned != 0_u64 {
@@ -103,7 +103,7 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = exercise();
   if result != 8_u64 {
     return exit_status(code: 1_u8);

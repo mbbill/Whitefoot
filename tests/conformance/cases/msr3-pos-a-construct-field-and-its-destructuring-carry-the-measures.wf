@@ -2,7 +2,7 @@ struct Lease['s] {
   run: Vector<'s, u8>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-3: the construct and destructuring placements, with no branch on a measure anywhere. The field operand carries its measures into lease.run, the placement into the field survives the consume the construct performs, and the destructuring consume carries them back out to the binder that names the field.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

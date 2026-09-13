@@ -34,7 +34,7 @@ fn consume(owner: own Owner) -> result: own u8 reads(owner) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let abandoned_left = buffer_new(1_u64, 7_u8);
   let abandoned_right = buffer_new(1_u64, 9_u8);
   let abandoned_pair = PairBuffers(left: move abandoned_left, right: move abandoned_right);
@@ -173,7 +173,7 @@ fn consume(value: own Option<buffer<u8>>) -> result: own u8 reads(value) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let abandoned_bytes = buffer_new(1_u64, 5_u8);
   let abandoned_some = Some<buffer<u8>>(value: move abandoned_bytes);
   abandon(value: move abandoned_some);

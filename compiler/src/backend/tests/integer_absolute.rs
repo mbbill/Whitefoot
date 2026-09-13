@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn executes_every_absolute_mode_for_every_signed_width() {
-    let template = r#"command fn main() -> status: own ExitStatus pure {
+    let template = r#"fn main() -> status: own ExitStatus pure {
   let wrapped = iabs.wrap($MIN_$TYPE);
   if wrapped == $MIN_$TYPE {
   } else {
@@ -77,7 +77,7 @@ fn executes_every_absolute_mode_for_every_signed_width() {
 
 #[test]
 fn defined_minimum_reports_false_without_executing_absolute_value() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let is_defined = iabs.defined(-128_i8);
   if bnot(is_defined) {
   } else {

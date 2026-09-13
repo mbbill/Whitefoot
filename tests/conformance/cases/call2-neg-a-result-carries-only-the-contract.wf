@@ -4,7 +4,7 @@ fn shrink<const n: u64>(source: own FixedVector<u8, n>) -> smaller: own FixedVec
   return move fresh;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[CALL-2] only the contract's facts exist on the result. The callee declares no relation, so nothing the caller knew about line reaches got: the result is a fresh binding and no fact of any argument flows to it. The subscript at offset 1 of the empty run the callee actually returned must therefore be rejected at [OP-4] with the residual 1_u64 < len_of(got), and a caller that wants a relation between what it handed over and what it got back reads it from a contract or does not have it.";
   let line = fixed_vector::<u8, 4>();
   region {

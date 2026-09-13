@@ -48,7 +48,7 @@ fn count['s](tree: &Box<'s, Tree<'s>>) -> result: own Result<u64, Overflow> read
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
     match boxed_leaf(store: &uniq heap) {
       None() => {

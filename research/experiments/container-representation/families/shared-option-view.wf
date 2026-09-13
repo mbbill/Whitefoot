@@ -26,7 +26,7 @@ fn lookup(slots: &FixedVector<Slot, 1>) -> result: own u64 reads(slots) contract
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let present = Entry(value: 37_u64);
   let some = Some<Entry>(value: move present);
   let none = None<Entry>();

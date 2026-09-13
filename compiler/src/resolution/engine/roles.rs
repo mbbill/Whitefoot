@@ -115,7 +115,16 @@ pub(super) fn classify_roles(
             owner_chain: owner_chain(topology, role.owner)?,
         });
     }
-    roles.sort_by_key(|role| EventKey::from_origin(&role.origin));
+    // PRE-1 declarations are supplied before writer declarations. Their
+    // physical source records are appended only to preserve writer spans;
+    // inventory order still makes a duplicate writer name cite the writer.
+    roles.sort_by_key(|role| {
+        let writer = classified
+            .source_bundle()
+            .file(role.origin.coordinate.source())
+            .is_none_or(|file| file.prelude().is_none());
+        (writer, EventKey::from_origin(&role.origin))
+    });
     Ok(roles)
 }
 
@@ -261,22 +270,6 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::ProgramKind if !names.is_empty() => {
-            return Err(ResolutionCompilerFailure::InvalidRoleShape);
-        }
-        Production::InputLabel => {
-            let [label] = names.as_slice() else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape);
-            };
-            add_complete(
-                classified,
-                owner,
-                *label,
-                RawRoleKind::TableChecked,
-                roles,
-                complete_counts,
-            )?;
-        }
         Production::InvariantStmt | Production::HeaderInvariant => {
             // The relation is a `compare_op` terminal between two affine
             // expressions, not a name; the only direct IDENT is the
@@ -461,7 +454,18 @@ fn classify_node(
             classified,
             owner,
             &names,
-            RawRoleKind::Declaration(DeclarationRole::FunctionParameter),
+            RawRoleKind::Declaration(
+                if topology
+                    .node(owner)
+                    .and_then(|node| node.parent)
+                    .and_then(|parent| topology.node(parent))
+                    .is_some_and(|parent| parent.production == Production::Item)
+                {
+                    DeclarationRole::Function
+                } else {
+                    DeclarationRole::FunctionParameter
+                },
+            ),
             roles,
             complete_counts,
         )?,

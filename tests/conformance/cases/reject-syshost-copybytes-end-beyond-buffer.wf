@@ -1,5 +1,9 @@
-command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
-  doc "SYS-8 rejects an end endpoint beyond the destination length statically, even when start is inside the buffer. The rejected call never reaches a host transfer or runtime fallback.";
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "The original end exceeds destination length. The ordinary function requires end <= len_of(deref(destination)); FN-8 rejects the unproved call requirement without a runtime fallback.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
       None() => {
@@ -20,9 +24,9 @@ command fn main(command.args as args: own Args, command.heap as heap: own Heap) 
           region {
             match arg_get(args: &args, position: 1_u64) {
               Ok(value: text) => {
-                region 'v {
+                region {
                   region {
-                    match host_copy_bytes(value: &'v text, destination: &uniq window, start: 2_u64, end: 6_u64) {
+                    match host_copy_bytes(value: &text, destination: &uniq window, start: 2_u64, end: 6_u64) {
                       Ok(value: copied) => {
                         return exit_status(code: 10_u8);
                       }

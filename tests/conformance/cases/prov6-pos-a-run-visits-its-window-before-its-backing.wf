@@ -25,7 +25,7 @@ fn hold['s](store: &uniq Heap<'s>, value: own u8) -> made: own Option<Holder<'s>
   }
 }
 
-fn walk['s](store: &uniq Heap<'s>, first: own Holder<'s>) -> code: own u8 reads(store, first.data), writes(store, first.data), allocates(store) {
+fn walk['s](store: &uniq Heap<'s>, first: own Holder<'s>) -> code: own u8 reads(store), writes(store), allocates(store) {
   doc "PROV-6: a container's elements are visited before its backing is released. The fixed run's own backing is this activation's frame and reclaims nothing, and its window holds elements that each own one run of the general store, so the derived release is exactly the window walk in ascending logical order and the storage every element owns is freed once.";
   let empty = fixed_vector::<Holder<'s>, 4>();
   region {
@@ -65,7 +65,7 @@ fn walk['s](store: &uniq Heap<'s>, first: own Holder<'s>) -> code: own u8 reads(
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "The entry hands the general store's provider to the walk, whose own region parameter names the store the run's elements live in.";
   region {
     match hold(store: &uniq heap, value: 3_u8) {

@@ -1,5 +1,5 @@
-command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus pure {
-  doc "An entry name reaches source only as bytes [SYS-14]: this specification declares no operation turning an enumerated name into a `HostString` or a `RelativePath`, because a name's backing is not the command-lifetime argument snapshot [HOST-3] while a path value is an inline lease over that snapshot [PATH-1]. The gap is closed by the type system, not by convention, so handing `relative_path` a run of bytes is a rejection.";
+fn exercise(cwd: &DirectoryRead, entry_factory: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, entry_factory), writes(entry_factory) {
+  doc "The ordinary relative_path parameter is HostString. Passing a run of u8 is a normal FN-1 argument type mismatch; no path-from-bytes conversion is declared.";
   let name = fixed_vector::<u8, 3>();
   region {
     place_back(vector: &uniq name, value: 97_u8);
@@ -17,5 +17,15 @@ command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus
     Err(error: problem) => {
       return exit_status(code: 8_u8);
     }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, entry_factory: &uniq entry_factory);
+    close_directory(factory: &uniq entry_factory, directory: move cwd);
+    return move outcome;
   }
 }

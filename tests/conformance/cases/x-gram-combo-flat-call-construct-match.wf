@@ -7,7 +7,7 @@ fn double(x: own i32) -> function_result: own i32 pure {
   return x *wrap 2_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Combination: a GRAM-9 three-address chain feeds a GRAM-11 named call whose result fills a GRAM-8 named construct, then a GRAM-10 match selects the arm; runs to exit 0.";
   let a = 3_i32;
   let b = 4_i32;

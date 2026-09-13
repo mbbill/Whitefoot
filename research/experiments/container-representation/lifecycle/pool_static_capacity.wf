@@ -23,7 +23,7 @@ fn return_static(free: &uniq FixedVector<StaticBlock, 2>, block: own StaticBlock
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
   region {
     place_back(vector: &uniq empty, value: 1_u8);

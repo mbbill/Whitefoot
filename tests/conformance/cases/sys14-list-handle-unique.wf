@@ -1,7 +1,7 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
+fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq Heap<'heap>) -> status: own ExitStatus reads(cwd, files, heap), writes(files, heap), allocates(heap) {
   doc "`directory_next` takes an exclusive `DirectorySource` borrow because advancing enumeration changes that source's state. This negative case deliberately requests two simultaneous unique borrows of the same owner, so ordinary OWN-5 exclusivity rejects them.";
   region {
-    match heap_vector::<u8>(store: &uniq heap, count: 1024_u64) {
+    match heap_vector::<u8>(store: &uniq deref(heap), count: 1024_u64) {
       None() => {
         return exit_status(code: 70_u8);
       }
@@ -18,38 +18,49 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
         region {
           let window = mut_slice_of(&uniq entries);
           region {
-            match reserve_handle(factory: &uniq files) {
-              Ok(value: permit) => {
-                match open_directory_source(permit: move permit, directory: &cwd) {
-                  SourceOpened(value: list) => {
-                    region {
-                      let first = &uniq list;
-                      let second = &uniq list;
-                      match directory_next(source: &uniq deref(first), destination: &uniq window, start: 0_u64, end: 1024_u64) {
-                        ListBytes(next: bytes, entries: reported) => {
-                          return exit_status(code: 0_u8);
-                        }
+            match open_directory_source(factory: &uniq deref(files), directory: cwd) {
+              SourceOpened(value: list) => {
+                region {
+                  let first = &uniq list;
+                  let second = &uniq list;
+                  let (list_result_12, reported) = directory_next(source: &uniq deref(first), destination: &uniq window, start: 0_u64, end: 1024_u64);
+                  match list_result_12 {
+                    Ok(value: bytes) => {
+                      close_directory_source(factory: &uniq deref(files), source: move list);
+                      return exit_status(code: 0_u8);
+                    }
+                    Err(error: list_stop_12) => {
+                      match list_stop_12 {
                         ListEnd() => {
+                          close_directory_source(factory: &uniq deref(files), source: move list);
                           return exit_status(code: 0_u8);
                         }
                         ListFailed(error: problem) => {
+                          close_directory_source(factory: &uniq deref(files), source: move list);
                           return exit_status(code: 3_u8);
                         }
                       }
                     }
                   }
-                  SourceOpenFailed(error: problem, permit: refused) => {
-                    return exit_status(code: 4_u8);
-                  }
                 }
               }
-              Err(error: spent) => {
-                return exit_status(code: 5_u8);
+              SourceOpenFailed(error: problem) => {
+                return exit_status(code: 4_u8);
               }
             }
           }
         }
       }
     }
+  }
+}
+
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files, heap: &uniq heap);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
 }

@@ -216,7 +216,7 @@ fn priority_trace(seed: own u64, rounds: own u64) -> checksum: own u64 pure {
   return checksum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let trace = priority_trace(seed: 1_u64, rounds: 1_u64);
   if trace != 16743229412097926756_u64 {
     return exit_status(code: 4_u8);
