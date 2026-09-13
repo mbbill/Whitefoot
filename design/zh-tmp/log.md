@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-13 记录各项审计的裁定并将规范修订到 v0.54
+
+Nodes: compiler, compiler/completion-runtime, compiler/target-qualification, compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime, compiler/resource-exhaustion-floor, language/data-model, language/parallelism/permission-judgment, language/system-interface
+
+Summary: `design/recall-tmp/audit/` 下的十一份模块审计，列出了代码里已经体现、却还没有对应节点的每一处选择，所有者对每一处都做了裁定；`design/recall-tmp/triage.md` 保存着这些裁定。新增两个编译器节点：completion-runtime，包含记录存于帧内的契约、启动期回退与接受之后 fail-stop 之间的不对称处理、160 字节的记录、按需增长的辅助线程、`fstat` 方式的 open 类型判定、硬性的链接要求、每个套接字都设置的 `TCP_NODELAY`、经测量的调优常数，以及暂定的两槽位分阶段循环流水线；以及 target-qualification，包含那道人工核对的版本检查。编译器根节点记录了所链接的运行时是人工审查过的 C 代码、位于 safe-Rust 保证之外。parallel-lowering 新增了许可账本的提示策略；two-worlds 新增了先认领 lane 再建帧的顺序；parallel-runtime 新增了最新优先的 join 顺序以及一吉字节的 lane 栈；resource-exhaustion-floor 新增了栈账本在代码生成之后才测量这一点，以及描述符地板（descriptor floor）。data-model 去掉了 array-of-structs 那条理由曾经引用过的 copy 结构体层级——规范和编译器都没有这个东西——并记录了名义类型身份里的区域轴。permission-judgment 承认一次判别对象调用也是窗口成员，规范也修订到 v0.54，在 [PAR-1] 里写明这一点，并在 [ENT-3.S10] 里为编译器已经推导出的整个 [SYS-8] 系列命名；退出使用的 v0.53 字节被归档。system-interface 记录了所有者的裁定：一个资源的状态由它的类型在 API 边界上承载，不会从被调用者的函数体推导出结果状态的来源，而现有的 `result_state_origin.rs` 与此相矛盾，`docs/todo.md` 现在跟踪这一点。这次修订的选择依据：[PAR-1] 遵循所有者"性能优先"的规则，因为收窄编译器会丢掉一次真实存在的重叠；[ENT-3.S10] 遵循 [SYS-8] 自身的文字，它本来就已经把这八个操作当作一个整体系列对待。
+> 通俗解释：这一批改动，是把十一份代码审计里发现的、代码已经在做但设计树里没写明的做法，一条条过了一遍，由所有者拍板该怎么处理，再把结果补进编译器树和语言树：新增了两个编译器节点，分别讲清楚异步 I/O 完成机制和目标平台版本核对机制背后的取舍；在几个已有的并行相关节点里，补上了运行时到底是怎么实现调度顺序、栈大小、join 顺序这些细节的决定；去掉了数据模型里一条说得比实际存在的机制还多的话；并且把语言规范升级到了 v0.54 版本，明确了两处编译器一直以来就是这样做、但规范原来没写清楚的规则。
+
 ## 2026-09-12 合并 main 的计算运行时工作并删除清单开关
 
 Nodes: compiler, compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime
