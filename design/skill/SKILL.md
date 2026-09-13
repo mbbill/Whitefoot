@@ -9,32 +9,29 @@ A design tree records the decisions a project is built on: what was chosen,
 because of what, instead of what. It is organized by concept, not by code
 structure, so it survives refactors. It holds only live decisions with their
 reasons; git holds history and the change log provides a short trace of each
-approved change. The tree is
-the owner's: every line in it is something the owner has ruled, and a choice
-an agent makes on its own stands beside the tree as an amendment until the
-owner rules on it.
+approved change. The tree is the owner's: every line in it is something the
+owner has ruled, and a choice an agent makes on its own stands beside the
+tree as an amendment until the owner rules on it.
 
 The purpose of this procedure is to help the owner judge whether a design is
 reasonable and what must change in the current design. The complete design
 and its proposed tree revision are the design deliverables. Choose the
 research and implementation methods to answer the actual design questions.
 
-Four parts:
+Use the project's established locations and concept hierarchy for the live
+tree, pending amendments, and change log. When these are not established,
+choose a suitable home under the project's conventions. The structure has
+three roles:
 
-- `design/language.md` with `design/language/`, and `design/compiler.md`
-  with `design/compiler/`: the two live trees, one for language decisions
-  and one for compiler decisions. One file per node; a node's children live
-  in the directory with the node's name. A language decision is checked
-  against the specification, a compiler decision against the code.
-- `design/amendments/`: one file per decision an agent made on its own, in
-  the node form with a first line naming the node it amends or adds. An
-  amendment is a proposal, not a decision, until the owner accepts it; the
-  directory is empty when nothing is pending.
-- `design/log.md`: one concise entry per approved tree change, newest first,
+- Live decisions: one file per node; a node's children live in a directory
+  with the node's name. Organize branches around the project's concepts and
+  check each decision against the artifact that implements it.
+- Pending amendments: one file per decision an agent made on its own, in
+  the node form with a first line naming the affected node. An amendment
+  remains a proposal until the owner accepts it.
+- Change log: one concise entry per approved tree change, newest first,
   for later traceability. It records the ruling after review; it is not a
   separate design deliverable or approval checkpoint.
-- `design/skill/`: this procedure, with its check prompts, and the
-  structural lint.
 
 ## Node format
 
@@ -53,8 +50,8 @@ line with neither is a description, not a decision, and does not belong in
 the tree.
 
 A decision is written for a reader who has not seen the record it came
-from. Terms of art compressed from a memory node, a specification section,
-or a compiler internal are expanded into plain words or replaced. A reader
+from. Terms of art compressed from an earlier record, a specification, or
+an implementation detail are expanded into plain words or replaced. A reader
 who has to open the source to understand the reason has found a defect in
 the node, not in their reading.
 
@@ -79,8 +76,8 @@ easy to review. Apply three filters at every change:
 
 1. Decision, not description. A node without `because` or `instead of` is
    documentation and is removed.
-2. Not derivable from code. A node that says what a signature, effect row,
-   or type already says is removed.
+2. Not derivable from code. A node that only restates what an interface or
+   implementation already shows is removed.
 3. Normalize upward. A rule true for a whole concept is stated once at that
    concept's node and never repeated in children. Siblings that repeat each
    other move to the parent.
@@ -96,8 +93,8 @@ agent chooses a design change on its own, it records an amendment and keeps
 working. Owner availability changes when that choice is discussed, not
 whether authorized branch work may continue.
 
-An amendment is a file `design/amendments/<name>.md` whose first line is
-`Node: <tree path>`, naming the existing node it amends or the new node it
+An amendment is a file in the project's amendment location whose first line
+is `Node: <tree path>`, naming the existing node it amends or the new node it
 would add, followed by a blank line and the node form: `Decision:` lines and
 an optional `Rejected:` list. A decision that replaces or retires one the tree
 holds identifies that decision and says why it changes. Keep the proposal
@@ -113,8 +110,7 @@ ruling, continuing wherever the remaining work permits.
 ## Log format
 
 Each entry is a `## <date> <title>` heading, a `Nodes:` line listing the
-path of every node the change touched, such as `language/checks-and-proofs`,
-and a `Summary:` paragraph with the
+path of every node the change touched, and a `Summary:` paragraph with the
 discussion's conclusion and reasons. Whether a node was added, changed, or
 removed, and which commits implemented the entry, are found through git.
 Parallel branches both insert at the top and conflict there; keep both
@@ -131,12 +127,11 @@ uncertainty behind the choice. The tree revision is the central review
 surface: show exactly which decisions would be added, changed, or retired,
 and why. A design document alone does not supply that comparison.
 
-Use `research/investigations/` for design documents, alternatives, and
-supporting analysis, and the existing experiment homes for measurements.
-Prototypes and changes to repository code, specifications, and tests on a
-work branch may be used to investigate the design. Choose the order and
-extent of these activities as needed; there is no prescribed sequence of
-documents, programs, or experiments.
+Use suitable project locations for design documents, analysis, and
+experimental evidence. Prototypes and changes to code, specifications, or
+tests may be used to investigate the design within the project's working
+rules. Choose the order and extent of these activities as needed; there is
+no prescribed sequence of documents, programs, or experiments.
 
 Deliver both the complete design and the proposed tree revision to the
 owner. The owner's confirmation completes phase 1. Apply the confirmed
@@ -155,23 +150,31 @@ the changed decision and its grounds as an amendment, and continue the
 authorized work. Present the complete outstanding tree revision when the
 owner returns. Do not infer approval of a tree change from their absence.
 
-At implementation delivery, run the lint, design-gate checks, and
-correspondence checks below over the tree, amendments, and code or
-specification diff. Put the design revision and findings on the PR review
-surface. The owner rules on the amendments and findings there; apply the
-accepted revisions and adjust the implementation for rejected ones. Resolve
+At implementation delivery, run the applicable structural lint, design-gate
+checks, and correspondence checks below over the tree, amendments, and code
+or specification diff. Put the design revision and findings on the project's
+review surface, such as its pull request. The owner rules on the amendments
+and findings there; apply the accepted revisions and adjust the
+implementation for rejected ones. Resolve
 open amendments and findings before merging under the repository's existing
 approval and test rules. These phases do not add permission requirements to
 work-branch changes.
 
 ## Lint
 
-`lint.py` checks form, not meaning; its messages say what it checks. It
-covers the nodes, the amendments, and the log. Run it from the gate with
-`--base <ref>` so that every tree change since `<ref>` must be named in a new
-log entry; an amendment needs no entry until it is accepted.
+Use the project's structural validation when available. The bundled
+`lint.py` checks node, amendment, and log form, not design quality. It takes
+the design directory through `--root` and the project's top-level concept
+names through `--trees`. For its file layout, each concept has a root node
+file and optional child directory, with `amendments/` and `log.md` beside
+the roots. Use it when that layout fits the project.
 
-    python3 -B design/skill/lint.py --base origin/main
+Pass the actual review base through `--base <ref>` to check that tree changes
+since that revision are named in a new log entry; an amendment needs no log
+entry until it is accepted. Paths, concept names, and the base revision come
+from the project, for example:
+
+    python3 -B <skill-directory>/lint.py --root <design-directory> --trees <concept-name> --base <review-base>
 
 ## Checks
 
@@ -181,9 +184,9 @@ acceptance authority.
 
 ## Design gate: review a proposed tree revision
 
-Use these checks when presenting a design revision and before an
-implementation pull request. Their purpose is to assess the choices and
-their grounds; a phase-1 proposal does not need a finished implementation.
+Use these checks when presenting a design revision and at implementation
+delivery. Their purpose is to assess the choices and their grounds; a
+phase-1 proposal does not need a finished implementation.
 
 G1. Decision test. For each added or changed node or amendment: does every
 `Decision:` line name a choice and either a reason or a refused alternative,
@@ -203,11 +206,12 @@ both nodes.
 
 ## Correspondence: run at implementation delivery
 
-Inputs: the tree diff since the last review, the open amendments, the code
-diff of the pull request, and the existing tree nodes in the concept areas
-the code diff touches. For a language change the code is the specification.
-Every check is reading and judgment: nothing is compiled, deleted, or re-run
-for it, and CI owns the rest.
+Inputs: the tree diff since the last review, the open amendments, the
+implementation diff under review, and the existing tree nodes in the
+concept areas it touches. Use the artifact that gives each decision effect:
+code, a specification, configuration, or another maintained artifact. The
+checks below refer to that artifact as code. These checks use reading and
+judgment; executable validation follows the project's own workflow.
 
 C1. Decisions in code. For each changed region of code (a new function, a
 changed hunk inside a function, a moved or split function) that embodies a

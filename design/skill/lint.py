@@ -10,17 +10,17 @@ DECISION_MARKERS = (" because ", " instead of ")
 LOG_ENTRY = re.compile(r"^## \d{4}-\d{2}-\d{2} \S")
 LOG_REQUIRED = ("Nodes:", "Summary:")
 FORBIDDEN_HEADINGS = ("## Facts", "## Moves")
-TREES = ("language", "compiler")
 DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
 REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
 DATE = re.compile(r"\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b")
 FIELDS = ("Decision:", "Rejected:")
-AMENDMENT_NODE = re.compile(r"^Node: ((?:language|compiler)(?:/[a-z0-9-]+)*)$")
+AMENDMENT_NODE = re.compile(r"^Node: ([a-z0-9-]+(?:/[a-z0-9-]+)*)$")
 
 
 class Lint:
-    def __init__(self, root):
+    def __init__(self, root, trees):
         self.root = root
+        self.trees = trees
         self.errors = []
         self.nodes = {}  # node path (relative to root, no .md) -> lines
         self.decisions = 0
@@ -32,7 +32,7 @@ class Lint:
     # ---- discovery -----------------------------------------------------
 
     def discover(self):
-        for tree in TREES:
+        for tree in self.trees:
             self.discover_tree(tree)
         self.discover_amendments()
 
@@ -195,27 +195,26 @@ class Lint:
 
     def check_diff(self, base):
         probe = subprocess.run(["git", "rev-parse", "--verify", "--quiet", base],
-                               capture_output=True, text=True)
+                               cwd=self.root, capture_output=True, text=True)
         if probe.returncode != 0:
             print(f"notice: base {base!r} not found; skipping the log-per-change check")
             return
-        names = subprocess.run(["git", "diff", "--name-only", base, "--", self.root],
-                               capture_output=True, text=True, check=True).stdout.split()
-        prefix = self.root.rstrip("/") + "/"
+        names = subprocess.run(["git", "diff", "--name-only", "-z", "--relative", base, "--", "."],
+                               cwd=self.root, capture_output=True, text=True,
+                               check=True).stdout.split("\0")
         changed = []
-        for name in names:
-            rel = name[len(prefix):] if name.startswith(prefix) else name
-            if any(rel == tree + ".md" or rel.startswith(tree + "/") for tree in TREES):
+        for rel in names:
+            if any(rel == tree + ".md" or rel.startswith(tree + "/") for tree in self.trees):
                 if rel.endswith(".md"):
                     changed.append(rel[:-3])
         if not changed:
             return
-        log_rel = prefix + "log.md"
+        log_rel = "log.md"
         if log_rel not in names:
             self.err("log.md", "tree changed since base but the change log did not")
             return
         diff = subprocess.run(["git", "diff", base, "--", log_rel],
-                              capture_output=True, text=True, check=True).stdout
+                              cwd=self.root, capture_output=True, text=True, check=True).stdout
         added = "\n".join(line[1:] for line in diff.split("\n")
                           if line.startswith("+") and not line.startswith("+++"))
         for node in changed:
@@ -239,9 +238,11 @@ class Lint:
 def main():
     parser = argparse.ArgumentParser(description="structural lint for the design tree")
     parser.add_argument("--root", default="design")
+    parser.add_argument("--trees", nargs="+", required=True,
+                        help="top-level concept names to check")
     parser.add_argument("--base", default=None)
     args = parser.parse_args()
-    lint = Lint(args.root)
+    lint = Lint(args.root, args.trees)
     lint.discover()
     lint.check_nodes()
     lint.check_amendments()
