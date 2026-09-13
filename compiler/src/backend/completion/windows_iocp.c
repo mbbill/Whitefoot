@@ -899,20 +899,10 @@ int wf_windows_iocp_park(
         wf_completion_wait_unlock(&adapter->runtime->wait);
         return 0;
     }
-    /* Sequentially consistent, and paired with the sequentially consistent
-     * epoch load below: a core publisher raises the epoch and then reads this
-     * count without taking the wait's lock, so this announcement and that read
-     * are what keeps a posted wake from being lost. */
-    atomic_fetch_add_explicit(
-        &adapter->runtime->parked_schedulers,
-        1,
-        memory_order_seq_cst
-    );
-    atomic_fetch_add_explicit(
-        &adapter->runtime->stat_parks,
-        1,
-        memory_order_relaxed
-    );
+    /* Arm the shared notifier before the SC epoch recheck. Registering only
+     * the sleeper count would leave wake_needed clear and lose a helper's
+     * completion, which produces no kernel I/O packet of its own. */
+    wf_completion_announce_park_locked(adapter->runtime);
     if (atomic_load_explicit(
             &adapter->runtime->wake_epoch,
             memory_order_seq_cst

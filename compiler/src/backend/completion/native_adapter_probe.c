@@ -921,6 +921,17 @@ static unsigned probe_state(const wf_completion_record *record) {
     return atomic_load_explicit(&record->state, memory_order_acquire);
 }
 
+typedef struct probe_native_wait {
+    wf_windows_iocp_adapter *adapter;
+    uint64_t epoch;
+} probe_native_wait;
+
+static DWORD WINAPI probe_wait_for_helper(LPVOID opaque) {
+    probe_native_wait *wait = opaque;
+    /* A missing wake must produce a failed probe, not a hung CI job. */
+    return (DWORD)wf_windows_iocp_park(wait->adapter, wait->epoch, 5000u);
+}
+
 int main(int argc, char **argv) {
     wf_completion_runtime runtime;
     wf_windows_iocp_adapter adapter;
@@ -959,6 +970,38 @@ int main(int argc, char **argv) {
             &adapter
         ) == 0
     );
+
+    /* A helper completion has no kernel I/O packet. Exercise its explicit
+     * wake on a fresh empty port before any file submission can mask a lost
+     * notification. The existing wait counter selects the announced schedule;
+     * the notifier still takes the real wait lock and posts the real packet. */
+    {
+        probe_native_wait wait = {&adapter, wf_completion_wake_epoch(&runtime)};
+        wf_completion_record completed;
+        DWORD result = 1u;
+        ULONGLONG until = GetTickCount64() + 10000u;
+        HANDLE thread;
+        memset(&completed, 0, sizeof(completed));
+        wf_completion_record_init(&completed);
+        thread = CreateThread(NULL, 0, probe_wait_for_helper, &wait, 0, NULL);
+        PROBE_CHECK(thread != NULL);
+        while (wf_windows_iocp_statistics_snapshot(&adapter).kernel_waits == 0u
+               && GetTickCount64() < until) {
+            (void)SwitchToThread();
+        }
+        completed.result.kind = WF_FILE_PREAD;
+        completed.result.value = 37;
+        wf_completion_record_complete(&completed);
+        PROBE_CHECK(WaitForSingleObject(thread, 10000u) == WAIT_OBJECT_0);
+        PROBE_CHECK(GetExitCodeThread(thread, &result) != FALSE);
+        PROBE_CHECK(CloseHandle(thread) != FALSE);
+        PROBE_CHECK(result == 0u);
+        PROBE_CHECK(wf_windows_iocp_statistics_snapshot(&adapter).kernel_waits == 1u);
+        PROBE_CHECK(wf_windows_iocp_statistics_snapshot(&adapter).host_wake_posts == 1u);
+        PROBE_CHECK(probe_state(&completed) == WF_COMPLETION_DONE);
+        PROBE_CHECK(completed.result.value == 37);
+        PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == 0u);
+    }
 
     /* The fixture is written first, through a synchronous handle of its own,
      * and only then opened for overlapped reading: the handle the port takes

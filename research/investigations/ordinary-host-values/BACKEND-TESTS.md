@@ -133,6 +133,23 @@ Native probes with their own entry remain independent of that launcher choice.
 These are local results; the PR's canonical gate and native host CI record
 whether its exact revision satisfies the complete C2 acceptance criteria.
 
+The main integration exposed a native Windows lost wake. The completion core
+now tests `wake_needed` before notifying an announced sleeper, but the merged
+IOCP park path only incremented the sleeper count. A helper completion could
+therefore publish DONE without posting an IOCP wake; unlike overlapped file
+I/O, that helper has no kernel packet to wake the caller independently. IOCP
+now uses the same `wf_completion_announce_park_locked` protocol as the other
+wait paths, with its epoch recheck and notification cohorts unchanged.
+
+The Windows arm of `native_adapter_probe.c` exercises a helper publication on
+a fresh empty port, before submitting any file I/O. A real native waiter is
+observed entering the kernel-wait path, then a completion is published through
+the real runtime notifier. The test requires exactly one host wake, the DONE
+record and result 37, and no remaining parked waiter. Finite probe waits make
+the missing notification a failed check instead of an indefinitely hung job.
+The pre-fix source skips that wake because `wake_needed` remains zero; Windows
+execution, rather than cross-compilation alone, owns confirmation of the fix.
+
 The traversal integration's compiler-IR component-validation test is retired
 with QUAL-1/SYS-14 compiler wrappers: the body is now a linked ordinary
 implementation. `ordinary_values_probe.c` and the retained
