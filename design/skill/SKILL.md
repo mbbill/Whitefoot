@@ -51,7 +51,8 @@ Apply three filters to every proposed tree revision:
 3. Normalize upward. State a shared rule once at its common ancestor instead
    of repeating it in children.
 
-Every tree diff review reports node count, depth, and net change.
+Every tree diff review reports node count, depth, and net change; the lint
+prints them against the review base.
 
 ## Amendments
 
@@ -65,15 +66,21 @@ node form. Identify any decision replaced or retired and explain why. Keep
 amendments current so the owner can review the complete outstanding revision.
 
 When approved, apply that revision, add its log entry, and remove the accepted
-amendment. When rejected, adjust the design and implementation to the ruling.
-Later revisions need their own approval.
+amendment. When rejected, add a log entry naming the node, what was proposed,
+and why it was refused, remove the amendment, and adjust the design and
+implementation to the ruling. Later revisions need their own approval.
 
 ## Log format
 
+The log records every ruling on the tree, each approved revision and each
+refused amendment, and anything else a later reader must be able to find.
 Each entry has a `## <date> <title>` heading, a `Nodes:` line listing every
-node touched, and a concise `Summary:` paragraph with the conclusion and
-reasons. Git supplies the detailed history. When parallel branches add
-entries, retain both, newest first.
+node touched or ruled on, and a concise `Summary:` paragraph with the
+conclusion, its reasons, and the ruling it records, naming the discussion or
+review that approved or refused it. Cite data, measurements, and evidence at
+their source under the project's research record instead of reproducing
+them. Git supplies the detailed history. When parallel branches add entries,
+retain both, newest first.
 
 ## Workflow
 
@@ -99,7 +106,9 @@ Requests to run `dcr` invoke the bidirectional tree/code review below. Also
 run it before declaring a goal or agreed work complete, moving a draft PR to
 ready, or presenting finished work as ready to merge. Opening a PR or
 publishing progress does not trigger it; goal completion does, even on a
-draft. Reuse the project's completion review when it covers these checks.
+draft. These triggers are defined here; a project's completion review refers
+to them rather than restating them. Reuse the project's completion review
+when it covers these checks.
 
 Use a separate, read-only reviewer that did not implement the change,
 normally a small or mid-sized model with bounded inputs. It reads actual
