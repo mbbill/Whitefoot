@@ -133,8 +133,8 @@ one tree can answer "what would this code generation flag be worth on exactly
 the translation units `whitefootc` builds":
 
 ```sh
-make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/aligned \
-     WF_MODULE_CONTROL_FLAGS='-falign-functions=64 -falign-loops=32'
+make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/fp \
+     WF_MODULE_CONTROL_FLAGS='-fno-omit-frame-pointer'
 ```
 
 It is **empty by default**, kept in its own stamp file that the twin's module
@@ -144,19 +144,22 @@ recompiles and relinks the twin rather than re-timing the one the last run left
 a `WF module control flags=` line when it is not empty. **A table recorded in
 `RESULTS.md` is always taken with all three variables empty**, for the same
 reason as the two above: the `wf` row of a recorded table is the program plain
-`--par` produces, built the way `whitefootc` builds it. It reaches no reference,
-no oracle, not the harness and not the shared `--no-overlap` control object,
-because none of those is the Whitefoot side of the link.
+`--par` produces, built the way the bundle builds the Whitefoot side for both
+arms. It reaches no reference, no oracle, not the harness and not the shared
+`--no-overlap` control object, because none of those is the Whitefoot side of
+the link.
 
-Its first use is on the record, and it is why the asymmetry below still stands.
-The `wf` row is built with no alignment flag while every reference gets
-`-falign-loops=32`, so "what would alignment do to the Whitefoot rows" is an A/B
-this handle asks directly: it reads all sixteen twin lines inside [0.954, 1.010]
-on this bundle's development host — nothing worse than one percent at any width,
-and less than the same host's own placement spread in either direction. The
-driver was left alone on that reading
+Its first use was the alignment question, and that question has since been
+settled the other way. It read all sixteen twin lines inside [0.954, 1.010] on
+this bundle's development host — nothing worse than one percent at any width,
+and less than the same host's own placement spread in either direction — and
+`whitefootc`'s own driver was left alone on that reading
 ([`RESULTS.md`](../../investigations/compute-runtime/RESULTS.md), loop and
-function alignment on the Whitefoot side).
+function alignment on the Whitefoot side). The driver is still unchanged, but
+the **bundle** now gives both arms those flags unconditionally through
+`WF_ALIGN`, as placement control for the regression gate rather than as a
+performance choice, so asking this handle for them again would set them twice
+on one arm and change nothing. "The two flag sets" below is where that sits.
 
 ### The placement-only arm
 
@@ -359,14 +362,45 @@ under another path rebuild nothing.
 ### The rule
 
 ```
-FAIL when a block's  A/B  wf-b/wf  wall  median is below 0.97
+A block is ADVERSE when its  A/B  wf-b/wf  wall  median is below 0.97
      and the baseline was the faster arm in at least 4 of the 5 pairs,
      at W in {1, 2, 4}, oversubscribed blocks excluded.
+
+A kernel FAILs on TWO adverse blocks.
+One adverse block alone is a `suspect`: printed, and it fails nothing.
 ```
 
-Both halves are required. A median can sit under the band on one adverse pair,
-and a count of adverse pairs says nothing about their size; the twin exists
-because this host class cannot resolve a single reading.
+Both halves of *adverse* are required. A median can sit under the band on one
+adverse pair, and a count of adverse pairs says nothing about their size; the
+twin exists because this host class cannot resolve a single reading.
+
+**And two widths are required, because one width does not separate a slower
+program from a differently placed one.** The two arms are two images linked
+from two sets of objects under two sets of names, so their functions do not
+land at the same offsets even when their sources are byte-identical, and this
+bundle's largest confound is exactly that. Two runs are on the record. Pull
+request #50's first attempt read `records W=1 wall 0.938` with five of five
+pairs lower on a branch that changes no translation unit the compute path
+compiles on Linux — both arms built from byte-identical runtime sources and
+the same emission — and run `34671025894` read `records` at 0.912 at W=1 where
+the code that pull request added is present in neither arm. Each was one block
+and each would have failed the rule as it stood.
+
+A regression in the scheduler runtime or the emission does not confine itself
+to one width; placement does exactly that, because the offsets that matter at
+width one are not the ones that matter at width four. So a lone adverse block
+is reported as `suspect` on its row and again under the table, on a passing run
+and a failing one alike, and two adverse blocks **in one kernel** are the
+verdict. The count is per kernel and is not pooled: one adverse block in each
+of two kernels is two suspects.
+
+This is the half of the problem a rule can answer. The other half is answered
+in the build — `WF_ALIGN` gives both arms `-falign-functions=64
+-falign-loops=32` on x86_64, so the internal alignment of their **Whitefoot
+translation units** is identical by construction (see "The two flag sets"
+below). Neither measure is sufficient alone, and the record is explicit that
+alignment is not a cure: with both arms aligned and one deliberately shifted by
+a 587-byte pad, the twin lines read no closer to 1.000 than unaligned.
 
 **CPU is a report and never a failure.** A paired `cpu` ratio below 0.90 under
 the same count is printed under the table, marked `*` on its row, and changes
@@ -393,7 +427,10 @@ and is not worth failing a branch over.
 **It refuses rather than passing vacuously.** A table with no `A/B` line means
 no twin was built; a table whose only `A/B` lines are at unrecorded widths
 means nothing the rule reads; a line backed by fewer than five pairs is not the
-rule. Each of those exits non-zero with `REFUSED`, because a gate that reads
+rule; and a table where **no kernel has two readable blocks** — one width asked
+for, or a host that oversubscribed all but one — is a table the two-block rule
+cannot fail whatever it says, which is the same defect wearing the new rule's
+clothes. Each of those exits non-zero with `REFUSED`, because a gate that reads
 absent evidence as good news is a gate that switches itself off.
 
 There is **no automatic re-run**. A re-run is a person's decision: a job that
@@ -477,8 +514,11 @@ repository's `make check` runs, and neither times anything. `programs-check`
 compiles each program in exactly the two modes the table uses and asserts that
 `--par` emits a publish site and `--no-overlap` emits none; it takes about two
 seconds, links nothing, and needs no dependency. `verdict-test` feeds the
-regression rule crafted table fragments and asserts its verdicts; it needs no
-compiler at all.
+regression rule fourteen crafted table fragments and asserts the exit status
+and the verdict text of each — the pass, the two-block failure, the one-block
+`suspect`, one adverse block in each of two kernels, both halves of the adverse
+test on their own, the two exclusions, the five refusals and the CPU report;
+it needs no compiler at all.
 
 ## Where results go, and the fresh-directory rule
 
@@ -992,8 +1032,11 @@ CXXFLAGS := -std=c++17 -DNDEBUG $(BASE)
 RFLAGS := -C no-vectorize-loops -C no-vectorize-slp -C lto=off \
           -C symbol-mangling-version=v0 $(TARGET_CPU)
 
-# Exactly what whitefootc itself passes clang.
-WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
+# Placement control for the gate's paired comparison, on both arms alike.
+WF_ALIGN := $(if $(filter x86_64,$(ARCH)),-falign-functions=64 -falign-loops=32,)
+
+# What whitefootc itself passes clang, plus the placement control.
+WF_FLAGS := -std=c11 -pthread -O2 -Wno-override-module $(WF_ALIGN)
 
 KERNELS ?= mandelbrot quadrature records fir
 PASSES ?= 5
@@ -1005,27 +1048,72 @@ WFB_GAP_US ?=
 
 **The two flag sets are an admitted asymmetry, and it is disclosed rather than
 glossed.** `WF_FLAGS` applies to `<kernel>-par.o`, `<kernel>-seq.o` and the four
-Whitefoot runtime units; `CFLAGS`/`CXXFLAGS` apply to every reference, every
-oracle and the harness. So **the WF module and the Whitefoot runtime are built
-at `-O2` with no `-march` and no loop alignment, because that is what a
-Whitefoot program gets, while every reference is built at `-O3` with both.**
-Building the runtime any other way would measure a runtime no Whitefoot program
-ever gets, and `-Wpedantic -Werror` over the compiler's own sources is a build
-that can fail for reasons that have nothing to do with the table. The asymmetry
-cuts **against** the WF row — the row this bundle is trying not to flatter — and
-a reader who finds the WF row slow should see this immediately rather than
-derive it from two Makefile variables. Loop alignment is not cosmetic here: code
-placement is this bundle's largest confound, and six byte-identical kernel
-bodies at different offsets once split a width-one median 7.3 ms against 10.7 ms
-with no scheduler involved.
+Whitefoot runtime units — of the plain image and of the twin alike, with the
+same bytes in the variable for both; `CFLAGS`/`CXXFLAGS` apply to every
+reference, every oracle and the harness. So **the WF module and the Whitefoot
+runtime are built at `-O2` with no `-march`, because that is what a Whitefoot
+program gets, while every reference is built at `-O3` with
+`-march=x86-64-v3`.** Building the runtime any other way would measure a
+runtime no Whitefoot program ever gets, and `-Wpedantic -Werror` over the
+compiler's own sources is a build that can fail for reasons that have nothing
+to do with the table. The asymmetry cuts **against** the WF row — the row this
+bundle is trying not to flatter — and a reader who finds the WF row slow should
+see this immediately rather than derive it from two Makefile variables.
 
-**What is not normalized, and cannot be.** `-march=x86-64-v3` and
-`-falign-loops=32` reach the C and C++ kernels and no Whitefoot translation
-unit. The separately built oneTBB shared library gets only the three scalar
-flags, with no `-march` and no alignment. The Rust staticlib gets only its four
-rustflags plus `target-cpu` where `BENCH_ARCH` names it, and Rust's precompiled
-standard library is not rebuilt with them. Library scheduler internals are
-therefore not code-placement-matched with the kernels.
+**`WF_ALIGN` is the one part of that asymmetry the bundle closes, and it is
+placement control rather than a performance flag.** On x86_64 it appends
+`-falign-functions=64 -falign-loops=32` to `WF_FLAGS`, so every Whitefoot
+translation unit of **both** images starts its functions on a 64-byte boundary
+and its hot loops on a 32-byte one. It exists for the regression gate's paired
+comparison: the gate's two arms are separate images linked from separate
+objects, their functions do not land at the same offsets even from
+byte-identical sources, and under these flags **those translation units'**
+internal alignment is identical **by construction** and the residual offset
+difference between the arms is a multiple of the boundary rather than an
+arbitrary number of bytes. It reaches no further into either image: the
+harness, the kernel object, the references and the prebuilt libraries are built
+at `CFLAGS`/`CXXFLAGS`, with `-falign-loops=32` and no function alignment, and
+all of those but the kernel object are literally the same objects in both arms.
+There is no way to set it on one arm; it is not an A/B handle and the three
+handles above are not how to ask for it.
+
+Two things it is **not**. It does not make code placement a solved confound —
+with both arms aligned and one shifted by a deliberate 587-byte pad the twin
+lines read no closer to 1.000 than unaligned, and the mechanism says why: the
+pad cannot change any function's alignment modulo 64, so what still moves is
+not function or loop alignment ([`RESULTS.md`](../../investigations/compute-runtime/RESULTS.md),
+the same shifted null arm with both arms aligned). The verdict rule's
+two-width requirement is what covers the rest. And it does **not** leave the
+recorded scoreboard measuring what it measured before: the `wf` row of a table
+recorded from the commit that added this variable onward is built at flags
+`whitefootc` does not pass clang, which is a real change to what the row times
+even though the measured cost of those flags on this bundle's development host
+was inside [0.954, 1.010] across sixteen twin lines. `RESULTS.md`'s status
+paragraph carries that as a dated note; no recorded table was touched.
+
+Loop alignment is not cosmetic on either side of the link: code placement is
+this bundle's largest confound, and six byte-identical kernel bodies at
+different offsets once split a width-one median 7.3 ms against 10.7 ms with no
+scheduler involved.
+
+**And it adds one asymmetry while closing another, which is the first that runs
+the WF row's way.** `-falign-functions=64` now reaches the Whitefoot
+translation units and no reference, no oracle and not the harness, in a bundle
+whose own record says function placement once split a width-one median 7.3 ms
+against 10.7 ms. Every other line of this section runs against the WF row; this
+one does not, and a WF-versus-reference ratio recorded from this commit onward
+carries it. It is not normalized the other way because `-falign-functions=64`
+on the references would move every reference row in every recorded table for a
+gate's benefit, which is a worse trade than disclosing it here.
+
+**What is not normalized, and cannot be.** `-march=x86-64-v3` reaches the C and
+C++ kernels and no Whitefoot translation unit, and `-falign-functions=64`
+reaches the Whitefoot units and nothing else. The separately built oneTBB
+shared library gets only the three scalar flags, with no `-march` and no
+alignment. The Rust staticlib gets only its four rustflags plus `target-cpu`
+where `BENCH_ARCH` names it, and Rust's precompiled standard library is not
+rebuilt with them. Library scheduler internals are therefore not
+code-placement-matched with the kernels.
 
 **Vectorization is off for every implementation of every kernel**, in C, C++ and
 Rust alike. The emitted module's `fmul.strict` and `fadd.strict` cannot be

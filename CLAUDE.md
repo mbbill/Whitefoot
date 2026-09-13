@@ -69,10 +69,11 @@ probably not the next work.
 - `design/` holds the live design trees: `design/language` for language
   decisions and `design/compiler` for compiler decisions, each decision with
   its reason and its refused alternatives, and `design/log.md` with one entry
-  per approved tree change. `design/skill/SKILL.md` owns the procedure: a
-  line enters a tree only through the owner's ruling, a decision an agent
-  makes on its own is an amendment beside the tree until the owner rules on
-  it. DCR runs at the triggers defined by that skill. `mcts_mem/` is a frozen
+  per ruling on the tree, an approved change or a refused amendment.
+  `design/skill/SKILL.md` owns the procedure: a line enters a tree only
+  through the owner's ruling, a decision an agent makes on its own is an
+  amendment beside the tree until the owner rules on it. DCR runs at the
+  triggers defined by that skill. `mcts_mem/` is a frozen
   historical record that is not written to; its content is being moved into
   the trees and it is deleted when that is complete.
 - Architecture dossiers, `archive/done/`, and

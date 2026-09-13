@@ -5,3 +5,5 @@ Decision: A conditional value is a `let` initializer whose every arm or branch e
 Decision: The scrutinee is a full expression, because restricting it to a place taxes the sole conditional idiom with a mechanical temporary at every use and adds naming burden for a weak writer, instead of binding the value first and matching on the name.
 
 Decision: An else-free conditional is the one spelling of the empty alternative, an empty `else` block is rejected, and an `else` holding exactly one conditional flattens to `else if`, because one construct has one spelling, instead of admitting both spellings of an empty alternative.
+
+Decision: A match names every declared variant and has no wildcard arm, because a wildcard arm is exactly where a newly added variant would be absorbed in silence, whereas enumeration surfaces every site that must change, instead of exhaustiveness with a catch-all arm.

@@ -2,5 +2,9 @@ Decision: Ownership is single-owner affine values with explicit ordinary moves, 
 
 Decision: Overlap is judged conservatively over complete resolved paths, with distinct fields and unequal literal indices establishing disjointness, because a conservative judgment the checker can decide is preferred to a precise one it would have to infer, instead of flow-sensitive alias analysis.
 
+Decision: Every value's release action is compiler-owned and fixed by its type, and no declaration, annotation, attribute, contract, conformance, or binding attaches a writer-defined action to a release, because a writer-defined action at release would run hidden code with hidden effects on every scope exit, which neither the exact effect row nor the explicit cleanup edges could account for, instead of a destructor or finalizer invoked implicitly at scope exit.
+
+Decision: There is no global mutable state and no static region, only immutable const items, because a function that reached a global directly could not be pure and every proof that rests on purity, parallel permission first among them, would collapse, while a global handed in as a parameter is no different from an object created on the stack or the heap at the program's root, and with no shared-memory threads there is nothing a global lock would guard, instead of a static-style shared mutable region with its own access discipline.
+
 Rejected:
 - Inferred borrow checking as Rust ships it, with elided lifetimes, non-lexical liveness, and implicit reborrows: rejected because replicating rustc's borrow checker is unacceptable implementation effort, so the ownership design stands only on a simplified explicit-region, reject-when-unsure calculus.
