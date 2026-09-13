@@ -72,10 +72,9 @@ probably not the next work.
   per approved tree change. `design/skill/SKILL.md` owns the procedure: a
   line enters a tree only through the owner's ruling, a decision an agent
   makes on its own is an amendment beside the tree until the owner rules on
-  it, and a pull request is checked for correspondence between the tree, its
-  amendments, and the code or specification diff. `mcts_mem/` is a frozen historical record
-  that is not written to; its content is being moved into the trees and it
-  is deleted when that is complete.
+  it. DCR runs at the triggers defined by that skill. `mcts_mem/` is a frozen
+  historical record that is not written to; its content is being moved into
+  the trees and it is deleted when that is complete.
 - Architecture dossiers, `archive/done/`, and
   `archive/governance/decision-log.md` preserve historical evidence and
   rationale. `archive/done/` is the retired per-batch record: frozen, not
