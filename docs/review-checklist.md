@@ -223,12 +223,12 @@ inapplicable.
 
 Use `design/skill/SKILL.md`; this section does not replace it.
 
-- [ ] **M1 — Tree before code.** A change that makes or revises a design
-  decision carries its tree diff and log entry, approved before the
-  implementation it governs. Every decision the agent made on its own is in
-  the tree diff for the owner to approve or reject; none is only in code.
+- [ ] **M1 — Tree and amendments.** A change that makes or revises a design
+  decision carries the tree diff and log entry the owner ruled, or an
+  amendment under `design/amendments/` for every decision the agent made on
+  its own, for the owner to accept or reject; none is only in code.
 - [ ] **M2 — Correspondence.** The procedure's correspondence checks ran over
-  the pull request's tree diff and its code or specification diff, and every
+  the tree, the amendments, and the code or specification diff, and every
   finding is resolved or listed.
 - [ ] **M3 — Form.** `make design-lint` passes on the head revision.
 

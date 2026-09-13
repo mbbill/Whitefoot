@@ -15,6 +15,7 @@ DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
 REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
 DATE = re.compile(r"\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b")
 FIELDS = ("Decision:", "Rejected:")
+AMENDMENT_NODE = re.compile(r"^Node: ((?:language|compiler)(?:/[a-z0-9-]+)*)$")
 
 
 class Lint:
@@ -33,6 +34,20 @@ class Lint:
     def discover(self):
         for tree in TREES:
             self.discover_tree(tree)
+        self.discover_amendments()
+
+    def discover_amendments(self):
+        self.amendments = {}
+        amend_dir = os.path.join(self.root, "amendments")
+        if not os.path.isdir(amend_dir):
+            return
+        for name in sorted(os.listdir(amend_dir)):
+            path = os.path.join(amend_dir, name)
+            rel = os.path.relpath(path, self.root)
+            if not name.endswith(".md") or not os.path.isfile(path):
+                self.err(rel, "only amendment files (.md) belong under amendments")
+                continue
+            self.amendments[name[:-3]] = self.read(path)
 
     def discover_tree(self, tree):
         tree_md = os.path.join(self.root, tree + ".md")
@@ -79,7 +94,7 @@ class Lint:
         for path, lines in sorted(self.nodes.items()):
             self.check_node(path, lines, stems)
 
-    def check_node(self, path, lines, stems):
+    def check_node(self, path, lines, stems, count=True):
         where = path + ".md"
         decisions = 0
         section = None
@@ -132,8 +147,22 @@ class Lint:
             self.err(loc, "line outside the node template")
         if decisions == 0:
             self.err(where, "node has no Decision: line")
-        self.decisions += decisions
-        self.rejected += len(rejected)
+        if count:
+            self.decisions += decisions
+            self.rejected += len(rejected)
+
+    # ---- amendments ---------------------------------------------------
+
+    def check_amendments(self):
+        for name, lines in self.amendments.items():
+            where = f"amendments/{name}"
+            if not lines or not AMENDMENT_NODE.match(lines[0]):
+                self.err(where + ".md:1", "an amendment starts with 'Node: <tree path>' naming the node it amends or adds")
+                continue
+            if len(lines) < 2 or lines[1].strip():
+                self.err(where + ".md:2", "a blank line separates the Node line from the fields")
+                continue
+            self.check_node(where, [""] * 2 + lines[2:], set(), count=False)
 
     # ---- log -----------------------------------------------------------
 
@@ -202,7 +231,7 @@ class Lint:
             parts = path.split("/")
             key = parts[0] if len(parts) == 1 else "/".join(parts[:2])
             per_subtree[key] = per_subtree.get(key, 0) + 1
-        print(f"nodes: {len(self.nodes)}  depth: {depth}  decisions: {self.decisions}  rejected: {self.rejected}")
+        print(f"nodes: {len(self.nodes)}  depth: {depth}  decisions: {self.decisions}  rejected: {self.rejected}  amendments: {len(self.amendments)}")
         for name, count in sorted(per_subtree.items()):
             print(f"  {name}: {count}")
 
@@ -215,6 +244,7 @@ def main():
     lint = Lint(args.root)
     lint.discover()
     lint.check_nodes()
+    lint.check_amendments()
     lint.check_log()
     if args.base:
         lint.check_diff(args.base)

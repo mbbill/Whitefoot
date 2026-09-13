@@ -70,9 +70,10 @@ probably not the next work.
   decisions and `design/compiler` for compiler decisions, each decision with
   its reason and its refused alternatives, and `design/log.md` with one entry
   per approved tree change. `design/skill/SKILL.md` owns the procedure: a
-  tree diff is written and approved before the implementation it governs,
-  and a pull request is checked for correspondence between its tree diff and
-  its code or specification diff. `mcts_mem/` is a frozen historical record
+  line enters a tree only through the owner's ruling, a decision an agent
+  makes on its own is an amendment beside the tree until the owner rules on
+  it, and a pull request is checked for correspondence between the tree, its
+  amendments, and the code or specification diff. `mcts_mem/` is a frozen historical record
   that is not written to; its content is being moved into the trees and it
   is deleted when that is complete.
 - Architecture dossiers, `archive/done/`, and
@@ -258,8 +259,9 @@ only reports the same class of mistake earlier.
 
 The compiler's implementation rules are its design decisions and live in
 `design/compiler`, each with its reason. Before changing the compiler, read
-the subtree you are changing and its ancestors, and change the tree before
-the code, as `design/skill/SKILL.md` prescribes.
+the subtree you are changing and its ancestors; a decision the tree does not
+cover is an amendment, never an edit to the tree, as `design/skill/SKILL.md`
+prescribes.
 
 ## Data safety
 
