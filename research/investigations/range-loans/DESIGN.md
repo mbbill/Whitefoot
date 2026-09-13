@@ -26,11 +26,10 @@ calls without copies, runtime overlap tests, or source scheduling constructs.
 
 The relevant standing grounds are single-owner storage, explicit regions,
 signature-complete callable boundaries, one shared loan/parallel overlap
-judgment, and deterministic proof discharge. The proposed amendments name
-the decisions this change revises; no live-tree line is changed without the
-owner's ruling.
+judgment, and deterministic proof discharge. Range extent proofs refine that
+existing overlap judgment; they do not introduce a second alias model.
 
-## Proposed source rule
+## Source rule
 
 Both existing view formers gain an optional pair of positional endpoints:
 `slice_of(&source, start, end)` and
@@ -99,7 +98,7 @@ There is no equal-size requirement on that use of [PAR-1].
 ## Compiler representation
 
 Structural checking currently checks borrow conflicts before the arithmetic
-flow pass. The proposed representation carries range formation and potential
+flow pass. The selected representation carries range formation and potential
 range conflicts as required, source-positioned obligations into the existing
 ProofContext, like bounds obligations. A checked program is produced only
 after these obligations succeed. Ordinary whole-place conflicts keep their
@@ -111,10 +110,10 @@ facts for parallel permission. Neither permission nor lowering reruns the
 proof. The representation must preserve aliases, nested origins, argument
 evaluation accesses, and backing-storage lifetime through every consumer.
 
-The implementation details remain provisional until the complete programs
-and negative cases exercise them. In particular, branch joins, result origin
-ceilings, and same-statement child lifetime must not gain precision merely
-because a convenient caller has one possible origin.
+The complete programs and negative cases below exercise the selected path.
+Branch joins, result-origin ceilings, and same-statement child lifetime keep
+their specified boundaries; a convenient caller with one possible origin
+does not justify additional precision.
 
 ## Alternatives and selection ground
 
@@ -131,8 +130,9 @@ because a convenient caller has one possible origin.
 - A separate parallel alias analysis would duplicate the ownership judgment.
   Checked range evidence must serve both ordinary loans and parallel calls.
 
-These are proposed grounds, not a claim of measured speed or a general
-solution for arbitrary scatter, irregular task dependencies, or early exit.
+These grounds select the admitted expressiveness. They do not establish a
+general solution for arbitrary scatter, irregular task dependencies, or
+early exit; performance claims depend on the separate measurements below.
 
 The v0.55 specification delta is numbered rules +0/-0 (revising OWN-5,
 OWN-7, VIEW-2, VIEW-6, OP-1, PAR-2, ENT-3.S6 and ENT-6), lexical tokens
@@ -172,10 +172,9 @@ five percent warrants attribution before calling the result competitive;
 a smaller result is not evidence of a universal no-loss guarantee.
 
 The compiler gate and existing compute program checks remain in force.
-The stencil joins the maintained compute benchmark once its ordinary
-compiler path works; its source lives there from the start. This document
-owns the design and resulting evidence until a later investigation
-supersedes it. The amendments are removed only by an owner ruling.
+The stencil is part of the maintained compute benchmark, and the compiler
+gate checks both complete consumers. This document owns the design and
+resulting evidence until a later investigation supersedes it.
 
 ## Baseline, 2026-09-13
 
