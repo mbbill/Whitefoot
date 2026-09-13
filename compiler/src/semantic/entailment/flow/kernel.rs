@@ -26,7 +26,7 @@ use super::super::RelationProvenance;
 use super::super::state::{FactState, PostconditionCallDetail, Relation};
 use super::super::term::{PlaceRoot, TermId, TermKind};
 use super::super::{DerivationRootKind, VerifiedPostconditionSummaryRef};
-use super::{Analyzer, GoalProjection, PreparedCall, PreparedCallee};
+use super::{Analyzer, GoalProjection, PreparedCall, PreparedCallee, ProofFlowState};
 
 /// The prelude ordinal of `Option`'s `None` variant.
 const NONE_VARIANT: crate::BuiltinPreludeId = crate::BuiltinPreludeId::NONE;
@@ -95,7 +95,7 @@ impl Analyzer<'_, '_> {
     pub(super) fn establish_kernel_call_datums(
         &mut self,
         expression: &CheckedExpression,
-        state: &mut FactState,
+        state: &mut ProofFlowState,
     ) {
         let Some(site) = kernel_call_site(expression) else {
             return;
@@ -159,8 +159,8 @@ impl Analyzer<'_, '_> {
                 continue;
             }
             let datum = self.terms.intern(kind);
-            self.adopt_measure_atom(datum, term);
-            state.establish(
+            self.adopt_measure_atom(datum, term, &state.affine);
+            state.facts.establish(
                 &Relation::Equal {
                     left: datum,
                     right: term,

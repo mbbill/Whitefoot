@@ -2980,3 +2980,73 @@ fn observe(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start
         );
     });
 }
+
+#[test]
+fn a_conditional_unique_call_keeps_the_other_branch_measure_image() {
+    for branches in [
+        "    if turn == 0_u64 {\n      region {\n        touch(values: &uniq values);\n      }\n    } else {\n      invariant untouched: len_of(values) >= 16_u64;\n    }",
+        "    if turn == 0_u64 {\n      invariant untouched: len_of(values) >= 16_u64;\n    } else {\n      region {\n        touch(values: &uniq values);\n      }\n    }",
+    ] {
+        let source = format!(
+            r#"fn touch(values: &uniq buffer<u8>) -> result: own unit writes(values) contract {{
+  requires len_of(deref(values)) >= 1_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values)));
+}} {{
+  set deref(values)[0_u64] = 7_u8;
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  let values = buffer_new(16_u64, 0_u8);
+  let turn = 0_u64;
+  loop @rounds (
+    invariant room: len_of(values) >= 16_u64
+  ) {{
+    if turn >= 2_u64 {{
+      break @rounds;
+    }}
+{branches}
+    let fresh = buffer_new(16_u64, 0_u8);
+    let previous = replace values = move fresh;
+    set turn = turn +wrap 1_u64;
+  }}
+  return exit_status(code: 0_u8);
+}}
+"#
+        );
+        assert_complete(source.as_bytes());
+    }
+}
+
+#[test]
+fn a_unique_replacement_still_kills_its_own_branch_measure_image() {
+    let source = br#"fn clear(values: &uniq FixedVector<u8, 16>) -> result: own unit reads(values), writes(values) {
+  let empty = fixed_vector::<u8, 16>();
+  let previous = replace deref(values) = move empty;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = fixed_vector::<u8, 16>();
+  region {
+    place_back(vector: &uniq values, value: 7_u8);
+  }
+  invariant before: len_of(values) >= 1_u64;
+  region {
+    clear(values: &uniq values);
+  }
+  invariant stale: len_of(values) >= 1_u64;
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("a changed referent must lose its old measure: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        let SemanticIssueKind::UndischargedLocalInvariant { name, .. } = issue.kind() else {
+            panic!("the old measure must fail at the local invariant: {issue:?}");
+        };
+        assert_eq!(name, "stale");
+    });
+}

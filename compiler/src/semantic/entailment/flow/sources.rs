@@ -32,7 +32,7 @@ use super::super::{
     CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
     S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
-use super::{Analyzer, ArmFacts, projected_place};
+use super::{Analyzer, ArmFacts, ProofFlowState, projected_place};
 /// Which term one evaluated value's [ENT-3] image is established on: the
 /// place a `let` binder introduces, or the compiler-owned commit value of one
 /// `set` occurrence, named by that statement's NodePath [ENT-2].
@@ -503,7 +503,7 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         ordinal: u32,
         value: &CheckedExpression,
-        state: &mut FactState,
+        state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
         let CheckedExpression::Binding { binding, ty, .. } = value else {
             return None;
@@ -545,7 +545,7 @@ impl Analyzer<'_, '_> {
         placement: MeasurePlacement,
         source: ProjectedPlaceTerm,
         ty: CheckedType,
-        state: &mut FactState,
+        state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
         let mut carried = Vec::new();
         for (path, measured_type) in self.measured_paths(ty) {
@@ -568,8 +568,8 @@ impl Analyzer<'_, '_> {
                     placement,
                     measure,
                 });
-                self.adopt_measure_atom(datum, live);
-                state.establish(
+                self.adopt_measure_atom(datum, live, &state.affine);
+                state.facts.establish(
                     &Relation::Equal {
                         left: datum,
                         right: live,

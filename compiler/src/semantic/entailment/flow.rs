@@ -18,6 +18,7 @@ mod sources;
 
 use super::super::postcondition::PostconditionPlace;
 use sources::{MeasureCarry, ValueImage};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use super::super::goal::{
@@ -210,6 +211,9 @@ struct ProofFlowState {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AffineFlowState {
     values: HashMap<BindingId, AffineForm>,
+    /// Current measure images belong to this control-flow edge. Queries mint
+    /// images lazily, but cloning a predecessor isolates its later kills.
+    measure_atoms: RefCell<HashMap<TermId, AffineForm>>,
     /// One atom standing for the whole value of a binding whose image is not
     /// already a single atom, minted on first demand.
     ///
@@ -862,7 +866,6 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         entry_images: Vec::new(),
         postcondition_entry_images: Vec::new(),
         affine_atoms: Vec::new(),
-        measure_atoms: HashMap::new(),
         measure_terms_seen: Vec::new(),
         measure_terms_scanned: 0,
         encountered_counted: 0,
@@ -884,7 +887,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
     // [MSR-3] the entry placement, before every other source: one immutable
     // datum per measure of a parameter any declared relation names, equal to
     // that measure at body entry.
-    analyzer.establish_entry_datums(&mut state.facts);
+    analyzer.establish_entry_datums(&mut state);
     analyzer
         .scopes
         .push(function.parameters.iter().map(|p| p.binding).collect());
@@ -1139,11 +1142,6 @@ struct Analyzer<'check, 'unit> {
     /// order. They are ordinary checker state and are discarded with the
     /// analysis.
     affine_atoms: Vec<AffineAtom>,
-    /// [MSR-4] one compiler-owned immutable affine atom per live measure
-    /// term, minted once and never retargeted. It is not a source binding
-    /// and has no written spelling; it exists so the automatic derivation of
-    /// a numeric goal can range over measures.
-    measure_atoms: HashMap<TermId, AffineForm>,
     /// Every measure term registered so far, and how much of the term
     /// registry the scan that found them has covered.
     measure_terms_seen: Vec<TermId>,
@@ -1686,7 +1684,7 @@ impl Analyzer<'_, '_> {
                 ..
             } => {
                 let term = self.goal_operand(expression)?;
-                Some(self.measure_atom(term))
+                Some(self.measure_atom(term, state))
             }
             GoalExpression::Datum(
                 GoalDatum::Parameter { .. } | GoalDatum::EvaluatedValue { .. },
@@ -2416,7 +2414,7 @@ impl Analyzer<'_, '_> {
         function: super::super::model::FunctionId,
         call: &crate::NodePath,
         goal_arguments: &[GoalExpression],
-        state: &mut FactState,
+        state: &mut ProofFlowState,
     ) {
         let Some(callee) = self.context.callee(function) else {
             return;
@@ -2493,8 +2491,8 @@ impl Analyzer<'_, '_> {
                 continue;
             }
             let datum = self.terms.intern(kind);
-            self.adopt_measure_atom(datum, term);
-            state.establish(
+            self.adopt_measure_atom(datum, term, &state.affine);
+            state.facts.establish(
                 &Relation::Equal {
                     left: datum,
                     right: term,
@@ -3816,7 +3814,7 @@ impl Analyzer<'_, '_> {
     /// entry value even where the body writes that parameter back with a
     /// [LIV-2] `set`, and it is the callee-side half of the denotation
     /// [MSR-3]'s table gives the same operand at a caller.
-    fn establish_entry_datums(&mut self, state: &mut FactState) {
+    fn establish_entry_datums(&mut self, state: &mut ProofFlowState) {
         if self.entry_images.is_empty() {
             return;
         }
@@ -3844,8 +3842,8 @@ impl Analyzer<'_, '_> {
                 &image.projections,
                 measure,
             ));
-            self.adopt_measure_atom(datum, live);
-            state.establish(
+            self.adopt_measure_atom(datum, live, &state.affine);
+            state.facts.establish(
                 &Relation::Equal {
                     left: datum,
                     right: live,
@@ -4297,8 +4295,9 @@ impl Analyzer<'_, '_> {
         // A measure of a place rooted in an exited binding has no image past
         // that edge, exactly as the binding itself has none, so the next
         // occurrence of that term mints a fresh atom [MSR-2].
-        let stale: Vec<TermId> = self
+        let stale: Vec<TermId> = state
             .measure_atoms
+            .borrow()
             .keys()
             .copied()
             .filter(|term| {
@@ -4307,7 +4306,7 @@ impl Analyzer<'_, '_> {
             })
             .collect();
         for term in stale {
-            self.measure_atoms.remove(&term);
+            state.measure_atoms.get_mut().remove(&term);
         }
     }
 
@@ -4405,7 +4404,9 @@ impl Analyzer<'_, '_> {
         // exports nothing and the `ensures` its body was written for is
         // unproved at the return.
         live_terms.extend(
-            self.measure_atoms
+            state
+                .measure_atoms
+                .borrow()
                 .values()
                 .flat_map(|value| value.terms().iter().map(|coefficient| coefficient.term())),
         );
@@ -6325,7 +6326,7 @@ impl Analyzer<'_, '_> {
                 // relation over an `own` operand outlive the consume the same
                 // statement performs.
                 if prepared_call.is_some() {
-                    self.establish_call_datums(*function, call, goal_arguments, &mut states.facts);
+                    self.establish_call_datums(*function, call, goal_arguments, states);
                 }
                 ExpressionJudgment {
                     prepared_call,
@@ -6411,7 +6412,7 @@ impl Analyzer<'_, '_> {
                 // `at the call` measures its relations name are minted here,
                 // at the same pre-transfer point.
                 if prepared_call.is_some() {
-                    self.establish_kernel_call_datums(expression, &mut states.facts);
+                    self.establish_kernel_call_datums(expression, states);
                 }
                 ExpressionJudgment {
                     prepared_call,
@@ -7839,7 +7840,7 @@ impl Analyzer<'_, '_> {
         ordinal: u32,
         target: &CheckedSetTarget,
         value: &CheckedExpression,
-        state: &mut FactState,
+        state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
         let CheckedExpression::Binding { binding, ty, .. } = value else {
             return None;
@@ -7870,7 +7871,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         node_path: &crate::NodePath,
         value: &CheckedExpression,
-        state: &mut FactState,
+        state: &mut ProofFlowState,
     ) -> Vec<(u32, MeasureCarry)> {
         let fields = match value {
             CheckedExpression::ConstructStruct { fields, .. } => fields,
@@ -7980,7 +7981,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         scrutinee: &CheckedExpression,
         enum_type: CheckedEnumType,
-        state: &mut FactState,
+        state: &mut ProofFlowState,
     ) -> Option<PayloadPlacement> {
         let CheckedExpression::Binding {
             carrier: node_path,
@@ -8054,7 +8055,7 @@ impl Analyzer<'_, '_> {
                 MeasurePlacement::Destructuring,
                 projected_place(source),
                 *ty,
-                &mut state.facts,
+                state,
             ) {
                 carried.push((ordinal, carry));
             }
@@ -8092,7 +8093,7 @@ impl Analyzer<'_, '_> {
         // disposition, so steps 4 and 5 range over the measure's own affine
         // atom instead of being reachable only through the L0-right bridge.
         let direct_affine = affine_offset.as_ref().and_then(|offset| {
-            let length = self.measure_atom(length_term);
+            let length = self.measure_atom(length_term, &states.affine);
             let mut check = AffineCheckState::new();
             AffineInequality::from_bounded_forms(offset, &length, -1, &mut check).ok()
         });
@@ -8471,7 +8472,7 @@ impl Analyzer<'_, '_> {
             | TermKind::MeasureDatum { .. }
             | TermKind::CallDatum {
                 measure: Some(_), ..
-            } => Some(self.measure_atom(term)),
+            } => Some(self.measure_atom(term, state)),
             TermKind::ConstParameter(_)
             | TermKind::Place(_, _)
             | TermKind::ProjectedPlace(_, _)
@@ -9963,8 +9964,20 @@ impl Analyzer<'_, '_> {
         // joined image is.
         let opaque_values: HashMap<BindingId, AffineForm> = HashMap::new();
 
+        // A measure keeps its current image only when every predecessor
+        // carries that exact image. Otherwise a later query mints a fresh
+        // image; no branch-local equality is promoted through this join.
+        let mut measure_atoms = first.affine.measure_atoms.borrow().clone();
+        measure_atoms.retain(|term, image| {
+            states
+                .iter()
+                .skip(1)
+                .all(|state| state.affine.measure_atoms.borrow().get(term) == Some(image))
+        });
+
         AffineFlowState {
             values,
+            measure_atoms: RefCell::new(measure_atoms),
             opaque_values,
             facts: self.join_affine_facts(states),
             published_invariants: first
@@ -10672,7 +10685,7 @@ impl Analyzer<'_, '_> {
                         let term = self
                             .checked_measure_term(measure)
                             .ok_or(AffineCheckError::CoefficientMismatch)?;
-                        values.push(self.measure_atom(term));
+                        values.push(self.measure_atom(term, state));
                     }
                     // [INV-1, MSR-6, ENT-2] a const generic at the symbolic
                     // instance is the declaration-anchored constant term, and
@@ -10680,7 +10693,7 @@ impl Analyzer<'_, '_> {
                     // immutable atom for the whole walk.
                     CheckedAffineExpressionKind::ConstGeneric { declaration, .. } => {
                         let term = self.terms.intern(TermKind::ConstParameter(*declaration));
-                        values.push(self.measure_atom(term));
+                        values.push(self.measure_atom(term, state));
                     }
                     CheckedAffineExpressionKind::Add(left, right) => {
                         pending.push(Pending::Add);
@@ -11440,7 +11453,7 @@ impl Analyzer<'_, '_> {
         requested.sort_unstable();
         requested.dedup();
 
-        let measure_terms_by_atom = self.measure_terms_by_atom();
+        let measure_terms_by_atom = self.measure_terms_by_atom(values);
         let mut term_intervals = HashMap::new();
         for atom_id in requested {
             let atom = *self
@@ -11566,15 +11579,12 @@ impl Analyzer<'_, '_> {
 
     /// The image this program point holds for one measure term.
     ///
-    /// [MSR-4]'s automatic derivation reads a measure through
-    /// [`Self::measure_atom`], which is one immutable atom for the whole walk
-    /// because a goal is discharged from the fact state at its own point. A
-    /// written invariant is different: its conclusion is carried forward as a
-    /// fact over value images, so the image has to be retargeted by the
-    /// events that kill the term, exactly as a local's image is retargeted by
-    /// a write to that local. A measure the table fixes has no mutable image
-    /// at all, and reads as the standing fact [MSR-2] gives it.
-    fn measure_atom(&mut self, term: TermId) -> AffineForm {
+    /// [MSR-4]'s automatic derivation reads the current edge's immutable
+    /// value image. A written invariant captures that image in its theorem;
+    /// a later kill removes only the affected edge's current mapping, so a
+    /// new image cannot reuse that theorem without a surviving relation.
+    /// A measure the table fixes reads as its standing [MSR-2] fact.
+    fn measure_atom(&mut self, term: TermId, state: &AffineFlowState) -> AffineForm {
         let mut anchor = term;
         // The table relates a cell to a constant or to one other term, and
         // this version's rows chain at most once (`cap` to the run's own
@@ -11586,11 +11596,14 @@ impl Analyzer<'_, '_> {
                 None => break,
             }
         }
-        if let Some(atom) = self.measure_atoms.get(&anchor) {
+        if let Some(atom) = state.measure_atoms.borrow().get(&anchor) {
             return atom.clone();
         }
         let atom = self.new_affine_atom(IntegerType::U64);
-        self.measure_atoms.insert(anchor, atom.clone());
+        state
+            .measure_atoms
+            .borrow_mut()
+            .insert(anchor, atom.clone());
         atom
     }
 
@@ -11602,15 +11615,15 @@ impl Analyzer<'_, '_> {
     /// retargets the term's: a header conclusion published over the old atom
     /// stays anchored to a live term, which is what lets one published
     /// relation preserve an invariant across a [LIV-2] commit.
-    fn adopt_measure_atom(&mut self, datum: TermId, live: TermId) {
-        if self.measure_atoms.contains_key(&datum) {
+    fn adopt_measure_atom(&mut self, datum: TermId, live: TermId, state: &AffineFlowState) {
+        if state.measure_atoms.borrow().contains_key(&datum) {
             return;
         }
-        let atom = self.measure_atom(live);
+        let atom = self.measure_atom(live, state);
         if atom.terms().is_empty() {
             return;
         }
-        self.measure_atoms.insert(datum, atom);
+        state.measure_atoms.borrow_mut().insert(datum, atom);
     }
 
     /// Every registered measure term, in term order.
@@ -11657,10 +11670,13 @@ impl Analyzer<'_, '_> {
     /// it; a measure atom's own name is its measure term [MSR-2], and without
     /// this map a measure entered every interval substitution at its complete
     /// `u64` range however tightly the closed state had already bounded it.
-    fn measure_terms_by_atom(&mut self) -> HashMap<AffineTermId, Vec<TermId>> {
+    fn measure_terms_by_atom(
+        &mut self,
+        state: &AffineFlowState,
+    ) -> HashMap<AffineTermId, Vec<TermId>> {
         let mut grouped: HashMap<AffineTermId, Vec<TermId>> = HashMap::new();
         for term in self.measure_terms() {
-            if let Some(atom) = self.measure_atom(term).unit_term() {
+            if let Some(atom) = self.measure_atom(term, state).unit_term() {
                 grouped.entry(atom).or_default().push(term);
             }
         }
@@ -11680,7 +11696,7 @@ impl Analyzer<'_, '_> {
         // own integer binding with an image, so a measure participates in the
         // affine domain through its own atom.
         for term in self.measure_terms() {
-            let value = self.measure_atom(term);
+            let value = self.measure_atom(term, values);
             // A measure whose image is a constant is Z displaced by that
             // constant, and Z is already the fixed zero candidate, so its
             // index entries would duplicate Z's under one coefficient vector.
@@ -11774,6 +11790,7 @@ impl Analyzer<'_, '_> {
     /// than a route by which an operation's own post-state is derived.
     fn capacity_identity_premises(
         &mut self,
+        values: &AffineFlowState,
         check: &mut AffineCheckState,
     ) -> Result<Vec<AutomaticAffinePremise>, AffineCheckError> {
         let mut premises = Vec::new();
@@ -11791,9 +11808,9 @@ impl Analyzer<'_, '_> {
             ) else {
                 continue;
             };
-            let capacity_atom = self.measure_atom(capacity);
-            let length_atom = self.measure_atom(length);
-            let room_atom = self.measure_atom(room);
+            let capacity_atom = self.measure_atom(capacity, values);
+            let length_atom = self.measure_atom(length, values);
+            let room_atom = self.measure_atom(room, values);
             let Ok(filled) = length_atom.add(&room_atom, check) else {
                 continue;
             };
@@ -11823,9 +11840,10 @@ impl Analyzer<'_, '_> {
     fn automatic_affine_premises(
         &mut self,
         facts: &[ActiveAffineFact],
+        values: &AffineFlowState,
         check: &mut AffineCheckState,
     ) -> Result<Vec<AutomaticAffinePremise>, AffineCheckError> {
-        let mut premises = self.capacity_identity_premises(check)?;
+        let mut premises = self.capacity_identity_premises(values, check)?;
         for fact in Self::canonical_affine_facts(facts) {
             check.charge(1)?;
             let (source, parent) = match fact.evidence {
@@ -11895,7 +11913,7 @@ impl Analyzer<'_, '_> {
         requested.sort_unstable();
         requested.dedup();
 
-        let measure_terms_by_atom = self.measure_terms_by_atom();
+        let measure_terms_by_atom = self.measure_terms_by_atom(values);
         let mut term_intervals = HashMap::new();
         for atom_id in requested {
             let atom = *self
@@ -12100,7 +12118,7 @@ impl Analyzer<'_, '_> {
             });
         }
         let automatic = self
-            .automatic_affine_premises(assumptions, &mut check)
+            .automatic_affine_premises(assumptions, values, &mut check)
             .ok()?;
 
         // Preserve the complete coefficient-one single-premise route. Every
@@ -12181,8 +12199,9 @@ impl Analyzer<'_, '_> {
         // kill its term, exactly as a local's image is retargeted by a write
         // to that local: the next occurrence of the term mints a fresh atom,
         // so no conclusion published over the old one reaches past the write.
-        let stale: Vec<TermId> = self
+        let stale: Vec<TermId> = state
             .measure_atoms
+            .borrow()
             .keys()
             .copied()
             .filter(|term| {
@@ -12192,7 +12211,7 @@ impl Analyzer<'_, '_> {
             })
             .collect();
         for term in stale {
-            self.measure_atoms.remove(&term);
+            state.measure_atoms.get_mut().remove(&term);
         }
         // An opaque handle names one binding's value at the point the fold
         // took it, so it dies with a write to that binding exactly as the
@@ -12411,7 +12430,7 @@ impl Analyzer<'_, '_> {
                 .enumerate()
                 .map(|(ordinal, (target, value))| {
                     let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
-                    self.mint_commit_placement(node_path, ordinal, target, value, &mut state.facts)
+                    self.mint_commit_placement(node_path, ordinal, target, value, state)
                 })
                 .collect::<Vec<_>>(),
             CheckedCommitValues::ResultList { .. } => Vec::new(),
@@ -12532,9 +12551,9 @@ impl Analyzer<'_, '_> {
         // transferred place had immediately before them. The destination is
         // the place this commit writes, which is a plain place or one element
         // position of a run.
-        let placement = self.mint_commit_placement(node_path, 0, target, value, &mut state.facts);
+        let placement = self.mint_commit_placement(node_path, 0, target, value, state);
         let constructed = matches!(target, CheckedSetTarget::Place(_))
-            .then(|| self.mint_construct_placements(node_path, value, &mut state.facts))
+            .then(|| self.mint_construct_placements(node_path, value, state))
             .unwrap_or_default();
         // [SET-1]: the target's base and offset are evaluated before the
         // right-hand side; both are judged at this point, then the commit
@@ -12718,12 +12737,11 @@ impl Analyzer<'_, '_> {
                 // [MSR-3] the rebind placement is minted before the
                 // initializer's own kills, because the datum it forms is the
                 // value the transferred place had immediately before them.
-                let rebind = self.mint_rebind_datums(node_path, 0, value, &mut state.facts);
+                let rebind = self.mint_rebind_datums(node_path, 0, value, state);
                 // [MSR-3] the construct placement is minted at the same
                 // point and for the same reason: a field operand is consumed
                 // by the construct that fills the field with it.
-                let constructed =
-                    self.mint_construct_placements(node_path, value, &mut state.facts);
+                let constructed = self.mint_construct_placements(node_path, value, state);
                 let judgment = self.expression_effects(value, state);
                 self.declare(*binding);
                 if judgment.reached
@@ -12905,14 +12923,7 @@ impl Analyzer<'_, '_> {
                         CheckedSetTarget::Storage(_) => MeasurePlacement::Element,
                         _ => MeasurePlacement::Rebind,
                     };
-                    self.mint_measure_datums(
-                        node_path,
-                        1,
-                        placement,
-                        place,
-                        target.ty(),
-                        &mut state.facts,
-                    )
+                    self.mint_measure_datums(node_path, 1, placement, place, target.ty(), state)
                 });
                 let outcome = self.walk_set(node_path, target, value, false, state);
                 self.declare(*binding);
@@ -13239,7 +13250,7 @@ impl Analyzer<'_, '_> {
                 // [MSR-3] the payload placement is minted before the `match`
                 // consumes its scrutinee, because the datums it forms are the
                 // measures the payload had immediately before that consume.
-                let payload = self.mint_payload_placements(scrutinee, *enum_type, &mut state.facts);
+                let payload = self.mint_payload_placements(scrutinee, *enum_type, state);
                 let judgment = self.expression_effects(scrutinee, state);
                 let facts = if judgment.reached {
                     self.arm_facts(scrutinee, *enum_type, &state.facts)
@@ -13278,7 +13289,7 @@ impl Analyzer<'_, '_> {
                 // [MSR-3] the payload placement is minted before the `match`
                 // consumes its scrutinee, because the datums it forms are the
                 // measures the payload had immediately before that consume.
-                let payload = self.mint_payload_placements(scrutinee, *enum_type, &mut state.facts);
+                let payload = self.mint_payload_placements(scrutinee, *enum_type, state);
                 let judgment = self.expression_effects(scrutinee, state);
                 let facts = if judgment.reached {
                     self.arm_facts(scrutinee, *enum_type, &state.facts)
