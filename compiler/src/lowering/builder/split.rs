@@ -822,8 +822,10 @@ fn frame_bytes(ty: IrType) -> u64 {
 /// chunk, each charged more the deeper it sits inside a loop, plus the same
 /// estimate for what the chunk calls, to a bounded depth. It reads no name, no
 /// signature, and no source shape, and it feeds nothing but the runtime
-/// allowance — an estimate that is wrong by a factor still lands on the
-/// measured grain plateau, which is flat over four thousandfold.
+/// allowance. The earlier kernels tolerated broad grain changes, but runtime
+/// block helpers expose a limit: this static estimate cannot distinguish a
+/// 17-element row from a 1024-element row. The compute-model investigation
+/// retains both cases; no universal grain plateau is established.
 pub(crate) fn assign_weights(functions: &mut [IrFunction]) {
     let costs: Vec<Cost> = functions.iter().map(cost).collect();
     let mut total: Vec<u64> = costs.iter().map(|cost| cost.instructions).collect();

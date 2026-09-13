@@ -469,6 +469,41 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn runtime_division_publishes_its_quotient_bound_without_a_later_product() {
+    for transfer in [
+        "let quotient = count / divisor;",
+        "let quotient = 0_u64;\n  set quotient = count / divisor;",
+    ] {
+        let source = format!(
+            "fn quotient_bound(count: own u64, divisor: own u64) -> result: own u64 pure contract {{
+  requires 1_u64 <= divisor;
+  ensures result <= count;
+}} {{
+  {transfer}
+  return quotient;
+}}
+
+command fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("runtime quotient bound must establish the postcondition: {outcome:?}");
+            };
+            let function = named(&checked.data.functions, "quotient_bound");
+            validate_derivations(&function.entailment);
+            assert!(function.entailment.postconditions[0].aggregate.discharged);
+            assert!(function.entailment.s7_derivations.iter().any(|source| {
+                matches!(source.kind, S7DerivationKind::UnsignedDivisionBound { divisor, .. }
+                    if !matches!(function.entailment.inventory.terms[divisor.0 as usize], TermKind::Constant(_)))
+            }));
+        });
+    }
+}
+
+#[test]
 fn unsigned_literal_division_publishes_the_scaled_quotient_image() {
     let source = br#"fn doubled_floor(count: own u64) -> result: own u64 pure contract {
   ensures result <= count;

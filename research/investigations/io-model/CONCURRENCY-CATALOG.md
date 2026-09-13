@@ -14,6 +14,10 @@ separately. It exists to be argued with before the I/O API is designed, so
 every claim that can be grounded in a measured number in this repository is,
 and every claim that cannot is labelled an estimate with its reasoning.
 
+The executable compute consumers in §§13--15 supersede their earlier range-loan
+predictions. Other sections remain analysis of the stated I/O brief, not
+compiler capability claims or an authorization to start I/O work.
+
 Nothing here proposes changing the model. Where a rule costs something, the
 cost is priced, not appealed.
 
@@ -1616,543 +1620,155 @@ also not help. Genuinely no loss here.
 
 ## 13. Level-synchronous graph algorithms and irregular reductions
 
-Parallel BFS frontier expansion; histogram; counting sort.
+The executable [compute-model investigation](../compute-model/DESIGN.md)
+supersedes the earlier estimates in this section. It distinguishes a useful
+sparse traversal, an eligible dense traversal, and a privatized histogram;
+eligibility alone supplies no performance result.
 
-### (a) Native shape
+### BFS
 
-```c
-// top-down BFS level
-#pragma omp parallel for schedule(dynamic, 64)
-for (size_t f = 0; f < frontier_n; ++f) {
-    uint32_t u = frontier[f];
-    for (uint32_t e = off[u]; e < off[u+1]; ++e) {
-        uint32_t v = adj[e];
-        if (__sync_bool_compare_and_swap(&parent[v], UINT32_MAX, u))
-            next[__sync_fetch_and_add(&next_n, 1)] = v;   // atomic append
-    }
-}
+The direct shared-frontier form uses data-dependent visited writes and a shared
+append cursor. Those writes do not carry the disjointness required for overlap.
+That does not make sparse BFS itself inexpressible: the
+[`bfs.wf`](../../experiments/compute-bench/programs/bfs.wf) consumer uses one
+intrusive link per vertex and source-ordered discovery. It visits each reached
+vertex once, retaining O(V+E) work without an array-queue capacity proof or a
+heap allocation for every vertex. It remains sequential during discovery.
 
-// histogram
-#pragma omp parallel
-{ uint32_t priv[256] = {0};
-  #pragma omp for
-  for (i = 0; i < n; ++i) priv[key[i]]++;
-  #pragma omp critical
-  for (b = 0; b < 256; ++b) hist[b] += priv[b]; }
-```
+The same source also implements a pull control: read the preceding distance
+buffer, give each destination vertex an exclusive one-cell view, and combine
+one discovery count. The outer loop is permitted, including the map writes
+and reduction together. Direct writes through a whole `MutSlice` do not use
+the direct-storage element-map family; the explicit subviews provide the
+existing adjacent-range proof. No new overlap rule was needed.
 
-### (b) Whitefoot shape — BFS
+The independent FIFO oracle checks unsigned distances and unreachable vertices
+on chains, trees, disconnected graphs, cycles, grids, and duplicate edges in
+both compiler modes with real worker pools. Fixtures are undirected with at
+most four adjacency slots per vertex. This removes the need for a transpose
+in the pull control but limits the result: arbitrary CSR, high-degree hubs,
+parent-selection semantics, and parallel sparse discovery are untested.
 
-The top-down sparse frontier is **not expressible in parallel**: `parent[v]` and
-`next[next_n++]` are both data-dependent (scattered) writes, denied by PAR-2 on
-the affine condition, and there is no atomic.
+Pull visits every vertex at each level. It therefore incurs O(V·D) vertex
+visits on a chain where sparse discovery needs O(V+E). Parallel eligibility
+does not make that an acceptable replacement. The prior estimate of roughly
+0.9 times an OpenMP direction-optimizing BFS is withdrawn: no such comparison
+was run, and unconditional pull is not direction optimization. The experiment
+compares FIFO and pull on the same graph and reports work as well as elapsed
+time and process CPU before selecting further work.
 
-The **dense / bottom-up** form is expressible and permitted, because every write
-is `x[i]` with the loop's own binder:
+### Histogram
 
-```whitefoot
-// Restructuring note: sparse frontier -> dense bitmaps over all vertices;
-// atomic append -> a per-vertex flag plus a sequential compaction (or none, if
-// the next level is also dense). This is direction-optimizing BFS's bottom-up
-// step, used unconditionally.
-fn bfs_level(off: &buffer<u32>, adj: &buffer<u32>,
-             visited: &buffer<u8>, frontier: &buffer<u8>,
-             next: &uniq buffer<u8>, parent: &uniq buffer<u32>, n: own u64)
-  -> result: own u64
-  reads(off, adj, visited, frontier, next, parent), writes(next, parent) contract {
-  requires n <= len_of(deref(next));
-  requires n <= len_of(deref(parent));
-} {
-  let found = 0_u64;
-  for (v in 0_u64..n) {
-    // reads: off, adj, visited, frontier — whole roots, none written by B.
-    // writes: next[v] and parent[v] — two roots, each affine a=1,b=0.
-    let hit = scan_in_neighbours(off: off, adj: adj, frontier: frontier, v: v);
-    set deref(next)[v]   = hit.flag;
-    set deref(parent)[v] = hit.from;
-    set found = found +wrap hit.count;     // one accumulator, +wrap: admitted
-  }
-  return found;
-}
-```
+[`histogram.wf`](../../experiments/compute-bench/programs/histogram.wf) uses
+ordinary loops over runtime input blocks and an exclusive counter range for
+each block. Its local data-dependent counter updates are sequential, while the
+enclosing block map is independently permitted. A separate bucket map merges
+the private counters. No worker count is written into the source.
 
-Two accumulators would be denied; here `found` is the only one.
+Independent one-pass oracles cover 208 runtime-size configurations, including
+empty input, tails, repeated keys, and skew. Storage is proportional to the
+number of input blocks times the bucket count, not necessarily the number of
+workers. The native parallel comparison uses the same privatization, while
+its serial reference uses a direct histogram. Allocation, private workspace,
+merge work, and the compiler's pricing of runtime block work remain costs to
+measure; the earlier unconditional "no loss" and OpenMP estimates are not
+established by the range proof.
 
-### (b′) Whitefoot shape — histogram
+### Counting and radix sort
 
-**Not expressible under PAR-2 in any form.** The privatized histogram needs a
-per-lane *array* of counters, and PAR-2's accumulator is one whole place
-combined with one scalar operation. `hist[key[i]] +wrap= 1` is a scattered
-write. A per-lane window `mut_slice_of(&uniq hist, lane*256, lane*256+256)`
-forms an exclusive loan rooted outside the loop, which PAR-2 denies.
-
-The expressible form is PAR-1 with the lane count in the source:
-
-```whitefoot
-// Restructuring note: W is a source constant. `hist` is W*256 wide; a
-// sequential fold collapses it afterwards.
-fn histogram(key: &buffer<u8>, n: own u64, hist: &uniq buffer<u32>)
-  -> result: own u64 reads(key, hist), writes(hist) contract {
-  requires len_of(deref(hist)) == 1024_u64;          // 4 lanes * 256 buckets
-  requires n <= len_of(deref(key));
-} {
-  let quarter = n / 4_u64;
-  region {
-    let h0 = mut_slice_of(&uniq deref(hist),   0_u64,  256_u64);   // [new]
-    let h1 = mut_slice_of(&uniq deref(hist), 256_u64,  512_u64);   // [new]
-    let h2 = mut_slice_of(&uniq deref(hist), 512_u64,  768_u64);   // [new]
-    let h3 = mut_slice_of(&uniq deref(hist), 768_u64, 1024_u64);   // [new]
-    let a = count_into(key: key, first: 0_u64,              end: quarter,          out: &uniq h0);
-    let b = count_into(key: key, first: quarter,            end: 2_u64 *wrap quarter, out: &uniq h1);
-    let c = count_into(key: key, first: 2_u64 *wrap quarter, end: 3_u64 *wrap quarter, out: &uniq h2);
-    let d = count_into(key: key, first: 3_u64 *wrap quarter, end: n,                out: &uniq h3);
-    let total = a +wrap b +wrap c +wrap d;
-    // sequential fold of 4 x 256 counters into the first 256
-    return fold_lanes(hist: &uniq deref(hist), lanes: 4_u64, buckets: 256_u64) +wrap total;
-  }
-}
-```
-
-### (c) What changes structurally
-
-BFS:
-- **The frontier stops being sparse.** Every level costs O(V) plus the in-edges
-  scanned, instead of O(frontier + its out-edges). For a small-world graph whose
-  middle levels hold most of the vertices, this is nearly free and is what
-  direction-optimizing BFS does anyway. For a road network or a long path graph
-  — diameter in the thousands, frontier of a few hundred — the cost is
-  **O(V · D)** against **O(V + E)**. On a 1M-vertex graph with diameter 1,000
-  that is a 1,000x work amplification.
-- **No atomic `parent` claim**, so a vertex reached from two parents in one level
-  must resolve deterministically: `scan_in_neighbours` picks (say) the lowest
-  in-neighbour in the frontier, which is *more* deterministic than the native
-  CAS race and costs a full in-neighbour scan rather than an early exit.
-- The compaction back to a sparse frontier (if wanted) is a scatter: sequential.
-
-Histogram / counting sort:
-- **W is a source constant.** Again.
-
-  **`[new]` — the affine-range extension removes this for the count pass.** With
-  an iteration-exclusive loan on `[c*i + b, c*(i+1) + b)` admitted by [PAR-2],
-  the privatized histogram is written as an ordinary counted loop over lanes:
-
-  ```whitefoot
-  for (lane in 0_u64..lanes) {                     // [new] affine range loan
-    let win = mut_slice_of(&uniq hist, lane *wrap 256_u64, lane *wrap 256_u64 +wrap 256_u64);
-    set counted[lane] = count_into(key: &key, first: lane *wrap chunk,
-                                   end: lane *wrap chunk +wrap chunk, out: &uniq win);
-  }
-  ```
-
-  `lanes` is then a runtime value. *What changes in the verdict:* the histogram
-  goes from "restructure, bounded loss (W in source, ~0.9–1.0 of native *if W
-  matches the host*)" to **restructure, no loss** — the per-lane privatization is
-  the native algorithm, and the lane count now matches the machine. *What does
-  not change:* counting sort stays **bounded loss**, because its scatter phase is
-  a data-dependent write and no range rule reaches it; the verdict there is set
-  by the scatter, not by W.
-- The counting-sort *scatter* phase (`out[pos[key[i]]++] = i`) is a data-dependent
-  write and stays sequential under every rule. In counting sort the scatter is
-  the expensive pass, so the parallelizable fraction is the count pass and the
-  prefix sum only.
-
-Proof obligations: the range-loan disjointness (four constants — trivial); the
-histogram's `requires len_of(hist) == W*B`; for BFS, the in-neighbour scan's
-bounds against `off`/`adj`, which is the ordinary `[OP-4]` work.
-
-### (d) Performance expectation
-
-BFS on a small-world graph (social, web): the level loop is a PAR-2 map at the
-measured 1.03–1.14 ratio, so **~0.9x of an OpenMP direction-optimizing BFS** —
-close, because the native implementation is doing the same dense pass. Whitefoot
-loses only the top-down levels it cannot use.
-
-BFS on a high-diameter graph: **catastrophic**, and the number is the diameter.
-This is not a constant-factor loss; it is an asymptotic one, O(V·D) versus
-O(V+E).
-
-Histogram: the count pass parallelizes to ~W with a cheap body; the fold is
-W×B = 1,024 adds, negligible. Expect **~0.9–1.0x of the OpenMP privatized
-form** on 4 cores — but only because W matched the machine. On an 8-core host
-the same source uses 4 lanes and delivers half the available throughput; on a
-2-core host it oversubscribes by 2 and the four calls are run inline by the lane
-budget, costing nothing but gaining nothing. **The source is tuned to a machine.**
-
-Counting sort: Amdahl-bound by the sequential scatter. If count is 25% of the
-runtime and scatter is 60%, the best possible speedup on 4 cores is
-`1/(0.6 + 0.4/4)` = **1.43x** against a native parallel counting sort's ~3x.
-About **0.5 of native.**
-
-Memory: BFS dense form needs O(V) bitmaps per level instead of O(frontier) —
-usually smaller in absolute terms (one byte per vertex) but always paid.
-Histogram needs W×B counters, same as the native privatized form.
-
-**Strictly worse case:** BFS on a high-diameter graph (above), and any histogram
-on a machine whose core count differs from the literal in the source.
-
-### (e) Verdict
-
-BFS: **restructure, bounded loss** on low-diameter graphs; **bounded loss that
-is asymptotic, not constant** on high-diameter graphs — the dense form is the
-wrong algorithm there.
-Histogram / counting sort: **restructure, bounded loss** — W is a source
-constant, and the scatter phase stays sequential (≈0.5 of native for counting
-sort). **`[new]`: with the affine-range extension the histogram becomes
-restructure, no loss**; counting sort stays bounded loss, because its verdict is
-set by the sequential scatter and not by W.
+The shared-cursor scatter `out[pos[key[i]]++] = i` has no independent-write
+proof and remains source ordered. This is a finding about that representation,
+not a proof that every counting or radix algorithm must scatter sequentially.
+A block/bucket decomposition with proved exclusive destination ranges is a
+candidate for a later consumer. Neither an implementation nor a native
+performance comparison has been run here; the former 0.5-of-native estimate
+is withdrawn rather than promoted into a model limitation.
 
 ---
 
 ## 14. Stencil / simulation time-stepping with double buffering and halo exchange
 
-### (a) Native shape
+The merged range-loan work replaces the hand-written fixed-worker bands with
+an ordinary loop over runtime rows. The executable
+[`stencil.wf`](../../experiments/compute-bench/programs/stencil.wf) passes three
+read-only neighbor rows and one exclusive output row to an ordinary helper.
+Its buffers alternate by step parity; each strict floating-point operation
+keeps its source grouping. The independent column-major oracle compares every
+result bit in both compiler modes and with actual worker pools.
 
-```c
-for (int t = 0; t < steps; ++t) {
-    #pragma omp parallel for collapse(2)
-    for (int y = 1; y < H-1; ++y)
-      for (int x = 1; x < W-1; ++x)
-        next[y*W+x] = 0.25f*(cur[(y-1)*W+x] + cur[(y+1)*W+x]
-                           + cur[y*W+x-1]   + cur[y*W+x+1]);
-    swap(cur, next);
-    exchange_halos(cur);            // MPI, if distributed
-}
-```
+This establishes expression of the contiguous runtime grid without a
+source-expanded worker count. It does not establish negligible scheduling cost.
+The [range-loan measurements](../range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
+reported a one-worker difference and a size-dependent grain cliff. The
+[compute-model follow-up](../compute-model/DESIGN.md#pool-off-measurement-path)
+found that the host adapter entered the parallel body even when ordinary
+command entry would select its sequential clone. The adapter now selects the
+same execution world; the initial control was too noisy to attribute a fixed
+remaining one-worker tax.
 
-### (b) Whitefoot shape — 1-D: direct
+The row weight also does not multiply by runtime width. Two similarly priced
+outer loops can do very different work per iteration. Original, large, small,
+and narrow-row fixtures, plus a threshold sweep, distinguish that estimate
+from the price of a join itself. The former less-than-one-percent barrier and
+5--10-percent native-parity estimates are withdrawn for this consumer; the
+actual measurements and their limitations belong to the investigation.
 
-```whitefoot
-fn step_1d(cur: &buffer<f64>, next: &uniq buffer<f64>, n: own u64)
-  -> result: own u64 reads(cur, next), writes(next) contract {
-  requires n <= len_of(deref(cur));
-  requires n <= len_of(deref(next));
-  requires 2_u64 <= n;
-} {
-  for (i in 1_u64..n - 1_u64) {
-    // write: next[i], affine a=1,b=0. reads: cur, a whole root B never writes.
-    // Footprints disjoint across iterations: [PAR-2] permits.
-    set deref(next)[i] = blend(l: deref(cur)[i - 1_u64],
-                               c: deref(cur)[i],
-                               r: deref(cur)[i + 1_u64]);
-  }
-  return n;
-}
-```
-
-### (b′) Whitefoot shape — 2-D: **the flat row-major form is denied**
-
-```whitefoot
-for (y in 1_u64..h - 1_u64) {
-  for (x in 1_u64..w - 1_u64) {
-    set deref(next)[y *wrap w +wrap x] = /* … */;
-    //  ^ inner loop binder is x; canonical offset is 1*x + (y*w).
-    //    `y*w` is a symbolic term, not a mathematical integer constant.
-    //    [PAR-2] DENIES. The outer loop over y denies for the mirror reason.
-  }
-}
-```
-
-Two expressible replacements. First, **rows as their own buffers**, so the write
-is `row[x]` with `b = 0` — but obtaining `&uniq next_rows[y]` inside the loop is
-a borrow formed by a non-call statement, which PAR-2 also denies. So this only
-works if the row loop is the *outer* loop and each iteration writes exactly one
-element of a row-pointer array — which is not what a stencil does.
-
-Second, and the one that works today, **a hand-written W-way band decomposition
-under PAR-1**:
-
-```whitefoot
-// Restructuring note: the 2-D loop nest becomes W hand-written band calls.
-// W is a source constant. [new] mut_slice_of range loans; the four bands are
-// proved disjoint by linear arithmetic over `band = (h - 2) / 4`.
-fn step_2d(cur: &buffer<f64>, next: &uniq buffer<f64>, w: own u64, h: own u64)
-  -> result: own u64 reads(cur, next), writes(next) contract {
-  requires 6_u64 <= h;
-  requires len_of(deref(cur)) == w *wrap h;
-  requires len_of(deref(next)) == w *wrap h;
-} {
-  let band = (h - 2_u64) / 4_u64;
-  region {
-    let b0 = mut_slice_of(&uniq deref(next), 1_u64 *wrap w,                    (1_u64 +wrap band) *wrap w);
-    let b1 = mut_slice_of(&uniq deref(next), (1_u64 +wrap band) *wrap w,       (1_u64 +wrap 2_u64 *wrap band) *wrap w);
-    let b2 = mut_slice_of(&uniq deref(next), (1_u64 +wrap 2_u64 *wrap band) *wrap w, (1_u64 +wrap 3_u64 *wrap band) *wrap w);
-    let b3 = mut_slice_of(&uniq deref(next), (1_u64 +wrap 3_u64 *wrap band) *wrap w, (h - 1_u64) *wrap w);
-    // Four disjoint exclusive loans; `cur` is shared by all four. One [PAR-1] chain.
-    let r0 = band_rows(cur: cur, out: &uniq b0, w: w, y0: 1_u64,                     y1: 1_u64 +wrap band);
-    let r1 = band_rows(cur: cur, out: &uniq b1, w: w, y0: 1_u64 +wrap band,          y1: 1_u64 +wrap 2_u64 *wrap band);
-    let r2 = band_rows(cur: cur, out: &uniq b2, w: w, y0: 1_u64 +wrap 2_u64 *wrap band, y1: 1_u64 +wrap 3_u64 *wrap band);
-    let r3 = band_rows(cur: cur, out: &uniq b3, w: w, y0: 1_u64 +wrap 3_u64 *wrap band, y1: h - 1_u64);
-    return r0 +wrap r1 +wrap r2 +wrap r3;
-  }
-}
-```
-
-**`[new]` — the affine-range extension turns this into an ordinary loop, and
-this is the case where it matters most.** A row of a row-major grid is
-`[y*w, y*w + w)`, which is exactly an affine range `[c*i + b, c*(i+1) + b)` with
-`c = w` and `b = 0`. So if [PAR-2] admits an iteration-exclusive loan on an
-affine range, the whole hand-written four-way decomposition above collapses to:
-
-```whitefoot
-for (y in 1_u64..h - 1_u64) {                     // [new] affine range loan
-  let row = mut_slice_of(&uniq deref(next), y *wrap w, y *wrap w +wrap w);
-  set done[y] = stencil_row(cur: cur, out: &uniq row, w: w, y: y);
-}
-```
-
-One caveat, stated because it decides whether the extension reaches this case at
-all: `w` is a runtime value, not a literal. The *element* rule requires `a` and
-`b` to be mathematical integer constants because it refines the write footprint
-to a single element syntactically. A *range* rule does not need that — the
-disjointness of `[c*i, c*(i+1))` across distinct `i` is `c >= 0` plus
-monotonicity, which is linear arithmetic over a symbolic `c`, and linear
-arithmetic is already the obligation the accepted range loans carry. **So the
-same range-loan rule does cover `[y*w, y*w+w)`, provided `c` may be a
-loop-invariant value rather than a literal.** If it is restricted to literals, it
-does not reach 2-D at all and this section's verdict is unchanged.
-
-*What changes in the verdict:* 2-D stencil goes from "restructure, bounded loss
-(hand-written W-way bands, W a source constant)" to **restructure, no loss** —
-the loop is written the way anyone would write it, the compiler chunks the row
-range, and the band count matches the machine.
-
-*What it does not fix:* the inner element write `next[y*w + x]` of §0.2 stays
-denied. That is the element rule's constant requirement, a separate narrowness,
-and the range extension routes around it (write rows, not elements) rather than
-removing it. A kernel that genuinely needs the inner loop parallel — a very wide,
-very short grid, where there are fewer rows than cores — is still denied.
-
-The time loop alternates buffers with a parity branch rather than a swap:
-
-```whitefoot
-for @steps (t in 0_u64..steps) {
-  if even(t) { let m = step_2d(cur: &a, next: &uniq b, w: w, h: h); }
-  else       { let m = step_2d(cur: &b, next: &uniq a, w: w, h: h); }
-}
-```
-
-### (c) What changes structurally
-
-- **Halo exchange disappears entirely.** There is one address space and one
-  control flow; the halo exists in MPI/threaded codes only because the domain is
-  split across memories or because a thread must not read a neighbour's
-  in-progress write. Here `cur` is read-only during the step and every lane reads
-  whatever it likes. This is a real, structural simplification: the ghost cells,
-  the pack/unpack buffers, the send/recv pairing, and the deadlock class that
-  comes with it are all gone.
-- **1-D is free. 2-D costs a hand-written W-way decomposition** (or a
-  row-of-buffers layout that hurts locality and does not compose with PAR-2
-  either).
-- **The buffer swap is a parity branch**, doubling the call site. A `replace`-
-  based swap would avoid that; it is not needed in the inner loop, so the cost
-  is cosmetic.
-- Boundary conditions are ordinary source and unchanged.
-
-Proof obligations: band disjointness (linear arithmetic over `band`, `w`, `h` —
-the `requires 6 <= h` is there to keep `band >= 1`), and the per-band bounds so
-`cur[(y-1)*w+x]` is in range, which needs `y0 >= 1` and `y1 <= h-1` in
-`band_rows`'s contract.
-
-### (d) Performance expectation
-
-1-D: the measured map ratio, **1.03–1.14 of the best reference**, or better —
-the `fir` kernel is structurally a 1-D stencil with 64 taps and Whitefoot is
-*fastest* on it (0.906–0.954 across both hosts).
-
-2-D under the band decomposition: the inner work is identical to the native
-band-parallel form, so throughput should be within ~5–10% — a band call is one
-outlined call per lane, not one per row, so the fork/join cost is 4 edges per
-time step. At a 1,024×1,024 grid and ~1 ns/cell, a step is ~1 ms and 4 fork-join
-edges are ~5 µs: **0.5% overhead**. The loss is not performance; it is that W is
-a literal.
-
-Memory: better. Two grids, no ghost regions, no pack buffers.
-
-**Strictly worse case:** a small grid with many time steps — 64×64 at 4 µs/step.
-Back-to-back steps keep the lanes hot inside the 1,000 µs idle window, so the
-per-step fork-join is spin rounds at 11.6 ns and the overhead is **well under
-1%** — the corrected park figure does *not* hurt here, because the loop never
-lets a lane park. A simulation whose steps are separated by more than the idle
-window (a step per frame, a step per request) pays the Linux **10–16 µs**
-park-and-wake per step instead, which against a 4 µs step is
-**250–400% overhead**. Native OpenMP
-with a persistent team and a barrier has the same problem and solves it with
-`#pragma omp parallel` hoisted outside the time loop, which Whitefoot cannot do:
-each step is its own fork-join because the time loop is sequential and every
-overlap is fork-join. **This is a real, structural loss for small-domain,
-many-step simulations, and it is roughly the barrier cost divided by the step
-cost.**
-
-### (e) Verdict
-
-1-D: **direct.**
-2-D: **restructure, bounded loss** — a hand-written W-way band decomposition
-with range loans, W as a source constant. **`[new]`: with the affine-range
-extension of (b′) — and provided the range rule's `c` may be a loop-invariant
-value, since a row is `[y*w, y*w+w)` — 2-D becomes restructure, no loss**, an
-ordinary `for` over rows. The inner `next[y*w+x]` element form stays denied
-either way. Halo exchange is deleted, which is a
-gain. Small-domain many-step simulations lose the persistent-team optimization
-and pay a fork-join per step.
+The time loop remains source ordered and every parallel step joins. These
+semantics permit reuse of buffers without an explicit publication protocol.
+They do not expose a writer-managed persistent team or distributed-memory
+exchange, neither of which this single-address-space experiment measures.
 
 ---
 
 ## 15. Parallel sort and prefix sum
 
-Sample sort, parallel quicksort partition, scan.
+### Prefix sum
 
-### (a) Native shape
+[`prefix.wf`](../../experiments/compute-bench/programs/prefix.wf) implements
+an exclusive modular unsigned scan with the ordinary three phases: parallel
+block sums, a sequential exclusive scan of the block totals, and parallel
+writeback into exclusive output blocks. The input size and block size are
+runtime values; an uneven tail is processed explicitly. The independent
+one-pass oracle covers 52 configurations in both compiler modes with real
+worker pools. No lane count is expanded in source.
 
-```cpp
-// prefix sum: Blelloch / three-pass
-parallel_for(0, nb, [&](int b){ bsum[b] = reduce(a + b*C, C); });
-exclusive_scan(bsum, bsum + nb, base, 0);
-parallel_for(0, nb, [&](int b){ scan_into(a + b*C, out + b*C, C, base[b]); });
+Runtime division images remove an actual proof gap at
+`blocks = count / block_size; covered = blocks * block_size`. The multiplication
+still proves its own exact domain; its quotient/divisor identity then bounds
+the covered input. Phase order and inner sequential recurrences remain the
+ordinary scan algorithm. Native parallel references share the decomposition;
+the serial reference uses one pass. Runtime block pricing and memory traffic
+remain performance questions, not consequences of eligibility.
 
-// sample sort
-parallel_for(...)  local_histogram_of_splitters();
-exclusive_scan(global_offsets);
-parallel_for(...)  scatter_to_buckets();          // irregular writes
-parallel_for(...)  sort_each_bucket();
-```
+### Comparison sort
 
-### (b) Whitefoot shape — prefix sum
+The earlier claim that a parallel merge is necessarily a sequential scatter
+is false. [`merge_sort.wf`](../../experiments/compute-bench/programs/merge_sort.wf)
+chooses a pivot, finds its rank in the other sorted input, forms disjoint output
+views from those two ranks, and recursively merges the two pairs through
+ordinary sibling calls. The sorting recursion also uses sibling calls and two
+reusable work buffers. It is an actual comparison sort with parallel merges,
+not a fixed number of independent block sorts followed by a serial merge tree.
 
-Pass 1 is a clean PAR-2 loop and needs nothing new: each iteration writes one
-element of the block-sum array, and the input is a read-only root.
+The concrete proof pressure was the affine length-sum contract at merge entry.
+Preserving its established affine inequality and the integer images of observed
+lengths lets the body prove its output extent without widening proof search or
+inserting an impossible-case branch. A verified binary-search step helper keeps
+the relationship between its two returned bounds across an ordinary branch
+join; the algorithm still performs logarithmic search.
 
-```whitefoot
-fn block_sums(a: &buffer<u64>, bsum: &uniq buffer<u64>, nb: own u64, c: own u64)
-  -> result: own u64 reads(a, bsum), writes(bsum) contract {
-  requires nb <= len_of(deref(bsum));
-  requires nb *wrap c <= len_of(deref(a));
-} {
-  for (b in 0_u64..nb) {
-    // bsum[b]: affine a=1,b=0. reduce_range reads root `a`, never written here.
-    set deref(bsum)[b] = reduce_range(a: a, first: b *wrap c, end: b *wrap c +wrap c);
-  }
-  return nb;
-}
-```
+An independent `qsort` oracle checks all keys and multiplicities on 60 input
+configurations, including duplicates, skew, reverse order, and all-equal keys.
+Both compiler modes run at one, two, and four workers and require actual grants
+for the parallel case. Native parallel references implement the same binary
+split and 64-element merge leaf; the serial reference uses `qsort`.
 
-Pass 2 is a sequential exclusive scan over `nb` entries — cheap and correct.
-
-Pass 3 is the wall. It must write a contiguous *range* of `out` per block, so
-under PAR-2 it needs an exclusive loan on `out` rooted outside the loop:
-**denied**. It drops to PAR-1 with W in the source, exactly as in architectures
-7, 13 and 14.
-
-**`[new]` — this is the cleanest case for the affine-range extension.** Pass 3's
-block `b` writes exactly `[b*c, (b+1)*c)`, which is the affine range
-`[c*i + b, c*(i+1) + b)` with offset zero — the literal shape of the rule. With
-it, pass 3 is the mirror image of pass 1:
-
-```whitefoot
-for (b in 0_u64..nb) {                            // [new] affine range loan
-  let win = mut_slice_of(&uniq out, b *wrap c, b *wrap c +wrap c);
-  set written[b] = scan_into(a: a, out: &uniq win, first: b *wrap c,
-                             end: b *wrap c +wrap c, base: deref(base)[b]);
-}
-```
-
-*What changes in the verdict:* prefix sum goes from "restructure, bounded loss
-(W in source)" to **restructure, no loss** — three passes, all written as
-ordinary loops, none of them naming a lane count. *What does not change:* the
-sort verdicts below, whose bound is the sequential scatter and the sequential
-merge, neither of which is a range question.
-
-The form without the extension:
-
-```whitefoot
-// Restructuring note: the writeback pass is W hand-written calls over W range
-// loans. W is a source constant. [new] mut_slice_of.
-region {
-  let o0 = mut_slice_of(&uniq out, 0_u64,   q);
-  let o1 = mut_slice_of(&uniq out, q,       2_u64 *wrap q);
-  let o2 = mut_slice_of(&uniq out, 2_u64 *wrap q, 3_u64 *wrap q);
-  let o3 = mut_slice_of(&uniq out, 3_u64 *wrap q, n);
-  let s0 = scan_into(a: &a, out: &uniq o0, first: 0_u64,   end: q,  base: base0);
-  let s1 = scan_into(a: &a, out: &uniq o1, first: q,       end: 2_u64 *wrap q, base: base1);
-  let s2 = scan_into(a: &a, out: &uniq o2, first: 2_u64 *wrap q, end: 3_u64 *wrap q, base: base2);
-  let s3 = scan_into(a: &a, out: &uniq o3, first: 3_u64 *wrap q, end: n, base: base3);
-}
-```
-
-### (b′) Whitefoot shape — sort
-
-- **Sample/counting the splitters:** architecture 13's histogram — PAR-1, W in
-  the source.
-- **Offsets:** the prefix sum above.
-- **Scatter to buckets:** `out[pos[key[i]]++] = i` — data-dependent write.
-  Denied by every rule. **Sequential.**
-- **Sort each bucket:** PAR-1 over W range loans (one per bucket, if buckets are
-  contiguous windows of one output buffer), or PAR-2 if each bucket's sort could
-  be expressed as "write one element per iteration", which it cannot.
-- **In-place quicksort partition** (Hoare two-pointer) is a data-dependent write
-  into the array being read: denied, sequential, at every level. Only the
-  *recursion* after the partition parallelizes, via PAR-1 sibling calls, which
-  is architecture 2 — which, on the 2026-09-12 tables, is parity at W≤4
-  (0.97–1.07) rather than the 1.58x earlier drafts carried.
-
-### (c) What changes structurally
-
-- **Scan becomes three passes with a hand-fixed writeback width**, which is what
-  a native implementation does anyway except for the hand-fixed part.
-- **Sort loses the parallel partition.** Every comparison sort's parallel form
-  rests on either an irregular scatter (sample sort) or an in-place partition
-  (quicksort). Both are data-dependent writes. What is left is: parallel
-  *per-block* sorts into disjoint output windows (PAR-1, W fixed) plus a merge.
-  A parallel merge is itself a data-dependent write and is sequential, so the
-  merge tree is `log2(W)` sequential passes over n elements.
-- **The realistic Whitefoot sort is: W-way block sort (parallel) + log2(W)-deep
-  sequential merge.** For W=4 that is one parallel pass and 2 sequential passes
-  over n.
-
-Proof obligations: the range-loan disjointness (constants and one quotient), the
-per-block bounds, and — for the merge — the ordinary index obligations. Nothing
-exotic; the cost is in the algorithm, not the proof.
-
-### (d) Performance expectation
-
-**Prefix sum:** near parity. All three passes exist in the native form; the only
-Whitefoot-specific cost is that pass 3 has W lanes fixed at source time.
-Throughput estimate on 4 cores: `2n` parallel reads/writes plus a tiny scan, so
-~3.5x of sequential against a native ~3.7x — **~0.95 of native.**
-
-**Sort:** clearly worse. Model it: a W=4 block sort costs `(n/4)·log(n/4)`
-comparisons per lane in parallel, then 2 sequential merge passes at `2n`
-element moves. Against a sample sort that is ~3x parallel throughout. Rough
-estimate: Whitefoot reaches `1 / (0.25·(log(n/4)/log n) + 2·(n / (n log n)))` —
-for n = 10^7, log n ≈ 23: parallel part ≈ 0.25 · 21/23 ≈ 0.23 of the work in
-parallel, merge ≈ 2/23 ≈ 0.087 of the work sequential, giving a speedup of
-about `1/(0.23 + 0.087)` ≈ **3.2x** against sequential — actually competitive,
-because merging is cheap relative to sorting at large n. At small n (10^4,
-log n ≈ 13) the merge fraction rises to 2/13 = 0.15 and the speedup falls to
-~2.6x. So sort is **0.7–0.9 of a good parallel sort** on 4 cores, which is
-better than I expected before doing the arithmetic and is worth checking with a
-real measurement before believing.
-
-**Counting sort / radix sort:** worse, per architecture 13 — the scatter is the
-dominant pass and it is sequential. ~0.5 of native.
-
-Latency and memory: the block-sort-plus-merge form needs a second full buffer
-(so does sample sort). No difference.
-
-**Strictly worse case:** in-place sorting under a memory constraint. Every
-Whitefoot parallel sort needs out-of-place output windows, because in-place
-partitioning is a data-dependent write. Memory doubles.
-
-### (e) Verdict
-
-Prefix sum: **restructure, bounded loss** — three passes with W in the source
-for the writeback; ~0.95 of native. **`[new]`: with the affine-range extension
-this becomes restructure, no loss** — pass 3 is an ordinary counted loop and no
-lane count appears in the source.
-Comparison sort: **restructure, bounded loss** — no parallel partition, no
-parallel merge; block-sort-plus-sequential-merge at ~0.7–0.9 of native on 4
-cores, and out-of-place only.
-Radix/counting sort: **restructure, bounded loss (large)** — the scatter is
-sequential, ~0.5 of native.
+This disproves the blanket "no parallel merge" limit. It does not establish
+parity with sample sort, an in-place sort, or every native sorting library.
+The experiment includes buffer allocation and copies and records small and
+skewed inputs as well as a large random input. The previous 0.7--0.9 estimate
+based on a forced sequential merge is withdrawn. In-place partition and
+block/bucket scatter remain separate, untested algorithm choices.
 
 ---
 
@@ -3010,14 +2626,14 @@ only.
 | 10 | Actor model | restructure, bounded loss (large) | — | sequential delivery scatter per round; compile-time fan-out cap; chain latency in rounds | ~1.4x worse at W=4, ~2.6x at W=16 (Amdahl on the scatter); chain latency **100–1,000x**; sparse actor sets **1,000x+** work amplification | E |
 | 11 | Per-core shared-nothing | restructure, bounded loss | — | round barrier where native has none; cross-core msgs → per-round scatter | **<1% barrier while saturated** (hot rounds); **300–500% per round at burst=32 once lanes park**; latency ~10–25x DPDK at burst=256 | R/E |
 | 12 | Structured concurrency / scoped threads | **direct** | — | none | parity; 2.98x on 4 cores measured (75% of ideal); faster than `thread::scope` for short tasks | M |
-| 13 | BFS, low-diameter | restructure, bounded loss | — | sparse frontier → dense bitmaps; no atomic parent claim | ~0.9x of an OpenMP direction-optimizing BFS | E |
-| 13′ | BFS, high-diameter | restructure, **asymptotic** loss | — | dense form is the wrong algorithm | **O(V·D) vs O(V+E)** — 1,000x on a 1M-vertex, diameter-1,000 graph | R |
-| 13″ | Histogram | **`[R]` restructure, no loss** | restructure, bounded loss — W a source constant | W copies of the counters; one merge pass | ~0.9–1.0 of the OpenMP privatized form, and now on a lane count that matches the host | R/E |
-| 13‴ | Counting / radix sort | restructure, bounded loss | — (verdict set by the scatter, not by W) | the scatter stays sequential under every rule | **~0.5** of native (Amdahl on the scatter) | R/E |
+| 13 | BFS, low-diameter | sparse or pull, both executable | — | sparse discovery remains sequential; pull scans every vertex | see compute-model experiment; former OpenMP estimate withdrawn | R |
+| 13′ | BFS, high-diameter | sparse O(V+E) available; pull has asymptotic loss | — | parallel sparse discovery unresolved | pull O(V·D) vertex visits; compare actual chain fixture | R |
+| 13″ | Histogram | runtime block privatization, executable | fixed-worker form obsolete | block-count × bucket-count workspace and a merge | see compute-model experiment; no OpenMP parity claim | R |
+| 13‴ | Counting / radix sort | direct shared-cursor scatter denied; alternatives untested | — | destination partition proof unresolved | no measured comparison | R |
 | 14 | Stencil, 1-D | **direct** | — | none; halo exchange deleted | 0.91–1.14 of best ref (`fir` measured fastest) | M |
-| 14′ | Stencil, 2-D | **`[R]` restructure, no loss** — an ordinary `for` over rows, since a row is the affine range `[y*w, y*w+w)` | restructure, bounded loss — hand-written W-way bands, W a source constant | requires the range rule's `c` to be a loop-invariant value, not a literal; the inner `next[y*w+x]` element form stays denied either way | within 5–10%; **<1% barrier** for back-to-back steps, **250–400%** if steps are further apart than the idle window | R/E |
-| 15 | Prefix sum | **`[R]` restructure, no loss** | restructure, bounded loss — W a source constant for the writeback | three passes | ~0.95 of native | E |
-| 15′ | Comparison sort | restructure, bounded loss | — (verdict set by the scatter and the merge) | no parallel partition, no parallel merge; out-of-place only | ~0.7–0.9 of a good parallel sort at 4 cores | E |
+| 14′ | Stencil, 2-D | ordinary loop over proved runtime rows | fixed-worker form obsolete | joins and runtime row pricing | range-loan measurements and compute-model controls; fixed W1 tax unestablished | M/R |
+| 15 | Prefix sum | ordinary three-phase runtime block scan, executable | fixed-worker form obsolete | sequential block-total scan; workspace and grain | see compute-model experiment | R |
+| 15′ | Comparison sort | recursive sort and parallel binary-split merge, executable | — | two work buffers; in-place partition untested | see compute-model experiment; forced serial-merge estimate withdrawn | R |
 | 16 | Background periodic thread | restructure, no loss (flush/metrics); bounded loss (hard deadlines); **not expressible** (watchdog) | — | every duty named in the main loop; jitter = longest phase | appends faster (lock deleted); timeliness worse by the phase length | R/E |
 | 17 | Thread-pool server | **`[R]` restructure, bounded loss** — the loss is shape, not speed | same verdict; per-iteration buffer windows need a `buffer<buffer<u8>>` or PAR-1 with W in source | the per-connection state machine returns as a row `phase`; a deep helper returns its wanted op as data | **estimate 0.95–1.0 of the batched io_uring reference** (315k rt/s at 64 conns, 349k at 1024, 4-core host): erased bounds checks 0 to −2%, reissue pass +0.3–0.6%, batch-wait syscall neutral if the whole ready set is reaped, parallel handler loop a gain when saturated and **+150–250% per round when lanes park**. Latency = one batch round. Memory = **a row plus a poolable buffer** | E |
 | 18 | Event loop / reactor | **`[R]` restructure, no loss** — the batch model *is* the reactor | same verdict, same caveat as 17 | callback graph → a dispatch `match` on a row; the state machine is still written by hand; timers need an API timer pending (**not expressible** without one) | **parity to 1.15x libuv**, 0.95–1.0 of raw batched io_uring; the dispatch loop is parallel where a reactor's is not. **Memory a row plus a pooled buffer — the earlier "30x worse per idle connection" is withdrawn with the stackful design** | E |
@@ -3078,38 +2694,30 @@ the number of *active* rows. A sparse active set costs a full pass to find, and
 compacting it is a scatter, which is sequential. Row types must be sized for the
 worst case across kinds.
 
-**T6. Data-dependent write → sequential scatter pass.** (5′, 10, 11, 13, 15′)
-Any `x[f(data)] = v` is denied by PAR-2's affine condition and by PAR-1's
-unresolved-place rule. It becomes its own sequential pass.
-*Inherent cost:* an Amdahl term whose size is the scatter's share of the
-algorithm. For counting sort and radix sort that share is the majority, which is
-why those verdicts are ~0.5.
+**T6. Unpartitioned data-dependent write → supply a destination proof or serialize.**
+(5′, 10, 11, 13, 15′)
+A shared-cursor scatter has no independence proof. Private histogram ranges and
+binary-split merge demonstrate two ways to retain data-dependent local work
+inside proved exclusive output ranges. Therefore a denied direct scatter does
+not establish a sequential phase for every algorithm with the same result.
+The remaining cost is specific to the decomposition and its proof boundary.
 
-**T7. Per-lane output range → a hand-written PAR-1 window with range loans.**
-(7, 13″, 14′, 15, 15′)
-*Inherent cost:* **W is a source constant.** A program written for 4 lanes gets
-4 lanes on a 64-core machine. This is the single most consequential recurring
-cost in the catalog, and it is a direct consequence of PAR-2's rule that an
-exclusive loan on a place rooted outside the loop denies permission.
-
-**`[new]` — this transformation is not inherent at all; it exists only because
-of that one rule, and the accepted range loans plus an affine-range condition
-delete it outright.** `[c*i + b, c*(i+1) + b)` is disjoint across distinct `i`
-by the same linear arithmetic the element case already uses, so the window can
-come from the loop index rather than from a hand-written window per lane. T7
-would then have no occasions left: architectures 7, 13″, 14′ and 15 each move
-from PAR-1-with-W-in-source to an ordinary [PAR-2] loop (see their `[new]`
-notes), and 15′ (sort) keeps its verdict for other reasons — the sequential
-scatter and the sequential merge. **Of the eleven transformations in this list,
-T7 is the only one that is a defect rather than a price.**
+**T7. Per-block output range → an ordinary loop with proved range loans.**
+(7, 13″, 14, 15)
+The range-loan extension is implemented. Prefix sum, histogram, and runtime
+stencil rows now use ordinary loops without a source-expanded worker count.
+This removes the former expression defect. It does not remove workspace,
+phase, or grain-estimation costs; those are measured by the actual consumers.
 
 **T8. Early exit → full scan with an admitted fold.** (1, 21)
 *Inherent cost:* all the work, always. Parity when the answer is late; a 10^4x
 amplification when it is early. Buys determinism.
 
-**T9. Sparse frontier → dense pass.** (5′, 13)
-*Inherent cost:* O(V) per level instead of O(frontier). Free on low-diameter
-graphs, asymptotically wrong on high-diameter ones.
+**T9. Sparse frontier → choose source-ordered sparse work or an eligible dense pass.**
+(5′, 13)
+Sparse traversal is expressible with O(V+E) work. Unconditional pull can expose
+parallel writes but adds O(V) vertex visits per level; on a chain it is the
+wrong algorithm. Parallel sparse discovery remains unresolved by this consumer.
 
 **T10. Callback state machine → a straight-line function on a parked stack.**
 (17, 18, 19)
@@ -3344,11 +2952,11 @@ publish that fact in its return type all the way up. That is a real constraint o
 how I/O libraries can be factored in this language, and it deserves an answer in
 the I/O API rather than a note in a catalog.
 
-**Runner-up, for the record.** Architecture 13′ (BFS on a high-diameter graph) is
-the only remaining *asymptotic* loss in the catalog — O(V·D) against O(V+E),
-1,000x on a 1M-vertex diameter-1,000 graph — and would be the fifth entry. It is
-excluded from the four only because the shape is narrower than the other four in
-real systems code.
+**Compute follow-up.** Architecture 13′ now has an executable O(V+E) sparse
+source, while its parallel pull control still incurs O(V·D) vertex visits.
+The measured distinction is the loss incurred by that parallel restructuring;
+it is not a claim that every expressible BFS must perform dense work. Parallel
+sparse discovery remains a compute-model question before I/O work begins.
 
 ---
 

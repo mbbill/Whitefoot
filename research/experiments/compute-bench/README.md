@@ -106,6 +106,18 @@ oracle covers 86 graph/mode configurations and checks every distance and
 unchanged edge. The sort and graph consumers are opt-in for timing and always
 included in `programs-check`.
 
+[`compute-model-2026-09-13.tsv`](compute-model-2026-09-13.tsv) retains the
+compute-model main run and diagnostic fixtures, with an interpretation in the
+[investigation](../../investigations/compute-model/DESIGN.md#measurements-and-assessment-2026-09-13).
+Each line starts with a fixture name and record kind (`manifest`, `raw`, or
+`table`), followed by the original line. For example, extract the main raw
+stream with `awk -F '\t' '$1 == "main" && $2 == "raw" { sub(/^[^\t]*\t[^\t]*\t/, ""); print }' compute-model-2026-09-13.tsv`.
+The manifest records the 10,000-unit runtime control; pass
+`-v runtimecontrol=-DWF_PAR_SPLIT_WORK_UNIT=10000` when reducing these rows.
+The `initial-pooloff-*` groups instead record the earlier adapter-only control
+and are explicitly inconclusive. This dated evidence is retained while its
+measurement-method and grain decisions cite it; new runs do not overwrite it.
+
 The `wf` row is the module `whitefootc` emits from the kernel's `.wf` source
 under **plain `--par --emit-llvm` and no other flag**, linked with
 the complete ordinary native library under `compiler/src/backend/`

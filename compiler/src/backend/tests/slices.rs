@@ -951,6 +951,14 @@ fn irregular_compute_matches_independent_sort_and_graph_oracles() {
     for (name, source, adapter, selection, harness) in kernels {
         let oracle = format!("#define {selection}\n{harness}");
         for emitted in [compile(source), emit_with_overlap(source)] {
+            if name == "merge_sort" && emitted.contains("call void @wf__par_publish(") {
+                for stage in ["_par_budget_sort_values", "_par_budget_merge_values"] {
+                    assert!(
+                        emitted_function(&emitted, stage).contains("call void @wf__par_publish("),
+                        "{stage} must offer recursive work independently of initialization"
+                    );
+                }
+            }
             let llvm = bind_compute_host_adapter(&emitted, adapter)
                 .replace("@main(", "@wf_irregular_smoke_main(")
                 .replace("@wf__main_body(", "@wf_irregular_smoke_body(");

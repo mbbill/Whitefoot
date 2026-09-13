@@ -3,6 +3,16 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
+- **Static loop weights underprice runtime helper work.** Prefix and histogram
+  with 4,096-word blocks emit no grants at their default four-million-word
+  fixture because the outer weight prices an inner loop with a fixed factor.
+  Lowering the global work unit from 150,000 to 10,000 speeds those fixtures
+  but makes the width-17 stencil 36 percent slower at four workers. The
+  [compute-model controls](../research/investigations/compute-model/DESIGN.md#grain-attribution-control)
+  retain the runtime dimensions, threshold sweep, process CPU and grants.
+  A replacement estimate must distinguish actual helper extents and preserve
+  the adverse cases; no dynamic estimator has been selected or implemented.
+
 - **Unguarded affine expression nesting depth.** A proof-domain affine
   expression nesting parentheses about 1400 deep aborts the driver with a
   stack overflow and no diagnostic (exit 134); 1200 rejects normally and

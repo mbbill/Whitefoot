@@ -213,8 +213,10 @@ The loop and recursive kernel oracles enter through `wf__floor_run`, just as
 the benchmark does; multiworker tests also require actual task grants. The
 earlier small C oracle entry bypassed that bootstrap, although the full native
 benchmark did start its pools. Its old width labels did not establish overlap.
-The corrected tests include large enough fixtures to exercise the algorithm's
-parallel stages, rather than relying on a parallel initialization loop.
+The corrected tests include large fixtures and separately assert that both
+the recursive sort and recursive merge bodies emit publish sites. Their
+cumulative grant counter proves that the worker pool participates; it alone
+does not identify which algorithm stage supplied a grant.
 
 Binary search also exposed an independent backend defect: a loop that only
 returns, with no break, retains an unreachable structural continuation whose
@@ -273,3 +275,130 @@ Sweep 1,017/1,030/1,043 rows around the first two-chunk threshold and
 2,057/2,058/2,071 around the four-chunk threshold at width 1,024. Also retain
 a width-17, height-4,096 adverse control: its outer weight equals the wide
 grid's although each row does far less actual work.
+
+## Measurements and assessment, 2026-09-13
+
+The [retained stream](../../experiments/compute-bench/compute-model-2026-09-13.tsv)
+contains the raw rows, manifests, and reducer tables for the nine-kernel main
+run and 20 additional fixture groups. The compiled source is `2f5617a9` on an
+eight-CPU Apple M1 Pro, Darwin arm64, Apple Clang 21 and Rust 1.98.1, using the
+bundle's pinned oneTBB, ParlayLib and Rayon versions. Whitefoot uses the
+driver's `-O2`; native references use `-O3` with the documented scalar flags.
+No affinity is available and this is an active desktop, not an isolated host.
+Every process makes one first call and five warm calls; the reported median
+is the median of five per-process warm medians. Paired ratios compare the
+same pass, so they need not equal the ratio of the two displayed medians.
+The first-call rows, process CPU, actual grants, all reference forms and
+oversubscribed widths are retained. No compiler or test ran during timing.
+
+The main run uses canonical `make compare` with the default runtime as `wf`
+and the explicitly labeled 10,000-work-unit runtime as `wf-b`. Additional
+fixtures reuse those verified images, checking their hashes before and after,
+at widths 1, 4 and 8, with `wf-seq`/FIFO or one-pass serial controls at one
+worker and oneTBB at four/eight. Their exact commands and rotated/reversed
+orders are in the stream. They are a selected diagnostic matrix, not a full
+native scoreboard. Hostname and scratch paths are normalized in metadata;
+numeric rows are unchanged. Tiny microsecond fixtures and unstable cells
+cannot support fine percentage or CPU-efficiency claims.
+
+### Pool-off and the stencil cliff
+
+With the corrected entry, the large stencil reads 37.634 ms for `wf` at one
+worker against 37.512 ms for `wf-seq`, a 0.3 percent difference between medians,
+with 0.5/0.4 percent MAD. The narrow-row control is 0.492/0.491 ms, and the
+small fixture about 2.8/2.9 microseconds. The original grid is noisier,
+16.529/16.075 ms with 10.3/3.1 percent MAD. The former 15--20 percent number
+does not survive as an established tax on an ordinary pool-off program.
+The old adapter measured the wrong entry path; the initial isolating control
+was noisy, so this establishes a corrected measurement and absence of that
+large tax in the new run, not a precise causal speedup from the adapter alone.
+
+The size sweep confirms the grain cliff. At width 1,024 and eight workers,
+height 1,017 costs 5.865 ms, height 1,030 costs 3.640 ms, and height 1,043
+costs 3.598 ms. Crossing height 2,057 to 2,058 moves 9.090 ms to 6.123 ms;
+height 2,071 is 5.978 ms. Those are the predicted one-to-two and two-to-four
+row-chunk transitions. Initialization also grants work, so a nonzero total
+grant count below a row threshold does not imply the time-step rows split.
+
+### Block work and the rejected global constant
+
+At the default 4,194,321-word input with 4,096-word blocks, prefix and histogram
+emit zero runtime grants under the current work floor at all measured widths.
+Their algorithmic outer loops are permitted; the cost estimate prevents offers.
+The 10,000-unit control exposes the missing parallel work, but its benefit is
+not uniform:
+
+| Fixture and workers | Default median | 10,000 control median | Paired control/default wall | Paired CPU |
+|---|---:|---:|---:|---:|
+| Prefix, W4 | 2.564 ms | 1.453 ms | 0.559, 5/5 lower | 1.677 |
+| Histogram, W4 | 2.927 ms | 0.958 ms | 0.329, 5/5 lower | 1.064 |
+| Large stencil, W8 | 13.622 ms | 11.108 ms | 0.828, 5/5 lower | 1.228 |
+| Narrow stencil, W4 | 0.217 ms | 0.305 ms | 1.358, 0/5 lower | 1.358 |
+| Coarse prefix, W8 | 2.643 ms | 2.987 ms | 1.134, 0/5 lower | 1.352 |
+| Chain pull, W4 | 15.429 ms | 30.417 ms | 1.900, 0/5 lower | 1.907 |
+
+The small histogram also starts a task under the lower floor and becomes
+slower (4.7 to 7.3 microseconds at W4); its scale warrants caution about exact
+percentages, not deleting the adverse case. Coarse histogram stays unsplit
+even under the control. Fine blocks make prefix more competitive but enlarge
+histogram's workspace: the fine histogram is 12.107 ms at W4 under the default,
+versus 2.927 ms with default-size blocks and 1.336 ms for its one-pass serial
+reference. A source block size is a real memory/algorithm choice, not a free
+scheduler tuning knob.
+
+Keep the 150,000 unit and 16-per-lane cap. The new amendment revises their
+grounds and removes the unsupported universal-plateau claim; it does not
+select a dynamic estimator. The next cost experiment needs an estimate that
+distinguishes runtime helper extents while retaining the cheap-row, tiny,
+coarse, and graph controls. The current grain defect is diagnosed and remains
+open in `docs/todo.md` rather than being hidden by a favorable constant.
+
+### Irregular algorithms
+
+The random 1,048,593-key comparison sort reads 84.355 ms at W1 and 22.639 ms
+at W4. The same-algorithm native references at W4 are 22.550 ms for Rayon,
+22.644 ms for ParlayLib and 25.202 ms for oneTBB. This is near parity for
+that actual parallel merge algorithm. The source does not require a forced
+serial merge tree. Its adverse cases matter: 257 keys take 6.2 microseconds
+under `--no-overlap` but 24.3 microseconds at W4; all-equal large input takes
+4.279 ms at W4 while native serial `qsort` takes 1.883 ms. Mostly repeated
+keys likewise favor `qsort` (2.919 ms versus Whitefoot W4 4.390 ms).
+Parallel merge is expressible; this algorithm is not universally the best sort.
+
+The graph experiment gives a sharper rejection of unconditional pull:
+
+| Undirected fixture | Levels | Sparse adjacency slots | Pull vertex visits | WF sparse W1 | WF pull W4 | Native FIFO W1 |
+|---|---:|---:|---:|---:|---:|---:|
+| Binary tree, 65,535 vertices | 16 | 262,140 | 1,048,560 | 0.145 ms | 0.523 ms | 0.131--0.134 ms |
+| Chain, 4,097 vertices | 4,097 | 16,388 | 16,785,409 | 0.0125 ms | 15.429 ms | 0.021 ms |
+| Width-31 grid, 16,384 vertices | 558 | 65,536 | 9,142,272 | 0.0447 ms | 5.196 ms | 0.0435--0.0444 ms |
+
+Work counts are exact consequences of the independently checked reached set
+and distance levels for these fixtures; they count different operations and
+are not a hardware-instruction ratio. The sparse and pull timings come from
+separate named fixture runs, so their wall ratio is descriptive, not a paired
+isolating control. Even the broad tree does not repay a full-vertex round here.
+On the chain, Whitefoot pull at W4 is faster than native oneTBB pull (28.711 ms)
+and still loses by orders of magnitude to the useful sparse algorithm.
+Scheduler parity on an inferior algorithm would not satisfy the requirement.
+
+### What the three stages establish
+
+Ordinary functions and proved range partitions now express runtime blocked
+scan, privatized scatter and parallel binary-split merge. Two finite proof
+foundations were necessary: runtime quotient/product images, and preservation
+of affine requirements/observed values. No general nonlinear solver, source
+scheduler API or additional overlap rule was needed. A partitioned-build
+consumer was not added: these programs already exercise private mutable
+workspaces, runtime partition bounds and data-dependent recursive destinations;
+no distinct outstanding obligation justified another kernel in this scope.
+
+Two limits remain concrete follow-up work: runtime helper pricing, and useful
+parallel sparse discovery without replacing O(V+E) traversal with dense rounds.
+The intrusive sparse representation shows that queue-capacity proofs are not
+the blocker for this bounded-degree family. Ownership of competing discoveries
+and sparse work creation is the unresolved parallel question; high-degree CSR,
+stable parent choices, destination compaction and alternative sorting families
+still need their own discriminating consumers. The catalog's corresponding
+predictions are replaced in place. I/O-specific design and implementation
+remain deferred while these compute questions are considered.
