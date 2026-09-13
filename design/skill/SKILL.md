@@ -21,8 +21,7 @@ Three parts:
   carries the discussion summary and the reasons. Nobody reads it routinely;
   it answers "why" when a node is questioned.
 - `design/skill/`: this procedure, with its check prompts, and the
-  structural lint. It is project-independent and moves out of the repository
-  once stable.
+  structural lint.
 
 ## Node format
 
@@ -30,6 +29,7 @@ A node is a file named for the decision it owns, holding one or more
 `Decision:` lines and an optional `Rejected:` list.
 Nothing else: no dates, no facts, no measurements, no task progress. A
 measurement belongs in its results record; a node may cite it in its reason.
+An event is named by what it was, never by its date.
 Every field is one line, every field is separated from the next by a blank
 line so it renders as its own paragraph, and a list follows its header line
 directly. The lint rejects anything outside the template.

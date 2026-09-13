@@ -1,1 +1,0 @@
-Temporary Chinese rendering of `design/` for owner review. The English files are the only maintained ones; this directory is deleted after the review and must not be linked from anywhere. Lines beginning with `> 通俗解释：` are plain-language explanations added for this review only; they are not decisions and have no counterpart in the English files.

@@ -13,6 +13,7 @@ FORBIDDEN_HEADINGS = ("## Facts", "## Moves")
 TREES = ("language", "compiler")
 DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
 REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
+DATE = re.compile(r"\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b")
 FIELDS = ("Decision:", "Rejected:")
 
 
@@ -87,6 +88,8 @@ class Lint:
         seen_field = False
         for number, line in enumerate(lines, 1):
             loc = f"{where}:{number}"
+            if DATE.search(line):
+                self.err(loc, "a date; a node holds no history, only the live decision")
             if not line.strip():
                 section = None
                 prev = "blank"
