@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- counter increments by at most 1 per iteration in one branch only; count <= i is the tight coefficient-one bound AUTO/DIRECT discharge at every backedge.";
   let count = 0_u64;
   for (

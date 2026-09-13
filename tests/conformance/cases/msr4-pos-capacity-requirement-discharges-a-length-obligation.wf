@@ -6,7 +6,7 @@ fn fetch_at(run: own FixedVector<u8, 8>, index: own u64) -> value: own u8 reads(
   return run[index];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[MSR-4, MSR-2] every consumer submits its normalized goal to one ordered disposition. The callee's requirement is stated over `cap_of(run)` and the subscript's [OP-4] obligation is stated over `len_of(run)` in logical coordinates, and nothing between them relates the two except [MSR-2]'s standing facts: `len_of(P) + room_of(P) = cap_of(P)`, appended to the automatic affine-premise sequence with the empty support every standing fact has. A run's `room_of` is an ordinary killable term rather than a fixed cell, so the caller states it and the disposition discharges the obligation from the identity and that clause together.";
   let run = fixed_vector::<u8, 8>();
   for @fill (
@@ -16,7 +16,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant tight: room_of(run) + at <= 8_u64,
     invariant flat: head_of(run) <= 0_u64
   ) {
-    set run = place_back(vector: move run, value: 0_u8);
+    place_back(vector: &uniq run, value: 0_u8);
   }
   let value = fetch_at(run: move run, index: 3_u64);
   if value == 0_u8 {

@@ -21,7 +21,7 @@ fn advance(s: &uniq Sprite, limit: own u32) -> result: own Bool reads(s.pos.x, s
   return still_room;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let start = Position(x: 0_u32, y: 0_u32);
   let final_sprite = Sprite(pos: move start, speed: 4_u32);
   let moving = True();

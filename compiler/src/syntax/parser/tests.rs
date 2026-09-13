@@ -558,17 +558,19 @@ n: Slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
 enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
 linear struct Lease { doc "lease"; slot: u8; }
 linear enum Ticket { doc "ticket"; Open(value: u8); }
-contract Contract<T: affine> {
-doc "contract";
+formal Behavior<T: affine> {
+doc "formal";
 fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(x);
-law associative(member);
-law identity(member, 0_i32);
 }
-conform Name<T>: Contract<T> { doc "binding"; member = implementation; }
+actual Selected : Behavior<Name<T>> { doc "binding"; member = implementation::<fn other>; }
+fn forwarded<Behavior<K>, fn operation(value: own K) -> result: own K pure>() -> result: own unit pure {
+Behavior<K>::member(x: unit);
+return unit;
+}
 const zero: i32 = 0_i32;
 const alias: i32 = zero;
 const table: array<i32, 2> =[0_i32, zero];
-command fn entry(command.args as arguments: own i32, command.cwd as directory: own i32)
+fn stored_entry(arguments: own i32, directory: own i32)
 -> result: own unit pure
 {
 return unit;
@@ -645,7 +647,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 89);
+    assert_eq!(productions().len(), 86);
     assert_eq!(
         parsed
             .tree
@@ -674,7 +676,8 @@ fn main() -> result: own unit pure {}
     assert!(finalized.node_count() >= productions().len());
 }
 
-const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus pure {\n  return unit;\n}\n";
+const ORDINARY_INPUTS_ENTRY: &[u8] =
+    b"fn main(inputs: own Inputs) -> status: own ExitStatus pure {\n  return unit;\n}\n";
 
 const EXTERNAL_EFFECT_ROW: &[u8] =
     b"fn probe() -> result: own unit external {\n  return unit;\n}\n";
@@ -726,20 +729,9 @@ fn parse_active(
 }
 
 #[test]
-fn active_contract_parses_the_kind_declaring_entry() {
-    let outcome = parse_active("entry.wf", KIND_DECLARING_ENTRY);
-    let ParseOutcome::Complete(parsed) = outcome else {
-        panic!("the active tables must derive the kind-declaring entry: {outcome:?}");
-    };
-    for production in [Production::ProgramKind, Production::InputLabel] {
-        let present = parsed.tree.elements.iter().any(|element| {
-            matches!(
-                element,
-                DerivationElement::Production { production: actual, .. } if *actual == production
-            )
-        });
-        assert!(present, "derivation omitted {production:?}");
-    }
+fn ordinary_inputs_parse_as_an_ordinary_parameter() {
+    let outcome = parse_active("entry.wf", ORDINARY_INPUTS_ENTRY);
+    assert!(matches!(outcome, ParseOutcome::Complete(_)), "{outcome:?}");
 }
 
 #[test]
@@ -1116,92 +1108,21 @@ fn issue_bytes(source: &'static [u8], issue: super::SyntaxIssue) -> &'static [u8
 }
 
 #[test]
-fn malformed_input_labels_reject_at_their_exact_grammar_boundary() {
-    // `input_label := IDENT "." IDENT "as"` has no other legal spelling, so
-    // each near miss stops at the first token that cannot continue it. The
-    // reserved `as` in a label-tail IDENT slot is DIAG-1 attribution row 3.
-    for (source, rule, boundary, expected) in [
-        (
-            b"command fn main(command.args args: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n".as_slice(),
-            SyntaxRule::Gram2,
-            b"args".as_slice(),
-            TerminalPredicate::Fixed(FixedTerminal::As),
-        ),
-        (
-            b"command fn main(command.args.more as args: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
-            SyntaxRule::Gram2,
-            b".",
-            TerminalPredicate::Fixed(FixedTerminal::As),
-        ),
-        (
-            b"command fn main(command. as args: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
-            SyntaxRule::Form3,
-            b"as",
-            TerminalPredicate::Identifier,
-        ),
-        (
-            b"command fn main(command.args as: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
-            SyntaxRule::Gram2,
-            b":",
-            TerminalPredicate::Identifier,
-        ),
-        (
-            b"command fn main(command.args as args own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
-            SyntaxRule::Gram2,
-            b"own",
-            TerminalPredicate::Fixed(FixedTerminal::Colon),
-        ),
+fn retired_entry_kind_and_input_labels_are_not_grammar() {
+    for source in [
+        b"command fn main() -> status: own ExitStatus pure {\n  return unit;\n}\n".as_slice(),
+        b"fn main(command.args as args: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
     ] {
-        let outcome = parse_active("label.wf", source);
-        let ParseOutcome::SourceIssue(issue) = outcome else {
-            panic!("malformed label must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), rule, "source: {:?}", String::from_utf8_lossy(source));
-        assert_eq!(issue_bytes(source, issue), boundary);
-        assert!(
-            issue
-                .expected()
-                .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(expected))
-        );
+        let outcome = parse_active("retired-entry.wf", source);
+        assert!(matches!(outcome, ParseOutcome::SourceIssue(_)), "{outcome:?}");
     }
 }
 
 #[test]
 fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
-    // `fn_decl := program_kind? "fn" ...`: once the fixed program kind is
-    // consumed, a non-`fn` continuation is a GRAM-2 shape
-    // failure at the first invalid continuation, with `fn` retained as the
-    // sole expected terminal.
-    let outcome = parse_active(
-        "kind.wf",
-        b"command struct Thing {\n  a: i32;\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n",
-    );
-    let ParseOutcome::SourceIssue(issue) = outcome else {
-        panic!("a program_kind not followed by `fn` must reject: {outcome:?}");
-    };
-    assert_eq!(issue.rule(), SyntaxRule::Gram2);
-    assert_eq!(
-        issue_bytes(
-            b"command struct Thing {\n  a: i32;\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n",
-            issue,
-        ),
-        b"struct"
-    );
-    assert_eq!(issue.expected().len(), 1);
-    assert!(
-        issue
-            .expected()
-            .contains(crate::syntax::grammar::LookaheadPredicate::Terminal(
-                TerminalPredicate::Fixed(FixedTerminal::Fn)
-            ))
-    );
-
-    // `param := input_label? IDENT ":" mode type`: `input_label` begins with
-    // the fixed `command` terminal, so after an ordinary parameter IDENT only
-    // the colon continuation remains live.
+    // An ordinary parameter name must be followed by its colon.
     let unresolved_param =
-        b"command fn main(args own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n"
-            .as_slice();
+        b"fn main(args own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n".as_slice();
     let outcome = parse_active("param.wf", unresolved_param);
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("an IDENT continuing neither param arm must reject: {outcome:?}");
@@ -1217,22 +1138,4 @@ fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
             )),
         "an ordinary parameter name must be followed by a colon"
     );
-}
-
-#[test]
-fn a_program_kind_and_an_input_label_derive_outside_the_entry() {
-    // The grammar attaches `program_kind` to every `fn_decl` and `input_label`
-    // to every `param`. FN-7 restricts both to the unit's entry, so the parser
-    // must derive these units and leave the rejection to semantic checking
-    // rather than reporting invalid source here.
-    for source in [
-        b"command fn helper(command.args as args: own Args) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n".as_slice(),
-        b"fn helper(command.args as args: own Args) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> result: own unit pure {\n  return unit;\n}\n",
-    ] {
-        let outcome = parse_active("outside.wf", source);
-        assert!(
-            matches!(outcome, ParseOutcome::Complete(_)),
-            "FN-7 placement is not a grammar decision: {outcome:?}"
-        );
-    }
 }

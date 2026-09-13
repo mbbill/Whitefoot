@@ -10,7 +10,7 @@ fn negate_checked(n: own i64) -> result: own i64 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = negate_checked(n: -9223372036854775808_i64);
   let b = negate_checked(n: 100_i64);
   if a == 0_i64 {

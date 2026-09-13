@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an ordinary loop counts a cursor down from a fixed bound to zero and breaks once the guard detects the cursor has reached zero.";
   let cursor = 6_u64;
   let steps = 0_u32;

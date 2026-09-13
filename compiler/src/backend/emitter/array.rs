@@ -1,6 +1,96 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
+    /// Transfer all owners in logical order. Array and fixed-run storage have
+    /// different types and cannot share a storage-plan group; retaining the
+    /// source operand keeps its storage live through both split copies.
+    pub(super) fn emit_full_array_conversion(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        value: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        let source_type = self.value_type(value).ok_or(BackendFailure::InvalidIr)?;
+        let (element, length, to_array) = match (source_type, ty) {
+            (
+                IrType::FixedVector {
+                    element: source,
+                    length: source_length,
+                },
+                IrType::Array { element, length },
+            ) if source == element && source_length == length => (element, length, true),
+            (
+                IrType::Array {
+                    element: source,
+                    length: source_length,
+                },
+                IrType::FixedVector { element, length },
+            ) if source == element && source_length == length => (element, length, false),
+            _ => return Err(BackendFailure::InvalidIr),
+        };
+        let source = self.value_place(value)?;
+        let destination = self.value_place(result)?;
+        let fixed_type = if to_array { source_type } else { ty };
+        let fixed_llvm = llvm_type(self.program, fixed_type)?;
+        if !to_array {
+            if length != 0 {
+                // The fixed run's first field is the dense element storage.
+                self.copy_storage(source_type, &source, &destination)?;
+            }
+            for (field, contents) in [(1, length), (2, 0)] {
+                let pointer = self.next_temporary()?;
+                writeln!(self.output, "  %{pointer} = getelementptr inbounds {fixed_llvm}, ptr {destination}, i64 0, i32 {field}\n  store i64 {contents}, ptr %{pointer}")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            return Ok(());
+        }
+        // No element access or head arithmetic is needed for the empty case.
+        if length == 0 {
+            return Ok(());
+        }
+        let element_type = self
+            .program
+            .element(element)
+            .ok_or(BackendFailure::InvalidIr)?;
+        let element_llvm = llvm_type(self.program, element_type)?;
+        let head_pointer = self.next_temporary()?;
+        let head = self.next_temporary()?;
+        let tail = self.next_temporary()?;
+        let tail_source = self.next_temporary()?;
+        let prefix_destination = self.next_temporary()?;
+        writeln!(self.output,
+            "  %{head_pointer} = getelementptr inbounds {fixed_llvm}, ptr {source}, i64 0, i32 2\n  %{head} = load i64, ptr %{head_pointer}\n  %{tail} = sub i64 {length}, %{head}\n  %{tail_source} = getelementptr inbounds {element_llvm}, ptr {source}, i64 %{head}\n  %{prefix_destination} = getelementptr inbounds {element_llvm}, ptr {destination}, i64 %{tail}")
+            .map_err(|_| BackendFailure::TextEmission)?;
+        self.copy_element_range(
+            &element_llvm,
+            &format!("%{tail_source}"),
+            &destination,
+            &format!("%{tail}"),
+        )?;
+        self.copy_element_range(
+            &element_llvm,
+            &source,
+            &format!("%{prefix_destination}"),
+            &format!("%{head}"),
+        )
+    }
+
+    /// A bounded count of complete stride-spaced representations. Target
+    /// layout supplies the stride; zero-byte elements transfer no bytes while
+    /// ownership still moves with the whole source value.
+    fn copy_element_range(
+        &mut self,
+        element_llvm: &str,
+        source: &str,
+        destination: &str,
+        count: &str,
+    ) -> Result<(), BackendFailure> {
+        let end = self.next_temporary()?;
+        let bytes = self.next_temporary()?;
+        writeln!(self.output, "  %{end} = getelementptr {element_llvm}, ptr null, i64 {count}\n  %{bytes} = ptrtoint ptr %{end} to i64\n  call void @llvm.memmove.p0.p0.i64(ptr {destination}, ptr {source}, i64 %{bytes}, i1 false)")
+            .map_err(|_| BackendFailure::TextEmission)
+    }
+
     pub(super) fn emit_array_fill(
         &mut self,
         result: IrValueId,
@@ -14,7 +104,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let IrType::Array { element, length } = ty else {
             return Err(BackendFailure::InvalidIr);
         };
-        let element_type = element.ty();
+        let element_type = self
+            .program
+            .element(element)
+            .ok_or(BackendFailure::InvalidIr)?;
         if self.value_type(value) != Some(element_type) {
             return Err(BackendFailure::InvalidIr);
         }
@@ -79,7 +172,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let IrType::Array { element, .. } = root_type else {
             return Err(BackendFailure::InvalidIr);
         };
-        if element.ty() != ty {
+        if self.program.element(element) != Some(ty) {
             return Err(BackendFailure::InvalidIr);
         }
 

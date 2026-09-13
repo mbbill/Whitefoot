@@ -1,0 +1,10 @@
+fn main() -> status: own ExitStatus pure {
+  doc "BLK-0 must discharge the BLK-3 conversion's len(vector) == n requirement. One initialized slot in a capacity-two run does not form a complete array; type formation must not expose its raw second slot.";
+  let empty = fixed_vector::<u64, 2>();
+  region {
+    place_back(vector: &uniq empty, value: 7_u64);
+  }
+  let partial = move empty;
+  let invalid = array_from_fixed(vector: move partial);
+  return exit_status(code: 0_u8);
+}

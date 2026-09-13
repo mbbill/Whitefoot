@@ -1,9 +1,98 @@
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
 fn component() -> made: own FixedVector<u8, 16> pure contract {
   ensures len_of(made) >= 16_u64;
   ensures room_of(made) <= 0_u64;
   ensures head_of(made) <= 0_u64;
 } {
-  doc "The fold of the hoisted destination is written before the transfer that fills it, so on every path through the body the read of that storage precedes any write of it in the same iteration. No coverage proof can ever admit this shape, and PAR-3 denies it. The reported condition is 3 over the view surface as over the buffer one, because the destination view resolves to the run it was formed over [VIEW-1].";
+  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
   let built = fixed_vector::<u8, 16>();
   for @fill (
     at in 0_u64..16_u64,
@@ -11,7 +100,7 @@ fn component() -> made: own FixedVector<u8, 16> pure contract {
     invariant spare: room_of(built) + at >= 16_u64,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: 97_u8);
+    place_back(vector: &uniq built, value: 97_u8);
   }
   return move built;
 }
@@ -40,8 +129,8 @@ fn fold_prefix(source: own Slice<u8>, produced: own u64, seed: own u64) -> resul
   return sum;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "The fold of the hoisted destination is written before the transfer that fills it, so on every path through the body the read of that storage precedes any write of it in the same iteration. No coverage proof can ever admit this shape, and PAR-3 denies it. The reported condition is 3 over the view surface as over the buffer one, because the destination view resolves to the run it was formed over [VIEW-1].";
+fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
+  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
   region 'w {
     let workspace = arena_frame::<64, 1, 'w>();
     region {
@@ -52,31 +141,31 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
         invariant spare: room_of(data) + at >= 64_u64,
         invariant flat: head_of(data) <= 0_u64
       ) {
-        set data = place_back(vector: move data, value: 0_u8);
+        place_back(vector: &uniq data, value: 0_u8);
       }
       let name = component();
       let total = 0_u64;
       for @scan (index in 0_u64..4_u64) {
-        match reserve_handle(factory: &uniq files) {
-          Ok(value: permit) => {
-            let window = slice_of(&name);
-            region {
-              match open_file(permit: move permit, root: &cwd, name: &window, start: 0_u64, end: 4_u64) {
-                FileOpened(value: handle) => {
-                  let digest = 0_u64;
+        let window = slice_of(&name);
+        region {
+          match open_file(factory: &uniq deref(files), root: cwd, name: &window, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              let digest = 0_u64;
+              region {
+                let source = slice_of(&data);
+                set digest = fold_prefix(source: source, produced: 64_u64, seed: 0_u64);
+              }
+              set total = total +wrap digest;
+              region {
+                region {
+                  let destination = mut_slice_of(&uniq data);
                   region {
-                    let source = slice_of(&data);
-                    set digest = fold_prefix(source: source, produced: 64_u64, seed: 0_u64);
-                  }
-                  set total = total +wrap digest;
-                  region 'h {
-                    region {
-                      let destination = mut_slice_of(&uniq data);
-                      region {
-                        match read_at(file: &'h handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                          ReadBytes(next: produced) => {
-                            set total = total +wrap produced;
-                          }
+                    match read_at(factory: &uniq deref(files), file: &uniq handle, destination: &uniq destination, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                      Ok(value: produced) => {
+                        set total = total +wrap produced;
+                      }
+                      Err(error: read_stop_5) => {
+                        match read_stop_5 {
                           ReadEnd() => {
                           }
                           ReadFailed(error: problem) => {
@@ -86,17 +175,30 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
                     }
                   }
                 }
-                FileOpenFailed(error: problem, permit: refused) => {
+              }
+              close_read(factory: &uniq deref(files), file: move handle);
+            }
+            FileOpenFailed(error: problem) => {
+              region {
+                if factory_refusal(error: &problem) {
+                  return exit_status(code: 1_u8);
                 }
               }
             }
-          }
-          Err(error: spent) => {
-            return exit_status(code: 1_u8);
           }
         }
       }
     }
   }
   return exit_status(code: 0_u8);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

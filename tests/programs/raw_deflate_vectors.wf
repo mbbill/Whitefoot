@@ -76,7 +76,7 @@ fn check_valid() -> result: own u8 pure {
         invariant spare: room_of(valid_output) + at >= 5_u64,
         invariant flat: head_of(valid_output) <= 0_u64
       ) {
-        set valid_output = place_back(vector: move valid_output, value: 0_u8);
+        place_back(vector: &uniq valid_output, value: 0_u8);
       }
       region {
         let valid_view = slice_of(&valid_input_bytes);
@@ -146,7 +146,7 @@ fn check_invalid_length() -> result: own u8 pure {
         invariant spare: room_of(invalid_length_output) + at >= 1_u64,
         invariant flat: head_of(invalid_length_output) <= 0_u64
       ) {
-        set invalid_length_output = place_back(vector: move invalid_length_output, value: 9_u8);
+        place_back(vector: &uniq invalid_length_output, value: 9_u8);
       }
       region {
         let invalid_length_view = slice_of(&invalid_length_input_bytes);
@@ -232,7 +232,7 @@ fn check_truncated() -> result: own u8 pure {
         invariant spare: room_of(truncated_output) + at >= 2_u64,
         invariant flat: head_of(truncated_output) <= 0_u64
       ) {
-        set truncated_output = place_back(vector: move truncated_output, value: 7_u8);
+        place_back(vector: &uniq truncated_output, value: 7_u8);
       }
       region {
         let truncated_view = slice_of(&truncated_input_bytes);
@@ -318,7 +318,7 @@ fn check_full() -> result: own u8 pure {
         invariant spare: room_of(full_output) + at >= 1_u64,
         invariant flat: head_of(full_output) <= 0_u64
       ) {
-        set full_output = place_back(vector: move full_output, value: 11_u8);
+        place_back(vector: &uniq full_output, value: 11_u8);
       }
       region {
         let full_view = slice_of(&full_input_bytes);
@@ -404,7 +404,7 @@ fn check_fixed_literal() -> result: own u8 pure {
         invariant spare: room_of(fixed_literal_output) + at >= 5_u64,
         invariant flat: head_of(fixed_literal_output) <= 0_u64
       ) {
-        set fixed_literal_output = place_back(vector: move fixed_literal_output, value: 0_u8);
+        place_back(vector: &uniq fixed_literal_output, value: 0_u8);
       }
       region {
         let fixed_literal_view = slice_of(&fixed_literal_input_bytes);
@@ -474,7 +474,7 @@ fn check_fixed_match() -> result: own u8 pure {
         invariant spare: room_of(fixed_match_output) + at >= 16_u64,
         invariant flat: head_of(fixed_match_output) <= 0_u64
       ) {
-        set fixed_match_output = place_back(vector: move fixed_match_output, value: 0_u8);
+        place_back(vector: &uniq fixed_match_output, value: 0_u8);
       }
       region {
         let fixed_match_view = slice_of(&fixed_match_input_bytes);
@@ -539,7 +539,7 @@ fn check_fixed_phrase() -> result: own u8 pure {
         invariant spare: room_of(fixed_phrase_output) + at >= 17_u64,
         invariant flat: head_of(fixed_phrase_output) <= 0_u64
       ) {
-        set fixed_phrase_output = place_back(vector: move fixed_phrase_output, value: 0_u8);
+        place_back(vector: &uniq fixed_phrase_output, value: 0_u8);
       }
       region {
         let fixed_phrase_view = slice_of(&fixed_phrase_input_bytes);
@@ -605,7 +605,7 @@ fn check_dynamic() -> result: own u8 pure {
         invariant spare: room_of(dynamic_output) + at >= 100_u64,
         invariant flat: head_of(dynamic_output) <= 0_u64
       ) {
-        set dynamic_output = place_back(vector: move dynamic_output, value: 0_u8);
+        place_back(vector: &uniq dynamic_output, value: 0_u8);
       }
       region {
         let dynamic_view = slice_of(&dynamic_input_bytes);
@@ -671,7 +671,7 @@ fn check_literal_only() -> result: own u8 pure {
         invariant spare: room_of(literal_only_output) + at >= 1_u64,
         invariant flat: head_of(literal_only_output) <= 0_u64
       ) {
-        set literal_only_output = place_back(vector: move literal_only_output, value: 0_u8);
+        place_back(vector: &uniq literal_only_output, value: 0_u8);
       }
       region {
         let literal_only_view = slice_of(&literal_only_dynamic_input_bytes);
@@ -721,7 +721,7 @@ fn check_dynamic_match() -> result: own u8 pure {
         invariant spare: room_of(dynamic_match_output) + at >= 400_u64,
         invariant flat: head_of(dynamic_match_output) <= 0_u64
       ) {
-        set dynamic_match_output = place_back(vector: move dynamic_match_output, value: 0_u8);
+        place_back(vector: &uniq dynamic_match_output, value: 0_u8);
       }
       region {
         let dynamic_match_view = slice_of(&dynamic_match_input_bytes);
@@ -803,7 +803,7 @@ fn check_mixed_block() -> result: own u8 pure {
         invariant spare: room_of(mixed_block_output) + at >= 105_u64,
         invariant flat: head_of(mixed_block_output) <= 0_u64
       ) {
-        set mixed_block_output = place_back(vector: move mixed_block_output, value: 0_u8);
+        place_back(vector: &uniq mixed_block_output, value: 0_u8);
       }
       region {
         let mixed_block_view = slice_of(&mixed_block_input_bytes);
@@ -899,7 +899,7 @@ fn check_invalid_tree() -> result: own u8 pure {
         invariant spare: room_of(invalid_tree_output) + at >= 1_u64,
         invariant flat: head_of(invalid_tree_output) <= 0_u64
       ) {
-        set invalid_tree_output = place_back(vector: move invalid_tree_output, value: 0_u8);
+        place_back(vector: &uniq invalid_tree_output, value: 0_u8);
       }
       region {
         let invalid_tree_view = slice_of(&invalid_tree_input_bytes);
@@ -940,7 +940,7 @@ fn check_dynamic_truncated() -> result: own u8 pure {
         invariant spare: room_of(dynamic_truncated_output) + at >= 100_u64,
         invariant flat: head_of(dynamic_truncated_output) <= 0_u64
       ) {
-        set dynamic_truncated_output = place_back(vector: move dynamic_truncated_output, value: 0_u8);
+        place_back(vector: &uniq dynamic_truncated_output, value: 0_u8);
       }
       region {
         let dynamic_truncated_view = slice_of(&dynamic_truncated_input_bytes);
@@ -981,7 +981,7 @@ fn check_dynamic_full() -> result: own u8 pure {
         invariant spare: room_of(dynamic_full_output) + at >= 99_u64,
         invariant flat: head_of(dynamic_full_output) <= 0_u64
       ) {
-        set dynamic_full_output = place_back(vector: move dynamic_full_output, value: 0_u8);
+        place_back(vector: &uniq dynamic_full_output, value: 0_u8);
       }
       region {
         let dynamic_full_view = slice_of(&dynamic_input_bytes);
@@ -1022,7 +1022,7 @@ fn check_reserved_block() -> result: own u8 pure {
         invariant spare: room_of(reserved_block_output) + at >= 1_u64,
         invariant flat: head_of(reserved_block_output) <= 0_u64
       ) {
-        set reserved_block_output = place_back(vector: move reserved_block_output, value: 0_u8);
+        place_back(vector: &uniq reserved_block_output, value: 0_u8);
       }
       region {
         let reserved_block_view = slice_of(&reserved_block_input_bytes);
@@ -1063,7 +1063,7 @@ fn check_fixed_truncated() -> result: own u8 pure {
         invariant spare: room_of(fixed_truncated_output) + at >= 5_u64,
         invariant flat: head_of(fixed_truncated_output) <= 0_u64
       ) {
-        set fixed_truncated_output = place_back(vector: move fixed_truncated_output, value: 0_u8);
+        place_back(vector: &uniq fixed_truncated_output, value: 0_u8);
       }
       region {
         let fixed_truncated_view = slice_of(&fixed_truncated_input_bytes);
@@ -1104,7 +1104,7 @@ fn check_invalid_huffman() -> result: own u8 pure {
         invariant spare: room_of(invalid_huffman_output) + at >= 1_u64,
         invariant flat: head_of(invalid_huffman_output) <= 0_u64
       ) {
-        set invalid_huffman_output = place_back(vector: move invalid_huffman_output, value: 0_u8);
+        place_back(vector: &uniq invalid_huffman_output, value: 0_u8);
       }
       region {
         let invalid_huffman_view = slice_of(&invalid_huffman_input_bytes);
@@ -1145,7 +1145,7 @@ fn check_invalid_distance() -> result: own u8 pure {
         invariant spare: room_of(invalid_distance_output) + at >= 3_u64,
         invariant flat: head_of(invalid_distance_output) <= 0_u64
       ) {
-        set invalid_distance_output = place_back(vector: move invalid_distance_output, value: 0_u8);
+        place_back(vector: &uniq invalid_distance_output, value: 0_u8);
       }
       region {
         let invalid_distance_view = slice_of(&invalid_distance_input_bytes);
@@ -1186,7 +1186,7 @@ fn check_fixed_full() -> result: own u8 pure {
         invariant spare: room_of(fixed_full_output) + at >= 4_u64,
         invariant flat: head_of(fixed_full_output) <= 0_u64
       ) {
-        set fixed_full_output = place_back(vector: move fixed_full_output, value: 0_u8);
+        place_back(vector: &uniq fixed_full_output, value: 0_u8);
       }
       region {
         let fixed_full_view = slice_of(&fixed_full_input_bytes);
@@ -1215,7 +1215,7 @@ fn check_fixed_full() -> result: own u8 pure {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Runs the recorded raw DEFLATE vectors, one case per function: every compressed input is a const table viewed as a run, and every destination is one run of that case's own bump extent, viewed exclusively for the decode and read back after the loan ends.";
   let valid_status = check_valid();
   if valid_status == 0_u8 {

@@ -8,7 +8,7 @@ enum Wrap {
   N();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "OWN-1: an affine payload binder is consumed by one inner match; a second inner match of it is a use-after-consume.";
   let inner = Value(number: 7_i32);
   let w = W(inner: move inner);

@@ -2,7 +2,7 @@ fn takes_i32(x: own i32) -> function_result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "A unit argument where i32 is declared violates exact argument typing [TYPE-5].";
   let u = unit;
   let r = takes_i32(x: u);

@@ -51,9 +51,12 @@ rejection cites is a diagnostic choice, and pinning it here would turn every
 diagnostic improvement into a corpus failure. If you want a cited rule pinned,
 that is a conformance case, not a snapshot row.
 
-Twenty-one rows carry `agreement = no`: the author expected an accept and this
+Twenty-two rows carry `agreement = no`: the author expected an accept and this
 compiler rejects. Each row's `doc` gives the rule that decides it and the
 mechanism behind it — twelve are expectation errors; one
+(`indexing__writer-r1__merge_two_pointer`) gained an invalid postcondition during
+the B7c container migration which the checker previously failed to verify on
+every selected return; one
 (`kills__writer-r2__06_chain_middle_replace`) is a program whose stated
 expectation the compiler now meets in the part it was written to exercise, yet
 which still rejects for an unrelated unproved product; and eight are programs
@@ -77,6 +80,17 @@ case, the recorded verdict, the reached verdict, and the first diagnostic line.
   survive.
 
 Never delete a case or edit a verdict merely to get a green run.
+
+The `indexing__writer-r1__merge_two_pointer` rejection fixes an omitted proof
+obligation. B7c migrated its full `array<u32, 3>` values to variable-length
+`FixedVector<u32, 3>` values and added a fullness postcondition. The old checker
+silently omitted the two direct recursive returns from that postcondition's
+proof, then published its summary from the three proved base returns alone.
+FN-9 selects every unrouted return: a direct call has no admitted result datum,
+and binding that result would still not make a same-component summary available.
+The executable logic remains here with the author's accept expectation recorded;
+the original full-array program is a passing native compiler test, whose array
+extent needs no postcondition or recursive summary.
 
 ## What B7c4b-1 moved
 
@@ -115,18 +129,33 @@ surface without changing what the row records:
 `diagnostics__writer-r1__r03_allocation_fit_unproved` and
 `diagnostics__writer-r2__r05_world_value_allocation_no_branch`. The first five
 lend a run, or a struct holding one, through a `&uniq` parameter, which
-[BLK-4] refuses; the hand-back or view restructure changes the kill each row
+the then-active [BLK-4] refused; the hand-back or view restructure changes the kill each row
 was written to record. The last two allocate at a runtime count in an entry
 with no store, and their successor's entry row carries `command.heap`, which is
 a different program. Their sources are deleted with their rows.
 
+## The v0.58 ordinary-value migration
+
+All 484 source files replace `command fn` with ordinary `fn`; input labels
+become ordinary parameters, and the one `Heap` argument writes its region
+under FORM-8. The two range diagnostics now exercise ordinary PRE-1
+`requires` under FN-8, with the factory argument supplied where the selected
+`write_once` interface requires it. Their reference rule cells and explanatory
+text change from the retired SYS-8 to FN-8; verdict cells do not change.
+
+`indexing__writer-r1__reverse_inplace` and `indexing__writer-r1__ring_slot`
+move the input run into a local before accessing it. Their rows become
+`pure`: v0.58 EFF-2 attributes the accesses to that local storage rather than
+following the incoming owner's value history. The executable statements,
+proofs and recorded accept verdicts remain intact. No case is retired by this
+migration.
+
 ## The case sources
 
-Case files are the sweep programs unchanged, except that each carries a leading
-`doc` statement that is true of the file. Thirteen of them — the disagreeing
-rows — had a `doc` asserting an expectation this compiler does not meet; those
-lines now state the snapshot verdict and what the author expected instead. The
-programs themselves were not touched.
+Each file carries a leading `doc` statement that describes its actual shape.
+The source migrations above preserve the property each snapshot watches;
+they are recorded here so a later reader can distinguish a language amendment
+from a changed compiler verdict.
 
 ## When to remove this directory
 

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-1, PROV-1: a slot may hold a store-backed run, descriptor included, so one frame-resident run holds several arena-backed ones. The outer run reclaims no storage of its own and each element run's backing is the extent's, which its region reset reclaims, so the window walk PROV-6 states is present and its every action is empty. A run put into a slot by a boundary row and taken back out by one carries no measure of its own: MSR-3's element placement reaches a written element position, while place_back stores its value at position len_of(vector) and take_back takes one from position len_of(rest), and a measure term is not an offset a place relation may name. The place_back below therefore reads room_of and branches: that is the ordinary MSR-4 discharge and not an assumption about what the slot held.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();
@@ -6,34 +6,46 @@ command fn main() -> status: own ExitStatus pure {
       let blocks = fixed_vector::<Vector<'a, u8>, 4>();
       let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
       let second = arena_vector_proved::<u8>(store: &uniq workspace, count: 32_u64);
-      let one = place_back(vector: move blocks, value: move first);
-      let two = place_back(vector: move one, value: move second);
+      region {
+        place_back(vector: &uniq blocks, value: move first);
+      }
+      let one = move blocks;
+      region {
+        place_back(vector: &uniq one, value: move second);
+      }
+      let two = move one;
       let held = len_of(two);
       if held == 2_u64 {
       } else {
         return exit_status(code: 1_u8);
       }
-      let (rest, last) = take_back(vector: move two);
-      let width = cap_of(last);
-      if width == 32_u64 {
-      } else {
-        return exit_status(code: 2_u8);
-      }
-      let spare = room_of(last);
-      if spare > 0_u64 {
-        let filled = place_back(vector: move last, value: 5_u8);
-        let byte = filled[0_u64];
-        if byte == 5_u8 {
+      region {
+        let last = take_back(vector: &uniq two);
+        let rest = move two;
+        let width = cap_of(last);
+        if width == 32_u64 {
         } else {
-          return exit_status(code: 3_u8);
+          return exit_status(code: 2_u8);
         }
-      } else {
-        return exit_status(code: 5_u8);
-      }
-      let left = len_of(rest);
-      if left == 1_u64 {
-      } else {
-        return exit_status(code: 4_u8);
+        let spare = room_of(last);
+        if spare > 0_u64 {
+          region {
+            place_back(vector: &uniq last, value: 5_u8);
+          }
+          let filled = move last;
+          let byte = filled[0_u64];
+          if byte == 5_u8 {
+          } else {
+            return exit_status(code: 3_u8);
+          }
+        } else {
+          return exit_status(code: 5_u8);
+        }
+        let left = len_of(rest);
+        if left == 1_u64 {
+        } else {
+          return exit_status(code: 4_u8);
+        }
       }
     }
   }

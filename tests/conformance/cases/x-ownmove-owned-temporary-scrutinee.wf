@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "OWN-13 owned temporary: a non-place scrutinee construction is moved into the match. The two unexpected arms return distinct nonzero statuses, while the Pos arm reaches the final zero status.";
   match Pos() {
     Neg() => {

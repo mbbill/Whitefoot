@@ -1,4 +1,4 @@
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "STOR-5 forbids region-bearing cell content, and a provider bears a region exactly as a slice does. heap_box derives its content type from its operand [S39], so moving an Arena<'r, bytes, align> into it places a region-bearing type in cell content and is rejected at that operand.";
   region 'r {
     let workspace = arena_frame::<8, 8, 'r>();

@@ -1,0 +1,7 @@
+scope=rehash+digest timer=posix-monotonic warmup_rounds=3 timed_rounds=100 includes=target-malloc+control-init+scan+probe+source-free+digest resources=preallocated load=direct-hit-half-full
+sample=0 migration_i_ns=21750.000 migration_s_ns=19770.000 witness=18397595044329936527 examinations=632832 cell_moves=210944
+sample=1 migration_i_ns=21780.000 migration_s_ns=19710.000 witness=18397595044329936527 examinations=632832 cell_moves=210944
+sample=2 migration_i_ns=21760.000 migration_s_ns=19650.000 witness=18397595044329936527 examinations=632832 cell_moves=210944
+sample=3 migration_i_ns=22760.000 migration_s_ns=20050.000 witness=18397595044329936527 examinations=632832 cell_moves=210944
+sample=4 migration_i_ns=23650.000 migration_s_ns=19690.000 witness=18397595044329936527 examinations=632832 cell_moves=210944
+witness=17955253779913400726

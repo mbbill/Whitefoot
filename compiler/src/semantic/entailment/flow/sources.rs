@@ -9,14 +9,14 @@
 //! version-monotone direction [ENT-1].
 //!
 //! Implemented here: S1 (through the parent's arm entry), S4, S5, S6, S7,
-//! S9, and S10. Retired labels are not reused [ENT-3].
+//! and S9. Retired labels are not reused [ENT-3].
 
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression,
     CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure,
-    CheckedNominalKind, CheckedSetTarget, CheckedSliceSource, CheckedType, CheckedValue,
-    IntegerType, MeasuredKind,
+    CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedSliceSource, CheckedType,
+    CheckedValue, IntegerType, MeasuredKind,
 };
 use super::super::fragment_type;
 use super::super::state::{
@@ -32,23 +32,7 @@ use super::super::{
     CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
     S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
-use super::{Analyzer, ArmFacts, projected_place};
-use crate::SYSTEM_OPERATIONS;
-
-/// The [SYS-2] operations whose outcome carries an [ENT-3] S10 absolute
-/// endpoint, with the observing variant. Both endpoint actuals are found by
-/// parameter name in the catalog row, never by a hardcoded position.
-const BOUNDARY_ENDPOINTS: [(&str, &str); 8] = [
-    ("read_at", "ReadBytes"),
-    ("read_next", "ReadBytes"),
-    ("receive_next", "ReadBytes"),
-    ("write_once", "Ok"),
-    ("send_once", "Ok"),
-    ("host_copy_bytes", "Ok"),
-    ("host_copy_utf8", "Ok"),
-    ("directory_next", "ListBytes"),
-];
-
+use super::{Analyzer, ArmFacts, ProofFlowState, projected_place};
 /// Which term one evaluated value's [ENT-3] image is established on: the
 /// place a `let` binder introduces, or the compiler-owned commit value of one
 /// `set` occurrence, named by that statement's NodePath [ENT-2].
@@ -519,7 +503,7 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         ordinal: u32,
         value: &CheckedExpression,
-        state: &mut FactState,
+        state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
         let CheckedExpression::Binding { binding, ty, .. } = value else {
             return None;
@@ -561,7 +545,7 @@ impl Analyzer<'_, '_> {
         placement: MeasurePlacement,
         source: ProjectedPlaceTerm,
         ty: CheckedType,
-        state: &mut FactState,
+        state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
         let mut carried = Vec::new();
         for (path, measured_type) in self.measured_paths(ty) {
@@ -584,8 +568,8 @@ impl Analyzer<'_, '_> {
                     placement,
                     measure,
                 });
-                self.adopt_measure_atom(datum, live);
-                state.establish(
+                self.adopt_measure_atom(datum, live, &state.affine);
+                state.facts.establish(
                     &Relation::Equal {
                         left: datum,
                         right: live,
@@ -1386,11 +1370,6 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// [ENT-3] S9: `let x: own T = c[i];` where c is the bare IDENT of a
-    /// named const of type `array<T, N>` and T a fragment type establishes
-    /// vlo <= x and x <= vhi over its N declared element values. The index's
-    /// own bounds obligation is judged separately and is unaffected. Deeper
-    /// const shapes establish nothing.
     /// [ENT-3.S14] the interval one admitted non-constant multiplication
     /// proved, published on the value it bound.
     ///
@@ -1448,6 +1427,11 @@ impl Analyzer<'_, '_> {
         );
     }
 
+    /// [ENT-3] S9: `let x: own T = c[i];` where c is the bare IDENT of a
+    /// named const of type `array<T, N>` and T a fragment type establishes
+    /// vlo <= x and x <= vhi over its N declared element values. The index's
+    /// own bounds obligation is judged separately and is unaffected. Deeper
+    /// const shapes establish nothing.
     fn establish_element_range(
         &mut self,
         node_path: &crate::NodePath,
@@ -1456,12 +1440,24 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> bool {
-        let CheckedExpression::ArrayIndex {
-            root: CheckedArrayRoot::Constant(constant),
-            ..
-        } = value
-        else {
-            return false;
+        let constant = match value {
+            CheckedExpression::ArrayIndex {
+                root: CheckedArrayRoot::Constant(constant),
+                ..
+            } => *constant,
+            CheckedExpression::ReadStorage { root, .. } => {
+                let PlaceRoot::Constant(constant) = root.root else {
+                    return false;
+                };
+                // Typed storage preserves the same bare-constant, single
+                // subscript source shape. Fields or deeper subscripts do
+                // not gain an element-range fact through this adapter.
+                if !matches!(root.path.as_slice(), [CheckedPlaceStep::Subscript(_)]) {
+                    return false;
+                }
+                constant
+            }
+            _ => return false,
         };
         let Some(constant) = self.context.constants.get(constant.0 as usize) else {
             return true;
@@ -1506,11 +1502,11 @@ impl Analyzer<'_, '_> {
     }
 
     // ------------------------------------------------------------------
-    // S7 checked arithmetic and S10 boundary counts, observed at a match
+    // S7 checked arithmetic, observed at a match
     // ------------------------------------------------------------------
 
     /// Records the outcome origin of a `let` whose initializer is a checked
-    /// arithmetic call or a bounded [SYS-2] boundary call, so a later match
+    /// arithmetic call, so a later match
     /// over the bare IDENT observes the same fact the direct scrutinee does.
     /// The recorded origin dies with any kill on its base term and with a
     /// `set` naming the binding, the discipline [ENT-3] states for it.
@@ -1526,7 +1522,7 @@ impl Analyzer<'_, '_> {
     }
 
     /// The [ENT-3] arm facts one match scrutinee admits: the S1 comparison
-    /// relation for a `Bool` match, and the S7/S10 fact carried by an
+    /// relation for a `Bool` match, and the S7 fact carried by an
     /// outcome-typed scrutinee — the call directly, or a bare IDENT naming a
     /// binding of its outcome whose origin survived the path here.
     pub(super) fn arm_facts(
@@ -1576,10 +1572,9 @@ impl Analyzer<'_, '_> {
     }
 
     /// The outcome fact one call expression carries, if any: S7's checked
-    /// `Ok(value: w)` shift, or S10's absolute endpoint on the observing arm.
+    /// `Ok(value: w)` shift on the observing arm.
     fn outcome_fact(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
         self.checked_offset_outcome(value)
-            .or_else(|| self.boundary_endpoint_outcome(value))
     }
 
     /// [ENT-3] S7: `iadd.checked::<T>(p, k)` and `isub.checked::<T>(p, k)` with a
@@ -1615,55 +1610,6 @@ impl Analyzer<'_, '_> {
         })
     }
 
-    /// [ENT-3] S10: a [SYS-2] transfer's observing arm binds the absolute
-    /// endpoint `next`, establishing `start <= next <= end`.
-    /// The fact carries the same trust class as S6's allocation-length
-    /// equality: it is a declared operation contract, never a writer
-    /// statement.
-    ///
-    /// The bounds are admitted only where no kill event on the path to the
-    /// match reaches either endpoint support. The call's own boundary writes
-    /// are on that path, so an endpoint read through a place the call writes
-    /// admits nothing — the conservative reading, which only under-derives.
-    fn boundary_endpoint_outcome(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
-        let CheckedExpression::SystemCall {
-            operation,
-            arguments,
-            ..
-        } = value
-        else {
-            return None;
-        };
-        let row = SYSTEM_OPERATIONS.get(usize::from(*operation))?;
-        let (_, variant) = BOUNDARY_ENDPOINTS
-            .iter()
-            .find(|(spelling, _)| *spelling == row.spelling)?;
-        let start_position = row
-            .parameters
-            .iter()
-            .position(|parameter| parameter.name == "start")?;
-        let end_position = row
-            .parameters
-            .iter()
-            .position(|parameter| parameter.name == "end")?;
-        let base = self.read_operand(arguments.get(start_position)?)?;
-        let upper = self.read_operand(arguments.get(end_position)?)?;
-        let mut events = Vec::new();
-        self.collect_expression_kills(value, &mut events);
-        if events
-            .iter()
-            .any(|event| self.event_kills_term(base, event) || self.event_kills_term(upper, event))
-        {
-            return None;
-        }
-        Some(OutcomeFact {
-            variant,
-            base,
-            relation: OutcomeRelation::Between { upper },
-            event_kind: FlowEventKind::S10,
-        })
-    }
-
     /// Establishes one arm's binder fact at arm entry: the value binder of
     /// the observing variant gains the recorded relation against its base.
     pub(super) fn establish_binder_fact(
@@ -1692,26 +1638,6 @@ impl Analyzer<'_, '_> {
                     bound,
                     outcome.base,
                     delta,
-                    &mut self.derivations,
-                    event,
-                );
-            }
-            OutcomeRelation::Between { upper } => {
-                state.establish(
-                    &Relation::Bound {
-                        left: outcome.base,
-                        right: bound,
-                        bound: 0,
-                    },
-                    &mut self.derivations,
-                    event,
-                );
-                state.establish(
-                    &Relation::Bound {
-                        left: bound,
-                        right: upper,
-                        bound: 0,
-                    },
                     &mut self.derivations,
                     event,
                 );

@@ -76,7 +76,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("(", "LeftParen"),
         (")", "RightParen"),
         (",", "Comma"),
-        ("command", "Command"),
         ("fn", "Fn"),
         ("->", "ThinArrow"),
         ("requires", "Requires"),
@@ -85,8 +84,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("define", "Define"),
         ("when", "When"),
         ("is", "Is"),
-        ("law", "Law"),
-        ("conform", "Conform"),
         ("const", "Const"),
         ("=", "Equal"),
         ("doc", "Doc"),
@@ -128,12 +125,12 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("=>", "FatArrow"),
         ("move", "Move"),
         ("deref", "Deref"),
+        ("entry", "Entry"),
         (".", "Dot"),
         ("pure", "Pure"),
         ("reads", "Reads"),
         ("writes", "Writes"),
         ("allocates", "Allocates"),
-        ("as", "As"),
         // FLOOR-5 additions: `if` plus the twenty `infix_op` spellings.
         // `else` already exists for statement and value conditionals. Verified
         // against the fixed delta's [GRAM-5] block, not guessed.
@@ -182,6 +179,8 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("dispose", "Dispose"),
         // v0.48 [PRF-1]: the cited-premise multiplicity atom.
         ("times", "Times"),
+        ("formal", "Formal"),
+        ("actual", "Actual"),
     ];
     if spelling == "[0-9]+" {
         return Pred::Digits;
@@ -545,6 +544,33 @@ pub fn follow_sets(grammar: &Grammar, first: &First, start: usize) -> Follow {
     let mut initial = WordSet::new();
     initial.insert(Vec::new());
     follow.production[start] = initial;
+    // PRE-1 supplies ordinary signature records independently of writer
+    // items. Their record terminator is a semicolon followed by source end;
+    // the same fn_sig production checks the declaration itself. This root
+    // continuation does not add fn_sig to the writer's item production.
+    if let Some(signature) = grammar.index.get("fn_sig") {
+        // The record uses the same separator as an ordinary formal member.
+        // Retain that grammar occurrence as the lookahead's provenance.
+        let formal = grammar.index["formal_decl"];
+        let mut pending = vec![grammar.roots[formal]];
+        let mut separator = None;
+        while let Some(node) = pending.pop() {
+            if matches!(&grammar.nodes[node].kind, Kind::Terminal(predicates)
+                if predicates.as_slice() == [Pred::Fixed("Semicolon")])
+            {
+                separator = Some(node);
+                break;
+            }
+            pending.extend_from_slice(&grammar.nodes[node].children);
+        }
+        follow.production[*signature].insert(vec![Tok {
+            pred: Pred::Fixed("Semicolon"),
+            prov: Some(separator.expect("formal members have a signature separator")),
+            tname: None,
+            atom_only: false,
+            inside: false,
+        }]);
+    }
 
     loop {
         let mut changed = false;

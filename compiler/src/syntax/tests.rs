@@ -474,7 +474,7 @@ fn active_contract_reserves_fixed_spellings_and_frees_retired_effect_words() {
     ];
     assert_eq!(classified.tokens().len(), expected.len());
     for (token, spelling) in classified.tokens().iter().zip(expected) {
-        if matches!(spelling, b"external" | b"blocks") {
+        if matches!(spelling, b"as" | b"external" | b"blocks") {
             assert!(token.terminals().contains(TerminalPredicate::Identifier));
             assert!(FixedTerminal::from_spelling(spelling).is_none());
         } else {

@@ -4,7 +4,7 @@ struct Mixed {
   c: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "TYPE-2: mixed-width integer fields (i32/u8/u64) exercise per-field load/store widths.";
   let m = Mixed(a: 100_i32, b: 5_u8, c: 1000_u64);
   if m.a == 100_i32 {

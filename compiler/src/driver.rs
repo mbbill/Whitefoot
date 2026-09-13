@@ -8,6 +8,7 @@ use core::fmt;
 
 mod rejection;
 
+pub(crate) mod launcher;
 /// The probe corpus that pins every diagnostic sentence by its rendered text.
 #[cfg(test)]
 mod pinned_sentences;
@@ -147,8 +148,6 @@ pub enum CompilationStage {
     Lowering,
     /// Selected-target representability and target-domain discharge.
     TargetLayout,
-    /// [QUAL-1] system-interface target qualification.
-    TargetQualification,
     /// Conservative textual LLVM emission.
     Backend,
 }
@@ -170,10 +169,6 @@ pub enum CompilationFailureKind {
     Lowering,
     /// A statically materialized object is not representable on the selected target.
     TargetLayout,
-    /// The selected target has no approved implementation of a system
-    /// operation the program uses, or does not supply a guarantee that
-    /// operation's record requires [QUAL-1, QUAL-2].
-    TargetQualification,
     /// LLVM emission failed internally.
     Backend,
 }
@@ -208,6 +203,25 @@ impl CompilationFailure {
             kind: CompilationFailureKind::Source,
             rule_id: Some(rule_id),
             detail: format!("{detail:?}"),
+        }
+    }
+
+    /// A malformed compiler-supplied declaration is a pipeline defect, not a
+    /// rejection of the writer's source bundle.
+    fn at_source(
+        stage: CompilationStage,
+        rule: &'static str,
+        detail: impl fmt::Debug,
+        bundle: &SourceBundle,
+        source: crate::SourceId,
+    ) -> Self {
+        if bundle
+            .file(source)
+            .is_some_and(|file| file.prelude().is_some())
+        {
+            Self::new(stage, CompilationFailureKind::Compiler, detail)
+        } else {
+            Self::source(stage, rule, detail)
         }
     }
 
@@ -263,15 +277,13 @@ impl std::error::Error for CompilationFailure {}
 
 /// Compiles one ordered closed source bundle to conservative textual LLVM.
 ///
-/// This is the shipped completion-only default: eligible direct finite target
-/// operations may overlap, while compute-call outlining remains opt-in through
+/// Calls run sequentially by default; ordinary call outlining is opt-in through
 /// [`compile_with_overlap`] and `whitefootc --par`.
 pub fn compile(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
 ) -> Result<String, CompilationFailure> {
-    compile_reporting(inputs, limits, crate::OverlapLowering::Completion)
-        .map(|reported| reported.module)
+    compile_with_overlap(inputs, limits, crate::OverlapLowering::Off)
 }
 
 /// [`compile`] with the [PAR-1 candidate] overlap lowering named explicitly.
@@ -308,37 +320,10 @@ pub fn compile_with_permission_ledger(
     compile_reporting(inputs, limits, overlap).map(|reported| (reported.module, reported.ledger))
 }
 
-/// [`compile_with_overlap`] plus the permission-ledger lines an ordinary
-/// compile reports on the default developer channel.
-///
-/// Exactly the denied verdicts of the program's I/O loops: a `[PAR-3]` staged
-/// denial, and the `[PAR-2]` counted denial of a loop the staged judgment also
-/// reached. Those are the two ways a loop a writer wrote to do I/O loses its
-/// pipeline, and they are missed optimizations on the source in front of the
-/// writer rather than a reading of the judgment, so they do not wait for a
-/// flag. A granted verdict is silent; `compile_with_permission_ledger` remains
-/// the full report.
-///
-/// Nothing here is a rejection. The compilation succeeded and the module is
-/// returned beside the notices.
-pub fn compile_with_io_notices(
-    inputs: &[SourceInput<'_>],
-    limits: CompilerLimits,
-    overlap: crate::OverlapLowering,
-) -> Result<(String, Vec<String>), CompilationFailure> {
-    compile_reporting(inputs, limits, overlap).map(|reported| (reported.module, reported.notices))
-}
-
 /// One compilation's module and the developer-channel text it produced.
-///
-/// Two channels, one rendering. `ledger` is the complete report a caller asks
-/// for by flag; `notices` is the subset every compile reports without one.
-/// They are projections of the same rendered lines, so a notice can never say
-/// something the full report does not.
 struct Reported {
     module: String,
     ledger: Vec<String>,
-    notices: Vec<String>,
 }
 
 /// The one compilation path, returning the module and the developer-channel
@@ -349,7 +334,16 @@ fn compile_reporting(
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
 ) -> Result<Reported, CompilationFailure> {
-    let bundle = SourceBundle::with_limits(inputs, limits.source).map_err(|failure| {
+    compile_selected(inputs, limits, overlap, "main")
+}
+
+fn compile_selected(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+    selected: &str,
+) -> Result<Reported, CompilationFailure> {
+    let bundle = SourceBundle::with_prelude(inputs, limits.source).map_err(|failure| {
         CompilationFailure::new(
             CompilationStage::SourceEnvelope,
             CompilationFailureKind::Invocation,
@@ -359,10 +353,12 @@ fn compile_reporting(
     let lexed = match lex(&bundle, limits.lexer) {
         LexOutcome::Complete(complete) => complete,
         LexOutcome::SourceIssue(issue) => {
-            return Err(CompilationFailure::source(
+            return Err(CompilationFailure::at_source(
                 CompilationStage::Lexing,
                 issue.kind().rule_id(),
                 issue,
+                &bundle,
+                issue.span().source(),
             ));
         }
         LexOutcome::ResourceFailure(failure) => {
@@ -383,10 +379,12 @@ fn compile_reporting(
     let classified = match classify_terminals(&lexed, ACTIVE_KERNEL_SPEC_HASH, limits.terminals) {
         TerminalOutcome::Complete(complete) => complete,
         TerminalOutcome::SourceIssue(issue) => {
-            return Err(CompilationFailure::source(
+            return Err(CompilationFailure::at_source(
                 CompilationStage::TerminalClassification,
                 issue.owner().id(),
                 issue,
+                &bundle,
+                issue.token().source(),
             ));
         }
         TerminalOutcome::ResourceFailure(failure) => {
@@ -415,10 +413,12 @@ fn compile_reporting(
         ParseOutcome::Complete(complete) => complete,
         ParseOutcome::SourceIssue(issue) => {
             let coordinate = issue.coordinate();
-            return Err(CompilationFailure::source(
+            return Err(CompilationFailure::at_source(
                 CompilationStage::Parsing,
                 issue.rule().id(),
                 Located::new(issue, classified.source_bundle(), coordinate),
+                &bundle,
+                coordinate.source(),
             ));
         }
         ParseOutcome::ResourceFailure(failure) => {
@@ -467,10 +467,12 @@ fn compile_reporting(
             // a written construct, so the reader is anchored inside the gap
             // rather than at its first byte.
             let coordinate = issue.location().coordinate();
-            return Err(CompilationFailure::source(
+            return Err(CompilationFailure::at_source(
                 CompilationStage::CanonicalSource,
                 issue.rule().id(),
                 Located::in_gap(issue, classified.source_bundle(), coordinate),
+                &bundle,
+                coordinate.source(),
             ));
         }
         CanonicalOutcome::ResourceFailure(failure) => {
@@ -492,10 +494,12 @@ fn compile_reporting(
         ResolutionOutcome::Complete(complete) => complete,
         ResolutionOutcome::SourceIssue { issue, .. } => {
             let coordinate = issue.origin().coordinate();
-            return Err(CompilationFailure::source(
+            return Err(CompilationFailure::at_source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
                 Located::new(issue, classified.source_bundle(), coordinate),
+                &bundle,
+                coordinate.source(),
             ));
         }
         ResolutionOutcome::CompilerFailure { failure, .. } => {
@@ -515,25 +519,24 @@ fn compile_reporting(
             // names a line of the file the caller named, so it is printed the
             // same way a syntax rejection's is.
             let rule_id = issue.rule_id();
-            let coordinate = match issue.location() {
-                SemanticLocation::SourceNode(_, coordinate) => Some(*coordinate),
-                SemanticLocation::BundleRoot(_) => None,
-            };
-            return Err(match coordinate {
-                Some(coordinate) => CompilationFailure::source(
-                    CompilationStage::Semantics,
-                    rule_id,
-                    Located::new(issue, classified.source_bundle(), coordinate),
-                ),
-                None => CompilationFailure::source(CompilationStage::Semantics, rule_id, issue),
-            });
+            let SemanticLocation::SourceNode(_, coordinate) = issue.location();
+            let coordinate = *coordinate;
+            return Err(CompilationFailure::at_source(
+                CompilationStage::Semantics,
+                rule_id,
+                Located::new(issue, classified.source_bundle(), coordinate),
+                &bundle,
+                coordinate.source(),
+            ));
         }
         SemanticOutcome::ResolutionIssue { issue, .. } => {
             let coordinate = issue.origin().coordinate();
-            return Err(CompilationFailure::source(
+            return Err(CompilationFailure::at_source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
                 Located::new(issue, classified.source_bundle(), coordinate),
+                &bundle,
+                coordinate.source(),
             ));
         }
         SemanticOutcome::Unsupported { unsupported, .. } => {
@@ -551,6 +554,37 @@ fn compile_reporting(
             ));
         }
     };
+    let launcher_contract_ready = checked
+        .data
+        .functions
+        .iter()
+        .find(|function| function.name == selected)
+        .is_some_and(|main| main.requirements.is_empty());
+    // This is a build caller, checked by the same pipeline as user-written
+    // callers. No precondition fact is manufactured from native initialization.
+    let mut caller_failure = None;
+    if !launcher_contract_ready
+        && let Some((name, source)) = launcher::caller_source(&checked, selected)
+    {
+        let bundle_name = (0_u64..)
+            .map(|index| format!("executable-caller-{index}.wf"))
+            .find(|candidate| {
+                !bundle
+                    .files()
+                    .iter()
+                    .any(|file| file.logical_path().as_str() == candidate)
+            })
+            .expect("a finite bundle leaves a caller source name");
+        let mut with_caller = inputs.to_vec();
+        with_caller.push(SourceInput::new(&bundle_name, source.as_bytes()));
+        match compile_selected(&with_caller, limits, overlap, &name) {
+            Ok(reported) => return Ok(reported),
+            Err(failure) if failure.kind() == CompilationFailureKind::Source => {
+                caller_failure = Some(failure.to_string());
+            }
+            Err(failure) => return Err(failure),
+        }
+    }
     let permission_ledger = checked.data.permission_ledger.clone();
     let ir = lower_checked(checked, overlap).map_err(|failure: LoweringFailure| {
         CompilationFailure::new(
@@ -563,41 +597,39 @@ fn compile_reporting(
     // the judgment's own lines. The judgment reports the same verdicts with or
     // without `--par`; these lines report an actualization, which only a
     // compilation that asked for one has.
-    let notices = permission_ledger
-        .iter()
-        .filter(|line| line.notice)
-        .map(|line| line.text.clone())
-        .collect();
     let mut ledger: Vec<String> = permission_ledger
         .into_iter()
         .map(|line| line.text)
         .collect();
     ledger.extend_from_slice(ir.actualization_ledger());
     emit_llvm(&ir)
-        .map(|module| {
-            // The emission's own actualization lines, last: which recursive
-            // components got a budget-carrying family is decided after the
-            // clone sets are known, which is the emitter's work, not lowering's.
+        .and_then(|module| {
+            // Emission decides which recursive components carry a runtime
+            // budget after their clone families are known.
             let mut ledger = ledger;
             ledger.extend_from_slice(module.actualization_ledger());
-            Reported {
-                module: module.into_string(),
+            let launch = if launcher_contract_ready {
+                launcher::render(&ir, selected)?
+            } else {
+                String::new()
+            };
+            Ok(Reported {
+                module: module.into_string()
+                    + &launch
+                    + &caller_failure.map_or_else(String::new, |failure| {
+                        format!(
+                            "\n; Executable caller was not admitted: {}\n",
+                            failure.replace(['\n', '\r'], " ")
+                        )
+                    }),
                 ledger,
-                notices,
-            }
+            })
         })
         .map_err(|failure: BackendFailure| {
             let (stage, kind) = match failure {
                 BackendFailure::TargetLayout(_) => (
                     CompilationStage::TargetLayout,
                     CompilationFailureKind::TargetLayout,
-                ),
-                // A qualification stop is a target failure like a layout
-                // stop: it is not a source-language rejection and cites no
-                // language rule [DIAG-1].
-                BackendFailure::TargetQualification(_) => (
-                    CompilationStage::TargetQualification,
-                    CompilationFailureKind::TargetQualification,
                 ),
                 _ => (CompilationStage::Backend, CompilationFailureKind::Backend),
             };
@@ -608,10 +640,36 @@ fn compile_reporting(
 #[cfg(test)]
 mod tests {
     use super::{
-        CompilationFailureKind, CompilationStage, CompilerLimits, compile, compile_with_io_notices,
+        CompilationFailureKind, CompilationStage, CompilerLimits, compile,
         compile_with_permission_ledger,
     };
     use crate::{OverlapLowering, RecursionBudget, SourceInput};
+
+    #[test]
+    fn the_executable_caller_proves_the_selected_functions_contract() {
+        let source = b"fn main['h](heap: own Heap<'h>) -> result: own unit pure contract {\n  requires 0_u64 <= 1_u64;\n} {\n  return unit;\n}\n";
+        let llvm = compile(
+            &[SourceInput::new("entry-contract.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect("the ordinary generated caller proves a constant requirement");
+        assert!(llvm.contains("@wf_executable_caller_0("));
+        assert!(llvm.contains("define i32 @main("));
+        assert!(!llvm.contains("Executable caller was not admitted"));
+    }
+
+    #[test]
+    fn an_uninhabited_function_is_a_library_without_an_unproved_executable_call() {
+        let source = b"fn main['h](heap: own Heap<'h>) -> result: own unit pure contract {\n  requires 1_u64 <= 0_u64;\n} {\n  return unit;\n}\n";
+        let llvm = compile(
+            &[SourceInput::new("uninhabited-entry.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect("an uninhabited ordinary declaration is accepted as a library");
+        assert!(llvm.contains("@wf_main("));
+        assert!(!llvm.contains("define i32 @main("));
+        assert!(llvm.contains("Executable caller was not admitted"));
+    }
 
     /// The permission ledger of one compiled source, in the order the driver
     /// hands it to `whitefootc --par-ledger`.
@@ -629,154 +687,6 @@ mod tests {
         ledger
     }
 
-    /// The ledger lines the same compilation reports without any flag.
-    fn notices_of(name: &str, source: &[u8]) -> Vec<String> {
-        let (_, notices) = compile_with_io_notices(
-            &[SourceInput::new(name, source)],
-            CompilerLimits::default(),
-            OverlapLowering::Off,
-        )
-        .expect("a permission-ledger fixture must compile");
-        notices
-    }
-
-    /// The scratch buffer hoisted above the loop, which denies the staged
-    /// verdict at `&uniq data`.
-    const DENIED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let name = buffer_new(16_u64, 97_u8);
-  let data = buffer_new(64_u64, 0_u8);
-  let total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        region {
-          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-            FileOpened(value: handle) => {
-              region 'h {
-                region {
-                  match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                    ReadBytes(next: produced) => {
-                      set total = total +wrap produced;
-                    }
-                    ReadEnd() => {
-                    }
-                    ReadFailed(error: problem) => {
-                    }
-                  }
-                }
-              }
-            }
-            FileOpenFailed(error: problem, permit: refused_2) => {
-            }
-          }
-        }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 8_u8);
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-
-    /// The same loop with its scratch inside the body, which the staged
-    /// judgment grants.
-    const GRANTED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    let name = buffer_new(16_u64, 97_u8);
-    region 'f {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          region {
-            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                set total = total +wrap 1_u64;
-              }
-              FileOpenFailed(error: problem, permit: refused_2) => {
-              }
-            }
-          }
-        }
-        Err(error: spent) => {
-          return exit_status(code: 8_u8);
-        }
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-
-    /// A denied I/O loop is reported on an ordinary compile; a granted one is
-    /// silent.
-    ///
-    /// The judgment was landed, correct, and unreachable: a writer compiled
-    /// five ordinary utilities, every I/O loop in them was denied, and nothing
-    /// said so, because the report was behind a flag they had no reason to
-    /// run. A loop that lost its pipeline is a missed optimization on the
-    /// program in front of them, so it does not wait to be asked for.
-    ///
-    /// The granted case is the other half and the harder one. Its counted
-    /// [PAR-2] verdict *is* denied — the counted rule refuses the short factory
-    /// loan the staged rule exists to admit — so a notice channel that reported
-    /// every denial would tell this writer their granted loop was denied.
-    #[test]
-    fn a_denied_io_loop_is_reported_without_a_flag_and_a_granted_one_is_silent() {
-        let notices = notices_of("hoisted.wf", DENIED_IO_LOOP);
-        let ledger = ledger_of("hoisted.wf", DENIED_IO_LOOP);
-        // Both verdicts of the one loop, and every place that denied it. The
-        // counted rule and the staged rule refuse it for different reasons, so
-        // both are losses the writer can act on; and the `stage` line names
-        // only the condition the judgment stopped at, so the denied rows of
-        // its table come with it. A repaired first cause otherwise uncovers a
-        // second denial the writer was never told about, which is what the
-        // verification of 2026-08-28 met on its first loop.
-        assert_eq!(notices.len(), 3, "{notices:?}");
-        assert!(
-            notices[0].starts_with("PAR loop        hoisted.wf:5") && notices[0].contains("denied"),
-            "{notices:?}"
-        );
-        assert!(
-            notices[1].starts_with("PAR stage       hoisted.wf:5")
-                && notices[1].contains("condition 3")
-                && notices[1].ends_with("&uniq data"),
-            "{notices:?}"
-        );
-        assert!(
-            notices[2].starts_with("PAR place       hoisted.wf:5")
-                && notices[2].contains("denied")
-                && notices[2].contains("&uniq data"),
-            "{notices:?}"
-        );
-        // A row that is not denied stays inside the full report: the notice
-        // channel states what cost the loop its pipeline, not the whole table.
-        assert!(
-            notices.iter().all(|notice| !notice.contains("read-only")),
-            "{notices:?}"
-        );
-        // Every notice is a line of the full report, verbatim: one rendering,
-        // two channels.
-        assert!(
-            notices.iter().all(|notice| ledger.contains(notice)),
-            "notices are a subset of the report: {ledger:?}"
-        );
-
-        assert!(
-            notices_of("staged.wf", GRANTED_IO_LOOP).is_empty(),
-            "a granted staged verdict says nothing without a flag"
-        );
-        // And the report still carries that loop's counted denial, which the
-        // notice channel deliberately withholds.
-        assert!(
-            ledger_of("staged.wf", GRANTED_IO_LOOP)
-                .iter()
-                .any(|line| line.starts_with("PAR loop") && line.contains("denied")),
-            "the counted denial stays in the full report"
-        );
-    }
-
     /// A syntax rejection prints the spellings it expected and the line it
     /// stopped in.
     ///
@@ -788,7 +698,7 @@ mod tests {
     /// are printed here.
     #[test]
     fn a_syntax_rejection_prints_the_expected_spellings_and_the_offending_line() {
-        let source = br#"command fn main() -> status: own ExitStatus pure {
+        let source = br#"fn main() -> status: own ExitStatus pure {
   doc "Writes a nested call where the grammar admits an atom.";
   let dotted = 1_u8;
   let addressable = 2_u8;
@@ -824,32 +734,32 @@ mod tests {
         for (name, source, stage, rule) in [
             (
                 "local-target-formation.wf",
-                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: 0_u64 == 0_u64;\n  return exit_status(code: 0_u8);\n}\n"
+                b"fn main() -> status: own ExitStatus pure {\n  invariant bad: 0_u64 == 0_u64;\n  return exit_status(code: 0_u8);\n}\n"
                     .as_slice(),
                 CompilationStage::Semantics,
                 "INV-1",
             ),
             (
                 "local-target-unproved.wf",
-                b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: 1_u64 <= 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn main() -> status: own ExitStatus pure {\n  invariant bad: 1_u64 <= 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Semantics,
                 "INV-1",
             ),
             (
                 "use-relation-formation.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value == limit);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value == limit);\n  }\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Semantics,
                 "PRF-1",
             ),
             (
                 "use-relation-name.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value <= missing);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value <= missing);\n  }\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Resolution,
                 "PRF-1",
             ),
             (
                 "named-use-scope.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use missing;\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use missing;\n  }\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Resolution,
                 "INV-1",
             ),
@@ -873,7 +783,7 @@ mod tests {
     /// cost a writer a compile round spent bisecting a byte offset.
     #[test]
     fn a_canonical_rejection_prints_the_expected_bytes_beside_the_found_bytes() {
-        let source = b"command fn main() -> status: own ExitStatus pure {\n  doc \"One double space where canonical form admits one space.\";\n  return exit_status(code:  0_u8);\n}\n";
+        let source = b"fn main() -> status: own ExitStatus pure {\n  doc \"One double space where canonical form admits one space.\";\n  return exit_status(code:  0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::from_host_path(
                 "input0.wf",
@@ -889,93 +799,45 @@ mod tests {
         assert!(detail.contains("/absolute/path/report.wf:3:"), "{detail}");
     }
 
-    /// The one rule the blind writer could not apply from the specification
-    /// text now says what it means and states the whole working idiom.
-    ///
-    /// This is the writer's own shape: reserve a permit from a borrowed
-    /// factory and open through it, which is what every recursive directory
-    /// walker wants and what a one-statement region cannot hold. Batch 0099
-    /// gave the rejection two routes and the verification writer took neither
-    /// to a working walker — `replace` cannot commit where the call consumed
-    /// the target's root, which `move permit` does, and the helper alone is
-    /// one third of the idiom `tests/programs/dir_walk.wf` uses.
+    /// A child loan ends before the following ordinary statement.
+    /// Removing the old scope rejection must not hide a later missing range
+    /// proof; the same source with that requirement supplied compiles.
     #[test]
-    fn a_child_reborrow_rejection_states_the_scope_rule_and_the_whole_idiom() {
-        let source = br#"fn walk['c](factory: &uniq HandleFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
+    fn child_reborrow_regions_keep_values_and_later_requirements() {
+        let source = br#"fn walk['c](factory: &uniq HandleFactory, root: &'c DirectoryRead, name: &'c Slice<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
   region {
-    let permit = reserve_handle(factory: &uniq deref(factory));
-    match permit {
-      Ok(value: opened) => {
-        match open_file(permit: move opened, root: root, name: name, start: 0_u64, end: 1_u64) {
-          FileOpened(value: handle) => {
-          }
-          FileOpenFailed(error: problem, permit: refused_2) => {
-          }
-        }
+    match open_file(factory: &uniq deref(factory), root: root, name: name, start: 0_u64, end: 1_u64) {
+      FileOpened(value: handle) => {
+        close_read(factory: &uniq deref(factory), file: move handle);
       }
-      Err(error: spent) => {
+      FileOpenFailed(error: problem) => {
       }
     }
+    let later = 0_u8;
   }
   return 0_u8;
-}
-
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let name = buffer_new(16_u64, 0_u8);
-  let code = 0_u8;
-  region {
-    set code = walk(factory: &uniq files, root: &cwd, name: &name);
-  }
-  return exit_status(code: code);
 }
 "#;
         let failure = compile(
             &[SourceInput::new("walk.wf", source)],
             CompilerLimits::default(),
         )
-        .expect_err("a two-statement region cannot carry a child reborrow");
-        assert_eq!(failure.rule_id(), Some("OWN-6"));
-        let detail = failure.detail();
-        // What the rule means, in the two facts a writer meets at once.
+        .expect_err("the unchanged source still lacks the file-name range proof");
+        assert_eq!(failure.rule_id(), Some("FN-8"));
         assert!(
-            detail.contains(
-                "a child reborrow's region admits exactly one statement, and a value that \
-                 statement binds dies at the region's end"
-            ),
-            "{detail}"
+            failure.detail().contains("1_u64 <= len_of(deref(name))"),
+            "{}",
+            failure.detail()
         );
-        // All three parts of the idiom, in the vocabulary `docs/patterns.md`
-        // uses, and the exact limit of the `replace` route.
-        assert!(
-            detail.contains(
-                "move the reserve and the open into one helper that takes the holder as \
-                 `&uniq 'f` and returns the opened value"
-            ),
-            "{detail}"
+        let bounded = std::str::from_utf8(source).unwrap().replace(
+            "writes(factory) {",
+            "writes(factory) contract {\n  requires 1_u64 <= len_of(deref(name));\n} {",
         );
-        assert!(
-            detail.contains(
-                "make the single statement of the region the `match` on that helper's call"
-            ),
-            "{detail}"
-        );
-        assert!(
-            detail.contains(
-                "write every statement that uses the opened value inside that `match` arm"
-            ),
-            "{detail}"
-        );
-        assert!(
-            detail.contains("P4 linear threading, P15 recursive walker"),
-            "{detail}"
-        );
-        assert!(
-            detail.contains(
-                "applies only where the call leaves the target's root alive: a call that \
-                 consumes the target root — one taking `move permit` — rejects OWN-1 instead"
-            ),
-            "{detail}"
-        );
+        compile(
+            &[SourceInput::new("bounded_walk.wf", bounded.as_bytes())],
+            CompilerLimits::default(),
+        )
+        .expect("the required range, not an extra scope helper, completes the valid program");
     }
 
     /// A post-syntax rejection names the file it is talking about and quotes
@@ -994,7 +856,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
   lines: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let running = Counts(lines: 0_u64);
   let totals = running;
   return exit_status(code: 0_u8);
@@ -1012,7 +874,7 @@ command fn main() -> status: own ExitStatus pure {
         assert!(!detail.contains("input0.wf"), "{detail}");
 
         // [TYPE-6], reached in the resolver.
-        let collision = br#"command fn main() -> status: own ExitStatus pure {
+        let collision = br#"fn main() -> status: own ExitStatus pure {
   let permit = 1_u64;
   region {
     let permit = 2_u64;
@@ -1040,7 +902,7 @@ command fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_lexical_rejection_names_the_host_path() {
         let host = "/absolute/path/pound.wf";
-        let source = "command fn main() -> status: own ExitStatus pure {\n  let x = \u{a3};\n  return exit_status(code: 0_u8);\n}\n";
+        let source = "fn main() -> status: own ExitStatus pure {\n  let x = \u{a3};\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::from_host_path(
                 "input0.wf",
@@ -1065,33 +927,15 @@ command fn main() -> status: own ExitStatus pure {
     /// on disk, so the output was not usable as emitted.
     #[test]
     fn a_ledger_names_the_host_path_the_source_was_read_from() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+        let source = br#"fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    let name = buffer_new(16_u64, 97_u8);
-    region 'f {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          region {
-            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                set total = total +wrap 1_u64;
-              }
-              FileOpenFailed(error: problem, permit: refused_2) => {
-              }
-            }
-          }
-        }
-        Err(error: spent) => {
-          return exit_status(code: 8_u8);
-        }
-      }
-    }
+    set total = total +wrap index;
   }
   return exit_status(code: 0_u8);
 }
 "#;
-        let host = "/absolute/path/staged.wf";
+        let host = "/absolute/path/counted.wf";
         let (_, ledger) = compile_with_permission_ledger(
             &[SourceInput::from_host_path("input0.wf", host, source)],
             CompilerLimits::default(),
@@ -1147,7 +991,7 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
   }}
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1176,7 +1020,7 @@ command fn main() -> status: own ExitStatus pure {{
         // `scaled` makes the fact explicit, the semantic checker verifies it,
         // and lowering erases it before the permission table is consumed.
         let proved = format!(
-            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 pure {{
+            "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 reads(values) {{
   let size = len_of(values);
   let bounded = iand(index, 7_u64);
   invariant index_in_range: bounded <= 7_u64;
@@ -1201,7 +1045,7 @@ fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node)
   }}
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1264,7 +1108,7 @@ command fn main() -> status: own ExitStatus pure {{
   return seen;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
   region {
     let lo = bump(slot: &uniq cell);
@@ -1282,21 +1126,19 @@ command fn main() -> status: own ExitStatus pure {
             ]
         );
 
-        // Completion and outside authority no longer form a global row gate.
-        // Distinct release capabilities are therefore reported as one
-        // eligible pair and chain rather than a synthetic condition-3 denial.
+        // Affine opaque values have empty release under PRE-1 and STOR-3.
         let capability_releases =
-            b"fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {
+            b"fn release_read_file(file: own OutputStream) -> result: own unit pure {
   return unit;
 }
 
-fn release_pair(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first, second) {
+fn release_pair(first: own OutputStream, second: own OutputStream) -> result: own unit pure {
   let done_first = release_read_file(file: move first);
   let done_second = release_read_file(file: move second);
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ";
@@ -1329,7 +1171,7 @@ fn probe['o](outcome: own Result<u8, NarrowError>, a: &uniq 'o u8, b: &'o u8) ->
   return Ok<unit, NarrowError>(value: unit);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ";
@@ -1367,7 +1209,7 @@ command fn main() -> status: own ExitStatus pure {
   return low == 3_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let hits = 0_u64;
   for @scan (i in 0_u64..4096_u64) {
     let escaped = interesting(index: i);
@@ -1399,7 +1241,7 @@ command fn main() -> status: own ExitStatus pure {
     /// wrote.
     #[test]
     fn a_counted_loop_reducing_under_a_float_operation_is_denied_by_condition_one() {
-        let source = b"command fn main() -> status: own ExitStatus pure {
+        let source = b"fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let step = 0.5_f64;
   for @sum (i in 0_u64..1024_u64) {
@@ -1420,7 +1262,7 @@ command fn main() -> status: own ExitStatus pure {
 
         // The identical loop over an integer accumulator is permitted, so the
         // refusal above is about the operation and not about the loop.
-        let integral = b"command fn main() -> status: own ExitStatus pure {
+        let integral = b"fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   let step = 5_u64;
   for @sum (i in 0_u64..1024_u64) {
@@ -1443,7 +1285,7 @@ command fn main() -> status: own ExitStatus pure {
     /// an eligible map with no accumulator.
     #[test]
     fn a_proven_counted_binder_buffer_map_is_permitted() {
-        let source = b"command fn main() -> status: own ExitStatus pure {
+        let source = b"fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
@@ -1479,7 +1321,7 @@ command fn main() -> status: own ExitStatus pure {
   return iand(bits, 1_u64);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
@@ -1506,7 +1348,7 @@ command fn main() -> status: own ExitStatus pure {
   return iand(bits, 1_u64);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
@@ -1558,7 +1400,7 @@ command fn main() -> status: own ExitStatus pure {
   return answer +wrap acc;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
   region {
@@ -1594,7 +1436,7 @@ command fn main() -> status: own ExitStatus pure {
   return answer +wrap acc;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
   region {
@@ -1624,7 +1466,7 @@ command fn main() -> status: own ExitStatus pure {
     /// row is `band`, `bor`, `bxor` [OP-1].
     #[test]
     fn a_refused_multi_accumulator_loop_keeps_advice_naming_the_boolean_combines() {
-        let source = b"command fn main() -> status: own ExitStatus pure {
+        let source = b"fn main() -> status: own ExitStatus pure {
   let every = True();
   let any = False();
   let parity = False();
@@ -1651,361 +1493,10 @@ command fn main() -> status: own ExitStatus pure {
         );
     }
 
-    /// The staged verdict of a loop that performs I/O, and the disposition
-    /// table underneath it.
-    ///
-    /// The table is the teaching channel the ledger exists for: a reader sees
-    /// what every place the body touches cost, not only that a loop was
-    /// granted. Asserting the whole block rather than the verdict line is
-    /// deliberate — a table that silently lost a row would still report a
-    /// grant, and a grant whose table is wrong is exactly the failure a
-    /// permission rule cannot afford.
+    /// Only ordinary counted-loop permission remains after C2 deletes PAR-3.
     #[test]
-    fn the_permission_ledger_reports_a_granted_stage_and_its_disposition_table() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    let name = buffer_new(16_u64, 97_u8);
-    region 'f {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          region {
-            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                set total = total +wrap 1_u64;
-              }
-              FileOpenFailed(error: problem, permit: refused_2) => {
-              }
-            }
-          }
-        }
-        Err(error: spent) => {
-          return exit_status(code: 8_u8);
-        }
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-        assert_eq!(
-            ledger_of("staged.wf", source),
-            vec![
-                // The counted rule refuses the same loop, and says why: the
-                // short unique factory loan is an exclusive loan on storage the
-                // iteration does not introduce. The staged rule admits exactly
-                // that loan, because prologues run in index order and never
-                // overlap. Both lines are printed, and neither judgment reads
-                // the other's verdict. Both anchor on the loop head, so a
-                // reader matching the two lines up does not have to know that
-                // one judgment cites the loop and the other its submission.
-                "PAR loop        staged.wf:3  loop  denied      condition 2: an iteration holds \
-                 an exclusive loan on storage the iteration does not introduce, at \
-                 &uniq files"
-                    .to_owned(),
-                "PAR stage       staged.wf:3  for   permitted   staged at \
-                 open_file(permit: move permit, root: &'f cwd, name: &name, \
-                 start: 0_u64, end: 4_u64); 4 places classified"
-                    .to_owned(),
-                "PAR place       staged.wf:3  serialized-P  &uniq files  every footprint \
-                 element and loan touching it belongs to the prologue, and prologues run in \
-                 index order without overlapping"
-                    .to_owned(),
-                "PAR place       staged.wf:3  read-only     &'f cwd  no footprint of the body \
-                 writes it or any place overlapping it, and every loan on it is shared"
-                    .to_owned(),
-                "PAR place       staged.wf:3  serialized-E  set total = total +wrap 1_u64;  \
-                 every footprint element and loan touching it belongs to the remainder, whose \
-                 accesses to storage rooted outside the loop are taken in index order"
-                    .to_owned(),
-                "PAR place       staged.wf:3  replicated    let name = buffer_new(16_u64, \
-                 97_u8);  iteration-own storage with copy elements, which an implementation may \
-                 give each in-flight iteration its own of"
-                    .to_owned(),
-            ]
-        );
-    }
-
-    /// The disposition table prints one row per classified place even when two
-    /// rows come out byte-identical.
-    ///
-    /// Every operand read of one statement is cited at that statement, so the
-    /// two enclosing buffers this body reads in one `let` carry the same
-    /// citation, the same disposition, and the same reason. Collapsing lines by
-    /// their text alone dropped one of them and printed a five-row table under
-    /// a `stage` line counting six places — a table that is evidence of nothing
-    /// if the reader cannot tell a missing place from a repeated one. The
-    /// collapse that keeps two instances of one generic to one reported site
-    /// still holds, because those two rows agree on their position in the table
-    /// as well as on their text.
-    #[test]
-    fn a_disposition_table_keeps_one_row_per_place_when_two_rows_read_alike() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let name = buffer_new(16_u64, 97_u8);
-  let left = buffer_new(8_u64, 1_u8);
-  let right = buffer_new(8_u64, 2_u8);
-  let total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        region {
-          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-            FileOpened(value: handle) => {
-              let sum = left[0_u64] +wrap right[0_u64];
-              let wide = cvt::<u8, u64>(sum);
-              set total = total +wrap wide;
-            }
-            FileOpenFailed(error: problem, permit: refused_2) => {
-            }
-          }
-        }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 8_u8);
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-        let ledger = ledger_of("alike.wf", source);
-        let stage = ledger
-            .iter()
-            .find(|line| line.starts_with("PAR stage"))
-            .expect("the loop performs I/O and carries a stage line");
-        assert!(
-            stage.ends_with("; 6 places classified"),
-            "the two buffers are two places: {stage}"
-        );
-        let places: Vec<&String> = ledger
-            .iter()
-            .filter(|line| line.starts_with("PAR place"))
-            .collect();
-        assert_eq!(
-            places.len(),
-            6,
-            "the table has a row for every place the stage line counts: {ledger:?}"
-        );
-        let shared = "PAR place       alike.wf:6  read-only     let sum = left[0_u64] +wrap \
-                      right[0_u64];  no footprint of the body writes it or any place \
-                      overlapping it, and every loan on it is shared";
-        assert_eq!(
-            places.iter().filter(|line| line.as_str() == shared).count(),
-            2,
-            "both buffers are read-only and both are printed: {ledger:?}"
-        );
-    }
-
-    /// A denial names the numbered condition, the place, and one admitted
-    /// writer form.
-    ///
-    /// The writer form is what makes the line worth printing: "this loop got no
-    /// pipeline" teaches nothing, while "allocate the scratch storage inside the
-    /// loop body" is a change the writer can make. It comes from the judgment
-    /// itself, so it cannot drift from the condition that produced it.
-    #[test]
-    fn the_permission_ledger_names_the_condition_the_place_and_the_admitted_form() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let name = buffer_new(16_u64, 97_u8);
-  let data = buffer_new(64_u64, 0_u8);
-  let total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        region {
-          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-            FileOpened(value: handle) => {
-              region 'h {
-                region {
-                  match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                    ReadBytes(next: produced) => {
-                      set total = total +wrap produced;
-                    }
-                    ReadEnd() => {
-                    }
-                    ReadFailed(error: problem) => {
-                    }
-                  }
-                }
-              }
-            }
-            FileOpenFailed(error: problem, permit: refused_2) => {
-            }
-          }
-        }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 8_u8);
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-        let ledger = ledger_of("hoisted.wf", source);
-        assert_eq!(
-            ledger[1],
-            "PAR stage       hoisted.wf:5  for   denied      condition 3: a may-suspend call \
-             retains a borrow past its own submission on storage the body writes and the \
-             iteration does not introduce; instead, allocate the scratch storage inside the \
-             loop body, so each iteration owns the buffer it reads and writes, at \
-             &uniq data"
-        );
-        // The table survives the denial, and it names the second place the
-        // writer must move as well as the one the verdict cites.
-        assert!(
-            ledger.iter().any(|line| line.contains(
-                "denied        &uniq data  the body writes it and a may-suspend call retains \
-                 a borrow of it past its own submission"
-            )),
-            "the denied place is in the table: {ledger:?}"
-        );
-    }
-
-    /// The write a condition-3 denial names is a write, and a place is never
-    /// reported as overlapping itself.
-    ///
-    /// A row keeps the first node that *cites* its place, and a read cites one
-    /// as readily as a write does. The denied place of
-    /// `accept-par3-staged-denied-read-before-write.wf` is cited by the fold
-    /// that reads the destination before the transfer fills it, so a denial
-    /// that fell back to the row's citation printed the read as the write, told
-    /// the writer to stop rewriting a record that is not there, and asserted an
-    /// [OWN-7] overlap between one place and itself. Both bodies below are the
-    /// same hazard as the hoisted destination above — one buffer the body
-    /// writes and a `may-suspend` call retains a borrow of — so both carry that
-    /// denial's own advice, and the one whose write is a node of its own names
-    /// that node under a phrase that does not assert self-overlap.
-    #[test]
-    fn a_retained_borrow_denial_names_a_write_and_never_an_overlap_with_itself() {
-        let read_first = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let name = buffer_new(16_u64, 97_u8);
-  let data = buffer_new(64_u64, 0_u8);
-  let total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {
-    let byte = data[0_u64];
-    region 'f {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          region {
-            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                region 'h {
-                  region {
-                    match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                      ReadBytes(next: produced) => {
-                        set total = total +wrap produced;
-                      }
-                      ReadEnd() => {
-                      }
-                      ReadFailed(error: problem) => {
-                      }
-                    }
-                  }
-                }
-              }
-              FileOpenFailed(error: problem, permit: refused_2) => {
-              }
-            }
-          }
-        }
-        Err(error: spent) => {
-          return exit_status(code: 8_u8);
-        }
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-        let ledger = ledger_of("read_first.wf", read_first);
-        assert_eq!(
-            ledger[1],
-            "PAR stage       read_first.wf:5  for   denied      condition 3: a may-suspend call \
-             retains a borrow past its own submission on storage the body writes and the \
-             iteration does not introduce; instead, allocate the scratch storage inside the \
-             loop body, so each iteration owns the buffer it reads and writes, at \
-             &uniq data"
-        );
-        assert_eq!(
-            ledger[2],
-            "PAR place       read_first.wf:5  denied        let byte = data[0_u64];  the body \
-             writes it and a may-suspend call retains a borrow of it past its own submission"
-        );
-
-        // The same body with a write of the destination in front of the
-        // transfer instead of a read. The write is now a node of its own, and
-        // the denial names it as the write it is.
-        let write_first = String::from_utf8(read_first.to_vec())
-            .expect("the fixture is text")
-            .replace("let byte = data[0_u64];", "set data[0_u64] = 7_u8;");
-        let ledger = ledger_of("write_first.wf", write_first.as_bytes());
-        assert_eq!(
-            ledger[1],
-            "PAR stage       write_first.wf:5  for   denied      condition 3: a may-suspend call \
-             retains a borrow past its own submission on storage the body writes and the \
-             iteration does not introduce; instead, allocate the scratch storage inside the \
-             loop body, so each iteration owns the buffer it reads and writes, at \
-             &uniq data, and the body writes it at set data[0_u64] = 7_u8;"
-        );
-    }
-
-    /// Two nested loops whose only submission is the inner one's print at
-    /// their own heads, not both at the shared cut.
-    ///
-    /// The inner loop holds the body's first `may-suspend` call, so that call
-    /// is the outer loop's first submission too and both judgments cite it.
-    /// Anchoring the line on the cut printed two verdicts at one source
-    /// position and a reader could not tell which loop either belonged to.
-    #[test]
-    fn nested_loops_sharing_one_cut_print_at_their_own_heads() {
-        let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  for @outer (step in 0_u64..2_u64) {
-    let shared = buffer_new(16_u64, 97_u8);
-    for @scan (index in 0_u64..4_u64) {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          region {
-            match open_file(permit: move permit, root: &cwd, name: &shared, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-              }
-              FileOpenFailed(error: problem, permit: refused_2) => {
-              }
-            }
-          }
-        }
-        Err(error: spent) => {
-          return exit_status(code: 8_u8);
-        }
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-        let ledger = ledger_of("nested.wf", source);
-        let stages: Vec<&String> = ledger
-            .iter()
-            .filter(|line| line.starts_with("PAR stage"))
-            .collect();
-        assert_eq!(stages.len(), 2, "one line per loop: {ledger:?}");
-        assert!(
-            stages[0].starts_with("PAR stage       nested.wf:2  for   denied      condition 1"),
-            "the outer loop is anchored on its own head: {stages:?}"
-        );
-        assert!(
-            stages[1].starts_with("PAR stage       nested.wf:4  for   permitted"),
-            "the inner loop is anchored on its own head: {stages:?}"
-        );
-    }
-
-    /// A loop whose body performs no I/O has no cut, so it gets no `stage`
-    /// line at all. The staged judgment adds ledger volume exactly where it has
-    /// something to say, and every counted loop that had one `loop` line still
-    /// has exactly that.
-    #[test]
-    fn a_loop_without_io_gets_a_counted_line_and_no_staged_line() {
-        let source = b"command fn main() -> status: own ExitStatus pure {
+    fn a_counted_loop_reports_only_its_ordinary_permission() {
+        let source = b"fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     set total = total +wrap i;
@@ -2028,7 +1519,8 @@ command fn main() -> status: own ExitStatus pure {
     /// same bytes.
     #[test]
     fn the_permission_ledger_is_output_beside_an_unchanged_module() {
-        let source = b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+        let source =
+            b"fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
         let (module, ledger) = compile_with_permission_ledger(
             &[SourceInput::new("quiet.wf", source)],
             CompilerLimits::default(),
@@ -2089,7 +1581,7 @@ command fn main() -> status: own ExitStatus pure {
   }}
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -2156,7 +1648,7 @@ command fn main() -> status: own ExitStatus pure {{
         }
         // A build that actualizes no compute at all reports none of this.
         assert!(
-            lines("fold.wf", recursive.as_bytes(), OverlapLowering::Completion).is_empty(),
+            lines("fold.wf", recursive.as_bytes(), OverlapLowering::Off).is_empty(),
             "a default build has no actualization to report"
         );
 
@@ -2168,7 +1660,7 @@ command fn main() -> status: own ExitStatus pure {{
   return low == 3_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let hits = 0_u64;
   for @scan (i in 0_u64..4096_u64) {
     let escaped = interesting(index: i);
@@ -2217,7 +1709,7 @@ command fn main() -> status: own ExitStatus pure {
   }}
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -2269,13 +1761,13 @@ command fn main() -> status: own ExitStatus pure {{
     }
 
     #[test]
-    fn driver_lowers_static_contract_metadata_without_executable_artifacts() {
-        let source = b"contract Empty {\n}\n\nconform i32: Empty {\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    fn driver_erases_empty_formal_and_actual_groups_before_lowering() {
+        let source = b"formal Empty {\n}\n\nactual Selected : Empty {\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
         )
-        .expect("static contract metadata must use the ordinary lowering path");
+        .expect("group expansion must use the ordinary lowering path");
         assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
         assert!(!llvm.contains("Empty"));
     }
@@ -2364,7 +1856,7 @@ command fn main() -> status: own ExitStatus pure {{
 
     #[test]
     fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
-        let source = b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new::<u8, 18446744073709551615>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"fn main() -> status: own ExitStatus pure {\n  let values = array_new::<u8, 18446744073709551615>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -2393,7 +1885,7 @@ fn make(n: own u64) -> result: own buffer<u16> pure {
   return buffer_new(bounded, 0_u16);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = make(n: 4_u64);
   return exit_status(code: 0_u8);
 }
@@ -2411,7 +1903,7 @@ command fn main() -> status: own ExitStatus pure {
 
     #[test]
     fn complete_frame_is_checked_after_each_slot_layout_succeeds() {
-        let source = b"command fn main() -> status: own ExitStatus pure {\n  let left = array_new::<u8, 4611686018427387904>(0_u8);\n  let right = array_new::<u8, 4611686018427387904>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"fn main() -> status: own ExitStatus pure {\n  let left = array_new::<u8, 4611686018427387904>(0_u8);\n  let right = array_new::<u8, 4611686018427387904>(0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -2423,72 +1915,29 @@ command fn main() -> status: own ExitStatus pure {
         assert!(failure.detail().contains("StackFrame"));
     }
 
+    // C2 replaces the SYS/QUAL and FN-7 entry assertions with PRE-1 ordinary
+    // declarations and an optional build caller; unit results are ordinary.
     #[test]
-    fn system_interface_constructs_compile_through_the_normal_path() {
-        // The canonical FN-7 command-entry header with a conforming body
-        // and exact row: the entry admits, its system calls type against
-        // the [SYS-2] catalog, and [EFF-2] attribution accepts the row —
-        // `writes(cwd)` from the DirectoryRead input's compiler-derived close
-        // attempt on the return edge. [QUAL-1] qualification now maps
-        // each identity to an approved implementation and the [QUAL-3]
-        // bootstrap supplies the standard inputs, so the program emits.
-        let kind_entry = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
-        let llvm = compile(
-            &[SourceInput::new("entry.wf", kind_entry)],
-            CompilerLimits::default(),
-        )
-        .expect("a qualified command program must emit");
-        assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
-
-        // A valid command unit whose entry declares no standard input emits
-        // the same bootstrap shape: qualification is over the IR's own system
-        // facts, not over the entry's parameter list.
-        let no_inputs =
-            b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-        let llvm = compile(
-            &[SourceInput::new("entry.wf", no_inputs)],
-            CompilerLimits::default(),
-        )
-        .expect("a command entry selecting no input must emit");
-        assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
-
-        // `open_read`, `read_at`, and `write_once` complete the qualified
-        // interface: every [SYS-2] semantic identity now has an approved
-        // implementation on this target, so no unsupported stop remains
-        // between an accepted system program and its emitted module.
-        let writing =b"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region {\n      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
-        let llvm = compile(
-            &[SourceInput::new("entry.wf", writing)],
-            CompilerLimits::default(),
-        )
-        .expect("a qualified writing command must emit");
-        assert!(llvm.contains("; QUAL-1 semantic id 9 -> @wf.sys.write_once.v1"));
-
-        // A `command` entry whose written result is not `own ExitStatus` is a
-        // source rejection now, not an unsupported stop: the FN-7 entry-form
-        // judgment is implemented and runs before the remaining capability
-        // stops.
-        let wrong_result = b"command fn main() -> result: own unit pure {\n  return unit;\n}\n";
-        let failure = compile(
-            &[SourceInput::new("entry.wf", wrong_result)],
-            CompilerLimits::default(),
-        )
-        .expect_err("a command entry returning own unit must be rejected");
-        assert_eq!(failure.stage(), CompilationStage::Semantics);
-        assert_eq!(failure.kind(), CompilationFailureKind::Source);
-        assert_eq!(failure.rule_id(), Some("FN-7"));
-
-        // State rows are checked in definition order. The valid but unused
-        // `reads(args)` path reaches EFF-2's exact-row check. `writes(file)`
-        // names a shared parameter, so EFF-1 rejects that malformed row before
-        // a body can be compared with it.
+    fn prelude_functions_and_unit_results_use_the_normal_call_path() {
+        for source in [
+            b"fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"
+                .as_slice(),
+            b"fn main() -> result: own unit pure {\n  return unit;\n}\n",
+        ] {
+            let llvm = compile(
+                &[SourceInput::new("entry.wf", source)],
+                CompilerLimits::default(),
+            )
+            .expect("an ordinary callable signature can be selected by the build caller");
+            assert!(llvm.contains("define i32 @main(i32 %argc, ptr %argv)"));
+        }
         for (source, rule) in [
             (
-                b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
+                b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n".as_slice(),
                 "EFF-2",
             ),
             (
-                b"fn probe(file: &ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn probe(file: &ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n",
                 "EFF-1",
             ),
         ] {
@@ -2496,7 +1945,7 @@ command fn main() -> status: own ExitStatus pure {
                 &[SourceInput::new("rejected.wf", source)],
                 CompilerLimits::default(),
             )
-            .expect_err("the invalid state row must reject at its earliest rule");
+            .expect_err("ordinary parameter rows retain their exactness and mode checks");
             assert_eq!(failure.stage(), CompilationStage::Semantics);
             assert_eq!(failure.kind(), CompilationFailureKind::Source);
             assert_eq!(failure.rule_id(), Some(rule));
@@ -2609,50 +2058,6 @@ command fn main() -> status: own ExitStatus pure {
                 .as_slice(),
                 "GIVE-1",
             ),
-            (
-                "reject-sysentry-label-unknown.wf",
-                include_bytes!("../../tests/conformance/cases/reject-sysentry-label-unknown.wf")
-                    .as_slice(),
-                "FN-7",
-            ),
-            (
-                "reject-sysentry-label-repeated.wf",
-                include_bytes!("../../tests/conformance/cases/reject-sysentry-label-repeated.wf")
-                    .as_slice(),
-                "FN-7",
-            ),
-            (
-                "reject-sysentry-label-out-of-order.wf",
-                include_bytes!(
-                    "../../tests/conformance/cases/reject-sysentry-label-out-of-order.wf"
-                )
-                .as_slice(),
-                "FN-7",
-            ),
-            (
-                "reject-sysentry-label-outside-entry.wf",
-                include_bytes!(
-                    "../../tests/conformance/cases/reject-sysentry-label-outside-entry.wf"
-                )
-                .as_slice(),
-                "FN-7",
-            ),
-            (
-                "reject-sysentry-input-type-mismatch.wf",
-                include_bytes!(
-                    "../../tests/conformance/cases/reject-sysentry-input-type-mismatch.wf"
-                )
-                .as_slice(),
-                "FN-7",
-            ),
-            (
-                "reject-sysentry-call-to-kind-entry.wf",
-                include_bytes!(
-                    "../../tests/conformance/cases/reject-sysentry-call-to-kind-entry.wf"
-                )
-                .as_slice(),
-                "FN-7",
-            ),
         ] {
             let failure = compile(&[SourceInput::new(name, source)], CompilerLimits::default())
                 .expect_err("negative conformance case must reject");
@@ -2757,7 +2162,7 @@ fn helper(value: own u64) -> out: own u64 pure {
   return a;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2778,7 +2183,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2809,7 +2214,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2827,7 +2232,7 @@ command fn main() -> status: own ExitStatus pure {
     fn an_effect_row_defect_names_its_condition_and_the_row_that_repairs_it() {
         let detail = rejection(
             "row.wf",
-            br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(cwd, out), writes(cwd), writes(out) {
+            br#"fn probe(cwd: &uniq u64, out: &uniq u64) -> status: own ExitStatus reads(cwd, out), writes(cwd), writes(out) {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2859,7 +2264,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2882,7 +2287,7 @@ command fn main() -> status: own ExitStatus pure {
     fn a_type_mismatch_publishes_the_type_required_and_the_type_written() {
         let detail = rejection(
             "types.wf",
-            br#"command fn main() -> status: own ExitStatus pure {
+            br#"fn main() -> status: own ExitStatus pure {
   let a = 1_u64;
   let b = 2_u32;
   let c = a <= b;
@@ -2911,7 +2316,7 @@ command fn main() -> status: own ExitStatus pure {
   return Ok(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2931,7 +2336,7 @@ command fn main() -> status: own ExitStatus pure {
   return Ok<u8, unit>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2957,7 +2362,7 @@ fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> pure {
   return anchor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2981,7 +2386,7 @@ command fn main() -> status: own ExitStatus pure {
     fn a_canonical_gap_quotes_the_line_its_offending_bytes_are_in() {
         let detail = rejection(
             "indent.wf",
-            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n    let b = a +wrap 2_u64;\n  return b;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n    let b = a +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         );
         assert!(detail.contains("[FORM-2]"), "{detail}");
         assert!(
@@ -2993,99 +2398,11 @@ command fn main() -> status: own ExitStatus pure {
         // the first byte of the gap, which is where the wrong bytes begin.
         let inline = rejection(
             "spacing.wf",
-            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         );
         assert!(
             inline.contains(r#"at spacing.wf:3:12 in line "  let b = a  +wrap 2_u64;""#),
             "{inline}"
-        );
-    }
-
-    /// One output stream written per iteration is offered the remedy that
-    /// works, and the program that takes it is granted.
-    ///
-    /// Replication is not advice a writer can take for stdout, and "leave this
-    /// loop sequential" was the only other half of the sentence. The remedy
-    /// that works is to take the write out of the loop: the two programs below
-    /// differ in that and in nothing else.
-    #[test]
-    fn a_one_position_resource_is_offered_the_hoist_that_works() {
-        const EMIT: &str = r#"fn emit(out: &uniq OutputStream, value: own u8) -> written: own u64 reads(out), writes(out) {
-  let one = buffer_new(1_u64, value);
-  let sent = 0_u64;
-  region {
-    match write_once(output: &uniq deref(out), source: &one, start: 0_u64, end: 1_u64) {
-      Ok(value: n) => {
-        set sent = n;
-      }
-      Err(error: e) => {
-      }
-    }
-  }
-  return sent;
-}
-"#;
-        let per_iteration = format!(
-            "{EMIT}
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {{
-  for @scan (index in 0_u64..4_u64) {{
-    let wrote = emit(out: &uniq out, value: 65_u8);
-  }}
-  return exit_status(code: 0_u8);
-}}
-"
-        );
-        let notices = notices_of("stream.wf", per_iteration.as_bytes());
-        let staged = notices
-            .iter()
-            .find(|notice| notice.starts_with("PAR stage"))
-            .unwrap_or_else(|| panic!("the per-iteration write must deny the stage: {notices:?}"));
-        assert!(
-            staged.contains(
-                // Written on one line: a sentence a test pins has to be
-                // greppable as the bytes a writer reads.
-                "instead, give each iteration its own resource; or, where the body only publishes to that storage — an output stream is the pointed case — hoist the per-iteration write out of the loop, folding a total in the body and writing it once after the loop; or leave this loop sequential, because storage that carries one position cannot be held by two iterations at once"
-            ),
-            "{staged}"
-        );
-
-        // The same program with the write hoisted out: the loop is granted and
-        // the default channel says nothing about it.
-        let hoisted = format!(
-            "{EMIT}
-command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files) {{
-  let total = 0_u64;
-  for @scan (index in 0_u64..4_u64) {{
-    let name = buffer_new(16_u64, 97_u8);
-    region 'f {{
-      match reserve_handle(factory: &uniq files) {{
-        Ok(value: permit) => {{
-          region {{
-            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {{
-              FileOpened(value: handle) => {{
-                set total = total +wrap 1_u64;
-              }}
-              FileOpenFailed(error: problem, permit: refused_2) => {{
-              }}
-            }}
-          }}
-        }}
-        Err(error: spent) => {{
-          return exit_status(code: 8_u8);
-        }}
-      }}
-    }}
-  }}
-  region {{
-    let wrote = emit(out: &uniq out, value: 65_u8);
-  }}
-  return exit_status(code: 0_u8);
-}}
-"
-        );
-        assert!(
-            notices_of("hoisted-stream.wf", hoisted.as_bytes()).is_empty(),
-            "the hoisted form is what the remedy names, so it must be granted"
         );
     }
 }

@@ -17,7 +17,7 @@ fn inner(stride_src: own u64, padding: own u64, height: own u64, row: own u64, w
   return at;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let at = inner(stride_src: 40_u64, padding: 3_u64, height: 11_u64, row: 4_u64, width: 37_u64);
   return exit_status(code: 0_u8);
 }

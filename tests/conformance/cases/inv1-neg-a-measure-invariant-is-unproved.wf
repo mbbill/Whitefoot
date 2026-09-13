@@ -11,7 +11,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> 
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: value);
+    place_back(vector: &uniq built, value: value);
   }
   return move built;
 }
@@ -30,7 +30,7 @@ fn headroom(run: own FixedVector<u8, 8>) -> total: own u64 reads(run) contract {
   return seen;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[INV-1] a measure factor is a proof obligation like any other affine factor: the caller's requirement gives four slots and the invariant states eight, so the base obligation fails at the loop header and the declaration is refused there rather than at the caller.";
   let run = filled::<u8, 8>(value: 0_u8);
   let total = headroom(run: move run);

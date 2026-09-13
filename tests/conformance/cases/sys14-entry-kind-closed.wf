@@ -1,7 +1,96 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
-  doc "One entry record is one kind byte, one little-endian u16 name length, and exactly that many name bytes [SYS-14]. The kind set is closed at `0` unknown, `1` regular file, `2` directory, `3` symbolic link, and `4` other, a name is never empty, and `ListBytes` reports the exact number of records its portable prefix holds. The program walks the batch and exits nonzero on any violation.";
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq Heap<'heap>) -> status: own ExitStatus reads(cwd, files, heap), writes(files, heap), allocates(heap) {
+  doc "The ordinary enumeration library emits records with one kind byte, a little-endian u16 name length and the name bytes. The program checks the selected record format, kind range and announced entry count without a special language operand class.";
   region {
-    match heap_vector::<u8>(store: &uniq heap, count: 4096_u64) {
+    match heap_vector::<u8>(store: &uniq deref(heap), count: 4096_u64) {
       None() => {
         return exit_status(code: 70_u8);
       }
@@ -13,25 +102,26 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
           invariant spare: room_of(entries) + at >= 4096_u64,
           invariant flat: head_of(entries) <= 0_u64
         ) {
-          set entries = place_back(vector: move entries, value: 0_u8);
+          place_back(vector: &uniq entries, value: 0_u8);
         }
         let spare = len_of(entries);
         let status = 0_u8;
         region {
-          match reserve_handle(factory: &uniq files) {
-            Ok(value: permit) => {
-              match open_directory_source(permit: move permit, directory: &cwd) {
-                SourceOpened(value: list) => {
-                  let produced = 0_u64;
-                  let announced = 0_u64;
-                  region {
-                    let window = mut_slice_of(&uniq entries);
-                    region {
-                      match directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 4096_u64) {
-                        ListBytes(next: bytes, entries: reported) => {
-                          set produced = bytes;
-                          set announced = reported;
-                        }
+          match open_directory_source(factory: &uniq deref(files), directory: cwd) {
+            SourceOpened(value: list) => {
+              let produced = 0_u64;
+              let announced = 0_u64;
+              region {
+                let window = mut_slice_of(&uniq entries);
+                region {
+                  let (list_result_26, bytes, reported) = directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 4096_u64);
+                  match list_result_26 {
+                    Ok(value: done) => {
+                      set produced = bytes;
+                      set announced = reported;
+                    }
+                    Err(error: list_stop_26) => {
+                      match list_stop_26 {
                         ListEnd() => {
                         }
                         ListFailed(error: problem) => {
@@ -40,79 +130,92 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
                       }
                     }
                   }
-                  let at = 0_u64;
-                  let seen = 0_u64;
-                  loop @entry {
-                    let header_end = at +wrap 3_u64;
-                    let complete = header_end <= produced;
-                    if complete {
-                    } else {
-                      break @entry;
-                    }
-                    let kind_readable = at < spare;
-                    if kind_readable {
-                    } else {
-                      break @entry;
-                    }
-                    let kind = entries[at];
-                    let closed = kind <= 4_u8;
-                    if closed {
-                    } else {
-                      set status = 9_u8;
-                      break @entry;
-                    }
-                    let length_low_at = at +wrap 1_u64;
-                    let length_low_readable = length_low_at < spare;
-                    if length_low_readable {
-                    } else {
-                      break @entry;
-                    }
-                    let length_high_at = at +wrap 2_u64;
-                    let length_high_readable = length_high_at < spare;
-                    if length_high_readable {
-                    } else {
-                      break @entry;
-                    }
-                    let length_low = entries[length_low_at];
-                    let length_high = entries[length_high_at];
-                    let length_low_wide = cvt::<u8, u64>(length_low);
-                    let length_high_wide = cvt::<u8, u64>(length_high);
-                    let length_high_shifted = ishl.wrap(length_high_wide, 8_u32);
-                    let name_count = ior(length_low_wide, length_high_shifted);
-                    let named = name_count > 0_u64;
-                    if named {
-                    } else {
-                      set status = 10_u8;
-                      break @entry;
-                    }
-                    let name_at = at +wrap 3_u64;
-                    let name_end = name_at +wrap name_count;
-                    let bounded = name_end <= produced;
-                    if bounded {
-                    } else {
-                      break @entry;
-                    }
-                    set at = name_end;
-                    set seen = seen +wrap 1_u64;
-                  }
-                  let counted = seen == announced;
-                  if counted {
-                  } else {
-                    set status = 12_u8;
-                  }
-                }
-                SourceOpenFailed(error: problem, permit: refused) => {
-                  set status = 4_u8;
                 }
               }
+              let at = 0_u64;
+              let seen = 0_u64;
+              loop @stored_entry {
+                let header_end = at +wrap 3_u64;
+                let complete = header_end <= produced;
+                if complete {
+                } else {
+                  break @stored_entry;
+                }
+                let kind_readable = at < spare;
+                if kind_readable {
+                } else {
+                  break @stored_entry;
+                }
+                let kind = entries[at];
+                let closed = kind <= 4_u8;
+                if closed {
+                } else {
+                  set status = 9_u8;
+                  break @stored_entry;
+                }
+                let length_low_at = at +wrap 1_u64;
+                let length_low_readable = length_low_at < spare;
+                if length_low_readable {
+                } else {
+                  break @stored_entry;
+                }
+                let length_high_at = at +wrap 2_u64;
+                let length_high_readable = length_high_at < spare;
+                if length_high_readable {
+                } else {
+                  break @stored_entry;
+                }
+                let length_low = entries[length_low_at];
+                let length_high = entries[length_high_at];
+                let length_low_wide = cvt::<u8, u64>(length_low);
+                let length_high_wide = cvt::<u8, u64>(length_high);
+                let length_high_shifted = ishl.wrap(length_high_wide, 8_u32);
+                let name_count = ior(length_low_wide, length_high_shifted);
+                let named = name_count > 0_u64;
+                if named {
+                } else {
+                  set status = 10_u8;
+                  break @stored_entry;
+                }
+                let name_at = at +wrap 3_u64;
+                let name_end = name_at +wrap name_count;
+                let bounded = name_end <= produced;
+                if bounded {
+                } else {
+                  break @stored_entry;
+                }
+                set at = name_end;
+                set seen = seen +wrap 1_u64;
+              }
+              let counted = seen == announced;
+              if counted {
+              } else {
+                set status = 12_u8;
+              }
+              close_directory_source(factory: &uniq deref(files), source: move list);
             }
-            Err(error: spent) => {
-              return exit_status(code: 13_u8);
+            SourceOpenFailed(error: problem) => {
+              region {
+                if factory_refusal(error: &problem) {
+                  return exit_status(code: 13_u8);
+                }
+              }
+              set status = 4_u8;
             }
           }
         }
         return exit_status(code: status);
       }
     }
+  }
+}
+
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files, heap: &uniq heap);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
 }

@@ -60,8 +60,12 @@ fn integrate(a: own f64, b: own f64, center: own f64, width: own f64, tolerance:
   return adaptive(a: a, b: b, center: center, width: width, fa: fa, fm: fm, fb: fb, whole: whole, tolerance: tolerance, depth: depth);
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "Integrates 2048 narrow Lorentz profiles with centers from 1/4 to just below 3/4, width 1/64 and tolerance 2^-42. Emits the sum's 64 floating-point bits, most significant first, as ASCII. The numerical depth cap is part of the algorithm, not a compiler proof limit.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq files, directory: move unused_cwd);
+  }
   let center = 0.25_f64;
   let total = 0.0_f64;
   let step = fdiv.strict(1.0_f64, 4096.0_f64);
@@ -85,7 +89,7 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
     } else {
       give 49_u8;
     }
-    set report = place_back(vector: move report, value: digit);
+    place_back(vector: &uniq report, value: digit);
     set bits = ishl.wrap(bits, 1_u32);
   }
   region {
@@ -96,7 +100,7 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
         break @write;
       }
       region {
-        match write_once(output: &uniq out, source: &published, start: sent, end: 64_u64) {
+        match write_once(factory: &uniq files, output: &uniq out, source: &published, start: sent, end: 64_u64) {
           Ok(value: next) => {
             set sent = next;
           }

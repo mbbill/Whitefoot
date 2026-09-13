@@ -236,3 +236,38 @@ fn spans_are_half_open_and_bound_to_their_exact_source() {
     assert_eq!(middle.bytes(), b"bc");
     assert_eq!(other_middle.bytes(), b"XY");
 }
+
+#[test]
+fn supplied_prelude_paths_do_not_reserve_writer_logical_paths() {
+    let inputs = [input("prelude/HostString.wf", b"writer bytes")];
+    let bundle = SourceBundle::with_prelude(&inputs, SourceLimits::REPRESENTABLE).unwrap();
+    assert_eq!(
+        bundle.file(SourceId::from_ordinal(0)).unwrap().bytes(),
+        b"writer bytes"
+    );
+    assert_eq!(
+        bundle
+            .files()
+            .iter()
+            .filter(|file| file.logical_path().as_str() == "prelude/HostString.wf")
+            .count(),
+        2
+    );
+    assert!(bundle.files()[0].prelude().is_none());
+    assert!(
+        bundle
+            .files()
+            .iter()
+            .skip(1)
+            .all(|file| file.prelude().is_some())
+    );
+    let duplicated = [inputs[0], inputs[0]];
+    assert!(matches!(
+        SourceBundle::with_prelude(&duplicated, SourceLimits::REPRESENTABLE),
+        Err(SourceBundleError::DuplicateLogicalPath {
+            first_position: 0,
+            duplicate_position: 1,
+            ..
+        })
+    ));
+}

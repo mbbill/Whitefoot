@@ -15,7 +15,7 @@ fn empty_compile_only(left: own EmptyEq, right: own EmptyEq) -> return_value: ow
   return eeq(left, right);
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   let one = OneOnly();
   let one_eq = eeq(one, one);
   let one_ne = ene(one, one);

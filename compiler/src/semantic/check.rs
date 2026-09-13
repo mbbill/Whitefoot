@@ -1,10 +1,8 @@
+mod behavior;
 mod borrows;
 mod cleanup;
-mod confinement;
-mod contracts;
 mod control;
 mod ensures;
-mod entry_form;
 pub(in crate::semantic::check) mod expressions;
 mod floats;
 mod generics;
@@ -13,8 +11,8 @@ mod nominal_instances;
 mod nominals;
 pub(crate) mod publication;
 mod requires;
-mod result_state_origin;
 mod support;
+mod type_regions;
 mod types;
 
 use std::cell::{Cell, RefCell};
@@ -37,10 +35,9 @@ use super::goal::{
     GoalOperation, GoalProjection, first_ephemeral_argument,
 };
 use super::model::{
-    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract, CheckedElement,
-    CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
-    CheckedNominal, CheckedNominalKind, CheckedParameter, CheckedProgramData,
-    CheckedResultStateOrigin, CheckedSetTarget, CheckedSliceOrigin, CheckedStateOrigins,
+    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
+    CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode, CheckedNominal,
+    CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedSliceOrigin,
     CheckedStatement, CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId,
     LoanStrength, NominalId, ValueInitializerKind, evaluate_const_operation,
 };
@@ -78,6 +75,7 @@ struct ParameterSignature {
     name: String,
     mode: CheckedMode,
     ty: CheckedType,
+    region_shape: type_regions::TypeRegionShape,
 }
 
 /// One declared result ordinal of a callable boundary [GRAM-2, FN-1].
@@ -118,6 +116,9 @@ struct FunctionSignature {
     slice_return_ceiling: Vec<CheckedSliceOrigin>,
     effects_node: NodeId,
     declared_effects: EffectSet,
+    /// A callable hypothesis used only while checking generic source spelling.
+    /// Concrete calls always select a verified source function instead.
+    formal_parameter: Option<generics::GenericParameterKey>,
     substitution: GenericSubstitution,
 }
 
@@ -300,11 +301,6 @@ const AMBIGUOUS_RESULT_PROVENANCE_RESTRUCTURING: &str = "give the source paramet
 const ARENA_ESCAPE_RESTRUCTURING: &str = "keep the arena value inside its region's block; \
      return or deliver its content, or a borrow OWN-10 admits, instead";
 
-struct ContractInfo {
-    checked: CheckedContract,
-    members: Vec<contracts::ContractMemberInfo>,
-}
-
 #[derive(Clone)]
 struct FunctionTemplate {
     declaration: DeclarationId,
@@ -365,6 +361,7 @@ struct ConstructorShape {
     /// of this constructor does, which is exactly the region argument the
     /// construct writes.
     determining_field: Vec<Option<usize>>,
+    field_regions: Vec<type_regions::TypeRegionShape>,
 }
 
 /// A nominal instance a derived type named, awaiting interning.
@@ -415,10 +412,7 @@ struct LocalBinding {
     declaration: DeclarationId,
     mode: CheckedMode,
     ty: CheckedType,
-    /// Structural incoming-formal attribution for this affine value. `None`
-    /// is reserved for a value with no ownership identity; a fresh owner has a
-    /// present empty set.
-    state_origins: Option<CheckedStateOrigins>,
+    /// Whether the binding still owns or borrows a usable value [OWN-1].
     live: bool,
     loop_depth: usize,
     /// Compiler-updated counted binders are readable source bindings but are
@@ -426,8 +420,8 @@ struct LocalBinding {
     compiler_updated: bool,
     borrow: Option<BorrowInfo>,
     slice: Option<SliceInfo>,
-    // Region-scoped loans outlive any one slice descriptor and end only with
-    // their named data region.
+    // A view loan is bounded by its named data region. Shared descriptors
+    // can end it earlier through their last-use judgment.
     slice_loans: Vec<SliceLoan>,
     // A `uniq` holder whose arm-scoped child reborrows a match created
     // [OWN-13]: its own allowance is withdrawn, and because binder borrows
@@ -438,12 +432,13 @@ struct LocalBinding {
 }
 
 impl LocalBinding {
-    /// One loan per (region, place, strength); a second formation of the same
+    /// One loan per (region, place, parent, strength); a second formation of the same
     /// loan adds its own holder rather than a second entry [PROV-3].
     fn push_slice_loan(&mut self, loan: SliceLoan) {
         if let Some(existing) = self.slice_loans.iter_mut().find(|existing| {
             existing.region == loan.region
                 && existing.place == loan.place
+                && existing.parent == loan.parent
                 && existing.strength == loan.strength
         }) {
             for descriptor in loan.descriptors {
@@ -456,12 +451,10 @@ impl LocalBinding {
         self.slice_loans.push(loan);
     }
 
-    /// [PROV-3] one binding takes the loans its own origin set names: a `let`
-    /// that binds a formed, copied, passed or returned view is where that
-    /// value's liveness — and therefore its loan's extent — begins.
-    fn hold_slice_loans(&mut self, holder: DeclarationId, places: &[ResolvedPlace]) {
+    /// [PROV-3] binding or copying a view continues exactly its carried loan.
+    fn hold_slice_loans(&mut self, holder: DeclarationId, key: &borrows::SliceLoanKey) {
         for loan in &mut self.slice_loans {
-            if places.contains(&loan.place) && !loan.descriptors.contains(&holder) {
+            if loan.key() == *key && !loan.descriptors.contains(&holder) {
                 loan.descriptors.push(holder);
             }
         }
@@ -478,10 +471,17 @@ impl LocalBinding {
         let mut right = other.clone();
         left.slice_loans.clear();
         right.slice_loans.clear();
-        left.state_origins = None;
-        right.state_origins = None;
         left.suspended = false;
         right.suspended = false;
+        // Join precision by conjunction below. Borrow holders cannot be
+        // rebound [TYPE-7, SET-1], so a valid loop never changes an existing
+        // header holder's precision; its ordinary equality remains exact.
+        if let Some(borrow) = &mut left.borrow {
+            borrow.exact_place = false;
+        }
+        if let Some(borrow) = &mut right.borrow {
+            borrow.exact_place = false;
+        }
         left == right
     }
 
@@ -489,15 +489,13 @@ impl LocalBinding {
     /// holds for the region remainder, matching [OWN-4]'s named-region
     /// liveness of the borrows that carry it.
     fn merge_region_loans_from(&mut self, other: &Self) {
+        if let (Some(left), Some(right)) = (&mut self.borrow, &other.borrow) {
+            left.exact_place &= right.exact_place;
+        }
         for loan in &other.slice_loans {
             self.push_slice_loan(loan.clone());
         }
         self.suspended |= other.suspended;
-        match (&mut self.state_origins, &other.state_origins) {
-            (Some(left), Some(right)) => left.union(right),
-            (None, Some(right)) => self.state_origins = Some(right.clone()),
-            (Some(_), None) | (None, None) => {}
-        }
     }
 }
 
@@ -568,6 +566,18 @@ impl TypedExpression {
 /// [EFF-2]'s only repair: the declaration must equal the exhibited row.
 const EFF2_ROW_FIX: &str = "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions";
 
+/// One ordinary resolved-place contribution to the enclosing effect row.
+#[derive(Clone, Debug)]
+struct EffectPath {
+    path: super::model::CheckedStatePath,
+}
+
+impl From<super::model::CheckedStatePath> for EffectPath {
+    fn from(path: super::model::CheckedStatePath) -> Self {
+        Self { path }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct EffectSet {
     reads: Vec<super::model::CheckedStatePath>,
@@ -575,11 +585,6 @@ struct EffectSet {
     /// [S23] the declared and exhibited `allocates` paths: one formal-rooted
     /// path per store whose provider is a value.
     allocates: Vec<super::model::CheckedStatePath>,
-    /// The ambient heap of `box<T>` and `buffer<T>` [STOR-1]. Its store has no
-    /// provider value, so [EFF-1] gives it no `effect_path` and no written
-    /// entry; the flag is derived, never declared, and never compared, and it
-    /// exists because [PROG-1]'s resource closure still reads it.
-    allocates_heap: bool,
     allocates_arenas: Vec<DeclarationId>,
 }
 
@@ -588,14 +593,6 @@ impl EffectSet {
         reads: Vec::new(),
         writes: Vec::new(),
         allocates: Vec::new(),
-        allocates_heap: false,
-        allocates_arenas: Vec::new(),
-    };
-    const ALLOCATES_HEAP: Self = Self {
-        reads: Vec::new(),
-        writes: Vec::new(),
-        allocates: Vec::new(),
-        allocates_heap: true,
         allocates_arenas: Vec::new(),
     };
     fn union(mut self, other: Self) -> Self {
@@ -608,42 +605,29 @@ impl EffectSet {
         for path in other.allocates {
             self.add_allocation(path);
         }
-        self.allocates_heap |= other.allocates_heap;
         for region in other.allocates_arenas {
             self.add_arena_allocation(region);
         }
         self
     }
 
-    fn add_read(&mut self, path: super::model::CheckedStatePath) {
-        if !self.reads.contains(&path) {
-            self.reads.push(path);
-            self.reads.sort_unstable();
+    fn add_read(&mut self, path: impl Into<EffectPath>) {
+        Self::add_path(&mut self.reads, path.into());
+    }
+
+    fn add_write(&mut self, path: impl Into<EffectPath>) {
+        Self::add_path(&mut self.writes, path.into());
+    }
+
+    fn add_path(paths: &mut Vec<super::model::CheckedStatePath>, contribution: EffectPath) {
+        if !paths.contains(&contribution.path) {
+            paths.push(contribution.path);
+            paths.sort_unstable();
         }
     }
 
-    fn add_write(&mut self, path: super::model::CheckedStatePath) {
-        if !self.writes.contains(&path) {
-            self.writes.push(path);
-            self.writes.sort_unstable();
-        }
-    }
-
-    /// The row a writer declares. The ambient heap [STOR-1] has no
-    /// `effect_path` and therefore no written entry [EFF-1, S23], so it is not
-    /// part of the row [EFF-2] compares in either direction.
-    fn written_row(&self) -> Self {
-        Self {
-            allocates_heap: false,
-            ..self.clone()
-        }
-    }
-
-    fn add_allocation(&mut self, path: super::model::CheckedStatePath) {
-        if !self.allocates.contains(&path) {
-            self.allocates.push(path);
-            self.allocates.sort_unstable();
-        }
+    fn add_allocation(&mut self, path: impl Into<EffectPath>) {
+        Self::add_path(&mut self.allocates, path.into());
     }
 
     fn add_arena_allocation(&mut self, region: DeclarationId) {
@@ -670,6 +654,8 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     reject_entailment: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
+    elements: RefCell<Vec<CheckedType>>,
+    element_ids: RefCell<HashMap<CheckedType, CheckedElement>>,
     nominal_nodes: Vec<Option<NodeId>>,
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
@@ -693,15 +679,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// driver between attempts at one function.
     pending_nominals: RefCell<Vec<PendingNominal>>,
     /// [PROV-1] the region an elided store brand denotes at the position
-    /// being parsed: the enclosing nominal.s sole region parameter while a
+    /// being parsed: the enclosing nominal's sole region parameter while a
     /// `struct_decl` or `enum_decl` body is being read, and `None`
-    /// everywhere else, where the brand resolves to the entry heap's store
-    /// region.
+    /// everywhere else, where FORM-8 requires a written store argument.
     elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
-    /// [BLK-4] whether this unit's entry selects [FN-7]'s `heap` standard
-    /// input, memoized because the answer is one whole-program fact and the
-    /// scan that reads it is over the unit's own `input_label` nodes.
-    general_store_reachable: std::cell::Cell<Option<bool>>,
     /// [FN-2, OWN-1, S37] whether the body now being checked is a *concrete
     /// instance* of a generic template whose spelling one symbolic instance
     /// has already judged.
@@ -725,7 +706,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// loans created before its own evaluation boundary.
     statement_loans: RefCell<Vec<borrows::TemporaryLoan>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
-    system_nominals: HashMap<u8, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
     nominal_templates: Vec<NominalTemplate>,
     nominal_templates_by_declaration: HashMap<DeclarationId, usize>,
@@ -735,13 +715,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     function_templates: Vec<FunctionTemplate>,
     templates_by_declaration: HashMap<DeclarationId, usize>,
     functions_by_declaration: HashMap<DeclarationId, Vec<FunctionId>>,
-    /// Closed-world structural state origins for the currently selected
-    /// concrete or symbolic function inventory, indexed by FunctionId.
-    result_state_origins: RefCell<Vec<CheckedResultStateOrigin>>,
-    /// The preliminary body pass records enough checked control/data flow to
-    /// derive the summaries but deliberately postpones EFF-2 equality until
-    /// the summaries reach a fixed point.
-    deriving_result_state_origin: Cell<bool>,
     constants: HashMap<DeclarationId, CheckedConstantId>,
     checked_constants: Vec<CheckedConstant>,
     /// Hash-consed symbolic const operations [CONST-1 candidate]. Written by
@@ -765,8 +738,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// contributes one row at ordinal zero. Set and restored beside
     /// `active_postcondition`.
     active_result_datums: RefCell<Vec<(String, u32, CheckedType)>>,
-    contracts: Vec<ContractInfo>,
-    contracts_by_declaration: HashMap<DeclarationId, usize>,
+    behavior: behavior::BehaviorInventory,
 }
 
 /// Checks the currently implemented active-specification semantic family.
@@ -1051,13 +1023,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// judgment of those rules — consume-once, dead roots, exclusivity, the
     /// region-free demand on a replacement target — is re-judged here, because
     /// each is a property of the concrete instance and not of the spelling.
-    /// [PROV-3] register one new binding as a holder of every loan its value's
-    /// origin set names.
-    ///
-    /// The origins are the value's own [PROV-3] set, so this covers the four
-    /// events the rule enumerates — formation, copy, pass and return — with
-    /// one judgment over the set rather than one per event. `immutable-const`
-    /// and a formal origin name no loan of this function and match nothing.
+    /// [PROV-3] register the new binding on its value's exact continuing
+    /// claims. Registering by origin would revive an older shared loan when
+    /// a later exclusive view reaches that same storage.
     pub(in crate::semantic::check) fn hold_slice_loans_of(
         holder: DeclarationId,
         slice: Option<&borrows::SliceInfo>,
@@ -1066,75 +1034,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(slice) = slice else {
             return;
         };
-        let mut wanted: HashMap<DeclarationId, Vec<ResolvedPlace>> = HashMap::new();
-        for origin in &slice.origins {
-            if let crate::semantic::model::CheckedSliceOrigin::SourcePlace { root, path, .. } =
-                origin
-            {
-                wanted.entry(*root).or_default().push(ResolvedPlace {
-                    root: *root,
-                    path: path.clone(),
-                });
-            }
-        }
-        for (root, places) in wanted {
-            if let Some(local) = bindings.get_mut(&root) {
-                local.hold_slice_loans(holder, &places);
+        for key in &slice.loans {
+            if let Some(local) = bindings.get_mut(&key.place.root) {
+                local.hold_slice_loans(holder, key);
             }
         }
     }
 
-    /// [VIEW-6, OWN-5] the shared child a call published, registered at the
-    /// caller.
-    ///
-    /// A callee handed `&uniq MutSlice<'r, T>` may return the shared child of
-    /// that view [VIEW-6]. The child reaches the caller's own storage, and
-    /// the caller holds the exclusive loan that storage already carries, so
-    /// the freeze the child puts on its parent has to stand here too: the
-    /// parent may not write the elements it views while the returned child
-    /// lives. No new formation happened at this caller, so the loan is
-    /// registered from the result's own origin set, and only where an
-    /// exclusive loan on that place is what the child is a child *of* — a
-    /// shared result over storage no exclusive loan covers already carries
-    /// its own shared loan from its formation.
-    pub(in crate::semantic::check) fn hold_published_child_loan(
-        holder: DeclarationId,
-        ty: CheckedType,
-        slice: Option<&borrows::SliceInfo>,
+    /// Formation or a borrowed-view result creates the claims its checked
+    /// value carries. A copy or an own-view relay only holds existing claims.
+    pub(in crate::semantic::check) fn publish_slice_loans(
+        slice: &borrows::SliceInfo,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
-    ) {
-        let (
-            CheckedType::Slice {
-                strength: LoanStrength::Shared,
-                ..
-            },
-            Some(slice),
-        ) = (ty, slice)
-        else {
-            return;
-        };
-        let places = slice.effect_places();
-        let mut added: Vec<(DeclarationId, SliceLoan)> = Vec::new();
-        for (root, local) in bindings.iter() {
-            for loan in &local.slice_loans {
-                if loan.strength == LoanStrength::Exclusive && places.contains(&loan.place) {
-                    added.push((
-                        *root,
-                        SliceLoan {
-                            region: slice.region,
-                            place: loan.place.clone(),
-                            strength: LoanStrength::Shared,
-                            descriptors: vec![holder],
-                        },
-                    ));
-                }
-            }
+    ) -> Result<(), CheckStop> {
+        for key in &slice.loans {
+            bindings
+                .get_mut(&key.place.root)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .push_slice_loan(SliceLoan::new(key.clone()));
         }
-        for (root, loan) in added {
-            if let Some(local) = bindings.get_mut(&root) {
-                local.push_slice_loan(loan);
-            }
-        }
+        Ok(())
     }
 
     pub(in crate::semantic::check) fn judges_class_spelling(&self) -> bool {
@@ -1219,11 +1138,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
         reject_entailment: bool,
     ) -> Result<Self, CheckStop> {
+        // A semantic unit includes the fixed PRE-1 declarations before resolution.
+        // A source-only parse is useful to tools but is not a complete compiler input.
+        if !resolved
+            .syntax()
+            .finalized
+            .parsed
+            .classified
+            .source_bundle()
+            .includes_prelude()
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
         Ok(Self {
             resolved,
             reject_entailment,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
+            elements: RefCell::new(Vec::new()),
+            element_ids: RefCell::new(HashMap::new()),
             nominal_nodes: Vec::new(),
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
@@ -1234,12 +1167,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
-            general_store_reachable: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             statement_loans: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
-            system_nominals: HashMap::new(),
             prelude_types: Vec::new(),
             nominal_templates: Vec::new(),
             nominal_templates_by_declaration: HashMap::new(),
@@ -1249,8 +1180,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             function_templates: Vec::new(),
             templates_by_declaration: HashMap::new(),
             functions_by_declaration: HashMap::new(),
-            result_state_origins: RefCell::new(Vec::new()),
-            deriving_result_state_origin: Cell::new(false),
             constants: HashMap::new(),
             checked_constants: Vec::new(),
             derived_consts: RefCell::new(Vec::new()),
@@ -1261,26 +1190,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             postcondition_unavailable_declarations: Vec::new(),
             active_postcondition: Cell::new(None),
             active_result_datums: RefCell::new(Vec::new()),
-            contracts: Vec::new(),
-            contracts_by_declaration: HashMap::new(),
+            behavior: behavior::BehaviorInventory::default(),
         })
     }
 
     fn check_program(&mut self) -> Result<CheckedProgramData, CheckStop> {
         let items = self.item_declarations()?;
-        // The [FN-7] entry-form and [GRAM-11] system-call-argument
-        // judgments run first in DIAG-1 stage order; the former also fixes
-        // which entry shape the rest of the unit is checked under. The
-        // system semantic family — [SYS-2] call typing, [EFF-2] effect
-        // attribution including the release contribution, and the checked
-        // drop records — is implemented below, so no capability stop
-        // remains at this stage; an accepted system program stops later, at
-        // lowering, as an explicit unsupported capability.
-        let entry = match self.check_entry_form(&items) {
-            Ok(entry) => entry,
-            Err(stop) => return Err(self.reject_missing_main_last(&items, stop)),
-        };
-        self.check_system_call_arguments()?;
+        self.collect_behavior_groups(&items)?;
+        self.reject_instantiation_cycles(&items)?;
         self.declare_nominals(&items)?;
         self.collect_constants(&items)?;
         self.complete_nominals()?;
@@ -1288,9 +1205,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.collect_function_signatures(&items)?;
         self.admit_postcondition_selectors()?;
         self.validate_generic_templates()?;
-        self.derive_result_state_origins()?;
-        let nominal_count_before_function_checking = self.nominals.len();
-        let main = self.main_id()?;
+        if self
+            .signatures
+            .iter()
+            .any(|signature| signature.formal_parameter.is_some())
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
 
         // Phase A completes every reachable concrete function before any
         // acceptance-bearing entailment judgment runs. This makes forward,
@@ -1300,60 +1221,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for index in 0..self.signatures.len() {
             function_inventory.push(self.check_function_interning_nominals(index)?);
         }
-        // Function checking discovers the instances a derived type names: a
-        // purely local `box<T>` [STOR-2], the `Result<T, E>` a checked row
-        // produces, and — since a call substitutes its region arguments into
-        // every position of the callee's signature, results included
-        // [FN-2] — a *source* instance of a declaration this unit already
-        // names at another region. That last class is admitted here on one
-        // condition: it is one representation with an instance the written
-        // text already interned [S20], so lowering still erases it onto that
-        // instance's own IR nominal and the executable prefix closes over a
-        // complete set of representations. A source instance discovered here
-        // that is related to no earlier one would be a representation no
-        // written type produced, and is a compiler defect.
-        for index in nominal_count_before_function_checking..self.nominals.len() {
-            let id = NominalId(
-                u32::try_from(index)
-                    .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?,
-            );
-            if self.source_nominal_instance_entry(id)?.is_none() {
-                continue;
-            }
-            let mut related = false;
-            for earlier in 0..nominal_count_before_function_checking {
-                let earlier = NominalId(
-                    u32::try_from(earlier)
-                        .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?,
-                );
-                if self.nominals_differ_only_in_region(id, earlier)? {
-                    related = true;
-                    break;
-                }
-            }
-            if !related {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-        }
+        // Body checking may first instantiate a nominal through the fields of
+        // an ordinary constructor. FN-6 has already checked the written finite
+        // dependency graph, and ensure_source_nominal_instance has completed
+        // each discovered instance. Lowering reads this completed inventory;
+        // no hidden entry-store instance is required to seed a representation.
 
-        // For an FN-9 unit, the complete existing [FN-3]/[FN-4] pass
-        // remains ahead of the first acceptance-bearing optimistic query. Its
-        // results are retained and reused below; no narrow duplicate prepass
-        // or proof-only contract judgment exists. The no-postcondition,
-        // no-marker ordinary fast path keeps its established phase order.
-        let early_contracts = if self.resolved.postconditions().is_empty() {
-            None
-        } else {
-            let executable_nominal_count = self.nominals.len();
-            let functions = function_inventory
-                .iter()
-                .map(|checked| checked.function.clone())
-                .collect::<Vec<_>>();
-            self.collect_contracts(&items)?;
-            let (conformances, law_derivations) =
-                self.check_conformances_and_laws(&items, &functions)?;
-            Some((executable_nominal_count, conformances, law_derivations))
-        };
+        self.check_behavior_bindings()?;
 
         // Phase B reads only the completed inventory. Kill-relevant [EFF-2]
         // projections are indexed by dense function identity [ENT-5]; later
@@ -1362,7 +1236,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.install_call_requirements(&mut function_inventory)?;
         let optimistic_batch = function_inventory.iter().any(|checked| {
             !checked.function.postconditions.is_empty()
-                || Self::statements_contain_value_if(&checked.function.body)
+                || Self::statements_contain_value_if(
+                    checked.function.body.as_deref().unwrap_or_default(),
+                )
         });
 
         let postcondition_schedule =
@@ -1418,20 +1294,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // proof arena, and performs no proof reconstruction.
         self.install_source_allocation_bounds(&mut functions)?;
 
-        // The ordinary function path is complete, so the executable prefix
-        // closes here — after the derived box nominals, which executable code
-        // allocates and drops, and before the contract metadata, which no
-        // executable path reaches.
-        let (executable_nominal_count, conformances, law_derivations) =
-            if let Some(early) = early_contracts {
-                early
-            } else {
-                let executable_nominal_count = self.nominals.len();
-                self.collect_contracts(&items)?;
-                let (conformances, law_derivations) =
-                    self.check_conformances_and_laws(&items, &functions)?;
-                (executable_nominal_count, conformances, law_derivations)
-            };
+        let executable_nominal_count = self.nominals.len();
         self.materialize_generic_requirements()?;
         let derived_consts = self.derived_consts.borrow().clone();
         for (index, derived) in derived_consts.iter().enumerate() {
@@ -1441,9 +1304,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
-        // Target execution is closed compiler metadata. Derive the complete
-        // recursive summary only after all concrete bodies are final.
-        super::target_action::derive_target_actions(&mut functions);
         // Permission is a read-only legality table over the completed checked
         // program. The affine-map rule consumes a successful OP-4 disposition
         // and exact value image retained on that program; no permission rule
@@ -1462,11 +1322,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // The ledger is rendered here because only the checker still holds the
         // syntax tree the citations name. It is pure presentation over the
         // table above and reaches no decision.
-        let permission_ledger = if permission.functions.iter().any(|permissions| {
-            !permissions.pairs.is_empty()
-                || !permissions.loops.is_empty()
-                || !permissions.staged.is_empty()
-        }) {
+        let permission_ledger = if permission
+            .functions
+            .iter()
+            .any(|permissions| !permissions.pairs.is_empty() || !permissions.loops.is_empty())
+        {
             render_ledger(&permission, &PermissionLedgerSource { tree: &self.tree })?
         } else {
             Vec::new()
@@ -1474,36 +1334,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         Ok(CheckedProgramData {
             nominals: self.nominals.clone(),
-            system_structs: {
-                let mut rows = self
-                    .system_nominals
-                    .iter()
-                    .filter(|(index, _)| {
-                        crate::SYSTEM_NOMINALS
-                            .get(usize::from(**index))
-                            .is_some_and(crate::SystemNominal::is_struct)
-                    })
-                    .map(|(index, id)| (*index, *id))
-                    .collect::<Vec<_>>();
-                rows.sort_unstable_by_key(|(index, _)| *index);
-                rows
-            },
+            nominal_confinement: self
+                .nominals
+                .iter()
+                .map(|nominal| self.confinement_regions(CheckedType::Nominal(nominal.id)))
+                .collect::<Result<_, _>>()?,
+            elements: self.elements.borrow().clone(),
             executable_nominal_count,
             nominal_lowering_alias: self.nominal_lowering_aliases()?,
+            nominal_physical_alias: self.nominal_physical_aliases()?,
+            region_release_defaults: {
+                let mut defaults = self
+                    .resolved
+                    .declarations()
+                    .iter()
+                    .filter(|record| {
+                        matches!(
+                            record.role(),
+                            crate::DeclarationRole::LocalRegion
+                                | crate::DeclarationRole::RegionParameter
+                        )
+                    })
+                    .map(|record| Ok((record.id(), self.vector_release_class(record.id())?)))
+                    .collect::<Result<Vec<_>, CheckStop>>()?;
+                defaults.sort_unstable_by_key(|(region, _)| *region);
+                defaults
+            },
             constants: self.checked_constants.clone(),
             derived_consts,
             functions,
             postcondition_schedule,
             generic_requirements: self.generic_requirements.clone(),
-            contracts: self
-                .contracts
-                .iter()
-                .map(|contract| contract.checked.clone())
-                .collect(),
-            conformances,
-            law_derivations,
-            main,
-            entry,
             permission,
             permission_ledger,
         })
@@ -1522,12 +1383,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn collect_function_signatures(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         self.collect_function_templates(items)?;
+        self.validate_formal_declarations()?;
         self.collect_concrete_function_signatures()
     }
 
-    /// Collects every non-nominal-typed const declaration. Runs before
+    /// Collects every const declaration with a nominal-free type. Runs before
     /// nominal completion because a nominal field's array length may name an
-    /// earlier const; nominal-typed const declarations [CONST-2 candidate]
+    /// earlier const; constants containing nominal types [CONST-2]
     /// need completed field inventories and are collected by the second pass
     /// below.
     fn collect_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
@@ -1549,11 +1411,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Collects the nominal-typed const declarations deferred by the first
+    /// Collects constants containing nominal types, deferred by the first
     /// pass, in item order, after `complete_nominals` has filled the field
     /// inventories they are checked against. CONST-2's declaration-before-use
-    /// rule is unaffected: a non-nominal const can never reference a
-    /// nominal-typed one (a cvalue reference must have the exact expected
+    /// rule is unaffected: a nominal-free constant cannot reference a value
+    /// containing a nominal type (a cvalue reference has the exact expected
     /// type), so the two passes never reorder a legal dependency.
     fn collect_deferred_nominal_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         let nodes = items
@@ -1578,10 +1440,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Type)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        Ok(self
-            .tree
-            .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
-            .is_some())
+        let mut pending = vec![ty];
+        while let Some(node) = pending.pop() {
+            if self.tree.production(node)? == Production::Type
+                && self
+                    .tree
+                    .direct_token_with(node, crate::TerminalPredicate::TypeIdentifier)?
+                    .is_some()
+            {
+                return Ok(true);
+            }
+            pending.extend(self.tree.children(node)?.iter().copied());
+        }
+        Ok(false)
     }
 
     pub(super) fn collect_constants_for_postconditions(
@@ -1673,10 +1544,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Cvalue)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if self
-            .tree
-            .direct_token_with(value, crate::TerminalPredicate::Identifier)?
-            .is_some()
+        if self.tree.direct_token_indices(value)?.len() == 1
+            && self
+                .tree
+                .direct_token_with(value, crate::TerminalPredicate::Identifier)?
+                .is_some()
         {
             let path = self.tree.path(value)?;
             if !self.resolved.lexical_uses().iter().any(|usage| {
@@ -1697,6 +1569,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(node, Production::Type)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let ty = self.parse_const_type(ty_node)?;
+        let declared_type = self.parse_type(ty_node)?;
         let value_node = self
             .tree
             .first_child_with(node, Production::Cvalue)?
@@ -1710,63 +1583,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             declaration: declaration_id,
             name,
+            declared_type,
             ty,
             value,
         });
         self.constants.insert(declaration_id, id);
         Ok(())
-    }
-
-    /// Orders the whole-unit missing-`main` rejection after per-declaration
-    /// source rejections.
-    ///
-    /// [DIAG-1] leaves the order among rejection events at distinct nodes
-    /// implementation-defined, and this compiler reports a declaration's own
-    /// established rule violation before the [FN-7] `BundleRoot` whole-unit
-    /// rejection: when the entry is missing, the remaining declarations are
-    /// still driven through signature collection and phase-A function
-    /// checking, and the first established source rejection found there is
-    /// reported instead. Anything short of an established source rejection —
-    /// success, an unsupported capability, an internal failure — falls back
-    /// to the held missing-`main` rejection, so a capability stop never
-    /// masks the definite FN-7 violation [DIAG-1].
-    fn reject_missing_main_last(&mut self, items: &[NodeId], stop: CheckStop) -> CheckStop {
-        let missing_main = matches!(
-            &stop,
-            CheckStop::Issue(issue)
-                if issue.rule == SemanticRule::Fn7
-                    && matches!(issue.kind, SemanticIssueKind::MissingMain)
-        );
-        if !missing_main {
-            return stop;
-        }
-        let salvage = (|| -> Result<(), CheckStop> {
-            self.check_system_call_arguments()?;
-            self.declare_nominals(items)?;
-            self.collect_constants(items)?;
-            self.complete_nominals()?;
-            self.collect_function_signatures(items)?;
-            self.admit_postcondition_selectors()?;
-            self.validate_generic_templates()?;
-            self.derive_result_state_origins()?;
-            for index in 0..self.signatures.len() {
-                self.check_function_interning_nominals(index)?;
-            }
-            Ok(())
-        })();
-        match salvage {
-            Err(rejection @ (CheckStop::Issue(_) | CheckStop::Resolution(_))) => rejection,
-            _ => stop,
-        }
-    }
-
-    /// Returns the dense identity of the checked entry function.
-    fn main_id(&self) -> Result<FunctionId, CheckStop> {
-        self.signatures
-            .iter()
-            .find(|signature| signature.name == "main")
-            .map(|signature| signature.id)
-            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     /// Checks one concrete function for the phase-A inventory, interning the
@@ -1847,9 +1669,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
-        let previous = self
-            .template_spelling_authority
-            .replace(signature.substitution.len() > 0 && signature.substitution.is_concrete());
+        let previous = self.template_spelling_authority.replace(
+            signature.substitution.len() > 0
+                && signature.substitution.is_concrete(&self.elements.borrow()),
+        );
         let outcome = self.check_function_signature_body(signature);
         self.template_spelling_authority.set(previous);
         outcome
@@ -1859,6 +1682,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
+        self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
         let mut parameters = Vec::with_capacity(signature.parameters.len());
         let mut next_binding = 0_u32;
@@ -1873,25 +1697,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             next_binding = next_binding
                 .checked_add(1)
                 .ok_or(SemanticCompilerFailure::CounterOverflow)?;
-            let state_leaves = self.type_state_leaf_paths(parameter.ty)?;
             bindings.insert(
                 parameter.declaration,
-                LocalBinding {
-                    binding,
-                    declaration: parameter.declaration,
-                    mode: parameter.mode,
-                    ty: parameter.ty,
-                    state_origins: (!state_leaves.is_empty()).then(|| {
-                        CheckedStateOrigins::formal_leaves(parameter.declaration, state_leaves)
-                    }),
-                    live: true,
-                    loop_depth: 0,
-                    compiler_updated: false,
-                    borrow: self.parameter_borrow(parameter),
-                    slice: self.parameter_slice(parameter),
-                    slice_loans: Vec::new(),
-                    suspended: false,
-                },
+                self.parameter_local(parameter, binding)?,
             );
             parameters.push(CheckedParameter {
                 name: parameter.name.clone(),
@@ -1943,7 +1751,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         bindings = parameter_bindings;
         let statements = self.tree.children_with(signature.node, Production::Stmt)?;
-        let checked = self.check_block(
+        let mut checked = self.check_block(
             signature,
             &statements,
             &mut bindings,
@@ -1953,6 +1761,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: None,
             },
         )?;
+        let declaration_only = self.tree.production(signature.node)? == Production::FnSig;
+        if declaration_only {
+            checked.can_continue = false;
+            checked.effects = signature.declared_effects.clone();
+        }
         if checked.can_continue {
             return Err(CheckStop::source_issue(SemanticIssue {
                 rule: SemanticRule::Fn1,
@@ -1963,60 +1776,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 kind: SemanticIssueKind::FunctionFallthrough,
             }));
         }
-        // The exhibited row is the union of exactly two contributions
-        // [EFF-2]: the syntactic contribution of the body and the release
-        // contribution of every compiler-derived release recorded on a normal
-        // body edge [STOR-3]. A requirement is a signature obligation, not an
-        // executed declaration occurrence.
-        let syntactic = if self.deriving_result_state_origin.get() {
-            checked.effects.clone()
-        } else {
-            self.written_body_effects(signature, checked.effects.clone())
-        };
-        let mut release_sites = Vec::new();
-        self.collect_release_sites(signature, &checked.statements, &mut release_sites)?;
-        let mut release = EffectSet::NONE;
-        for site in &release_sites {
-            release = release.union(site.effects.clone());
-        }
-        let exhibited = syntactic.clone().union(release.clone());
-        if !self.deriving_result_state_origin.get()
-            && exhibited.written_row() != signature.declared_effects.written_row()
-        {
-            // A state transition contributed only by a release has no offending
-            // source occurrence. Keep the owner-bearing diagnostic for that
-            // case even though the current system releases have empty memory
-            // rows; later resource families may carry an ordinary memory row.
-            let release_only = release.clone().union(syntactic.clone()).written_row()
-                != syntactic.written_row()
-                && release
-                    .clone()
-                    .union(signature.declared_effects.clone())
-                    .written_row()
-                    != signature.declared_effects.written_row();
-            if release_only {
-                let owner = release_sites
-                    .iter()
-                    .find(|site| site.effects != EffectSet::NONE)
-                    .map(|site| match &site.owner {
-                        cleanup::ReleaseOwner::Binding(binding) => binding_names
-                            .get(binding.0 as usize)
-                            .cloned()
-                            .unwrap_or_else(|| "<unnamed owner>".to_owned()),
-                        cleanup::ReleaseOwner::ExpressionResult => {
-                            "<discarded expression result>".to_owned()
-                        }
-                    })
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                return self.issue_node(
-                    SemanticRule::Eff2,
-                    signature.effects_node,
-                    SemanticIssueKind::ReleaseEffectMismatch {
-                        owner,
-                        mechanical_fix: "declare the release effects of every resource this function may release, or move the owner out",
-                    },
-                );
-            }
+        let mut exhibited = self.written_body_effects(signature, checked.effects.clone());
+        self.collect_release_effects(signature, &checked.statements, &mut exhibited)?;
+        if exhibited != signature.declared_effects {
             let (missing, extra) =
                 self.effect_row_difference(&exhibited, &signature.declared_effects, signature)?;
             return self.issue_node(
@@ -2031,7 +1793,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let postconditions = if signature.substitution.is_concrete() {
+        let postconditions = if signature.substitution.is_concrete(&self.elements.borrow()) {
             postcondition_selectors
                 .into_iter()
                 .zip(postcondition_relations)
@@ -2080,26 +1842,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         let function = CheckedFunction {
+            formal_hypothesis: signature.formal_parameter.is_some(),
             id: signature.id,
             declaration: signature.declaration,
             name: signature.name.clone(),
             symbol: signature.symbol.clone(),
+            region_parameters: signature.region_parameters.clone(),
             parameters,
             result_mode: signature.result_mode,
             result: signature.result,
-            result_state_origin: self
-                .result_state_origins
-                .borrow()
-                .get(signature.id.0 as usize)
-                .cloned()
-                .unwrap_or(CheckedResultStateOrigin::Unknown),
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
-            reaches_ambient_heap: checked.effects.allocates_heap,
             declared_state_writes: signature.declared_effects.writes.clone(),
-            target_action: crate::TargetAction::INLINE,
             requirements,
             postconditions,
-            body: checked.statements,
+            body: (!declaration_only).then_some(checked.statements),
             body_disposition: super::model::CheckedBodyDisposition::Inhabited,
             entailment: super::entailment::FunctionEntailment::default(),
         };
@@ -2160,6 +1916,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(callees)
     }
 
+    fn parameter_local(
+        &self,
+        parameter: &ParameterSignature,
+        binding: BindingId,
+    ) -> Result<LocalBinding, CheckStop> {
+        Ok(LocalBinding {
+            binding,
+            declaration: parameter.declaration,
+            mode: parameter.mode,
+            ty: parameter.ty,
+            live: true,
+            loop_depth: 0,
+            compiler_updated: false,
+            borrow: self.parameter_borrow(parameter),
+            slice: self.parameter_slice(parameter),
+            slice_loans: Vec::new(),
+            suspended: false,
+        })
+    }
+
     /// Checks the source-generic body while symbolic nominal and function
     /// identities are still alive.
     /// Checks every source-generic body once with symbolic arguments, even when
@@ -2175,7 +1951,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         let optimistic_batch = functions.iter().any(|checked| {
             !checked.function.postconditions.is_empty()
-                || Self::statements_contain_value_if(&checked.function.body)
+                || Self::statements_contain_value_if(
+                    checked.function.body.as_deref().unwrap_or_default(),
+                )
         });
         self.analyze_function_inventory(functions, callees, optimistic_batch)?;
         if optimistic_batch {
@@ -2213,6 +1991,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     constants: &self.checked_constants,
                     constant_ids: &self.constants,
                     nominals: &self.nominals,
+                    elements: &self.elements.borrow(),
                     verified_postconditions: &[],
                     verified_postcondition_proofs: &[],
                     binding_names: &checked.binding_names,
@@ -2274,6 +2053,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         constants: &self.checked_constants,
                         constant_ids: &self.constants,
                         nominals: &self.nominals,
+                        elements: &self.elements.borrow(),
                         verified_postconditions: &verified_postconditions,
                         verified_postcondition_proofs: &verified_postcondition_proofs,
                         binding_names: &checked.binding_names,
@@ -2357,7 +2137,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map(|checked| checked.function.requirements.clone())
             .collect::<Vec<_>>();
         for checked in functions {
-            self.install_statement_call_requirements(&mut checked.function.body, &requirements)?;
+            if let Some(body) = &mut checked.function.body {
+                self.install_statement_call_requirements(body, &requirements)?;
+            }
         }
         Ok(())
     }
@@ -2513,8 +2295,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // A [BLK-0] row's requirement list is declaration data, so the
             // call instantiated it while it was checked and there is nothing
             // to install from the source inventory here.
-            CheckedExpression::SystemCall { arguments, .. }
-            | CheckedExpression::KernelCall { arguments, .. }
+            CheckedExpression::KernelCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
@@ -2569,7 +2350,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::Project { .. } => {}
@@ -2597,7 +2377,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Ok((outcome.node_path.clone(), upper))
                 })
                 .collect::<Result<HashMap<_, _>, SemanticCompilerFailure>>()?;
-            Self::install_statement_allocation_bounds(&mut function.body, &bounds)?;
+            if let Some(body) = &mut function.body {
+                Self::install_statement_allocation_bounds(body, &bounds)?;
+            }
         }
         Ok(())
     }
@@ -2754,7 +2536,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedExpression::UserCall { arguments, .. }
-            | CheckedExpression::SystemCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
@@ -2804,7 +2585,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::DerefAddressed { .. }
             | CheckedExpression::Project { .. } => {}
@@ -2945,7 +2725,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 operand_type: self.instantiate_goal_type(operand_type, signature, regions)?,
             },
             GoalOperation::ArrayFill { element, length } => GoalOperation::ArrayFill {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
             GoalOperation::ArrayMeasure {
@@ -2954,11 +2734,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 length,
             } => GoalOperation::ArrayMeasure {
                 measure,
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
             GoalOperation::ArrayIndex { element, length } => GoalOperation::ArrayIndex {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
             GoalOperation::BufferMeasure { measure, element } => GoalOperation::BufferMeasure {
@@ -3039,7 +2819,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .type_argument(declaration)
                 .unwrap_or(ty),
             CheckedType::Array { element, length } => CheckedType::Array {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
             CheckedType::Slice {
@@ -3088,44 +2868,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// [S20] one nominal instance read at a caller: its region arguments
-    /// substituted, which is the instance the caller's own value has.
+    /// [FN-2, S20] one nominal instance read at a caller with every formal
+    /// region substituted, which is the instance the caller's own value has.
     ///
-    /// The substituted instance already exists wherever the caller can hold a
-    /// value of it, so this is a lookup and never a minting; where it does
-    /// not, the declaration's own instance stands and the ordinary type
-    /// judgment decides.
+    /// The structural walk is the same one used while checking the call, so
+    /// it reaches a source nominal through PRE-1 wrappers and compiler-owned
+    /// store nominals as well as a source nominal's own region axis. It keeps
+    /// that walk's ordinary lookup-and-defer behavior; it does not assume a
+    /// result-only or nested goal type was itself a direct call argument.
     fn instantiate_goal_nominal(
         &self,
         id: NominalId,
         signature: &FunctionSignature,
         regions: &[DeclarationId],
     ) -> Result<CheckedType, CheckStop> {
-        let Some((template, substitution)) = self.source_nominal_instance_entry(id)? else {
-            return Ok(CheckedType::Nominal(id));
-        };
-        if substitution.region_arguments().is_empty() {
-            return Ok(CheckedType::Nominal(id));
+        if signature.region_parameters.len() != regions.len() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        let substitution = substitution.clone();
-        let mut mapped = Vec::with_capacity(substitution.region_arguments().len());
-        for (formal, actual) in substitution.region_arguments() {
-            mapped.push((
-                *formal,
-                self.instantiate_goal_region(*actual, signature, regions)?,
-            ));
-        }
-        if mapped == substitution.region_arguments() {
-            return Ok(CheckedType::Nominal(id));
-        }
-        let declaration = self
-            .nominal_templates
-            .get(template)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-            .declaration;
-        Ok(self
-            .source_nominal_instance(declaration, &substitution.with_regions(mapped))
-            .map_or(CheckedType::Nominal(id), CheckedType::Nominal))
+        let substitution = signature
+            .region_parameters
+            .iter()
+            .copied()
+            .zip(regions.iter().copied())
+            .filter(|(formal, actual)| formal != actual)
+            .collect::<Vec<_>>();
+        self.substitute_type_regions(CheckedType::Nominal(id), &substitution)
     }
 
     fn instantiate_goal_flat_element(
@@ -3164,30 +2931,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// One run element at a caller's instance [BLK-1].
     ///
-    /// The lift is one level, so an element that is itself a run instantiates
-    /// through the ordinary type path and is re-lifted; anything the lift does
-    /// not carry is the flat domain's own instantiation.
+    /// Complete slot types use the ordinary recursive type substitution and
+    /// are re-interned only after all formal type, const and region arguments
+    /// have been instantiated.
     fn instantiate_goal_element(
         &self,
         element: CheckedElement,
         signature: &FunctionSignature,
         regions: &[DeclarationId],
     ) -> Result<CheckedElement, CheckStop> {
-        if element.is_run() {
-            let ty = self.instantiate_goal_type(element.ty(), signature, regions)?;
-            return Self::run_element(ty)
-                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
-        }
-        let flat = element
-            .flat()
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let ty = self.instantiate_goal_type(flat.ty(), signature, regions)?;
-        if let Some(lifted) = Self::run_element(ty) {
-            return Ok(lifted);
-        }
-        Ok(CheckedElement::Flat(
-            self.instantiate_goal_flat_element(flat, signature, regions)?,
-        ))
+        let ty = self.instantiate_goal_type(self.element_type(element)?, signature, regions)?;
+        self.intern_element(ty)
     }
 
     fn instantiate_goal_const(
@@ -3350,7 +3104,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<&crate::NodePath, SemanticCompilerFailure> {
         match &issue.location {
             SemanticLocation::SourceNode(path, _) => Ok(path),
-            SemanticLocation::BundleRoot(_) => Err(SemanticCompilerFailure::InvalidResolution),
         }
     }
 
@@ -3418,7 +3171,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
-                        super::entailment::ObligationFamily::SystemRange => SemanticRule::Sys8,
                         super::entailment::ObligationFamily::KernelRequirement => {
                             SemanticRule::Blk0
                         }
@@ -3733,14 +3485,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "when the allocation must fit, establish `buffer_fits::<T>(n)` with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when allocation shortage is intended program behavior; otherwise restructure the allocation",
                             },
                         },
-                        super::entailment::ObligationFamily::SystemRange => SemanticIssue {
-                            rule: SemanticRule::Sys8,
-                            location,
-                            kind: SemanticIssueKind::UndischargedSystemRangeObligation {
-                                residual,
-                                mechanical_fix: "when the range must be valid, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the system range",
-                            },
-                        },
                         // [BLK-0]: a diagnostic arising in this domain cites
                         // BLK-0 and names the operation in its payload,
                         // exactly as an [OP-1] diagnostic names its family.
@@ -3819,10 +3563,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
         }
 
-        if matches!(
-            function.entailment.body_disposition,
-            super::model::CheckedBodyDisposition::Uninhabited { .. }
-        ) {
+        // PRE-1 signature contracts have a declaration premise, not selected
+        // WF return statements. Their ordinary aggregate was published by
+        // the same entailment schedule before caller goals were checked.
+        if function.body.is_none()
+            || matches!(
+                function.entailment.body_disposition,
+                super::model::CheckedBodyDisposition::Uninhabited { .. }
+            )
+        {
             return Ok(());
         }
         for proof in &function.entailment.postconditions {

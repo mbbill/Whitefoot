@@ -58,18 +58,18 @@ fn dispositions(proof: &FunctionPostconditionProof) -> Vec<PostconditionDisposit
     proof.exits.iter().map(|exit| exit.disposition).collect()
 }
 
-const COMMAND_MAIN: &str =
-    "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const ORDINARY_MAIN: &str =
+    "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
-fn command_entry_smoke() {
-    assert_complete(COMMAND_MAIN.as_bytes());
+fn ordinary_main_smoke() {
+    assert_complete(ORDINARY_MAIN.as_bytes());
 }
 
 #[test]
 fn requires_smoke() {
     let source = format!(
-        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  requires value == value;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  requires value == value;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     assert_complete(source.as_bytes());
 }
@@ -77,9 +77,36 @@ fn requires_smoke() {
 #[test]
 fn ensures_smoke() {
     let source = format!(
-        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     assert_complete(source.as_bytes());
+}
+
+#[test]
+fn published_relations_keep_distinct_scalar_result_ordinals_separate() {
+    let source = format!(
+        "fn pair() -> (zero: own i32, one: own i32) pure contract {{\n  ensures zero == 0_i32;\n  ensures one == 1_i32;\n}} {{\n  return 0_i32, 1_i32;\n}}\n\n{ORDINARY_MAIN}"
+    );
+    assert_complete(source.as_bytes());
+}
+
+#[test]
+fn contradictory_relations_on_one_scalar_result_ordinal_still_reject() {
+    let source = format!(
+        "fn contradictory() -> (zero: own i32, spare: own i32) pure contract {{\n  ensures zero == 0_i32;\n  ensures spare == 1_i32;\n  ensures zero == 1_i32;\n}} {{\n  return 0_i32, 1_i32;\n}}\n\n{ORDINARY_MAIN}"
+    );
+    assert_rule(
+        source.as_bytes(),
+        SemanticRule::Call6,
+        SemanticIssueKind::ContradictoryPublishedRelations {
+            relations: vec![
+                "ensures zero == 0_i32;".to_owned(),
+                "ensures spare == 1_i32;".to_owned(),
+                "ensures zero == 1_i32;".to_owned(),
+            ],
+            mechanical_fix: "state one consistent relation set: a contract whose clauses cannot hold together publishes every fact at every caller",
+        },
+    );
 }
 
 #[test]
@@ -91,7 +118,7 @@ fn a_computed_constant_offset_is_not_an_fn9_relation_operand() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -112,7 +139,7 @@ fn a_true_computed_constant_offset_is_still_outside_the_fn9_relation_form() {
   return next;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -141,7 +168,7 @@ fn select(index: own u64) -> result: own u8 pure contract {
   return values[selected];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -176,7 +203,7 @@ fn caller(table: own FixedVector<u8, 8>) -> result: own u8 reads(table) contract
   return lookup[value];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -220,7 +247,7 @@ fn caller(value: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -230,7 +257,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_non_bool_ensures_predicate_cites_op5() {
     let source = format!(
-        "fn invalid(value: own i32) -> out: own i32 pure contract {{\n  ensures value;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn invalid(value: own i32) -> out: own i32 pure contract {{\n  ensures value;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     assert_rule(
         source.as_bytes(),
@@ -242,7 +269,7 @@ fn a_non_bool_ensures_predicate_cites_op5() {
 #[test]
 fn plural_ensures_are_proved_and_published_as_independent_relations() {
     let source = format!(
-        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= value;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= value;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics_dark(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -277,7 +304,7 @@ fn plural_ensures_are_proved_and_published_as_independent_relations() {
 #[test]
 fn one_failed_ensure_withholds_every_summary_in_its_component() {
     let source = format!(
-        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= 0_i32;\n}} {{\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn identity(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= 0_i32;\n}} {{\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics_dark(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -311,7 +338,7 @@ fn one_failed_ensure_withholds_every_summary_in_its_component() {
 #[test]
 fn one_failed_relation_withholds_every_summary_in_a_mutual_scc() {
     let source = format!(
-        "fn left(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n}} {{\n  let ignored = right(value: value);\n  return value;\n}}\n\nfn right(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= 0_i32;\n}} {{\n  let ignored = left(value: value);\n  return value;\n}}\n\n{COMMAND_MAIN}"
+        "fn left(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n}} {{\n  let ignored = right(value: value);\n  return value;\n}}\n\nfn right(value: own i32) -> out: own i32 pure contract {{\n  ensures out == value;\n  ensures out >= 0_i32;\n}} {{\n  let ignored = left(value: value);\n  return value;\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics_dark(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -358,7 +385,7 @@ fn one_failed_relation_withholds_every_summary_in_a_mutual_scc() {
 #[test]
 fn an_inhabited_routed_ensure_without_a_selected_exit_is_rejected() {
     let source = format!(
-        "fn only_error(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  ensures when Ok(value: payload): payload == value;\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{COMMAND_MAIN}"
+        "fn only_error(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  ensures when Ok(value: payload): payload == value;\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -375,7 +402,7 @@ fn an_inhabited_routed_ensure_without_a_selected_exit_is_rejected() {
 #[test]
 fn an_uninhabited_routed_ensure_needs_no_exit_and_publishes_no_summary() {
     let source = format!(
-        "fn impossible(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  requires value == 0_i32;\n  requires value != 0_i32;\n  ensures when Ok(value: payload): payload == value;\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{COMMAND_MAIN}"
+        "fn impossible(value: own i32) -> out: own Result<i32, i32> pure contract {{\n  requires value == 0_i32;\n  requires value != 0_i32;\n  ensures when Ok(value: payload): payload == value;\n}} {{\n  return Err<i32, i32>(error: value);\n}}\n\n{ORDINARY_MAIN}"
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -414,7 +441,7 @@ fn a_checked_plain_postcondition_is_proved_at_its_selected_exit() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -435,7 +462,7 @@ fn entry_requirements_prove_postconditions_in_the_originating_context() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -457,7 +484,7 @@ fn entry_image_writes_are_retained_and_prevent_false_discharge() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -493,7 +520,7 @@ fn plain(out: &uniq i32) -> result: own i32 reads(out), writes(out) {
   return before;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -523,6 +550,8 @@ command fn main() -> status: own ExitStatus pure {
 
         let (call, carrier) = transfer
             .body
+            .as_deref()
+            .expect("WF body")
             .iter()
             .find_map(|statement| {
                 let call = match statement {
@@ -585,7 +614,7 @@ fn an_ordinary_loop_uses_the_exact_first_invalidation_event_without_a_snapshot()
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -614,6 +643,8 @@ command fn main() -> status: own ExitStatus pure {
         );
         let set = function
             .body
+            .as_deref()
+            .expect("WF body")
             .iter()
             .find_map(|statement| match statement {
                 CheckedStatement::Loop { body, .. } => body.iter().find_map(|statement| {
@@ -663,7 +694,7 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -703,7 +734,7 @@ fn measure_entry_datums_survive_element_writes_and_root_replacement() {
   return len_of(values);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -733,7 +764,7 @@ fn replaced(values: own FixedVector<u8, 2>) -> result: own u64 reads(values) con
   return size;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -759,7 +790,7 @@ command fn main() -> status: own ExitStatus pure {
   return count;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -788,7 +819,7 @@ fn selected_exits_aggregate_only_when_every_exit_in_the_view_discharges() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -819,7 +850,7 @@ fn caller(value: own i32) -> result: own i32 pure contract {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -838,7 +869,7 @@ fn caller(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -878,7 +909,7 @@ fn delivered(value: own i32) -> result: own i32 pure {
   return selected;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -904,7 +935,7 @@ fn caller(pair: &Pair) -> result: own i32 reads(pair.value) contract {
   return observed;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -935,7 +966,7 @@ fn caller(pair: own Pair) -> result: own i32 reads(pair.kept), writes(pair.chang
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -995,7 +1026,7 @@ fn a_cell_deref_actual_survives_a_cross_formal_owner_move_as_a_call_datum() {
   return value;
 }
 
-fn caller(heap: own Heap) -> result: own i32 reads(heap), writes(heap), allocates(heap) contract {
+fn caller['heap](heap: own Heap<'heap>) -> result: own i32 reads(heap), writes(heap), allocates(heap) contract {
   ensures result == 1_i32;
 } {
   region {
@@ -1011,7 +1042,7 @@ fn caller(heap: own Heap) -> result: own i32 reads(heap), writes(heap), allocate
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1064,7 +1095,7 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller(heap: own Heap) -> result: own unit reads(heap), writes(heap), allocates(heap) {
+fn caller['heap](heap: own Heap<'heap>) -> result: own unit reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 1_i32) {
       Ok(value: owner) => {
@@ -1081,7 +1112,7 @@ fn caller(heap: own Heap) -> result: own unit reads(heap), writes(heap), allocat
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1154,7 +1185,7 @@ fn caller() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1183,7 +1214,7 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller(heap: own Heap) -> result: own unit reads(heap), writes(heap), allocates(heap) {
+fn caller['heap](heap: own Heap<'heap>) -> result: own unit reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 1_i32) {
       Ok(value: owner) => {
@@ -1205,7 +1236,7 @@ fn caller(heap: own Heap) -> result: own unit reads(heap), writes(heap), allocat
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1230,7 +1261,7 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller(choose: own Bool, heap: own Heap) -> result: own unit reads(heap), writes(heap), allocates(heap) {
+fn caller['heap](choose: own Bool, heap: own Heap<'heap>) -> result: own unit reads(heap), writes(heap), allocates(heap) {
   region {
     match heap_box(store: &uniq heap, value: 1_i32) {
       Ok(value: owner) => {
@@ -1252,7 +1283,7 @@ fn caller(choose: own Bool, heap: own Heap) -> result: own unit reads(heap), wri
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1279,7 +1310,7 @@ fn caller(slot: own i32, replacement: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1339,7 +1370,7 @@ fn distinct_receiver(slot: own i32, other: own i32, replacement: own i32) -> res
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1400,7 +1431,7 @@ fn caller(outer: own i32, replacement: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1498,7 +1529,7 @@ fn computed(outer: own i32, replacement: own i32) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1543,7 +1574,7 @@ fn a_checked_ok_postcondition_selects_its_direct_payload() {
   return Ok<i32, Overflow>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1559,7 +1590,7 @@ fn an_ok_selector_rejects_an_empty_selected_exit_set() {
   return Err<i32, Overflow>(error: error);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1581,7 +1612,7 @@ fn an_ok_selector_rejects_a_stored_whole_result_return() {
   return move outcome;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1599,7 +1630,7 @@ fn length() -> result: own u64 pure contract {
   return 1_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1614,7 +1645,7 @@ fn projected_result_is_rejected_at_the_complete_final_relation() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1629,7 +1660,7 @@ fn a_nonbare_result_use_in_an_ensures_expression_is_still_rejected() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1665,11 +1696,171 @@ fn field_length(values: own Values) -> result: own u64 reads(values.items) contr
   return len_of(values.items);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
+}
+
+fn measured_call_return_source(generic: bool, bind_result: bool, expected: u64) -> String {
+    let (parameters, element, arguments) = if generic {
+        ("<T: linear>", "T", "::<box<u64>>")
+    } else {
+        ("", "box<u64>", "")
+    };
+    let build_arguments = if generic { "::<T>" } else { "" };
+    let returned = if bind_result {
+        format!("let filled = build{build_arguments}(value: move value);\n  return move filled;")
+    } else {
+        format!("return build{build_arguments}(value: move value);")
+    };
+    format!(
+        "fn build{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  let vacant = fixed_vector::<{element}, 1>();\n  region {{\n    place_back(vector: &uniq vacant, value: move value);\n  }}\n  return move vacant;\n}}\n\nfn singleton{parameters}(value: own {element}) -> result: own FixedVector<{element}, 1> pure contract {{\n  ensures len_of(result) == {expected}_u64;\n}} {{\n  {returned}\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  let value = box_new(17_u64);\n  let items = singleton{arguments}(value: move value);\n  return exit_status(code: 0_u8);\n}}\n"
+    )
+}
+
+#[test]
+fn a_direct_measured_call_return_reports_its_unsupported_result_datum() {
+    for generic in [false, true] {
+        let source = measured_call_return_source(generic, false, 1);
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("an unnamed call result has no FN-9 return datum: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Fn9);
+            assert!(matches!(
+                issue.kind(),
+                SemanticIssueKind::InvalidPostconditionReturn
+            ));
+        });
+        assert_rule_at(
+            source.as_bytes(),
+            SemanticRule::Fn9,
+            if generic {
+                "return build::<T>(value: move value);"
+            } else {
+                "return build(value: move value);"
+            },
+        );
+    }
+}
+
+#[test]
+fn a_bound_measured_call_return_preserves_the_kernel_result_relation() {
+    for generic in [false, true] {
+        assert_complete(measured_call_return_source(generic, true, 1).as_bytes());
+    }
+}
+
+#[test]
+fn a_measured_postcondition_cannot_omit_a_direct_call_return() {
+    for returned in ["fixed_vector::<u8, 1>()", "empty()"] {
+        let source = format!(
+            "fn empty() -> result: own FixedVector<u8, 1> pure {{\n  return fixed_vector::<u8, 1>();\n}}\n\nfn choose(keep: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  ensures len_of(result) == 1_u64;\n}} {{\n  if keep {{\n    let vacant = fixed_vector::<u8, 1>();\n    region {{\n      place_back(vector: &uniq vacant, value: 17_u8);\n    }}\n    let full = move vacant;\n    return move full;\n  }}\n  return {returned};\n}}\n\n{ORDINARY_MAIN}"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("a proved branch must not hide an invalid selected return");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Fn9);
+            assert!(matches!(
+                issue.kind(),
+                SemanticIssueKind::InvalidPostconditionReturn
+            ));
+        });
+        assert_rule_at(
+            source.as_bytes(),
+            SemanticRule::Fn9,
+            &format!("return {returned};"),
+        );
+    }
+}
+
+fn measured_recursive_return_source(bind_result: bool) -> String {
+    let returned = if bind_result {
+        "let forwarded = forward(items: move items, again: again);\n    return move forwarded;"
+    } else {
+        "return forward(items: move items, again: again);"
+    };
+    format!(
+        "fn forward(items: own FixedVector<u8, 1>, again: own Bool) -> result: own FixedVector<u8, 1> pure contract {{\n  requires len_of(items) == 1_u64;\n  ensures len_of(result) == 1_u64;\n}} {{\n  if again {{\n    {returned}\n  }}\n  return move items;\n}}\n\n{ORDINARY_MAIN}"
+    )
+}
+
+#[test]
+fn a_measured_recursive_return_requires_a_named_result_datum() {
+    let source = measured_recursive_return_source(false);
+    with_semantics(source.as_bytes(), |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("a recursive call has no implicit return datum");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn9);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::InvalidPostconditionReturn
+        ));
+    });
+    assert_rule_at(
+        source.as_bytes(),
+        SemanticRule::Fn9,
+        "return forward(items: move items, again: again);",
+    );
+}
+
+#[test]
+fn a_bound_measured_recursive_return_cannot_assume_its_own_summary() {
+    let source = measured_recursive_return_source(true);
+    assert_fn9_unproved(source.as_bytes());
+    assert_rule_at(
+        source.as_bytes(),
+        SemanticRule::Fn9,
+        "return move forwarded;",
+    );
+}
+
+#[test]
+fn a_bound_measured_call_return_still_refutes_a_wrong_postcondition() {
+    for generic in [false, true] {
+        let source = measured_call_return_source(generic, true, 0);
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("a wrong length relation must fail FN-9: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Fn9);
+            let SemanticIssueKind::UndischargedPostcondition(detail) = issue.kind() else {
+                panic!("a selected return must retain its proof failure: {issue:?}");
+            };
+            assert_eq!(
+                detail.disposition,
+                crate::PostconditionProofDisposition::Refuted
+            );
+        });
+        assert_rule_at(source.as_bytes(), SemanticRule::Fn9, "return move filled;");
+    }
+}
+
+#[test]
+fn an_unselected_error_skips_other_measured_call_return_datums() {
+    for late_route in [false, true] {
+        let (results, success, failure) = if late_route {
+            (
+                "items: own FixedVector<u8, 1>, status: own Result<u64, u8>",
+                "move full, Ok<u64, u8>(value: 0_u64)",
+                "fixed_vector::<u8, 1>(), Err<u64, u8>(error: 1_u8)",
+            )
+        } else {
+            (
+                "status: own Result<u64, u8>, items: own FixedVector<u8, 1>",
+                "Ok<u64, u8>(value: 0_u64), move full",
+                "Err<u64, u8>(error: 1_u8), fixed_vector::<u8, 1>()",
+            )
+        };
+        let source = format!(
+            "fn build(keep: own Bool) -> ({results}) pure contract {{\n  ensures when status is Ok(value: accepted): len_of(items) == 1_u64;\n}} {{\n  if keep {{\n    let empty = fixed_vector::<u8, 1>();\n    region {{\n      place_back(vector: &uniq empty, value: 17_u8);\n    }}\n    let full = move empty;\n    return {success};\n  }}\n  return {failure};\n}}\n\n{ORDINARY_MAIN}"
+        );
+        assert_complete(source.as_bytes());
+    }
 }
 
 #[test]
@@ -1685,7 +1876,7 @@ fn from_shared_alias(owner: &Pair) -> result: own i32 reads(owner.value) contrac
   return deref(alias).value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1706,7 +1897,7 @@ fn a_concrete_const_substitution_is_retained_with_a_selected_length() {
   return len_of(values);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u8, 1>();
   let one = count::<1>(values: move values);
   return exit_status(code: 0_u8);
@@ -1716,8 +1907,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_ensures_bearing_conformance_binding_is_fn3_before_proof() {
-    let source = br#"contract Maker {
+fn an_actual_with_a_different_ensures_is_fn4_before_proof() {
+    let source = br#"formal Maker {
   fn make() -> result: own i32 pure;
 }
 
@@ -1727,20 +1918,20 @@ fn make() -> result: own i32 pure contract {
   return 1_i32;
 }
 
-conform i32: Maker {
+actual Made : Maker {
   make = make;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_at(source, SemanticRule::Fn3, "make = make;");
+    assert_rule_at(source, SemanticRule::Fn4, "make = make;");
 }
 
 #[test]
-fn an_invalid_contract_precedes_the_postcondition_proof_boundary() {
-    let source = br#"contract Invalid<T: affine> {
+fn an_invalid_formal_header_precedes_the_postcondition_proof_boundary() {
+    let source = br#"formal Invalid<fn make() -> result: own u64 pure> {
 }
 
 fn identity(value: own i32) -> result: own i32 pure contract {
@@ -1749,19 +1940,22 @@ fn identity(value: own i32) -> result: own i32 pure contract {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
         source,
         SemanticRule::Fn3,
-        SemanticIssueKind::GenericContract,
+        SemanticIssueKind::type_mismatch(
+            "a formal header contains only flat type and const parameters",
+            "a nonmatching behavior argument",
+        ),
     );
 }
 
 #[test]
-fn an_invalid_contract_law_precedes_the_postcondition_proof_boundary() {
+fn retired_law_syntax_precedes_the_postcondition_proof_boundary() {
     let source = br#"contract InvalidLaw {
   fn combine(x: own u64, y: own u64) -> result: own u64 pure;
   law identity(combine, unit);
@@ -1773,15 +1967,13 @@ fn identity(value: own i32) -> result: own i32 pure contract {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Fn4,
-        SemanticIssueKind::InvalidContractLaw,
-    );
+    // D7 retires the law mechanism. Preserve the old source as a grammar
+    // rejection; it cannot supply or bypass any postcondition proof.
+    super::assert_parse_rule(source, crate::SyntaxRule::Gram2);
 }
 
 #[test]
@@ -1792,7 +1984,7 @@ fn invalid_selector_precedes_an_unresolved_name_in_its_entry() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1817,7 +2009,7 @@ fn second() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1836,7 +2028,7 @@ fn admitted_selector_forwards_the_original_entry_lookup_issue() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1865,7 +2057,7 @@ fn entry_inventory_precedes_a_poisoned_body_constructor() {
   return Missing();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1889,7 +2081,7 @@ fn unused_generic_entry_issue_precedes_its_body_semantics() {
   return fixed_vector::<u8, 1>();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1913,7 +2105,7 @@ fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
   return Ok<i32, Overflow>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1926,9 +2118,7 @@ command fn main() -> status: own ExitStatus pure {
             issue.kind(),
             &SemanticIssueKind::InvalidPostconditionSelector
         );
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("selector must cite a source node");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(&source[start..end], b"ForeignCase(value: payload)");
@@ -1943,7 +2133,7 @@ fn concrete_generic_instances_do_not_reuse_symbolic_selector_class() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let good = identity::<i32>(value: 1_i32);
   let flag = True();
   let bad = identity::<Bool>(value: flag);
@@ -2008,7 +2198,7 @@ fn unused_numeric_bounds_preserve_selector_class_information() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2028,7 +2218,7 @@ fn unavailable_generic_type_argument_does_not_invent_a_selector_instance() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let unavailable = generic::<Missing>(value: unit);
   return exit_status(code: 0_u8);
 }
@@ -2053,7 +2243,7 @@ fn unavailable_const_argument_does_not_invent_a_selector_instance() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let unavailable = generic::<unit, missing>(value: unit);
   return exit_status(code: 0_u8);
 }
@@ -2078,7 +2268,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2101,7 +2291,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2112,22 +2302,22 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// B7c4b left the vehicle on the retiring surface: what this case needs is a
-/// header whose own [TYPE-2] violation must win over the unresolved selector,
-/// and `array<T, 1>` at an `affine` parameter is that violation. A run admits
-/// a symbolic type parameter as its element, so the migrated program records
-/// the resolution issue instead — a different verdict. It retires with
-/// `array<T, n>`.
+/// An unavailable header must report its own premise failure before the
+/// unresolved selector. A full array now admits an affine element, so use
+/// the real PROV-6 failure of forwarding an affine parameter to a copy bound.
 #[test]
 fn unavailable_symbolic_header_does_not_forward_its_entry_issue() {
-    let source =
-        br#"fn unavailable<T: affine>(value: own array<T, 1>) -> result: own T pure contract {
+    let source = br#"struct CopyOnly<T: copy> {
+  value: T;
+}
+
+fn unavailable<T: affine>(value: own CopyOnly<T>) -> result: own T pure contract {
   ensures result == missing;
 } {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2135,14 +2325,25 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
             panic!("ordinary header issue must win, got {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Type2);
+        assert_eq!(issue.rule(), SemanticRule::Prov6);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::LinearityBoundMismatch {
+                bound: "copy",
+                actual: "affine",
+                ..
+            }
+        ));
     });
 }
 
 #[test]
 fn unavailable_record_does_not_suppress_a_later_independent_selector() {
-    let source =
-        br#"fn unavailable<T: affine>(value: own array<T, 1>) -> result: own T pure contract {
+    let source = br#"struct CopyOnly<T: copy> {
+  value: T;
+}
+
+fn unavailable<T: affine>(value: own CopyOnly<T>) -> result: own T pure contract {
   ensures result == missing;
 } {
   return value;
@@ -2154,7 +2355,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2173,7 +2374,7 @@ fn malformed_trailing_argument_does_not_enter_final_selector_metadata() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bad = generic::<i32, i32>(value: 1_i32);
   return exit_status(code: 0_u8);
 }
@@ -2198,7 +2399,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2209,14 +2410,17 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// B7c4b left the vehicle on the retiring surface for the same reason the
-/// symbolic-header case above states: `FixedVector<T, 2>` is a valid field, so
-/// the migrated `Invalid` is not invalid and neither this case nor the one
-/// below it would test what it names.
+/// The symbolic affine parameter cannot satisfy CopyOnly's copy bound,
+/// although the selected concrete argument i32 can. Checking just that
+/// concrete instance would miss the referenced template's PROV-6 failure.
 #[test]
 fn referenced_generic_nominal_must_pass_its_symbolic_template_judgment() {
-    let source = br#"struct Invalid<T: affine> {
-  values: array<T, 2>;
+    let source = br#"struct CopyOnly<T: copy> {
+  value: T;
+}
+
+struct Invalid<T: affine> {
+  values: CopyOnly<T>;
 }
 
 fn probe(value: own Invalid<i32>) -> result: own unit pure contract {
@@ -2225,7 +2429,7 @@ fn probe(value: own Invalid<i32>) -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2233,14 +2437,26 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
             panic!("the referenced symbolic nominal premise must win: {outcome:?}");
         };
-        assert_eq!(issue.rule(), SemanticRule::Type2);
+        assert_eq!(issue.rule(), SemanticRule::Prov6);
+        assert!(matches!(
+            issue.kind(),
+            SemanticIssueKind::LinearityBoundMismatch {
+                bound: "copy",
+                actual: "affine",
+                ..
+            }
+        ));
     });
 }
 
 #[test]
 fn unrelated_invalid_generic_nominal_does_not_suppress_selector_admission() {
-    let source = br#"struct Invalid<T: affine> {
-  values: array<T, 2>;
+    let source = br#"struct CopyOnly<T: copy> {
+  value: T;
+}
+
+struct Invalid<T: affine> {
+  values: CopyOnly<T>;
 }
 
 fn invalid() -> result: own unit pure contract {
@@ -2249,7 +2465,7 @@ fn invalid() -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2287,7 +2503,7 @@ fn bridge(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2310,12 +2526,13 @@ command fn main() -> status: own ExitStatus pure {
                     .windows(2)
                     .all(|pair| pair[0].0 < pair[1].0)
             );
-            assert!(
-                component
-                    .summaries
-                    .windows(2)
-                    .all(|pair| pair[0].function.0 < pair[1].function.0)
-            );
+            assert!(component.summaries.windows(2).all(|pair| (
+                pair[0].function.0,
+                pair[0].relation_ordinal
+            ) < (
+                pair[1].function.0,
+                pair[1].relation_ordinal
+            )));
             assert!(component.summaries.iter().all(|summary| {
                 summary.component == component.ordinal
                     && component.functions.contains(&summary.function)
@@ -2390,7 +2607,7 @@ fn second(value: own i32) -> result: own i32 pure contract {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2412,12 +2629,13 @@ command fn main() -> status: own ExitStatus pure {
                 .all(|pair| pair[0].0 < pair[1].0)
         );
         assert_eq!(component.summaries.len(), 2);
-        assert!(
-            component
-                .summaries
-                .windows(2)
-                .all(|pair| pair[0].function.0 < pair[1].function.0)
-        );
+        assert!(component.summaries.windows(2).all(|pair| (
+            pair[0].function.0,
+            pair[0].relation_ordinal
+        ) < (
+            pair[1].function.0,
+            pair[1].relation_ordinal
+        )));
         for summary in &component.summaries {
             let proof = checked.data.functions[summary.function.0 as usize]
                 .entailment
@@ -2440,7 +2658,7 @@ fn an_independently_proved_self_recursive_component_publishes_its_summary() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2489,7 +2707,7 @@ fn right(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2564,7 +2782,7 @@ fn second(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2601,7 +2819,7 @@ fn concrete_generic_instances_receive_distinct_verified_summary_identities() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = identity::<i32>(value: 1_i32);
   let wide = identity::<u64>(value: 1_u64);
   return exit_status(code: 0_u8);
@@ -2648,7 +2866,7 @@ fn wrapper<U: affine>() -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2669,12 +2887,12 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_unit_without_postconditions_keeps_the_empty_schedule_fast_path() {
+fn a_unit_without_writer_postconditions_still_publishes_prelude_contracts() {
     let source = br#"fn helper(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let ignored = helper(value: 1_i32);
   return exit_status(code: 0_u8);
 }
@@ -2683,7 +2901,152 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("no-postcondition control must check completely: {outcome:?}");
         };
-        assert!(checked.data.postcondition_schedule.components.is_empty());
+        // v0.58 PRE-1 records contribute ordinary signature contracts even
+        // when every writer-defined function has no postcondition.
+        assert!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .all(|function| function.postconditions.is_empty())
+        );
+        let declared = checked
+            .data
+            .functions
+            .iter()
+            .filter(|function| function.body.is_none() && !function.postconditions.is_empty())
+            .collect::<Vec<_>>();
+        assert!(!declared.is_empty());
+        for function in declared {
+            for proof in &function.entailment.postconditions {
+                assert!(proof.aggregate.discharged);
+                assert!(proof.summary.is_some());
+                assert!(proof.exits.is_empty());
+            }
+        }
     });
     assert_complete(source);
+}
+
+/// An endpoint outside an enum is an ordinary multi-result datum [CALL-4].
+/// Supplied signatures and checked WF bodies publish exactly the same bounds;
+/// observing the independent status does not need delayed enum fact transfer.
+#[test]
+fn ordinary_directory_result_bounds_cross_both_callable_body_forms() {
+    let source = br#"fn forward(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) reads(source, destination), writes(source, destination) contract {
+  requires start <= end;
+  requires end <= len_of(deref(destination));
+  ensures start <= next;
+  ensures next <= end;
+} {
+  region {
+    let (outcome, cursor, count) = directory_next(source: &uniq deref(source), destination: &uniq deref(destination), start: start, end: end);
+    match move outcome {
+      Ok(value: done) => {
+        return Ok<unit, ListStop>(value: unit), cursor, count;
+      }
+      Err(error: stopped) => {
+        return Err<unit, ListStop>(error: move stopped), start, count;
+      }
+    }
+  }
+}
+
+fn observe(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own unit reads(source, destination), writes(source, destination) contract {
+  requires start <= end;
+  requires end <= len_of(deref(destination));
+} {
+  region {
+    let (outcome, cursor, count) = forward(source: &uniq deref(source), destination: &uniq deref(destination), start: start, end: end);
+    match move outcome {
+      Ok(value: done) => {
+        invariant bounded_low: start <= cursor;
+        invariant bounded_high: cursor <= end;
+      }
+      Err(error: stopped) => {
+        invariant bounded_low: start <= cursor;
+        invariant bounded_high: cursor <= end;
+      }
+    }
+  }
+  return unit;
+}
+"#;
+    super::with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, crate::SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn a_conditional_unique_call_keeps_the_other_branch_measure_image() {
+    for branches in [
+        "    if turn == 0_u64 {\n      region {\n        touch(values: &uniq values);\n      }\n    } else {\n      invariant untouched: len_of(values) >= 16_u64;\n    }",
+        "    if turn == 0_u64 {\n      invariant untouched: len_of(values) >= 16_u64;\n    } else {\n      region {\n        touch(values: &uniq values);\n      }\n    }",
+    ] {
+        let source = format!(
+            r#"fn touch(values: &uniq buffer<u8>) -> result: own unit writes(values) contract {{
+  requires len_of(deref(values)) >= 1_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values)));
+}} {{
+  set deref(values)[0_u64] = 7_u8;
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  let values = buffer_new(16_u64, 0_u8);
+  let turn = 0_u64;
+  loop @rounds (
+    invariant room: len_of(values) >= 16_u64
+  ) {{
+    if turn >= 2_u64 {{
+      break @rounds;
+    }}
+{branches}
+    let fresh = buffer_new(16_u64, 0_u8);
+    let previous = replace values = move fresh;
+    set turn = turn +wrap 1_u64;
+  }}
+  return exit_status(code: 0_u8);
+}}
+"#
+        );
+        assert_complete(source.as_bytes());
+    }
+}
+
+#[test]
+fn a_unique_replacement_still_kills_its_own_branch_measure_image() {
+    let source = br#"fn clear(values: &uniq FixedVector<u8, 16>) -> result: own unit reads(values), writes(values) {
+  let empty = fixed_vector::<u8, 16>();
+  let previous = replace deref(values) = move empty;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = fixed_vector::<u8, 16>();
+  region {
+    place_back(vector: &uniq values, value: 7_u8);
+  }
+  invariant before: len_of(values) >= 1_u64;
+  region {
+    clear(values: &uniq values);
+  }
+  invariant stale: len_of(values) >= 1_u64;
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue } = outcome else {
+            panic!("a changed referent must lose its old measure: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        let SemanticIssueKind::UndischargedLocalInvariant { name, .. } = issue.kind() else {
+            panic!("the old measure must fail at the local invariant: {issue:?}");
+        };
+        assert_eq!(name, "stale");
+    });
 }

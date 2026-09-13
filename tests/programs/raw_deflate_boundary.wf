@@ -1,3 +1,92 @@
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
 const usage_text: FixedVector<u8, 33> =[117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 32_u8, 70_u8, 73_u8, 76_u8, 69_u8, 10_u8];
 
 const reason_unreadable: FixedVector<u8, 55> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 114_u8, 101_u8, 97_u8, 100_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 99_u8, 111_u8, 109_u8, 112_u8, 114_u8, 101_u8, 115_u8, 115_u8, 101_u8, 100_u8, 32_u8, 105_u8, 110_u8, 112_u8, 117_u8, 116_u8, 10_u8];
@@ -95,7 +184,7 @@ fn inflate_status(error: own InflateError) -> result: own u8 pure {
   }
 }
 
-fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(factory, output, source), writes(factory, output) contract {
   define source_length = len_of(source);
   requires length <= source_length;
 } {
@@ -108,7 +197,7 @@ fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u6
       break @publish;
     }
     region {
-      match write_once(output: &uniq deref(output), source: &source, start: sent, end: length) {
+      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -195,8 +284,8 @@ fn assemble_reason(report: own MutSlice<u8>, capacity: own u64, reason: own u8) 
   return length;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files) {
-  doc "Reads one raw DEFLATE file named on the command line through the system read path; every boundary outcome reaches its own status.";
+fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(out, err, files) {
+  doc "Reads one raw DEFLATE file named on the command line through ordinary read_at calls; every boundary outcome reaches its own status.";
   region 'workspace {
     let workspace = arena_frame::<131072, 1, 'workspace>();
     region {
@@ -207,7 +296,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         invariant spare: room_of(scratch) + at >= 4097_u64,
         invariant flat: head_of(scratch) <= 0_u64
       ) {
-        set scratch = place_back(vector: move scratch, value: 0_u8);
+        place_back(vector: &uniq scratch, value: 0_u8);
       }
       let report = arena_vector_proved::<u8>(store: &uniq workspace, count: 128_u64);
       for @reserve_report (
@@ -216,12 +305,12 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         invariant spare: room_of(report) + at >= 128_u64,
         invariant flat: head_of(report) <= 0_u64
       ) {
-        set report = place_back(vector: move report, value: 0_u8);
+        place_back(vector: &uniq report, value: 0_u8);
       }
       let report_room = len_of(report);
       let arguments = 0_u64;
       region {
-        set arguments = args_count(args: &args);
+        set arguments = args_count(args: args);
       }
       let named = arguments >= 2_u64;
       if named {
@@ -231,7 +320,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 1_u8);
           let publish_view = slice_of(&report);
           region {
-            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
               Ok(value: published) => {
               }
               Err(error: problem) => {
@@ -245,37 +334,37 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       let filled = 0_u64;
       let file_offset = 0_u64;
       region {
-        match arg_get(args: &args, position: 1_u64) {
+        match arg_get(args: args, position: 1_u64) {
           Ok(value: text) => {
             match relative_path(value: move text) {
               Ok(value: path) => {
                 region {
-                  match reserve_handle(factory: &uniq files) {
-                    Ok(value: permit) => {
-                      match open_read(permit: move permit, root: &cwd, path: &path) {
-                        FileOpened(value: file) => {
-                          let ended = 0_u8;
+                  match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
+                    FileOpened(value: file) => {
+                      let ended = 0_u8;
+                      region {
+                        let scratch_window = mut_slice_of(&uniq scratch);
+                        loop @chunks {
+                          let within_scratch = filled <= 4097_u64;
+                          if within_scratch {
+                          } else {
+                            set ended = 2_u8;
+                            break @chunks;
+                          }
+                          let spare = 4097_u64 -wrap filled;
+                          let full = spare == 0_u64;
+                          if full {
+                            break @chunks;
+                          }
                           region {
-                            let scratch_window = mut_slice_of(&uniq scratch);
-                            loop @chunks {
-                              let within_scratch = filled <= 4097_u64;
-                              if within_scratch {
-                              } else {
-                                set ended = 2_u8;
-                                break @chunks;
+                            match read_at(factory: &uniq deref(files), file: &uniq file, destination: &uniq scratch_window, file_offset: file_offset, start: filled, end: 4097_u64) {
+                              Ok(value: endpoint) => {
+                                let received = endpoint -wrap filled;
+                                set file_offset = file_offset +wrap received;
+                                set filled = endpoint;
                               }
-                              let spare = 4097_u64 -wrap filled;
-                              let full = spare == 0_u64;
-                              if full {
-                                break @chunks;
-                              }
-                              region {
-                                match read_at(file: &file, destination: &uniq scratch_window, file_offset: file_offset, start: filled, end: 4097_u64) {
-                                  ReadBytes(next: endpoint) => {
-                                    let received = endpoint -wrap filled;
-                                    set file_offset = file_offset +wrap received;
-                                    set filled = endpoint;
-                                  }
+                              Err(error: read_stop_15) => {
+                                match read_stop_15 {
                                   ReadEnd() => {
                                     set ended = 1_u8;
                                   }
@@ -284,21 +373,19 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                   }
                                 }
                               }
-                              if ended != 0_u8 {
-                                break @chunks;
-                              }
                             }
                           }
-                          if ended == 2_u8 {
-                            set status = 2_u8;
+                          if ended != 0_u8 {
+                            break @chunks;
                           }
                         }
-                        FileOpenFailed(error: problem, permit: refused_2) => {
-                          set status = 2_u8;
-                        }
                       }
+                      if ended == 2_u8 {
+                        set status = 2_u8;
+                      }
+                      close_read(factory: &uniq deref(files), file: move file);
                     }
-                    Err(error: spent) => {
+                    FileOpenFailed(error: problem) => {
                       set status = 2_u8;
                     }
                   }
@@ -320,7 +407,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
           let publish_view = slice_of(&report);
           region {
-            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
               Ok(value: published) => {
               }
               Err(error: problem) => {
@@ -337,7 +424,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 3_u8);
           let publish_view = slice_of(&report);
           region {
-            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
               Ok(value: published) => {
               }
               Err(error: problem) => {
@@ -354,7 +441,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 4_u8);
           let publish_view = slice_of(&report);
           region {
-            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
               Ok(value: published) => {
               }
               Err(error: problem) => {
@@ -373,7 +460,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         invariant spare_hi: room_of(stream) + at <= 4096_u64,
         invariant flat: head_of(stream) <= 0_u64
       ) {
-        set stream = place_back(vector: move stream, value: 0_u8);
+        place_back(vector: &uniq stream, value: 0_u8);
       }
       region {
         let scratch_view = slice_of(&scratch);
@@ -389,7 +476,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         invariant spare: room_of(decoded) + at >= 65536_u64,
         invariant flat: head_of(decoded) <= 0_u64
       ) {
-        set decoded = place_back(vector: move decoded, value: 0_u8);
+        place_back(vector: &uniq decoded, value: 0_u8);
       }
       let decoded_length = 0_u64;
       region {
@@ -412,7 +499,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
           let publish_view = slice_of(&report);
           region {
-            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
               Ok(value: published) => {
               }
               Err(error: problem) => {
@@ -431,7 +518,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: 7_u8);
           let publish_view = slice_of(&report);
           region {
-            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
               Ok(value: published) => {
               }
               Err(error: problem) => {
@@ -444,7 +531,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       region {
         let decoded_view = slice_of(&decoded);
         region {
-          match publish_all(output: &uniq out, source: decoded_view, length: decoded_length) {
+          match publish_all(factory: &uniq deref(files), output: &uniq deref(out), source: decoded_view, length: decoded_length) {
             Ok(value: published) => {
             }
             Err(error: problem) => {
@@ -459,7 +546,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           let assembled = assemble_reason(report: move report_window, capacity: report_room, reason: status);
           let publish_view = slice_of(&report);
           region {
-            match publish_all(output: &uniq err, source: publish_view, length: assembled) {
+            match publish_all(factory: &uniq deref(files), output: &uniq deref(err), source: publish_view, length: assembled) {
               Ok(value: published) => {
               }
               Err(error: problem) => {
@@ -471,5 +558,15 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       }
       return exit_status(code: 0_u8);
     }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(args: &args, cwd: &cwd, out: &uniq out, err: &uniq err, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
 }

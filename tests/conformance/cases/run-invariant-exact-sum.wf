@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "A counted loop and affine invariant prove every exact sum step before execution: sum 0..4 == 10.";
   let sum = 0_u64;
   for (

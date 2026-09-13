@@ -9,7 +9,7 @@ fn count_touched(limit: own u64) -> value: own u64 pure {
   return touched;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: [INV-1] the header invariant fails at the first loop header (base case)";
   for (
     i in 0_u64..0_u64,

@@ -1,9 +1,17 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u8, 4>();
-  set table = place_back(vector: move table, value: 7_u8);
-  set table = place_back(vector: move table, value: 7_u8);
-  set table = place_back(vector: move table, value: 7_u8);
-  set table = place_back(vector: move table, value: 7_u8);
+  region {
+    place_back(vector: &uniq table, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 7_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 7_u8);
+  }
   region {
     let first = slice_of(&table);
     let second = slice_of(&table);

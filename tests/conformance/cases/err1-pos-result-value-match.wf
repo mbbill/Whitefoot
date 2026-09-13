@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Recoverable error is a value: a `Result` dispatched by `match` arms [ERR-1].";
   let v = match 40_i32 +checked 2_i32 {
     Ok(value: w) => {

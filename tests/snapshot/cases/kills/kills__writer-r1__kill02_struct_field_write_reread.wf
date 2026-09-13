@@ -16,7 +16,7 @@ fn bump(c: &uniq Counter) -> result: own Bool reads(c.value, c.limit), writes(c.
   return still_room;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let final_counter = Counter(value: 0_u32, limit: 3_u32);
   let has_room = True();
   region {

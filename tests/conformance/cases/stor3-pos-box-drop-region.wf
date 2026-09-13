@@ -1,4 +1,4 @@
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "A cell taken at the general store inside a region is released by a compiler-derived walk on the region-exit edge, in reverse declaration order [STOR-3]; surfaced in the elaborated artifact [DIAG-2].";
   region {
     match heap_box(store: &uniq heap, value: 9_i32) {

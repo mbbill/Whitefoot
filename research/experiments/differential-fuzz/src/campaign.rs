@@ -38,9 +38,6 @@ struct Tally {
     pair_denied: u64,
     loop_permitted: u64,
     loop_denied: u64,
-    stage_permitted: u64,
-    stage_denied: u64,
-    programs_with_permitted_stage: u64,
     programs_with_permitted_pair: u64,
     findings: Vec<String>,
 }
@@ -51,11 +48,6 @@ impl Tally {
         self.pair_denied += ledger.pair_denied;
         self.loop_permitted += ledger.loop_permitted;
         self.loop_denied += ledger.loop_denied;
-        self.stage_permitted += ledger.stage_permitted;
-        self.stage_denied += ledger.stage_denied;
-        if ledger.stage_permitted > 0 {
-            self.programs_with_permitted_stage += 1;
-        }
         if ledger.pair_permitted > 0 {
             self.programs_with_permitted_pair += 1;
         }
@@ -101,13 +93,11 @@ pub fn check_one(paths: &Paths, seed: u64) -> Result<(), String> {
     );
     if let Some(ledger) = &verdict.ledger {
         println!(
-            "ledger: pairs {}/{} permitted, loops {}/{} permitted, stages {}/{} permitted",
+            "ledger: pairs {}/{} permitted, loops {}/{} permitted",
             ledger.pair_permitted,
             ledger.pair_permitted + ledger.pair_denied,
             ledger.loop_permitted,
-            ledger.loop_permitted + ledger.loop_denied,
-            ledger.stage_permitted,
-            ledger.stage_permitted + ledger.stage_denied
+            ledger.loop_permitted + ledger.loop_denied
         );
     }
     match verdict.judgment {
@@ -397,15 +387,7 @@ fn render(tally: &Tally, elapsed: Duration, options: &Options) -> String {
         "  PAR-2 loops      {:>6} permitted, {:>6} denied\n",
         tally.loop_permitted, tally.loop_denied
     ));
-    text.push_str(&format!(
-        "  PAR-3 stages     {:>6} permitted, {:>6} denied\n",
-        tally.stage_permitted, tally.stage_denied
-    ));
-    text.push_str(&format!(
-        "  programs holding at least one permitted PAR-3 stage: {} ({:.1}% of accepted)\n",
-        tally.programs_with_permitted_stage,
-        percentage(tally.programs_with_permitted_stage, tally.accepted)
-    ));
+    text.push_str("  PAR-3 stage permission is retired by v0.58; file-loop workloads remain.\n");
     text.push_str(&format!(
         "  programs holding at least one permitted PAR-1 pair:  {} ({:.1}% of accepted)\n",
         tally.programs_with_permitted_pair,

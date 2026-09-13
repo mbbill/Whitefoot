@@ -10,8 +10,14 @@ compiler:
 
 check: compiler
 	$(MAKE) -C authority check
+	$(MAKE) -C foundation check
 	$(MAKE) -C lifecycle check WHITEFOOTC="$(WHITEFOOTC)"
 	$(MAKE) -C dense check WHITEFOOTC="$(WHITEFOOTC)"
+	$(MAKE) -C costs check
+	$(MAKE) -C families check WHITEFOOTC="$(WHITEFOOTC)"
 
 measure: check
+	$(MAKE) -C foundation measure
 	$(MAKE) -C dense measure WHITEFOOTC="$(WHITEFOOTC)"
+	$(MAKE) -C costs measure
+	$(MAKE) -C families measure WHITEFOOTC="$(WHITEFOOTC)"

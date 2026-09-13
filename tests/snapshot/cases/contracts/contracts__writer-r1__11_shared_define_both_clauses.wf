@@ -8,7 +8,7 @@ fn clamp_input(value: own u32, floor: own u32, ceiling: own u32) -> result: own 
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: two independent ensures clauses, a lower and an upper bound, both proved from the same requires range.";
   let result = clamp_input(value: 42_u32, floor: 10_u32, ceiling: 90_u32);
   if result == 42_u32 {

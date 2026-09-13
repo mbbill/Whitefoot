@@ -14,6 +14,12 @@ Keep this decision and its linked evidence current as implementation replaces th
 old container paths. `DESIGN.md` points here for the superseding container choice;
 its separate resource research is outside this selection.
 
+[FOUNDATION.md](FOUNDATION.md) continues from the merged owned-place implementation
+with the performance-ceiling comparison. Its earlier pool-driven implementation
+selection is reopened: common containers and kernel/database/cache-server cases
+must establish expressibility and cost before a broader foundation is selected.
+That research does not change the merged source behavior or measured scope here.
+
 The implementation examined was `ea97222adc0aff481df320f4c39624eb6813e488`, rebased as
 `eff095c701b473a0108822a16cd1e1274c43f621` onto main
 `8a5ad14b1d9093117dff1bd437d4de9d7aa564c4`. The rebase adds exactly main's intervening
@@ -488,6 +494,9 @@ at a stable allocation should retain its full-state type when the owning referen
 moves through a free list. At the examined baseline, the boxed source probes
 were blocked by incorrect region inference and owned-cell measure resolution;
 those compiler defects do not refute that representation.
+An empty-backing pool has an additional contract: failed partial construction must
+return the same empty storage. The next [foundation selection](FOUNDATION.md#empty-backing-across-library-and-pool-boundaries)
+addresses that state separately; a full-array type alone does not express it.
 
 The proposed full-state construction proceeds through a checked partial state.
 This is a follow-on source capability, distinct from constructing an already
@@ -662,8 +671,8 @@ rules or general checked-library representations have passed a compiler.
 
 [Project instructions](../../../AGENTS.md), the
 [constitution](../../../docs/constitution.md), the
-[active specification](../../../spec/kernel-spec.md), and the corrected
-[development decisions](../../../mcts_mem/whitefoot/development-workflow.md) supply
+[active specification](../../../spec/kernel-spec.md), and current
+[decision practice](../../../docs/practice.md#decision-work) supply
 the ground. Historical design selections and compiler convenience do not define a
 new architecture's requirements. Current language behavior remains the active
 specification's, including its proof rules; historical claim/trap language does not

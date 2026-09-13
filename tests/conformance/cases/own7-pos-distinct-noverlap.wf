@@ -1,4 +1,4 @@
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "OWN-7: borrows of distinct roots do not overlap; two uniq borrows coexist.";
   let a = 1_i32;
   let b = 2_i32;

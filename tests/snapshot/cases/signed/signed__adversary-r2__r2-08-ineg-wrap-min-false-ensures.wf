@@ -11,7 +11,7 @@ fn wrapped_negate_ordinary(x: own i32) -> result: own i32 pure {
   return ineg.wrap(x);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let control = wrapped_negate_ordinary(x: -2147483648_i32);
   if control == -2147483648_i32 {
   } else {

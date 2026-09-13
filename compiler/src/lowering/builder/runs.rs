@@ -63,6 +63,13 @@ impl IrBuilder<'_> {
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                 self.lower_fixed_measure(constant)
             }
+            MeasureCell::ExactExtent if matches!(root.ty, CheckedType::Array { .. }) => {
+                let length = root
+                    .type_constant()
+                    .and_then(|constant| constant.value())
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                self.lower_fixed_measure(length)
+            }
             MeasureCell::ExactExtent | MeasureCell::ExactRuntime | MeasureCell::Bounded => {
                 let container = self.container_root_value(root)?;
                 // A bump extent carries one measure word, its cursor: its
@@ -117,16 +124,30 @@ impl IrBuilder<'_> {
                 CheckedPlaceStep::Field(field) => {
                     self.project_struct_path(value, &[*field], false)?
                 }
+                // Box-referent places are promoted by storage planning and
+                // lowered through their owner slot's address. Reaching this
+                // value-only path would take an address from a copied Box.
+                CheckedPlaceStep::BoxReferent(_) => {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
                 CheckedPlaceStep::Subscript(subscript) => {
                     let offset = self.expression(&subscript.offset)?;
-                    self.define(
-                        lower_type(self.erasure, subscript.element_type)?,
-                        IrOperation::RunIndex {
-                            run: value,
+                    let operation = match lower_type(self.erasure, subscript.base_type)? {
+                        IrType::Array { .. } => IrOperation::ArrayIndex {
+                            root: IrArrayRoot::Value(value),
                             offset,
                             target_domain: subscript.target_domain.into(),
                         },
-                    )?
+                        IrType::FixedVector { .. } | IrType::Vector { .. } => {
+                            IrOperation::RunIndex {
+                                run: value,
+                                offset,
+                                target_domain: subscript.target_domain.into(),
+                            }
+                        }
+                        _ => return Err(LoweringFailure::InvalidCheckedProgram),
+                    };
+                    self.define(lower_type(self.erasure, subscript.element_type)?, operation)?
                 }
             };
         }
@@ -159,6 +180,35 @@ impl IrBuilder<'_> {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 self.define(result_type, IrOperation::FixedVector)
+            }
+            crate::KernelRow::ArrayFromFixed | crate::KernelRow::FixedFromArray => {
+                let [value] = arguments else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                let value = self.expression(value)?;
+                let valid = match (row, self.value_type(value)?, result_type) {
+                    (
+                        crate::KernelRow::ArrayFromFixed,
+                        IrType::FixedVector {
+                            element: source,
+                            length: source_length,
+                        },
+                        IrType::Array { element, length },
+                    )
+                    | (
+                        crate::KernelRow::FixedFromArray,
+                        IrType::Array {
+                            element: source,
+                            length: source_length,
+                        },
+                        IrType::FixedVector { element, length },
+                    ) => source == element && source_length == length,
+                    _ => false,
+                };
+                if !valid {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.define(result_type, IrOperation::FullArrayConversion { value })
             }
             crate::KernelRow::PlaceBack
             | crate::KernelRow::PlaceFront
@@ -405,7 +455,8 @@ impl IrBuilder<'_> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         };
         let run = self.expression(run)?;
-        if self.value_type(run)? != run_type {
+        if !matches!(self.value_type(run)?, IrType::Address(referent) if referent.ty() == run_type)
+        {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         let value = match (boundary.places(), rest) {
@@ -424,34 +475,19 @@ impl IrBuilder<'_> {
         let taken = (!boundary.places())
             .then(|| self.define(element_type, IrOperation::RunTaken { row: boundary, run }))
             .transpose()?;
-        let handed_back = self.define(
-            run_type,
+        let completed = self.define(
+            IrType::Unit,
             IrOperation::RunBoundary {
                 row: boundary,
                 run,
                 value,
             },
         )?;
-        let Some(taken) = taken else {
-            if result_type == run_type {
-                return Ok(handed_back);
-            }
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        };
-        // The ordered result list [CALL-4] is one value of the row's
-        // compiler-owned result-list nominal, whose fields are `rest` then
-        // `value` in declared order.
-        let CheckedType::Nominal(nominal) = result else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        };
-        let nominal = self.erased(nominal);
-        self.define(
-            IrType::Nominal(nominal),
-            IrOperation::ConstructStruct {
-                nominal,
-                fields: vec![handed_back, taken],
-            },
-        )
+        match taken {
+            Some(taken) if result_type == element_type => Ok(taken),
+            None if result_type == IrType::Unit => Ok(completed),
+            _ => Err(LoweringFailure::InvalidCheckedProgram),
+        }
     }
 
     /// The run or extent value one measured place reads, projected out of its
@@ -460,15 +496,18 @@ impl IrBuilder<'_> {
         &mut self,
         root: &CheckedContainerRoot,
     ) -> Result<IrValueId, LoweringFailure> {
+        let Some(binding) = root.binding() else {
+            return self.lower_place_address(root);
+        };
         if self
             .bindings
-            .get(&root.binding)
+            .get(&binding)
             .copied()
             .is_some_and(|storage| matches!(self.value_type(storage), Ok(IrType::Address(_))))
         {
             return self.lower_place_address(root);
         }
-        let value = self.binding_value(root.binding)?;
+        let value = self.binding_value(binding)?;
         let value = self.project_place_path(value, &root.path)?;
         if self.value_type(value)? != lower_type(self.erasure, root.ty)? {
             return Err(LoweringFailure::InvalidCheckedProgram);

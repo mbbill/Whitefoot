@@ -1,14 +1,14 @@
 # External container workload traces
 
 This evidence belongs to the container architecture experiment in this directory.
-Maintain it through the implementation selected in [REASSESSMENT.md](REASSESSMENT.md);
+Maintain it with the comparison in [FOUNDATION.md](FOUNDATION.md);
 merge or retire it when a replacement investigation supersedes these claims. It
 supplements the local compiler and Whitefoot fixtures. It does not define the
 language or establish workload prevalence.
 
 ## Selection and evidence boundary
 
-The sample covers three substantial application subsystems in three languages and
+The initial sample covers three substantial application subsystems in three languages and
 domains. They were selected to challenge different assumptions: contiguous search
 windows, columnar query execution, and indexed scheduling state. The six traces
 are deliberately related within each application; they are not six independent
@@ -26,6 +26,183 @@ for annotated tags. All code links below use those commits, and line numbers wer
 read from their raw source. These are reproducible snapshots, not claims about
 the latest release. No upstream build, benchmark, production profile, allocation
 trace, or Whitefoot translation was run for this study.
+
+The 2026-09-08 extension below adds Linux, Redis and SQLite as explicit tests of
+the systems-performance ceiling. Its source observations remain qualitative;
+the separately linked native cost controls are not upstream application timings.
+
+## Permission mechanisms as design counterchecks
+
+These sources test proposed mechanisms, not container demand or workload
+frequency. Neither upstream implementation nor benchmark was executed here.
+
+GhostCell (ICFP 2021) separates aliased cell references from a branded permission
+token. Borrowing the token controls access without per-cell runtime permission
+metadata; its core implementation uses encapsulated unsafe operations with a
+mechanized soundness argument. The paper's list example separately uses arena
+lifetime, with an Arc alternative, for memory management. The brand identifies
+an access domain, not a node or membership. Its original token API for shared
+cells permits only one same-brand mutable cell borrow at a time; uniquely owned
+cells also support direct access without a token. The token API cannot implement
+an iterator yielding simultaneous mutable references to all possibly cyclic
+nodes. For WF, this is evidence for evaluating separate access authority, not
+evidence that initialization permissions provide keepalive, individual deletion
+or disjoint mutable traversal. A token that avoids per-node counters can impose
+a coarser borrowing boundary. [GhostCell, sections 3.1–3.2](https://plv.mpi-sws.org/rustbelt/ghostcell/paper.pdf#page=9).
+
+Verus source at commit `f9e945252b5a2b989d837defdf72ad04794aa658`
+(main resolved on 2026-09-08) separates raw address-set permission, typed
+initialized/uninitialized permission and deallocation authority. Raw splitting
+preserves provenance; typed conversion requires alignment and the exact extent
+and yields uninitialized permission, not permission to read existing bytes;
+deallocation requires the original extent and authority. This is a concrete
+reference for the single-backing layout obligation. These primitives are declared
+axioms or external bodies. The inspected allocation wrapper aborts on refusal,
+and its raw write permits overwriting an initialized value without dropping it.
+Those are not the WF failure and linear-consumption contracts. Verus also uses
+solver-based verification; its expressive permissions do not establish a
+specification-fixed, terminating WF checker. [Memory primitives](https://github.com/verus-lang/verus/blob/f9e945252b5a2b989d837defdf72ad04794aa658/source/vstd/raw_ptr.rs#L569-L969),
+[verification model](https://github.com/verus-lang/verus/blob/f9e945252b5a2b989d837defdf72ad04794aa658/README.md).
+
+These observations challenge two shortcuts in the WF comparison: identifying
+access permission with backing lifetime, and treating raw splitting as sufficient
+authority for a typed layout. They select neither a public pointer interface nor
+an unrestricted proof language. The actual WF alternatives and missing checking
+obligations remain in [FOUNDATION.md](FOUNDATION.md).
+
+## Kernel, database and cache-server ceiling cases
+
+The owner selected performance before breadth and explicitly allowed intended
+runtime validation whose cost is acceptable. These cases ask whether Whitefoot
+can retain useful layouts and operation contracts, not whether it can reproduce
+C syntax or remove every branch. Sources were read at immutable commits:
+
+| System | Pin | Selected paths |
+| --- | --- | --- |
+| Linux | [`28924df2a08f440c73991b83028032c901de2ae4`](https://github.com/torvalds/linux/tree/28924df2a08f440c73991b83028032c901de2ae4) (master resolved during this audit) | Intrusive list/rbtree, inode membership, RCU deletion, XArray reservation |
+| Redis 7.2.4 | [`d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7`](https://github.com/redis/redis/tree/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7) | Incremental dictionary rehash, listpack, SDS |
+| SQLite 3.45.1 | [`189e44dfecdc7868bb860dfb5d98eab371318c37`](https://github.com/sqlite/sqlite/tree/189e44dfecdc7868bb860dfb5d98eab371318c37) | Byte-page B-tree layout, validation, insertion-space allocation and compaction |
+
+No upstream program was run. Statements about a check occurring inside lookup
+or on resize follow control flow, not a measured frequency distribution. Source
+complexity, popularity and comments about expected performance are not profiles.
+
+### Linux: independent membership and delayed reclamation
+
+An inode contains several independent membership hooks, including an hlist hook
+and distinct list fields. List insertion rewrites four link relationships;
+unlinking a known hook is separate from destroying the containing object.
+This is a concrete need to separate membership from ownership, rather than to
+give several owning vectors the same element. It does not establish how often
+all hooks are linked simultaneously.
+[inode fields](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/include/linux/fs.h#L813-L837),
+[list insertion](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/include/linux/list.h#L158-L230).
+
+The rbtree documentation motivates embedding by avoiding an indirection and
+leaves locking to the caller. An ordinary owning boxed tree is a plausible WF
+ordered-map route, but does not reproduce external ownership and multiple stable
+memberships. Indices may preserve logical identity; their lookup and validation
+cost must be measured. Parent/color bit packing and container_of are C choices,
+not mandatory WF mechanisms.
+[rbtree representation](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/Documentation/core-api/rbtree.rst#L45-L76).
+
+RCU list deletion explicitly preserves traversal and forbids immediate free.
+XArray similarly separates sparse presence, reservation and reclamation:
+reservation can ensure later store avoids allocation while normal load sees
+absence; release does nothing if another actor has published a value meanwhile.
+An empty typed slot alone does not express either protocol. Current lexical
+loans and the specified staged runtime are not an RCU lifetime system.
+[RCU deletion](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/include/linux/rculist.h#L97-L180),
+[XArray reservation](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/Documentation/core-api/xarray.rst#L64-L115),
+[locking and retained access](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/Documentation/core-api/xarray.rst#L170-L249).
+
+Configured list hardening performs inline checks and routes corruption to a
+report helper marked cold outside its debug configuration. This is evidence
+that placement of validation is a design choice, not proof that its cost is
+negligible in a kernel workload.
+[hardening checks](https://github.com/torvalds/linux/blob/28924df2a08f440c73991b83028032c901de2ae4/include/linux/list.h#L57-L154).
+
+### Redis dictionary: migration changes the lookup contract
+
+The dictionary retains two tables during migration. Ordinary valued entries are
+relinked without reconstructing payloads; a rehash step moves a whole collision
+chain. Its empty-bucket scan limit is not a strict bound on entries moved or
+operation latency. Lookup itself may perform a migration step and search both
+tables. A semantically read-only query can therefore mutate internal topology.
+[rehash](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/dict.c#L295-L380),
+[lookup](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/dict.c#L668-L687).
+
+Two runs of optional boxed bucket heads and source-written migration are a WF
+candidate, not an executed port. Value-in/value-out mutation, a returned position
+followed by access, and a concrete hash implementation avoid some current source
+restrictions, but must be priced. Stored borrowed entries, generic behavior
+dispatch and mutation during iteration are separate gaps from initializedness.
+A flat table changes locality, migration work and payload-address guarantees;
+finishing migration eagerly changes latency policy. Neither is automatically a
+same-contract substitute.
+
+### Redis listpack and SDS: compact bytes do not require arbitrary typed holes
+
+Listpack stores variable-sized encoded entries, backward lengths and a compact
+header. Insertion saves an offset across relocation, grows when needed, shifts
+overlapping bytes, then writes the entry and metadata. Small Redis hashes use
+this linear representation and convert at thresholds. This demonstrates multiple
+representations for different size regimes; it supplies no optimal threshold
+for Whitefoot.
+[listpack insertion](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/listpack.c#L780-L905),
+[hash conversion](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/t_hash.c#L37-L97).
+
+Start with initialized byte storage, offsets and codecs. Its potential costs are
+overlap-move lowering, spare-byte initialization, resizing and validation reuse,
+not necessarily missing raw-T authority. A vector of allocated strings is a
+different layout with different density and allocation work. Listpack's own
+validator has shallow and full-walk modes; this audit did not trace their loading
+call frequency.
+[integrity validation](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/listpack.c#L1292-L1387).
+
+SDS places size-class-dependent packed metadata before payload bytes, leaving a
+pointer-sized handle. Growth can use realloc when the header class is unchanged;
+otherwise it allocates, copies and frees. Current WF's byte Vector has four
+descriptor words and no realloc row. Proving head zero does not itself erase
+the descriptor fields. A dynamic header-plus-tail allocation and a smaller
+handle are distinct candidates from sparse initialization permissions.
+[SDS headers](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/sds.h#L43-L90),
+[growth](https://github.com/redis/redis/blob/d2c8a4b91e8c0e6aefd1f5bc0bf582cddbe046b7/src/sds.c#L234-L290).
+SDS_NOINIT is an unchecked caller obligation in C; importing that state as a
+readable WF string would be invalid. A checked reserve/fill/publish route must
+account for initialized bytes before publication.
+
+### SQLite: packed pages, validation and localized movement
+
+A B-tree page separates its header, two-byte cell-offset array, variable-size
+cell bodies, freeblocks and fragments. Logical key order differs from physical
+cell order. This is a byte codec, not an array of uniform typed records.
+[page format](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btreeInt.h#L20-L170).
+
+Page initialization validates and caches derived information; lookup still
+contains corruption checks during decoding. Space allocation uses freeblocks
+or compaction. Compaction has both local movement and a temporary-page rebuild
+path. Therefore a whole-page temporary is not inherently a bad container design:
+its frequency, size and competing work decide its cost.
+[initialization](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btree.c#L2160-L2206),
+[lookup](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btree.c#L5710-L5779),
+[compaction](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btree.c#L1560-L1677).
+
+The WF starting point is a full byte page, explicit codecs, page IDs and checked
+offsets. A validated offset table costs metadata but may amortize repeated
+decoding. A decoded object graph adds different allocation and serialization
+costs. Current source does not package borrowed page views into a stored cursor;
+reacquiring by ID changes lookup/pin work. Page cache lifetime and rollback are
+separate from the local container layout. SQLite balancing explicitly relies
+on database rollback after some failures; a WF port must not silently require
+every helper to be failure-atomic.
+[balancing failure contract](https://github.com/sqlite/sqlite/blob/189e44dfecdc7868bb860dfb5d98eab371318c37/src/btree.c#L8031-L8069).
+
+These observations widen the necessary comparisons. Typed initialization is one
+candidate component; compact bytes, allocation policy, behavior dispatch,
+membership, cursor lifetime and reclamation remain independent dimensions.
+Memory-safety evidence need not prove all abstract map/tree semantics unless
+those semantics authorize a partial operation or an exported checked relation.
 
 An **observed** operation follows source and its local callers. A cost statement
 describes explicit work or an algorithmic consequence, unless marked as an
@@ -241,6 +418,74 @@ rehash, and many-to-one result mappings. The first owned-place slice can provide
 storage identity and legal destinations, but cannot by itself prove these
 relations or admit parallel writes to the returned addresses.
 
+## Focused revalidation: contracts and host mechanisms
+
+A second primary-source pass reread the EW1, EW3, and EW4 files cited above and
+the Rust standard library at the peeled Rust 1.89.0 tag commit
+[`29483883eed69d5fb4db01964cdf2af4d86e9cb2`](https://github.com/rust-lang/rust/tree/29483883eed69d5fb4db01964cdf2af4d86e9cb2).
+It supplies qualitative demand and comparison contracts, not occurrence counts,
+profiles, or evidence that these forms are common.
+
+| Evidence reread | Contract that a replacement must preserve | Host mechanism that the source does not make a Whitefoot requirement |
+| --- | --- | --- |
+| ripgrep `LineBuffer` state, fill, roll, and growth [state][rg-state], [fill][rg-fill], [growth][rg-growth] | Preserve the byte stream, searchable complete-line window, retained incomplete suffix, absolute offsets, EOF publication, binary cutoff, configured growth refusal, and reuse after reset. A scan view ends before mutation or relocation. | Rust `Vec<u8>`, zero-filled spare bytes, `copy_within`, and the observed three-times eager growth are choices. In particular, the zero fill satisfies this implementation's writable-slice route; the workload requires safe writable capacity, not readable zeros. |
+| DuckDB concat, `string_t`, heap, and vector ownership [concat][dd-concat], [representation][dd-string-type], [heap][dd-string-contract], [retention][dd-string-refs] | For each row, compute the same NULL/value result, reserve its final payload destination, fill it, and publish only after completion. Long payload addresses remain valid through the retaining heap/vector lifetime. The batch implementation reserves all result destinations before copying any payload. | The twelve-byte inline cutoff, cached prefix, C++ return by value, arena chunk policy, and the name `EmptyString` are not semantic requirements. The source also does not promise rollback or resumable progress if a later batch allocation fails. |
+| DuckDB packed entry and aggregate find/resize [entry][dd-entry], [find/create][dd-agg-find], [resize][dd-agg-resize] | A reserved slot cannot supply a row pointer before append and aggregate-state initialization; rehash preserves lookup and does not move pinned rows; equal groups may intentionally share one output address. | Empty/reserved/ready is a temporal protocol, not an explicit three-tag representation: `SetSalt` makes `IsOccupied()` true before `SetPointer`, and phase selections keep that state away from pointer readers. Salt/pointer packing, pointer width, linear probing, and C++ exceptions are choices. |
+| Rust boxed-slice, vector spare-capacity, safe vector conversion, `MaybeUninit`, and array iteration source [boxed construction][rust-box-uninit], [boxed publication][rust-box-publish], [vector layout][rust-vec-layout], [spare capacity][rust-vec-spare], [length publication][rust-vec-publish], [safe boxed-array conversion][rust-safe-box-array], [fallible exact reservation][rust-try-reserve-exact], [partial cleanup][rust-maybe-partial], [array consume][rust-array-consume], [array residual cleanup][rust-array-cleanup] | These APIs witness demand for final-place element construction, an initialized/raw boundary, publication only after the new range is initialized, partial cleanup, and by-value consumption of a complete fixed array with exact cleanup of the unconsumed range. | Safe Rust can prefix-fill a valid `Vec<T>`, clear it on producer failure, and convert it to `Box<[T; N]>` when full; the [matched control][rust-safe-control] exercises that route. `try_reserve_exact` may receive excess capacity, and the full conversion discards it, so exact backing preservation is conditional on `len=cap=N`. Rust's raw-slot route instead uses `MaybeUninit`, `Box::assume_init`, and `Vec::set_len` behind unsafe library boundaries. This is evidence for checked transitions with a stronger resource contract, not evidence that safe Rust cannot express the workload or that Whitefoot writers need public unsafe authority. |
+
+### Decisive same-contract comparisons
+
+The smallest useful comparisons keep observable behavior and resource policy
+fixed, then vary only the storage/state mechanism:
+
+1. **Reusable search window.** Feed identical chunk boundaries, long lines, EOF,
+   binary bytes, and capacity limits to the rolled contiguous design and a
+   candidate ring/two-span design. Require identical visible bytes, matches,
+   offsets, context, and refusal point. Record allocations, peak capacity,
+   initialized bytes, bytes moved/coalesced, and bytes scanned. A two-span result
+   is equivalent only if the matcher consumes both spans with the same boundary
+   behavior or the coalescing cost is included.
+2. **Fixed-block pool and direct construction.** Allocate a fixed pool once;
+   exhaust it, return blocks in a different order, and reuse it without another
+   backing allocation. For a block of non-copy, drop-counted elements, fail after
+   constructing element `k`: exactly the constructed prefix is destroyed and the
+   slot returns to the pool. On success, publication transfers the complete block
+   without a whole-block copy. Compare the checked-in [safe initialized Rust
+   baseline][rust-safe-control], Rust's pinned `MaybeUninit` route, and the checked Whitefoot place route at the same pool
+   capacity and refusal points; count provider allocations, element
+   constructions/destructions, copied bytes, peak storage, and steady-state work.
+3. **Direct string result.** Use the same row validity and segment order, including
+   empty, inline-sized, and long results. Require identical result bytes and
+   lifetimes, one final payload reservation per long result, and no extra
+   full-payload temporary copy. Count payload writes/copies, arena calls and
+   chunks, peak retained bytes, and cleanup. Failure comparisons need an explicit
+   common contract; DuckDB's inspected path does not supply a strong rollback
+   contract to inherit.
+4. **Sparse reserve and rehash.** Replay the same keys, hashes, collisions, resize
+   thresholds, and aggregate updates. Require the same groups and results, no
+   pointer read during reservation, stable row addresses across pointer-table
+   reallocation, and no aggregate-payload move during rehash. Count allocations,
+   metadata bytes, probes, reinsertions, payload bytes moved, and peak storage.
+   Injection immediately after reservation and after row initialization checks
+   cleanup, but its observable failure result must be defined rather than inferred
+   from the throwing C++ path.
+5. **Full-array consume.** Consume `k` values from a by-value fixed array of
+   non-copy, drop-counted elements, then stop. Require ownership of those `k`
+   values to transfer and exactly the other `N-k` values to be destroyed, with no
+   second allocation or whole-array element copy. This separates consumption of
+   a proven-full value from construction of a partial one even if both lower to a
+   tracked live interval.
+
+Two rare adversarial cases remain hard falsifiers without being prevalence
+claims. A nullable slot whose validity is false may retain stale payload bits from
+a previously destroyed or moved owner; it must neither read nor destroy those
+bits, and validity may become true only after the replacement payload is
+constructed. A recycled pool slot may later occupy the same address: a retained
+identity for generation `g` must not read, release, or mutate generation `g+1`.
+Static lifetime exclusion can make that trace impossible; a runtime generation
+tag is needed only when identities are allowed to outlive retirement. Neither
+case justifies bitmap storage or generation metadata on every dense container.
+
 ## EW5: Kubernetes maintains a key-to-position relation during heap mutation
 
 **Observed trace.** The scheduler heap stores a slice of keys and a map from key
@@ -398,6 +643,17 @@ rather than being converted into mandatory representation rules.
 [dd-agg-find]: https://github.com/duckdb/duckdb/blob/5f5512b827df6397afd31daedb4bbdee76520019/src/execution/aggregate_hashtable.cpp#L566-L751
 [dd-agg-update]: https://github.com/duckdb/duckdb/blob/5f5512b827df6397afd31daedb4bbdee76520019/src/execution/aggregate_hashtable.cpp#L522-L540
 [dd-agg-finalize]: https://github.com/duckdb/duckdb/blob/5f5512b827df6397afd31daedb4bbdee76520019/src/execution/radix_partitioned_hashtable.cpp#L799-L844
+[rust-box-uninit]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/boxed.rs#L632-L652
+[rust-box-publish]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/boxed.rs#L965-L994
+[rust-vec-layout]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/vec/mod.rs#L290-L332
+[rust-vec-spare]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/vec/mod.rs#L2907-L2946
+[rust-vec-publish]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/vec/mod.rs#L1875-L1955
+[rust-safe-box-array]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/boxed/convert.rs#L259-L311
+[rust-try-reserve-exact]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/alloc/src/vec/mod.rs#L1537-L1580
+[rust-safe-control]: ../../experiments/container-representation/foundation/rust-baseline.rs
+[rust-maybe-partial]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/core/src/mem/maybe_uninit.rs#L112-L156
+[rust-array-consume]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/core/src/array/iter.rs#L35-L73
+[rust-array-cleanup]: https://github.com/rust-lang/rust/blob/29483883eed69d5fb4db01964cdf2af4d86e9cb2/library/core/src/array/iter/iter_inner.rs#L29-L82
 [k-heap]: https://github.com/kubernetes/kubernetes/blob/70d3cc986aa8221cd1dfb1121852688902d3bf53/pkg/scheduler/backend/heap/heap.go#L17-L239
 [k-queues]: https://github.com/kubernetes/kubernetes/blob/70d3cc986aa8221cd1dfb1121852688902d3bf53/pkg/scheduler/backend/queue/scheduling_queue.go#L341-L350
 [k-key]: https://github.com/kubernetes/kubernetes/blob/70d3cc986aa8221cd1dfb1121852688902d3bf53/pkg/scheduler/backend/queue/scheduling_queue.go#L1395-L1397

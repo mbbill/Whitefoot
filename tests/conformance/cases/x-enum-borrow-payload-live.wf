@@ -3,7 +3,7 @@ enum Cell {
   Void();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Borrow-match a payload enum through &'r: the scrutinee stays live for a second read, and each derived shared payload binder is explicitly dereferenced before its copy value is used [OWN-13, TYPE-7, GIVE-1, GRAM-10, OP-1, SCOPE-3].";
   let c = Full(v: 20_i32);
   region {

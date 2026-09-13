@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: constant nonzero divisors put signed `%` in the total divisor class regardless of operand sign [OP-2].";
   let left = -40_i32 % 41_i32;
   let right = 2_i32 % 3_i32;

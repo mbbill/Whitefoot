@@ -23,18 +23,6 @@ pub use kernel::{
     KernelOperationId, KernelRow, container_nominal, kernel_operation,
 };
 
-pub use catalog::{
-    SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemConstructor, SystemEntity,
-    SystemField, SystemIntegerResultBound, SystemNominal, SystemOperation, SystemParameter,
-    SystemParameterMode, SystemRelease, SystemReleaseAction, SystemReleaseRow,
-    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultPayload,
-    SystemResultStateOrigin, SystemTypeRef, TargetAction, TargetCompletion, TargetDispatch,
-    TargetMilestones, operation_state_effects, system_constructor_declaration,
-    system_constructor_index, system_constructors, system_entity, system_nominal_index,
-    system_nominals, system_operation_index, system_operations, system_release_row,
-    system_resource_contract,
-};
-
 /// Returns the exact OP-1 spelling of a resolved operation family.
 #[must_use]
 pub fn operation_family_spelling(id: OperationFamilyId) -> Option<&'static str> {
@@ -129,56 +117,58 @@ impl DeclarationId {
     pub(crate) const fn index(self) -> usize {
         self.0 as usize
     }
-
-    /// The entry heap's store region [PROV-1].
-    ///
-    /// The general store the runtime mints before `main` is named by no
-    /// source REGIONID: `main` declares no region parameter [FN-7], so the
-    /// region has no written spelling and every elided store brand that
-    /// resolves to it reaches it by elision alone. It is one region for the
-    /// whole unit, so it is one identity rather than a per-occurrence minted
-    /// declaration, and it is disjoint from every resolver declaration
-    /// because no unit holds `u32::MAX` of them.
-    pub const ENTRY_HEAP_REGION: Self = Self(u32::MAX);
-
-    /// Whether this identity is the entry heap's store region [PROV-1].
-    #[must_use]
-    pub const fn is_entry_heap_region(self) -> bool {
-        self.0 == u32::MAX
-    }
 }
 
-/// Dense identity of one normative PRE-1 declaration record.
+/// Identity of an existing language-known built-in prelude record.
+/// This internal identity is independent of its PRE-1 diagnostic ordinal.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PreludeDeclarationId(u8);
+pub struct BuiltinPreludeId(u8);
 
-impl PreludeDeclarationId {
-    pub(crate) const fn new(index: u8) -> Self {
-        Self(index)
-    }
+impl BuiltinPreludeId {
+    pub(crate) const BOOL: Self = Self(0);
+    pub(crate) const TRUE: Self = Self(1);
+    pub(crate) const FALSE: Self = Self(2);
+    pub(crate) const OPTION: Self = Self(3);
+    pub(crate) const OPTION_TYPE: Self = Self(4);
+    pub(crate) const NONE: Self = Self(5);
+    pub(crate) const SOME: Self = Self(6);
+    pub(crate) const SOME_VALUE: Self = Self(7);
+    pub(crate) const RESULT: Self = Self(8);
+    pub(crate) const RESULT_VALUE_TYPE: Self = Self(9);
+    pub(crate) const RESULT_ERROR_TYPE: Self = Self(10);
+    pub(crate) const OK: Self = Self(11);
+    pub(crate) const OK_VALUE: Self = Self(12);
+    pub(crate) const ERR: Self = Self(13);
+    pub(crate) const ERR_ERROR: Self = Self(14);
+    pub(crate) const OVERFLOW_TYPE: Self = Self(15);
+    pub(crate) const OVERFLOW: Self = Self(16);
+    pub(crate) const DIV_ERROR_TYPE: Self = Self(17);
+    pub(crate) const DIVIDE_BY_ZERO: Self = Self(18);
+    pub(crate) const DIV_OVERFLOW: Self = Self(19);
+    pub(crate) const NARROW_ERROR_TYPE: Self = Self(20);
+    pub(crate) const NARROW_ERROR: Self = Self(21);
+    pub(crate) const INT: Self = Self(22);
+    pub(crate) const FLOAT: Self = Self(23);
 
-    /// Returns the zero-based PRE-1 declaration ordinal.
+    /// Returns the internal built-in record index.
     #[must_use]
     pub const fn ordinal(self) -> u8 {
         self.0
     }
 }
 
-/// Dense identity of one normative [SYS-2] system declaration record.
-///
-/// The ordinal is a `u16` because v0.50's inventory is three hundred and seven
-/// records; it was a `u8` while the inventory fitted one byte.
+/// Diagnostic identity in the complete PRE-1 declaration preorder.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SystemDeclarationId(u16);
+pub struct PreludeDeclarationId(u32);
 
-impl SystemDeclarationId {
-    pub(crate) const fn new(ordinal: u16) -> Self {
-        Self(ordinal)
+impl PreludeDeclarationId {
+    pub(crate) fn from_index(index: usize) -> Option<Self> {
+        u32::try_from(index).ok().map(Self)
     }
 
-    /// Returns the zero-based `system_declaration_ordinal` in [SYS-2] preorder.
+    /// Returns the zero-based ordinal in the complete PRE-1 inventory.
     #[must_use]
-    pub const fn ordinal(self) -> u16 {
+    pub const fn ordinal(self) -> u32 {
         self.0
     }
 }
@@ -204,6 +194,8 @@ impl OperationFamilyId {
 pub enum DeclarationClass {
     /// Top-level source function.
     Function,
+    /// A compile-time function-kind parameter, never a runtime value.
+    FunctionParameter,
     /// Top-level immutable named constant.
     NamedConst,
     /// Lexical const generic.
@@ -218,8 +210,12 @@ pub enum DeclarationClass {
     StructConstructor,
     /// Source or prelude enum variant.
     EnumVariant,
-    /// Source or prelude contract.
-    Contract,
+    /// One built-in numeric bound: Int or Float.
+    NumericBound,
+    /// A named parameter-group abbreviation.
+    Formal,
+    /// A named argument-group abbreviation.
+    Actual,
     /// Region parameter or local region.
     Region,
     /// Loop label.
@@ -239,8 +235,8 @@ pub enum DeclarationDomain {
     NominalType,
     /// Struct constructors and enum variants.
     Constructor,
-    /// Contracts.
-    Contract,
+    /// Built-in numeric bounds.
+    NumericBound,
     /// Region parameters and local regions.
     Region,
     /// Loop labels.
@@ -255,7 +251,7 @@ impl DeclarationDomain {
             Self::LexicalIdentifier => 0,
             Self::NominalType => 1,
             Self::Constructor => 2,
-            Self::Contract => 3,
+            Self::NumericBound => 3,
             Self::Region => 4,
             Self::Label => 5,
             Self::Invariant => 6,
@@ -274,8 +270,12 @@ pub enum DeclarationRole {
     Enum,
     /// D04: source enum variant.
     Variant,
-    /// D05: source contract.
-    Contract,
+    /// A named parameter-group declaration.
+    Formal,
+    /// A named argument-group declaration.
+    Actual,
+    /// A raw function-kind generic parameter.
+    FunctionParameter,
     /// D06: named constant.
     NamedConst,
     /// D07: type generic.
@@ -307,8 +307,8 @@ pub enum DependentDeclarationRole {
     Field,
     /// X02: source enum-variant field.
     VariantField,
-    /// X03: contract member signature.
-    ContractMember,
+    /// One function-kind member of a named parameter group.
+    FunctionMember,
 }
 
 /// Lexical-use roles retained by name resolution.
@@ -316,10 +316,12 @@ pub enum DependentDeclarationRole {
 pub enum LexicalUseRole {
     /// U01: nominal or generic type.
     Type,
-    /// U02: type-generic contract bound.
+    /// U02: built-in numeric bound.
     GenericBound,
-    /// U03: conformance contract.
-    ConformanceContract,
+    /// A formal group in a header or forwarding/member application.
+    FormalGroup,
+    /// An explicit argument name, admitting a type or group abbreviation.
+    TypeArgument,
     /// U04: struct or enum construction.
     Construct,
     /// U05: enum-variant match arm.
@@ -350,7 +352,7 @@ pub enum LexicalUseRole {
     IdentifierCallee,
     /// U16: dotted operation callee.
     OperationCallee,
-    /// U17: concrete function bound to a contract member.
+    /// A source function or function parameter used as an explicit argument.
     FunctionBinding,
     /// U18: generic suffix in `0_T` or `1_T`.
     GenericNumericSuffix,
@@ -371,12 +373,10 @@ pub enum DeferredUseRole {
     MatchField,
     /// X06: projected field.
     ProjectedField,
-    /// X07: contract member side of a conformance binding.
-    ContractBinding,
-    /// X08: closed law name.
-    LawName,
-    /// X09: complete law argument.
-    LawArgument,
+    /// The member name on the left side of an actual binding.
+    FunctionBinding,
+    /// The member selected by a qualified group call.
+    FunctionMember,
     /// A statically selected field after an effect-path root.
     EffectField,
 }
@@ -423,11 +423,9 @@ pub enum DeclarationOrigin {
     Source(SourceOrigin),
     /// One normative PRE-1 record.
     Prelude(PreludeDeclarationId),
-    /// One [SYS-2] record from the system domain present in every unit [SYS-3].
-    System(SystemDeclarationId),
     /// One [TYPE-2] compiler-owned container or provider nominal.
     Container(ContainerNominalId),
-    /// One [BLK-0] kernel-domain operation present in every unit [SYS-3].
+    /// One [BLK-0] kernel-domain operation present in every unit [BLK-0].
     Kernel(KernelOperationId),
 }
 
@@ -440,9 +438,20 @@ pub struct DeclarationRecord {
     origin: SourceOrigin,
     scope: ScopeId,
     classes: Vec<DeclarationClass>,
+    diagnostic_origins: Vec<(DeclarationClass, PreludeDeclarationId)>,
 }
 
 impl DeclarationRecord {
+    fn diagnostic_origin(&self, class: DeclarationClass) -> DeclarationOrigin {
+        self.diagnostic_origins
+            .iter()
+            .find_map(|(candidate, origin)| (*candidate == class).then_some(*origin))
+            .map_or_else(
+                || DeclarationOrigin::Source(self.origin.clone()),
+                DeclarationOrigin::Prelude,
+            )
+    }
+
     /// Returns this declaration's dense identity.
     #[must_use]
     pub const fn id(&self) -> DeclarationId {
@@ -519,16 +528,14 @@ pub enum ResolvedTarget {
         class: DeclarationClass,
     },
     /// One normative PRE-1 lookup entry.
-    Prelude(PreludeDeclarationId),
+    Prelude(BuiltinPreludeId),
     /// One exact OP-1 operation family.
     Operation(OperationFamilyId),
-    /// One admitted [SYS-2] lookup entry ([SYS-1], [SYS-3]).
-    System(SystemDeclarationId),
     /// One [TYPE-2] compiler-owned container or provider nominal, admitted at
     /// a `type` TYPEID in every unit.
     Container(ContainerNominalId),
     /// One admitted [BLK-0] kernel-domain operation, admitted at a `callee`
-    /// IDENT in every unit [SYS-3].
+    /// IDENT in every unit [BLK-0].
     Kernel(KernelOperationId),
 }
 
@@ -653,60 +660,41 @@ pub(crate) struct PostconditionResolutionRecord {
     pub(crate) entry_resolution_issue: Option<ResolutionIssue>,
 }
 
-/// One normative [SYS-2] declaration record admitted to one resolved unit.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SystemDeclarationRecord {
-    id: SystemDeclarationId,
-    spelling: &'static str,
-    class: Option<DeclarationClass>,
-}
-
-impl SystemDeclarationRecord {
-    /// Returns the [SYS-2] preorder identity.
-    #[must_use]
-    pub const fn id(self) -> SystemDeclarationId {
-        self.id
-    }
-
-    /// Returns the normative spelling.
-    #[must_use]
-    pub const fn spelling(self) -> &'static str {
-        self.spelling
-    }
-
-    /// Returns the source-lookup class, or `None` for owner-local records.
-    #[must_use]
-    pub const fn lookup_class(self) -> Option<DeclarationClass> {
-        self.class
-    }
-}
-
-/// One normative PRE-1 declaration record.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// One record in the complete PRE-1 diagnostic inventory.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreludeDeclarationRecord {
     id: PreludeDeclarationId,
-    spelling: &'static str,
+    spelling: String,
     class: Option<DeclarationClass>,
 }
 
 impl PreludeDeclarationRecord {
-    /// Returns the PRE-1 record ordinal.
     #[must_use]
-    pub const fn id(self) -> PreludeDeclarationId {
+    /// Returns this record's complete PRE-1 diagnostic ordinal.
+    pub const fn id(&self) -> PreludeDeclarationId {
         self.id
     }
 
-    /// Returns the normative spelling.
     #[must_use]
-    pub const fn spelling(self) -> &'static str {
-        self.spelling
+    /// Returns the declaration or owner-local record spelling.
+    pub fn spelling(&self) -> &str {
+        &self.spelling
     }
 
-    /// Returns the source-lookup class, or `None` for owner-local records.
     #[must_use]
-    pub const fn lookup_class(self) -> Option<DeclarationClass> {
+    /// Returns its whole-unit lookup class, or None for an owner-local record.
+    pub const fn lookup_class(&self) -> Option<DeclarationClass> {
         self.class
     }
+}
+
+/// An existing built-in declaration used by ordinary lookup.
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct BuiltinPreludeDeclarationRecord {
+    id: BuiltinPreludeId,
+    spelling: &'static str,
+    class: Option<DeclarationClass>,
 }
 
 /// Numbered rule owning one resolver rejection.
@@ -982,7 +970,6 @@ pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
     scopes: Vec<ScopeRecord>,
     prelude: Vec<PreludeDeclarationRecord>,
-    system: Vec<SystemDeclarationRecord>,
     declarations: Vec<DeclarationRecord>,
     dependent_declarations: Vec<DependentDeclarationRecord>,
     lexical_uses: Vec<LexicalUseRecord>,
@@ -1003,7 +990,7 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         &self.scopes
     }
 
-    /// Returns all twenty-four PRE-1 records in normative preorder.
+    /// Returns the complete PRE-1 diagnostic records in normative preorder.
     #[must_use]
     pub fn prelude_declarations(&self) -> &[PreludeDeclarationRecord] {
         &self.prelude
@@ -1015,22 +1002,7 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
         &self,
         id: PreludeDeclarationId,
     ) -> Option<&PreludeDeclarationRecord> {
-        self.prelude.get(usize::from(id.ordinal()))
-    }
-
-    /// Returns the complete [SYS-2] inventory in normative preorder.
-    ///
-    /// [SYS-3] admits this fixed declaration source into every compilation
-    /// unit, independently of entry-form validity or source uses.
-    #[must_use]
-    pub fn system_declarations(&self) -> &[SystemDeclarationRecord] {
-        &self.system
-    }
-
-    /// Returns one admitted [SYS-2] record by its normative identity.
-    #[must_use]
-    pub fn system_declaration(&self, id: SystemDeclarationId) -> Option<&SystemDeclarationRecord> {
-        self.system.get(usize::from(id.ordinal()))
+        self.prelude.get(id.ordinal() as usize)
     }
 
     /// Returns all source declaration events D01 through D15.

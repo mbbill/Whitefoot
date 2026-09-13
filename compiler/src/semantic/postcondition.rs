@@ -6,7 +6,7 @@
 //! expression.  Task 0060 consumes these values to prove selected exits; H1
 //! stops explicitly before that proof.
 
-use crate::{DeclarationId, NodePath, PreludeDeclarationId, SourceOrigin};
+use crate::{BuiltinPreludeId, DeclarationId, NodePath, SourceOrigin};
 
 use super::goal::GoalProjection;
 use super::model::{
@@ -25,7 +25,7 @@ pub(crate) struct CheckedPostconditionSelector {
     /// [CALL-4]. A declaration that writes one result has ordinal zero, the
     /// route writes no ordinal binder, and every clause names it.
     pub(crate) ordinal: u32,
-    pub(crate) variant: Option<PreludeDeclarationId>,
+    pub(crate) variant: Option<BuiltinPreludeId>,
     pub(crate) field: Option<PostconditionFieldIdentity>,
     pub(crate) result_type: CheckedType,
 }
@@ -34,7 +34,7 @@ pub(crate) struct CheckedPostconditionSelector {
 #[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PostconditionFieldIdentity {
-    pub(crate) declaration: PreludeDeclarationId,
+    pub(crate) declaration: BuiltinPreludeId,
     pub(crate) origin: SourceOrigin,
 }
 
@@ -178,6 +178,10 @@ pub(crate) struct PostconditionPlace {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PostconditionPlaceRoot {
     Parameter {
+        ordinal: u32,
+    },
+    /// The resolved exclusive referent at the selected return or call exit.
+    ExitParameter {
         ordinal: u32,
     },
     /// One declared result ordinal [CALL-4]: a measure over an admitted

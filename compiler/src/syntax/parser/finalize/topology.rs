@@ -3,7 +3,7 @@ use crate::{ByteOffset, SourceId};
 
 use super::outcome::BundleSourceExtent;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct NodeId(u32);
 
 impl NodeId {

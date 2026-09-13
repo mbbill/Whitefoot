@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: -wrap on i64 is total and wraps mathematically at MIN(i64) with no obligation.";
   let min_value = -9223372036854775808_i64;
   let wrapped = min_value -wrap 1_i64;

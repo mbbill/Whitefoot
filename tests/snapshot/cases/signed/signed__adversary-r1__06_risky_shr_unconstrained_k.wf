@@ -3,6 +3,6 @@ fn risky_shr(x: own i64, k: own u32) -> result: own i64 pure {
   return ishr(x, k);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -170,7 +170,7 @@ impl GoalDatum {
 /// Structural identity for an already-evaluated, occurrence-local value.
 ///
 /// Call actuals remain distinguishable from proof-obligation operands so
-/// FN-8's bind-first diagnostic cannot be selected for OP-2, OP-9, or SYS-8.
+/// FN-8's bind-first diagnostic cannot be selected for OP-2 or OP-9.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum EvaluatedValueOccurrence {
     CallArgument { call: NodePath, argument: u32 },
@@ -216,18 +216,18 @@ pub(crate) enum GoalOperation {
     /// Pure, total `array_new`. FN-8's copy-only clause-local rule keeps this
     /// out of GoalTemplates, but ENT-3 body-origin expansion may retain it.
     ArrayFill {
-        element: CheckedFlatElement,
+        element: CheckedElement,
         length: CheckedConst,
     },
     ArrayMeasure {
         measure: CheckedMeasure,
-        element: CheckedFlatElement,
+        element: CheckedElement,
         length: CheckedConst,
     },
     /// One array element value whose own OP-4 obligation has already been
     /// discharged before this expression is used as a proof operand.
     ArrayIndex {
-        element: CheckedFlatElement,
+        element: CheckedElement,
         length: CheckedConst,
     },
     BufferMeasure {

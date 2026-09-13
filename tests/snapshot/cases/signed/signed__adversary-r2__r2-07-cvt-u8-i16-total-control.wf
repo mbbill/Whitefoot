@@ -10,7 +10,7 @@ fn round_trip_holds(x: own u8) -> result: own Bool pure {
   return widened == widened_again;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let ok = round_trip_holds(x: 200_u8);
   if ok {
   } else {

@@ -1,4 +1,93 @@
-fn drain(link: &uniq TcpConnection, scratch: &uniq MutSlice<u8>) -> result: own u8 reads(link.receive, link.send, scratch), writes(link.receive, link.send, scratch) contract {
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn drain(link: &uniq TcpConnection, scratch: &uniq MutSlice<u8>) -> result: own u8 reads(link.receive, scratch), writes(link.receive, scratch) contract {
   define room = len_of(deref(scratch));
   requires 32_u64 <= room;
 } {
@@ -6,20 +95,28 @@ fn drain(link: &uniq TcpConnection, scratch: &uniq MutSlice<u8>) -> result: own 
   let outcome = 0_u8;
   region {
     match receive_next(receive: &uniq deref(link).receive, destination: &uniq deref(scratch), start: 0_u64, end: 32_u64) {
-      ReadBytes(next: endpoint) => {
+      Ok(value: endpoint) => {
       }
-      ReadEnd() => {
-      }
-      ReadFailed(error: problem) => {
-        set outcome = 2_u8;
+      Err(error: read_stop_18) => {
+        match read_stop_18 {
+          ReadEnd() => {
+          }
+          ReadFailed(error: problem) => {
+            set outcome = 2_u8;
+          }
+        }
       }
     }
   }
   return outcome;
 }
 
-command fn main(command.handles as handles: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(handles, heap), writes(handles, heap), allocates(heap) {
-  doc "EFF-1, SYS-18: an effect path may name a struct field, and a system struct's two directions are ordinary fields, so `link.receive` and `link.send` are the paths a helper over a whole connection declares and the row is stated leaf by leaf rather than over the aggregate. The checker admits this program and lowering lowers it; the target has no approved row for a TCP submission in this version, so it stops at target qualification, which is not a source-language rejection [QUAL-1].";
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "A helper receiving only through link.receive declares that exact ordinary field effect plus its scratch effects. The untouched send field adds nothing; field row precision does not shorten the whole-connection borrow.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 32_u64) {
       None() => {
@@ -33,32 +130,32 @@ command fn main(command.handles as handles: own HandleFactory, command.heap as h
           invariant spare: room_of(scratch) + at >= 32_u64,
           invariant flat: head_of(scratch) <= 0_u64
         ) {
-          set scratch = place_back(vector: move scratch, value: 0_u8);
+          place_back(vector: &uniq scratch, value: 0_u8);
         }
         region {
           let window = mut_slice_of(&uniq scratch);
           let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9103_u16);
           region {
-            match reserve_handle(factory: &uniq handles) {
-              Ok(value: permit) => {
-                region {
-                  match tcp_connect(permit: move permit, address: &address) {
-                    Connected(connection: link) => {
-                      let outcome = 0_u8;
-                      region {
-                        set outcome = drain(link: &uniq link, scratch: &uniq window);
-                      }
-                      let returned = close_connection(connection: move link);
-                      return exit_status(code: outcome);
-                    }
-                    ConnectFailed(error: problem, permit: returned) => {
-                      return exit_status(code: 4_u8);
+            region {
+              match tcp_connect(factory: &uniq handles, address: &address) {
+                Connected(connection: link) => {
+                  let outcome = 0_u8;
+                  region {
+                    set outcome = drain(link: &uniq link, scratch: &uniq window);
+                  }
+                  let TcpConnection(receive: close_receive_19, send: close_send_19) = move link;
+                  close_receive(factory: &uniq handles, receive: move close_receive_19);
+                  close_send(factory: &uniq handles, send: move close_send_19);
+                  return exit_status(code: outcome);
+                }
+                ConnectFailed(error: problem) => {
+                  region {
+                    if factory_refusal(error: &problem) {
+                      return exit_status(code: 5_u8);
                     }
                   }
+                  return exit_status(code: 4_u8);
                 }
-              }
-              Err(error: problem) => {
-                return exit_status(code: 5_u8);
               }
             }
           }

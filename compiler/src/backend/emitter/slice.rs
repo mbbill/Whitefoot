@@ -28,7 +28,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         else {
             return Err(BackendFailure::InvalidIr);
         };
-        if array_element != element {
+        if self.program.element(array_element) != Some(element.ty()) {
             return Err(BackendFailure::InvalidIr);
         }
 
@@ -172,7 +172,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    fn emit_slice_descriptor(
+    pub(super) fn emit_slice_descriptor(
         &mut self,
         result: IrValueId,
         ty: IrType,

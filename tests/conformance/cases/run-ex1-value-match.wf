@@ -15,7 +15,7 @@ fn sign_of(x: own i32) -> function_result: own Sign pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "let-initializer match with give, named construction, named user-fn call.";
   let a = 40_i32;
   region {

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: ordinary loop with guarded increment stays within limit, cursor ends exactly at limit";
   let limit = 6_u64;
   let cursor = 0_u64;

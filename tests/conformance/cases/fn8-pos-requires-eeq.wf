@@ -11,7 +11,7 @@ fn guarded(left: own ClauseEq, right: own ClauseEq) -> result: own unit pure con
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left = ClauseSecond();
   let right = ClauseSecond();
   let same = eeq(left, right);

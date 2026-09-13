@@ -103,7 +103,7 @@ impl RecursiveFrontiers {
             // Ordinal order, so one component reads the same way whatever
             // order the decomposition popped its members in.
             component.sort_unstable();
-            // The same four conditions the family needs, asked one member at a
+            // The structural conditions the family needs, asked one member at a
             // time so the ledger can name the one that refused. A component
             // passes exactly when no member answers.
             let refusal = component.iter().find_map(|&ordinal| {
@@ -115,10 +115,6 @@ impl RecursiveFrontiers {
                 // those is why.
                 if function.synthesis().is_some() {
                     Some(format!("{name} is a synthesized loop function"))
-                } else if function.target_action().may_suspend() {
-                    Some(format!("{name} may suspend"))
-                } else if function.completion_pipeline().is_some() {
-                    Some(format!("{name} carries a staged completion pipeline"))
                 } else if !u32::try_from(ordinal).is_ok_and(|i| clones.contains(&i)) {
                     Some(format!("{name} has no sequential clone"))
                 } else {

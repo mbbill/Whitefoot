@@ -12,16 +12,32 @@ fn probe<const n: u64>(table: own FixedVector<u8, n>, lo: own u64, hi: own u64) 
   return byte;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let table = fixed_vector::<u8, 8>();
-  set table = place_back(vector: move table, value: 0_u8);
-  set table = place_back(vector: move table, value: 0_u8);
-  set table = place_back(vector: move table, value: 0_u8);
-  set table = place_back(vector: move table, value: 0_u8);
-  set table = place_back(vector: move table, value: 0_u8);
-  set table = place_back(vector: move table, value: 0_u8);
-  set table = place_back(vector: move table, value: 0_u8);
-  set table = place_back(vector: move table, value: 0_u8);
+  region {
+    place_back(vector: &uniq table, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table, value: 0_u8);
+  }
   set table[0_u64] = 1_u8;
   set table[1_u64] = 3_u8;
   set table[2_u64] = 5_u8;
@@ -36,14 +52,30 @@ command fn main() -> status: own ExitStatus pure {
     return exit_status(code: 1_u8);
   }
   let table2 = fixed_vector::<u8, 8>();
-  set table2 = place_back(vector: move table2, value: 0_u8);
-  set table2 = place_back(vector: move table2, value: 0_u8);
-  set table2 = place_back(vector: move table2, value: 0_u8);
-  set table2 = place_back(vector: move table2, value: 0_u8);
-  set table2 = place_back(vector: move table2, value: 0_u8);
-  set table2 = place_back(vector: move table2, value: 0_u8);
-  set table2 = place_back(vector: move table2, value: 0_u8);
-  set table2 = place_back(vector: move table2, value: 0_u8);
+  region {
+    place_back(vector: &uniq table2, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table2, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table2, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table2, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table2, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table2, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table2, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq table2, value: 0_u8);
+  }
   set table2[0_u64] = 1_u8;
   set table2[1_u64] = 3_u8;
   set table2[2_u64] = 5_u8;

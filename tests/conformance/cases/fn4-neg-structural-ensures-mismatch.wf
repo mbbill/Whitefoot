@@ -1,0 +1,19 @@
+formal Hash {
+  fn hash(value: own u64) -> result: own u64 pure contract {
+    ensures result <= 99_u64;
+  };
+}
+
+fn constant_hash(input: own u64) -> output: own u64 pure contract {
+  ensures output < 100_u64;
+} {
+  return 17_u64;
+}
+
+actual Wrong : Hash {
+  hash = constant_hash;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

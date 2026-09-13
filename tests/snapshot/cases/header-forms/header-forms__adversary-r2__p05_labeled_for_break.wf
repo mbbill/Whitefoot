@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: labeled for-loop with break naming that exact label from a nested inner loop.";
   let total = 0_u64;
   for @outer (i in 0_u64..4_u64) {

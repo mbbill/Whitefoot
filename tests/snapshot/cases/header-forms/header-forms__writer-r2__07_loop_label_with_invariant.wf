@@ -13,7 +13,7 @@ fn count_bounded(limit: own u64) -> reached: own u64 pure {
   return cursor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: labeled ordinary loop combined with a one-item header invariant [GRAM-4, FORM-2].";
   let reached = count_bounded(limit: 5_u64);
   if reached == 5_u64 {

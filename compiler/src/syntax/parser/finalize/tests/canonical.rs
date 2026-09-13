@@ -25,7 +25,7 @@ fn audit_source(
 fn exact_empty_and_nonempty_source_forests_publish_canonical_syntax() {
     for source in [
         b"\n".as_slice(),
-        b"command fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
+        b"fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
         b"const first: i32 = 1_i32;\n\nconst second: i32 = 2_i32;\n".as_slice(),
     ] {
         audit_source(source, |outcome| {
@@ -132,24 +132,21 @@ fn selected(value: own i32) -> result: own Result<i32, i32> pure contract {
 
 #[test]
 fn first_gap_mismatch_uses_exact_source_or_deepest_node_location() {
-    audit_source(
-        b"command fn main() -> status: own ExitStatus pure {}",
-        |outcome| {
-            let CanonicalOutcome::SourceIssue(issue) = outcome else {
-                panic!("one-line block must reject: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), crate::syntax::parser::SyntaxRule::Form2);
-            let CanonicalLocation::SourceNode(path, coordinate) = issue.location() else {
-                panic!("inside-item gap must use SourceNode");
-            };
-            assert_eq!(path.components(), &[0, 0]);
-            assert_eq!(coordinate.source(), SourceId::from_ordinal(0));
-            assert_eq!(coordinate.start(), coordinate.end());
-        },
-    );
+    audit_source(b"fn main() -> status: own ExitStatus pure {}", |outcome| {
+        let CanonicalOutcome::SourceIssue(issue) = outcome else {
+            panic!("one-line block must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), crate::syntax::parser::SyntaxRule::Form2);
+        let CanonicalLocation::SourceNode(path, coordinate) = issue.location() else {
+            panic!("inside-item gap must use SourceNode");
+        };
+        assert_eq!(path.components(), &[0, 0]);
+        assert_eq!(coordinate.source(), SourceId::from_ordinal(0));
+        assert_eq!(coordinate.start(), coordinate.end());
+    });
 
     audit_source(
-        b" command fn main() -> status: own ExitStatus pure {\n}\n",
+        b" fn main() -> status: own ExitStatus pure {\n}\n",
         |outcome| {
             let CanonicalOutcome::SourceIssue(issue) = outcome else {
                 panic!("leading trivia must reject: {outcome:?}");
@@ -163,7 +160,7 @@ fn first_gap_mismatch_uses_exact_source_or_deepest_node_location() {
     );
 
     audit_source(
-        b"command fn main() -> status: own ExitStatus pure {\n}",
+        b"fn main() -> status: own ExitStatus pure {\n}",
         |outcome| {
             let CanonicalOutcome::SourceIssue(issue) = outcome else {
                 panic!("missing final LF must reject: {outcome:?}");
@@ -228,7 +225,7 @@ fn ordered_sources_stop_at_the_first_form2_mismatch() {
 
 #[test]
 fn tree_mutation_with_the_original_tape_cannot_publish_canonical_syntax() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n}\n";
+    let source = b"fn main() -> status: own ExitStatus pure {\n}\n";
     let inputs = [SourceInput::new("mutated.wf", source)];
     with_parsed(&inputs, |parsed| {
         let FinalizeOutcome::Complete(mut finalized) = finalize(parsed, FINALIZE_LIMITS) else {
@@ -265,7 +262,7 @@ fn tree_mutation_with_the_original_tape_cannot_publish_canonical_syntax() {
 
 #[test]
 fn canonical_audit_resource_edges_are_explicit_and_deterministic() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n}\n";
+    let source = b"fn main() -> status: own ExitStatus pure {\n}\n";
     let cases = [
         (
             CanonicalLimit::Work,
@@ -315,7 +312,7 @@ fn canonical_audit_resource_edges_are_explicit_and_deterministic() {
         });
     }
 
-    let noncanonical = b"command fn main() -> status: own ExitStatus pure {}";
+    let noncanonical = b"fn main() -> status: own ExitStatus pure {}";
     let inputs = [SourceInput::new("path.wf", noncanonical)];
     with_parsed(&inputs, |parsed| {
         let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
@@ -394,24 +391,20 @@ fn only_these_trivia_bytes_render(canonical: &[u8]) {
 
 #[test]
 fn generated_trivia_mutations_never_bypass_the_exact_forest_renderer() {
-    only_these_trivia_bytes_render(b"const first: i32 = 1_i32;\n\ncommand fn main() -> status: own ExitStatus pure {\n  let value = 2_i32;\n  return unit;\n}\n");
+    only_these_trivia_bytes_render(b"const first: i32 = 1_i32;\n\nfn main() -> status: own ExitStatus pure {\n  let value = 2_i32;\n  return unit;\n}\n");
 }
 
-/// The one canonical byte sequence [FN-7] states for a complete five-input
-/// command entry header.
-const COMMAND_ENTRY_HEADER: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus writes(cwd) {";
+/// Ordinary typed parameters use the same canonical function header.
+const ORDINARY_HEADER_HEADER: &[u8] = b"fn main(args: own Args, cwd: own DirectoryRead, out: own OutputStream, err: own OutputStream, files: own HandleFactory) -> status: own ExitStatus writes(cwd) {";
 
-const COMMAND_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus writes(cwd) {\n  return unit;\n}\n";
+const ORDINARY_HEADER: &[u8] = b"fn main(args: own Args, cwd: own DirectoryRead, out: own OutputStream, err: own OutputStream, files: own HandleFactory) -> status: own ExitStatus writes(cwd) {\n  return unit;\n}\n";
 
 #[test]
-fn the_command_entry_header_renders_from_form2_without_amendment() {
-    // FN-7 states that FORM-2 renders the entry header unamended: neither
-    // `program_kind` nor `input_label` is line-bearing or block-bearing, and
-    // the existing attachment sets join `command`, `.`, and the label tail
-    // with no bytes while separating `as` from its binder by one space. The
-    // mutation sweep is the reject side: no other trivia spelling renders.
-    assert!(COMMAND_ENTRY.starts_with(COMMAND_ENTRY_HEADER));
-    only_these_trivia_bytes_render(COMMAND_ENTRY);
+fn ordinary_parameter_headers_follow_form2() {
+    // C2 removes program_kind and input_label; ordinary parameters retain
+    // FORM-2 exact trivia, including the negative mutation sweep.
+    assert!(ORDINARY_HEADER.starts_with(ORDINARY_HEADER_HEADER));
+    only_these_trivia_bytes_render(ORDINARY_HEADER);
 }
 
 /// The property the corpus migration rests on: a transform may produce any
@@ -424,24 +417,24 @@ fn rendering_normalizes_any_parseable_layout_onto_canonical_bytes() {
     for (sloppy, canonical) in [
         // No trivia at all where FORM-2 requires a break.
         (
-            b"command fn main() -> status: own ExitStatus pure {}".as_slice(),
-            b"command fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {}".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
         ),
         // Leading trivia, which no canonical source carries.
         (
-            b" command fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
-            b"command fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
+            b" fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
         ),
         // A missing final newline.
         (
-            b"command fn main() -> status: own ExitStatus pure {\n}".as_slice(),
-            b"command fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {\n}".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {\n}\n".as_slice(),
         ),
         // Wrong indentation and a run of blank lines inside a body.
         (
-            b"command fn main() -> status: own ExitStatus pure {\n\n\n        let value = 2_i32;\n   return exit_status(code: 0_u8);\n}\n"
+            b"fn main() -> status: own ExitStatus pure {\n\n\n        let value = 2_i32;\n   return exit_status(code: 0_u8);\n}\n"
                 .as_slice(),
-            b"command fn main() -> status: own ExitStatus pure {\n  let value = 2_i32;\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {\n  let value = 2_i32;\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
         ),
         // Two top-level items run together; FORM-2 separates them by a blank
         // line, which no amount of local spacing repair would supply.
@@ -453,13 +446,13 @@ fn rendering_normalizes_any_parseable_layout_onto_canonical_bytes() {
         // `if`/`else` from a `match` produces the close and the `else` with no
         // idea they share a line; the renderer is what puts them there.
         (
-            b"command fn main() -> status: own ExitStatus pure {\nlet flag = True();\nif flag {\nlet then_value = flag;\n}\nelse\n{\nlet else_value = flag;\n}\nreturn unit;\n}\n".as_slice(),
-            b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let then_value = flag;\n  } else {\n    let else_value = flag;\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {\nlet flag = True();\nif flag {\nlet then_value = flag;\n}\nelse\n{\nlet else_value = flag;\n}\nreturn unit;\n}\n".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let then_value = flag;\n  } else {\n    let else_value = flag;\n  }\n  return unit;\n}\n".as_slice(),
         ),
         // A flattened `else if` chain, likewise joined by the renderer.
         (
-            b"command fn main() -> status: own ExitStatus pure {\nlet flag = True();\nif flag {\nlet first = flag;\n} else if flag {\nlet second = flag;\n} else {\nlet third = flag;\n}\nreturn unit;\n}\n".as_slice(),
-            b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let first = flag;\n  } else if flag {\n    let second = flag;\n  } else {\n    let third = flag;\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {\nlet flag = True();\nif flag {\nlet first = flag;\n} else if flag {\nlet second = flag;\n} else {\nlet third = flag;\n}\nreturn unit;\n}\n".as_slice(),
+            b"fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let first = flag;\n  } else if flag {\n    let second = flag;\n  } else {\n    let third = flag;\n  }\n  return unit;\n}\n".as_slice(),
         ),
     ] {
         assert!(!reaches_canonical_syntax(sloppy));
@@ -483,20 +476,20 @@ fn an_item_free_source_renders_as_one_newline() {
 fn if_else_renders_its_join_line_and_indents_both_blocks() {
     // An else-free `if`: one block, ordinary break after the close.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let then_value = flag;\n  }\n  return unit;\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let then_value = flag;\n  }\n  return unit;\n}\n",
     );
     // A braced `else`: two blocks joined by `} else {` on one line.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let then_value = flag;\n  } else {\n    let else_value = flag;\n  }\n  return unit;\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let then_value = flag;\n  } else {\n    let else_value = flag;\n  }\n  return unit;\n}\n",
     );
     // An `else if` chain: the nested `if_stmt` owns the second block, so the
     // outer node has one pair plus an `else`, and still suppresses its break.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let first = flag;\n  } else if flag {\n    let second = flag;\n  } else {\n    let third = flag;\n  }\n  return unit;\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let first = flag;\n  } else if flag {\n    let second = flag;\n  } else {\n    let third = flag;\n  }\n  return unit;\n}\n",
     );
     // A `value_if` initializer delivers from both branches.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  let picked = if flag {\n    give 1_i32;\n  } else {\n    give 2_i32;\n  }\n  return unit;\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  let picked = if flag {\n    give 1_i32;\n  } else {\n    give 2_i32;\n  }\n  return unit;\n}\n",
     );
     // A three-deep chain renders flat: every arm sits at one indent level.
     // This is structural, not a special case. An else-position `if_stmt`
@@ -507,7 +500,7 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
     // brace. Do not add a special case here: depth would then accumulate and
     // this fixture would indent each arm one level deeper.
     only_these_trivia_bytes_render(
-        b"command fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let first = flag;\n  } else if flag {\n    let second = flag;\n  } else if flag {\n    let third = flag;\n  } else {\n    let fourth = flag;\n  }\n  return unit;\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  if flag {\n    let first = flag;\n  } else if flag {\n    let second = flag;\n  } else if flag {\n    let third = flag;\n  } else {\n    let fourth = flag;\n  }\n  return unit;\n}\n",
     );
 }
 

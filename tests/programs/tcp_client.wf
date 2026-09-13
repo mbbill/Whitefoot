@@ -1,3 +1,92 @@
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
 fn byte_at(store: &Slice<u8>, index: own u64) -> result: own u8 reads(store) {
   doc "Reads one stored byte, delivering zero for a position the view does not hold.";
   let room = len_of(deref(store));
@@ -67,7 +156,7 @@ fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result:
   return Ok<unit, IoError>(value: unit);
 }
 
-fn publish_all(output: &uniq OutputStream, source: &Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(factory, output, source), writes(factory, output) contract {
   define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
@@ -80,7 +169,7 @@ fn publish_all(output: &uniq OutputStream, source: &Slice<u8>, length: own u64) 
       break @publish;
     }
     region {
-      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
+      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -93,8 +182,12 @@ fn publish_all(output: &uniq OutputStream, source: &Slice<u8>, length: own u64) 
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own OutputStream, command.handles as handles: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, out, handles, heap), writes(out, handles, heap), allocates(heap) {
-  doc "Connects to the loopback port named by the invocation, sends eight bytes through the connection's sending direction, and publishes every byte the peer returns through its receiving direction until the peer stops sending [SYS-17, SYS-18]. The argument scratch and the receive chunk are store-resident runs viewed exclusively where they are written and shared where they are read; the eight-byte payload is an inline run whose shared view is all the send needs.";
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "Connects to the loopback port named by the invocation, sends eight bytes through the connection's sending direction, and publishes every byte the peer returns through its receiving direction until the peer stops sending. Each direction is an ordinary linear owner [PRE-1, PROV-6]. The argument scratch and the receive chunk are store-resident runs viewed exclusively where they are written and shared where they are read; the eight-byte payload is an inline run whose shared view is all the send needs.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 16_u64) {
       None() => {
@@ -108,7 +201,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
           invariant spare_digits: room_of(digits) + at >= 16_u64,
           invariant flat_digits: head_of(digits) <= 0_u64
         ) {
-          set digits = place_back(vector: move digits, value: 0_u8);
+          place_back(vector: &uniq digits, value: 0_u8);
         }
         match heap_vector::<u8>(store: &uniq heap, count: 4096_u64) {
           None() => {
@@ -122,7 +215,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
               invariant spare_chunk: room_of(chunk) + at >= 4096_u64,
               invariant flat_chunk: head_of(chunk) <= 0_u64
             ) {
-              set chunk = place_back(vector: move chunk, value: 0_u8);
+              place_back(vector: &uniq chunk, value: 0_u8);
             }
             let room = len_of(digits);
             let held = len_of(chunk);
@@ -142,7 +235,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
                 Err(error: problem) => {
                 }
               }
-              set payload = place_back(vector: move payload, value: letter);
+              place_back(vector: &uniq payload, value: letter);
             }
             let carried = 0_u64;
             let port = 0_u16;
@@ -158,11 +251,11 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
             region {
               match arg_get(args: &args, position: 1_u64) {
                 Ok(value: text) => {
-                  region 'v {
+                  region {
                     region {
                       let window = mut_slice_of(&uniq digits);
                       region {
-                        match host_copy_utf8(value: &'v text, destination: &uniq window, start: 0_u64, end: room) {
+                        match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: room) {
                           Ok(value: written) => {
                             set carried = written;
                           }
@@ -191,35 +284,35 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
             let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
             let outcome = 0_u8;
             region {
-              match reserve_handle(factory: &uniq handles) {
-                Ok(value: permit) => {
-                  region {
-                    match tcp_connect(permit: move permit, address: &address) {
-                      Connected(connection: link) => {
-                        let refused = 0_u8;
-                        region {
-                          let greeting = slice_of(&payload);
-                          region {
-                            match send_all(send: &uniq link.send, source: &greeting, length: 8_u64) {
-                              Ok(value: delivered) => {
-                              }
-                              Err(error: problem) => {
-                                set refused = 5_u8;
-                              }
-                            }
+              region {
+                match tcp_connect(factory: &uniq handles, address: &address) {
+                  Connected(connection: link) => {
+                    let refused = 0_u8;
+                    region {
+                      let greeting = slice_of(&payload);
+                      region {
+                        match send_all(send: &uniq link.send, source: &greeting, length: 8_u64) {
+                          Ok(value: delivered) => {
+                          }
+                          Err(error: problem) => {
+                            set refused = 5_u8;
                           }
                         }
-                        if refused == 0_u8 {
-                          loop @chunks {
-                            let available = 0_u64;
-                            let ended = 0_u8;
-                            region {
-                              let sink = mut_slice_of(&uniq chunk);
-                              region {
-                                match receive_next(receive: &uniq link.receive, destination: &uniq sink, start: 0_u64, end: held) {
-                                  ReadBytes(next: endpoint) => {
-                                    set available = endpoint;
-                                  }
+                      }
+                    }
+                    if refused == 0_u8 {
+                      loop @chunks {
+                        let available = 0_u64;
+                        let ended = 0_u8;
+                        region {
+                          let sink = mut_slice_of(&uniq chunk);
+                          region {
+                            match receive_next(receive: &uniq link.receive, destination: &uniq sink, start: 0_u64, end: held) {
+                              Ok(value: endpoint) => {
+                                set available = endpoint;
+                              }
+                              Err(error: read_stop_3) => {
+                                match read_stop_3 {
                                   ReadEnd() => {
                                     set ended = 1_u8;
                                   }
@@ -230,39 +323,44 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
                                 }
                               }
                             }
-                            if ended == 0_u8 {
-                              region {
-                                let returned = slice_of(&chunk);
-                                region {
-                                  match publish_all(output: &uniq out, source: &returned, length: available) {
-                                    Ok(value: published) => {
-                                    }
-                                    Err(error: problem) => {
-                                      set outcome = 7_u8;
-                                      set ended = 2_u8;
-                                    }
-                                  }
+                          }
+                        }
+                        if ended == 0_u8 {
+                          region {
+                            let returned = slice_of(&chunk);
+                            region {
+                              match publish_all(factory: &uniq handles, output: &uniq out, source: &returned, length: available) {
+                                Ok(value: published) => {
+                                }
+                                Err(error: problem) => {
+                                  set outcome = 7_u8;
+                                  set ended = 2_u8;
                                 }
                               }
                             }
-                            if ended == 0_u8 {
-                            } else {
-                              break @chunks;
-                            }
                           }
-                        } else {
-                          set outcome = refused;
                         }
-                        let credit = close_connection(connection: move link);
+                        if ended == 0_u8 {
+                        } else {
+                          break @chunks;
+                        }
                       }
-                      ConnectFailed(error: problem, permit: handed_back) => {
+                    } else {
+                      set outcome = refused;
+                    }
+                    let TcpConnection(receive: close_receive_4, send: close_send_4) = move link;
+                    close_receive(factory: &uniq handles, receive: move close_receive_4);
+                    close_send(factory: &uniq handles, send: move close_send_4);
+                  }
+                  ConnectFailed(error: problem) => {
+                    region {
+                      if factory_refusal(error: &problem) {
+                        set outcome = 9_u8;
+                      } else {
                         set outcome = 8_u8;
                       }
                     }
                   }
-                }
-                Err(error: problem) => {
-                  set outcome = 9_u8;
                 }
               }
             }

@@ -11,10 +11,10 @@ use super::super::model::{
     CheckedBufferRoot, CheckedContainerRoot, CheckedExpression, CheckedMode, CheckedNominalKind,
     CheckedPlaceStep, CheckedSliceOrigin, CheckedStatePath, CheckedType, LoanStrength,
 };
-use super::super::places::{PlaceStep, paths_diverge};
+use super::super::places::{PlaceProjection, PlaceStep, paths_diverge};
 use super::linearity::LinearityClass;
 use super::{
-    CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ParameterSignature,
+    CheckStop, Checker, EffectPath, FunctionSignature, LocalBinding, ParameterSignature,
     TypedExpression,
 };
 
@@ -87,7 +87,7 @@ const _: () = {
 };
 
 /// [OWN-14]'s exact restructuring for a rejected reborrow form.
-const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child in argument position, \
+pub(super) const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child in argument position, \
      return it as the complete return expression from a parameter or let-bound holder, \
      or return the holder itself";
 
@@ -99,22 +99,8 @@ const OWN14_RESTRUCTURING: &str = "pass the reborrow as a statement-scoped child
 /// judgments.
 const OWN10_LOCAL_STORAGE: &str = "a borrow of local storage names a region introduced inside that binding's own scope: write `region 'r { ... }` after the binding and take the borrow inside it. A caller-supplied region parameter is never admitted here, because it outlives the storage.";
 
-/// OWN-6's statement-scoped-region condition, in the terms a writer has.
-///
-/// The rule reads "a locally-introduced region whose block does not extend
-/// beyond the enclosing statement". A writer meets that as two facts at once:
-/// the region holds one statement, and anything that statement binds is gone
-/// at the closing brace — so `region 'r { let permit = reserve(...); match
-/// open(permit: move permit, ...) { ... } }`, which is the shape every
-/// recursive walker wants, is rejected and cannot be repaired by shortening
-/// the region.
-///
-/// The 0099 text named two routes and neither reached a working walker: the
-/// `replace` route cannot commit where the call consumed the target's root,
-/// which is exactly what `move permit` does, and the helper route is only the
-/// first third of the working idiom. `tests/programs/dir_walk.wf` pairs the
-/// helper with two more parts, and all three are named here.
-const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_handle::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f HandleFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
+/// OWN-6's local formation ceiling for a non-candidate argument child.
+const OWN6_LOCAL_REGION: &str = "introduce the child region locally inside the holder's region; a caller-supplied region is admitted only in a borrow-result provenance-candidate position";
 
 /// OWN-6's receiver condition: which calls admit a reborrow argument at all.
 const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
@@ -125,23 +111,64 @@ const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call r
 const OWN6_HOLDER: &str = "reborrow only a parameter or let-bound holder, take `&uniq` only from \
      a `&uniq` holder, and introduce the child region inside the holder's own region";
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct ResolvedPlace {
     pub(super) root: DeclarationId,
     pub(super) path: Vec<PlaceStep>,
+    /// [LIV-2] identity retains owning indirection, which [OWN-7]'s
+    /// conservative path deliberately erases. Borrow provenance carries both.
+    pub(super) storage_path: Vec<PlaceProjection>,
 }
+
+// Existing loan identities compare the conservative origin. Exact storage
+// identity is a separate relation, used by the commit's read-out judgment.
+impl PartialEq for ResolvedPlace {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root && self.path == other.path
+    }
+}
+
+impl Eq for ResolvedPlace {}
 
 impl ResolvedPlace {
     pub(super) fn fields(root: DeclarationId, fields: Vec<u32>) -> Self {
+        Self::from_path(root, fields.into_iter().map(PlaceStep::Field).collect())
+    }
+
+    pub(super) fn from_path(root: DeclarationId, path: Vec<PlaceStep>) -> Self {
         Self {
             root,
-            path: fields.into_iter().map(PlaceStep::Field).collect(),
+            storage_path: path
+                .iter()
+                .map(|step| match step {
+                    PlaceStep::Field(field) => PlaceProjection::Field(*field),
+                    PlaceStep::Subscript(offset) => PlaceProjection::Subscript(*offset),
+                })
+                .collect(),
+            path,
         }
     }
 
     pub(super) fn extend_fields(&mut self, fields: &[u32]) {
         self.path
             .extend(fields.iter().copied().map(PlaceStep::Field));
+        self.storage_path
+            .extend(fields.iter().copied().map(PlaceProjection::Field));
+    }
+
+    pub(super) fn push_subscript(&mut self, offset: super::super::places::PlaceOffset) {
+        self.path.push(PlaceStep::Subscript(offset));
+        self.storage_path.push(PlaceProjection::Subscript(offset));
+    }
+
+    pub(super) fn extend_storage(&mut self, path: &[CheckedPlaceStep]) {
+        for step in path {
+            match step {
+                CheckedPlaceStep::Field(field) => self.extend_fields(&[*field]),
+                CheckedPlaceStep::BoxReferent(_) => self.storage_path.push(PlaceProjection::Deref),
+                CheckedPlaceStep::Subscript(index) => self.push_subscript(index.place_offset),
+            }
+        }
     }
 
     /// The source-expressible prefix used by state/effect contracts, whose
@@ -163,6 +190,10 @@ pub(super) struct BorrowInfo {
     pub(super) region: DeclarationId,
     pub(super) place: ResolvedPlace,
     pub(super) origin_region: Option<DeclarationId>,
+    /// A signature candidate is a loan ceiling, not the exact value returned.
+    /// Only an exact place may transfer its value facts or receive a strong
+    /// update of its contained ownership state.
+    pub(super) exact_place: bool,
 }
 
 /// A non-escaping argument temporary and the holder its child suspends.
@@ -185,22 +216,37 @@ impl TemporaryLoan {
 pub(super) struct SliceInfo {
     pub(super) region: DeclarationId,
     pub(super) origins: Vec<CheckedSliceOrigin>,
+    /// The exact continuing claims carried by this value. Equal storage
+    /// origins do not make a new view a holder of an older view's loan.
+    pub(super) loans: Vec<SliceLoanKey>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct SliceLoanKey {
+    pub(super) region: DeclarationId,
+    pub(super) place: ResolvedPlace,
+    pub(super) parent: Option<DeclarationId>,
+    pub(super) strength: LoanStrength,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SliceLoan {
-    /// The named data region, which—not a descriptor binding—owns this claim.
+    /// The named data region bounds this claim; shared descriptors may end
+    /// it earlier at their last use.
     pub(super) region: DeclarationId,
-    /// The exact source place protected for the complete named region.
+    /// The exact source place protected while the loan is live.
     pub(super) place: ResolvedPlace,
+    /// The checked borrow holder that supplied this view's permission, if
+    /// formation went through a storage holder. Origins identify backing
+    /// storage; they do not by themselves delegate a holder's authority.
+    pub(super) parent: Option<DeclarationId>,
     /// [VIEW-1] the strength of the loan the view value holds.
     ///
     /// It is carried because two exclusive loans on one range are what
     /// [OWN-5] 606 refuses, and because a target path through a view is
     /// admitted at exclusive strength and at no other [SET-1].
     pub(super) strength: LoanStrength,
-    /// [PROV-3] the bindings that hold this loan: every view binding whose
-    /// origin set names the loan's place.
+    /// [PROV-3] the bindings that carry this exact continuing claim.
     ///
     /// A loan begins where its value is formed or copied and ends where that
     /// value's own liveness ends. For a **copy** view that end is its last
@@ -214,6 +260,25 @@ pub(super) struct SliceLoan {
 }
 
 impl SliceLoan {
+    pub(super) fn new(key: SliceLoanKey) -> Self {
+        Self {
+            region: key.region,
+            place: key.place,
+            parent: key.parent,
+            strength: key.strength,
+            descriptors: Vec::new(),
+        }
+    }
+
+    pub(super) fn key(&self) -> SliceLoanKey {
+        SliceLoanKey {
+            region: self.region,
+            place: self.place.clone(),
+            parent: self.parent,
+            strength: self.strength,
+        }
+    }
+
     /// Whether one access to the origin conflicts with this loan [OWN-5].
     ///
     /// A shared loan refuses what a shared borrow refuses: a write, a move,
@@ -289,6 +354,23 @@ impl BorrowInfo {
 }
 
 impl SliceInfo {
+    pub(super) fn child(&self, region: DeclarationId) -> Self {
+        Self {
+            region,
+            origins: self.origins.clone(),
+            loans: self
+                .loans
+                .iter()
+                .cloned()
+                .map(|mut loan| {
+                    loan.region = region;
+                    loan.strength = LoanStrength::Shared;
+                    loan
+                })
+                .collect(),
+        }
+    }
+
     pub(super) fn source_places(&self) -> Vec<(ResolvedPlace, Option<DeclarationId>)> {
         self.origins
             .iter()
@@ -298,10 +380,7 @@ impl SliceInfo {
                     path,
                     origin_region,
                 } => Some((
-                    ResolvedPlace {
-                        root: *root,
-                        path: path.clone(),
-                    },
+                    ResolvedPlace::from_path(*root, path.clone()),
                     *origin_region,
                 )),
                 CheckedSliceOrigin::ImmutableConst | CheckedSliceOrigin::FormalSlice { .. } => None,
@@ -313,10 +392,9 @@ impl SliceInfo {
         let mut places = Vec::new();
         for origin in &self.origins {
             let place = match origin {
-                CheckedSliceOrigin::SourcePlace { root, path, .. } => Some(ResolvedPlace {
-                    root: *root,
-                    path: path.clone(),
-                }),
+                CheckedSliceOrigin::SourcePlace { root, path, .. } => {
+                    Some(ResolvedPlace::from_path(*root, path.clone()))
+                }
                 CheckedSliceOrigin::FormalSlice { parameter, .. } => {
                     Some(ResolvedPlace::fields(*parameter, Vec::new()))
                 }
@@ -351,6 +429,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut ty = bindings
             .get(&place.root)
             .map(|binding| binding.ty)
+            .or_else(|| {
+                self.constants
+                    .get(&place.root)
+                    .and_then(|id| self.checked_constants.get(id.0 as usize))
+                    .map(|constant| constant.ty)
+            })
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let mut fields = Vec::new();
         for field in place.field_prefix() {
@@ -376,40 +460,64 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// Instantiates one resolved place onto the current function's incoming
-    /// formal identities. Fresh local owners yield no enclosing effect;
-    /// moved affine owners retain their structural formal sources; a scalar
-    /// borrow parameter falls back to its direct parameter place.
+    /// formal places. Local owners yield no enclosing effect. View origins
+    /// identify borrowed backing even when the descriptor itself is copy.
+    /// No owned value history participates in this projection.
     pub(super) fn effect_paths_for_place(
         &self,
+        node: NodeId,
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<Vec<CheckedStatePath>, CheckStop> {
+    ) -> Result<Vec<EffectPath>, CheckStop> {
+        self.state_effect_paths_for_place(node, place, bindings, false, false)
+    }
+
+    /// A callee's declared formal effect covers the complete selected actual.
+    /// It is not a local descriptor read or a type-selected release action.
+    pub(super) fn effect_paths_for_whole_place(
+        &self,
+        node: NodeId,
+        place: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<Vec<EffectPath>, CheckStop> {
+        self.state_effect_paths_for_place(node, place, bindings, true, false)
+    }
+
+    /// A measure reads the selected run descriptor, not the values stored in
+    /// its element slots. Unlocated suppliers remain conservative bounds.
+    pub(super) fn effect_paths_for_descriptor(
+        &self,
+        node: NodeId,
+        place: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<Vec<EffectPath>, CheckStop> {
+        self.state_effect_paths_for_place(node, place, bindings, false, true)
+    }
+
+    fn state_effect_paths_for_place(
+        &self,
+        _node: NodeId,
+        place: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        _whole: bool,
+        _descriptor: bool,
+    ) -> Result<Vec<EffectPath>, CheckStop> {
+        if self.constants.contains_key(&place.root) {
+            return Ok(Vec::new());
+        }
         let canonical = self.state_path(place, bindings)?;
         let binding = bindings
             .get(&place.root)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        if let Some(origins) = &binding.state_origins {
-            if origins.unknown && !self.deriving_result_state_origin.get() {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-            let mut paths = origins
-                .clone()
-                .projected(&canonical.fields)
-                .formals
-                .into_iter()
-                .map(|origin| origin.source)
-                .collect::<Vec<_>>();
-            paths.sort();
-            paths.dedup();
-            return Ok(paths);
-        }
         let parameter = self.resolved.declarations().iter().any(|declaration| {
             declaration.id() == place.root && declaration.role() == DeclarationRole::Parameter
         });
         if parameter
-            && (binding.mode != CheckedMode::Own || matches!(binding.ty, CheckedType::Slice { .. }))
+            && (binding.mode != CheckedMode::Own
+                || !self.is_copy_type(binding.ty)?
+                || Self::checked_type_is_loan_bearing(binding.ty))
         {
-            Ok(vec![canonical])
+            Ok(vec![canonical.into()])
         } else {
             Ok(Vec::new())
         }
@@ -662,8 +770,8 @@ region block that most closely encloses it, and a loop body is one",
 
     /// [FORM-8] over one `fn_decl` or `fn_sig` boundary.
     ///
-    /// A region name is written exactly where the same region is meant at two
-    /// or more positions of the declaration, or where an output position names
+    /// Invariant type brands are named even at one input position. Other
+    /// regions are written where two positions share them or an output names
     /// a region no parameter position names. `region_params` then lists
     /// exactly those names, once each, in order of first written occurrence.
     pub(super) fn check_declaration_region_spelling(&self, node: NodeId) -> Result<(), CheckStop> {
@@ -672,19 +780,17 @@ region block that most closely encloses it, and a loop body is one",
             inputs = self.written_regions_below(parameters)?;
         }
         let mut outputs = Vec::new();
-        for production in [Production::ResultBinding, Production::Effects] {
-            if let Some(child) = self.tree.first_child_with(node, production)? {
-                outputs.extend(self.written_regions_below(child)?);
-            }
+        for result in self.tree.children_with(node, Production::ResultBinding)? {
+            outputs.extend(self.written_regions_below(result)?);
+        }
+        if let Some(effects) = self.tree.first_child_with(node, Production::Effects)? {
+            outputs.extend(self.written_regions_below(effects)?);
         }
         // [FORM-8] every output position writes its region: either the same
         // region is meant at an input position, or no input determines it and
         // the caller chooses it. An elided output region names nothing either
         // way.
-        if let Some(result) = self
-            .tree
-            .first_child_with(node, Production::ResultBinding)?
-        {
+        for result in self.tree.children_with(node, Production::ResultBinding)? {
             let mut stack = vec![result];
             while let Some(current) = stack.pop() {
                 let carries_region = match self.tree.production(current)? {
@@ -717,7 +823,8 @@ the result shares, or a region parameter of its own that the caller supplies",
         for (position, name) in inputs.iter().chain(outputs.iter()) {
             let related = counts.get(name.as_str()).copied().unwrap_or_default() >= 2;
             let caller_chosen = !input_names.contains(&name.as_str());
-            if !related && !caller_chosen {
+            let invariant = self.tree.production(*position)? == Production::Targ;
+            if !related && !caller_chosen && !invariant {
                 return self.issue_node(
                     SemanticRule::Form8,
                     *position,
@@ -863,10 +970,9 @@ absent when it writes none",
     ///
     /// [OWN-2] restricts no type, so this states what the checker, lowering,
     /// and backend carry today rather than a language rule: every directly
-    /// stored value, plus the descriptor and opaque-handle types that are
-    /// already their own borrow. `array` content and an unsubstituted generic
-    /// stay explicitly unsupported instead of being misreported as invalid
-    /// source.
+    /// stored value, including descriptor and opaque-resource types. Generic
+    /// referents use the same typed storage path; instantiation supplies their
+    /// concrete representation before lowering.
     pub(super) fn borrowable_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Buffer { .. } | CheckedType::Slice { .. } => true,
@@ -874,41 +980,41 @@ absent when it writes none",
             // handle, so each is already the thing a borrow carries; a
             // frame-resident run is inline storage, so a borrow of it is the
             // address of that storage, exactly as a borrow of a struct is
-            // [BLK-1, PROV-1]. [BLK-4] refuses only the `&uniq` of a run, so
-            // the shared borrow is an ordinary one.
+            // [BLK-1, PROV-1]. Both loan strengths address that storage.
             CheckedType::Vector { .. } | CheckedType::Heap { .. } | CheckedType::Extent { .. } => {
                 true
             }
-            CheckedType::FixedVector { .. } => true,
+            CheckedType::Array { .. } | CheckedType::FixedVector { .. } => true,
             CheckedType::Nominal(nominal) => matches!(
                 self.nominal(nominal)?.kind,
-                CheckedNominalKind::Struct { .. }
+                CheckedNominalKind::Opaque
+                    | CheckedNominalKind::Struct { .. }
                     | CheckedNominalKind::Enum { .. }
                     | CheckedNominalKind::Box { .. }
-                    | CheckedNominalKind::SystemResource { .. }
             ),
             CheckedType::Unit
             | CheckedType::Bool
             | CheckedType::Integer(_)
             | CheckedType::Float(_) => true,
-            CheckedType::Array { .. }
-            | CheckedType::Generic(_)
-            | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => false,
+            CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
+                true
+            }
         })
     }
 
     /// Whether a borrow of this type is the address of the borrowed storage.
     ///
-    /// A `buffer` or `slice` value is already a descriptor, and a `box` or
-    /// system-resource value is already its own borrow, so only directly
-    /// stored content — scalars, structs, and enums — needs a stable address
-    /// for reads and writes through the holder [OWN-5, TYPE-7].
+    /// A Box borrow addresses the pointer slot in its owner, so reads and
+    /// replacement through the holder share that storage [OWN-5, TYPE-7].
+    /// Legacy buffer/view descriptors retain their value representation.
     pub(super) fn borrow_addresses_storage(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Nominal(nominal) => matches!(
                 self.nominal(nominal)?.kind,
-                CheckedNominalKind::Struct { .. } | CheckedNominalKind::Enum { .. }
+                CheckedNominalKind::Opaque
+                    | CheckedNominalKind::Struct { .. }
+                    | CheckedNominalKind::Enum { .. }
+                    | CheckedNominalKind::Box { .. }
             ),
             CheckedType::Unit
             | CheckedType::Bool
@@ -919,20 +1025,18 @@ absent when it writes none",
             // that storage. Both runs [BLK-1] are borrowed the same way: an
             // inline run is storage in its owner and a store-resident run's
             // descriptor is storage in its owner's frame, so each borrow is
-            // the address of the run's own storage. That is one borrow path
-            // for the two runs rather than one shape each, and [BLK-4]
-            // refuses the `&uniq` of either, so no borrow of a run writes
-            // through it.
+            // the address of the run's own storage. Generic referents name
+            // the same storage; their concrete layout is selected only at
+            // instantiation.
             CheckedType::Heap { .. }
             | CheckedType::Extent { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. } => true,
-            CheckedType::Buffer { .. }
-            | CheckedType::Slice { .. }
             | CheckedType::Array { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => false,
+            | CheckedType::GenericFloat(_) => true,
+            CheckedType::Buffer { .. } | CheckedType::Slice { .. } => false,
         })
     }
 
@@ -947,11 +1051,15 @@ absent when it writes none",
             region,
             place: ResolvedPlace::fields(parameter.declaration, Vec::new()),
             origin_region: Some(region),
+            exact_place: true,
         })
     }
 
     pub(super) fn parameter_slice(&self, parameter: &ParameterSignature) -> Option<SliceInfo> {
-        let CheckedType::Slice { region, .. } = parameter.ty else {
+        let CheckedType::Slice {
+            region, strength, ..
+        } = parameter.ty
+        else {
             return None;
         };
         Some(SliceInfo {
@@ -959,6 +1067,14 @@ absent when it writes none",
             origins: vec![CheckedSliceOrigin::FormalSlice {
                 parameter: parameter.declaration,
                 region,
+            }],
+            // An incoming view supplies its own permission. No local
+            // formation loan is registered until it forms a shared child.
+            loans: vec![SliceLoanKey {
+                region,
+                place: ResolvedPlace::fields(parameter.declaration, Vec::new()),
+                parent: (parameter.mode != CheckedMode::Own).then_some(parameter.declaration),
+                strength,
             }],
         })
     }
@@ -1010,11 +1126,11 @@ inside the `region` block whose region it takes",
             // programs as OWN-6/OWN-14/TYPE-7 violations.
             if let Some(root) = self.owned_content_deref_root(pbase, bindings)? {
                 return self.check_owned_content_borrow(
-                    node, place_node, region, function, loop_depth, root,
+                    node, place_node, region, function, bindings, loop_depth, root,
                 );
             }
             return self.check_child_reborrow(
-                node, place_node, pbase, region, kind, bindings, loop_depth, position,
+                node, place_node, pbase, region, kind, bindings, function, loop_depth, position,
             );
         }
         if !self.borrow_region_is_inside_current_loops(region, node, loop_depth)? {
@@ -1030,6 +1146,68 @@ inside the `region` block whose region it takes",
             return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, pbase);
         }
         let root_use = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+        if let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::NamedConst,
+        } = root_use.target()
+        {
+            if kind == BorrowKind::Unique {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::ImmutableSetTarget,
+                );
+            }
+            let constant_id = *self
+                .constants
+                .get(&declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let constant = self.constant(constant_id)?;
+            let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
+            // A descriptor-free constant run is not an ordinary in-memory
+            // FixedVector descriptor. Scalar projection is unchanged, but
+            // borrowing the complete value needs a representation adapter.
+            if suffixes.is_empty() && constant.declared_type != constant.ty {
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+            }
+            let (path, ty, offsets) = self.resolve_storage_path(
+                &suffixes,
+                constant.ty,
+                bindings,
+                function,
+                loop_depth,
+                true,
+            )?;
+            if !self.borrow_addresses_storage(ty)? {
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+            }
+            let mut place = ResolvedPlace::fields(declaration, Vec::new());
+            place.extend_storage(&path);
+            let borrow = BorrowInfo {
+                kind,
+                region,
+                place,
+                origin_region: None,
+                exact_place: true,
+            };
+            return Ok(TypedExpression {
+                expression: CheckedExpression::BorrowAddressed {
+                    carrier: self.tree.path(carrier)?.clone(),
+                    root: CheckedContainerRoot {
+                        root: crate::semantic::CheckedPlaceRoot::Constant(constant_id),
+                        path,
+                        ty,
+                    },
+                },
+                mode: borrow.mode(),
+                borrow: Some(borrow),
+                slice: None,
+                holder: None,
+                reference_value: true,
+                effects: offsets.effects,
+                accesses: offsets.accesses,
+            });
+        }
         let ResolvedTarget::Source {
             declaration,
             class: DeclarationClass::Value,
@@ -1087,10 +1265,8 @@ inside the `region` block whose region it takes",
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
         let (path, ty, offsets) =
             self.resolve_storage_path(&suffixes, local.ty, bindings, function, loop_depth, true)?;
-        let place = ResolvedPlace {
-            root: declaration,
-            path: path.iter().map(CheckedPlaceStep::place_step).collect(),
-        };
+        let mut place = ResolvedPlace::fields(declaration, Vec::new());
+        place.extend_storage(&path);
         let fields = place.field_prefix();
         let only_fields = fields.len() == path.len();
         self.check_commit_place_live(&place, node, false)?;
@@ -1109,6 +1285,7 @@ inside the `region` block whose region it takes",
             region,
             place,
             origin_region: None,
+            exact_place: true,
         };
         let slice = local.slice.clone();
         let expression = match ty {
@@ -1130,32 +1307,9 @@ inside the `region` block whose region it takes",
                     nominal,
                 }
             }
-            // An opaque resource value is its own borrow, whether the
-            // binding is that resource or a field of one. A system struct's
-            // `receive` and `send` are ordinary field places [SYS-18], so a
-            // borrow of one carries the field path and nothing else changes:
-            // the loan `place` above already names the field, so [OWN-5]
-            // decides two loans on disjoint fields exactly as it does for a
-            // source struct.
-            CheckedType::Nominal(nominal)
-                if only_fields
-                    && matches!(
-                        self.nominal(nominal)?.kind,
-                        CheckedNominalKind::SystemResource { .. }
-                    ) =>
-            {
-                CheckedExpression::BorrowSystemResource {
-                    carrier: self.tree.path(carrier)?.clone(),
-                    binding: local.binding,
-                    fields: fields.clone(),
-                    state_origins: local.state_origins.clone(),
-                    nominal,
-                }
-            }
             CheckedType::Slice { .. } if path.is_empty() => CheckedExpression::Binding {
                 carrier: self.tree.path(carrier)?.clone(),
                 binding: local.binding,
-                state_origins: local.state_origins.clone(),
                 ty,
                 slice_origins: slice
                     .as_ref()
@@ -1166,7 +1320,7 @@ inside the `region` block whose region it takes",
             _ if self.borrow_addresses_storage(ty)? => CheckedExpression::BorrowAddressed {
                 carrier: self.tree.path(carrier)?.clone(),
                 root: CheckedContainerRoot {
-                    binding: local.binding,
+                    root: crate::semantic::CheckedPlaceRoot::Binding(local.binding),
                     path,
                     ty,
                 },
@@ -1250,12 +1404,14 @@ inside the `region` block whose region it takes",
     /// as for a borrow of the binding itself; only the region relation
     /// differs, because arena content outlives its region rather than its
     /// binding [STOR-4].
+    #[allow(clippy::too_many_arguments)]
     fn check_owned_content_borrow(
         &self,
         node: NodeId,
         place_node: NodeId,
         region: DeclarationId,
         function: &FunctionSignature,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         root: (LocalBinding, OwnedContent),
     ) -> Result<TypedExpression, CheckStop> {
@@ -1299,26 +1455,76 @@ inside the `region` block whose region it takes",
                 },
             );
         }
-        // The written suffix chain still selects a real field of the content
-        // type, so a wrong spelling stays a source rejection rather than being
-        // masked by the capability stop below [DIAG-1].
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
-        let (_fields, _ty) = self.resolve_struct_path(&suffixes, content.ty())?;
-        // TEMPORARY capability stop, judged after the [OWN-1], [OWN-10], and
-        // [OWN-11] source rejections above. No checked expression addresses
-        // owned indirection content: a `box` binding lowers to the content
-        // pointer with the box's own IR type and arena storage has no runtime
-        // at all, so there is nothing for the IR builder to take the address
-        // of. This is the same explicit stop the arena-content `slice_of`
-        // path takes rather than publishing an unlowerable checked program.
-        match content {
-            OwnedContent::Arena { .. } => {
-                self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, place_node)
-            }
-            OwnedContent::Boxed(_) => {
-                self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node)
-            }
+        let (suffix, ty, offsets) = self.resolve_storage_path(
+            &suffixes,
+            content.ty(),
+            bindings,
+            function,
+            loop_depth,
+            true,
+        )?;
+        if matches!(content, OwnedContent::Arena { .. }) {
+            return self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, place_node);
         }
+        if !self.borrow_addresses_storage(ty)? {
+            return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
+        }
+        let CheckedType::Nominal(nominal) = local.ty else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        // The ordinary typed place path already lowers BoxReferent by loading
+        // the owner's pointer slot and addressing its allocation. Reuse that
+        // path instead of materializing a snapshot of the boxed content.
+        let mut path = vec![CheckedPlaceStep::BoxReferent(nominal)];
+        path.extend(suffix);
+        let mut place = ResolvedPlace::fields(local.declaration, Vec::new());
+        place.extend_storage(&path);
+        let kind = if self.has_fixed(node, crate::FixedTerminal::Uniq)? {
+            BorrowKind::Unique
+        } else {
+            BorrowKind::Shared
+        };
+        self.check_commit_place_live(&place, node, false)?;
+        self.check_loan_access(
+            bindings,
+            None,
+            &place,
+            match kind {
+                BorrowKind::Shared => AccessKind::SharedBorrow,
+                BorrowKind::Unique => AccessKind::UniqueBorrow,
+            },
+            node,
+        )?;
+        let borrow = BorrowInfo {
+            kind,
+            region,
+            place,
+            origin_region: None,
+            exact_place: true,
+        };
+        let carrier = self
+            .tree
+            .parent(node)?
+            .filter(|parent| self.tree.production(*parent) == Ok(Production::Atom))
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        Ok(TypedExpression {
+            expression: CheckedExpression::BorrowAddressed {
+                carrier: self.tree.path(carrier)?.clone(),
+                root: CheckedContainerRoot {
+                    root: crate::semantic::CheckedPlaceRoot::Binding(local.binding),
+                    path,
+                    ty,
+                },
+            },
+            mode: borrow.mode(),
+            borrow: Some(borrow),
+            slice: None,
+            holder: None,
+            reference_value: true,
+            effects: offsets.effects,
+            accesses: offsets.accesses,
+        })
     }
 
     pub(super) fn check_direct_slice_borrow_lifetime(
@@ -1369,6 +1575,7 @@ inside the `region` block whose region it takes",
         region: DeclarationId,
         kind: BorrowKind,
         bindings: &HashMap<DeclarationId, LocalBinding>,
+        function: &FunctionSignature,
         loop_depth: usize,
         position: ReborrowPosition,
     ) -> Result<TypedExpression, CheckStop> {
@@ -1420,25 +1627,29 @@ inside the `region` block whose region it takes",
         {
             // In the provenance-candidate position of a borrow-returning
             // call, the child's loan survives in the bound result, so the
-            // statement-scoped-region condition is replaced by the parent's
+            // local-region condition is replaced by the parent's
             // permanent suspension [OWN-6]; a caller-supplied region is
             // admitted there because the claim is carried by the result
             // holder, never by a resumed parent. Every other argument child
             // stays statement-scoped.
             if !result_candidate {
                 let region_declaration = self.region_declaration(region)?;
-                if region_declaration.role() != DeclarationRole::LocalRegion
-                    || !self.child_region_is_statement_scoped(region_declaration, node)?
-                {
+                // [OWN-6] the local region
+                // bounds formation and types; the existing statement-loan
+                // stack independently determines the temporary's endpoint.
+                if region_declaration.role() != DeclarationRole::LocalRegion {
                     return self.issue_node(
                         SemanticRule::Own6,
                         node,
                         SemanticIssueKind::InvalidChildReborrow {
-                            mechanical_fix: OWN6_STATEMENT_SCOPE,
+                            mechanical_fix: OWN6_LOCAL_REGION,
                         },
                     );
                 }
             }
+        }
+        if position == ReborrowPosition::ReturnExpression {
+            self.check_returned_reborrow_holder_shape(node, place_node, pbase, region, bindings)?;
         }
         let (holder, local, parent) = self.resolve_dereference_holder(node, pbase, bindings)?;
         // No reborrow is created through a holder [OWN-13] suspended: its
@@ -1465,32 +1676,7 @@ inside the `region` block whose region it takes",
                 }
             }
             ReborrowPosition::ReturnExpression => {
-                // [OWN-10]'s borrow-rooted case is the creation obligation and
-                // is defined before OWN-14, so its violation is cited first at
-                // this node [DIAG-1].
-                if !self.region_outlives(parent.region, region)? {
-                    return self.issue_node(
-                        SemanticRule::Own10,
-                        node,
-                        SemanticIssueKind::InvalidBorrowLifetime {
-                            region: self.region_phrase(region)?,
-                            binder: self.declaration_spelling(holder)?,
-                            // The holder's own region is what a legal
-                            // reborrow names. A region [FORM-8] leaves
-                            // unwritten has no name to give.
-                            mechanical_fix: match self.written_region_name(parent.region)? {
-                                Some(name) => format!(
-                                    "a returned child reborrow names a region its holder's own \
-region {name} outlives; name {name} itself, or a region {name} outlives, on the returned reborrow"
-                                ),
-                                None => "a returned child reborrow names a region its holder's \
-own region outlives; that region is unwritten here, so relate the holder's region to this result \
-and name it on the returned reborrow"
-                                    .to_owned(),
-                            },
-                        },
-                    );
-                }
+                self.check_returned_reborrow_lifetime(holder, &parent, region, node)?;
                 // [OWN-14] admission: a parameter or let-bound holder, never a
                 // match binder, and mode preserved in both directions.
                 if !matches!(
@@ -1509,9 +1695,27 @@ and name it on the returned reborrow"
             }
         }
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
-        let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
+        let (path, ty, offsets) =
+            self.resolve_storage_path(&suffixes, local.ty, bindings, function, loop_depth, true)?;
+        // A returned holder may carry only its candidate's loan ceiling.
+        // A field of its runtime referent is not necessarily that field of
+        // the ceiling, so do not turn this projection into an exact place.
         let mut place = parent.place.clone();
-        place.extend_fields(&fields);
+        if parent.exact_place {
+            place.extend_storage(&path);
+        }
+        let fields = path
+            .iter()
+            .map_while(|step| match step {
+                CheckedPlaceStep::Field(field) => Some(*field),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let only_fields = fields.len() == path.len();
+        // [LIV-2] a target already read out is dead for the remaining RHS,
+        // including a child reborrow. Reject at this use, before the commit
+        // would independently reject its surviving temporary loan.
+        self.check_commit_place_live(&place, node, false)?;
         self.check_loan_access(
             bindings,
             Some(holder),
@@ -1523,7 +1727,7 @@ and name it on the returned reborrow"
             node,
         )?;
         let expression = match ty {
-            CheckedType::Buffer { element } => CheckedExpression::BorrowBuffer {
+            CheckedType::Buffer { element } if only_fields => CheckedExpression::BorrowBuffer {
                 carrier: self.tree.path(carrier)?.clone(),
                 root: CheckedBufferRoot {
                     binding: local.binding,
@@ -1531,34 +1735,15 @@ and name it on the returned reborrow"
                     element,
                 },
             },
-            // An opaque resource value is its own borrow, so a child reborrow
-            // of a borrow-mode holder is that same inline value: there is no
-            // content to address and nothing to reload [SYS-2, OWN-6].
-            CheckedType::Nominal(nominal)
-                if matches!(
-                    self.nominal(nominal)?.kind,
-                    CheckedNominalKind::SystemResource { .. }
-                ) =>
-            {
-                CheckedExpression::BorrowSystemResource {
-                    carrier: self.tree.path(carrier)?.clone(),
-                    binding: local.binding,
-                    fields: fields.clone(),
-                    state_origins: local.state_origins.clone(),
-                    nominal,
-                }
-            }
             // A view value is already a descriptor, so the child reborrow a
             // helper takes of its own view holder is that same descriptor
             // read once more: there is no content to address and nothing to
-            // reload, exactly as a system-resource holder's child is
-            // [OWN-6, VIEW-1]. The child carries the parent's range and its
+            // reload [OWN-6, VIEW-1]. The child carries the parent's range and its
             // loan region, and [OWN-6]'s ordinary suspension freezes the
             // holder while the child lives [OWN-5].
-            CheckedType::Slice { .. } if fields.is_empty() => CheckedExpression::Binding {
+            CheckedType::Slice { .. } if path.is_empty() => CheckedExpression::Binding {
                 carrier: self.tree.path(carrier)?.clone(),
                 binding: local.binding,
-                state_origins: local.state_origins.clone(),
                 ty,
                 slice_origins: local
                     .slice
@@ -1567,13 +1752,21 @@ and name it on the returned reborrow"
                     .unwrap_or_default(),
                 consume_root: false,
             },
-            _ if fields.is_empty() && self.borrow_addresses_storage(ty)? => {
+            _ if path.is_empty() && self.borrow_addresses_storage(ty)? => {
                 CheckedExpression::ReborrowAddressed {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
                     ty,
                 }
             }
+            _ if self.borrow_addresses_storage(ty)? => CheckedExpression::BorrowAddressed {
+                carrier: self.tree.path(carrier)?.clone(),
+                root: CheckedContainerRoot {
+                    root: crate::semantic::CheckedPlaceRoot::Binding(local.binding),
+                    path,
+                    ty,
+                },
+            },
             _ => {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, place_node);
             }
@@ -1583,6 +1776,7 @@ and name it on the returned reborrow"
             region,
             place,
             origin_region: parent.origin_region,
+            exact_place: parent.exact_place,
         };
         // The reborrowed descriptor reaches the same storage its parent does,
         // so the child's origin set is the parent's own [VIEW-2].
@@ -1596,40 +1790,41 @@ and name it on the returned reborrow"
             slice,
             holder: Some(holder),
             reference_value: true,
-            effects: EffectSet::NONE,
-            accesses: Vec::new(),
+            effects: offsets.effects,
+            accesses: offsets.accesses,
         })
     }
 
-    fn child_region_is_statement_scoped(
+    /// OWN-10's creation obligation precedes OWN-14 at the same return node,
+    /// including when a malformed holder expression selects borrowed storage.
+    pub(super) fn check_returned_reborrow_lifetime(
         &self,
-        region: &crate::DeclarationRecord,
-        child: NodeId,
-    ) -> Result<bool, CheckStop> {
-        let Some(region_node) = self.tree.node_with_path(region.origin().node()) else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        };
-        // [OWN-3] a `region_stmt` body and a loop body are both blocks a local
-        // region is introduced over, so both answer whether that block extends
-        // beyond the enclosing statement [OWN-6, OWN-11].
-        if !matches!(
-            self.tree.production(region_node)?,
-            Production::RegionStmt | Production::LoopStmt | Production::ForStmt
-        ) {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        holder: DeclarationId,
+        parent: &BorrowInfo,
+        region: DeclarationId,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        if self.region_outlives(parent.region, region)? {
+            return Ok(());
         }
-        let region_statements = self.tree.children_with(region_node, Production::Stmt)?;
-        let [region_statement] = region_statements.as_slice() else {
-            return Ok(false);
-        };
-        let mut cursor = Some(child);
-        while let Some(node) = cursor {
-            if self.tree.production(node)? == Production::Stmt {
-                return Ok(node == *region_statement);
-            }
-            cursor = self.tree.parent(node)?;
-        }
-        Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
+        self.issue_node(
+            SemanticRule::Own10,
+            node,
+            SemanticIssueKind::InvalidBorrowLifetime {
+                region: self.region_phrase(region)?,
+                binder: self.declaration_spelling(holder)?,
+                mechanical_fix: match self.written_region_name(parent.region)? {
+                    Some(name) => format!(
+                        "a returned child reborrow names a region its holder's own \
+region {name} outlives; name {name} itself, or a region {name} outlives, on the returned reborrow"
+                    ),
+                    None => "a returned child reborrow names a region its holder's \
+own region outlives; that region is unwritten here, so relate the holder's region to this result \
+and name it on the returned reborrow"
+                        .to_owned(),
+                },
+            },
+        )
     }
 
     pub(in crate::semantic::check) fn borrow_region_is_inside_current_loops(
@@ -1902,6 +2097,70 @@ and name it on the returned reborrow"
         )
     }
 
+    /// [OWN-5, OWN-6, OWN-12] Earlier arguments already suspend their
+    /// unique parents while later argument atoms are evaluated. Keep these
+    /// local until call effects have been checked, then publish them into the
+    /// enclosing statement's loan set. A sibling's formation alone is exempt;
+    /// reads used to compute that sibling's place are ordinary accesses.
+    pub(super) fn check_call_argument_loans(
+        &self,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        argument: &TypedExpression,
+        explicit_borrow: bool,
+        loans: &[TemporaryLoan],
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        // At this same argument atom, parent suspension precedes OWN-12's
+        // pairwise call overlap judgment [DIAG-1]. A bare holder transfer has
+        // no PlaceAccess entries, so it must be checked explicitly.
+        for loan in loans {
+            let Some(parent) = loan
+                .parent
+                .and_then(|holder| bindings.get(&holder))
+                .and_then(|local| local.borrow.as_ref())
+                .filter(|borrow| borrow.kind == BorrowKind::Unique)
+            else {
+                continue;
+            };
+            let transfers_parent = !explicit_borrow && argument.holder == loan.parent;
+            let accesses_parent = argument.accesses.iter().any(|access| {
+                let sibling = explicit_borrow
+                    && matches!(
+                        access.kind,
+                        AccessKind::SharedBorrow | AccessKind::UniqueBorrow
+                    );
+                !sibling && places_overlap(&access.place, &parent.place)
+            });
+            if transfers_parent || accesses_parent {
+                return self.issue_node(
+                    SemanticRule::Own5,
+                    node,
+                    SemanticIssueKind::BorrowConflict,
+                );
+            }
+        }
+        for access in &argument.accesses {
+            for loan in loans {
+                if places_overlap(&access.place, &loan.borrow.place)
+                    && match access.kind {
+                        AccessKind::Read => loan.borrow.kind == BorrowKind::Unique,
+                        AccessKind::Write
+                        | AccessKind::Move
+                        | AccessKind::SharedBorrow
+                        | AccessKind::UniqueBorrow => true,
+                    }
+                {
+                    return self.issue_node(
+                        SemanticRule::Own12,
+                        node,
+                        SemanticIssueKind::BorrowConflict,
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn check_temporary_loan_access(
         &self,
         bindings: &HashMap<DeclarationId, LocalBinding>,
@@ -1983,21 +2242,43 @@ and name it on the returned reborrow"
             .and_then(|holder| bindings.get(&holder))
             .and_then(|holder| holder.borrow.as_ref())
             .map(|borrow| &borrow.place);
+        // A view continues the permission its formation obtained from an
+        // actual checked child borrow [VIEW-2]. Copies and permitted returns
+        // register their descriptors on that same loan. Matching an origin
+        // alone is insufficient: only this descriptor's recorded parent may
+        // supply the access, and only inside the loan's protected place.
+        let view_parents: Vec<DeclarationId> = bindings
+            .values()
+            .flat_map(|local| &local.slice_loans)
+            .filter(|loan| {
+                through_holder.is_some_and(|holder| loan.descriptors.contains(&holder))
+                    && place.root == loan.place.root
+                    && place.path.starts_with(&loan.place.path)
+            })
+            .filter_map(|loan| loan.parent)
+            .collect();
         for (declaration, local) in bindings {
             if let Some(loan) = &local.borrow
                 && Some(*declaration) != through_holder
                 && places_overlap(&loan.place, place)
             {
+                let extends_loan = |child: &ResolvedPlace| {
+                    child.root == loan.place.root && child.path.starts_with(&loan.place.path)
+                };
                 let suspended_ancestor = local.suspended
-                    && through_place.is_some_and(|child| {
-                        child.root == loan.place.root && child.path.starts_with(&loan.place.path)
-                    });
+                    && (through_place.is_some_and(extends_loan)
+                        || view_parents.iter().any(|parent| {
+                            bindings
+                                .get(parent)
+                                .and_then(|binding| binding.borrow.as_ref())
+                                .is_some_and(|borrow| extends_loan(&borrow.place))
+                        }));
                 let conflicts = match access {
                     AccessKind::Read => loan.kind == BorrowKind::Unique,
                     AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow => true,
                     AccessKind::SharedBorrow => loan.kind == BorrowKind::Unique,
                 };
-                if conflicts && !suspended_ancestor {
+                if conflicts && !suspended_ancestor && !view_parents.contains(declaration) {
                     return self.issue_node(
                         SemanticRule::Own5,
                         node,
@@ -2030,8 +2311,14 @@ and name it on the returned reborrow"
         // one indirection earlier. Refusing them here is what makes the
         // freeze a property of the loan rather than of the one statement
         // form that happened to check it.
-        if matches!(access, AccessKind::UniqueBorrow | AccessKind::Move) {
-            let frozen: Vec<ResolvedPlace> = bindings
+        // A callee may receive an already-bound descriptor holder. Its
+        // projected write must check the same freeze even though no new
+        // descriptor borrow is formed at that call.
+        if matches!(
+            access,
+            AccessKind::Write | AccessKind::UniqueBorrow | AccessKind::Move
+        ) {
+            let mut frozen: Vec<ResolvedPlace> = bindings
                 .values()
                 .flat_map(|local| local.slice_loans.iter())
                 .filter(|loan| {
@@ -2040,6 +2327,20 @@ and name it on the returned reborrow"
                 })
                 .map(|loan| loan.place.clone())
                 .collect();
+            // Incoming views already carry permission, even after being
+            // moved to a local binding; there need not be a local exclusive
+            // formation record. Check those carried claims in addition to
+            // every descriptor association retained by the loan state above.
+            if let Some(slice) = bindings
+                .get(&place.root)
+                .and_then(|local| local.slice.as_ref())
+            {
+                for key in &slice.loans {
+                    if key.strength == LoanStrength::Exclusive && !frozen.contains(&key.place) {
+                        frozen.push(key.place.clone());
+                    }
+                }
+            }
             if !frozen.is_empty() {
                 self.check_child_reborrow_freeze_at(
                     bindings,
@@ -2233,7 +2534,7 @@ and name it on the returned reborrow"
             .declarations()
             .iter()
             .find(|declaration| declaration.id() == id)
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn declaration_scope(&self, id: DeclarationId) -> Result<ScopeId, CheckStop> {
@@ -2242,7 +2543,7 @@ and name it on the returned reborrow"
             .iter()
             .find(|declaration| declaration.id() == id)
             .map(|declaration| declaration.scope())
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn scope_is_within(&self, mut scope: ScopeId, ancestor: ScopeId) -> Result<bool, CheckStop> {

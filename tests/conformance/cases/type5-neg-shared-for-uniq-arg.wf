@@ -2,7 +2,7 @@ fn mutate(x: &uniq u64) -> function_result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = 0_u64;
   region {
     let shared = &value;

@@ -22,6 +22,6 @@ fn cursor_read(c: &Cursor, wide: own Bool) -> result: own u8 reads(c.buf, c.pos)
   return deref(c).buf[pos];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

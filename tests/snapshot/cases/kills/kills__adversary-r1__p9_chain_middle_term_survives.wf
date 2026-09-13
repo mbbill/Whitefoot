@@ -1,16 +1,36 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect: ACCEPT - a<b<c derives a<c whose support is {a,c} only; mutating the middle term b afterward must not kill a<c, so buf[a] still discharges";
   let buf = fixed_vector::<u8, 10>();
-  set buf = place_back(vector: move buf, value: 4_u8);
-  set buf = place_back(vector: move buf, value: 4_u8);
-  set buf = place_back(vector: move buf, value: 4_u8);
-  set buf = place_back(vector: move buf, value: 4_u8);
-  set buf = place_back(vector: move buf, value: 4_u8);
-  set buf = place_back(vector: move buf, value: 4_u8);
-  set buf = place_back(vector: move buf, value: 4_u8);
-  set buf = place_back(vector: move buf, value: 4_u8);
-  set buf = place_back(vector: move buf, value: 4_u8);
-  set buf = place_back(vector: move buf, value: 4_u8);
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 4_u8);
+  }
   let a = 2_u64;
   let b = 5_u64;
   let c = len_of(buf);

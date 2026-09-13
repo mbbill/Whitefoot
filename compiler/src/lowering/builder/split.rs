@@ -452,14 +452,7 @@ impl IrBuilder<'_> {
         // it; a group whose members do not all land in this body resolves to
         // nothing, which is the narrowing `overlaps` already performs.
         let overlaps = builder.overlaps();
-        let completion_steps = builder.completion_steps();
-        builder.finish(
-            chunk_symbol(ordinal),
-            overlaps,
-            completion_steps,
-            Some(IrSynthesis::Chunk),
-            crate::TargetAction::INLINE,
-        )
+        builder.finish(chunk_symbol(ordinal), overlaps, Some(IrSynthesis::Chunk))
     }
 
     /// The recursive range splitter, whose two halves are one ordinary overlap
@@ -663,9 +656,7 @@ impl IrBuilder<'_> {
             vec![IrOverlap {
                 members: vec![left, right],
             }],
-            Vec::new(),
             Some(IrSynthesis::Splitter),
-            crate::TargetAction::INLINE,
         )
     }
 

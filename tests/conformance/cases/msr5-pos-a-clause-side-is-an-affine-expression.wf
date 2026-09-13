@@ -7,7 +7,7 @@ fn bump(count: own u64) -> total: own u64 pure contract {
   return next;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-5: a contract clause side is an affine expression, so a relation displaced by a written constant is one clause rather than an unwritable fact.";
   let five = 5_u64;
   let six = bump(count: five);

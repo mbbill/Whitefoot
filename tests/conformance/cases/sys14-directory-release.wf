@@ -1,19 +1,117 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "`DirectorySource` is release-complete [SYS-5, SYS-14]: the value bound in the Ok arm leaves scope at the arm's end and compiler-derived release is the complete language obligation, so the program needs no terminal operation and declares none. This specification declares no separate explicit-close operation at all.";
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
+  doc "DirectoryRead and DirectorySource are ordinary linear opaque values. The program explicitly closes both acquired values through their ordinary factory parameter instead of relying on retired implicit native release.";
   region {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        match open_directory_source(permit: move permit, directory: &cwd) {
-          SourceOpened(value: list) => {
-          }
-          SourceOpenFailed(error: problem, permit: refused) => {
+    match open_directory_source(factory: &uniq deref(files), directory: cwd) {
+      SourceOpened(value: list) => {
+        close_directory_source(factory: &uniq deref(files), source: move list);
+      }
+      SourceOpenFailed(error: problem) => {
+        region {
+          if factory_refusal(error: &problem) {
+            return exit_status(code: 1_u8);
           }
         }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 1_u8);
       }
     }
   }
   return exit_status(code: 0_u8);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

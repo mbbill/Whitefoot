@@ -11,8 +11,12 @@ fn sentinel_status(bytes: &MutSlice<u8>, failure: own u8) -> result: own u8 read
   return 0_u8;
 }
 
-command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
-  doc "SYS-8: host_copy_utf8 validates and measures the encoding first and returns Utf8CopyInvalid without writing any byte. The destination is large enough, so only the validation can have refused the transfer, and the sentinel prefill witnesses that no partial encoding was written [HOST-2].";
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "The ordinary UTF-8 copy library operation reports Utf8CopyInvalid before changing the destination; the arranged invalid input and retained sentinel observe that library behavior.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
       None() => {
@@ -26,16 +30,16 @@ command fn main(command.args as args: own Args, command.heap as heap: own Heap) 
           invariant spare: room_of(bytes) + at >= 8_u64,
           invariant flat: head_of(bytes) <= 0_u64
         ) {
-          set bytes = place_back(vector: move bytes, value: 90_u8);
+          place_back(vector: &uniq bytes, value: 90_u8);
         }
         region {
           let window = mut_slice_of(&uniq bytes);
           region {
             match arg_get(args: &args, position: 1_u64) {
               Ok(value: text) => {
-                region 'v {
+                region {
                   region {
-                    match host_copy_utf8(value: &'v text, destination: &uniq window, start: 0_u64, end: 8_u64) {
+                    match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: 8_u64) {
                       Ok(value: encoded) => {
                         return exit_status(code: 10_u8);
                       }

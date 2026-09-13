@@ -1,0 +1,420 @@
+diff --git a/design/compiler/completion-runtime.md b/design/compiler/completion-runtime.md
+index f60f20b..b98dd61 100644
+--- a/design/compiler/completion-runtime.md
++++ b/design/compiler/completion-runtime.md
+@@ -1,22 +1,20 @@
+-Decision: A completion record is a block of the submitting frame found by address, with no slot pool, token, generation, or capacity wait, so no I/O operation is ever refused for capacity and its buffers and paths cross the ABI as live loans rather than copies, because every Whitefoot frame is static and sized by the ledger, so the stack is the only ceiling there is, instead of a fixed global slot pool with generation-checked tokens and a capacity refusal a submitter loops on.
++Decision: A completion record belongs to the ordinary linked call's native activation and is found by address, with no global slot token or source capacity wait, because the call already owns the live request and borrowed backing until return, instead of a fixed global slot pool with generation-checked tokens and a refusal the submitter loops on.
+
+ Decision: A ring that is absent or refused at startup falls back silently to the blocking-helper adapter, while a target failure after an operation has been accepted ends the process as a fail-stop with no fallback and no writer-visible `IoError`, because before acceptance both engines answer the same request identically, whereas after acceptance ownership of the target operation has transferred, so falling back would duplicate it and ignoring the error would strand it, instead of degrading a post-acceptance failure to the adapter or to an `IoError`.
+
+-Decision: The completion record is 160 bytes, eight words sized to the largest single operation, `open_at`, and does not grow, which keeps `AcceptEx`, positioned stream writes, and `stat` off the Windows completion port and on the helper adapter, because the record lives in every I/O-carrying frame of every program, so growing it for one operation's 88-byte address pair would tax every frame, instead of a larger record or an accept-owned buffer outside it.
++Decision: The native completion record remains 160 bytes, keeping larger operation-specific requests on the helper adapter, because enlarging a common record for one operation taxes every pending request, instead of a larger shared record or an additional accept-owned buffer.
+
+ Decision: The helper pool starts at zero where a native ring is ready and grows on demand, on a measured wait of about 20 microseconds sampled one execution in sixteen and unconditionally for a peer-bound request, up to the machine's CPU count, because an unset helper count pinned one helper, the worst measured setting for a program with width, instead of a fixed helper count.
+
+ Decision: An opened descriptor's kind is read with one `fstat` on the reaping thread rather than a second ring operation linked to the open, because two ring round trips cost more than the open they wrap, measured at 152 against 116 milliseconds on the eight-wide many-file program, while the mode of a descriptor the kernel has produced is an inode read that cannot wait, instead of a linked `IORING_OP_STATX`.
+
+-Decision: A module that submits any file, directory, or socket operation names the completion runtime's entries as plain external declarations on every target, so a link without the runtime fails as an unresolved symbol, because a submit answers nothing and there is no inline arm a weak body could stand in for, instead of the weak run-it-directly fallback the compute runtime keeps on non-Windows targets.
++Decision: Ordinary linked implementations call their required native engine through strong link references, because an absent engine cannot complete a submitted request, instead of a weak inline fallback for an unresolved native implementation.
+
+ Decision: Every TCP socket the runtime creates or accepts sets `TCP_NODELAY`, because with the option off io_uring ran at about 1,562 requests per second with a 41 millisecond p99 at 64 peers and 64 KiB and gained 11.8 to 15 times paired throughput with it on, instead of the host's default packet policy.
+
+-Decision: The runtime's tuning constants are measured and recorded beside their definitions, a reap budget of 64 completions per lock, a join spin of 10 microseconds before parking, a window default of 1,024 operations under a 4 MiB byte budget, and an io_uring submission depth of 64 with 2,048 completion entries, because the reap budget alone cut a 64-connection run from 720 thousand futex calls to 19 thousand and doubled its round-trip rate, instead of unmeasured defaults.
+-
+-Decision: The staged loop pipeline keeps two operations in flight per loop, a fixed two-slot ring with no per-slot byte accounting, as a provisional value, because the schedule, the permission shape, and the storage discipline shipped first against their falsifier program and the runtime-computed window the investigation designed was never selected, instead of a window derived from per-iteration storage cost and a runtime capacity query.
++Decision: The runtime's tuning constants are measured and recorded beside their definitions, a reap budget of 64 completions per lock, a join spin of 10 microseconds before parking, an io_uring submission depth of 64 with 2,048 completion entries, because the reap budget alone cut a 64-connection run from 720 thousand futex calls to 19 thousand and doubled its round-trip rate, instead of unmeasured defaults.
+
+ Decision: On Windows the completion port's wake records each native wait in an intrusive list under the runtime wait lock, publishes one packet per previously unnotified waiter, re-posts a polled packet only while a notified cohort is outstanding, and parks a newcomer on the runtime condition until that cohort has left the kernel, because a wake sized by the parked-scheduler count let a newer park take an older sleeper's packet, which stalled a scheduler job at its 20-minute limit and replayed as two wakes expected and none received, instead of one unaddressed packet per announced sleeper consumed unconditionally by whichever park receives it.
+
+ Rejected:
+-- A fixed global slot pool with generation-checked tokens and a capacity wait: rejected because every frame is static and ledger-sized, so the stack already bounds outstanding operations and the pool only added refusals nothing could act on.
++- A fixed global slot pool with generation-checked tokens and a capacity wait: rejected because the native call activation already owns the request until return and the pool only added refusals nothing could act on.
+diff --git a/design/compiler/parallel-lowering/parallel-runtime.md b/design/compiler/parallel-lowering/parallel-runtime.md
+index 5cc1a15..1863b35 100644
+--- a/design/compiler/parallel-lowering/parallel-runtime.md
++++ b/design/compiler/parallel-lowering/parallel-runtime.md
+@@ -4,7 +4,7 @@ Decision: A full deque refuses the offer and the call runs inline, so refusal fa
+
+ Decision: A waiting join works instead of sleeping, draining its own deque and then stealing, and parks only when no work exists anywhere, because a sleeping joiner wastes the thread the program already has, instead of a join that sleeps on a condition variable.
+
+-Decision: Compute tasks run on persistent native worker threads and their ordinary stacks, a join executes an unstolen target on the joining thread, a stolen target lets the joining thread run and steal other compute work before a bounded spin, yield, and condition-wait slow path, a may-suspend user call stays on its caller's stack and is never published to a compute worker, and an I/O join progresses completion and then waits through the native backend on that same stack without helping compute tasks, because parking the joining stack at a compute miss measured eight to nine percent behind at four and eight workers and could only be trusted through a switchable-stack pool, a managed-stack state machine, and an exhaustive schedule enumerator, and helping from an I/O join would need those switchable stacks too, instead of a park-on-miss scheduler that resumes a parked stack on whichever worker finishes its target and reaps every I/O join through the compute runtime.
++Decision: Compute tasks run on persistent native worker threads and their ordinary stacks, a join executes an unstolen target on the joining thread, a stolen target lets the joining thread run and steal other compute work before a bounded spin, yield, and condition-wait slow path, an ordinary published call may invoke a source or linked body, and a native engine wait inside that call remains on the executing thread's stack without helping compute tasks, because parking the joining stack at a compute miss measured eight to nine percent behind at four and eight workers and could only be trusted through a switchable-stack pool, a managed-stack state machine, and an exhaustive schedule enumerator, and recursively helping compute work from a native engine wait would need those switchable stacks too, instead of a park-on-miss scheduler that resumes a parked stack on whichever worker finishes its target and reaps every I/O join through the compute runtime.
+
+ Decision: The deque stress probe, run under `make -C compiler sched-deque-test` and repeated under ThreadSanitizer, is the runtime's concurrency check, with separate startup, join, completion, and exhaustion tests for the boundaries it does not reach, because the retired enumerator modeled the managed-stack state machine that no longer exists, and a probe on native threads finds races in the executions it observes without claiming the exhaustive coverage the enumerator had, instead of keeping an enumerator of schedules the runtime no longer takes.
+
+@@ -14,7 +14,7 @@ Decision: A lane with no work stays hot for an idle window in time, `WF_PAR_IDLE
+
+ Decision: The independent-map splitter's work unit is 150,000 and its oversubscription cap 16 chunks per lane, both compile-time constants an A/B build can override, because at eight lanes the work term and not the cap fixed the Mandelbrot kernel at 16 chunks, leaving a trailing chunk the size of the critical path, and the finer unit measured 0.692 of the wall there with five of five pairs lower, while raising the cap alone bought 18 to 19 percent more CPU for no wall at four lanes, instead of the 1,200,000 unit or a raised cap.
+
+-Decision: A group's compute members are joined newest-published-first while its completion members keep their published positions, because the deque is Chase-Lev, so a join taken newest first finds its target at the owner's end or already stolen and never buried under a newer entry, and join order is unobservable since every value is fixed to its source-order result, instead of joining in publish order.
++Decision: A group's published calls are joined newest-published-first, because the deque is Chase-Lev, so a join taken newest first finds its target at the owner's end or already stolen and never buried under a newer entry, and join order is unobservable since every value is fixed to its source-order result, instead of joining in publish order.
+
+ Rejected:
+ - A fixed array of worker lanes scanned with a compare-and-swap per lane and a mutex-condvar handshake: rejected because every offer paid the scan and the handshake whether granted or refused, 48.8 nanoseconds per fork at the coarsest cell and up to 48.6 times slower than sequential at fine grain.
+diff --git a/design/compiler/parallel-lowering/two-worlds.md b/design/compiler/parallel-lowering/two-worlds.md
+index b603526..4554fce 100644
+--- a/design/compiler/parallel-lowering/two-worlds.md
++++ b/design/compiler/parallel-lowering/two-worlds.md
+@@ -2,9 +2,9 @@ Decision: A `--par` module carries two lowerings of every function on a path fro
+
+ Decision: The clone set is the functions reachable from the entry that can reach a hand-out, derived from the call graph and the permission table, because only those functions have a lowering that differs between the two worlds, instead of cloning every function or marking clones by name.
+
+-Decision: `--par-sequential-refusal` enters the callee's existing sequential clone when a compute offer is refused and the callee cannot suspend, keeping the ordinary signatures, joins, and result ABI, adding no hidden parameters or runtime depth counters, and declining the compute offers beneath the clone it enters, because refusal reuses the failed-acquisition edge every offer already has and so adds none of the per-task demand query whose contention cost was rejected, instead of a runtime demand signal read on each call.
++Decision: `--par-sequential-refusal` enters the callee's existing sequential clone when a compute offer is refused, keeping the ordinary signatures, joins, and result ABI, adding no hidden parameters or runtime depth counters, and declining the compute offers beneath the clone it enters, because refusal reuses the failed-acquisition edge every offer already has and so adds none of the per-task demand query whose contention cost was rejected, instead of a runtime demand signal read on each call.
+
+-Decision: Under `--par`, every ordinary cyclic call-graph component gets one budget-carrying variant per member, the member's ordinary symbol keeping its signature and result ABI, taking an initial budget once per call into the component, and entering its variant, every intra-component call and published callback entering the callee's variant with one level less, and a variant handed nothing left entering its sequential clone, so the cut costs one compare and one branch per node above it and nothing below, while a component whose member may suspend, carries a staged completion pipeline, is a synthesized loop function, or has no sequential clone is left out and named with its reason in `--par-ledger`, as offer selection after checking that reads no acceptance path, because a recursion otherwise offers at every node at a per-node cost the leaf work does not pay for, measured as the quadrature kernel's wall ratio falling from 1.685 with no family to 1.031 at two lanes, from 1.564 to 0.987 at four, and from 1.665 to 1.000 at eight, with process CPU falling from 1.81 to 1.17 times the sequential control, instead of `N` private layers of ordinary parallel call levels or a global nesting bound.
++Decision: Under `--par`, every ordinary cyclic call-graph component gets one budget-carrying variant per member, the member's ordinary symbol keeping its signature and result ABI, taking an initial budget once per call into the component, and entering its variant, every intra-component call and published callback entering the callee's variant with one level less, and a variant handed nothing left entering its sequential clone, so the cut costs one compare and one branch per node above it and nothing below, while a component with a synthesized loop function or no sequential clone is left out and named with its reason in `--par-ledger`, as offer selection after checking that reads no acceptance path, because a recursion otherwise offers at every node at a per-node cost the leaf work does not pay for, measured as the quadrature kernel's wall ratio falling from 1.685 with no family to 1.031 at two lanes, from 1.564 to 0.987 at four, and from 1.665 to 1.000 at eight, with process CPU falling from 1.81 to 1.17 times the sequential control, instead of `N` private layers of ordinary parallel call levels or a global nesting bound.
+
+ Decision: The initial budget is the runtime's own answer, floor(log2(64 times the lane count)) clamped to 24, one lane's answer when no pool exists, and zero from the weak stub every module carries so that a scheduler-less link runs the sequential clone from the first node, with `--par-recursive-frontier auto|N|off` as the one control over that starting value, `auto` the default, `N` in 1..32 pinning it at compile time, and `off` emitting no family so every node offers, because the measured best fixed value differs between two and four lanes, so a number chosen at compile time is wrong at the other width, and 64 sequential leaves per lane is the measured constant that `sched/core.c` records beside the measurement that selected it, instead of a fixed compile-time depth.
+
+diff --git a/design/compiler/parallel-lowering.md b/design/compiler/parallel-lowering.md
+index 5caa42e..df7e685 100644
+--- a/design/compiler/parallel-lowering.md
++++ b/design/compiler/parallel-lowering.md
+@@ -8,8 +8,6 @@ Decision: Under `--par`, a scalar leaf with at most 16 nonconstant operations is
+
+ Decision: Sequential refusal is off unless asked for, the scalar-leaf threshold is provisional, and no universal grain policy is selected, because one exploratory result on one workload supports the provisional default and establishes neither that every workload benefits nor that refusal should be on by default, instead of a default grain policy chosen from that one measurement.
+
+-Decision: A denied [PAR-3] verdict is reported without a flag on every ordinary and `--par` compile, a denied [PAR-2] verdict only when the same loop's [PAR-3] judgment also denied it, and a [PAR-1] pair or chain never, with `--no-overlap` silencing the notice and `--par-ledger` printing everything, because a blind-writer trial found every I/O loop in five ordinary utilities denied with nothing said, the flag they needed being the flag they had no reason to run, while a `--no-overlap` build has already asked for no overlap so a loop without a pipeline is the build it asked for, instead of surfacing every denial or none.
+-
+ Rejected:
+ - Splitting a parallel range down to leaves of one iteration with grain left to the runtime: rejected because it destroys the body's own optimization, measured at 3.6 to 7.6 times slower on light bodies.
+ - Passing `-falign-functions=64 -falign-loops=32` to clang for the emitted module and the runtime sources: rejected because the flags did not remove the code-placement sensitivity they were meant to remove, a padded twin still moving a median 1.7 percent against 0.8 unaligned, and their own A/B held every line within one to five percent, less than the same instrument does to arms that execute identical code.
+diff --git a/design/compiler/resource-exhaustion-floor.md b/design/compiler/resource-exhaustion-floor.md
+index 92525ff..b74d92b 100644
+--- a/design/compiler/resource-exhaustion-floor.md
++++ b/design/compiler/resource-exhaustion-floor.md
+@@ -4,7 +4,7 @@ Decision: The entry runs on a stack the runtime sizes, every generated function
+
+ Decision: The stack ledger's numbers come from a completed host compilation of the emitted module, its frame sizes read back with `-fstack-usage` and its call graph from the same compilation's assembly, plus a fixed per-architecture correction for the return address that report omits, because nowhere earlier has the numbers, a non-leaf's real cost being the ABI frame record and the spills the register allocator chose, and the uncorrected report once over-promised recursion depth by a factor of two on x86-64, the dangerous direction for a writer who believes it, instead of a frame estimate accumulated during target qualification or the uncorrected report.
+
+-Decision: The handle factory's descriptor capacity is the host's descriptor limit less a fixed reserve of 64 for the runtime's own descriptors, capped at 2^20 and spent as atomic credits without a host call, because a scan of the descriptor table costs one system call per possible descriptor and the limit may be a million, while a fixed reserve keeps a program that holds a permit from being refused a descriptor by its own runtime, instead of a scan of the descriptor table or an uncapped host limit.
++Decision: The handle factory starts with 4096 descriptor credits on Windows and, on POSIX, the host limit capped at 2^20 before subtracting a reserve of 64 with a floor of zero; acquisition and explicit close update that capacity through the exclusively borrowed ordinary factory, because scanning a possible million-entry descriptor table costs one host call per entry, the reserve leaves room for runtime descriptors, and the ordinary exclusive loan already serializes accounting, instead of a descriptor-table scan, an uncapped limit, or atomic permit credits; available capacity does not guarantee that a host acquisition succeeds.
+
+ Rejected:
+ - A stack-pointer comparison against a per-thread limit in every generated prologue: rejected because the check spends the headroom it guards, and the target's stack-probing attribute contains the same fault class at no cost.
+diff --git a/design/compiler/target-qualification.md b/design/compiler/target-qualification.md
+deleted file mode 100644
+index b3d2bf6..0000000
+--- a/design/compiler/target-qualification.md
++++ /dev/null
+@@ -1 +0,0 @@
+-Decision: The target-mapping table stays current against the specification through one hand-checked version string, compared at the command entry row alone, and a per-version review note above it, never generated from the specification, because a generated constant would delete the review it exists to force, and a lapsed review fails every program at the command entry rather than going stale silently, instead of a generated constant, per-row checks, or no running review.
+diff --git a/design/compiler.md b/design/compiler.md
+index b8dfc13..9ddbd48 100644
+--- a/design/compiler.md
++++ b/design/compiler.md
+@@ -8,7 +8,11 @@ Decision: A rejection names the numbered rule it violates and the location, one
+
+ Decision: The runtime every compiled program links, the compute scheduler, the completion runtime, and the exhaustion floor, is plain C reviewed by hand and lies outside the crate's safe-Rust guarantee, because it is target code that speaks the host's threads, rings, and ports directly, and this research compiler and its runtime will be replaced by self-hosted ones, so a checked runtime language or a confinement policy now is work that buys nothing while ordinary engineering quality stays required, instead of a memory-safety-checked runtime language or a stated unsafe-confinement policy.
+
++Decision: A WF body and a linked body with the same ordinary signature use one callable ABI and the same permission path, with native engines confined to implementation inside that call, because choosing a native implementation cannot change source acceptance, effect overlap or loan duration, instead of qualification tables, special system-call emission, suspension summaries or early source-loan release.
++
+ Rejected:
++- A source acceptance tripwire maintained by a hand-checked native qualification version: rejected because ordinary declarations and link-selected implementations have no separate system domain to qualify.
++- A source staged-loop permission selected by a native operation or suspension classification: rejected because ordinary call and loan boundaries must apply equally to source and linked bodies.
+ - A product-grade checked-artifact toolchain with stable crate boundaries, serialized artifacts, and replay: rejected because it multiplied crates and gates before a resolver or backend existed and imposed protocols that had no consumer.
+ - Hardening the frontend against hostile input and re-verifying a previous stage's result inside the trusted path: rejected because this compiler exists to iterate the language and will be replaced by a self-hosted one, so defense in depth here is work that buys nothing, while ordinary engineering quality stays required for fast iteration.
+ - Superseded system-inventory states kept reachable behind compile-time switches so that a differential test can show an earlier program's module unchanged: rejected because the compiler implements exactly one specification, the active one, so a switch that reconstructs a superseded inventory has no consumer and only adds code paths to maintain.
+diff --git a/design/language/checks-and-proofs/automatic-facts.md b/design/language/checks-and-proofs/automatic-facts.md
+index b11c638..744be1e 100644
+--- a/design/language/checks-and-proofs/automatic-facts.md
++++ b/design/language/checks-and-proofs/automatic-facts.md
+@@ -1,3 +1,3 @@
+ Decision: An admitted nonconstant integer multiplication's proved interval is published as an ordinary automatic fact on its value, because the checker had already computed that interval to discharge the multiplication's own domain obligation, and discarding it made a writer restate by hand what the checker had just proved, instead of keeping the interval as checker-internal state.
+
+-Decision: The boundary-endpoint fact of a range-bearing system operation is stated for the whole family of those operations, because the system interface already treats the eight operations as one family and the compiler derived the same fact for all of them, instead of naming only the operations a given change happened to add first.
++Decision: A range endpoint reaches the caller through the callee's ordinary verified requires and ensures, using the same result routes for source and prelude declarations, because an operation-name family would create a second proof producer unrelated to the written callable boundary, instead of the system-range automatic fact.
+diff --git a/design/language/checks-and-proofs/requires-entry-contract.md b/design/language/checks-and-proofs/requires-entry-contract.md
+index 60c9a91..3af8748 100644
+--- a/design/language/checks-and-proofs/requires-entry-contract.md
++++ b/design/language/checks-and-proofs/requires-entry-contract.md
+@@ -1,4 +1,4 @@
+-Decision: A non-entry function may carry one requires-and-ensures block after its signature, which the specification calls a contract block and which is compiled away entirely, in which shared define abbreviations come first and any number of requires and ensures clauses follow, each proved on its own, and a present block holds at least one clause, because the earlier separate requires and ensures blocks were spelled like executable code so a reader could not see they were erased, an abbreviation needed by both had to be written twice, and ensures had no name for the function's result, instead of a single final requirement block ending in one Boolean check.
++Decision: An ordinary function may carry one erased contract block after its signature, with shared definitions and individually checked requires and ensures clauses, because separate executable-looking blocks hid their proof-only role, duplicated shared abbreviations, and left the result unnamed, instead of a single final requirement block ending in one Boolean check or an entry-only contract exclusion.
+
+ Decision: A define is a proof-only abbreviation that is substituted textually into every clause using it and never runs, stores a value, or takes a snapshot, because the same abbreviation is read at two different moments, before the call for requires and at the callee's return for ensures, and no single stored value could be right at both, instead of evaluating it once into a hidden slot.
+
+@@ -8,6 +8,10 @@ Decision: Each requires clause is proved on its own at the call site in the call
+
+ Decision: A function instance whose requirements contradict each other is legal and simply uncallable: the compiler still checks its structure, ownership, effects, and return shape, lowers an unreachable stub with the right calling convention in place of its body, and publishes no postcondition, because such an instance is harmless dead code that no call site can ever reach, while rejecting it would require the checker to detect every contradiction, which a deterministic no-search checker cannot promise, instead of rejecting such an instance as a source error.
+
++Decision: An exclusive parameter's bare measure in ensures denotes its exit state and entry(parameter) selects its entry state, using ordinary dereference and field projections, because a mutating helper must relate the caller's unchanged storage location before and after the call without equating both sides of an increment to the same moment, instead of an owned run round trip or a separate kernel-only spelling.
++
++Decision: Linked declarations and source definitions have the same call-site requirement boundary, including a build-selected entry, because native linkage cannot justify a proof the ordinary caller lacks, instead of a launcher exception or an executable requirement check.
++
+ Rejected:
+ - A single final requirement block with local bindings and one Boolean check: rejected because it was spelled like executable code so its erased status was invisible, an abbreviation used by both requires and ensures had to be written twice, and the result had no name.
+ - Callee-entry prologue evaluating the requirement on every invocation: rejected because it let a helper hide a protected leaf behind a runtime trap and added the prologue's reads to the callee effect row.
+diff --git a/design/language/contracts.md b/design/language/contracts.md
+index aba0e2c..ba07a02 100644
+--- a/design/language/contracts.md
++++ b/design/language/contracts.md
+@@ -1,10 +1,14 @@
+-Decision: Source contracts and conformances, the trait-like declarations of member signatures and laws, are compile-time signature-and-law metadata that create no runtime value, ABI component, dispatch path, lowering operation, or optimizer authority, because a contract that lowered to anything would be a second semantics, instead of runtime interface objects.
++Decision: A container receives hash, equality, and comparison as explicit function-kind arguments, with formal and actual groups abbreviating their signatures and arguments hygienically, because the owning-map and priority-queue witnesses need reusable behavior without runtime representation or dispatch cost, instead of function values, dictionaries, implicit type-owned implementations, or repeating every member signature at every library layer.
+
+-Decision: Member compatibility is exact after positional region renaming, with independently valid effect rows required to have equal normalized read, write, and allocation components and no subtyping, because normalized equality preserves signature regularity across irrelevant occurrence order, repetition, and region spelling while still requiring every capability on both sides, instead of raw source-row equality or effect subtyping.
++Decision: A formal member's declared effect row is authoritative, an actual's effects must fit its paths by category and prefix, and ordered contracts must match structurally after ordinary substitution, because a generic caller must retain one written boundary while accepting an implementation that touches less state, instead of deriving the boundary from the selected body or using implication search to match contracts.
+
+-Decision: A conformance that carries laws must discharge every law for the source to be accepted, and a law is used only where a rule of the specification names it, such as the permission for a parallel reduction, because a law proved anywhere else, by an optimizer or on trust, would be a second proof path outside the checker, instead of optimizer-side law proofs.
++Decision: Member calls use the instantiated formal signature, row and contracts while the selected actual is checked independently, because a container's written boundary must not vary with which implementation is selected, instead of importing an actual body's smaller row or stronger inferred facts into its callers.
+
+-Decision: Generic bounds over source contracts and member calls stay absent until a real behavior consumer and the interfaces experiment justify their complete syntax, semantics, diagnostics, and direct-call proof, because a capability with no consumer cannot be measured, instead of adding the surface ahead of a need.
++Decision: Supplied behavior carries no assumed equality, comparison, or hashing laws, because hostile behavior must still preserve ownership and proved bounds even when the container holds unexpected contents, instead of using an unchecked law as a safety premise or retaining source law declarations without a selected consumer.
++
++Decision: A formal group's members quantify their own loan regions while an actual may capture store brands in its type arguments, because borrowing at each call and identifying stored values are different relationships already expressed by ordinary function and nominal parameters, instead of a group-wide loan region or implicit captured environments.
+
+ Rejected:
+-- Raw source-row equality for member effect compatibility: rejected because it breaks signature regularity across irrelevant occurrence order, repetition, and region spelling.
++- Runtime dictionaries or callable values for container behavior: rejected because the selected map and queue need direct-call specialization without runtime storage or dispatch.
++- Checking actual rows for equality with the formal row: rejected because an actual that accesses only a declared subfield fits the caller's contract without dummy reads or a runtime adapter.
++- An owned function-formal result required to be fresh: rejected because it depended on the removed history of owned values and excluded ordinary ownership-returning functions from the common callable boundary.
+diff --git a/design/language/data-model/kernel-minimality.md b/design/language/data-model/kernel-minimality.md
+index 9a78bce..f842826 100644
+--- a/design/language/data-model/kernel-minimality.md
++++ b/design/language/data-model/kernel-minimality.md
+@@ -1 +1 @@
+-Decision: The kernel admits, as a fourth compiler-owned generic declaration domain built the way the system domain is, only what a writer cannot implement in the language over the rest of the kernel, the typed but uninitialized run and the boundary that moves its window, because everything a writer can build on that primitive, growth policies, pools, keyed tables, swap, rebase, clear, truncation, or middle removal, belongs to a library or to user code and not to the specification, instead of a larger kernel inventory or ordinary prelude functions for those operations.
++Decision: The kernel owns only the typed storage and initialization transitions that a writer cannot implement over the rest of the language, while growth policies, pools, keyed tables, swap, rebase, clear, truncation and middle removal belong in source libraries, because those policies do not require a second authority over memory safety, instead of expanding the kernel for every container or pretending its primitive storage transitions are ordinary source functions.
+diff --git a/design/language/data-model.md b/design/language/data-model.md
+index 0990c85..c2ac480 100644
+--- a/design/language/data-model.md
++++ b/design/language/data-model.md
+@@ -13,3 +13,9 @@ Decision: A nominal's region parameters are an axis of its identity at check tim
+ Decision: Bool is a two-variant prelude enum matched by the same tag-only mechanism as every user enum, and the primitive set is the fixed-width integers and floats of 8, 16, 32, and 64 bits with unit, because one mechanism then serves equality, match and if selection, and tag-width lowering for Bool and user enums alike, instead of a dedicated primitive boolean with its own literals and comparisons, or address-width and 128-bit integers.
+
+ Decision: A single store-resident value has its own compiler-owned cell type, Box, carrying no measure and formed by dedicated rows, because a one-element run costs three descriptor words against a cell's one pointer and would owe a nonempty-length proof at every read of a container the language already knows is never empty, instead of representing a boxed value as a run of capacity one.
++
++Decision: Full arrays admit owned elements and consuming conversions to and from fixed runs, while mutation helpers borrow runs exclusively and return only outcomes or removed elements, because completed fixed storage needs no variable-window metadata and the retained-helper experiments exposed copies of the entire inline capacity at owned mutation boundaries, instead of forcing completed arrays through a partial-run state or returning a mutated run by value.
++
++Decision: Ordinary enum slots remain the owning sparse-map baseline, because the matched growth and refusal witnesses execute and their measured gap does not isolate a benefit sufficient to select compiler-known projected storage, instead of introducing projected sparse authority from an unseparated interface and layout cost.
++
++Decision: Ordinary opaque nominals retain a uniform allocation-fit ceiling independent of their linked representation, because a native catalog's size must not choose whether the same source allocation is accepted, instead of deriving allocation proof from link-selected native sizes or making opaque allocation-fit queries unavailable.
+diff --git a/design/language/effects.md b/design/language/effects.md
+index a1de924..7dde9d4 100644
+--- a/design/language/effects.md
++++ b/design/language/effects.md
+@@ -1,12 +1,15 @@
+ Decision: An effect row is checked for exactness in both directions, an exhibited but undeclared effect and a declared but unexhibited effect are both errors, and a row stays exact even where a later proof could remove the effect, because an exact row is a statement a reader and the checker can rely on without reading the body, padding a row would be a place to smuggle effects, and the later-proof clause keeps acceptance decidable from the signature alone, instead of rows as upper bounds.
+
+-Decision: Effects describe ordinary state including opaque system resources, reads and writes name parameter paths, regions describe lifetimes and not state identity, and host scheduling belongs to target lowering, because one state vocabulary serves system resources and memory alike, instead of separate external, blocks, and traps categories.
++Decision: Effects describe resolved parameter storage, including ordinary opaque values, while moves into local storage create no effect root from an earlier owner, because a signature must describe the storage it accesses without recovering value history from callee bodies, instead of separate external categories or ownership-routing summaries.
+
+ Decision: Contracts and invariants are erased proof syntax and introduce no effect, because a proof-only statement that changed a row would be observable, instead of proof statements contributing effects.
+
+ Decision: `pure` states that a function has no state effects and promises nothing about termination, because the language has no termination checker, and a promise the checker cannot verify would be a trusted theorem, instead of `pure` as totality.
+
+-Decision: Ordinary heap allocation is ambient and absent from a function's effect row, while allocation into a store-branded provider such as an arena appears as a formal-rooted allocates path and needs that provider as an explicit parameter, because only a store whose identity can vary needs a caller-visible capability to tell it from another, and there is one heap, instead of making every allocation capability-visible or none.
++Decision: Store-branded allocation through Heap or Arena requires the provider as an ordinary parameter and names it in the effect row, while the legacy unbranded box and buffer operations retain ambient allocation, because different branded stores need distinct caller-visible capabilities and the legacy forms carry no such identity, instead of hiding branded allocation behind the legacy ambient-heap rule.
++
++Decision: An exclusive helper's projected declared writes kill exactly the caller facts whose storage support overlaps, before verified exit contracts publish replacement facts, because preserving a changed inner run's former length is unsound and killing unrelated facts prevents useful modular proofs, instead of killing by the syntax of an actual argument or keeping an unknown replacement unchanged.
+
+ Rejected:
+ - Separate external, blocks, and traps effect categories: rejected because system resources are ordinary state under ownership and scheduling belongs to lowering, so the categories described mechanisms rather than state.
++- Following owned values through locals, results, or exclusive replacement to derive additional effect roots: rejected because ordinary storage paths and explicit contracts supply the callable boundary, while ancestry makes that boundary depend on implementation bodies.
+diff --git a/design/language/generics.md b/design/language/generics.md
+index 7270b08..a291d56 100644
+--- a/design/language/generics.md
++++ b/design/language/generics.md
+@@ -1,3 +1,3 @@
+-Decision: Generics are monomorphization-only, expanded before the IR from always-explicit type and const arguments with each instance checked as concrete code, and nothing in the trust path infers or solves bounds, because inference and bound solving in the trust path add complexity and unpredictability the checker does not need, instead of inferred instantiation or dictionary-passing generics that share one body across instances.
++Decision: Generics are monomorphization-only, expanded before IR from always-explicit type, const and function arguments with each inhabited instance checked as concrete code, because inference and bound solving add complexity and unpredictability to the trust path and the behavior witnesses need concrete direct calls, instead of inferred instantiation or dictionary-passing generics that share one runtime body across instances.
+
+-Decision: Polymorphic recursion is refused by a syntactic rule, every call inside a generic call cycle instantiating its callee at exactly the caller's own type parameters, even where a finite permutation cycle would be safe, because monomorphization needs a termination guarantee readable from the syntax, and a depth or fuel bound is barred by the rule that no acceptance depends on a budget, instead of a more precise termination analysis over parametric instantiation.
++Decision: Function and nominal instantiation cycles must forward the complete argument vector unchanged in position and kind, including function arguments, even where a finite permutation cycle would be safe, because a growing recursive instance would not terminate and the syntactic cycle check decides that boundary without executing a search, instead of a more precise termination analysis or a depth, time or fuel limit.
+diff --git a/design/language/ownership/no-reborrow.md b/design/language/ownership/no-reborrow.md
+index 4df1f7d..a739beb 100644
+--- a/design/language/ownership/no-reborrow.md
++++ b/design/language/ownership/no-reborrow.md
+@@ -6,6 +6,9 @@ Decision: A call result may be bound as a borrow holder only when the signature
+
+ Decision: A completed owned-enum match header or exact owned-Boolean conditional header ends only the call-scoped temporary loans that header created, before the selected arm or branch, because retaining them for the whole statement blocked sequential typed acquisition through a retained unique provider after the owned header value had completed, while non-escape and completed-access checks permit the narrower endpoint without weakening exclusivity, instead of whole-statement retention of header loans.
+
++Decision: An argument child's local region may contain statements before and after its receiving statement while its temporary loan retains the existing statement or completed-header endpoint, because sequential provider calls and displaced-owner reads need that local region ceiling without requiring last-use inference, instead of confining the entire region block to one statement.
++
+ Rejected:
++- Confining an argument child's local region to one receiving statement: rejected because the ordinary temporary endpoint and independent surviving-loan checks already preserve exclusivity across later statements.
+ - Strict no-reborrow, with exclusive access flowing only by linear threading or restructuring: rejected because about a thousand sites that hand a borrow through to a callee forced the compiler into threading owned values in place of borrows, a shape the language does not teach, while the bounded child form preserves the no-alias facts; harder reborrow forms remain deferred rather than admitted.
+ - Every header-created child reborrow living through the complete enclosing statement including every arm: rejected because it blocked sequential typed acquisition through a retained unique provider after the header value had completed.
+diff --git a/design/language/ownership/slice-result-provenance.md b/design/language/ownership/slice-result-provenance.md
+index 586583c..6532b5f 100644
+--- a/design/language/ownership/slice-result-provenance.md
++++ b/design/language/ownership/slice-result-provenance.md
+@@ -1,6 +1,6 @@
+ Decision: A direct slice carries a finite static set of ultimate storage origins, formation creates a singleton, every operation preserves the complete set, and a call computes its result's origin set from signatures alone, because a body-derived exact summary would make callable contracts depend on implementation bodies and need fixed points for recursive call groups, which conflicts with the signature-complete caller boundary, instead of body-derived origin summaries.
+
+-Decision: The boundary is direct slices only, with region-bearing generic arguments and stored slice content rejected rather than approximated, because per-leaf origin metadata inside generic or stored values would import unresolved retained-state, cleanup, and stored-borrow obligations, and rejecting those hiding positions is sounder than approximating them, instead of tracking origins through generics and stored values.
++Decision: The boundary is direct slices only, with generic arguments that hide loans or providers and stored slice content rejected rather than approximated, because per-leaf origin metadata inside generic or stored values would import unresolved retained-state, cleanup, and stored-borrow obligations, and rejecting those hiding positions is sounder than approximating them, instead of tracking origins through generics and stored values.
+
+ Rejected:
+ - An explicit return-origin annotation: rejected because it adds writer syntax plus body validation for a precision a writer can already express with separate formal regions.
+diff --git a/design/language/ownership.md b/design/language/ownership.md
+index 9b0fe65..e19793e 100644
+--- a/design/language/ownership.md
++++ b/design/language/ownership.md
+@@ -1,10 +1,10 @@
+-Decision: Ownership is single-owner affine values with explicit ordinary moves, lexical named or unnamed regions, explicit borrow modes at mode-bearing positions, and a checker that rejects when it cannot establish safety, because replicating a Rust-class inferring borrow checker is unacceptable implementation effort, a normal compiler frontend is acceptable and rustc-scale inference is not, so the calculus stands on explicit regions and reject-when-unsure, instead of inferred lifetimes, flow-sensitive borrow liveness, and implicit reborrowing.
++Decision: Ownership uses single-owner affine values, explicit moves and borrow modes, lexical named or unnamed regions, and only the temporary-loan endpoints the specification enumerates, because explicit region and endpoint rules give deterministic local checks without inferring a Rust-class lifetime solution, instead of implicit reborrowing or general inferred non-lexical lifetimes.
+
+ Decision: Overlap is judged conservatively over complete resolved paths, with distinct fields and unequal literal indices establishing disjointness, because a conservative judgment the checker can decide is preferred to a precise one it would have to infer, instead of flow-sensitive alias analysis.
+
+-Decision: Every value's release action is compiler-owned and fixed by its type, and no declaration, annotation, attribute, contract, conformance, or binding attaches a writer-defined action to a release, because a writer-defined action at release would run hidden code with hidden effects on every scope exit, which neither the exact effect row nor the explicit cleanup edges could account for, instead of a destructor or finalizer invoked implicitly at scope exit.
++Decision: Every implicit release action is fixed by the ordinary type and store rules, and no writer declaration, attribute or binding attaches a callable finalizer to it, because a user-defined release action would hide code and effects on scope exits, instead of destructors or native finalizers selected by a value's origin.
+
+ Decision: There is no global mutable state and no static region, only immutable const items, because a function that reached a global directly could not be pure and every proof that rests on purity, parallel permission first among them, would collapse, while a global handed in as a parameter is no different from an object created on the stack or the heap at the program's root, and with no shared-memory threads there is nothing a global lock would guard, instead of a static-style shared mutable region with its own access discipline.
+
+ Rejected:
+-- Inferred borrow checking as Rust ships it, with elided lifetimes, non-lexical liveness, and implicit reborrows: rejected because replicating rustc's borrow checker is unacceptable implementation effort, so the ownership design stands only on a simplified explicit-region, reject-when-unsure calculus.
++- General inferred borrow checking with implicit reborrows and inferred non-lexical lifetimes: rejected because it requires a lifetime-solving model beyond the selected explicit regions and individually specified temporary-loan endpoints.
+diff --git a/design/language/parallelism/staged-permission.md b/design/language/parallelism/staged-permission.md
+deleted file mode 100644
+index 645778b..0000000
+--- a/design/language/parallelism/staged-permission.md
++++ /dev/null
+@@ -1 +0,0 @@
+-Decision: A loop containing a may-suspend operation gets a second, staged permission that cuts its body at the first submission into a prologue that always runs in index order and a remainder that may overlap a later prologue or another remainder, replicating storage only under a proved must-write and may-read coverage condition and throttling host-resource creation to the source-order footprint before any outcome publishes, because a writer-stated buffer extent on every effect row broke the very program the pipeline exists to accelerate while the derived footprint does not, and a pipelined I/O loop is the shape real programs need that neither the sibling-call window nor the counted-loop reduction can grant, instead of leaving every suspending loop sequential or requiring a hand-written pipeline of independent calls.
+diff --git a/design/language/parallelism.md b/design/language/parallelism.md
+index 583ca33..93ccbaa 100644
+--- a/design/language/parallelism.md
++++ b/design/language/parallelism.md
+@@ -3,3 +3,6 @@ Decision: Parallel permission derives from checked ownership, effects, dataflow,
+ Decision: Permission and actualization are separate judgments, because a permission is a fact about the program while actualization is a lowering and runtime choice, and conflating them would make acceptance depend on a scheduling decision, instead of one combined judgment.
+
+ Decision: A counted loop is a parallel-permission site in its own right, because its permission must not depend on rewriting the loop as a pair of sibling calls, instead of loop permission as an amendment to the sibling-call rule.
++
++Rejected:
++- Source staged-loop permission selected by suspension or native-operation classifications: rejected because ordinary calls retain their loans until return and implementation origin cannot authorize additional overlap; the lost pipeline permission is a measured cost, not a reason to restore a separate source-call boundary.
+diff --git a/design/language/system-interface/completion-policy.md b/design/language/system-interface/completion-policy.md
+deleted file mode 100644
+index 77a9bcc..0000000
+--- a/design/language/system-interface/completion-policy.md
++++ /dev/null
+@@ -1 +0,0 @@
+-Decision: Three completion policies are named now, release-complete, explicitly-abandonable, and completion-required, though the specification uses only the first and defines no checker obligation for the other two, because naming the stronger policies fixes the vocabulary a later buffered output, atomic replacement, pending operation, or child process must choose among rather than inheriting the weakest policy by default, instead of leaving completion strictness undefined until a resource needs a stronger one.
+diff --git a/design/language/system-interface/declaration-home.md b/design/language/system-interface/declaration-home.md
+index 9c7f6ca..47979be 100644
+--- a/design/language/system-interface/declaration-home.md
++++ b/design/language/system-interface/declaration-home.md
+@@ -1,6 +1,5 @@
+-Decision: System types and operations resolve from a distinct compiler-owned declaration domain, neither the prelude nor the foreign-boundary family, visible in every compilation unit, with actual authority entering only through the labelled parameters a program requests, because every alternative either reserved ordinary spellings in programs that do no system access, merged system operations with foreign frames, or keyed visibility on a program kind that no longer partitions programs, instead of a prelude extension, the foreign boundary, or kind-conditional visibility.
++Decision: Types and signatures supplied by the host are ordinary prelude declarations with the same naming, type, ownership, effect and proof rules as source declarations, because implementation origin cannot justify a separate acceptance path, instead of a distinct system declaration domain, semantic operation identities or visibility selected by a program kind.
+
+ Rejected:
+-- System operations entering through the gated foreign-boundary family: rejected because that family has one shared per-fact obligation record, so housing system operations there merges them with foreign frames against the required system and foreign separation.
+-- Extending the prelude with system types and signatures: rejected because it reserves ordinary spellings unconditionally in every program whether or not it performs I/O and would put function signatures in the prelude for the first time.
+-- Visibility conditional on a program-kind declaration: rejected because once every legal unit has the sole command entry form, the condition partitions no accepted program and only preserves a dead declaration path.
++- A compiler-owned system declaration domain separate from the prelude: rejected because it distinguished otherwise ordinary values and functions solely by implementation origin.
++- A source callable restricted to a WF body rather than a prelude signature: rejected because native binding is a link choice and supplies no reason to exclude the same ordinary signature from a function-formal argument.
+diff --git a/design/language/system-interface/directory-enumeration.md b/design/language/system-interface/directory-enumeration.md
+index 96568a4..14a7cd3 100644
+--- a/design/language/system-interface/directory-enumeration.md
++++ b/design/language/system-interface/directory-enumeration.md
+@@ -1,3 +1,5 @@
+-Decision: Directory enumeration is a one-attempt transfer of a bounded batch of portable records into the caller's validated buffer range, advancing the directory's own position, with the handle owning a cursor and no storage, because a handle owning its own window needs storage the system layer does not allocate, a second call to drain it, and a lifetime rule for entries it still holds, while the caller-range transfer reuses the existing one-attempt file-read contract whole, instead of a handle-owned window yielding entries one at a time.
++Decision: Directory enumeration transfers a bounded batch of records into the caller's validated view and advances the supplied directory cursor, because a writer-visible handle-owned window would require another draining interface and entry-lifetime rules while the caller-owned window reuses ordinary range contracts, instead of returning a borrowed entry or handle-owned window one item at a time.
+
+ Decision: An enumerated name reaches source only as bytes, self and parent entries are reported unfiltered, and no order is fixed, because turning a name into a host string or path value would reintroduce a path model, filtering out the self and parent entries would cost a second host call for a batch holding only them while a descending program must exclude them anyway, and a fixed order would promise what hosts do not provide, instead of filtered, ordered, path-valued entries.
++
++Decision: A directory batch returns its outcome, numeric endpoint and entry count separately with unconditional endpoint bounds, because a caller that ends a view loan before matching a saved outcome can retain ordinary numeric result facts without the deferred transport of an enum payload's fact through a later local match, instead of a special directory-result proof producer or an impossible bounds-failure branch.
+diff --git a/design/language/system-interface/handle-factory.md b/design/language/system-interface/handle-factory.md
+index 3f91ba5..0d7e6f5 100644
+--- a/design/language/system-interface/handle-factory.md
++++ b/design/language/system-interface/handle-factory.md
+@@ -1 +1,5 @@
+-Decision: A finite, program-recoverable capacity that several operations draw from is exposed as ordinary owned state, a factory an operation reserves a credit from through a short unique loan and a permit value that authorizes exactly one attempt and is handed back unspent on failure, with the factory's count never raised, because a hidden process-global pool would reintroduce mutation outside a function's arguments and let an overlapped schedule invent a resource-exhausted outcome the sequential program never produces, instead of a hidden runtime-global pool an operation consults directly, or an unconditional per-call exhaustion check with no reservation.
++Decision: Acquisition and close borrow an explicit HandleFactory exclusively for the whole ordinary call, spending one credit on successful acquisition, restoring it on refusal and returning it on the explicit close that releases the allocation, because this exposes accounting without implicit creator links, cancellation effects or early loan release, instead of hidden global capacity or one-shot permits with implicit cancellation.
++
++Rejected:
++- A reservation whose drop silently returns factory credit: rejected because the selected ordinary interface has empty opaque drop and explicit host-state writes; a later reservation API would need explicit consuming return and cancellation outcomes.
++- Available factory capacity as a promise that host acquisition succeeds: rejected because other host activity and limits can still refuse an otherwise funded attempt, so refusal remains an ordinary outcome.
+diff --git a/design/language/system-interface/host-string-lease.md b/design/language/system-interface/host-string-lease.md
+index 568f0f1..f2027c0 100644
+--- a/design/language/system-interface/host-string-lease.md
++++ b/design/language/system-interface/host-string-lease.md
+@@ -1 +1 @@
+-Decision: A host string and the relative path built from one are an opaque inline lease, an address and a length carried by value that is neither a borrow nor a region-bearing type, with its backing kept alive by a target-qualification guarantee rather than a source-checked region, because reusing the region-carrying view machinery would make every argument-derived value unstorable under the storage rule, while the backing's lifetime is a target property that nothing in a program could check, instead of a region-bearing lease or an owned reference-counted backing with a release action.
++Decision: HostString and RelativePath are ordinary opaque values with invocation-backed native representations and no writer-visible borrow or finalizer, because argument-derived values must remain storable and lossless while the supplied implementation keeps their backing valid throughout their uses, instead of region-bearing leases or an owned reference-counted buffer; this backing obligation is an ordinary implementation obligation, not a compiler qualification or an acceptance exception.
+diff --git a/design/language/system-interface/opaque-scalar-types.md b/design/language/system-interface/opaque-scalar-types.md
+index 2c2bd42..ed907b5 100644
+--- a/design/language/system-interface/opaque-scalar-types.md
++++ b/design/language/system-interface/opaque-scalar-types.md
+@@ -1 +1 @@
+-Decision: A value with no internal state that a program only constructs and passes whole, such as a command's exit status or a socket address, is its own opaque nominal type with a total pure constructor, because the language has no implicit conversion and every value's type is exactly what its producer fixes, so without a stated constructor the value would be unwritable, and a distinct type is what stops an arbitrary integer from serving as an exit status or an arbitrary integer group as an address, instead of a bare integer alias or a tuple of integers.
++Decision: A value such as ExitStatus or SocketAddress has an opaque nominal type and an ordinary total constructor function, because exact nominal typing prevents an arbitrary integer or tuple from serving as that value while a constructor makes every intended value expressible, instead of a bare integer alias or a constructor privilege tied to native implementation.
+diff --git a/design/language/system-interface/outcome-typing.md b/design/language/system-interface/outcome-typing.md
+index 1618c3d..cb0dfe2 100644
+--- a/design/language/system-interface/outcome-typing.md
++++ b/design/language/system-interface/outcome-typing.md
+@@ -1,3 +1,3 @@
+-Decision: Each system operation declares its own outcome type, a two-outcome operation using the prelude Result and a wider one its own prefixed enum, because an exhaustive match with no wildcard arm would force dead hand-written arms at every call site for outcomes that operation can never return, and a shared union's variant list would turn each later operation into an edit of every existing call site, instead of one shared outcome union across the read, write, and copy operations.
++Decision: Each ordinary library operation uses Result for two outcomes or its own enum for a wider outcome set, because exhaustive matching should not require branches for outcomes that operation cannot produce and a shared union would couple unrelated callers to each new operation, instead of a shared outcome union across reading, writing and copying.
+
+-Decision: An IoError class carries only fixed-size inline target detail, a native error code and a small origin discriminator that is copy data with no allocation and no release action, because every operation row is declared allocation-free and a richer payload would force a heap allocation effect onto every fallible system operation, instead of a heap-backed diagnostic payload carrying a host message or buffer.
++Decision: IoError carries fixed-size inline error detail, a numeric native code and an ordinary origin discriminator, because a heap-backed message would add an allocation obligation to every fallible library call, instead of an owned diagnostic string or buffer.
+diff --git a/design/language/system-interface/qualification-guarantees.md b/design/language/system-interface/qualification-guarantees.md
+deleted file mode 100644
+index bf29014..0000000
+--- a/design/language/system-interface/qualification-guarantees.md
++++ /dev/null
+@@ -1 +0,0 @@
+-Decision: A system operation's specification identity is target-independent, and a target qualifies for it only by supplying every guarantee that identity names, failing qualification and stopping compilation when it cannot, with no runtime negotiation and no implementation that narrows or emulates a missing guarantee, because a weakened operation would make the same source mean different things on different targets, and a negotiated or emulated capability would let target reality define the language in place of the specification, instead of runtime feature detection with dynamic dispatch, or emulating a missing facility such as directory-relative resolution by concatenating a path prefix.
+diff --git a/design/language/system-interface/single-attempt-transfer.md b/design/language/system-interface/single-attempt-transfer.md
+index 8166d5d..83745e2 100644
+--- a/design/language/system-interface/single-attempt-transfer.md
++++ b/design/language/system-interface/single-attempt-transfer.md
+@@ -1 +1 @@
+-Decision: Every range-bearing system operation makes at most one progress-producing host attempt and reports exactly what happened, with no read-exact, write-all, positioned, vectored, seek, peek, pushback, or framing operation in the inventory, because a source loop over the single-attempt primitive can inspect cancellation or signal state and accumulate progress and a terminal reason itself, which a built-in looping form would hide behind a convenience, instead of composite operations that loop to completion inside the system interface.
++Decision: The ordinary byte-I/O primitives expose a single attempt's progress and terminal outcome, leaving looping read-exact and write-all policies to source helpers, because the caller can preserve partial progress and choose whether to retry while a composite native loop hides that decision, instead of requiring each caller to accept a built-in loop-to-completion policy.
+diff --git a/design/language/system-interface.md b/design/language/system-interface.md
+index 2cdbf07..8d0c3d1 100644
+--- a/design/language/system-interface.md
++++ b/design/language/system-interface.md
+@@ -1,18 +1,17 @@
+-Decision: System access uses typed entry inputs and ordinary owned resources under ordinary ownership, with no separate capability category and no language mechanism invented to express system state: to the language a system object is an ordinary object, and a system object that lacks a capability is redesigned as a better ownership relation, such as a factory that hands out owned resources, rather than patched with interior mutability or a new language feature, because the alternatives each forged identity, hid access, serialized unrelated resources, or imported another ecosystem's contract, and a mechanism added to paper over one interface's shape becomes a permanent hole in the ownership model, instead of raw descriptors, ambient functions, one process object, a literal WASI contract, or interior mutability for system state.
++Decision: Host interactions use ordinary values and functions without a source-language exception, because a special category introduced to repair one resource API would become a permanent second ownership and proof model, instead of raw descriptors, hidden capabilities, source suspension classifications, or native-specific release and effect rules.
+
+-Decision: Resource contracts state outcomes, ownership, cleanup, capacity relations, and target guarantees, while completion and host scheduling are lowering concerns, because a source contract must be checkable without a scheduler in the language, instead of scheduling in the source model.
++Decision: Owners responsible for closing a native resource are declared linear and close through explicit consuming functions, while opaque drop is empty, because ordinary must-consume checking exposes cleanup obligations on every exit without a hidden finalizer, instead of release tables that infer native cleanup or resource availability from a type's origin.
+
+-Decision: Arguments and paths preserve the target host's bytes with explicit conversion, and range-bearing operations expose their exact window and result relations, because a Unicode-only path model cannot represent every host path and an operation whose window is implicit cannot be proved against, instead of string-typed paths and implicit windows.
++Decision: The shipped invocation groups its ordinary inputs in Inputs and passes a separately branded Heap where requested, while entry selection imposes no special source declaration or call prohibition, because the ordinary provider-storage rule excludes Heap from the aggregate and ordinary parameters already express the other invocation values, instead of command labels, an unspellable entry brand, or a mandatory source-uncallable main.
+
+-Decision: Every compilation unit has exactly one `command fn main`, which requests any ordered subset of the labelled command inputs, has a named `ExitStatus` result, carries no contract, and cannot be called from source, because two main forms made one declaration serve incompatible ordinary-call and process-entry roles, and with one uncallable entry, no foreign interface, and no contract on the entry, every requirement belongs to an internal call and no entry-only runtime exception to the no-trap boundary is needed, instead of a second source-callable main or a checked process-entry wrapper.
++Decision: TcpConnection is an ordinary public struct of separately closable direction owners, because well-typed reconstruction may pair halves from different connections and cleanup must remain correct for that pair, instead of a public-field struct with a native-only constructor or a hidden matching-pair release invariant.
+
+-Decision: A resource's state is carried entirely by its type at the API boundary, and the compiler derives no result-state origin from a callee's body, because ownership and types state everything a resource must keep, a body-derived summary makes a function's acceptance depend on the bodies of the functions it calls, and the same shape was refused for slice and reborrow provenance, instead of a whole-program fixed point over callee bodies attributing compiler-derived releases.
+-
+-Decision: A system operation that would hand back several related parts of one resource returns one system-declared struct with those parts as ordinary fields from its first release, as a connection's receive and send halves, because a system operation has one fixed nongeneric signature, so a later split or reunite could not be added without inventing a second operation family, instead of one handle with a later split, or two independently permitted handles from one accept.
++Decision: Arguments and paths preserve the target host's bytes with explicit conversion, and range-bearing operations expose their exact window and result relations through ordinary contracts, because a Unicode-only path model cannot represent every host path and an implicit window cannot supply a source proof, instead of string-typed paths or operation-name proof sources.
+
+ Rejected:
+-- Raw syscall numbers and integer file descriptors in source: rejected because they expose forgeable identities, an implicit global descriptor table, manual close, weak effect precision, poor Windows portability, and an unchecked pointer wall; they remain permitted only inside compiler-owned target code.
+-- Ambient free functions such as args, open, stdin, and spawn callable from any function: rejected because they hide access, create inter-function channels against the no-global rule, and make system use invisible in signatures.
+-- One permanently retained affine Process object borrowed by every system operation: rejected because every operation then contends for the same unique holder, falsely serializing files, output, networking, clocks, and workers, and sharing it would need a central lock or hidden aliasing.
+-- A literal WASI source contract: rejected because it imports Unicode-only paths, no guaranteed caller-buffer or zero-copy route, async tied to Component Model costs, and an incomplete threads and process surface chosen for cross-language components; WASI stays a possible target implementation for operations it can supply.
+-- A body-derived result-state origin computed to a whole-program fixed point over the call graph: rejected because a callable contract depends only on signatures, and a caller's verdict must not change when a callee's body changes.
++- Raw syscall numbers and integer descriptors in source: rejected because they expose forgeable identity and unchecked host access outside the ordinary ownership boundary.
++- Ambient mutable host access absent from a function's parameters: rejected because it hides inter-function state channels that the declared effect row cannot describe.
++- Opaque drop implicitly closing or returning quota: rejected because an empty ordinary drop cannot conceal a host-state write or a must-consume obligation.
++- Compiler qualification tables, semantic operation identities, target-specific source guarantees and completion-policy classes: rejected because a linked body must implement its ordinary declaration and origin alone grants no additional acceptance or cleanup rule.
++- One permanently retained Process object borrowed by every operation: rejected because it unnecessarily serializes unrelated state; an explicit shared operand represents only the state its operations actually share.
++- A literal WASI source contract: rejected because it imports a path, buffering and asynchronous interface designed for cross-language components rather than selecting those obligations for Whitefoot's ordinary values.
+diff --git a/design/log.md b/design/log.md
+index c10af64..8ab3c3c 100644
+--- a/design/log.md
++++ b/design/log.md
+@@ -4,6 +4,12 @@ Newest first. One entry per ruling on the tree, an approved change or a
+ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
+ on, and `Summary:`; `skill/SKILL.md` owns the form.
+
++## 2026-09-13 Reconcile container contracts and ordinary host values
++
++Nodes: compiler, compiler/completion-runtime, compiler/parallel-lowering, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/two-worlds, compiler/resource-exhaustion-floor, compiler/target-qualification, language/checks-and-proofs/automatic-facts, language/checks-and-proofs/requires-entry-contract, language/contracts, language/data-model, language/data-model/kernel-minimality, language/effects, language/generics, language/ownership, language/ownership/no-reborrow, language/ownership/slice-result-provenance, language/parallelism, language/parallelism/staged-permission, language/system-interface, language/system-interface/completion-policy, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/handle-factory, language/system-interface/host-string-lease, language/system-interface/opaque-scalar-types, language/system-interface/outcome-typing, language/system-interface/qualification-guarantees, language/system-interface/single-attempt-transfer
++
++Summary: This revision records the owner's selected D5, D7 and C2 rules in the live tree: exclusive run mutation with entry and exit contracts, explicit formal/actual behavior with authoritative formal rows and ordinary function bindings, owned full arrays, and an ordinary prelude boundary for host values and functions. The ordinary-host-values DESIGN and DECISIONS retain the interface alternatives and grounds; the container investigation retains the transfer and sparse-layout experiments. Retired nodes for staged source permission, completion policies and native qualification lose their implementations under C2 and their refusals move to the surviving ancestors. Dependent records for generic instantiation, kernel minimality, automatic endpoint facts, explicit factory accounting, invocation backing, directory multi-results, empty opaque drop, ordinary entry calls and native call lifetimes follow the same selections. Main's unrelated decisions and native-runtime measurement grounds remain. C2-RESULTS and the backend witnesses supply revision-specific evidence, not a general performance or safety certification. The outstanding consumed-result-destinations and continuing-view-loans amendments remain separate. This reconciliation does not decide the recorded acyclic-instantiation cost conflict, the cross-version measurement adapter or the unverified concurrent-close ordering question.
++
+ ## 2026-09-13 Recover the specification's own decisions into the language tree
+
+ Nodes: language, language/grammar, language/generics, language/dispatch, language/gated-family, language/data-model, language/data-model/kernel-minimality, language/ownership, language/ownership/linearity, language/ownership/region-elision, language/ownership/multi-target-commit, language/ownership/affine-replacement, language/ownership/no-reborrow, language/effects, language/checks-and-proofs, language/checks-and-proofs/automatic-facts, language/surface-form, language/surface-form/canonical-style, language/surface-form/match-form, language/surface-form/multi-result-list, language/parallelism/loop-permission, language/parallelism/staged-permission, language/system-interface, language/system-interface/host-string-lease, language/system-interface/qualification-guarantees, language/system-interface/completion-policy, language/system-interface/outcome-typing, language/system-interface/single-attempt-transfer, language/system-interface/handle-factory, language/system-interface/opaque-scalar-types, compiler

@@ -15,7 +15,7 @@ fn widen_checked(x: own u32) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let checked_value = widen_checked(x: 3000000000_u32);
   if checked_value == 0_i32 {
   } else {

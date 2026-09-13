@@ -1,9 +1,9 @@
-fn f (heap: &uniq Heap, x: own i32) -> function_result: own i32 pure, allocates(heap) {
-  doc "pure combined with allocates(heap) [EFF-1]; pure is the empty row.";
+fn f ['heap](heap: &uniq Heap<'heap>, x: own i32) -> function_result: own i32 pure, allocates(heap) {
+  doc "D7 raw fn_sig parameters admit comma after pure in FOLLOW(effects); in this unchanged top-level source the comma fails the enclosing fn_decl continuation under DIAG-1/GRAM-2. The program still rejects and pure still cannot combine with another category.";
   return x;
 }
 
-command fn main (command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main ['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Driver.";
   region {
     let a: own i32 = f(heap: &uniq heap, x: 7_i32);

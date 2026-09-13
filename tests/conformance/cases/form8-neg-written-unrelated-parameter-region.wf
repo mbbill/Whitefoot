@@ -3,6 +3,6 @@ fn peek['r](value: &'r i32) -> result: own i32 reads(value) {
   return deref(value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

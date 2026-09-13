@@ -1,9 +1,8 @@
-//! End-to-end evidence for `tests/programs/wfgrep.wf`, the first real
-//! Whitefoot command program, now a recursive search.
+//! End-to-end evidence for the recursive search in `tests/programs/wfgrep.wf`.
 //!
 //! wfgrep takes a pattern and one search root, walks the tree with the
-//! [SYS-14] enumeration surface, opens each regular file it reaches by the
-//! enumerated name with active [SYS-11] `open_file`, reads it, and
+//! ordinary prelude enumeration functions, opens each regular file by its
+//! enumerated name with `open_file`, reads it, and
 //! publishes `PATH:LINE:TEXT` for every matching line.
 //!
 //! Two oracles check it. The first is a trusted reference search written
@@ -405,12 +404,11 @@ fn a_pattern_that_is_not_text_travels_the_lossless_route_unchanged() {
 
 /// A symbolic link the walk enumerates is not followed.
 ///
-/// [SYS-14] reports it as kind `3 symbolic link`, and the program acts on
+/// The ordinary directory entry reports kind `3 symbolic link`; the program acts on
 /// exactly the kinds it was told about — a regular file it opens, a directory
-/// it descends, and everything else it leaves alone. That is a property of
-/// this program, not of the capability: [PATH-2]'s resolution is still
-/// process-equivalent and would follow a link a program actually named. This
-/// case has no `grep` side, because the two grep families disagree about
+/// it descends, and everything else it leaves alone. This checks that the
+/// program skips the link before attempting a component open. The case has
+/// no `grep` side, because the two grep families disagree about
 /// links found during a traversal.
 #[test]
 fn an_enumerated_symbolic_link_is_not_followed() {
@@ -431,15 +429,21 @@ fn an_enumerated_symbolic_link_is_not_followed() {
     assert_eq!(output.status.code(), Some(0));
 }
 
-/// The search source compiles against the complete [SYS-2] inventory and
-/// resolves to exactly the approved implementations below, pinned by symbol
-/// rather than by any source name [QUAL-1].
+/// The search reaches its file and directory operations through ordinary
+/// direct calls. A supplied declaration alone does not establish a call site.
 #[test]
-fn the_search_source_compiles_using_its_approved_system_implementations() {
+fn the_search_uses_ordinary_file_and_directory_calls() {
     let llvm = compile_program("wfgrep.wf");
-    assert!(llvm.contains("@wf.sys.open_file.v1"));
-    assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
-    assert!(llvm.contains("@wf.sys.directory_next.v1"));
-    assert!(llvm.contains("@wf.sys.open_directory.v1"));
-    assert!(llvm.contains("@wf.sys.read_at.v1"));
+    for name in [
+        "open_file",
+        "open_directory_source",
+        "directory_next",
+        "open_directory",
+        "read_at",
+    ] {
+        assert!(
+            llvm.contains(&format!("call void @wf_{name}(")),
+            "the search must call the ordinary {name} declaration"
+        );
+    }
 }

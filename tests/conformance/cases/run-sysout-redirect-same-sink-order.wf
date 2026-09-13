@@ -1,13 +1,110 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
-  doc "EFF-5 and SYS-12: both calls take an exclusive borrow of the same `Output`, so ordinary ownership prevents the second call from starting until the first call has released its loan. The redirected sink is read back through an independent DirectoryRead value to witness that source order; no relationship is inferred between distinct Output values merely because the environment may redirect them to one physical sink.";
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uniq OutputStream, files: &uniq HandleFactory, heap: &uniq Heap<'heap>) -> status: own ExitStatus reads(args, cwd, out, err, files, heap), writes(out, err, files, heap), allocates(heap) {
+  doc "Output calls and the later file read explicitly borrow the same HandleFactory state. Ordinary EFF-2/PAR-1 interference preserves the arranged shared sink order, including independently named aliased output streams; the readback observes the combined bytes.";
   let first = fixed_vector::<u8, 2>();
-  set first = place_back(vector: move first, value: 65_u8);
-  set first = place_back(vector: move first, value: 65_u8);
-  let second = fixed_vector::<u8, 2>();
-  set second = place_back(vector: move second, value: 66_u8);
-  set second = place_back(vector: move second, value: 66_u8);
   region {
-    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
+    place_back(vector: &uniq first, value: 65_u8);
+  }
+  region {
+    place_back(vector: &uniq first, value: 65_u8);
+  }
+  let second = fixed_vector::<u8, 2>();
+  region {
+    place_back(vector: &uniq second, value: 66_u8);
+  }
+  region {
+    place_back(vector: &uniq second, value: 66_u8);
+  }
+  region {
+    match heap_vector::<u8>(store: &uniq deref(heap), count: 8_u64) {
       None() => {
         return exit_status(code: 70_u8);
       }
@@ -19,12 +116,12 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           invariant spare: room_of(page) + at >= 8_u64,
           invariant flat: head_of(page) <= 0_u64
         ) {
-          set page = place_back(vector: move page, value: 0_u8);
+          place_back(vector: &uniq page, value: 0_u8);
         }
-        region 'o {
+        region {
           let head = slice_of(&first);
           region {
-            match write_once(output: &uniq 'o out, source: &head, start: 0_u64, end: 2_u64) {
+            match write_once(factory: &uniq deref(files), output: &uniq deref(out), source: &head, start: 0_u64, end: 2_u64) {
               Ok(value: written) => {
               }
               Err(error: problem) => {
@@ -33,10 +130,10 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
             }
           }
         }
-        region 'e {
+        region {
           let tail = slice_of(&second);
           region {
-            match write_once(output: &uniq 'e out, source: &tail, start: 0_u64, end: 2_u64) {
+            match write_once(factory: &uniq deref(files), output: &uniq deref(err), source: &tail, start: 0_u64, end: 2_u64) {
               Ok(value: written) => {
               }
               Err(error: problem) => {
@@ -46,71 +143,81 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           }
         }
         region {
-          match arg_get(args: &args, position: 1_u64) {
+          match arg_get(args: args, position: 1_u64) {
             Ok(value: text) => {
               match relative_path(value: move text) {
                 Ok(value: path) => {
-                  region 'c {
+                  region {
                     region {
-                      match reserve_handle(factory: &uniq 'c files) {
-                        Ok(value: permit) => {
-                          match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                            FileOpened(value: file) => {
-                              region 'f {
-                                region {
-                                  let window = mut_slice_of(&uniq page);
-                                  region {
-                                    match read_at(file: &'f file, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
-                                      ReadBytes(next: n) => {
-                                        let combined = n == 4_u64;
-                                        if combined {
-                                        } else {
-                                          return exit_status(code: 12_u8);
-                                        }
-                                      }
+                      match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
+                        FileOpened(value: file) => {
+                          region {
+                            region {
+                              let window = mut_slice_of(&uniq page);
+                              region {
+                                match read_at(factory: &uniq deref(files), file: &uniq file, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                                  Ok(value: n) => {
+                                    let combined = n == 4_u64;
+                                    if combined {
+                                    } else {
+                                      close_read(factory: &uniq deref(files), file: move file);
+                                      return exit_status(code: 12_u8);
+                                    }
+                                  }
+                                  Err(error: read_stop_32) => {
+                                    match read_stop_32 {
                                       ReadEnd() => {
+                                        close_read(factory: &uniq deref(files), file: move file);
                                         return exit_status(code: 13_u8);
                                       }
                                       ReadFailed(error: problem) => {
+                                        close_read(factory: &uniq deref(files), file: move file);
                                         return exit_status(code: 14_u8);
                                       }
                                     }
                                   }
                                 }
                               }
-                              let byte0 = page[0_u64];
-                              let byte1 = page[1_u64];
-                              let byte2 = page[2_u64];
-                              let byte3 = page[3_u64];
-                              let head0 = byte0 == 65_u8;
-                              if head0 {
-                              } else {
-                                return exit_status(code: 15_u8);
-                              }
-                              let head1 = byte1 == 65_u8;
-                              if head1 {
-                              } else {
-                                return exit_status(code: 16_u8);
-                              }
-                              let tail0 = byte2 == 66_u8;
-                              if tail0 {
-                              } else {
-                                return exit_status(code: 17_u8);
-                              }
-                              let tail1 = byte3 == 66_u8;
-                              if tail1 {
-                                return exit_status(code: 0_u8);
-                              } else {
-                                return exit_status(code: 18_u8);
-                              }
-                            }
-                            FileOpenFailed(error: problem, permit: refused) => {
-                              return exit_status(code: 19_u8);
                             }
                           }
+                          let byte0 = page[0_u64];
+                          let byte1 = page[1_u64];
+                          let byte2 = page[2_u64];
+                          let byte3 = page[3_u64];
+                          let head0 = byte0 == 65_u8;
+                          if head0 {
+                          } else {
+                            close_read(factory: &uniq deref(files), file: move file);
+                            return exit_status(code: 15_u8);
+                          }
+                          let head1 = byte1 == 65_u8;
+                          if head1 {
+                          } else {
+                            close_read(factory: &uniq deref(files), file: move file);
+                            return exit_status(code: 16_u8);
+                          }
+                          let tail0 = byte2 == 66_u8;
+                          if tail0 {
+                          } else {
+                            close_read(factory: &uniq deref(files), file: move file);
+                            return exit_status(code: 17_u8);
+                          }
+                          let tail1 = byte3 == 66_u8;
+                          if tail1 {
+                            close_read(factory: &uniq deref(files), file: move file);
+                            return exit_status(code: 0_u8);
+                          } else {
+                            close_read(factory: &uniq deref(files), file: move file);
+                            return exit_status(code: 18_u8);
+                          }
                         }
-                        Err(error: spent) => {
-                          return exit_status(code: 22_u8);
+                        FileOpenFailed(error: problem) => {
+                          region {
+                            if factory_refusal(error: &problem) {
+                              return exit_status(code: 22_u8);
+                            }
+                          }
+                          return exit_status(code: 19_u8);
                         }
                       }
                     }
@@ -128,5 +235,15 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         }
       }
     }
+  }
+}
+
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(args: &args, cwd: &cwd, out: &uniq out, err: &uniq err, files: &uniq files, heap: &uniq heap);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
 }

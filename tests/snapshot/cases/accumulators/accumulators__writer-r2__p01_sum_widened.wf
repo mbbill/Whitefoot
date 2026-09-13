@@ -1,6 +1,6 @@
 const samples: FixedVector<u8, 6> =[10_u8, 20_u8, 5_u8, 0_u8, 40_u8, 15_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: byte sum widened to u32 with a per-byte header invariant discharges the OP-2 overflow obligation.";
   let sum = 0_u32;
   for (

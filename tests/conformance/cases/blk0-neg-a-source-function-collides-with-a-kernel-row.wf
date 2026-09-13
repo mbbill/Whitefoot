@@ -3,7 +3,7 @@ fn place_back(vector: own u64, value: own u64) -> result: own u64 pure {
   return vector;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Declares the colliding helper above and returns.";
   return exit_status(code: 0_u8);
 }

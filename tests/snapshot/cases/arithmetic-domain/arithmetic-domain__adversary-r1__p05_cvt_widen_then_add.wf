@@ -6,7 +6,7 @@ fn widen_add(a: own i8, b: own i8) -> result: own i32 pure {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: cvt i8->i32 widen then add cannot overflow i32.";
   let v = widen_add(a: -128_i8, b: -128_i8);
   if v == -256_i32 {

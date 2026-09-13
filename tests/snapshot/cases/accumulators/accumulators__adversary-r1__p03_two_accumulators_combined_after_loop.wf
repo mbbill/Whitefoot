@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- count_even and count_odd each individually bounded by i via a coefficient-one invariant; their checked sum after the loop is provably at most 20 so `+` cannot overflow u64.";
   let count_even = 0_u64;
   let count_odd = 0_u64;

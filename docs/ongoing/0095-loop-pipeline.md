@@ -1,5 +1,12 @@
 # 0095 — staged loop pipeline, narrow bounded-batch actualization
 
+The implementation described below is historical. The v0.55 ordinary-value amendment deletes PAR-3,
+source suspension classifications and the compiler-generated staged driver,
+including `wf__completion_window`. The retained text records the former
+implementation and its measurements; it is not current compiler guidance.
+Current calls use the ordinary interfaces described in the
+[ordinary-call design](../../research/investigations/ordinary-host-values/DESIGN.md#completion-and-overlap).
+
 The design is `research/investigations/io-model/LOOP-PIPELINE.md` §1, §3 and §7
 "Batch 2", with its §9 probe results as the measurement of record, and
 `research/investigations/io-model/FIRST-PRINCIPLES.md` §13-16 as the ownership

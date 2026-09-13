@@ -1,8 +1,10 @@
-use crate::{PreludeDeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
+use std::collections::HashSet;
+
+use crate::{BuiltinPreludeId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 
 use super::super::model::{
-    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind, CheckedType,
-    CheckedVariant, IntegerType, LoanStrength, NominalId,
+    CheckedConst, CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind,
+    CheckedType, CheckedVariant, LoanStrength, NominalId,
 };
 use super::{CheckStop, Checker, PendingNominal, PreludeType};
 
@@ -62,30 +64,40 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedNominalKind::Box { .. }
             | CheckedNominalKind::Arena { .. }
             | CheckedNominalKind::ArenaStorage
-            | CheckedNominalKind::SystemResource { .. } => Vec::new(),
+            | CheckedNominalKind::Opaque => Vec::new(),
         };
-        Ok(fields
-            .into_iter()
-            .filter_map(|field| match field.ty {
-                CheckedType::Nominal(id)
-                    if !matches!(
-                        self.nominals
-                            .get(id.0 as usize)
-                            .map(|nominal| &nominal.kind),
-                        Some(CheckedNominalKind::Box { .. })
-                    ) =>
-                {
-                    Some(id)
+        let mut pending: Vec<_> = fields.into_iter().map(|field| field.ty).collect();
+        let mut visited = HashSet::new();
+        let mut dependencies = Vec::new();
+        while let Some(ty) = pending.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            match ty {
+                CheckedType::Nominal(id) => {
+                    if !matches!(self.nominal(id)?.kind, CheckedNominalKind::Box { .. }) {
+                        dependencies.push(id);
+                    }
                 }
-                _ => None,
-            })
-            .collect())
+                CheckedType::Array { element, length } if length != CheckedConst::Value(0) => {
+                    pending.push(self.element_type(element)?);
+                }
+                CheckedType::FixedVector { element, .. } => {
+                    pending.push(self.element_type(element)?);
+                }
+                // The target spells an empty array as [0 x i8], independently
+                // of T. Fixed runs retain their payload's element layout even
+                // at N0; descriptor-owned runs never embed their elements.
+                _ => {}
+            }
+        }
+        Ok(dependencies)
     }
 
     pub(super) fn nominal(&self, id: NominalId) -> Result<&CheckedNominal, CheckStop> {
         self.nominals
             .get(id.0 as usize)
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     /// The arena instance data behind a checked type, when it is one
@@ -132,6 +144,57 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Heap { .. }
             | CheckedType::Extent { .. } => false,
         })
+    }
+
+    /// Whether the complete type cannot occur at a proper accessible subplace.
+    /// Follow type edges, including owning indirection, rather than expanding
+    /// values or capacities. Recursive occurrences and unresolved generics do
+    /// not establish uniqueness of the whole place.
+    pub(super) fn has_no_same_typed_subplace(&self, ty: CheckedType) -> Result<bool, CheckStop> {
+        let mut pending = vec![ty];
+        let mut visited = HashSet::new();
+        while let Some(current) = pending.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            let children = match current {
+                CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
+                    CheckedNominalKind::Struct { fields } => {
+                        fields.iter().map(|field| field.ty).collect::<Vec<_>>()
+                    }
+                    CheckedNominalKind::Enum { variants } => variants
+                        .iter()
+                        .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
+                        .collect(),
+                    CheckedNominalKind::Box { referent, .. } => vec![*referent],
+                    CheckedNominalKind::Arena { content, .. } => vec![*content],
+                    CheckedNominalKind::Opaque => Vec::new(),
+                    CheckedNominalKind::ArenaStorage => return Ok(false),
+                },
+                CheckedType::Array { element, .. }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => vec![self.element_type(element)?],
+                CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
+                    vec![element.ty()]
+                }
+                CheckedType::Generic(_)
+                | CheckedType::GenericInt(_)
+                | CheckedType::GenericFloat(_) => return Ok(false),
+                CheckedType::Unit
+                | CheckedType::Bool
+                | CheckedType::Integer(_)
+                | CheckedType::Float(_)
+                | CheckedType::Heap { .. }
+                | CheckedType::Extent { .. } => Vec::new(),
+            };
+            for child in children {
+                if child == ty {
+                    return Ok(false);
+                }
+                pending.push(child);
+            }
+        }
+        Ok(true)
     }
 
     pub(super) fn prelude_type(&self, id: NominalId) -> Option<PreludeType> {
@@ -423,158 +486,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// Returns the already-interned instance of one [SYS-2] nominal type.
-    pub(super) fn system_nominal(&self, index: u8) -> Result<NominalId, CheckStop> {
-        self.system_nominals
-            .get(&index)
-            .copied()
-            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
-    }
-
-    /// Interns one [SYS-2] nominal type: an opaque resource becomes a
-    /// [`CheckedNominalKind::SystemResource`]; an outcome enum becomes an
-    /// ordinary checked enum whose variants and typed fields come from the
-    /// catalog, so matching, affinity, and drops use the one normal path.
-    pub(super) fn intern_system_nominal(&mut self, index: u8) -> Result<NominalId, CheckStop> {
-        if let Some(id) = self.system_nominals.get(&index) {
-            return Ok(*id);
-        }
-        let nominal = crate::SYSTEM_NOMINALS
-            .get(usize::from(index))
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let kind = if nominal.is_opaque() {
-            CheckedNominalKind::SystemResource { nominal: index }
-        } else if nominal.is_struct() {
-            // A system-declared struct becomes an ordinary checked struct
-            // whose typed fields come from the catalog [SYS-18], so field
-            // places, disjoint-field loans, partial moves and derived release
-            // all take the one normal path. It contributes no constructor
-            // entry, so no source expression constructs one.
-            let mut fields = Vec::with_capacity(nominal.fields.len());
-            for field in nominal.fields {
-                fields.push(CheckedField {
-                    name: field.name.to_owned(),
-                    ty: self
-                        .ensure_system_type(field.ty)?
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                });
-            }
-            CheckedNominalKind::Struct { fields }
-        } else {
-            let mut variants = Vec::new();
-            for (constructor_index, constructor) in crate::SYSTEM_CONSTRUCTORS.iter().enumerate() {
-                if constructor.owner != index {
-                    continue;
-                }
-                let mut fields = Vec::with_capacity(constructor.fields.len());
-                for field in constructor.fields {
-                    fields.push(CheckedField {
-                        name: field.name.to_owned(),
-                        ty: self
-                            .ensure_system_type(field.ty)?
-                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                    });
-                }
-                let declaration = u8::try_from(constructor_index)
-                    .ok()
-                    .and_then(crate::system_constructor_declaration)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let tag = u32::try_from(variants.len())
-                    .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-                variants.push(CheckedVariant {
-                    name: constructor.spelling.to_owned(),
-                    constructor: CheckedConstructor::System(declaration),
-                    tag,
-                    fields,
-                });
-            }
-            CheckedNominalKind::Enum { variants }
-        };
-        let id = NominalId(
-            u32::try_from(self.nominals.len())
-                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-        );
-        self.nominals.push(CheckedNominal {
-            id,
-            name: nominal.spelling.to_owned(),
-            kind,
-            linear: false,
-        });
-        self.nominal_nodes.push(None);
-        self.nominal_states.push(2);
-        self.source_nominal_instances.push(None);
-        self.prelude_types.push(None);
-        if self.system_nominals.insert(index, id).is_some() {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        }
-        Ok(id)
-    }
-
-    /// Maps one written [SYS-2] table type to its checked type, interning
-    /// every system nominal and prelude `Result` instantiation it needs.
-    /// `None` for an operand class [SYS-8]: a class is admitted by
-    /// membership rather than by type equality, so it has no one checked type
-    /// and interns nothing of its own.
-    pub(super) fn ensure_system_type(
-        &mut self,
-        ty: crate::SystemTypeRef,
-    ) -> Result<Option<CheckedType>, CheckStop> {
-        Ok(Some(match ty {
-            crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
-            crate::SystemTypeRef::U16 => CheckedType::Integer(IntegerType::U16),
-            crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
-            crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
-            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
-                return Ok(None);
-            }
-            crate::SystemTypeRef::Nominal(index) => {
-                CheckedType::Nominal(self.intern_system_nominal(index)?)
-            }
-            crate::SystemTypeRef::Result { ok, err } => {
-                let ok = match ok {
-                    crate::SystemResultPayload::U64 => CheckedType::Integer(IntegerType::U64),
-                    crate::SystemResultPayload::Nominal(index) => {
-                        CheckedType::Nominal(self.intern_system_nominal(index)?)
-                    }
-                };
-                let error = CheckedType::Nominal(self.intern_system_nominal(err)?);
-                CheckedType::Nominal(self.intern_prelude_nominal(PreludeType::Result(ok, error))?)
-            }
-        }))
-    }
-
-    /// Read-only variant of [`Self::ensure_system_type`] for use during
-    /// function checking, after the mutable pre-pass interned every needed
-    /// instance.
-    /// `None` for an operand class [SYS-8], exactly as above.
-    pub(super) fn system_type(
-        &self,
-        ty: crate::SystemTypeRef,
-    ) -> Result<Option<CheckedType>, CheckStop> {
-        Ok(Some(match ty {
-            crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
-            crate::SystemTypeRef::U16 => CheckedType::Integer(IntegerType::U16),
-            crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
-            crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
-            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
-                return Ok(None);
-            }
-            crate::SystemTypeRef::Nominal(index) => {
-                CheckedType::Nominal(self.system_nominal(index)?)
-            }
-            crate::SystemTypeRef::Result { ok, err } => {
-                let ok = match ok {
-                    crate::SystemResultPayload::U64 => CheckedType::Integer(IntegerType::U64),
-                    crate::SystemResultPayload::Nominal(index) => {
-                        CheckedType::Nominal(self.system_nominal(index)?)
-                    }
-                };
-                let error = CheckedType::Nominal(self.system_nominal(err)?);
-                CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(ok, error))?)
-            }
-        }))
-    }
-
     pub(super) fn intern_prelude_nominal(
         &mut self,
         ty: PreludeType,
@@ -592,13 +503,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 vec![
                     CheckedVariant {
                         name: "None".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(5)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::NONE),
                         tag: 0,
                         fields: Vec::new(),
                     },
                     CheckedVariant {
                         name: "Some".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(6)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::SOME),
                         tag: 1,
                         fields: vec![CheckedField {
                             name: "value".to_owned(),
@@ -616,7 +527,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 vec![
                     CheckedVariant {
                         name: "Ok".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(11)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::OK),
                         tag: 0,
                         fields: vec![CheckedField {
                             name: "value".to_owned(),
@@ -625,7 +536,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                     CheckedVariant {
                         name: "Err".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(13)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::ERR),
                         tag: 1,
                         fields: vec![CheckedField {
                             name: "error".to_owned(),
@@ -638,7 +549,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "Overflow".to_owned(),
                 vec![CheckedVariant {
                     name: "Overflow".to_owned(),
-                    constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(16)),
+                    constructor: CheckedConstructor::Prelude(BuiltinPreludeId::OVERFLOW),
                     tag: 0,
                     fields: Vec::new(),
                 }],
@@ -648,13 +559,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 vec![
                     CheckedVariant {
                         name: "DivideByZero".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(18)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::DIVIDE_BY_ZERO),
                         tag: 0,
                         fields: Vec::new(),
                     },
                     CheckedVariant {
                         name: "DivOverflow".to_owned(),
-                        constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(19)),
+                        constructor: CheckedConstructor::Prelude(BuiltinPreludeId::DIV_OVERFLOW),
                         tag: 1,
                         fields: Vec::new(),
                     },
@@ -664,7 +575,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "NarrowError".to_owned(),
                 vec![CheckedVariant {
                     name: "NarrowError".to_owned(),
-                    constructor: CheckedConstructor::Prelude(PreludeDeclarationId::new(21)),
+                    constructor: CheckedConstructor::Prelude(BuiltinPreludeId::NARROW_ERROR),
                     tag: 0,
                     fields: Vec::new(),
                 }],

@@ -1,5 +1,13 @@
 # Channel 3: Checked-Law Reassociation (FN-4)
 
+Historical experiment. D7 retires source `contract`/`conform` declarations and
+the FN-4 law table; the active behavior boundary assumes no algebraic laws.
+The two WF kernels below retain their original bytes as dated evidence and
+are not current-toolchain test targets. The corresponding five law cases
+were retired with reasons in
+[BEHAVIOR.md](../../investigations/containers-and-resources/BEHAVIOR.md#d7-source-migration-and-retirement).
+The figures below are not measurements of the D7 compiler.
+
 Status: BUILT + MEASURED 2026-07-09. Third channel differentiated: 3.3x over
 Rust's obvious shape, ties expert Rust, and REFUTES the false law expert Rust
 silently miscompiles with.

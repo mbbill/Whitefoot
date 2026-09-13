@@ -12,7 +12,7 @@ fn half_budget(total: own u8, used: own u8) -> remaining: own u8 pure contract {
   return extended;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let remaining = half_budget(total: 40_u8, used: 10_u8);
   let code = remaining -wrap 25_u8;
   return exit_status(code: code);

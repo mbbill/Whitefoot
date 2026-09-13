@@ -36,15 +36,8 @@
 #include <time.h>
 #include <unistd.h>
 
-/* The completion driver's default bound before slot size and static caps. */
-#define WF_HARNESS_WINDOW_DEFAULT 1024u
-/* The private storage the window query affords one loop before the compiler's
- * ceiling and the loop's own slot size apply.  A test which means to reach
- * that boundary must name the same number the bridge does. */
-#define WF_HARNESS_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
-
-/* One operation record block, exactly as an emitted frame reserves it: the
- * size and alignment the contract states, and no knowledge of the layout. */
+/* One operation record block, exactly as an ordinary linked body reserves it:
+ * the size and alignment the contract states, and no knowledge of the layout. */
 typedef struct wf_harness_record {
     _Alignas(WF_COMPLETION_RECORD_ALIGN)
         unsigned char bytes[WF_COMPLETION_RECORD_BYTES];
@@ -207,7 +200,7 @@ int wf_completion_test_poll(
  *     `test_a_name_no_pool_record_could_hold_takes_the_completion_path`.
  *   - The overwrite arm of `test_submitted_open_owns_its_path_bytes`, which
  *     rewrote the caller's buffer immediately after submitting.  The bytes are
- *     the frame's and [SYS-2]'s loan on them holds until the join (design §5),
+ *     the frame's and (ordinary native library)'s loan on them holds until the join (design §5),
  *     so rewriting them while the operation is outstanding is no longer a
  *     thing a conforming caller does; what remains -- that an open resolves
  *     the name it was given -- is asserted by
@@ -1085,7 +1078,7 @@ static int wf_harness_write_marker_file(int root, const char *name, char byte) {
  * outstanding opens resolve their own.
  *
  * Nothing is copied any more: the path is the frame's own storage and
- * [SYS-2]'s loan on it holds until the join, so the kernel or the helper
+ * (ordinary native library)'s loan on it holds until the join, so the kernel or the helper
  * resolves the caller's bytes in place (design §5).  The property that
  * survives the copy's removal is the one an emitted program depends on --
  * that two independent opens outstanding at once each resolve their own name
@@ -2393,13 +2386,9 @@ static void *write_after_a_delay(void *opaque) {
 
 /* A completion elsewhere ends a join that is waiting in place.
  *
- * This is the property `test_drain_wakes_the_registered_token_owner` held over
- * the deleted consume-wait registration, in the form the design gives it: the
- * join registers `WF_SCHED_WAITER_IN_PLACE` on its own record, sleeps on the
- * one primitive, and the thread that finishes the operation -- a helper where
- * the pool has one, this thread's own progress pass where it has none -- calls
- * `wf_sched_complete`, which claims the registration and wakes it (design §2's
- * fourth line, §6).
+ * The join announces a wait on the record's current-state predicate. The
+ * thread that finishes the operation publishes its result through
+ * `wf_completion_record_complete` and wakes an announced native waiter.
  *
  * The operation is a read of an empty pipe, so it genuinely cannot finish
  * until another thread writes: a join that did not wait, or a completion that
@@ -2528,59 +2517,6 @@ static int test_readiness_refusal_is_not_a_terminal_outcome(void) {
     CHECK(close(descriptors[1]) == 0);
     return 0;
 }
-/* The runtime's own bound on how many iterations of one loop may be in flight
- * at once.
- *
- * The rules this checks are the only ones a lowering may rely on: every
- * argument is a bound and none can raise the answer, a zero argument places no
- * bound, and one is always a legal answer.  That last one is what makes the
- * query safe to emit at all — a loop whose window came back as zero would have
- * no legal schedule, and the sequential program is always a legal schedule. */
-static int test_completion_window_answers_at_the_boundaries(void) {
-    uint64_t unconstrained = wf__completion_window(0, 0, 0);
-    uint64_t budget = WF_HARNESS_WINDOW_BYTE_BUDGET;
-    uint64_t two;
-
-    /* The runtime's default is a throughput bound, not global capacity. */
-    CHECK(unconstrained >= 1u);
-    CHECK(unconstrained <= WF_HARNESS_WINDOW_DEFAULT);
-
-    /* A trip count of one is a loop with nothing to overlap. */
-    CHECK(wf__completion_window(1, 0, 0) == 1u);
-    /* The compiler's own static cap is honoured exactly. */
-    CHECK(wf__completion_window(0, 0, 1) == 1u);
-    CHECK(wf__completion_window(0, 0, 2) == (unconstrained < 2u ? unconstrained : 2u));
-    CHECK(wf__completion_window(3, 0, 0) == (unconstrained < 3u ? unconstrained : 3u));
-    /* Neither a huge trip count nor a huge ceiling raises the runtime's own
-     * answer: every argument is a minimum with it, never a request. */
-    CHECK(wf__completion_window(UINT64_MAX, 0, 0) == unconstrained);
-    CHECK(wf__completion_window(0, 0, UINT64_MAX) == unconstrained);
-    CHECK(wf__completion_window(UINT64_MAX, 0, UINT64_MAX) == unconstrained);
-
-    /* The byte budget. One slot of the whole budget affords one iteration;
-     * half of it affords two; a slot larger than the budget affords none, and
-     * the floor turns that into the sequential program rather than into a
-     * schedule with no slots. */
-    CHECK(wf__completion_window(0, budget, 0) == 1u);
-    CHECK(wf__completion_window(0, budget + 1u, 0) == 1u);
-    CHECK(wf__completion_window(0, UINT64_MAX, 0) == 1u);
-    /* The design's own example: a loop privatizing a 16 MiB buffer gets one. */
-    CHECK(wf__completion_window(0, 16u * 1024u * 1024u, 0) == 1u);
-    two = budget / 2u;
-    CHECK(wf__completion_window(0, two, 0) == (unconstrained < 2u ? unconstrained : 2u));
-
-    /* The smallest argument decides, whichever one it is. */
-    CHECK(wf__completion_window(2, budget / 8u, 8) == 2u);
-    CHECK(wf__completion_window(8, budget / 2u, 8) == (unconstrained < 2u ? unconstrained : 2u));
-    CHECK(wf__completion_window(8, budget / 8u, 2) == 2u);
-
-    /* One is always legal: no combination of arguments answers zero. */
-    CHECK(wf__completion_window(0, 0, 0) >= 1u);
-    CHECK(wf__completion_window(1, UINT64_MAX, 1) == 1u);
-    CHECK(wf__completion_window(UINT64_MAX, UINT64_MAX, UINT64_MAX) == 1u);
-    return 0;
-}
-
 /* The io_uring doorbell is deferred, and every path that can stop reaches the
  * kernel before it does.
  *
@@ -2720,14 +2656,14 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
 }
 
 /* One loopback connection through the submitted TCP kinds, and the accounting
- * a connection's two directions carry [SYS-17, SYS-18].
+ * a connection's two directions carry (ordinary native library).
  *
  * This is the whole socket lifecycle at the bridge's own ABI: listen, connect,
  * accept, send, receive, and the two half-closes. The accounting under test is
  * the pair's: a connection is one descriptor and two owners, so it takes
  * exactly two releases, the first is that direction's half-close and leaves
  * the target's object open, and the second releases it. That is the runtime's
- * half of the [SYS-10] credit rule -- one connection costs the target one
+ * half of the (ordinary native library) credit rule -- one connection costs the target one
  * native handle, whichever way the pair is released -- and it is checked here
  * by asking the host whether the descriptor is still this program's.
  *
@@ -2804,7 +2740,7 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
     CHECK(memcmp(received, message, sizeof(message)) == 0);
 
     /* An empty receive has no external action at all and answers zero without
-     * a host call, exactly as an empty read does [SYS-8]. */
+     * a host call, exactly as an empty read does (ordinary native library). */
     wf__completion_socket_receive_submit(taken, received, 0, record.bytes);
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
@@ -2820,21 +2756,21 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
     CHECK(value == 0 && error_code == 0);
     CHECK(fcntl(taken, F_GETFD) >= 0);
 
-    /* The second releases the target's object, which is the release that
-     * spends the credit. */
+    /* The second releases the descriptor. The private joined value records
+     * that one credit can be returned to the ordinary close's passed factory. */
     wf__completion_socket_shutdown_submit(
         taken,
         WF_SOCKET_DIRECTION_SEND,
         record.bytes
     );
     wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
+    CHECK(value == 1 && error_code == 0);
     errno = 0;
     CHECK(fcntl(taken, F_GETFD) < 0 && errno == EBADF);
 
     /* The other connection takes exactly the same two releases, in the other
      * order, because which direction is released first is the program's own
-     * ordinary release order and changes no outcome [SYS-18]. */
+     * ordinary release order and changes no outcome (ordinary native library). */
     wf__completion_socket_shutdown_submit(
         connected,
         WF_SOCKET_DIRECTION_SEND,
@@ -2849,7 +2785,7 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
         record.bytes
     );
     wf__completion_file_join(record.bytes, &value, &error_code);
-    CHECK(value == 0 && error_code == 0);
+    CHECK(value == 1 && error_code == 0);
     errno = 0;
     CHECK(fcntl(connected, F_GETFD) < 0 && errno == EBADF);
 
@@ -2859,9 +2795,9 @@ static int test_socket_lifecycle_and_the_pair_two_count(void) {
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
 
-    /* A connect nobody is listening for takes no handle at all: the host
-     * refuses it and the runtime disposes of the socket it made, so the
-     * program's own permit comes back rather than a descriptor [SYS-10]. */
+    /* A connect nobody is listening for returns no descriptor: the host
+     * refuses it and the runtime disposes of the socket it made. The ordinary
+     * library can therefore return failure and restore the factory's credit. */
     wf__completion_socket_connect_submit(0x0100007fu, 0, port, record.bytes);
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value < 0 && error_code == ECONNREFUSED);
@@ -3148,7 +3084,7 @@ static uint64_t monotonic_nanoseconds(void) {
  * costs nothing.
  *
  * It is the record protocol and nothing else: initialise the record, store a
- * result head, publish through `wf_sched_complete`, read DONE.  The claim,
+ * result head, publish through `wf_completion_record_complete`, read DONE.  The claim,
  * the drain and the consume it used to include are deleted with the pool. */
 static int benchmark_record_roundtrip(uint64_t *nanoseconds_per_operation) {
     enum { ITERATIONS = 100000 };
@@ -3270,7 +3206,6 @@ int main(int argc, char **argv) {
     RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
     RUN_TEST(test_an_io_join_waits_on_the_current_stack());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
-    RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
     RUN_TEST(test_socket_lifecycle_and_the_pair_two_count());
     RUN_TEST(test_a_peer_bound_request_is_left_to_a_helper());

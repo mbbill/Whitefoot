@@ -11,7 +11,7 @@ fn copy_bytes(out: &uniq MutSlice<u8>, source: own Slice<u8>) -> function_result
   return length;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let length = 4_u64;
   region 'w {
     let workspace = arena_frame::<8, 1, 'w>();
@@ -23,7 +23,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_source: room_of(source) + at >= 4_u64,
         invariant flat_source: head_of(source) <= 0_u64
       ) {
-        set source = place_back(vector: move source, value: 7_u8);
+        place_back(vector: &uniq source, value: 7_u8);
       }
       let output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
       for @fill_output (
@@ -32,7 +32,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_output: room_of(output) + at >= 4_u64,
         invariant flat_output: head_of(output) <= 0_u64
       ) {
-        set output = place_back(vector: move output, value: 0_u8);
+        place_back(vector: &uniq output, value: 0_u8);
       }
       region {
         let window = slice_of(&source);

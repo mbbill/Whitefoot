@@ -20,7 +20,7 @@
 //! statement this analysis cannot account for **denies with a report** rather
 //! than silently ending the enumeration.
 //!
-//! P(s1, s2) holds exactly when all four conditions hold. Writing T for an
+//! P(s1, s2) holds exactly when all three conditions hold. Writing T for an
 //! interposed statement, D(u) for the binding u defines, U(u) for the bindings
 //! its operands mention, and W/R/O(u) for u's written, read, and caller-side
 //! operand-read footprints:
@@ -62,12 +62,7 @@
 //!    s2 out has already completed s1. The operand half is one-sided for s1
 //!    and two-sided for s2. Getting this wrong conservatively costs only
 //!    denials; getting it wrong permissively is a race.
-//! 3. **Target support does not alter legality.** A may-suspend target does not
-//!    deny permission: it selects completion lowering when one exists,
-//!    otherwise the permitted window stays sequential. State conflicts and
-//!    lifetime exclusion have already been decided by conditions 2 and the
-//!    ordinary loans above.
-//! 4. **No skipping exit.** No exit edge of s1 bypasses s2, and no statement
+//! 3. **No skipping exit.** No exit edge of s1 bypasses s2, and no statement
 //!    between them carries an exit edge at all: s1's only continuation is s2.
 //!    A `propagate` right-hand side has an `Err` edge to the function-return
 //!    sink [ERR-3], so it is never a window member on either side; standing
@@ -85,9 +80,9 @@
 //! what the two admit, never the weaker set the current backend alone would
 //! survive.
 //!
-//! # Proof statements do not add a fifth condition
+//! # Proof statements do not add a fourth condition
 //!
-//! Nothing beyond those four conditions is required. Every source proof
+//! Nothing beyond those three conditions is required. Every source proof
 //! statement has already been checked against its control-flow facts before
 //! permission metadata is built. It is then erased before lowering: it has no
 //! runtime evaluation, effect, exit edge, or scheduler-visible event. A failed
@@ -95,7 +90,7 @@
 //! permission judgment therefore neither rechecks proofs nor models a proof
 //! failure path.
 //!
-//! **Invariant.** The window and staged judgments consult typing, declared
+//! **Invariant.** The window and counted-loop judgments consult typing, declared
 //! effect rows, resolved places [OWN-5, OWN-7], and statement-graph exit edges.
 //! The counted-loop judgment additionally consumes an already-successful
 //! [OP-4] disposition and its retained single-binder affine value image; it
@@ -110,11 +105,7 @@ use super::model::{
     expression_children,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceTerm, ResolvedPlace};
-use super::staged_permission::StagedPermission;
-use crate::{
-    DeclarationId, NodePath, SYSTEM_OPERATIONS, SystemParameterMode, TargetAction,
-    operation_state_effects,
-};
+use crate::{DeclarationId, NodePath};
 
 /// The declared effect row and region parameters of one concrete function, as
 /// P reads them. This is the callable boundary only: no body fact enters.
@@ -343,7 +334,7 @@ pub(crate) enum Denial {
         /// The form, as the ledger names it to the writer.
         form: &'static str,
     },
-    /// Condition 4: an exit edge of a statement between the two members does
+    /// Condition 3: an exit edge of a statement between the two members does
     /// not reach s2. No member itself carries an exit edge: [PAR-1] admits a
     /// `let`-bound call or a scrutinee call, and the one statement shape with
     /// an exit edge, `propagate`, is never a candidate (see `candidate_of`).
@@ -403,9 +394,6 @@ pub(crate) struct PermissionSite {
     /// in every written call position, where a defining binding does not.
     pub(crate) call: NodePath,
     pub(crate) callee_name: String,
-    /// Compiler-owned execution summary selected for this call. The
-    /// permission judgment does not use it as an alias fact.
-    pub(crate) target_action: TargetAction,
 }
 
 /// One ordered pair of adjacent call statements and its verdict.
@@ -424,22 +412,6 @@ pub(crate) struct PermissionRun {
     pub(crate) sites: Vec<PermissionSite>,
 }
 
-/// One source-ordered call step in a dependency-driven completion schedule.
-///
-/// The sites in one schedule are consecutive call statements. `wait_for` names
-/// only earlier calls whose ordinary value, memory access, or loan conflicts
-/// with this call, by their call occurrences.  It contains no resource family
-/// or target operation identity; lowering later decides which direct
-/// may-suspend calls have an executable completion route.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PermissionCompletionStep {
-    pub(crate) site: PermissionSite,
-    pub(crate) wait_for: Vec<NodePath>,
-    /// At least one immediately following call may run before this call's
-    /// result and loans return. The final call of a schedule is false.
-    pub(crate) has_later_independent_call: bool,
-}
-
 /// Every analyzed pair and eligible chain of one concrete function, in source
 /// order.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -447,20 +419,10 @@ pub(crate) struct FunctionPermissions {
     pub(crate) function: String,
     pub(crate) pairs: Vec<PermissionPair>,
     pub(crate) runs: Vec<PermissionRun>,
-    /// Consecutive call schedules whose waits are ordinary dependency edges.
-    /// This table is intentionally absent from the developer pair ledger: it
-    /// is a lowering view of the same verdicts, not another permission rule.
-    pub(crate) completion_steps: Vec<PermissionCompletionStep>,
     /// The [PAR-2] verdict of every counted loop of this function, in source
     /// order. The pair judgment above is computed exactly as it was before
     /// these existed, and nothing here is lowered by this version.
     pub(crate) loops: Vec<LoopPermission>,
-    /// The [PAR-3] staged verdict of every loop of this function whose body
-    /// performs I/O, in source order. It is a second judgment of the same
-    /// bodies and shares none of the counted permission's apparatus: no
-    /// accumulator, no combination tree, no index range. A loop with no
-    /// `may-suspend` action has no entry.
-    pub(crate) staged: Vec<StagedPermission>,
 }
 
 /// The whole-program permission table, dense by [`FunctionId`].
@@ -550,18 +512,12 @@ struct Candidate<'check> {
 /// Both project the same boundary, so both build it from this and neither
 /// grows a second copy of the projection.
 pub(super) struct CallProjection<'check> {
+    pub(super) formal_effects: Option<&'check super::model::CheckedEffects>,
     pub(super) call: &'check NodePath,
-    pub(super) target: CallTarget,
+    pub(super) target: FunctionId,
     pub(super) arguments: &'check [CheckedExpression],
     pub(super) argument_nodes: &'check [NodePath],
     pub(super) regions: &'check [DeclarationId],
-}
-
-/// The closed callable classes the overlap judgment can project.
-#[derive(Clone, Copy)]
-pub(super) enum CallTarget {
-    User(FunctionId),
-    System(u8),
 }
 
 /// The call one expression is, or `None` for every other expression form.
@@ -573,202 +529,18 @@ pub(super) fn call_projection(value: &CheckedExpression) -> Option<CallProjectio
             argument_nodes,
             arguments,
             goal_regions,
+            formal_effects,
             ..
         } => Some(CallProjection {
+            formal_effects: formal_effects.as_deref(),
             call,
-            target: CallTarget::User(*function),
+            target: *function,
             arguments,
             argument_nodes,
             regions: goal_regions,
         }),
-        CheckedExpression::SystemCall {
-            operation,
-            call,
-            regions,
-            argument_nodes,
-            arguments,
-            ..
-        } => Some(CallProjection {
-            call,
-            target: CallTarget::System(*operation),
-            arguments,
-            argument_nodes,
-            regions,
-        }),
         _ => None,
     }
-}
-
-/// One [BLK-0] kernel-domain call, reduced to what the boundary projection
-/// reads.
-///
-/// A kernel row is not an admitted member of a [PAR-1] window — that rule's
-/// members are one call of a declared function [FN-1] or one system operation
-/// [SYS-2] — so this is deliberately not a [`CallProjection`] and the window
-/// judgment keeps refusing the form. The staged permission [PAR-3] states no
-/// such enumeration: it asks of every statement of the body only that its
-/// footprint and its loans resolve, and a row's declared effect row and
-/// parameter modes are exactly what that projection needs.
-pub(super) struct KernelProjection<'check> {
-    pub(super) row: crate::KernelRow,
-    pub(super) call: &'check NodePath,
-    pub(super) arguments: &'check [CheckedExpression],
-    pub(super) argument_nodes: &'check [NodePath],
-}
-
-/// The kernel-domain call one expression is, or `None` for every other form.
-pub(super) fn kernel_projection(value: &CheckedExpression) -> Option<KernelProjection<'_>> {
-    match value {
-        CheckedExpression::KernelCall {
-            row,
-            call,
-            arguments,
-            argument_nodes,
-            ..
-        } => Some(KernelProjection {
-            row: *row,
-            call,
-            arguments,
-            argument_nodes,
-        }),
-        _ => None,
-    }
-}
-
-/// The written and read footprints of one [BLK-0] row, by the same [EFF-2]
-/// boundary projection [`Program::footprint`] applies to a declared callee.
-///
-/// The record supplies both halves. Its parameter modes give the loans — an
-/// acquiring row takes its store's provider by `&uniq` [BLK-2], so the take
-/// holds one exclusive loan on that store for the duration of the call,
-/// exactly as a `&uniq` factory argument does. Its declared effect row gives
-/// the accesses: `reads(store)`, `writes(store)` and `allocates(store)` each
-/// name a value parameter, and each projects onto that parameter's actual
-/// place, so two takes from one store conflict and two from distinct stores do
-/// not. The run or cell the row hands back is a fresh value the caller binds;
-/// it is storage the statement introduces and no footprint element of the
-/// caller's.
-pub(super) fn kernel_footprint(places: &PlaceMap, candidate: &KernelProjection<'_>) -> Footprint {
-    let mut footprint = Footprint::default();
-    let signature = super::kernel::kernel_signature(candidate.row);
-    if signature.parameters.len() != candidate.arguments.len()
-        || candidate.arguments.len() != candidate.argument_nodes.len()
-    {
-        footprint.unresolved = Some(candidate.call.clone());
-        return footprint;
-    }
-    for (index, parameter) in signature.parameters.iter().enumerate() {
-        let argument = &candidate.arguments[index];
-        let node = &candidate.argument_nodes[index];
-        let strength = match parameter.mode {
-            super::kernel::KernelMode::Own => None,
-            super::kernel::KernelMode::Shared => Some(LoanStrength::Shared),
-            super::kernel::KernelMode::Unique => Some(LoanStrength::Exclusive),
-        };
-        if let Some(strength) = strength {
-            match argument_place(places, argument) {
-                Some(place) => footprint.loans.push(Loan {
-                    strength,
-                    place,
-                    argument: node.clone(),
-                }),
-                None => footprint.unresolved = Some(node.clone()),
-            }
-        }
-        // A consumed `own` actual transfers caller storage into the row, and
-        // the boundary rows [BLK-3] take their run exactly that way.
-        if matches!(parameter.mode, super::kernel::KernelMode::Own)
-            && let Some(place) = consumed_place(places, argument)
-        {
-            footprint.writes.push(Access::Place {
-                place,
-                argument: node.clone(),
-            });
-        }
-    }
-    // `allocates(P)` names the same operand its `writes(P)` does on every row
-    // of this domain, so the two are one access rather than two.
-    for (written, ordinal) in [
-        (false, signature.effects.reads),
-        (true, signature.effects.writes),
-        (true, signature.effects.allocates),
-    ] {
-        let Some(ordinal) = ordinal else { continue };
-        let (Some(argument), Some(node)) = (
-            candidate.arguments.get(ordinal as usize),
-            candidate.argument_nodes.get(ordinal as usize),
-        ) else {
-            footprint.unresolved = Some(candidate.call.clone());
-            continue;
-        };
-        match argument_place(places, argument).or_else(|| consumed_place(places, argument)) {
-            Some(place) => {
-                let access = Access::Place {
-                    place,
-                    argument: node.clone(),
-                };
-                if written {
-                    footprint.writes.push(access);
-                } else {
-                    footprint.reads.push(access);
-                }
-            }
-            None => footprint.unresolved = Some(node.clone()),
-        }
-    }
-    for (argument, node) in candidate.arguments.iter().zip(candidate.argument_nodes) {
-        collect_operand_reads(places, argument, node, &mut footprint);
-    }
-    footprint
-}
-
-/// The store a [BLK-2] acquisition's own release returns its storage to, when
-/// that release spends the store's provider capability.
-///
-/// A `Vector<'s, T>` and a `Box<'s, T>` are store-owned [STOR-1]: the value's
-/// scope exit runs one compiler-derived release back to the store `'s` names,
-/// which for a **general** store spends that store's capability [PROV-6] and
-/// therefore writes the same place the take wrote. For a **bump extent** the
-/// release is empty, the extent's reclamation being its own region reset
-/// [BLK-2], so those rows return `None` and cost their store nothing.
-///
-/// The release is not a statement, so no walk over the body reaches it. A
-/// judgment that reads a body's statements alone would attribute the take and
-/// miss the give-back, which is the one direction it must never fail in.
-pub(super) fn kernel_release_footprint(
-    places: &PlaceMap,
-    candidate: &KernelProjection<'_>,
-) -> Option<Footprint> {
-    match candidate.row {
-        crate::KernelRow::HeapVector | crate::KernelRow::HeapBox => {}
-        crate::KernelRow::FixedVector
-        | crate::KernelRow::ArenaVector
-        | crate::KernelRow::ArenaVectorProved
-        | crate::KernelRow::ArenaBox
-        | crate::KernelRow::ArenaFrame
-        | crate::KernelRow::PlaceBack
-        | crate::KernelRow::PlaceFront
-        | crate::KernelRow::TakeBack
-        | crate::KernelRow::TakeFront
-        | crate::KernelRow::SliceOf
-        | crate::KernelRow::MutSliceOf => return None,
-    }
-    let mut footprint = Footprint::default();
-    let (Some(argument), Some(node)) = (
-        candidate.arguments.first(),
-        candidate.argument_nodes.first(),
-    ) else {
-        footprint.unresolved = Some(candidate.call.clone());
-        return Some(footprint);
-    };
-    match argument_place(places, argument) {
-        Some(place) => footprint.writes.push(Access::Place {
-            place,
-            argument: node.clone(),
-        }),
-        None => footprint.unresolved = Some(node.clone()),
-    }
-    Some(footprint)
 }
 
 /// One statement written between the two judged calls, reduced to what the
@@ -816,11 +588,9 @@ impl<'check> Program<'check> {
             function: function.name.clone(),
             pairs: Vec::new(),
             runs: Vec::new(),
-            completion_steps: Vec::new(),
             loops: Vec::new(),
-            staged: Vec::new(),
         };
-        let mut blocks = vec![function.body.as_slice()];
+        let mut blocks = vec![function.body.as_deref().unwrap_or_default()];
         while let Some(block) = blocks.pop() {
             self.analyze_block(&places, block, &mut permissions);
             for statement in block {
@@ -839,12 +609,6 @@ impl<'check> Program<'check> {
                 .components()
                 .cmp(right.sites[0].statement.components())
         });
-        permissions.completion_steps.sort_by(|left, right| {
-            left.site
-                .statement
-                .components()
-                .cmp(right.site.statement.components())
-        });
         // The loop judgment runs last and reads the finished verdicts, so a
         // loop that already holds an eligible pair is never told to become
         // one. Its own verdict does not read them: [PAR-2] is a judgment of
@@ -856,10 +620,6 @@ impl<'check> Program<'check> {
             .map(|pair| pair.first.statement.clone())
             .collect::<Vec<_>>();
         permissions.loops = super::loop_permission::judge_loops(self, &places, function, &eligible);
-        // The staged judgment is its own rule over the same bodies. It reads
-        // no [PAR-2] verdict and no pair verdict, so nothing here can move an
-        // existing line of the table.
-        permissions.staged = super::staged_permission::judge_staged(self, &places, function);
         permissions
     }
 
@@ -907,53 +667,6 @@ impl<'check> Program<'check> {
             });
         }
         self.collect_runs(&windows, permissions);
-        self.collect_completion_steps(&windows, permissions);
-    }
-
-    /// Builds maximal schedules of consecutive plain call statements.
-    ///
-    /// Adjacent eligibility is enough to keep the writer moving from one site
-    /// to the next. Every later site then records all earlier members whose
-    /// ordinary pair verdict is denied. For `A(out), B(err), C(out)`, this
-    /// yields no wait before B and exactly A before C.
-    fn collect_completion_steps(
-        &self,
-        windows: &BlockWindows<'check>,
-        permissions: &mut FunctionPermissions,
-    ) {
-        let candidates = &windows.candidates;
-        let mut start = 0;
-        while start + 1 < candidates.len() {
-            let first = &candidates[start];
-            let second = &candidates[start + 1];
-            if first.index + 1 != second.index
-                || !self.judge(windows, start, start + 1).is_eligible()
-            {
-                start += 1;
-                continue;
-            }
-
-            let mut end = start + 1;
-            while end + 1 < candidates.len()
-                && candidates[end].index + 1 == candidates[end + 1].index
-                && self.judge(windows, end, end + 1).is_eligible()
-            {
-                end += 1;
-            }
-
-            for current in start..=end {
-                let wait_for = (start..current)
-                    .filter(|earlier| !self.judge(windows, *earlier, current).is_eligible())
-                    .map(|earlier| candidates[earlier].call.call.clone())
-                    .collect();
-                permissions.completion_steps.push(PermissionCompletionStep {
-                    site: self.site(&candidates[current]),
-                    wait_for,
-                    has_later_independent_call: current < end,
-                });
-            }
-            start = end + 1;
-        }
     }
 
     /// Grows maximal chains whose every ordered pair is permitted and
@@ -992,23 +705,16 @@ impl<'check> Program<'check> {
     }
 
     fn site(&self, candidate: &Candidate<'check>) -> PermissionSite {
-        let (callee_name, target_action) = match candidate.call.target {
-            CallTarget::User(function) => self
-                .functions
-                .get(function.0 as usize)
-                .map(|function| (function.name.clone(), function.target_action))
-                .unwrap_or_else(|| (String::new(), TargetAction::CONSERVATIVE)),
-            CallTarget::System(operation) => SYSTEM_OPERATIONS
-                .get(usize::from(operation))
-                .map(|row| (row.spelling.to_owned(), row.target_action))
-                .unwrap_or_else(|| (String::new(), TargetAction::CONSERVATIVE)),
-        };
+        let callee_name = self
+            .functions
+            .get(candidate.call.target.0 as usize)
+            .map(|function| function.name.clone())
+            .unwrap_or_default();
         PermissionSite {
             statement: candidate.statement.clone(),
             binding: candidate.binding,
             call: candidate.call.call.clone(),
             callee_name,
-            target_action,
         }
     }
 
@@ -1145,7 +851,7 @@ impl<'check> Program<'check> {
             }
         }
 
-        // Condition 4: no window member carries an exit edge: [PAR-1] admits a
+        // Condition 3: no window member carries an exit edge: [PAR-1] admits a
         // `let`-bound call or a scrutinee call as a member, and a
         // `propagate` statement forms no candidate at all (see
         // `candidate_of`), so a skipping exit can only come from a statement
@@ -1274,10 +980,9 @@ impl<'check> Program<'check> {
             CheckedStatement::Return { .. }
             | CheckedStatement::Give { .. }
             | CheckedStatement::Break { .. } => Err(InterposedRefusal::Exit(ExitKind::BlockExit)),
-            // An expression statement is a call [GRAM-4], which may be a
-            // system call whose reach no row projects, and a discarded one
-            // carries its own [STOR-3] release. Admitting these needs that
-            // release classified first, so today they deny.
+            // PAR-1's admitted intervening forms exclude expression
+            // statements [GRAM-4], including calls with ordinary exact rows.
+            // A discarded result also carries its own [STOR-3] release.
             CheckedStatement::Evaluate(_) => {
                 Err(InterposedRefusal::Form("an expression statement"))
             }
@@ -1304,12 +1009,7 @@ impl<'check> Program<'check> {
     /// The written and read footprints of one call, by [EFF-2] boundary
     /// projection onto the actuals' resolved places.
     pub(super) fn footprint(&self, places: &PlaceMap, candidate: &CallProjection<'_>) -> Footprint {
-        match candidate.target {
-            CallTarget::User(callee) => self.user_call_footprint(places, candidate, callee),
-            CallTarget::System(operation) => {
-                self.system_call_footprint(places, candidate, operation)
-            }
-        }
+        self.user_call_footprint(places, candidate, candidate.target)
     }
 
     fn user_call_footprint(
@@ -1329,7 +1029,12 @@ impl<'check> Program<'check> {
 
         // An `allocates(arena 'r)` row appends to the caller region's
         // allocation list, which is written storage with no actual of its own.
-        for formal in &signature.allocates_arenas {
+        for formal in candidate
+            .formal_effects
+            .map_or(&signature.allocates_arenas, |effects| {
+                &effects.allocates_arenas
+            })
+        {
             match signature
                 .region_parameters
                 .iter()
@@ -1388,7 +1093,13 @@ impl<'check> Program<'check> {
             }
         }
 
-        for (written, declared) in [(false, &signature.reads), (true, &signature.writes)] {
+        let reads = candidate
+            .formal_effects
+            .map_or(&signature.reads, |effects| &effects.reads);
+        let writes = candidate
+            .formal_effects
+            .map_or(&signature.writes, |effects| &effects.writes);
+        for (written, declared) in [(false, reads), (true, writes)] {
             for path in declared {
                 let Some(index) = callee
                     .parameters
@@ -1435,112 +1146,6 @@ impl<'check> Program<'check> {
             collect_operand_reads(places, argument, node, &mut footprint);
         }
         footprint
-    }
-
-    /// Projects one direct system call through the same caller-place model as
-    /// a user call. The catalog's ordinary parameter paths and borrow modes
-    /// are complete: there is no synthetic global-world access.
-    fn system_call_footprint(
-        &self,
-        places: &PlaceMap,
-        candidate: &CallProjection<'_>,
-        operation_index: u8,
-    ) -> Footprint {
-        let mut footprint = Footprint::default();
-        let Some(operation) = SYSTEM_OPERATIONS.get(usize::from(operation_index)) else {
-            footprint.unresolved = Some(candidate.call.clone());
-            return footprint;
-        };
-        if operation.regions.len() != candidate.regions.len()
-            || operation.parameters.len() != candidate.arguments.len()
-            || operation.parameters.len() != candidate.argument_nodes.len()
-        {
-            footprint.unresolved = Some(candidate.call.clone());
-            return footprint;
-        }
-        let (reads, writes) = operation_state_effects(operation);
-
-        for (index, parameter) in operation.parameters.iter().enumerate() {
-            let Some(argument) = candidate.arguments.get(index) else {
-                footprint.unresolved = Some(candidate.call.clone());
-                return footprint;
-            };
-            let Some(node) = candidate.argument_nodes.get(index) else {
-                footprint.unresolved = Some(candidate.call.clone());
-                return footprint;
-            };
-            let strength = match parameter.mode {
-                SystemParameterMode::Own => None,
-                SystemParameterMode::Borrow(_) => Some(LoanStrength::Shared),
-                SystemParameterMode::UniqueBorrow(_) => Some(LoanStrength::Exclusive),
-            };
-
-            if let Some(strength) = strength {
-                match argument_place(places, argument) {
-                    Some(place) => footprint.loans.push(Loan {
-                        strength,
-                        place,
-                        argument: node.clone(),
-                    }),
-                    None => footprint.unresolved = Some(node.clone()),
-                }
-            }
-
-            // A consumed `own` actual transfers caller storage into the
-            // operation, and [PAR-1] puts the place it names in the written
-            // footprint whatever the row says about it. This is the same
-            // unconditional push `user_call_footprint` makes, and it is
-            // unconditional for the same reason: reading the row instead would
-            // leave a parameter the row mentions only under `reads` with no
-            // written footprint element, so another statement could read the
-            // consumed place alongside the consume.
-            if matches!(parameter.mode, SystemParameterMode::Own)
-                && let Some(place) = consumed_place(places, argument)
-            {
-                footprint.writes.push(Access::Place {
-                    place,
-                    argument: node.clone(),
-                });
-            }
-
-            let Ok(ordinal) = u8::try_from(index) else {
-                footprint.unresolved = Some(node.clone());
-                continue;
-            };
-            let written = writes.contains(&ordinal);
-            let read = reads.contains(&ordinal);
-            if written || read {
-                match argument_place(places, argument).or_else(|| consumed_place(places, argument))
-                {
-                    Some(place) => {
-                        let access = Access::Place {
-                            place,
-                            argument: node.clone(),
-                        };
-                        if written {
-                            footprint.writes.push(access.clone());
-                        }
-                        if read {
-                            footprint.reads.push(access);
-                        }
-                    }
-                    None => footprint.unresolved = Some(node.clone()),
-                }
-            }
-        }
-
-        for (argument, node) in candidate.arguments.iter().zip(candidate.argument_nodes) {
-            collect_operand_reads(places, argument, node, &mut footprint);
-        }
-        footprint
-    }
-
-    /// Conservative target summary of one concrete callee.
-    pub(super) fn target_action(&self, function: FunctionId) -> TargetAction {
-        self.functions
-            .get(function.0 as usize)
-            .map(|function| function.target_action)
-            .unwrap_or(TargetAction::CONSERVATIVE)
     }
 }
 
@@ -1769,7 +1374,6 @@ pub(super) fn expression_forms_borrow(expression: &CheckedExpression) -> bool {
         CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
     ) || expression_children(expression)
         .into_iter()
@@ -1977,12 +1581,15 @@ pub(crate) fn visit_read_bindings(
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::Project { binding, .. }
         | CheckedExpression::BorrowBox { binding, .. }
-        | CheckedExpression::BorrowSystemResource { binding, .. }
         | CheckedExpression::ReborrowAddressed { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. } => note(*binding),
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ContainerMeasure { root, .. }
-        | CheckedExpression::ReadStorage { root, .. } => note(root.binding),
+        | CheckedExpression::ReadStorage { root, .. } => {
+            if let Some(binding) = root.binding() {
+                note(binding);
+            }
+        }
         CheckedExpression::BorrowBuffer { root, .. }
         | CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
@@ -2002,7 +1609,11 @@ pub(crate) fn visit_read_bindings(
             }
             CheckedSliceSource::Buffer(root) => note(root.binding),
             CheckedSliceSource::ArenaContent { binding, .. } => note(*binding),
-            CheckedSliceSource::Run(root) => note(root.binding),
+            CheckedSliceSource::Run(root) => {
+                if let Some(binding) = root.binding() {
+                    note(binding);
+                }
+            }
             CheckedSliceSource::ViewHolder { binding, .. } => note(*binding),
         },
         _ => {}
@@ -2061,7 +1672,6 @@ pub(super) fn collect_operand_reads(
         CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowAddressed { .. }
         | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::BorrowSystemResource { .. }
         | CheckedExpression::ReborrowAddressed { .. } => {}
         // The handle itself is the recursed child, and its resolved place is
         // where an opaque referent anchors, so the child walk covers both.
@@ -2116,9 +1726,7 @@ pub(super) fn collect_operand_reads(
         },
         // [GRAM-9] forbids a call in argument position; if one ever reaches
         // here its whole footprint is unaccounted for.
-        CheckedExpression::UserCall { .. }
-        | CheckedExpression::SystemCall { .. }
-        | CheckedExpression::KernelCall { .. } => {
+        CheckedExpression::UserCall { .. } | CheckedExpression::KernelCall { .. } => {
             footprint.operand_unresolved = Some(node.clone());
         }
         // One clause-only datum; no executable statement carries one.
@@ -2186,19 +1794,23 @@ pub(super) fn rooted_container_place(
     root: &super::model::CheckedContainerRoot,
 ) -> ResolvedPlace {
     let mut projections = Vec::new();
-    if places.is_holder(root.binding) {
+    if root
+        .binding()
+        .is_some_and(|binding| places.is_holder(binding))
+    {
         projections.push(super::places::PlaceProjection::Deref);
     }
     projections.extend(root.path.iter().map(|step| match step {
         super::model::CheckedPlaceStep::Field(field) => {
             super::places::PlaceProjection::Field(*field)
         }
+        super::model::CheckedPlaceStep::BoxReferent(_) => super::places::PlaceProjection::Deref,
         super::model::CheckedPlaceStep::Subscript(subscript) => {
             super::places::PlaceProjection::Subscript(subscript.place_offset)
         }
     }));
     places.resolve_projected(&super::places::ProjectedPlaceTerm {
-        root: PlaceRoot::Binding(root.binding),
+        root: root.root,
         projections,
     })
 }

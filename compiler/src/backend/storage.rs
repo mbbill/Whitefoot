@@ -2,22 +2,26 @@
 //!
 //! Source ownership is already checked and is not inferred here. A value gets
 //! independent backing unless complete CFG liveness proves that a selected
-//! update or edge transfer can reuse backing whose old contents are dead.
-//! Projections and loads remain snapshots, never aliases. Exposed backing is
+//! update, edge transfer or alternative return can reuse backing whose old
+//! contents are dead. A returned group containing one owned entry parameter
+//! may use the result after every other indirect input reaches private storage.
+//! Loads and ordinary projections remain snapshots. A consumed call input and
+//! its consumed struct result field may occupy the same field of the complete
+//! result allocation after a separate interference check. Exposed backing is
 //! not coalesced, and schedules whose reads can outlive an IR call keep every
 //! value separate until their actual retirement lifetimes are represented.
 
 use std::collections::BTreeSet;
 
 use crate::{
-    IrArrayRoot, IrFunction, IrInstruction, IrNominalKind, IrOperation, IrProgram, IrTerminator,
-    IrType, IrValueId,
+    IrArrayRoot, IrFunction, IrInstruction, IrNominalId, IrNominalKind, IrOperation, IrProgram,
+    IrSourceArgument, IrSourceMode, IrTerminator, IrType, IrValueId,
 };
 
 use super::BackendFailure;
 
-/// These values contain their payload inline. Descriptors and opaque handles
-/// retain their ordinary SSA representation: their payload is elsewhere. This
+/// These values contain their payload inline. Descriptors retain their
+/// ordinary SSA representation: their payload is elsewhere. This
 /// choice depends on representation, not source names or a size threshold.
 pub(super) fn is_stored_aggregate(
     program: &IrProgram<'_, '_, '_>,
@@ -28,12 +32,11 @@ pub(super) fn is_stored_aggregate(
         IrType::Nominal(nominal) => {
             let nominal = program.nominal(nominal).ok_or(BackendFailure::InvalidIr)?;
             match nominal.kind() {
-                IrNominalKind::Struct { .. } => true,
+                IrNominalKind::Struct { .. } | IrNominalKind::Opaque => true,
                 IrNominalKind::Enum { .. } => !nominal.is_tag_only_enum(),
                 IrNominalKind::Box { .. }
                 | IrNominalKind::Arena { .. }
-                | IrNominalKind::ArenaStorage
-                | IrNominalKind::SystemResource(_) => false,
+                | IrNominalKind::ArenaStorage => false,
             }
         }
         IrType::Unit
@@ -51,25 +54,74 @@ pub(super) fn is_stored_aggregate(
 pub(super) struct FunctionStoragePlan {
     values: Vec<Option<usize>>,
     slots: Vec<IrType>,
+    exposed: BTreeSet<usize>,
     /// A fresh binding can be the destination of its initializing value.
     /// The frame plan supplies this address's static or per-iteration backing.
     destinations: Vec<Option<IrValueId>>,
+    fields: Vec<Option<FieldDestination>>,
+}
+
+/// A logical slot occupies one field of a complete local struct allocation.
+/// Logical slot identity and type are retained; this is not a value alias.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct FieldDestination {
+    pub(super) parent_slot: usize,
+    pub(super) nominal: IrNominalId,
+    pub(super) field: u32,
+}
+
+/// Only these two instruction sites have an established overlapping transfer.
+/// Other occurrences of the same values still contribute normal interference.
+struct FieldReuse {
+    call: usize,
+    argument: usize,
+    projection: usize,
 }
 
 impl FunctionStoragePlan {
+    #[cfg(test)]
     pub(super) fn build(
         program: &IrProgram<'_, '_, '_>,
         function: &IrFunction,
-        pipeline: Option<&crate::IrCompletionPipeline>,
     ) -> Result<Self, BackendFailure> {
+        Self::build_in_world(program, function, false)
+    }
+
+    /// Storage interference follows the world being emitted. A sequential
+    /// clone has no deferred hand-out operands, including in its callees.
+    pub(super) fn build_in_world(
+        program: &IrProgram<'_, '_, '_>,
+        function: &IrFunction,
+        sequential: bool,
+    ) -> Result<Self, BackendFailure> {
+        // A signature has the same parameter/result ABI as a definition but
+        // no activation or control-flow graph to allocate storage for.
+        if function.blocks().is_empty() {
+            return Ok(Self {
+                values: vec![None; function.value_types().len()],
+                slots: Vec::new(),
+                exposed: BTreeSet::new(),
+                destinations: Vec::new(),
+                fields: Vec::new(),
+            });
+        }
         let types = function
             .value_types()
             .iter()
             .map(|ty| is_stored_aggregate(program, *ty).map(|stored| stored.then_some(*ty)))
             .collect::<Result<Vec<_>, _>>()?;
-        let graph = FlowGraph::from_function(function);
-        let mut plan = graph.plan(types)?;
-        plan.select_destinations(function, &graph, pipeline)?;
+        let graph = FlowGraph::from_function(program, function, sequential)?;
+        let returned: Vec<_> = function
+            .blocks()
+            .iter()
+            .filter_map(|block| match block.terminator() {
+                IrTerminator::Return { value, .. } => Some(index(*value)),
+                _ => None,
+            })
+            .collect();
+        let mut plan = graph.plan(types, &returned)?;
+        plan.select_destinations(function, &graph)?;
+        plan.select_field_destinations(program, function, &graph, sequential)?;
         Ok(plan)
     }
 
@@ -87,24 +139,202 @@ impl FunctionStoragePlan {
         self.destinations.get(slot).copied().flatten()
     }
 
+    pub(super) fn is_exposed(&self, slot: usize) -> bool {
+        self.exposed.contains(&slot)
+    }
+
+    pub(super) fn field_destination(&self, slot: usize) -> Option<FieldDestination> {
+        self.fields.get(slot).copied().flatten()
+    }
+
+    /// Field placements have depth one and never redirect an existing binding
+    /// destination. The complete allocation, not its child, owns the frame slot.
+    pub(super) fn allocation_root(&self, slot: usize) -> usize {
+        self.field_destination(slot)
+            .map_or(slot, |field| field.parent_slot)
+    }
+
+    fn select_field_destinations(
+        &mut self,
+        program: &IrProgram<'_, '_, '_>,
+        function: &IrFunction,
+        graph: &FlowGraph,
+        sequential: bool,
+    ) -> Result<(), BackendFailure> {
+        if !graph.coalesce {
+            return Ok(());
+        }
+        let types: Vec<_> = self
+            .values
+            .iter()
+            .map(|slot| slot.map(|slot| self.slots[slot]))
+            .collect();
+        let mut members = vec![Vec::new(); self.slots.len()];
+        for (value, slot) in self.values.iter().enumerate() {
+            if let Some(slot) = slot {
+                members[*slot].push(value);
+            }
+        }
+        // Each selected allocation component is independent. In particular a
+        // later candidate cannot place an existing parent inside its own child.
+        let mut placed = BTreeSet::new();
+        for (block_index, block) in function.blocks().iter().enumerate() {
+            for (call_index, instruction) in block.instructions().iter().enumerate() {
+                let IrInstruction::Define {
+                    result: call,
+                    ty: IrType::Nominal(nominal),
+                    operation: operation @ IrOperation::Call { .. },
+                } = instruction
+                else {
+                    continue;
+                };
+                let Some(parent) = self.slot(*call) else {
+                    continue;
+                };
+                if members[parent].as_slice() != [index(*call)]
+                    || placed.contains(&parent)
+                    || self.destination(parent).is_some()
+                    || self.is_exposed(parent)
+                {
+                    continue;
+                }
+                let IrNominalKind::Struct { fields } = program
+                    .nominal(*nominal)
+                    .ok_or(BackendFailure::InvalidIr)?
+                    .kind()
+                else {
+                    continue;
+                };
+                let mut projections = Vec::new();
+                let mut seen_fields = BTreeSet::new();
+                let mut admitted = true;
+                // The parent is only read by distinct, consuming field
+                // projections after this call, in this same dynamic block.
+                // Whole-parent reads, exposure, drops and CFG transports keep
+                // the original allocation rather than guessing field liveness.
+                for (other_block, flow) in graph.blocks.iter().enumerate() {
+                    if flow.terminal_uses.contains(&index(*call)) {
+                        admitted = false;
+                    }
+                    for (other_index, flow_instruction) in flow.instructions.iter().enumerate() {
+                        if !flow_instruction.operands.contains(&index(*call)) {
+                            continue;
+                        }
+                        let IrInstruction::Define {
+                            result,
+                            ty,
+                            operation:
+                                IrOperation::ProjectStruct {
+                                    aggregate,
+                                    nominal: source,
+                                    field,
+                                    consume_root: true,
+                                },
+                        } = &function.blocks()[other_block].instructions()[other_index]
+                        else {
+                            admitted = false;
+                            continue;
+                        };
+                        if other_block != block_index
+                            || other_index <= call_index
+                            || aggregate != call
+                            || source != nominal
+                            || !seen_fields.insert(*field)
+                            || fields.get(*field as usize).map(|field| field.ty()) != Some(*ty)
+                        {
+                            admitted = false;
+                            continue;
+                        }
+                        projections.push((*result, *ty, *field));
+                    }
+                }
+                if !admitted {
+                    continue;
+                }
+                for (projection, ty, field) in projections {
+                    let Some(child) = self.slot(projection) else {
+                        continue;
+                    };
+                    let Some(argument) = call_reuse_operand_for_type(
+                        program, function, *call, operation, ty, sequential,
+                    )?
+                    else {
+                        continue;
+                    };
+                    let input = self.slot(argument).ok_or(BackendFailure::InvalidIr)?;
+                    let children = BTreeSet::from([input, child]);
+                    if children.contains(&parent)
+                        || children.iter().any(|slot| {
+                            placed.contains(slot)
+                                || self.destination(*slot).is_some()
+                                || self.is_exposed(*slot)
+                        })
+                    {
+                        continue;
+                    }
+                    let reuse = FieldReuse {
+                        call: index(*call),
+                        argument: index(argument),
+                        projection: index(projection),
+                    };
+                    let (conflicts, _) = graph.interference_with_field_reuse(&types, Some(&reuse));
+                    let values: Vec<_> = children
+                        .iter()
+                        .chain(std::iter::once(&parent))
+                        .flat_map(|slot| members[*slot].iter().copied())
+                        .collect();
+                    if values
+                        .iter()
+                        .any(|left| values.iter().any(|right| conflicts[*left].contains(right)))
+                    {
+                        continue;
+                    }
+                    let destination = FieldDestination {
+                        parent_slot: parent,
+                        nominal: *nominal,
+                        field,
+                    };
+                    for child in children {
+                        self.fields[child] = Some(destination);
+                        placed.insert(child);
+                    }
+                    placed.insert(parent);
+                    break;
+                }
+            }
+        }
+        // This also protects later address resolution from cycles and from a
+        // child being backed by less storage than its complete parent requires.
+        for (child, field) in self.fields.iter().enumerate() {
+            if let Some(field) = field
+                && (field.parent_slot == child
+                    || self.field_destination(field.parent_slot).is_some()
+                    || self.destination(child).is_some()
+                    || self.destination(field.parent_slot).is_some()
+                    || self.slots[field.parent_slot] != IrType::Nominal(field.nominal))
+            {
+                return Err(BackendFailure::InvalidIr);
+            }
+        }
+        Ok(())
+    }
+
     /// Redirect a value's construction into the fresh place that consumes it.
     /// This changes physical placement, not source ownership or initialization:
-    /// no old content is overwritten, and calls still have separate inputs.
+    /// no old content is overwritten. Input/result backing reuse is selected
+    /// separately by `call_reuse_operand` and checked CFG liveness.
     ///
     /// The single-use condition preserves independent snapshots and exposed
     /// views. Both definitions must execute in the same block, hence the same
-    /// dynamic iteration. A static destination must be in an acyclic block;
-    /// otherwise only the actualized pipeline's per-slot backing has a proved
-    /// retirement-before-reuse boundary. Single-use alone cannot exclude a
+    /// dynamic iteration. A static destination must be in an acyclic block.
+    /// Single-use alone cannot exclude a
     /// previous iteration's address alias during the producer's reads.
     /// AddressOf already freezes the value's storage group;
-    /// no other definition can subsequently reuse it. Staged carries count as
-    /// reads even though their stores are schedule metadata rather than IR.
+    /// no other definition can subsequently reuse it.
     fn select_destinations(
         &mut self,
         function: &IrFunction,
         graph: &FlowGraph,
-        pipeline: Option<&crate::IrCompletionPipeline>,
     ) -> Result<(), BackendFailure> {
         let mut uses = vec![0_u8; self.values.len()];
         for block in &graph.blocks {
@@ -122,12 +352,7 @@ impl FunctionStoragePlan {
             members[*slot] += 1;
         }
         for (block_index, block) in function.blocks().iter().enumerate() {
-            let block_id = crate::IrBlockId::from_index(block_index)
-                .map_err(|_| BackendFailure::CounterOverflow)?;
-            let per_slot = pipeline.is_some_and(|pipeline| {
-                pipeline.slot_index(block_id).is_some() && !pipeline.drains(block_id)
-            });
-            if !per_slot && graph.reentered(block_index) {
+            if graph.reentered(block_index) {
                 continue;
             }
             let mut defined = BTreeSet::new();
@@ -201,7 +426,11 @@ impl FlowGraph {
         false
     }
 
-    fn from_function(function: &IrFunction) -> Self {
+    fn from_function(
+        program: &IrProgram<'_, '_, '_>,
+        function: &IrFunction,
+        sequential: bool,
+    ) -> Result<Self, BackendFailure> {
         let blocks = function
             .blocks()
             .iter()
@@ -237,7 +466,7 @@ impl FlowGraph {
                         (Vec::new(), Vec::new())
                     }
                 };
-                FlowBlock {
+                Ok(FlowBlock {
                     parameters: block
                         .parameters()
                         .iter()
@@ -246,47 +475,70 @@ impl FlowGraph {
                     instructions: block
                         .instructions()
                         .iter()
-                        .map(FlowInstruction::from_ir)
-                        .collect(),
+                        .map(|instruction| {
+                            FlowInstruction::from_ir(program, function, instruction, sequential)
+                        })
+                        .collect::<Result<Vec<_>, BackendFailure>>()?,
                     terminal_uses: terminator_operands(block.terminator())
                         .into_iter()
                         .map(index)
                         .collect(),
                     successors,
                     transfers,
-                }
+                })
             })
-            .collect();
-        Self {
+            .collect::<Result<Vec<_>, BackendFailure>>()?;
+        Ok(Self {
             entry_parameters: function
                 .parameters()
                 .iter()
                 .map(|(value, _)| index(*value))
                 .collect(),
             blocks,
-            // A refused ordinary hand-out reads its arguments at join, and a
-            // staged definition can have several dynamic values in flight.
-            coalesce: function.overlaps().is_empty() && function.completion_pipeline().is_none(),
-        }
+            // A refused ordinary hand-out reads its arguments at join.
+            coalesce: sequential || function.overlaps().is_empty(),
+        })
     }
 
-    fn plan(&self, types: Vec<Option<IrType>>) -> Result<FunctionStoragePlan, BackendFailure> {
+    fn plan(
+        &self,
+        types: Vec<Option<IrType>>,
+        returned: &[usize],
+    ) -> Result<FunctionStoragePlan, BackendFailure> {
         self.validate(types.len())?;
+        if returned.iter().any(|value| *value >= types.len()) {
+            return Err(BackendFailure::InvalidIr);
+        }
         let mut groups: Vec<BTreeSet<usize>> = (0..types.len())
             .map(|value| BTreeSet::from([value]))
             .collect();
         let mut representative: Vec<usize> = (0..types.len()).collect();
         if self.coalesce {
             let (interference, frozen) = self.interference(&types);
-            // Try only semantic update and CFG transfer neighbors. Unrelated
-            // dead values are deliberately not packed into the same backing.
-            let candidates = self.blocks.iter().flat_map(|block| {
-                block
-                    .instructions
-                    .iter()
-                    .filter_map(|instruction| Some((instruction.result?, instruction.reuse?)))
-                    .chain(block.transfers.iter().copied())
-            });
+            // Update and CFG transfer neighbors can reuse backing. Returned
+            // values can also share their caller's destination, but returning
+            // on different edges does not by itself prove their storage dead:
+            // all definitions, reads, drops and exposed addresses still take
+            // part in the same interference check. If every returned group
+            // joins, the emitter can omit its frame slot and return copy.
+            // A group containing an entry parameter additionally needs the
+            // prologue's private-input-before-result ordering. Its input
+            // transfer remains; no caller input/result equality is assumed.
+            let candidates = self
+                .blocks
+                .iter()
+                .flat_map(|block| {
+                    block
+                        .instructions
+                        .iter()
+                        .filter_map(|instruction| Some((instruction.result?, instruction.reuse?)))
+                        .chain(block.transfers.iter().copied())
+                })
+                .chain(
+                    returned.first().into_iter().flat_map(|first| {
+                        returned.iter().skip(1).map(move |other| (*first, *other))
+                    }),
+                );
             for (left, right) in candidates {
                 if types[left].is_none() || types[left] != types[right] {
                     continue;
@@ -326,10 +578,20 @@ impl FlowGraph {
             }
         }
         let destinations = vec![None; slots.len()];
+        let fields = vec![None; slots.len()];
+        let exposed = self
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter_map(|instruction| instruction.exposed)
+            .filter_map(|value| values[value])
+            .collect();
         Ok(FunctionStoragePlan {
             values,
             slots,
+            exposed,
             destinations,
+            fields,
         })
     }
 
@@ -402,6 +664,14 @@ impl FlowGraph {
     }
 
     fn interference(&self, types: &[Option<IrType>]) -> (Vec<BTreeSet<usize>>, BTreeSet<usize>) {
+        self.interference_with_field_reuse(types, None)
+    }
+
+    fn interference_with_field_reuse(
+        &self,
+        types: &[Option<IrType>],
+        reuse: Option<&FieldReuse>,
+    ) -> (Vec<BTreeSet<usize>>, BTreeSet<usize>) {
         let entering = self.live_in();
         let mut conflicts = vec![BTreeSet::new(); types.len()];
         let mut frozen = BTreeSet::new();
@@ -420,14 +690,22 @@ impl FlowGraph {
                 if let Some(result) = instruction.result {
                     // Even an unused definition writes its assigned backing.
                     for other in &live {
-                        conflict(result, *other);
+                        if !reuse
+                            .is_some_and(|reuse| result == reuse.projection && *other == reuse.call)
+                        {
+                            conflict(result, *other);
+                        }
                     }
                     // An arbitrary result destination may be written before
                     // a call/constructor has finished reading its operands.
                     // Only a selected update has an explicit read-then-write
                     // contract permitting its base operand's reuse.
                     for operand in &instruction.operands {
-                        if Some(*operand) != instruction.reuse {
+                        let field_transfer = reuse.is_some_and(|reuse| {
+                            (result == reuse.call && *operand == reuse.argument)
+                                || (result == reuse.projection && *operand == reuse.call)
+                        });
+                        if Some(*operand) != instruction.reuse && !field_transfer {
                             conflict(result, *operand);
                         }
                     }
@@ -454,15 +732,102 @@ impl FlowGraph {
     }
 }
 
+/// Selects the one checked owned binding whose dead backing may receive this
+/// ordinary call's whole result. Stored parameters are snapshotted in the
+/// callee prologue before any body or result write, so making its result
+/// destination equal this one input address preserves argument evaluation.
+/// Calls which can leave the current synchronous extent keep distinct storage.
+fn call_reuse_operand(
+    program: &IrProgram<'_, '_, '_>,
+    caller: &IrFunction,
+    result: IrValueId,
+    operation: &IrOperation,
+    sequential: bool,
+) -> Result<Option<IrValueId>, BackendFailure> {
+    let ty = caller.value_type(result).ok_or(BackendFailure::InvalidIr)?;
+    call_reuse_operand_for_type(program, caller, result, operation, ty, sequential)
+}
+
+fn call_reuse_operand_for_type(
+    program: &IrProgram<'_, '_, '_>,
+    caller: &IrFunction,
+    result: IrValueId,
+    operation: &IrOperation,
+    input_type: IrType,
+    sequential: bool,
+) -> Result<Option<IrValueId>, BackendFailure> {
+    let IrOperation::Call {
+        function,
+        arguments,
+    } = operation
+    else {
+        return Err(BackendFailure::InvalidIr);
+    };
+    if !sequential && !caller.overlaps().is_empty() {
+        return Ok(None);
+    }
+    let mut source_calls = caller
+        .source_calls()
+        .iter()
+        .filter(|call| call.result() == result);
+    let Some(source_call) = source_calls.next() else {
+        return Ok(None);
+    };
+    if source_calls.next().is_some() || source_call.arguments().len() != arguments.len() {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let callee = program
+        .functions()
+        .get(*function as usize)
+        .ok_or(BackendFailure::InvalidIr)?;
+    let Some(signature) = callee.source_signature() else {
+        return Ok(None);
+    };
+    if (!sequential && !callee.overlaps().is_empty())
+        || signature.result() != IrSourceMode::Own
+        || signature.parameters().len() != arguments.len()
+        || callee.result() != caller.value_type(result).ok_or(BackendFailure::InvalidIr)?
+        || !is_stored_aggregate(program, callee.result())?
+    {
+        return Ok(None);
+    }
+    let mut candidate = None;
+    for ((argument, source), mode) in arguments
+        .iter()
+        .zip(source_call.arguments())
+        .zip(signature.parameters())
+    {
+        let consumes_owned_binding =
+            matches!(source, IrSourceArgument::Binding { consume_root: true })
+                && *mode == IrSourceMode::Own
+                && caller.value_type(*argument) == Some(input_type);
+        if consumes_owned_binding {
+            if candidate.is_some() {
+                return Ok(None);
+            }
+            candidate = Some(*argument);
+        }
+    }
+    Ok(candidate)
+}
+
 impl FlowInstruction {
-    fn from_ir(instruction: &IrInstruction) -> Self {
+    fn from_ir(
+        program: &IrProgram<'_, '_, '_>,
+        function: &IrFunction,
+        instruction: &IrInstruction,
+        sequential: bool,
+    ) -> Result<Self, BackendFailure> {
         let (result, reuse, exposed) = match instruction {
             IrInstruction::Define {
                 result, operation, ..
             } => {
                 let reuse = match operation {
-                    IrOperation::RunBoundary { run, .. } => Some(index(*run)),
                     IrOperation::InsertStruct { aggregate, .. } => Some(index(*aggregate)),
+                    IrOperation::Call { .. } => {
+                        call_reuse_operand(program, function, *result, operation, sequential)?
+                            .map(index)
+                    }
                     _ => None,
                 };
                 let exposed = match operation {
@@ -480,7 +845,7 @@ impl FlowInstruction {
             | IrInstruction::Store { .. }
             | IrInstruction::Drops(_) => (None, None, None),
         };
-        Self {
+        Ok(Self {
             result,
             operands: instruction_operands(instruction)
                 .into_iter()
@@ -488,7 +853,7 @@ impl FlowInstruction {
                 .collect(),
             reuse,
             exposed,
-        }
+        })
     }
 }
 
@@ -537,11 +902,11 @@ fn terminator_operands(terminator: &IrTerminator) -> Vec<IrValueId> {
 pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
     match operation {
         IrOperation::Constant(_)
+        | IrOperation::ConstantAddress { .. }
         | IrOperation::FixedVector
         | IrOperation::ArenaFrame { .. }
         | IrOperation::ArenaListNew => Vec::new(),
         IrOperation::Call { arguments, .. }
-        | IrOperation::SystemCall { arguments, .. }
         | IrOperation::Integer { arguments, .. }
         | IrOperation::Float { arguments, .. }
         | IrOperation::Boolean { arguments, .. } => arguments.clone(),
@@ -549,6 +914,7 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
         IrOperation::NumericConversion { value, .. }
         | IrOperation::Reinterpret { value, .. }
         | IrOperation::ArrayFill { value, .. }
+        | IrOperation::FullArrayConversion { value }
         | IrOperation::BoxNew { value, .. }
         | IrOperation::BoxTake { value, .. }
         | IrOperation::BoxDeref { value, .. }
@@ -600,7 +966,9 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             address,
             projection,
         } => match projection {
-            crate::IrPlaceProjection::Field { .. } => vec![*address],
+            crate::IrPlaceProjection::Field { .. }
+            | crate::IrPlaceProjection::BoxReferent { .. }
+            | crate::IrPlaceProjection::EnumVariant { .. } => vec![*address],
             crate::IrPlaceProjection::RunElement { offset, .. }
             | crate::IrPlaceProjection::ArrayElement { offset, .. } => vec![*address, *offset],
         },
@@ -630,12 +998,11 @@ mod tests {
 
     use super::*;
 
-    const ARRAY: IrType = IrType::Array {
+    const AGGREGATE: IrType = IrType::Buffer {
         element: crate::IrFlatElement::Integer {
             width: 64,
             signed: false,
         },
-        length: 4,
     };
 
     fn define(result: usize, operands: &[usize], reuse: Option<usize>) -> FlowInstruction {
@@ -662,9 +1029,13 @@ mod tests {
     }
 
     fn plan(graph: &FlowGraph, values: usize) -> FunctionStoragePlan {
-        let types = vec![Some(ARRAY); values];
+        plan_returning(graph, values, &[])
+    }
+
+    fn plan_returning(graph: &FlowGraph, values: usize, returned: &[usize]) -> FunctionStoragePlan {
+        let types = vec![Some(AGGREGATE); values];
         let (conflicts, _) = graph.interference(&types);
-        let plan = graph.plan(types).expect("well-formed flow graph");
+        let plan = graph.plan(types, returned).expect("well-formed flow graph");
         for (value, others) in conflicts.iter().enumerate() {
             for other in others {
                 assert_ne!(
@@ -675,6 +1046,199 @@ mod tests {
         }
         compare_execution(graph, &plan);
         plan
+    }
+
+    #[test]
+    fn field_transfer_exceptions_are_local_and_preserve_frozen_values() {
+        let reuse = FieldReuse {
+            call: 1,
+            argument: 0,
+            projection: 2,
+        };
+        let types = vec![Some(AGGREGATE); 5];
+        let mut graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![block(
+                &[],
+                vec![
+                    define(1, &[0], None),
+                    define(2, &[1], None),
+                    define(4, &[], None),
+                    define(3, &[1], None),
+                ],
+                &[2, 3],
+            )],
+            coalesce: true,
+        };
+        let (ordinary, _) = graph.interference(&types);
+        assert!(ordinary[1].contains(&0));
+        assert!(ordinary[1].contains(&2));
+        let (selected, _) = graph.interference_with_field_reuse(&types, Some(&reuse));
+        assert!(!selected[1].contains(&0));
+        assert!(!selected[1].contains(&2));
+        assert!(selected[1].contains(&3), "other projection still writes");
+        assert!(selected[1].contains(&4), "other definition still writes");
+
+        graph.blocks[0].terminal_uses.push(0);
+        graph.blocks[0].instructions[0].exposed = Some(0);
+        let (selected, frozen) = graph.interference_with_field_reuse(&types, Some(&reuse));
+        assert!(selected[1].contains(&0), "live input is not a dead operand");
+        assert_eq!(frozen, BTreeSet::from([0]));
+    }
+
+    #[test]
+    fn a_nonzero_result_field_can_back_an_owned_parameter_and_returned_child() {
+        with_program(
+            br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn split(value: own Row) -> (observed: own u64, updated: own Row) reads(value.left) {
+  let observed = value.left;
+  return observed, move value;
+}
+
+fn relay(value: own Row) -> result: own Row reads(value.left) {
+  let (observed, updated) = split(value: move value);
+  return move updated;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let value = Row(left: 3_u64, right: 5_u64);
+  let result = relay(value: move value);
+  if result.right != 5_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let relay = program
+                    .functions()
+                    .iter()
+                    .find(|function| function.name() == "relay")
+                    .expect("relay");
+                let plan = FunctionStoragePlan::build(program, relay).expect("plan");
+                let parameter = plan.slot(relay.parameters()[0].0).expect("owned input");
+                let returned = relay
+                    .blocks()
+                    .iter()
+                    .find_map(|block| match block.terminator() {
+                        IrTerminator::Return { value, .. } => plan.slot(*value),
+                        _ => None,
+                    })
+                    .expect("owned result");
+                let field = plan.field_destination(parameter).expect("input field");
+                assert_eq!(field.field, 1);
+                assert_eq!(plan.field_destination(returned), Some(field));
+                assert_eq!(plan.allocation_root(parameter), field.parent_slot);
+                assert_eq!(plan.allocation_root(returned), field.parent_slot);
+                assert_eq!(plan.field_destination(field.parent_slot), None);
+                assert_eq!(plan.destination(parameter), None);
+                assert_eq!(plan.destination(returned), None);
+                assert_eq!(
+                    super::super::emitter::places::returned_storage_slot(relay, &plan),
+                    None,
+                    "the complete parent cannot use the smaller caller result buffer"
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn exclusive_returns_construct_in_one_destination() {
+        for successors in [[1, 2], [2, 1]] {
+            let mut entry = block(&[], Vec::new(), &[]);
+            entry.successors.extend(successors);
+            let graph = FlowGraph {
+                entry_parameters: Vec::new(),
+                blocks: vec![
+                    entry,
+                    block(&[], vec![define(0, &[], None)], &[0]),
+                    block(&[], vec![define(1, &[], None)], &[1]),
+                ],
+                coalesce: true,
+            };
+            let plan = plan_returning(&graph, 2, &[0, 1]);
+            assert_eq!(plan.slots.len(), 1);
+        }
+    }
+
+    #[test]
+    fn an_alternative_return_cannot_overwrite_a_value_read_in_a_successor() {
+        let mut entry = block(&[], vec![define(0, &[], None)], &[]);
+        entry.successors.extend([2, 1]);
+        let mut alternative = block(&[], vec![define(1, &[], None)], &[]);
+        alternative.successors.push(3);
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![
+                entry,
+                block(&[], Vec::new(), &[0]),
+                alternative,
+                block(&[], Vec::new(), &[0, 1]),
+            ],
+            coalesce: true,
+        };
+        let plan = plan_returning(&graph, 2, &[0, 1]);
+        assert_ne!(plan.values[0], plan.values[1]);
+    }
+
+    #[test]
+    fn an_exposed_return_keeps_its_backing_after_its_last_direct_read() {
+        let mut expose = define(1, &[0], None);
+        expose.exposed = Some(0);
+        let mut entry = block(&[], vec![define(0, &[], None), expose], &[]);
+        entry.successors.extend([2, 1]);
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![
+                entry,
+                block(&[], Vec::new(), &[0]),
+                block(&[], vec![define(2, &[], None)], &[1, 2]),
+            ],
+            coalesce: true,
+        };
+        let plan = plan_returning(&graph, 3, &[0, 2]);
+        assert_ne!(plan.values[0], plan.values[2]);
+    }
+
+    #[test]
+    fn an_alternative_return_preserves_values_read_after_a_backedge() {
+        let mut entry = block(&[], Vec::new(), &[]);
+        entry.successors.extend([2, 1]);
+        let mut body = block(&[], vec![define(1, &[0], None), define(2, &[], None)], &[]);
+        body.successors.extend([2, 3]);
+        let graph = FlowGraph {
+            entry_parameters: vec![0],
+            blocks: vec![
+                entry,
+                block(&[], Vec::new(), &[0]),
+                body,
+                block(&[], Vec::new(), &[2]),
+            ],
+            coalesce: true,
+        };
+        let plan = plan_returning(&graph, 3, &[0, 2]);
+        assert_ne!(plan.values[0], plan.values[2]);
+    }
+
+    #[test]
+    fn deferred_return_values_keep_distinct_destinations() {
+        let mut entry = block(&[], Vec::new(), &[]);
+        entry.successors.extend([1, 2]);
+        let graph = FlowGraph {
+            entry_parameters: Vec::new(),
+            blocks: vec![
+                entry,
+                block(&[], vec![define(0, &[], None)], &[0]),
+                block(&[], vec![define(1, &[], None)], &[1]),
+            ],
+            coalesce: false,
+        };
+        let plan = plan_returning(&graph, 2, &[0, 1]);
+        assert_ne!(plan.values[0], plan.values[1]);
     }
 
     /// A separate concrete oracle executes value snapshots and physical
@@ -869,6 +1433,8 @@ mod tests {
         };
         let plan = plan(&graph, 3);
         assert_ne!(plan.values[0], plan.values[2]);
+        assert!(plan.is_exposed(plan.values[0].expect("stored exposed input")));
+        assert!(!plan.is_exposed(plan.values[2].expect("stored update result")));
     }
 
     #[test]
@@ -925,7 +1491,7 @@ mod tests {
 
         let limits = CompilerLimits::default();
         let inputs = [SourceInput::new("storage.wf", source)];
-        let bundle = SourceBundle::with_limits(&inputs, limits.source).expect("valid source");
+        let bundle = SourceBundle::with_prelude(&inputs, limits.source).expect("valid source");
         let LexOutcome::Complete(lexed) = lex(&bundle, limits.lexer) else {
             panic!("lex")
         };
@@ -969,14 +1535,14 @@ fn build(seed: own u64) -> result: own Row pure {
   return Row(left: seed, right: next);
 }
 
-fn exchange(old: &uniq Row) -> result: own Row reads(old.left, old.right), writes(old.left, old.right) {
+fn exchange(old: &uniq Row) -> result: own Row reads(old), writes(old, old.left) {
   let fresh = build(seed: 37_u64);
   let previous = replace deref(old) = move fresh;
   set deref(old).left = 99_u64;
   return move previous;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = build(seed: 11_u64);
   region {
     let previous = exchange(old: &uniq first);
@@ -994,7 +1560,7 @@ command fn main() -> status: own ExitStatus pure {
             |program| {
                 let mut direct_calls = 0;
                 for function in program.functions() {
-                    let plan = FunctionStoragePlan::build(program, function, None).expect("plan");
+                    let plan = FunctionStoragePlan::build(program, function).expect("plan");
                     for block in function.blocks() {
                         for instruction in block.instructions() {
                             let IrInstruction::Define {
@@ -1062,9 +1628,174 @@ command fn main() -> status: own ExitStatus pure {
     }
 
     #[test]
+    fn a_synchronous_whole_result_reuses_one_consumed_owned_binding() {
+        with_program(
+            br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn pass(value: own Row) -> result: own Row pure {
+  return move value;
+}
+
+fn relay(value: own Row) -> result: own Row pure {
+  return pass(value: move value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let row = Row(left: 3_u64, right: 5_u64);
+  let kept = relay(value: move row);
+  if kept.left != 3_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let relay = program
+                    .functions()
+                    .iter()
+                    .find(|function| function.name() == "relay")
+                    .expect("relay");
+                let plan = FunctionStoragePlan::build(program, relay).expect("plan");
+                let (result, argument) = relay
+                    .blocks()
+                    .iter()
+                    .flat_map(|block| block.instructions())
+                    .find_map(|instruction| match instruction {
+                        IrInstruction::Define {
+                            result,
+                            operation: IrOperation::Call { arguments, .. },
+                            ..
+                        } => Some((result.to_owned(), arguments[0])),
+                        _ => None,
+                    })
+                    .expect("call");
+                assert_eq!(plan.slot(result), plan.slot(argument));
+            },
+        );
+    }
+
+    #[test]
+    fn several_same_typed_owned_inputs_do_not_choose_an_alias_candidate() {
+        with_program(
+            br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn choose(left: own Row, right: own Row) -> result: own Row pure {
+  return move right;
+}
+
+fn relay(left: own Row, right: own Row) -> result: own Row pure {
+  return choose(left: move left, right: move right);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let left = Row(left: 1_u64, right: 2_u64);
+  let right = Row(left: 3_u64, right: 4_u64);
+  let kept = relay(left: move left, right: move right);
+  if kept.left != 3_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let relay = program
+                    .functions()
+                    .iter()
+                    .find(|function| function.name() == "relay")
+                    .expect("relay");
+                let plan = FunctionStoragePlan::build(program, relay).expect("plan");
+                let (result, arguments) = relay
+                    .blocks()
+                    .iter()
+                    .flat_map(|block| block.instructions())
+                    .find_map(|instruction| match instruction {
+                        IrInstruction::Define {
+                            result,
+                            operation: IrOperation::Call { arguments, .. },
+                            ..
+                        } => Some((result.to_owned(), arguments.as_slice())),
+                        _ => None,
+                    })
+                    .expect("call");
+                assert!(
+                    arguments
+                        .iter()
+                        .all(|argument| plan.slot(*argument) != plan.slot(result))
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn a_multi_result_retains_its_complete_parent_allocation() {
+        with_program(
+            br#"struct Row {
+  left: u64;
+  right: u64;
+}
+
+fn split(value: own Row) -> (updated: own Row, observed: own u64) reads(value.left) {
+  let observed = value.left;
+  return move value, observed;
+}
+
+fn relay(value: own Row) -> result: own Row reads(value.left) {
+  let (updated, observed) = split(value: move value);
+  return move updated;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let row = Row(left: 3_u64, right: 5_u64);
+  let kept = relay(value: move row);
+  if kept.left != 3_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+            |program| {
+                let relay = program
+                    .functions()
+                    .iter()
+                    .find(|function| function.name() == "relay")
+                    .expect("relay");
+                let plan = FunctionStoragePlan::build(program, relay).expect("plan");
+                let (result, argument) = relay
+                    .blocks()
+                    .iter()
+                    .flat_map(|block| block.instructions())
+                    .find_map(|instruction| match instruction {
+                        IrInstruction::Define {
+                            result,
+                            operation: IrOperation::Call { arguments, .. },
+                            ..
+                        } => Some((result.to_owned(), arguments[0])),
+                        _ => None,
+                    })
+                    .expect("call");
+                assert_ne!(plan.slot(result), plan.slot(argument));
+                let parent = plan.slot(result).expect("complete result");
+                let input = plan.slot(argument).expect("owned input");
+                let field = plan.field_destination(input).expect("consumed input field");
+                assert_eq!(field.parent_slot, parent);
+                assert_eq!(field.field, 0);
+                assert_eq!(plan.allocation_root(input), parent);
+                assert_eq!(plan.field_destination(parent), None);
+                assert_ne!(plan.slots[parent], plan.slots[input]);
+            },
+        );
+    }
+
+    #[test]
     fn checked_dense_ir_coalesces_without_changing_ownership() {
         with_program(
-            br#"command fn main() -> status: own ExitStatus pure {
+            br#"fn main() -> status: own ExitStatus pure {
   let built = fixed_vector::<u64, 8>();
   for @fill (
     at in 0_u64..8_u64,
@@ -1072,14 +1803,18 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare: room_of(built) + at >= 8_u64,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: 1_u64);
+    place_back(vector: &uniq built, value: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
 "#,
             |program| {
-                let function = &program.functions()[program.main_ordinal() as usize];
-                let plan = FunctionStoragePlan::build(program, function, None).expect("plan");
+                let function = &program
+                    .functions()
+                    .iter()
+                    .find(|function| function.name() == "main")
+                    .expect("fixture main");
+                let plan = FunctionStoragePlan::build(program, function).expect("plan");
                 let slots: BTreeSet<_> = function
                     .blocks()
                     .iter()
@@ -1094,7 +1829,28 @@ command fn main() -> status: own ExitStatus pure {
                     })
                     .collect();
                 assert_eq!(slots.len(), 1, "construction and append use one backing");
-                assert_eq!(plan.slots().len(), 1);
+                // PRE-1's ExitStatus is an ordinary opaque nominal, so its
+                // direct-call result owns backing independently of the run.
+                let IrType::Nominal(result) = function.result() else {
+                    panic!("the source entry returns an ordinary nominal");
+                };
+                assert!(matches!(
+                    program.nominal(result).expect("result nominal").kind(),
+                    IrNominalKind::Opaque
+                ));
+                assert_eq!(
+                    plan.slots()
+                        .iter()
+                        .filter(|ty| **ty == function.result())
+                        .count(),
+                    1,
+                    "the opaque result uses exactly one separate slot"
+                );
+                assert_ne!(
+                    plan.slots()[*slots.first().expect("run slot")],
+                    function.result()
+                );
+                assert_eq!(plan.slots().len(), 2);
             },
         );
     }

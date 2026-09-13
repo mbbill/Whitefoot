@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: a loop folds a running product with checked multiplication [OP-1]; overflow is an expected typed Err handled by ordinary control.";
   let i = 0_u32;
   let acc = 1_u32;

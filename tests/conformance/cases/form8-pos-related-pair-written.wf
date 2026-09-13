@@ -3,7 +3,7 @@ fn pass['r](value: &'r i32) -> result: &'r i32 pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The relation is the callee's; the caller writes no region argument because the parameter position determines it.";
   let a = 40_i32;
   region {

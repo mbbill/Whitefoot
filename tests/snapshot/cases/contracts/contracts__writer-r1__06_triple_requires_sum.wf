@@ -12,7 +12,7 @@ fn bounded_total(first: own u8, first_limit: own u8, second: own u8, second_limi
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: three independent requires goals feed a single ensures.";
   let total = bounded_total(first: 1_u8, first_limit: 8_u8, second: 2_u8, second_limit: 8_u8, third: 3_u8, third_limit: 8_u8);
   if total == 6_u8 {

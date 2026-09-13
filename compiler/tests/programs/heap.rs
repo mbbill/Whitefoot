@@ -129,7 +129,7 @@ fn byte_string_builds_searches_and_publishes_its_report() {
 fn search_layer_with_entry() -> String {
     let source = include_str!("../../../tests/programs/byte_string.wf");
     let start = source
-        .find("enum Grown {")
+        .find("enum Grown['heap] {")
         .expect("byte-string growth outcome");
     let end = source
         .find("\nfn bs_push_decimal")
@@ -137,21 +137,27 @@ fn search_layer_with_entry() -> String {
     let layer = &source[start..end];
     format!(
         "{layer}
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {{
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {{
   region {{
     match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {{
       None() => {{
         return exit_status(code: 70_u8);
       }}
       Some(value: fresh) => {{
-        let subject = place_back(vector: move fresh, value: 7_u8);
+        let subject = move fresh;
+        region {{
+          place_back(vector: &uniq subject, value: 7_u8);
+        }}
         region {{
           match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {{
             None() => {{
               return exit_status(code: 70_u8);
             }}
             Some(value: other) => {{
-              let needle = place_back(vector: move other, value: 7_u8);
+              let needle = move other;
+              region {{
+                place_back(vector: &uniq needle, value: 7_u8);
+              }}
               region {{
                 match bs_find(haystack: &subject, needle: &needle) {{
                   Some(value: at) => {{

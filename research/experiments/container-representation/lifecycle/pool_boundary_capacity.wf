@@ -1,14 +1,23 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'a {
     let store = arena_frame::<64, 8, 'a>();
     region {
       let block = arena_vector_proved::<u8>(store: &uniq store, count: 4_u64);
       let free = fixed_vector::<Vector<'a, u8>, 2>();
-      let one = place_back(vector: move free, value: move block);
-      let (rest, taken) = take_block(free: move one);
-      invariant capacity: cap_of(taken) >= 4_u64;
-      let full = return_block(free: move rest, block: move taken);
-      return exit_status(code: 0_u8);
+      region {
+        place_back(vector: &uniq free, value: move block);
+      }
+      let one = move free;
+      region {
+        let taken = take_block(free: &uniq one);
+        let rest = move one;
+        invariant capacity: cap_of(taken) >= 4_u64;
+        region {
+          return_block(free: &uniq rest, block: move taken);
+          let full = move rest;
+          return exit_status(code: 0_u8);
+        }
+      }
     }
   }
 }

@@ -1,4 +1,4 @@
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "FORM-8: a named region block the loop body writes another statement beside is narrower than the iteration and stays legal.";
   let a = 0_i32;
   let seen = 1_i32;

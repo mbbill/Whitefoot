@@ -14,17 +14,33 @@ fn needs_eight(bound: own u64) -> ok: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "S16, CALL-4: a set target list commits both result ordinals, and each target receives its own ordinal's published relation over the value the commit left.";
   let run = fixed_vector::<u8, 8>();
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
-  set run = place_back(vector: move run, value: 0_u8);
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq run, value: 0_u8);
+  }
   let kept = 0_u64;
   let spare = 0_u64;
   set (kept, spare) = split(taken: move run);

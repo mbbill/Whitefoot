@@ -6,6 +6,440 @@ use super::super::model::{
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 #[test]
+fn region_substitution_does_not_implicitly_shorten_direct_view_values() {
+    let prefix = "const data: array<u8, 2> =[7_u8, 9_u8];\n\nfn choose['r](first: own Slice<'r, u8>, second: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {\n  return first;\n}\n\n";
+    let distinct = format!(
+        "{prefix}fn main() -> status: own ExitStatus pure {{\n  region {{\n    let first = slice_of(&data);\n    region {{\n      let second = slice_of(&data);\n      let result = choose(first: first, second: second);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+    );
+    assert_rule_kind(distinct.as_bytes(), SemanticRule::Type5, |kind| {
+        matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+    });
+    let same = format!(
+        "{prefix}fn main() -> status: own ExitStatus pure {{\n  region {{\n    let first = slice_of(&data);\n    let second = slice_of(&data);\n    let result = choose(first: first, second: second);\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+    );
+    with_semantics(same.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        )
+    });
+}
+
+#[test]
+fn invariant_brands_require_exact_view_types_in_either_parameter_order() {
+    for reversed in [false, true] {
+        let (parameters, arguments) = if reversed {
+            (
+                "view: own Slice<'s, u8>, marker: &Mark<'s>",
+                "view: view, marker: &marker",
+            )
+        } else {
+            (
+                "marker: &Mark<'s>, view: own Slice<'s, u8>",
+                "marker: &marker, view: view",
+            )
+        };
+        let source = format!(
+            "struct Mark['s] {{\n  value: u64;\n}}\n\nconst data: array<u8, 2> =[7_u8, 9_u8];\n\nfn inspect['s]({parameters}) -> result: own u64 pure {{\n  return 0_u64;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  region {{\n    let view = slice_of(&data);\n    region 'inner {{\n      let marker = Mark<'inner>(value: 1_u64);\n      region {{\n        let result = inspect({arguments});\n      }}\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Type5, |kind| {
+            matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+        });
+    }
+}
+
+#[test]
+fn array_views_preserve_exclusivity_and_element_domains() {
+    let source = r#"fn main() -> status: own ExitStatus pure {
+  let values = array_new::<u8, 2>(0_u8);
+  region {
+    let view = mut_slice_of(&uniq values);
+    set view[0_u64] = 1_u8;
+    let seen = view[0_u64];
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    for (source, rule) in [
+        (
+            source.replace("mut_slice_of(&uniq values)", "slice_of(&values)"),
+            SemanticRule::Set1,
+        ),
+        (
+            source.replace("set view[0_u64]", "set view[2_u64]"),
+            SemanticRule::Op4,
+        ),
+        (
+            source.replace("set view[0_u64]", "set values[0_u64]"),
+            SemanticRule::Own5,
+        ),
+        (
+            source.replace(
+                "set view[0_u64] = 1_u8;",
+                "let other = mut_slice_of(&uniq values);",
+            ),
+            SemanticRule::Own5,
+        ),
+        (
+            source.replace("mut_slice_of(&uniq values)", "mut_slice_of(&values)"),
+            SemanticRule::Type5,
+        ),
+    ] {
+        assert_rule_kind(source.as_bytes(), rule, |_| true);
+    }
+    let constant = source
+        .replace("  let values = array_new::<u8, 2>(0_u8);\n", "")
+        .replace("fn", "const values: array<u8, 2> =[0_u8, 0_u8];\n\nfn");
+    assert_rule_kind(constant.as_bytes(), SemanticRule::Const2, |_| true);
+}
+
+#[test]
+fn borrowed_storage_views_preserve_parent_permissions() {
+    let source = r#"fn relay['r](view: own Slice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
+  ensures len_of(result) == len_of(view);
+} {
+  return view;
+}
+
+fn first(view: own Slice<u64>) -> result: own u64 reads(view) contract {
+  requires len_of(view) == 2_u64;
+} {
+  return view[0_u64];
+}
+
+fn inspect(values: &array<u64, 2>) -> result: own u64 reads(values) {
+  region {
+    let view = slice_of(&deref(values));
+    return first(view: view);
+  }
+}
+
+fn edit(values: &uniq array<u64, 2>) -> (before: own u64, after: own u64) reads(values), writes(values) {
+  region {
+    let view = slice_of(&deref(values));
+    let before = first(view: view);
+    let duplicate = view;
+    let observed = duplicate[1_u64];
+    set deref(values)[0_u64] = 19_u64;
+    region {
+      let writer = mut_slice_of(&uniq deref(values));
+      set writer[1_u64] = 23_u64;
+      let after = writer[1_u64];
+      return before, after;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    let relayed = source.replace(
+        "let duplicate = view;",
+        "let duplicate = relay(view: view);",
+    );
+    with_semantics(relayed.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    for source in [source.to_owned(), relayed] {
+        let early_write = source.replace(
+            "let observed = duplicate[1_u64];",
+            "set deref(values)[1_u64] = 17_u64;\n    let observed = duplicate[1_u64];",
+        );
+        assert_rule_kind(early_write.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+        let second_writer = source.replace(
+            "set writer[1_u64] = 23_u64;",
+            "let second = mut_slice_of(&uniq deref(values));\n      set writer[1_u64] = 23_u64;",
+        );
+        assert_rule_kind(second_writer.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+    }
+}
+
+#[test]
+fn borrowed_array_views_preserve_exact_brand_parameters() {
+    let source = br#"struct Mark['s] {
+  value: u64;
+}
+
+const data: array<u8, 2> =[7_u8, 9_u8];
+
+fn inspect['s](marker: &Mark<'s>, view: own Slice<'s, u8>) -> result: own u64 reads(view) {
+  return len_of(view);
+}
+
+fn main() -> status: own ExitStatus pure {
+  region {
+    let parent = &data;
+    region 'inner {
+      let view = slice_of(&deref(parent));
+      let marker = Mark<'inner>(value: 1_u64);
+      region {
+        let result = inspect(marker: &marker, view: view);
+        if result == 2_u64 {
+          return exit_status(code: 0_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    // The former unsupported probe now reaches VIEW-2 through the ordinary
+    // child-borrow path. The source and its exact brand relation are retained.
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    let direct = std::str::from_utf8(source)
+        .unwrap()
+        .replace("slice_of(&deref(parent))", "slice_of(&data)");
+    with_semantics(direct.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        )
+    });
+}
+
+#[test]
+fn selected_view_results_preserve_each_borrowed_storage_parent() {
+    let source = r#"fn choose['r](first: own Slice<'r, u64>, second: own Slice<'r, u64>, left: own Bool) -> result: own Slice<'r, u64> pure contract {
+  requires len_of(first) == 2_u64;
+  requires len_of(second) == 2_u64;
+  ensures len_of(result) == 2_u64;
+} {
+  if left {
+    return first;
+  } else {
+    return second;
+  }
+}
+
+fn read_first(view: own Slice<u64>) -> result: own u64 reads(view) contract {
+  requires len_of(view) == 2_u64;
+} {
+  return view[0_u64];
+}
+
+fn inspect(left: &uniq array<u64, 2>, right: &uniq array<u64, 2>, select_first: own Bool) -> result: own u64 reads(left, right), writes(left, right) {
+  region {
+    let a = slice_of(&deref(left));
+    let b = slice_of(&deref(right));
+    let selected = choose(first: a, second: b, left: select_first);
+    let observed = read_first(view: selected);
+    set deref(left)[0_u64] = 19_u64;
+    set deref(right)[0_u64] = 23_u64;
+    return observed;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    for parent in ["left", "right"] {
+        let early_write = source.replace(
+            "let observed = read_first(view: selected);",
+            &format!(
+                "set deref({parent})[1_u64] = 31_u64;\n    let observed = read_first(view: selected);"
+            ),
+        );
+        assert_rule_kind(early_write.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+    }
+}
+
+#[test]
+fn borrowed_storage_child_views_preserve_live_and_dead_relay_copies() {
+    let source = r#"fn child['r](view: &uniq MutSlice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
+  requires len_of(deref(view)) == 2_u64;
+  ensures len_of(result) == 2_u64;
+} {
+  let result = slice_of(&'r deref(view));
+  return result;
+}
+
+fn relay['r](view: own Slice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
+  ensures len_of(result) == len_of(view);
+} {
+  return view;
+}
+
+fn inspect(values: &uniq array<u64, 2>) -> result: own u64 reads(values), writes(values) {
+  region {
+    let writer = mut_slice_of(&uniq deref(values));
+    region {
+      let parent = &uniq writer;
+      region {
+        let shared = FORM;
+        let copied = relay(view: shared);
+        let observed = copied[0_u64];
+        set deref(parent)[1_u64] = 23_u64;
+        return observed;
+      }
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for formation in [
+        "slice_of(&deref(parent))",
+        "child(view: &uniq deref(parent))",
+    ] {
+        let source = source.replace("FORM", formation);
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            );
+        });
+        let early_write = source.replace(
+            "let observed = copied[0_u64];",
+            "set deref(parent)[1_u64] = 17_u64;\n        let observed = copied[0_u64];",
+        );
+        assert_rule_kind(early_write.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+    }
+}
+
+#[test]
+fn moved_formal_views_keep_their_shared_children_frozen_across_calls() {
+    let source = r#"fn child['r](view: &uniq MutSlice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
+  requires len_of(deref(view)) == 2_u64;
+  ensures len_of(result) == 2_u64;
+} {
+  let result = slice_of(&'r deref(view));
+  return result;
+}
+
+fn overwrite(view: own MutSlice<u64>) -> result: own unit writes(view) contract {
+  requires len_of(view) == 2_u64;
+} {
+  set view[0_u64] = 19_u64;
+  return unit;
+}
+
+fn update(view: &uniq MutSlice<u64>) -> result: own unit writes(view) contract {
+  requires len_of(deref(view)) == 2_u64;
+} {
+  set deref(view)[0_u64] = 19_u64;
+  return unit;
+}
+
+fn accept_view(view: own MutSlice<u64>) -> result: own unit pure {
+  return unit;
+}
+
+fn inspect(view: own MutSlice<u64>) -> result: own u64 reads(view), writes(view) contract {
+  requires len_of(view) == 2_u64;
+} {
+  let writer = move view;
+  region {
+    let shared = child(view: &uniq writer);
+    let done = CALL;
+    let observed = shared[0_u64];
+    return observed;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for (call, effects) in [
+        ("overwrite(view: move writer)", "reads(view), writes(view)"),
+        ("update(view: &uniq writer)", "reads(view), writes(view)"),
+        ("update(view: move parent)", "reads(view), writes(view)"),
+        ("accept_view(view: move writer)", "reads(view)"),
+    ] {
+        let source = source.replace("CALL", call).replace(
+            "result: own u64 reads(view), writes(view) contract",
+            &format!("result: own u64 {effects} contract"),
+        );
+        let source = if call == "update(view: move parent)" {
+            source.replace(
+                "  let writer = move view;\n  region {\n    let shared = child(view: &uniq writer);\n    let done = update(view: move parent);\n    let observed = shared[0_u64];\n    return observed;\n  }",
+                "  let writer = move view;\n  region {\n    let parent = &uniq writer;\n    region {\n      let shared = slice_of(&deref(parent));\n      let done = update(view: move parent);\n      let observed = shared[0_u64];\n      return observed;\n    }\n  }",
+            )
+        } else {
+            source
+        };
+        assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
+            matches!(kind, SemanticIssueKind::BorrowConflict)
+        });
+        let indent = if call == "update(view: move parent)" {
+            "      "
+        } else {
+            "    "
+        };
+        let last_use = source.replace(
+            &format!("let done = {call};\n{indent}let observed = shared[0_u64];"),
+            &format!("let observed = shared[0_u64];\n{indent}let done = {call};"),
+        );
+        with_semantics(last_use.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{call}: {outcome:?}"
+            );
+        });
+        let wrong_effects = if effects == "reads(view)" {
+            last_use.replace(
+                "result: own u64 reads(view) contract",
+                "result: own u64 reads(view), writes(view) contract",
+            )
+        } else {
+            last_use.replace(
+                "result: own u64 reads(view), writes(view) contract",
+                "result: own u64 reads(view) contract",
+            )
+        };
+        if effects == "reads(view)" {
+            assert_rule_kind(wrong_effects.as_bytes(), SemanticRule::Eff2, |kind| {
+                matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
+                    if extra == &["writes(view)".to_owned()])
+            });
+        } else {
+            assert_rule_kind(wrong_effects.as_bytes(), SemanticRule::Eff2, |kind| {
+                matches!(kind, SemanticIssueKind::EffectMismatch { missing, .. }
+                    if missing == &["writes(view)".to_owned()])
+            });
+        }
+    }
+}
+
+#[test]
 fn slices_retain_type_source_and_access_operations() {
     let source = br#"const bytes: FixedVector<u8, 2> =[4_u8, 9_u8];
 
@@ -19,7 +453,7 @@ fn first(values: own Slice<u8>) -> result: own u8 reads(values) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region {
     let values = slice_of(&bytes);
     let value = first(values: values);
@@ -34,13 +468,14 @@ command fn main() -> status: own ExitStatus pure {
         let first = &checked.data.functions[0];
         assert!(matches!(first.parameters[0].ty, CheckedType::Slice { .. }));
         assert!(matches!(
-            first.body[0],
+            first.body.as_deref().expect("WF body")[0],
             CheckedStatement::Let {
                 value: CheckedExpression::SliceMeasure { .. },
                 ..
             }
         ));
-        let CheckedStatement::Match { arms, .. } = &first.body[2] else {
+        let CheckedStatement::Match { arms, .. } = &first.body.as_deref().expect("WF body")[2]
+        else {
             panic!("the explicit nonempty guard must remain a checked branch");
         };
         assert!(arms.iter().any(|arm| matches!(
@@ -52,7 +487,8 @@ command fn main() -> status: own ExitStatus pure {
         )));
 
         let main = &checked.data.functions[1];
-        let CheckedStatement::Region { body, .. } = &main.body[0] else {
+        let CheckedStatement::Region { body, .. } = &main.body.as_deref().expect("WF body")[0]
+        else {
             panic!("main must retain the view region");
         };
         assert!(matches!(
@@ -74,7 +510,7 @@ fn incoming_slice_reads_require_their_origin_effect() {
   return values[0_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -87,8 +523,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn moved_owner_borrows_and_slices_keep_the_incoming_formal_effect_path() {
-    let source = br#"fn touch_after_move(value: own FixedVector<u8, 2>) -> result: own u8 reads(value), writes(value) {
+fn moved_owners_resolve_borrows_and_slices_to_their_local_storage() {
+    let source = br#"fn touch_after_move(value: own FixedVector<u8, 2>) -> result: own u8 pure {
   let moved = move value;
   region {
     let holder = &uniq moved;
@@ -104,7 +540,7 @@ fn moved_owner_borrows_and_slices_keep_the_incoming_formal_effect_path() {
   }
 }
 
-fn slice_after_move(value: own FixedVector<u8, 2>) -> result: own u8 reads(value) contract {
+fn slice_after_move(value: own FixedVector<u8, 2>) -> result: own u8 pure contract {
   requires head_of(value) <= room_of(value);
 } {
   let moved = move value;
@@ -120,14 +556,14 @@ fn slice_after_move(value: own FixedVector<u8, 2>) -> result: own u8 reads(value
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
-            "a local lifetime must not erase the moved formal owner: {outcome:?}"
+            "v0.58 EFF-2 attributes the moved owner to its local storage, not its incoming value history: {outcome:?}"
         );
     });
 }
@@ -143,10 +579,16 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let window = slice_of(&values);
     set values[0_u64] = 1_u8;
@@ -159,10 +601,16 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
         SemanticIssueKind::BorrowConflict,
     );
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let window = slice_of(&values);
     let taken = move values;
@@ -174,6 +622,127 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
+}
+
+/// VIEW-2 applies to children of formal views as well as local storage.
+#[test]
+fn formal_view_children_release_at_the_last_use_of_all_descriptors() {
+    let source = r#"fn child['r](view: &uniq MutSlice<'r, u8>) -> result: own Slice<'r, u8> pure contract {
+  requires len_of(deref(view)) == 1_u64;
+  ensures len_of(result) == 1_u64;
+} {
+  let result = slice_of(&'r deref(view));
+  return result;
+}
+
+fn reuse(view: &uniq MutSlice<u8>) -> result: own u8 reads(view), writes(view) contract {
+  requires len_of(deref(view)) == 1_u64;
+} {
+  region {
+    let shared = FORM;
+    COPY
+    let previous = shared[0_u64];
+    BEFORE
+    set deref(view)[0_u64] = 9_u8;
+    AFTER
+    return previous;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for formation in ["slice_of(&deref(view))", "child(view: &uniq deref(view))"] {
+        for (copy, before, after, live) in [
+            ("", "", "", false),
+            (
+                "let copied = shared;",
+                "let last = copied[0_u64];",
+                "",
+                false,
+            ),
+            ("", "", "let last = shared[0_u64];", true),
+            (
+                "let copied = shared;",
+                "",
+                "let last = copied[0_u64];",
+                true,
+            ),
+        ] {
+            let source = source
+                .replace("FORM", formation)
+                .replace("    COPY\n", &optional_statement(copy))
+                .replace("    BEFORE\n", &optional_statement(before))
+                .replace("    AFTER\n", &optional_statement(after));
+            if live {
+                assert_rule(
+                    source.as_bytes(),
+                    SemanticRule::Own5,
+                    SemanticIssueKind::BorrowConflict,
+                );
+            } else {
+                with_semantics(source.as_bytes(), |outcome| {
+                    assert!(
+                        matches!(outcome, SemanticOutcome::Complete(_)),
+                        "all shared descriptors ended before the write: {formation}: {outcome:?}"
+                    );
+                });
+            }
+        }
+    }
+
+    fn optional_statement(statement: &str) -> String {
+        if statement.is_empty() {
+            String::new()
+        } else {
+            format!("    {statement}\n")
+        }
+    }
+}
+
+#[test]
+fn local_holders_of_formal_views_keep_every_live_child_copy_frozen() {
+    for (before, after, live) in [
+        ("      let last = copied[0_u64];\n", "", false),
+        ("", "      let last = copied[0_u64];\n", true),
+    ] {
+        let source = r#"fn reuse(view: own MutSlice<u8>) -> result: own u8 reads(view), writes(view) contract {
+  requires len_of(view) == 1_u64;
+} {
+  region {
+    let holder = &uniq view;
+    region {
+      let shared = slice_of(&deref(holder));
+      let copied = shared;
+      let previous = shared[0_u64];
+BEFORE      set deref(holder)[0_u64] = 9_u8;
+AFTER      return previous;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#
+        .replace("BEFORE", before)
+        .replace("AFTER", after);
+        if live {
+            assert_rule(
+                source.as_bytes(),
+                SemanticRule::Own5,
+                SemanticIssueKind::BorrowConflict,
+            );
+        } else {
+            with_semantics(source.as_bytes(), |outcome| {
+                assert!(
+                    matches!(outcome, SemanticOutcome::Complete(_)),
+                    "a local holder must use the child's formal backing origin: {outcome:?}"
+                );
+            });
+        }
+    }
 }
 
 /// [PROV-3, OWN-5] a copy view's loan ends at its last use, and the region
@@ -191,10 +760,16 @@ fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
     // program the region extent used to refuse. Its binding cannot be used
     // after that block at all, so its last use is inside it and the loan
     // cannot reach the write [PROV-3].
-    let inner_view = br#"command fn main() -> status: own ExitStatus pure {
+    let inner_view = br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region 'outer {
     region {
       let view = slice_of(&'outer values);
@@ -213,10 +788,16 @@ fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
     });
 
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   let take_view = True();
   region {
     let view = slice_of(&values);
@@ -235,10 +816,16 @@ fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
 
     // The loan ends at the view's last use, so the write the region used to
     // refuse is admitted inside that same region [PROV-3].
-    let dead_view = br#"command fn main() -> status: own ExitStatus pure {
+    let dead_view = br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let view = slice_of(&values);
     let seen = view[0_u64];
@@ -254,10 +841,16 @@ fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
         );
     });
 
-    let ended_region = br#"command fn main() -> status: own ExitStatus pure {
+    let ended_region = br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let view = slice_of(&values);
   }
@@ -276,10 +869,16 @@ fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
 #[test]
 fn slice_loans_follow_structured_break_region_exits() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let view = slice_of(&values);
     loop @once {
@@ -295,10 +894,16 @@ fn slice_loans_follow_structured_break_region_exits() {
         SemanticIssueKind::BorrowConflict,
     );
 
-    let ended_on_break = br#"command fn main() -> status: own ExitStatus pure {
+    let ended_on_break = br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   loop @once {
     let view = slice_of(&values);
     break @once;
@@ -317,10 +922,16 @@ fn slice_loans_follow_structured_break_region_exits() {
     // [OWN-11] the body's own region is what an elided borrow takes, so the
     // outer region has to be named for this fault to be written at all.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region 'r {
     loop @once {
       let view = slice_of(&'r values);
@@ -347,11 +958,17 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
 "#;
 
     let direct_move = format!(
-        r#"{OWNER}command fn main() -> status: own ExitStatus pure {{
+        r#"{OWNER}fn main() -> status: own ExitStatus pure {{
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }}
+  let source = move source_empty;
   let sibling_empty = fixed_vector::<u8, 1>();
-  let sibling = place_back(vector: move sibling_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq sibling_empty, value: 0_u8);
+  }}
+  let sibling = move sibling_empty;
   let owner = Owner(source: move source, sibling: move sibling);
   region {{
     let view = slice_of(&owner.source);
@@ -373,11 +990,17 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
   return unit;
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }}
+  let source = move source_empty;
   let sibling_empty = fixed_vector::<u8, 1>();
-  let sibling = place_back(vector: move sibling_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq sibling_empty, value: 0_u8);
+  }}
+  let sibling = move sibling_empty;
   let owner = Owner(source: move source, sibling: move sibling);
   region {{
     let view = slice_of(&owner.source);
@@ -404,11 +1027,17 @@ struct Owner {
   sibling: Slot;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }
+  let source = move source_empty;
   let sibling_value_empty = fixed_vector::<u8, 1>();
-  let sibling_value = place_back(vector: move sibling_value_empty, value: 0_u8);
+  region {
+    place_back(vector: &uniq sibling_value_empty, value: 0_u8);
+  }
+  let sibling_value = move sibling_value_empty;
   let sibling = Full(value: move sibling_value);
   let owner = Owner(source: move source, sibling: move sibling);
   region {
@@ -431,14 +1060,23 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     let given = format!(
-        r#"{OWNER}command fn main() -> status: own ExitStatus pure {{
+        r#"{OWNER}fn main() -> status: own ExitStatus pure {{
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }}
+  let source = move source_empty;
   let sibling_empty = fixed_vector::<u8, 1>();
-  let sibling = place_back(vector: move sibling_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq sibling_empty, value: 0_u8);
+  }}
+  let sibling = move sibling_empty;
   let owner = Owner(source: move source, sibling: move sibling);
   let spare_empty = fixed_vector::<u8, 1>();
-  let spare = place_back(vector: move spare_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq spare_empty, value: 0_u8);
+  }}
+  let spare = move spare_empty;
   let choose_owner = True();
   region {{
     let view = slice_of(&owner.source);
@@ -473,7 +1111,7 @@ fn invalid(owner: own Owner) -> result: own Result<unit, Overflow> pure {
   return Ok<unit, Overflow>(value: unit);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -484,11 +1122,17 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     let ended_region = format!(
-        r#"{OWNER}command fn main() -> status: own ExitStatus pure {{
+        r#"{OWNER}fn main() -> status: own ExitStatus pure {{
   let source_empty = fixed_vector::<u8, 1>();
-  let source = place_back(vector: move source_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq source_empty, value: 0_u8);
+  }}
+  let source = move source_empty;
   let sibling_empty = fixed_vector::<u8, 1>();
-  let sibling = place_back(vector: move sibling_empty, value: 0_u8);
+  region {{
+    place_back(vector: &uniq sibling_empty, value: 0_u8);
+  }}
+  let sibling = move sibling_empty;
   let owner = Owner(source: move source, sibling: move sibling);
   region {{
     let view = slice_of(&owner.source);
@@ -512,10 +1156,16 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_shared_view_is_no_set_target_and_an_exclusive_view_is() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   region {
     let window = slice_of(&values);
     set window[0_u64] = 1_u8;
@@ -532,7 +1182,7 @@ fn a_shared_view_is_no_set_target_and_an_exclusive_view_is() {
     // Keep the store-resident case alongside the inline-owned-place tests:
     // both storage classes use the same exclusive view rule.
     with_semantics(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   region 'a {
     let workspace = arena_frame::<8, 8, 'a>();
     region {
@@ -543,7 +1193,7 @@ fn a_shared_view_is_no_set_target_and_an_exclusive_view_is() {
         invariant spare: room_of(values) + at >= 2_u64,
         invariant flat: head_of(values) <= 0_u64
       ) {
-        set values = place_back(vector: move values, value: 0_u8);
+        place_back(vector: &uniq values, value: 0_u8);
       }
       region {
         let window = mut_slice_of(&uniq values);
@@ -573,13 +1223,19 @@ fn slice_formation_enforces_storage_duration_and_explicit_boundaries() {
     assert_rule_kind(
         br#"fn invalid['caller](anchor: &'caller u8) -> result: &'caller u8 pure {
   let values_empty = fixed_vector::<u8, 2>();
-  let values_0 = place_back(vector: move values_empty, value: 0_u8);
-  let values = place_back(vector: move values_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq values_empty, value: 0_u8);
+  }
+  let values_0 = move values_empty;
+  region {
+    place_back(vector: &uniq values_0, value: 0_u8);
+  }
+  let values = move values_0;
   let window = slice_of(&'caller values);
   return anchor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -595,32 +1251,44 @@ fn observe(values: own Slice<Item>) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::CompositeValues,
     );
-    assert_unsupported(
-        br#"fn invalid(values: &FixedVector<u8, 2>) -> result: own unit pure {
+    let borrowed_run = br#"fn invalid(values: &FixedVector<u8, 2>) -> result: own unit pure {
   region {
     let window = slice_of(&deref(values));
   }
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
-"#,
-        UnsupportedSemanticFeature::RegionsAndBorrows,
+"#;
+    // Formation through a storage holder is implemented. This unchanged
+    // source still owes VIEW-2's non-wrap premise, now reached at BLK-0.
+    assert_rule_kind(borrowed_run, SemanticRule::Blk0, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedKernelRequirement(_))
+    });
+    let contiguous = std::str::from_utf8(borrowed_run).unwrap().replace(
+        "fn invalid(values: &FixedVector<u8, 2>) -> result: own unit pure {",
+        "fn invalid(values: &FixedVector<u8, 2>) -> result: own unit pure contract {\n  requires head_of(deref(values)) <= room_of(deref(values));\n} {",
     );
+    with_semantics(contiguous.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
     assert_rule_kind(
         br#"fn invalid['r](values: own FixedVector<u8, 2>) -> result: own Slice<'r, u8> pure {
   return slice_of(&'r values);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -636,7 +1304,7 @@ command fn main() -> status: own ExitStatus pure {
 /// untested, and one that only derived would not reject the deleted form.
 #[test]
 fn slice_of_derives_its_region_and_rejects_a_written_argument() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let data = fixed_vector::<u8, 4>();
   for @fill_data (
     at in 0_u64..4_u64,
@@ -644,7 +1312,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     invariant spare: room_of(data) + at >= 4_u64,
     invariant flat: head_of(data) <= 0_u64
   ) {
-    set data = place_back(vector: move data, value: 0_u8);
+    place_back(vector: &uniq data, value: 0_u8);
   }
   region {
     region {
@@ -666,7 +1334,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     // `'outer` outlives the binding the view is taken from is not the point —
     // the loan is keyed on the region the borrow writes.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let data = fixed_vector::<u8, 4>();
   for @fill_data (
     at in 0_u64..4_u64,
@@ -674,7 +1342,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     invariant spare: room_of(data) + at >= 4_u64,
     invariant flat: head_of(data) <= 0_u64
   ) {
-    set data = place_back(vector: move data, value: 0_u8);
+    place_back(vector: &uniq data, value: 0_u8);
   }
   region {
     let view = slice_of(&data);
@@ -694,7 +1362,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     // asserts — the `derivation.rs:224` class.
     // The written `<'view, u8>` IS the subject and must stay written.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let data = fixed_vector::<u8, 4>();
   for @fill_data (
     at in 0_u64..4_u64,
@@ -702,7 +1370,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     invariant spare: room_of(data) + at >= 4_u64,
     invariant flat: head_of(data) <= 0_u64
   ) {
-    set data = place_back(vector: move data, value: 0_u8);
+    place_back(vector: &uniq data, value: 0_u8);
   }
   region 'view {
     slice_of::<'view, u8>(&data);
@@ -729,13 +1397,25 @@ fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r,
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left_empty = fixed_vector::<u8, 2>();
-  let left_0 = place_back(vector: move left_empty, value: 11_u8);
-  let left = place_back(vector: move left_0, value: 11_u8);
+  region {
+    place_back(vector: &uniq left_empty, value: 11_u8);
+  }
+  let left_0 = move left_empty;
+  region {
+    place_back(vector: &uniq left_0, value: 11_u8);
+  }
+  let left = move left_0;
   let right_empty = fixed_vector::<u8, 2>();
-  let right_0 = place_back(vector: move right_empty, value: 29_u8);
-  let right = place_back(vector: move right_0, value: 29_u8);
+  region {
+    place_back(vector: &uniq right_empty, value: 29_u8);
+  }
+  let right_0 = move right_empty;
+  region {
+    place_back(vector: &uniq right_0, value: 29_u8);
+  }
+  let right = move right_0;
   region {
     let pass_source = slice_of(&left);
     let passed = pass(value: pass_source);
@@ -772,10 +1452,12 @@ command fn main() -> status: own ExitStatus pure {
             CheckedSliceOrigin::ImmutableConst
         ));
 
-        // The two runs are built by `fixed_vector` plus one `place_back`
-        // each, which is three statements where `array_new` was one, so the
-        // view region is `main`'s seventh statement.
-        let CheckedStatement::Region { body, .. } = &checked.data.functions[2].body[6] else {
+        // The two runs are built by `fixed_vector` plus two `place_back`s
+        // each. Each unit call has its own region before the owning alias,
+        // so the view region is main's eleventh statement.
+        let CheckedStatement::Region { body, .. } =
+            &checked.data.functions[2].body.as_deref().expect("WF body")[10]
+        else {
             panic!("main must retain the slice region");
         };
         let CheckedStatement::Let {
@@ -837,7 +1519,7 @@ fn first(value: own Slice<u8>) -> result: own u8 reads(value) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -857,13 +1539,25 @@ command fn main() -> status: own ExitStatus pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left_empty = fixed_vector::<u8, 2>();
-  let left_0 = place_back(vector: move left_empty, value: 0_u8);
-  let left = place_back(vector: move left_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq left_empty, value: 0_u8);
+  }
+  let left_0 = move left_empty;
+  region {
+    place_back(vector: &uniq left_0, value: 0_u8);
+  }
+  let left = move left_0;
   let right_empty = fixed_vector::<u8, 2>();
-  let right_0 = place_back(vector: move right_empty, value: 0_u8);
-  let right = place_back(vector: move right_0, value: 0_u8);
+  region {
+    place_back(vector: &uniq right_empty, value: 0_u8);
+  }
+  let right_0 = move right_empty;
+  region {
+    place_back(vector: &uniq right_0, value: 0_u8);
+  }
+  let right = move right_0;
   region {
     let left_view = slice_of(&left);
     let right_view = slice_of(&right);
@@ -893,7 +1587,7 @@ fn wrapper(view: own Slice<u8>, output: &uniq MutSlice<u8>) -> result: own unit 
   return consume(view: view, output: move output);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -909,21 +1603,14 @@ command fn main() -> status: own ExitStatus pure {
     // view over the very storage it hands to the unique position reaches one
     // place twice, once uniquely.
     //
-    // B7c4b left this program on the retiring surface. Two things stand
-    // between it and a run: `&uniq` may no longer reach a run at all, which
-    // is [BLK-4]'s `UniqueParameterReachesContainer`, and the exclusive view
-    // that replaces such a parameter is a *bound* view value, which
-    // `argument_place` resolves to nothing — the footprint-resolver gap 6.0v
-    // recorded for [PAR] and [OWN-12] alike. Both migrated shapes therefore
-    // record an accept rather than this refusal. It retires with `buffer<T>`,
-    // or lands again when the footprint resolver gains its
-    // declaration-to-binding map.
+    // Keep this legacy descriptor control beside the run/view overlap cases:
+    // the shared view and unique actual must resolve to the same storage.
     assert_rule(
         br#"fn consume(view: own Slice<u8>, output: &uniq buffer<u8>) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bytes = buffer_new(2_u64, 0_u8);
   region {
     let view = slice_of(&bytes);
@@ -949,7 +1636,7 @@ fn slice_value_matches_and_borrowed_slice_results_are_rejected() {
   return move selected;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -968,7 +1655,7 @@ command fn main() -> status: own ExitStatus pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -992,7 +1679,7 @@ fn wrapper(value: &Slice<u8>) -> result: own u8 reads(value) {
   return first(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1002,4 +1689,74 @@ command fn main() -> status: own ExitStatus pure {
             "descriptor and underlying slice provenance must both survive: {outcome:?}"
         );
     });
+}
+
+#[test]
+fn copied_and_returned_own_slice_descriptors_keep_referent_read_effects() {
+    let source =
+        br#"fn relay['r](view: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure contract {
+  ensures len_of(result) == len_of(view);
+} {
+  return view;
+}
+
+fn copied(view: own Slice<u8>) -> result: own u8 reads(view) contract {
+  requires 1_u64 <= len_of(view);
+} {
+  let alias = view;
+  return alias[0_u64];
+}
+
+fn returned(view: own Slice<u8>) -> result: own u8 reads(view) contract {
+  requires 1_u64 <= len_of(view);
+} {
+  let alias = relay(view: view);
+  return alias[0_u64];
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    // Ownership of a copyable descriptor does not own the addressed bytes.
+    // Omitting reads(view) rejects through ordinary EFF-2 in either path.
+    let text = std::str::from_utf8(source).expect("test source");
+    for name in ["copied", "returned"] {
+        let row = format!("fn {name}(view: own Slice<u8>) -> result: own u8 reads(view)");
+        let pure = format!("fn {name}(view: own Slice<u8>) -> result: own u8 pure");
+        let negative = text.replace(&row, &pure);
+        assert_rule_kind(negative.as_bytes(), SemanticRule::Eff2, |kind| {
+            matches!(kind, SemanticIssueKind::EffectMismatch { .. })
+        });
+    }
+}
+
+/// The descriptor borrow and the backing loan are different places. Passing
+/// `&window` must continue the loan that formed `window`, including when its
+/// backing was reached through an exclusive parameter.
+#[test]
+fn a_borrowed_view_descriptor_keeps_its_backing_parent_permission() {
+    with_semantics(
+        br#"fn count(source: &Slice<u8>) -> result: own u64 reads(source) {
+  return len_of(deref(source));
+}
+
+fn view(scratch: &uniq buffer<u8>) -> result: own u64 reads(scratch) {
+  region {
+    let window = slice_of(&deref(scratch));
+    region {
+      return count(source: &window);
+    }
+  }
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
+    );
 }

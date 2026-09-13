@@ -1,4 +1,4 @@
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "SET-2 admits a replace whose target type is affine and region-free. A Box<'s, u64> descriptor is affine and carries no region of its own, so exchanging one owning descriptor for another is accepted, the previous cell is bound as a fresh own binding, and the target root stays live. This is the positive control for the region-bearing rejection: the two targets differ exactly in bearing a region.";
   region {
     match heap_box(store: &uniq heap, value: 1_u64) {

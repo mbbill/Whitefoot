@@ -1,24 +1,21 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::syntax::NodeId;
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::{
-    DeclarationClass, DeclarationRole, LexicalUseRole, PreludeDeclarationId, Production,
+    BuiltinPreludeId, DeclarationClass, DeclarationRole, LexicalUseRole, Production,
     ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
     UnsupportedSemanticFeature,
 };
 
 use super::super::model::{
-    CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
-    CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedResultStateOrigin,
-    CheckedStateOrigins, CheckedStatePath, CheckedStatement, CheckedType, CheckedValue,
-    ConstOperation, FloatType, IntegerType, LoanStrength, evaluate_const_operation,
+    CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedFlatElement,
+    CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType, CheckedValue, ConstOperation,
+    FloatType, IntegerType, LoanStrength, evaluate_const_operation,
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
-use super::{
-    CheckStop, Checker, EffectSet, LocalBinding, ParameterSignature, PreludeType, TypedExpression,
-};
+use super::{CheckStop, Checker, EffectSet, ParameterSignature, PreludeType};
 
 /// [TYPE-5]'s two sides where a type spelling that takes no type arguments
 /// carries a written `<...>` list.
@@ -32,9 +29,6 @@ const TYPE5_NO_TARGS_FOUND: &str = "a written `<...>` type-argument list on a ty
 /// mechanical there.
 const RESULT_TARGS_EXPECTED: &str = "Result with both type arguments written: as a type `Result<u64, IoError>`, and as a variant constructor `Ok<u64, IoError>(value: v)`";
 const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a type `Option<u64>`, and as a variant constructor `Some<u64>(value: v)`";
-/// [TYPE-2]'s flat-element requirement, in the terms the rule states it.
-const TYPE2_FLAT_ELEMENT: &str = "a flat element type: an integer, a float, Bool, unit, or a struct or enum whose fields are themselves flat element types";
-
 /// [EFF-1]'s five row conditions, each with the repair it admits.
 ///
 /// The rule text carries every one of these sentences; the diagnostic did not,
@@ -53,32 +47,6 @@ const EFF1_FIELD_OF_NON_STRUCT_FIX: &str = "name the parameter itself, which nam
 const EFF1_UNKNOWN_FIELD: &str = "an effect-path suffix names a field the struct does not declare";
 const EFF1_UNKNOWN_FIELD_FIX: &str =
     "name a declared field of that struct, or the parameter itself";
-
-#[derive(Clone, Debug)]
-enum StateOriginResolution {
-    Absent,
-    Finite(CheckedStateOrigins),
-    Unknown(crate::NodePath),
-}
-
-impl StateOriginResolution {
-    fn union(&mut self, other: Self) {
-        match (&mut *self, other) {
-            (Self::Unknown(_), _) => {}
-            (_, Self::Unknown(path)) => *self = Self::Unknown(path),
-            (Self::Absent, finite @ Self::Finite(_)) => *self = finite,
-            (Self::Finite(left), Self::Finite(right)) => left.union(&right),
-            (Self::Absent, Self::Absent) | (Self::Finite(_), Self::Absent) => {}
-        }
-    }
-
-    fn projected(mut self, fields: &[u32]) -> Self {
-        if let Self::Finite(origins) = self {
-            self = Self::Finite(origins.projected(fields));
-        }
-        self
-    }
-}
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn parse_parameters_with(
@@ -105,14 +73,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(node, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let ty = self.parse_type_with(ty_node, substitution)?;
-            // [BLK-4] the `&uniq` parameter refusal is a source rejection and
-            // is asked before the capability stop below, because an
-            // unsupported compiler capability may never mask one [DIAG-1].
-            // It quantifies over a source-declared `fn` and not over a
-            // contract member's `fn_sig`.
-            if self.tree.production(function)? == Production::FnDecl {
-                self.check_unique_parameter_confinement(mode, ty, declaration.spelling(), node)?;
-            }
             if mode != CheckedMode::Own && !self.borrowable_type(ty)? {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
             }
@@ -122,6 +82,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 name: declaration.spelling().to_owned(),
                 mode,
                 ty,
+                region_shape: self.type_region_shape(ty, Some(ty_node))?,
             });
         }
         Ok(parameters)
@@ -153,7 +114,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<CheckedType, CheckStop> {
-        let targs = self.tree.first_child_with(node, Production::Targs)?;
+        let targs = self.tree.argument_list(node)?;
         if let Some(ty) = self.integer_type(node)? {
             if targs.is_some() {
                 return self.issue_node(
@@ -191,7 +152,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(node, Production::Const)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
-            let element = self.checked_flat_element(element_type, element_node)?;
+            let element = self.intern_element(element_type)?;
             return Ok(CheckedType::Array {
                 element,
                 length: self.parse_const_expression_with(length_node, substitution)?,
@@ -269,7 +230,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             let usage = self.use_at(node, LexicalUseRole::Type)?;
             match usage.target() {
-                ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(0) => {
+                ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::BOOL => {
                     if targs.is_some() {
                         return self.issue_node(
                             SemanticRule::Type5,
@@ -282,7 +243,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     return Ok(CheckedType::Bool);
                 }
-                ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(3) => {
+                ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::OPTION => {
                     let value = self.option_type_argument_with(node, substitution)?;
                     return self
                         .prelude_nominals
@@ -291,7 +252,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .map(CheckedType::Nominal)
                         .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
-                ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(8) => {
+                ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::RESULT => {
                     let (ok, error) = self.result_type_arguments_with(node, substitution)?;
                     return self
                         .prelude_nominals
@@ -300,7 +261,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .map(CheckedType::Nominal)
                         .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
-                ResolvedTarget::Prelude(id) if matches!(id.ordinal(), 15 | 17 | 20) => {
+                ResolvedTarget::Prelude(id)
+                    if matches!(
+                        id,
+                        crate::BuiltinPreludeId::OVERFLOW_TYPE
+                            | crate::BuiltinPreludeId::DIV_ERROR_TYPE
+                            | crate::BuiltinPreludeId::NARROW_ERROR_TYPE
+                    ) =>
+                {
                     if targs.is_some() {
                         return self.issue_node(
                             SemanticRule::Type5,
@@ -311,10 +279,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             ),
                         );
                     }
-                    let ty = match id.ordinal() {
-                        15 => PreludeType::Overflow,
-                        17 => PreludeType::DivError,
-                        20 => PreludeType::NarrowError,
+                    let ty = match id {
+                        crate::BuiltinPreludeId::OVERFLOW_TYPE => PreludeType::Overflow,
+                        crate::BuiltinPreludeId::DIV_ERROR_TYPE => PreludeType::DivError,
+                        crate::BuiltinPreludeId::NARROW_ERROR_TYPE => PreludeType::NarrowError,
                         _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
                     };
                     return Ok(CheckedType::Nominal(self.prelude_nominal(ty)?));
@@ -367,21 +335,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 ResolvedTarget::Container(id) => {
                     return self.parse_container_type(node, id, substitution);
-                }
-                ResolvedTarget::System(id) => {
-                    let index = crate::system_nominal_index(id)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if targs.is_some() {
-                        return self.issue_node(
-                            SemanticRule::Type5,
-                            node,
-                            SemanticIssueKind::type_mismatch(
-                                TYPE5_NO_TARGS_EXPECTED,
-                                TYPE5_NO_TARGS_FOUND,
-                            ),
-                        );
-                    }
-                    return Ok(CheckedType::Nominal(self.system_nominal(index)?));
                 }
                 _ => {}
             }
@@ -465,11 +418,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Slice { .. }
                 | CheckedType::Heap { .. }
                 | CheckedType::Extent { .. } => return Ok(true),
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
-                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    pending.push(element.ty());
+                CheckedType::Array { element, .. }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => {
+                    pending.push(self.element_type(element)?);
                 }
                 CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
                     CheckedNominalKind::Arena { .. } => return Ok(true),
@@ -485,8 +440,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 .map(|field| field.ty),
                         );
                     }
-                    CheckedNominalKind::ArenaStorage
-                    | CheckedNominalKind::SystemResource { .. } => {}
+                    CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
                 },
                 CheckedType::Unit
                 | CheckedType::Bool
@@ -571,7 +525,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(CheckedType, CheckedType), CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return self.issue_node(
                 SemanticRule::Type5,
                 node,
@@ -636,7 +590,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(crate::DeclarationId, CheckedType), CheckStop> {
-        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+        let arguments = match self.tree.argument_list(node)? {
             Some(targs) => self.tree.children_with(targs, Production::Targ)?,
             None => Vec::new(),
         };
@@ -645,12 +599,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let Some(first) = arguments.first()
             && self
                 .tree
-                .first_child_with(*first, Production::Type)?
-                .is_none()
-            && self
-                .tree
-                .first_child_with(*first, Production::Const)?
-                .is_none()
+                .direct_token_with(*first, crate::TerminalPredicate::RegionIdentifier)?
+                .is_some()
         {
             let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
             let ResolvedTarget::Source {
@@ -689,7 +639,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let referent = self.parse_type_with(referent_node, substitution)?;
         Ok((
-            written_region.unwrap_or_else(|| self.elided_store_region()),
+            match written_region {
+                Some(region) => region,
+                None => self.elided_store_region(node)?,
+            },
             referent,
         ))
     }
@@ -703,7 +656,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let shape = crate::container_nominal(id)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?
             .shape;
-        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+        let arguments = match self.tree.argument_list(node)? {
             Some(targs) => self.tree.children_with(targs, Production::Targ)?,
             None => Vec::new(),
         };
@@ -712,12 +665,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let Some(first) = arguments.first()
             && self
                 .tree
-                .first_child_with(*first, Production::Type)?
-                .is_none()
-            && self
-                .tree
-                .first_child_with(*first, Production::Const)?
-                .is_none()
+                .direct_token_with(*first, crate::TerminalPredicate::RegionIdentifier)?
+                .is_some()
         {
             let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
             let ResolvedTarget::Source {
@@ -750,33 +699,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::type_mismatch(expected, found),
             )
         };
-        // [BLK-1] what a slot may hold: every copy element, one region-free
-        // affine nominal stored by value, one type parameter under any of its
-        // three bounds — which [FN-2] resolves at every concrete instance —
-        // and one element that is itself a run, descriptor included. The lift
-        // is one level: the element run's own element is flat, so a third
-        // level is an explicit unsupported capability rather than a source
-        // rejection.
+        // [BLK-1] every nameable type is a slot type; STOR-5 checks
+        // contained providers and views independently of representation.
         let element_of = |argument: NodeId| -> Result<CheckedElement, CheckStop> {
             let element_node = self
                 .tree
                 .first_child_with(argument, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            self.reject_region_bearing_storage_type(element_node, substitution)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
-            if let CheckedType::Generic(declaration) = element_type {
-                return Ok(CheckedElement::Flat(CheckedFlatElement::Generic(
-                    declaration,
-                )));
-            }
-            if let Some(lifted) = Self::run_element(element_type) {
-                return Ok(lifted);
-            }
-            match self.buffer_element(element_type)? {
-                Some(element) => Ok(CheckedElement::Flat(element)),
-                None => self
-                    .unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
-                    .map(|()| CheckedElement::Flat(CheckedFlatElement::Unit)),
-            }
+            self.intern_element(element_type)
         };
         match shape {
             crate::ContainerShape::Vector => {
@@ -791,7 +723,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return mismatch("a const argument in the Vector element position");
                 }
                 let element = element_of(*element)?;
-                let region = written_region.unwrap_or_else(|| self.elided_store_region());
+                let region = match written_region {
+                    Some(region) => region,
+                    None => self.elided_store_region(node)?,
+                };
                 Ok(CheckedType::Vector {
                     region,
                     element,
@@ -827,7 +762,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return mismatch("a Heap type-argument list with a further argument");
                 }
                 Ok(CheckedType::Heap {
-                    region: written_region.unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION),
+                    region: match written_region {
+                        Some(region) => region,
+                        None => self.elided_store_region(node)?,
+                    },
                 })
             }
             // S39 one store-resident cell. Its referent is any nameable
@@ -845,7 +783,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 self.reject_region_bearing_storage_type(referent_node, substitution)?;
                 let referent = self.parse_type_with(referent_node, substitution)?;
-                let region = written_region.unwrap_or_else(|| self.elided_store_region());
+                let region = match written_region {
+                    Some(region) => region,
+                    None => self.elided_store_region(node)?,
+                };
                 self.store_box_nominal(region, referent)
                     .map(CheckedType::Nominal)
             }
@@ -895,10 +836,20 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(substitution.region_argument(region).unwrap_or(region))
     }
 
-    pub(in crate::semantic::check) fn elided_store_region(&self) -> crate::DeclarationId {
-        self.elided_store_brand
-            .get()
-            .unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION)
+    pub(in crate::semantic::check) fn elided_store_region(
+        &self,
+        node: NodeId,
+    ) -> Result<crate::DeclarationId, CheckStop> {
+        if let Some(region) = self.elided_store_brand.get() {
+            return Ok(region);
+        }
+        self.issue_node(
+            SemanticRule::Form8,
+            node,
+            SemanticIssueKind::RegionSpelling {
+                mechanical_fix: "write the store region argument",
+            },
+        )
     }
 
     pub(super) fn option_type_argument_with(
@@ -906,7 +857,7 @@ extent's region is one the caller must choose, so it is written at every positio
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<CheckedType, CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return self.issue_node(
                 SemanticRule::Type5,
                 node,
@@ -1151,308 +1102,6 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(paths)
     }
 
-    pub(super) fn type_carries_identity(&self, ty: CheckedType) -> Result<bool, CheckStop> {
-        Ok(!self.type_state_leaf_paths(ty)?.is_empty())
-    }
-
-    /// Follows a checked value through moves, borrows, and closed-world call
-    /// summaries to every direct formal path which may supply its state leaves.
-    pub(super) fn state_origins_of_value(
-        &self,
-        value: &TypedExpression,
-        bindings: &HashMap<crate::DeclarationId, LocalBinding>,
-    ) -> Result<Option<CheckedStateOrigins>, CheckStop> {
-        if !self.type_carries_identity(value.expression.ty())? {
-            return Ok(None);
-        }
-        let rooted = if let Some(borrow) = value.borrow.as_ref() {
-            bindings
-                .get(&borrow.place.root)
-                .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| origins.projected(&borrow.place.field_prefix()))
-        } else if let Some(holder) = value.holder {
-            bindings
-                .get(&holder)
-                .and_then(|binding| binding.state_origins.clone())
-        } else if value.accesses.len() == 1 {
-            let access = &value.accesses[0];
-            bindings
-                .get(&access.place.root)
-                .and_then(|binding| binding.state_origins.clone())
-                .map(|origins| origins.projected(&access.place.field_prefix()))
-        } else {
-            None
-        };
-        let origins = match self.expression_state_origins(&value.expression) {
-            StateOriginResolution::Absent => {
-                rooted.map_or(StateOriginResolution::Absent, StateOriginResolution::Finite)
-            }
-            explicit => explicit,
-        };
-        self.finish_state_origins(
-            origins,
-            value.expression.ty(),
-            value.expression.carrier().cloned(),
-        )
-    }
-
-    pub(super) fn give_state_origins(
-        &self,
-        arms: &[CheckedMatchArm],
-        result_type: CheckedType,
-    ) -> Result<Option<CheckedStateOrigins>, CheckStop> {
-        let mut origins = StateOriginResolution::Absent;
-        let mut fallback = None;
-        for arm in arms {
-            self.collect_give_state_origins(&arm.body, &mut origins, &mut fallback);
-        }
-        self.finish_state_origins(origins, result_type, fallback)
-    }
-
-    fn collect_give_state_origins(
-        &self,
-        statements: &[CheckedStatement],
-        origins: &mut StateOriginResolution,
-        fallback: &mut Option<crate::NodePath>,
-    ) {
-        for statement in statements {
-            match statement {
-                CheckedStatement::Give { value, .. } => {
-                    if fallback.is_none() {
-                        *fallback = value.carrier().cloned();
-                    }
-                    origins.union(self.expression_state_origins(value));
-                }
-                CheckedStatement::Match { arms, .. } => {
-                    for arm in arms {
-                        self.collect_give_state_origins(&arm.body, origins, fallback);
-                    }
-                }
-                // A nested value initializer owns its own give set.
-                CheckedStatement::ValueMatchLet { .. } => {}
-                CheckedStatement::Dispose { .. } => {}
-                CheckedStatement::Loop { body, .. }
-                | CheckedStatement::CountedRange { body, .. }
-                | CheckedStatement::Region { body, .. } => {
-                    self.collect_give_state_origins(body, origins, fallback);
-                }
-                CheckedStatement::Let { .. }
-                | CheckedStatement::DestructuringLet { .. }
-                | CheckedStatement::PropagateLet { .. }
-                | CheckedStatement::Set { .. }
-                | CheckedStatement::SetList { .. }
-                | CheckedStatement::Replace { .. }
-                | CheckedStatement::Evaluate(_)
-                | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Proof(_)
-                | CheckedStatement::Return { .. }
-                | CheckedStatement::Break { .. } => {}
-            }
-        }
-    }
-
-    fn finish_state_origins(
-        &self,
-        origins: StateOriginResolution,
-        ty: CheckedType,
-        _fallback: Option<crate::NodePath>,
-    ) -> Result<Option<CheckedStateOrigins>, CheckStop> {
-        if !self.type_carries_identity(ty)? {
-            return Ok(None);
-        }
-        match origins {
-            StateOriginResolution::Absent => Ok(Some(CheckedStateOrigins::fresh())),
-            StateOriginResolution::Finite(origins) => Ok(Some(origins)),
-            StateOriginResolution::Unknown(_) => Ok(Some(CheckedStateOrigins::unknown())),
-        }
-    }
-
-    fn expression_state_origins(&self, expression: &CheckedExpression) -> StateOriginResolution {
-        match expression {
-            CheckedExpression::Binding { state_origins, .. }
-            | CheckedExpression::Project { state_origins, .. }
-            | CheckedExpression::BorrowSystemResource { state_origins, .. } => state_origins
-                .clone()
-                .map_or(StateOriginResolution::Absent, StateOriginResolution::Finite),
-            CheckedExpression::SystemCall {
-                operation, call, ..
-            } => match crate::SYSTEM_OPERATIONS
-                .get(usize::from(*operation))
-                .map(|operation| operation.result_state_origin)
-            {
-                Some(crate::SystemResultStateOrigin::None) => StateOriginResolution::Absent,
-                Some(crate::SystemResultStateOrigin::Fresh) => {
-                    StateOriginResolution::Finite(CheckedStateOrigins::fresh())
-                }
-                None => StateOriginResolution::Unknown(call.clone()),
-            },
-            CheckedExpression::UserCall {
-                function,
-                arguments,
-                call,
-                ..
-            } => match self
-                .result_state_origins
-                .borrow()
-                .get(function.0 as usize)
-                .cloned()
-            {
-                Some(CheckedResultStateOrigin::NoState) => StateOriginResolution::Absent,
-                Some(CheckedResultStateOrigin::Finite { formals }) => {
-                    let finite = CheckedStateOrigins {
-                        unknown: false,
-                        formals: Vec::new(),
-                    };
-                    let mut resolved = StateOriginResolution::Finite(finite);
-                    for formal in formals {
-                        let Some(argument) = arguments.get(formal.parameter as usize) else {
-                            return StateOriginResolution::Unknown(call.clone());
-                        };
-                        let mut mapped = self
-                            .expression_state_origins(argument)
-                            .projected(&formal.parameter_fields);
-                        if let StateOriginResolution::Finite(origins) = &mut mapped {
-                            for origin in &mut origins.formals {
-                                let mut value_fields = formal.result_fields.clone();
-                                value_fields.extend_from_slice(&origin.value_fields);
-                                origin.value_fields = value_fields;
-                                if formal.result_variant.is_some() {
-                                    origin.variant = formal.result_variant;
-                                }
-                            }
-                        }
-                        resolved.union(mapped);
-                    }
-                    resolved
-                }
-                Some(CheckedResultStateOrigin::Unknown) | None => {
-                    StateOriginResolution::Unknown(call.clone())
-                }
-            },
-            CheckedExpression::ConstructStruct { fields, .. } => {
-                let mut origins = StateOriginResolution::Absent;
-                for (ordinal, field) in fields.iter().enumerate() {
-                    let mut field_origins = self.expression_state_origins(field);
-                    if let StateOriginResolution::Finite(field_origins) = &mut field_origins {
-                        let Ok(ordinal) = u32::try_from(ordinal) else {
-                            return expression.carrier().cloned().map_or(
-                                StateOriginResolution::Absent,
-                                StateOriginResolution::Unknown,
-                            );
-                        };
-                        for origin in &mut field_origins.formals {
-                            origin.value_fields.insert(0, ordinal);
-                        }
-                    }
-                    origins.union(field_origins);
-                }
-                origins
-            }
-            CheckedExpression::ConstructEnum {
-                variant, fields, ..
-            } => {
-                let mut origins = StateOriginResolution::Absent;
-                for (field, value) in fields.iter().enumerate() {
-                    let Ok(field) = u32::try_from(field) else {
-                        return expression.carrier().cloned().map_or(
-                            StateOriginResolution::Absent,
-                            StateOriginResolution::Unknown,
-                        );
-                    };
-                    let mut field_origins = self.expression_state_origins(value);
-                    if let StateOriginResolution::Finite(field_origins) = &mut field_origins {
-                        for origin in &mut field_origins.formals {
-                            origin.value_fields.insert(0, field);
-                            origin.variant = Some(*variant);
-                        }
-                    }
-                    origins.union(field_origins);
-                }
-                origins
-            }
-            CheckedExpression::BoxNew { value, .. } | CheckedExpression::ArenaNew { value, .. } => {
-                let mut origins = self.expression_state_origins(value);
-                if let StateOriginResolution::Finite(origins) = &mut origins {
-                    for origin in &mut origins.formals {
-                        origin.value_fields.clear();
-                        origin.variant = None;
-                    }
-                }
-                origins
-            }
-            _ => {
-                let mut origins = StateOriginResolution::Absent;
-                for child in super::super::model::expression_children(expression) {
-                    origins.union(self.expression_state_origins(child));
-                }
-                origins
-            }
-        }
-    }
-
-    pub(super) fn type_state_leaf_paths(
-        &self,
-        ty: CheckedType,
-    ) -> Result<Vec<Vec<u32>>, CheckStop> {
-        self.identity_leaf_paths(ty, false)
-    }
-
-    fn identity_leaf_paths(
-        &self,
-        ty: CheckedType,
-        embedded: bool,
-    ) -> Result<Vec<Vec<u32>>, CheckStop> {
-        if self.is_copy_type(ty)? {
-            return Ok(embedded.then(Vec::new).into_iter().collect());
-        }
-        let paths = match ty {
-            CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
-                CheckedNominalKind::Struct { fields } => {
-                    if fields.is_empty() {
-                        return Ok(vec![Vec::new()]);
-                    }
-                    let mut paths = Vec::new();
-                    for (ordinal, field) in fields.iter().enumerate() {
-                        let ordinal = u32::try_from(ordinal)
-                            .map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-                        for mut path in self.identity_leaf_paths(field.ty, true)? {
-                            path.insert(0, ordinal);
-                            paths.push(path);
-                        }
-                    }
-                    paths
-                }
-                CheckedNominalKind::Enum { .. }
-                | CheckedNominalKind::Box { .. }
-                | CheckedNominalKind::Arena { .. }
-                | CheckedNominalKind::ArenaStorage
-                | CheckedNominalKind::SystemResource { .. } => vec![Vec::new()],
-            },
-            // A slice's identity is its already-tracked backing place, never
-            // the descriptor binding. Region-bearing storage fields are
-            // rejected before this point, so the embedded case is defensive.
-            CheckedType::Slice { .. } if !embedded => Vec::new(),
-            CheckedType::Array { .. }
-            | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. }
-            | CheckedType::Generic(_) => vec![Vec::new()],
-            CheckedType::Unit
-            | CheckedType::Bool
-            | CheckedType::Integer(_)
-            | CheckedType::Float(_)
-            | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => {
-                // The copy case returned above.
-                Vec::new()
-            }
-        };
-        Ok(paths)
-    }
-
     pub(super) fn parse_const_expression_with(
         &self,
         node: NodeId,
@@ -1499,7 +1148,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 });
         }
         self.combine_const(operation, left, right)
-            .ok_or(SemanticCompilerFailure::CounterOverflow.into())
+            .ok_or_else(|| SemanticCompilerFailure::CounterOverflow.into())
     }
 
     /// The one const operation of a candidate-grammar `const` tail. The
@@ -1635,6 +1284,20 @@ extent's region is one the caller must choose, so it is written at every positio
             .direct_token_with(node, TerminalPredicate::Identifier)?
             .is_some()
         {
+            // CONST-2 permits earlier-constant identifiers only for primitive
+            // values. Arrays/runs require lists and structs require a complete
+            // construction; physical constant storage cannot authorize an
+            // implicit conversion between array and fixed-run source types.
+            if !matches!(
+                expected,
+                CheckedType::Unit | CheckedType::Integer(_) | CheckedType::Float(_)
+            ) {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            }
             let usage = self.use_at(node, LexicalUseRole::ConstValue)?;
             let ResolvedTarget::Source {
                 declaration,
@@ -1659,6 +1322,12 @@ extent's region is one the caller must choose, so it is written at every positio
                 SemanticIssueKind::InvalidConstValue,
             );
         }
+        if matches!(expected, CheckedType::FixedVector { .. }) {
+            // Top-level constant runs use dense array storage. A run nested
+            // in another constant needs the same normalization at its field
+            // or element position; that representation path is not wired yet.
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+        }
         let CheckedType::Array { element, length } = expected else {
             return self.issue_node(
                 SemanticRule::Const2,
@@ -1680,7 +1349,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 SemanticIssueKind::InvalidConstValue,
             );
         }
-        let element_type = element.ty();
+        let element_type = self.element_type(element)?;
         let mut elements = Vec::with_capacity(entries.len());
         for entry in entries {
             elements.push(self.parse_const_value(entry, element_type)?);
@@ -1705,11 +1374,7 @@ extent's region is one the caller must choose, so it is written at every positio
         // implemented yet: valid under the candidate's eligibility relation
         // only through concrete instances, which this version does not intern
         // from a cvalue.
-        if self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .is_some()
-        {
+        if self.tree.argument_list(node)?.is_some() {
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
         }
         let CheckedType::Nominal(id) = expected else {
@@ -1737,7 +1402,7 @@ extent's region is one the caller must choose, so it is written at every positio
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let ResolvedTarget::Source { declaration, .. } = usage.target() else {
-            // A prelude or system constructor never names a const-eligible
+            // A core prelude constructor never names a const-eligible
             // struct.
             return self.issue_node(
                 SemanticRule::Const2,
@@ -1805,52 +1470,13 @@ extent's region is one the caller must choose, so it is written at every positio
     }
 
     pub(super) fn parse_const_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
-        let directly_ineligible = self.written_loan_strength(node)?.is_some()
-            || self.has_fixed(node, FixedTerminal::Box)?
-            || self.has_fixed(node, FixedTerminal::Arena)?
-            || self.has_fixed(node, FixedTerminal::Buffer)?;
-        if directly_ineligible {
-            return self.issue_node(
-                SemanticRule::Const2,
-                node,
-                SemanticIssueKind::InvalidConstValue,
-            );
-        }
-        // [CONST-2] none of the compiler-owned container nominals is
-        // const-eligible: a const is pure static rodata, and each of the five
-        // names storage, a store region, or a release action. The question is
-        // decided here, on the resolved declaration class and before the
-        // type's own arguments are parsed, because a cell type is interned
-        // per (store region, referent) and a `const` item is not one of the
-        // positions the interning pass visits — parsing one there reported an
-        // internal deferred-nominal failure instead of this rejection.
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_some()
-            && matches!(
-                self.use_at(node, LexicalUseRole::Type)?.target(),
-                ResolvedTarget::Container(_)
-            )
-            && !self.written_type_is_fixed_vector(node)?
-        {
-            return self.issue_node(
-                SemanticRule::Const2,
-                node,
-                SemanticIssueKind::InvalidConstValue,
-            );
-        }
+        self.reject_ineligible_const_storage(node)?;
         let ty = self.parse_type(node)?;
-        // [CONST-1, CONST-2, S34] the one const-eligible container form: a
-        // `FixedVector<T, n>` of const-eligible flat `T` with exactly `n`
-        // literal entries. It lowers to **element storage only** — its four
-        // measures are the standing facts `len_of = cap_of = n` and
-        // `room_of = head_of = 0`, materialized from the type at each use
-        // rather than stored — so the const's storage type is the run of `n`
-        // slots itself, which is the place every read of it resolves to and
-        // the measure row every one of its four measures already reads.
+        // [CONST-1, CONST-2, S34] a top-level fixed-run constant occupies only
+        // dense element storage. Its four measures are materialized from the
+        // type rather than stored in a window descriptor.
         if let CheckedType::FixedVector { element, length } = ty {
-            let CheckedElement::Flat(element) = element else {
+            let Some(_) = self.flat_element(self.element_type(element)?)? else {
                 return self.issue_node(
                     SemanticRule::Const2,
                     node,
@@ -1878,6 +1504,63 @@ extent's region is one the caller must choose, so it is written at every positio
         }
     }
 
+    /// Reject forbidden storage constructors before parsing types whose
+    /// nominal instances need not exist for an ineligible const declaration.
+    /// Follow only array/run element positions: arbitrary nominal type
+    /// arguments may be phantom and do not themselves decide eligibility.
+    fn reject_ineligible_const_storage(&self, root: NodeId) -> Result<(), CheckStop> {
+        let mut current = Some(root);
+        while let Some(node) = current {
+            let directly_ineligible = self.written_loan_strength(node)?.is_some()
+                || self.has_fixed(node, FixedTerminal::Box)?
+                || self.has_fixed(node, FixedTerminal::Arena)?
+                || self.has_fixed(node, FixedTerminal::Buffer)?;
+            if directly_ineligible {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            }
+            // FixedVector is the one eligible compiler-owned container. The
+            // other constructors name storage, a store region, or release.
+            if self
+                .tree
+                .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+                .is_some()
+                && matches!(
+                    self.use_at(node, LexicalUseRole::Type)?.target(),
+                    ResolvedTarget::Container(_)
+                )
+                && !self.written_type_is_fixed_vector(node)?
+            {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::InvalidConstValue,
+                );
+            }
+            current = if self.has_fixed(node, FixedTerminal::Array)? {
+                self.tree.first_child_with(node, Production::Type)?
+            } else if self.written_type_is_fixed_vector(node)? {
+                match self.tree.argument_list(node)? {
+                    Some(targs) => {
+                        match self.tree.children_with(targs, Production::Targ)?.first() {
+                            Some(argument) => {
+                                self.tree.first_child_with(*argument, Production::Type)?
+                            }
+                            None => None,
+                        }
+                    }
+                    None => None,
+                }
+            } else {
+                None
+            };
+        }
+        Ok(())
+    }
+
     /// Whether one written `type` node spells the compiler-owned inline run
     /// [BLK-1], which is the one container nominal a `const` item may write
     /// [CONST-2, S34].
@@ -1891,94 +1574,86 @@ extent's region is one the caller must choose, so it is written at every positio
         Ok(self.tree.token_bytes(token)? == b"FixedVector")
     }
 
-    /// The CONST-2 const-eligibility relation: a primitive, an array of
-    /// const-eligible flat elements, or — under the v0.31 candidate — a
-    /// source struct whose every field type is const-eligible. Enums, boxes,
-    /// buffers, slices, arenas, and generics remain ineligible (a const is
-    /// pure static rodata: no allocation, no region, no drop).
+    /// Check every type reachable through CONST-2's element and field
+    /// relation. Zero-length arrays still require eligible element types;
+    /// a visited set closes recursive zero-extent nominal graphs. Parsing
+    /// the finite cvalue separately checks every written element and field.
     fn const_eligible_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
-        Ok(match ty {
-            CheckedType::Unit | CheckedType::Integer(_) | CheckedType::Float(_) => true,
-            CheckedType::Array { element, .. } => {
-                matches!(
-                    element,
-                    CheckedFlatElement::Unit
-                        | CheckedFlatElement::Integer(_)
-                        | CheckedFlatElement::Float(_)
-                )
+        let mut pending = vec![ty];
+        let mut visited = HashSet::new();
+        while let Some(ty) = pending.pop() {
+            if !visited.insert(ty) {
+                continue;
             }
-            CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
-                super::super::model::CheckedNominalKind::Struct { fields } => {
-                    let fields = fields.iter().map(|field| field.ty).collect::<Vec<_>>();
-                    for field in fields {
-                        if !self.const_eligible_type(field)? {
-                            return Ok(false);
-                        }
-                    }
-                    true
+            match ty {
+                CheckedType::Unit | CheckedType::Integer(_) | CheckedType::Float(_) => {}
+                CheckedType::Array { element, .. } => {
+                    pending.push(self.element_type(element)?);
                 }
-                _ => false,
-            },
-            CheckedType::Bool
-            | CheckedType::Generic(_)
-            | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => false,
-            // The `FixedVector` const form is [S34]'s and lands with
-            // `array`'s retirement; a run, a heap, and an extent are not
-            // static rodata in this version.
-            CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. }
-            | CheckedType::FixedVector { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::Heap { .. }
-            | CheckedType::Extent { .. } => false,
-        })
+                CheckedType::FixedVector { element, .. } => {
+                    let element = self.element_type(element)?;
+                    if self.flat_element(element)?.is_none() {
+                        return Ok(false);
+                    }
+                    pending.push(element);
+                }
+                CheckedType::Nominal(id) => {
+                    let CheckedNominalKind::Struct { fields } = &self.nominal(id)?.kind else {
+                        return Ok(false);
+                    };
+                    pending.extend(fields.iter().map(|field| field.ty));
+                }
+                // The top-level FixedVector const form is normalized to dense
+                // element storage by parse_const_type. Other eligible nesting
+                // must be implemented or reported as a capability gap, never
+                // made ineligible merely because its layout is unsupported.
+                CheckedType::Bool
+                | CheckedType::Generic(_)
+                | CheckedType::GenericInt(_)
+                | CheckedType::GenericFloat(_)
+                | CheckedType::Slice { .. }
+                | CheckedType::Buffer { .. }
+                | CheckedType::Vector { .. }
+                | CheckedType::Heap { .. }
+                | CheckedType::Extent { .. } => return Ok(false),
+            }
+        }
+        Ok(true)
     }
 
-    pub(super) fn checked_flat_element(
+    /// Resolve one checked-program-local structural element handle.
+    pub(in crate::semantic) fn element_type(
+        &self,
+        element: CheckedElement,
+    ) -> Result<CheckedType, CheckStop> {
+        self.elements
+            .borrow()
+            .get(element.0 as usize)
+            .copied()
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// Hash-cons the complete slot type. Children have already been formed by
+    /// the ordinary type parser, so structural edges always point backwards.
+    pub(in crate::semantic) fn intern_element(
         &self,
         ty: CheckedType,
-        node: NodeId,
-    ) -> Result<CheckedFlatElement, CheckStop> {
-        match self.flat_element(ty)? {
-            Some(element) => Ok(element),
-            None => self.issue_node(
-                SemanticRule::Type2,
-                node,
-                SemanticIssueKind::type_mismatch(TYPE2_FLAT_ELEMENT, self.checked_type_name(ty)?),
-            ),
+    ) -> Result<CheckedElement, CheckStop> {
+        if let Some(element) = self.element_ids.borrow().get(&ty).copied() {
+            return Ok(element);
         }
-    }
-
-    /// The one-level lift of [BLK-1]'s element domain: a run whose own
-    /// element is flat is itself an element, its descriptor included.
-    ///
-    /// It is `None` for every other type, including a run whose element is
-    /// already lifted — that is the second level, which this version does not
-    /// represent — so a caller falls through to the flat domain and, failing
-    /// that, to the unsupported capability.
-    pub(super) const fn run_element(ty: CheckedType) -> Option<CheckedElement> {
-        match ty {
-            CheckedType::FixedVector {
-                element: CheckedElement::Flat(element),
-                length,
-            } => Some(CheckedElement::FixedVector { element, length }),
-            CheckedType::Vector {
-                region,
-                element: CheckedElement::Flat(element),
-                release,
-            } => Some(CheckedElement::Vector {
-                region,
-                element,
-                release,
-            }),
-            _ => None,
-        }
+        let element = CheckedElement(
+            u32::try_from(self.elements.borrow().len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        self.elements.borrow_mut().push(ty);
+        self.element_ids.borrow_mut().insert(ty, element);
+        Ok(element)
     }
 
     /// The [TYPE-2] buffer element domain: every flat copy element, plus a
-    /// region-free affine nominal stored by value. Arrays and slices keep
-    /// [`Self::flat_element`]'s copy domain.
+    /// region-free affine nominal stored by value. Slices keep
+    /// [`Self::flat_element`]'s copy domain; arrays use complete elements.
     pub(super) fn buffer_element(
         &self,
         ty: CheckedType,

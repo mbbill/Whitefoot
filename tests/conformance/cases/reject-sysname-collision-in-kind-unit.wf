@@ -1,8 +1,8 @@
 fn open_read(root: own u64, path: own u64) -> function_result: own u64 pure {
-  doc "Every unit receives the complete system declaration domain [SYS-3], so a source declaration spelled like an inventory entry in the same domain is a collision; neither declaration resolves and the unit is rejected [SYS-1] at declaration-inventory rank 5, citing TYPE-6.";
+  doc "The source declaration duplicates an ordinary PRE-1 function name. Ordinary TYPE-6 declaration inventory rejects the collision; there is no system domain or qualification rank.";
   return root;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

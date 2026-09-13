@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "Main is the sole command entry, is invoked exactly once by program start [PROG-3], and is never source-callable. A source call resolving to main is rejected under FN-7.";
+fn main() -> status: own ExitStatus pure {
+  doc "FN-7: main is an ordinary source-callable function. This recursive call is accepted under FN-6; the acceptance case is deliberately not executed.";
   return main();
 }

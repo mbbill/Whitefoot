@@ -15,7 +15,7 @@ use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKin
 use super::super::super::model::{
     CheckedCommitValues, CheckedSetTarget, CheckedStatement, CheckedWritablePlace,
 };
-use super::super::super::places::{PlaceOffset, PlaceStep, paths_diverge};
+use super::super::super::places::{PlaceOffset, PlaceProjection, PlaceStep, paths_diverge};
 use super::super::borrows::{ResolvedPlace, places_overlap};
 use super::super::expressions::{MutationAccess, MutationTarget};
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -46,20 +46,17 @@ struct FormedTarget {
 /// [LIV-2] one target place of the commit whose right-hand side is being
 /// checked, and whether that right-hand side has read it out.
 ///
-/// The place is the resolved place the commit writes, so a `move` matches it
-/// however it is spelled and through whatever holder it reaches.
+/// `place.storage_path` retains the complete selected storage, including
+/// owning Box dereferences and the final subscript. Matching and spent-place
+/// liveness use this path; the conservative `place.path` still serves the
+/// existing overlap and loan relations.
 pub(in crate::semantic::check) struct CommitReadOut {
     place: ResolvedPlace,
-    /// A subscript target writes one element of `place` rather than `place`
-    /// itself [MSR-2], so it is matched by the element read-out below and
-    /// never by the whole-place one: a `move` of `place`, or of a place
-    /// reached through it, is a different element as often as it is this one.
-    ///
-    /// The complete path below the target's root is retained rather than one
-    /// offset, because a measured place may carry a subscript of its own
-    /// [MSR-1]: `grid[0][1]` and `grid[1][1]` write two elements and agree in
-    /// their last offset.
-    element: Option<Vec<PlaceStep>>,
+    /// Whether read-out owes the affine-element judgment, including literal
+    /// offset equality. A measured place can itself carry a subscript
+    /// [MSR-1], so `grid[0][1]` and `grid[1][1]` differ despite agreeing in
+    /// their last offset; the flag never substitutes for that complete path.
+    element: bool,
     read_out: bool,
 }
 
@@ -76,8 +73,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         let spent = self.commit_read_outs.borrow().iter().any(|target| {
             target.read_out
-                && places_overlap(&target.place, place)
-                && (!descriptor || target.place.path.len() <= place.path.len())
+                && target.place.root == place.root
+                && !target
+                    .place
+                    .storage_path
+                    .iter()
+                    .zip(&place.storage_path)
+                    .any(|(left, right)| match (left, right) {
+                        (PlaceProjection::Field(left), PlaceProjection::Field(right)) => {
+                            left != right
+                        }
+                        (PlaceProjection::Subscript(left), PlaceProjection::Subscript(right)) => {
+                            left.provably_distinct(*right)
+                        }
+                        (PlaceProjection::Deref, PlaceProjection::Deref) => false,
+                        _ => true,
+                    })
+                && (!descriptor || target.place.storage_path.len() <= place.storage_path.len())
         });
         if spent {
             return self.issue_node(
@@ -103,19 +115,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// `move` of the same place is therefore an ordinary use of what that
     /// read-out consumed and is judged as one.
     pub(in crate::semantic::check) fn take_commit_read_out(&self, place: &ResolvedPlace) -> bool {
-        let mut targets = self.commit_read_outs.borrow_mut();
-        for target in targets.iter_mut() {
-            if target.read_out
-                || target.element.is_some()
-                || target.place.root != place.root
-                || !place.path.starts_with(&target.place.path)
-            {
-                continue;
-            }
-            target.read_out = true;
-            return true;
-        }
-        false
+        self.take_commit_storage_read_out(place, false)
     }
 
     /// Whether `place[offset]` is the read-out of an element target of the
@@ -130,20 +130,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(in crate::semantic::check) fn take_commit_element_read_out(
         &self,
         place: &ResolvedPlace,
-        path: &[PlaceStep],
     ) -> bool {
+        self.take_commit_storage_read_out(place, true)
+    }
+
+    fn take_commit_storage_read_out(&self, place: &ResolvedPlace, element: bool) -> bool {
         let mut targets = self.commit_read_outs.borrow_mut();
         for target in targets.iter_mut() {
-            let Some(target_path) = target.element.as_ref() else {
-                continue;
-            };
             if target.read_out
+                || target.element != element
                 || target.place.root != place.root
-                || target_path.len() > path.len()
-                || !target_path
-                    .iter()
-                    .zip(path)
-                    .all(|(target, read)| target.provably_same(*read))
+                || !Self::storage_path_prefix(&target.place.storage_path, &place.storage_path)
             {
                 continue;
             }
@@ -151,6 +148,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return true;
         }
         false
+    }
+
+    fn storage_path_prefix(target: &[PlaceProjection], read: &[PlaceProjection]) -> bool {
+        target.len() <= read.len()
+            && target
+                .iter()
+                .zip(read)
+                .all(|(target, read)| match (target, read) {
+                    (PlaceProjection::Field(left), PlaceProjection::Field(right)) => {
+                        PlaceStep::Field(*left).provably_same(PlaceStep::Field(*right))
+                    }
+                    (PlaceProjection::Deref, PlaceProjection::Deref) => true,
+                    (PlaceProjection::Subscript(left), PlaceProjection::Subscript(right)) => {
+                        left.provably_same(*right)
+                    }
+                    _ => false,
+                })
+    }
+
+    /// Extraction below a Box target needs an explicit account of the old
+    /// target's unselected owning content. Retain that capability boundary.
+    pub(in crate::semantic::check) fn is_box_descendant_read_out(
+        &self,
+        place: &ResolvedPlace,
+    ) -> bool {
+        place.storage_path.contains(&PlaceProjection::Deref)
+            && self.commit_read_outs.borrow().iter().any(|target| {
+                !target.read_out
+                    && target.place.root == place.root
+                    && target.place.storage_path.len() < place.storage_path.len()
+                    && Self::storage_path_prefix(&target.place.storage_path, &place.storage_path)
+            })
     }
 
     /// [GRAM-4, SET-1, LIV-2] one `set` statement, in every written form.
@@ -182,8 +211,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 continue;
             }
             let revives = self.commit_revives_binding(*target_node, bindings)?;
-            let mutation =
+            let mut mutation =
                 self.check_set_target(function, *target_node, bindings, scope.loops.len())?;
+            if revives {
+                // An entry-dead complete binding has no current owner whose
+                // state this initialization could write [LIV-2, EFF-2]. Its
+                // bare target evaluates no offsets or other expressions;
+                // ordinary target admission, the RHS and the commit kill
+                // still apply. Same-statement read-out keeps its own write.
+                mutation.effects = EffectSet::NONE;
+            }
             for earlier in &targets {
                 if self.commit_targets_overlap(&earlier.mutation, &mutation) {
                     return self.issue_node(
@@ -245,7 +282,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration,
                         mode: crate::semantic::model::CheckedMode::Own,
                         ty,
-                        state_origins: None,
                         live: false,
                         loop_depth: scope.loops.len(),
                         compiler_updated: false,
@@ -266,7 +302,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // attributes its initialization.
             let place = ResolvedPlace::fields(declaration, Vec::new());
             let mut target_effects = EffectSet::NONE;
-            for path in self.effect_paths_for_place(&place, bindings)? {
+            for path in self.effect_paths_for_place(target_node, &place, bindings)? {
                 target_effects.add_write(path);
             }
             let mutation = MutationTarget {
@@ -382,13 +418,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.commit_read_outs.replace(
             targets
                 .iter()
-                .map(|target| CommitReadOut {
-                    place: target.mutation.place.clone(),
-                    element: target
-                        .mutation
-                        .element
-                        .then(|| Self::commit_target_path(&target.mutation.target)),
-                    read_out: false,
+                .map(|target| {
+                    let mut place = target.mutation.place.clone();
+                    let offset = match &target.mutation.target {
+                        CheckedSetTarget::ArrayIndex(target) => Some(&target.offset),
+                        CheckedSetTarget::BufferIndex(target) => Some(&target.offset),
+                        CheckedSetTarget::SliceIndex(target) => Some(&target.offset),
+                        CheckedSetTarget::Place(_) | CheckedSetTarget::Storage(_) => None,
+                    };
+                    if let Some(offset) = offset {
+                        place.storage_path.push(PlaceProjection::Subscript(
+                            Self::place_offset_of(offset).unwrap_or(PlaceOffset::Opaque),
+                        ));
+                    }
+                    CommitReadOut {
+                        place,
+                        element: target.mutation.element,
+                        read_out: false,
+                    }
                 })
                 .collect(),
         );
@@ -535,25 +582,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn commit_bindings(
         &self,
         targets: &[FormedTarget],
-        values: &[super::super::TypedExpression],
+        _values: &[super::super::TypedExpression],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
-        for (index, target) in targets.iter().enumerate() {
-            if !self.commit_reinitializes_binding(target) {
-                continue;
-            }
-            let origins = match values.get(index) {
-                Some(value) if values.len() == targets.len() => {
-                    self.state_origins_of_value(value, bindings)?
-                }
-                _ => None,
-            };
-            let local = bindings
-                .get_mut(&target.mutation.declaration)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            local.live = true;
-            if origins.is_some() {
-                local.state_origins = origins;
+        for target in targets {
+            if self.commit_reinitializes_binding(target) {
+                bindings
+                    .get_mut(&target.mutation.declaration)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .live = true;
             }
         }
         Ok(())

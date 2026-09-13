@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-2: one reserving occurrence inside a loop whose region block is outside it has one activation and executes on every trip, so its published empty state would be false from the second.";
   region 'a {
     for @trips (at in 0_u64..2_u64) {

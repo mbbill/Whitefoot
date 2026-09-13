@@ -1,4 +1,4 @@
-command fn main(command.heap as heap: own Heap) -> return_value: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> return_value: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "heap_vector takes a runtime-length run from the general store after its statically discharged allocation-fit obligation [OP-9].";
   region {
     match heap_vector::<i32>(store: &uniq heap, count: 4_u64) {

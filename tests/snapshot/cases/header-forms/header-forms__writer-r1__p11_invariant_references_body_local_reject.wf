@@ -10,7 +10,7 @@ fn running_bound(limit: own u64) -> total: own u64 pure {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT -- the header invariant relation names a local declared only inside the loop body, which is not in scope at the header.";
   let total = running_bound(limit: 5_u64);
   if total == 5_u64 {

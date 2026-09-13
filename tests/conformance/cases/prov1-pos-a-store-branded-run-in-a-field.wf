@@ -1,13 +1,13 @@
-struct Bytes {
+struct Bytes['heap] {
   v: Vector<u8>;
 }
 
-struct Frame {
+struct Frame['heap] {
   flags: u64;
   page: Vector<u8>;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
-  doc "Names two nominals whose fields hold entry-heap runs. The entry receives the general store, which is what [BLK-4] requires of a unit declaring a position branded to it.";
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
+  doc "PROV-1: each nominal field is branded to its enclosing nominal sole declared region, independent of program-start selection.";
   return exit_status(code: 0_u8);
 }

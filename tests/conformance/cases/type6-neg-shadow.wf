@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Redeclaring a live name shadows it, which TYPE-6 forbids.";
   let a = 1_i32;
   let a = 2_i32;

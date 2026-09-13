@@ -6,7 +6,7 @@ use super::super::scopes::ScopeBuild;
 use super::super::{
     DeclarationClass, DeclarationConflict, DeclarationOrigin, DeclarationRecord, DeclarationRole,
     DeferredUseRole, DependentDeclarationRole, ReservedDeclarationRole, ResolutionCompilerFailure,
-    ResolutionIssue, ResolutionIssueKind, ResolutionRule, SystemDeclarationRecord,
+    ResolutionIssue, ResolutionIssueKind, ResolutionRule,
 };
 use super::{
     ClassifiedRole, DeclarationIndex, DeclarationMeta, EventKey, RawRoleKind, SelectorRole,
@@ -18,7 +18,7 @@ struct InventoryTables<'a> {
     declarations: &'a [DeclarationRecord],
     metas: &'a [DeclarationMeta],
     index: &'a DeclarationIndex,
-    system: &'a [SystemDeclarationRecord],
+    prelude_origins: &'a [super::super::PreludeDeclarationId],
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -30,7 +30,7 @@ pub(super) fn check_declaration_inventory(
     metas: &[DeclarationMeta],
     index: &DeclarationIndex,
     declaration_by_role: &[Option<usize>],
-    system: &[SystemDeclarationRecord],
+    prelude_origins: &[super::super::PreludeDeclarationId],
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     check_inventory(
         topology,
@@ -40,7 +40,7 @@ pub(super) fn check_declaration_inventory(
         metas,
         index,
         declaration_by_role,
-        system,
+        prelude_origins,
         |_| true,
     )
 }
@@ -54,7 +54,7 @@ fn check_inventory(
     metas: &[DeclarationMeta],
     index: &DeclarationIndex,
     declaration_by_role: &[Option<usize>],
-    system: &[SystemDeclarationRecord],
+    prelude_origins: &[super::super::PreludeDeclarationId],
     include: impl Fn(&ClassifiedRole) -> bool,
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     if declarations.len() != metas.len()
@@ -70,7 +70,7 @@ fn check_inventory(
         declarations,
         metas,
         index,
-        system,
+        prelude_origins,
     };
     for (role_index, role) in roles.iter().enumerate() {
         if !include(role) {
@@ -313,7 +313,9 @@ fn collision_issue(
                     class: prelude
                         .class
                         .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?,
-                    origin: DeclarationOrigin::Prelude(prelude.id),
+                    origin: DeclarationOrigin::Prelude(
+                        tables.prelude_origins[usize::from(prelude.id.ordinal())],
+                    ),
                 });
             }
         }
@@ -328,44 +330,9 @@ fn collision_issue(
         )));
     }
 
-    // [DIAG-1] rank 5: a TYPE-6 collision with an admitted system declaration
-    // [SYS-1]. It is selected for a colliding declaration event at the
-    // compilation root and in a nested scope alike, ahead of ranks 6 and 7 at
-    // that event; no source declaration displaces, overrides, or shadows an
-    // inventory entry, and neither declaration resolves. [SYS-3] makes the
-    // complete system inventory a collision candidate in every unit.
-    let mut system_conflicts = Vec::new();
-    for class in &meta.entries {
-        let domain =
-            declaration_domain(*class).ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
-        for record in tables.system {
-            if record.spelling() == declaration.spelling
-                && record.lookup_class().and_then(declaration_domain) == Some(domain)
-            {
-                system_conflicts.push(DeclarationConflict {
-                    domain,
-                    class: record
-                        .lookup_class()
-                        .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?,
-                    origin: DeclarationOrigin::System(record.id()),
-                });
-            }
-        }
-    }
-    sort_conflicts(&mut system_conflicts, tables.declarations);
-    if !system_conflicts.is_empty() {
-        return Ok(Some(collision(
-            declaration,
-            system_conflicts,
-            declaration_collision_rule(declaration),
-            COLLIDES_WITH_SYSTEM,
-        )));
-    }
-
     // [DIAG-1] rank 5, read over the two compiler-owned container domains:
     // the [TYPE-2] container and provider nominals and the [BLK-0] kernel
-    // operations enter every unit exactly as the system inventory does
-    // [SYS-3], so a source declaration of one of their spellings in the same
+    // operations enter every unit [BLK-0], so a source declaration in the same
     // domain is the same collision and neither declaration resolves.
     let mut container_conflicts = Vec::new();
     for class in &meta.entries {
@@ -443,6 +410,7 @@ fn collision_issue(
     }
 
     let mut shadows = Vec::new();
+    let mut shadows_prelude = false;
     for candidate in tables
         .index
         .with_spelling(&declaration.spelling)
@@ -462,6 +430,7 @@ fn collision_issue(
         {
             continue;
         }
+        let before = shadows.len();
         collect_domain_conflicts(
             declaration,
             meta,
@@ -469,6 +438,7 @@ fn collision_issue(
             candidate,
             &mut shadows,
         );
+        shadows_prelude |= shadows.len() != before && scopes.is_prelude_scope(candidate.scope);
     }
     sort_conflicts(&mut shadows, tables.declarations);
     Ok((!shadows.is_empty()).then(|| {
@@ -476,7 +446,11 @@ fn collision_issue(
             declaration,
             shadows,
             declaration_collision_rule(declaration),
-            COLLIDES_WITH_LIVE_OUTER,
+            if shadows_prelude {
+                COLLIDES_WITH_PRELUDE
+            } else {
+                COLLIDES_WITH_LIVE_OUTER
+            },
         )
     }))
 }
@@ -518,7 +492,7 @@ fn collect_domain_conflicts(
                 conflicts.push(DeclarationConflict {
                     domain,
                     class: *candidate_class,
-                    origin: DeclarationOrigin::Source(candidate.origin.clone()),
+                    origin: candidate.diagnostic_origin(*candidate_class),
                 });
             }
         }
@@ -535,7 +509,6 @@ fn collect_domain_conflicts(
 /// blind-writer trial of 2026-08-28 met that one twice and repaired it by
 /// guessing.
 const COLLIDES_WITH_PRELUDE: &str = "a source declaration never displaces, overrides, or shadows a PRE-1 prelude declaration of the same spelling and domain, and neither declaration resolves after the collision; rename this declaration";
-const COLLIDES_WITH_SYSTEM: &str = "a source declaration never displaces, overrides, or shadows an admitted system declaration of the same spelling and domain [SYS-1, SYS-3], and neither declaration resolves after the collision; rename this declaration";
 const COLLIDES_WITH_CONTAINER: &str = "a source declaration never displaces, overrides, or shadows a compiler-owned container nominal or kernel-domain operation of the same spelling and domain [TYPE-2, BLK-0], and neither declaration resolves after the collision; rename this declaration";
 const COLLIDES_IN_ONE_SCOPE: &str = "one scope declares each spelling once in a domain, so this is a redeclaration and not a shadow; rename this declaration, or delete the earlier one when nothing reads it";
 const COLLIDES_WITH_LIVE_OUTER: &str = "a declaration's scope ends with the block that declares it, and not where its value is consumed: a binding whose value was moved is dead as a value while its declaration stays live, so an inner declaration of the same spelling still collides with it. Rename the inner declaration, or close the block that declares the outer one before this point";
@@ -572,7 +545,7 @@ pub(super) fn conflict_key(
     declarations: &[DeclarationRecord],
 ) -> (u8, EventKey) {
     // [DIAG-1] orders conflicts within one domain by PRE-1 declaration
-    // ordinal first, then system declaration ordinal, then source
+    // ordinal first, then container declaration ordinal, then source
     // declaration-event key.
     match origin {
         DeclarationOrigin::Prelude(id) => (
@@ -586,19 +559,8 @@ pub(super) fn conflict_key(
                 subtoken: 0,
             },
         ),
-        DeclarationOrigin::System(id) => (
-            1,
-            EventKey {
-                source: 0,
-                start: u64::from(id.ordinal()),
-                end: 0,
-                path: Vec::new(),
-                role: 0,
-                subtoken: 0,
-            },
-        ),
         // [DIAG-1] orders the two compiler-owned container domains after the
-        // system inventory and before any source event, by their own
+        // prelude and before any source event, by their own
         // ordinals: the nominal-type rows [TYPE-2] then the
         // `container_declaration_ordinal` rows [BLK-0].
         DeclarationOrigin::Container(id) => (

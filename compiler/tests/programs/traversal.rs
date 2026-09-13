@@ -1,10 +1,10 @@
-//! The [SYS-14] directory-enumeration surface, end to end.
+//! Ordinary directory values and prelude functions, end to end.
 //!
 //! Every case here compiles a real corpus program against the declared
 //! inventory, links it, and runs it against a real directory tree the harness
 //! writes with ordinary filesystem calls. Nothing is injected into the
 //! program's address space: it opens, enumerates, and descends through the
-//! host's own facilities, exactly as a shipped command would.
+//! host's own facilities, exactly as an ordinary linked program would.
 
 use super::support::compile_rejection;
 use super::support::{build_program, close_path, compile_program, fixture_directory, reopen_path};
@@ -28,18 +28,13 @@ fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
         !llvm.contains("call void @wf_trap(ptr @.wf_trap."),
         "the traversal must execute only operations admitted by static proof"
     );
-    // The three approved implementations and the compiler-owned target
-    // progress wrapper, by symbol rather than by any source name [QUAL-1].
-    assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
-    assert!(llvm.contains("@wf.sys.directory_next.v1"));
-    assert!(llvm.contains("@wf.sys.open_directory.v1"));
-    // One lowering: the enumeration is submitted into the record the wrapper
-    // reserved in its own frame and joined there
-    // (`research/investigations/io-model/PARK-ON-MISS.md` §8), and the submit
-    // is the runtime's own on every target because the enumeration facility
-    // has no target column of its own.
-    assert!(llvm.contains("wf__completion_directory_next_submit"));
-    assert!(!llvm.contains("call i64 @__getdirentries64"));
+    // C2 deletes QUAL-1 and the compiler-owned native wrapper. All three
+    // operations use the ordinary callable ABI; the native engine is linked
+    // separately and contributes no compiler declaration or permission.
+    assert!(llvm.contains("@wf_open_directory_source("));
+    assert!(llvm.contains("@wf_directory_next("));
+    assert!(llvm.contains("@wf_open_directory("));
+    assert!(!llvm.contains("@wf__completion_directory_next_submit("));
 
     let program = build_program(&llvm);
     let fixture = fixture_directory();
@@ -99,206 +94,69 @@ fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
     );
 }
 
-/// A held enumeration handle is affine like every other system resource: a
-/// source that uses one after moving it is rejected, and the rejection comes
-/// from ownership rather than from any traversal-specific rule.
+/// A held enumeration handle is an ordinary linear value: using its moved
+/// place is rejected by OWN-1, without a traversal-specific rule.
 #[test]
 fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
-  doc "Moves one enumeration handle and then uses the moved binding.";
+    let source = br#"fn moved(list: own DirectorySource, destination: &uniq MutSlice<u8>) -> result: own unit reads(list, destination), writes(list, destination) {
+  doc "Moves an ordinary linear enumeration value and then borrows its dead place.";
+  let taken = move list;
   region {
-    match heap_vector::<u8>(store: &uniq heap, count: 64_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let scratch = move fresh;
-        for @blank (
-          at in 0_u64..64_u64,
-          invariant grown: len_of(scratch) >= at,
-          invariant capped: len_of(scratch) <= at,
-          invariant spare: room_of(scratch) + at >= 64_u64,
-          invariant flat: head_of(scratch) <= 0_u64
-        ) {
-          set scratch = place_back(vector: move scratch, value: 0_u8);
-        }
-        region {
-          let window = mut_slice_of(&uniq scratch);
-          match reserve_handle(factory: &uniq files) {
-            Ok(value: permit) => {
-              match open_directory_source(permit: move permit, directory: &cwd) {
-                SourceOpened(value: list) => {
-                  let taken = move list;
-                  region {
-                    match directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 64_u64) {
-                      ListBytes(next: endpoint, entries: reported) => {
-                      }
-                      ListEnd() => {
-                      }
-                      ListFailed(error: problem) => {
-                      }
-                    }
-                  }
-                }
-                SourceOpenFailed(error: problem, permit: refused) => {
-                }
-              }
-            }
-            Err(error: spent) => {
-            }
-          }
-        }
-      }
-    }
+    let (outcome, endpoint, reported) = directory_next(source: &uniq list, destination: &uniq deref(destination), start: 0_u64, end: 0_u64);
   }
-  return exit_status(code: 0_u8);
+  return unit;
 }
 "#;
     let failure = compile_rejection(&[("moved_list.wf", source)]);
     assert!(
-        failure.contains("Semantics"),
+        failure.contains("Semantics") && failure.contains("Own1"),
         "expected an ownership rejection, got {failure}"
     );
 }
 
 /// A run of name bytes is not a path value: no operation turns program bytes
-/// into a `RelativePath`, so the deferred path algebra of [PATH-1] stays
-/// deferred even with the traversal surface admitted. The rejection is
-/// TYPE-5's, naming the run where it named the buffer.
+/// into a `RelativePath`: the ordinary PRE-1 `relative_path` declaration
+/// takes a `HostString`. The rejection is TYPE-5's type mismatch.
 #[test]
 fn program_bytes_still_cannot_become_a_path_value() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(cwd, heap), allocates(heap) {
-  doc "Attempts to construct a relative path from program bytes.";
-  region {
-    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let name = move fresh;
-        region {
-          match relative_path(value: move name) {
-            Ok(value: path) => {
-            }
-            Err(error: problem) => {
-            }
-          }
-        }
-      }
+    let source = br#"fn make_path['heap](name: own Vector<'heap, u8>) -> result: own unit pure {
+  doc "Attempts to construct a path from run bytes rather than the declared HostString parameter.";
+  match relative_path(value: move name) {
+    Ok(value: path) => {
+    }
+    Err(error: problem) => {
     }
   }
-  return exit_status(code: 0_u8);
+  return unit;
 }
 "#;
     let failure = compile_rejection(&[("run_path.wf", source)]);
     assert!(
-        failure.contains("Semantics"),
+        failure.contains("Semantics") && failure.contains("Type5"),
         "expected a type rejection, got {failure}"
     );
 }
 
-/// The enumeration outcome is a three-constructor enum like every other
-/// [SYS-6] outcome type, so portable control flow over it is exhaustive and a
+/// The enumeration status is an ordinary Result enum, so portable control
+/// flow over it must be exhaustive under ERR-2 and a
 /// missing arm is a rejection rather than a silent fallthrough.
 #[test]
 fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
-  doc "Omits one enumeration outcome from an otherwise complete match.";
+    let source = br#"fn partial(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>) -> result: own unit reads(source, destination), writes(source, destination) {
+  doc "Omits the error arm of the ordinary enumeration status result.";
   region {
-    match heap_vector::<u8>(store: &uniq heap, count: 64_u64) {
-      None() => {
-        return exit_status(code: 70_u8);
-      }
-      Some(value: fresh) => {
-        let scratch = move fresh;
-        for @blank (
-          at in 0_u64..64_u64,
-          invariant grown: len_of(scratch) >= at,
-          invariant capped: len_of(scratch) <= at,
-          invariant spare: room_of(scratch) + at >= 64_u64,
-          invariant flat: head_of(scratch) <= 0_u64
-        ) {
-          set scratch = place_back(vector: move scratch, value: 0_u8);
-        }
-        region {
-          let window = mut_slice_of(&uniq scratch);
-          match reserve_handle(factory: &uniq files) {
-            Ok(value: permit) => {
-              match open_directory_source(permit: move permit, directory: &cwd) {
-                SourceOpened(value: list) => {
-                  region {
-                    match directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 64_u64) {
-                      ListBytes(next: endpoint, entries: reported) => {
-                      }
-                      ListEnd() => {
-                      }
-                    }
-                  }
-                }
-                SourceOpenFailed(error: problem, permit: refused) => {
-                }
-              }
-            }
-            Err(error: spent) => {
-            }
-          }
-        }
+    let (outcome, endpoint, reported) = directory_next(source: &uniq deref(source), destination: &uniq deref(destination), start: 0_u64, end: 0_u64);
+    match outcome {
+      Ok(value: completed) => {
       }
     }
   }
-  return exit_status(code: 0_u8);
+  return unit;
 }
 "#;
     let failure = compile_rejection(&[("partial_list.wf", source)]);
     assert!(
-        failure.contains("Semantics"),
+        failure.contains("Semantics") && failure.contains("Err2"),
         "expected an exhaustiveness rejection, got {failure}"
-    );
-}
-
-/// The component-name validation precedes the host call, so a name that is
-/// not one path component is refused with no directory-relative open at all.
-///
-/// This is structural evidence about the emitted implementation rather than a
-/// runtime observation: the rejection path is a separate block that
-/// constructs the portable class and returns, and the one typed completion
-/// call site is reachable only after the length and byte scan admitted the
-/// range. The target adapter below this emitted boundary owns `openat`.
-#[test]
-fn the_component_validation_precedes_every_host_call() {
-    let llvm = compile_program("dir_walk.wf");
-    let start = llvm
-        .find("@wf.sys.open_directory.v1(")
-        .expect("the emitted open_directory implementation");
-    let body_start = llvm[..start].rfind("\ndefine private").expect("its header") + 1;
-    let body_end = body_start + llvm[body_start..].find("\n}\n").expect("its closing brace");
-    let shim = &llvm[body_start..body_end];
-
-    // The component limit is the selected target's own [SYS-14]: 1023 bytes
-    // on the Darwin family, 255 on the Linux family. The constant is asserted
-    // exactly on each host rather than matched loosely on both.
-    let component_limit = if cfg!(target_os = "macos") { 1023 } else { 255 };
-    assert!(shim.contains(&format!(
-        "%oversize = icmp ugt i64 %extent, {component_limit}"
-    )));
-    assert!(shim.contains("%vacant = icmp eq i64 %extent, 0"));
-    assert!(shim.contains("%separating = icmp eq i32 %byte.value, 47"));
-    assert!(shim.contains("%terminating = icmp eq i32 %byte.value, 0"));
-
-    let open_block = shim.find("\nopen:\n").expect("the admitted-name block");
-    // One lowering: the admitted name is submitted and the record joined
-    // there (`research/investigations/io-model/PARK-ON-MISS.md` §8), so the
-    // operation the rejection path must not reach is the submission.
-    let host_call = shim
-        .find("@wf__completion_file_open_at_submit")
-        .expect("the typed directory-relative open");
-    assert!(
-        host_call > open_block,
-        "the operation must be reachable only from the admitted-name block"
-    );
-    let invalid_block = shim.find("\ninvalid:\n").expect("the rejection block");
-    assert!(
-        !shim[invalid_block..].contains("@wf__completion_file_open_at_submit"),
-        "the rejection path must submit nothing"
     );
 }

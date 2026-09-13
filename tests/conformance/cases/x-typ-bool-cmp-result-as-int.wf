@@ -2,7 +2,7 @@ struct Holder {
   value: i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Committing a Bool comparison result to a place whose written type is i32 crosses the arithmetic and enum layers and is an exact-type mismatch [TYPE-5].";
   let a = 1_i32;
   let b = 2_i32;

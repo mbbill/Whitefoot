@@ -3,8 +3,7 @@
 //!
 //! [BLK-0] states that the container and store operations are one
 //! compiler-owned generic declaration domain, admitted to every compilation
-//! unit on exactly [SYS-3]'s terms. Like the system domain it is data of the
-//! specification rather than a source record: no source construct declares,
+//! unit. It is specification data rather than a source record: no source construct declares,
 //! redeclares, extends, or overrides an entry, and a source declaration whose
 //! spelling equals an entry's in the same domain is the ordinary [DIAG-1]
 //! collision.
@@ -130,6 +129,10 @@ pub enum KernelRow {
     TakeBack,
     /// `take_front(vector)` [BLK-3].
     TakeFront,
+    /// `array_from_fixed(vector)` [BLK-3].
+    ArrayFromFixed,
+    /// `fixed_from_array(values)` [BLK-3].
+    FixedFromArray,
     /// `slice_of(vector)` [VIEW-2]: the shared view over a viewable operand.
     SliceOf,
     /// `mut_slice_of(vector)` [VIEW-2]: the exclusive view over one.
@@ -152,8 +155,8 @@ pub struct KernelOperation {
     pub results: &'static [&'static str],
 }
 
-/// The eleven operations of the inventory, in [BLK-2] then [BLK-3] order.
-pub const KERNEL_OPERATIONS: [KernelOperation; 11] = [
+/// The operations of the inventory, in [BLK-2] then [BLK-3] order.
+pub const KERNEL_OPERATIONS: [KernelOperation; 13] = [
     KernelOperation {
         spelling: "fixed_vector",
         row: KernelRow::FixedVector,
@@ -212,13 +215,25 @@ pub const KERNEL_OPERATIONS: [KernelOperation; 11] = [
         spelling: "take_back",
         row: KernelRow::TakeBack,
         parameters: &["vector"],
-        results: &["rest", "value"],
+        results: &["value"],
     },
     KernelOperation {
         spelling: "take_front",
         row: KernelRow::TakeFront,
         parameters: &["vector"],
-        results: &["rest", "value"],
+        results: &["value"],
+    },
+    KernelOperation {
+        spelling: "array_from_fixed",
+        row: KernelRow::ArrayFromFixed,
+        parameters: &["vector"],
+        results: &["result"],
+    },
+    KernelOperation {
+        spelling: "fixed_from_array",
+        row: KernelRow::FixedFromArray,
+        parameters: &["values"],
+        results: &["result"],
     },
 ];
 
@@ -258,7 +273,7 @@ pub const KERNEL_OPERATION_CLASS: DeclarationClass = DeclarationClass::Function;
 #[cfg(test)]
 mod tests {
     use super::{CONTAINER_NOMINALS, KERNEL_OPERATIONS};
-    use crate::resolution::catalog::{MODE_WORDS, OPERATION_FAMILIES, SYSTEM_NOMINALS};
+    use crate::resolution::catalog::{MODE_WORDS, OPERATION_FAMILIES};
 
     /// [BLK-0]: a kernel-domain operation spelling is IDENT-shaped, contains
     /// no dot, and is no member of `ReservedLowerNames` [OP-1], so adding the
@@ -314,7 +329,7 @@ mod tests {
     }
 
     /// [TYPE-6]: spellings are unique within each domain and disjoint from
-    /// the system inventory's spellings of the same domain.
+    /// the ordinary prelude declarations of the same domain.
     #[test]
     fn kernel_spellings_are_unique_and_disjoint() {
         let mut nominals: Vec<_> = CONTAINER_NOMINALS
@@ -325,15 +340,6 @@ mod tests {
         let count = nominals.len();
         nominals.dedup();
         assert_eq!(nominals.len(), count);
-        for nominal in CONTAINER_NOMINALS {
-            assert!(
-                !SYSTEM_NOMINALS
-                    .iter()
-                    .any(|system| system.spelling == nominal.spelling),
-                "{} collides with a system nominal",
-                nominal.spelling
-            );
-        }
         let mut operations: Vec<_> = KERNEL_OPERATIONS
             .iter()
             .map(|operation| operation.spelling)
@@ -345,9 +351,9 @@ mod tests {
     }
 
     /// [BLK-0]'s first-parameter ordering, over the inventory this version
-    /// carries: the transforming rows name `vector` first, the acquiring rows
-    /// name their provider first, and the two rows that neither transform nor
-    /// provide take no value parameter at all.
+    /// carries: the consuming rows name `vector` or `values` first, and the
+    /// acquiring rows name their provider first. Rows with no value parameter
+    /// have no first-parameter obligation.
     #[test]
     fn every_row_orders_its_first_parameter() {
         for operation in KERNEL_OPERATIONS {
@@ -355,7 +361,7 @@ mod tests {
                 continue;
             };
             assert!(
-                matches!(*first, "vector" | "store"),
+                matches!(*first, "vector" | "values" | "store"),
                 "{} names {first} first",
                 operation.spelling
             );

@@ -1,14 +1,30 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- averages eight byte-scale fixed-point samples with a checker-proved sum bound, no wraparound";
   let samples = fixed_vector::<u8, 8>();
-  set samples = place_back(vector: move samples, value: 1_u8);
-  set samples = place_back(vector: move samples, value: 1_u8);
-  set samples = place_back(vector: move samples, value: 1_u8);
-  set samples = place_back(vector: move samples, value: 1_u8);
-  set samples = place_back(vector: move samples, value: 1_u8);
-  set samples = place_back(vector: move samples, value: 1_u8);
-  set samples = place_back(vector: move samples, value: 1_u8);
-  set samples = place_back(vector: move samples, value: 1_u8);
+  region {
+    place_back(vector: &uniq samples, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 1_u8);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 1_u8);
+  }
   set samples[0_u64] = 2_u8;
   set samples[1_u64] = 1_u8;
   set samples[2_u64] = 3_u8;

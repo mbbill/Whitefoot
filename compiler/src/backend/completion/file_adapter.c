@@ -44,7 +44,7 @@ int wf_file_request_valid(const wf_file_request *request) {
     /* A listen and a connect name an address and create their own socket, so
      * there is no descriptor and no buffer to check; the address is a value
      * the emitter built and every combination of its operands is one address
-     * [SYS-16]. */
+     * (ordinary native library). */
     case WF_FILE_SOCKET_LISTEN:
     case WF_FILE_SOCKET_CONNECT:
         return 1;

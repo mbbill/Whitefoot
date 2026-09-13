@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-2: one frame reservation, one proved take from it, and the two measures the take publishes about the store and about the run.";
   region 'a {
     let workspace = arena_frame::<128, 8, 'a>();

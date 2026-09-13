@@ -364,14 +364,11 @@ static int probe_open_and_close_cases(
 /* A submitted open resolves the submitting frame's own bytes.
  *
  * The SQE names the caller's buffer and the caller keeps it live until the
- * join, because the record is a block of that frame and [SYS-2]'s loan on the
- * path component holds for exactly that interval (design §5).  What used to be
- * checked here -- that the adapter had copied the name into a pool entry of
- * its own, and had published `loan-released(path)` to say so -- is retired
- * with the copy: there is no entry to copy into, no `WF_FILE_PATH_CAPACITY` to
- * exceed, no "path does not fit" refusal and no demoted-open counter (design
- * §7, "The record's pool machinery: deleted, not answered").  What remains is
- * that the SQE names the record's request, which is what this checks. */
+ * join, because the record belongs to that frame and the ordinary library
+ * call does not return until the request is finished. The adapter does not
+ * copy the component into a bounded pool entry or introduce another path
+ * capacity refusal. This probe checks that the SQE names the request's
+ * actual bytes throughout the native operation. */
 static int probe_open_names_the_submitters_bytes(
     wf_linux_io_uring_adapter *adapter,
     const char *data_path
@@ -604,7 +601,7 @@ static int probe_loopback_round_trip(wf_linux_io_uring_adapter *adapter) {
 
     /* This probe links the ring and nothing else, so the pair's own two-count
      * -- which lives in the shared adapter and is what a half-close consults
-     * [SYS-18] -- is exercised by `harness.c` instead. Here the three
+     * (ordinary native library) -- is exercised by `harness.c` instead. Here the three
      * descriptors are simply given back. */
     PROBE_CHECK(close(connected) == 0);
     PROBE_CHECK(close(taken) == 0);
@@ -924,6 +921,17 @@ static unsigned probe_state(const wf_completion_record *record) {
     return atomic_load_explicit(&record->state, memory_order_acquire);
 }
 
+typedef struct probe_native_wait {
+    wf_windows_iocp_adapter *adapter;
+    uint64_t epoch;
+} probe_native_wait;
+
+static DWORD WINAPI probe_wait_for_helper(LPVOID opaque) {
+    probe_native_wait *wait = opaque;
+    /* A missing wake must produce a failed probe, not a hung CI job. */
+    return (DWORD)wf_windows_iocp_park(wait->adapter, wait->epoch, 5000u);
+}
+
 int main(int argc, char **argv) {
     wf_completion_runtime runtime;
     wf_windows_iocp_adapter adapter;
@@ -962,6 +970,38 @@ int main(int argc, char **argv) {
             &adapter
         ) == 0
     );
+
+    /* A helper completion has no kernel I/O packet. Exercise its explicit
+     * wake on a fresh empty port before any file submission can mask a lost
+     * notification. The existing wait counter selects the announced schedule;
+     * the notifier still takes the real wait lock and posts the real packet. */
+    {
+        probe_native_wait wait = {&adapter, wf_completion_wake_epoch(&runtime)};
+        wf_completion_record completed;
+        DWORD result = 1u;
+        ULONGLONG until = GetTickCount64() + 10000u;
+        HANDLE thread;
+        memset(&completed, 0, sizeof(completed));
+        wf_completion_record_init(&completed);
+        thread = CreateThread(NULL, 0, probe_wait_for_helper, &wait, 0, NULL);
+        PROBE_CHECK(thread != NULL);
+        while (wf_windows_iocp_statistics_snapshot(&adapter).kernel_waits == 0u
+               && GetTickCount64() < until) {
+            (void)SwitchToThread();
+        }
+        completed.result.kind = WF_FILE_PREAD;
+        completed.result.value = 37;
+        wf_completion_record_complete(&completed);
+        PROBE_CHECK(WaitForSingleObject(thread, 10000u) == WAIT_OBJECT_0);
+        PROBE_CHECK(GetExitCodeThread(thread, &result) != FALSE);
+        PROBE_CHECK(CloseHandle(thread) != FALSE);
+        PROBE_CHECK(result == 0u);
+        PROBE_CHECK(wf_windows_iocp_statistics_snapshot(&adapter).kernel_waits == 1u);
+        PROBE_CHECK(wf_windows_iocp_statistics_snapshot(&adapter).host_wake_posts == 1u);
+        PROBE_CHECK(probe_state(&completed) == WF_COMPLETION_DONE);
+        PROBE_CHECK(completed.result.value == 37);
+        PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == 0u);
+    }
 
     /* The fixture is written first, through a synchronous handle of its own,
      * and only then opened for overlapped reading: the handle the port takes

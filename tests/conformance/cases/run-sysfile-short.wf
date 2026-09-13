@@ -1,7 +1,96 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
-  doc "SYS-8: a short success is not end of input. A file shorter than the requested range yields ReadBytes(next) with start < next < end, and only the next call, which observes no available byte, states ReadEnd. Exactly [start, next) may have changed and the rest of the buffer is unchanged.";
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn exercise['heap](args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq Heap<'heap>) -> status: own ExitStatus reads(args, cwd, files, heap), writes(files, heap), allocates(heap) {
+  doc "The ordinary read_at implementation returns Ok(next) for a short transfer and Err(ReadEnd) only on a later read observing no byte. The successful endpoint enters proof through ordinary ensures.";
   region {
-    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
+    match heap_vector::<u8>(store: &uniq deref(heap), count: 8_u64) {
       None() => {
         return exit_status(code: 70_u8);
       }
@@ -13,69 +102,82 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           invariant spare: room_of(page) + at >= 8_u64,
           invariant flat: head_of(page) <= 0_u64
         ) {
-          set page = place_back(vector: move page, value: 90_u8);
+          place_back(vector: &uniq page, value: 90_u8);
         }
         region {
           let window = mut_slice_of(&uniq page);
           region {
-            match arg_get(args: &args, position: 1_u64) {
+            match arg_get(args: args, position: 1_u64) {
               Ok(value: text) => {
                 match relative_path(value: move text) {
                   Ok(value: path) => {
-                    region 'c {
+                    region {
                       region {
-                        match reserve_handle(factory: &uniq 'c files) {
-                          Ok(value: permit) => {
-                            match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                              FileOpened(value: file) => {
-                                region 'f {
-                                  region {
-                                    match read_at(file: &'f file, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
-                                      ReadBytes(next: n) => {
-                                        let short = n == 3_u64;
-                                        if short {
-                                        } else {
-                                          return exit_status(code: 10_u8);
-                                        }
-                                      }
+                        match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
+                          FileOpened(value: file) => {
+                            region {
+                              region {
+                                match read_at(factory: &uniq deref(files), file: &uniq file, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                                  Ok(value: n) => {
+                                    let short = n == 3_u64;
+                                    if short {
+                                    } else {
+                                      close_read(factory: &uniq deref(files), file: move file);
+                                      return exit_status(code: 10_u8);
+                                    }
+                                  }
+                                  Err(error: read_stop_8) => {
+                                    match read_stop_8 {
                                       ReadEnd() => {
+                                        close_read(factory: &uniq deref(files), file: move file);
                                         return exit_status(code: 11_u8);
                                       }
                                       ReadFailed(error: problem) => {
+                                        close_read(factory: &uniq deref(files), file: move file);
                                         return exit_status(code: 12_u8);
                                       }
                                     }
                                   }
                                 }
-                                let beyond = page[3_u64];
-                                let intact = beyond == 90_u8;
-                                if intact {
-                                } else {
-                                  return exit_status(code: 13_u8);
-                                }
-                                region 'g {
-                                  region {
-                                    match read_at(file: &'g file, destination: &uniq window, file_offset: 3_u64, start: 0_u64, end: 8_u64) {
-                                      ReadBytes(next: more) => {
-                                        return exit_status(code: 14_u8);
-                                      }
+                              }
+                            }
+                            let beyond = page[3_u64];
+                            let intact = beyond == 90_u8;
+                            if intact {
+                            } else {
+                              close_read(factory: &uniq deref(files), file: move file);
+                              return exit_status(code: 13_u8);
+                            }
+                            region {
+                              region {
+                                match read_at(factory: &uniq deref(files), file: &uniq file, destination: &uniq window, file_offset: 3_u64, start: 0_u64, end: 8_u64) {
+                                  Ok(value: more) => {
+                                    close_read(factory: &uniq deref(files), file: move file);
+                                    return exit_status(code: 14_u8);
+                                  }
+                                  Err(error: read_stop_9) => {
+                                    match read_stop_9 {
                                       ReadEnd() => {
+                                        close_read(factory: &uniq deref(files), file: move file);
                                         return exit_status(code: 0_u8);
                                       }
                                       ReadFailed(error: problem) => {
+                                        close_read(factory: &uniq deref(files), file: move file);
                                         return exit_status(code: 15_u8);
                                       }
                                     }
                                   }
                                 }
                               }
-                              FileOpenFailed(error: problem, permit: refused) => {
-                                return exit_status(code: 16_u8);
-                              }
                             }
                           }
-                          Err(error: spent) => {
-                            return exit_status(code: 19_u8);
+                          FileOpenFailed(error: problem) => {
+                            region {
+                              if factory_refusal(error: &problem) {
+                                return exit_status(code: 19_u8);
+                              }
+                            }
+                            return exit_status(code: 16_u8);
                           }
                         }
                       }
@@ -94,5 +196,15 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         }
       }
     }
+  }
+}
+
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(args: &args, cwd: &cwd, files: &uniq files, heap: &uniq heap);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
 }

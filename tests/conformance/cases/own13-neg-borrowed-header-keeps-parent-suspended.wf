@@ -2,7 +2,7 @@ enum Packet {
   Data(value: u64);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let packet = Data(value: 3_u64);
   region {
     let holder = &uniq packet;

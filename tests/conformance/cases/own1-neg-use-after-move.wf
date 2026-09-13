@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "OWN-1/OWN-13: matching an own value moves it; a second use is use-after-move.";
   let s = Pos();
   match s {

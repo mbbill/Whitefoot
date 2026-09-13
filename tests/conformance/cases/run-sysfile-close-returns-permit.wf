@@ -1,7 +1,96 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
-  doc "SYS-10: close_read returns the credit an open spent as a fresh HandlePermit, and that permit opens again. One credit serves two sequential opens of the same file; the second read sees the same first byte.";
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn exercise['heap](args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq Heap<'heap>) -> status: own ExitStatus reads(args, cwd, files, heap), writes(files, heap), allocates(heap) {
+  doc "Explicit close_read consumes a linear file and restores the ordinary factory credit; the next open through that same factory succeeds and reads the original byte. The old returned HandlePermit assertion is retired.";
   region {
-    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+    match heap_vector::<u8>(store: &uniq deref(heap), count: 1_u64) {
       None() => {
         return exit_status(code: 70_u8);
       }
@@ -13,52 +102,57 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           invariant spare: room_of(page) + at >= 1_u64,
           invariant flat: head_of(page) <= 0_u64
         ) {
-          set page = place_back(vector: move page, value: 0_u8);
+          place_back(vector: &uniq page, value: 0_u8);
         }
         region {
           let window = mut_slice_of(&uniq page);
           region {
-            match arg_get(args: &args, position: 1_u64) {
+            match arg_get(args: args, position: 1_u64) {
               Ok(value: text) => {
                 match relative_path(value: move text) {
                   Ok(value: path) => {
-                    region 'c {
+                    region {
                       region {
-                        match reserve_handle(factory: &uniq 'c files) {
-                          Ok(value: permit) => {
-                            match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                              FileOpened(value: file) => {
-                                let returned = close_read(file: move file);
-                                match open_read(permit: move returned, root: &'c cwd, path: &path) {
-                                  FileOpened(value: again) => {
-                                    region 'f {
-                                      region {
-                                        match read_at(file: &'f again, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 1_u64) {
-                                          ReadBytes(next: n) => {
-                                            return exit_status(code: 0_u8);
-                                          }
+                        match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
+                          FileOpened(value: file) => {
+                            let returned = close_read(factory: &uniq deref(files), file: move file);
+                            match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
+                              FileOpened(value: again) => {
+                                region {
+                                  region {
+                                    match read_at(factory: &uniq deref(files), file: &uniq again, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 1_u64) {
+                                      Ok(value: n) => {
+                                        close_read(factory: &uniq deref(files), file: move again);
+                                        return exit_status(code: 0_u8);
+                                      }
+                                      Err(error: read_stop_11) => {
+                                        match read_stop_11 {
                                           ReadEnd() => {
+                                            close_read(factory: &uniq deref(files), file: move again);
                                             return exit_status(code: 10_u8);
                                           }
                                           ReadFailed(error: problem) => {
+                                            close_read(factory: &uniq deref(files), file: move again);
                                             return exit_status(code: 11_u8);
                                           }
                                         }
                                       }
                                     }
                                   }
-                                  FileOpenFailed(error: problem, permit: refused) => {
-                                    return exit_status(code: 16_u8);
-                                  }
                                 }
                               }
-                              FileOpenFailed(error: problem, permit: refused) => {
-                                return exit_status(code: 12_u8);
+                              FileOpenFailed(error: problem) => {
+                                return exit_status(code: 16_u8);
                               }
                             }
                           }
-                          Err(error: spent) => {
-                            return exit_status(code: 15_u8);
+                          FileOpenFailed(error: problem) => {
+                            region {
+                              if factory_refusal(error: &problem) {
+                                return exit_status(code: 15_u8);
+                              }
+                            }
+                            return exit_status(code: 12_u8);
                           }
                         }
                       }
@@ -77,5 +171,15 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         }
       }
     }
+  }
+}
+
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(args: &args, cwd: &cwd, files: &uniq files, heap: &uniq heap);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
 }

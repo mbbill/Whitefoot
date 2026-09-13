@@ -17,7 +17,7 @@ fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pu
     invariant flat: head_of(built) <= 0_u64
   ) {
     let empty = None<T>();
-    set built = place_back(vector: move built, value: move empty);
+    place_back(vector: &uniq built, value: move empty);
   }
   return move built;
 }
@@ -77,16 +77,16 @@ fn optvec_pop(v: own OptVec) -> (rest: own OptVec, taken: own u32) reads(v.buf, 
   }
 }
 
-fn boxed_slots(store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+fn boxed_slots['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
   doc "A run of optional cells at the general store: each slot holds a Box the store hands out, and each exchange leaves exactly one owner.";
-  let slots = vacant::<Box<u64>, 3>();
+  let slots = vacant::<Box<'heap, u64>, 3>();
   region {
     match heap_box(store: &uniq deref(store), value: 11_u64) {
       Err(error: refused_first) => {
         return unit;
       }
       Ok(value: first) => {
-        let wrapped = Some<Box<u64>>(value: move first);
+        let wrapped = Some<Box<'heap, u64>>(value: move first);
         let vacant_zero = replace slots[0_u64] = move wrapped;
         match vacant_zero {
           None() => {
@@ -101,7 +101,7 @@ fn boxed_slots(store: &uniq Heap) -> result: own unit reads(store), writes(store
               return unit;
             }
             Ok(value: second) => {
-              let wrapped2 = Some<Box<u64>>(value: move second);
+              let wrapped2 = Some<Box<'heap, u64>>(value: move second);
               let vacant_two = replace slots[2_u64] = move wrapped2;
               match vacant_two {
                 None() => {
@@ -110,7 +110,7 @@ fn boxed_slots(store: &uniq Heap) -> result: own unit reads(store), writes(store
                   return unit;
                 }
               }
-              let taken = replace slots[0_u64] = None<Box<u64>>();
+              let taken = replace slots[0_u64] = None<Box<'heap, u64>>();
               match taken {
                 None() => {
                   return unit;
@@ -132,7 +132,7 @@ fn boxed_slots(store: &uniq Heap) -> result: own unit reads(store), writes(store
   return unit;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let v = optvec_new();
   set v = optvec_push(v: move v, x: 10_u32);
   set v = optvec_push(v: move v, x: 20_u32);

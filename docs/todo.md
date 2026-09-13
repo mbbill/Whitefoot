@@ -31,28 +31,26 @@ of them is a decision. Remove an item when its fix and test land.
   the implementation or the accepted proof rules; the
   [selection-ground assessment](../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
   separates the unresolved costs from the safety obligations.
-- **Connection-level concurrency through suspended user calls is missing, and
-  silently.** A loop that accepts and serves connections in source order
+- **Connection-level concurrency is not supplied by ordinary source order.**
+  A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting
   on a silent peer holds up every later connection, and 1024 open connections
   are not 1024 independently resumable handlers. The source is accepted and
-  compiled through ordinary calls with no report. No restoration mechanism has
-  been chosen. `WF_STACKS` is inert for the same reason: the runtime has no
+  compiled through ordinary calls. The retained multi-client TCP protocol can
+  wait forever when the first handler awaits EOF while clients close only
+  after every peer has finished; the
+  [C2 measurements](../research/experiments/io-completion-bench/C2-RESULTS.md)
+  record that noncompletion without a throughput result. No replacement
+  interface has been chosen. `WF_STACKS` is inert: the runtime has no
   switchable-stack pool for it to size, so it is neither read nor validated.
-- **Result-state origins are derived from callee bodies.**
-  `semantic/check/result_state_origin.rs` walks every function's checked body
-  to a whole-program fixed point to learn which parameter a returned
-  resource's state came from, and that feeds the acceptance-bearing
-  effect-row check, so a caller's verdict can change when a callee's body
-  changes. The system-interface decision rules this out: a resource's state
-  is carried by its type at the API boundary. The mechanism is being removed;
-  until it is, the contradiction stands.
-- **[PAR-3] replicates only iteration-own storage.** Condition 5's
-  replicated disposition for a place rooted outside the loop, which the rule
-  defines under a byte-coverage proof, is not implemented; every such place
-  is denied and the loop stages sequentially. The byte-range coverage
-  analysis the case needs consumes the entailment fact state and was
-  sequenced after the schedule and storage discipline shipped.
+- **Acyclic generic instantiation has no established practical bound.**
+  D7's unchanged-argument cycle rule establishes termination while acyclic
+  fan-out may still require exponentially many instances relative to written
+  source. The owner deferred this question in D7, whereas the current language
+  design rules out exponential checking work. The
+  [behavior investigation](../research/investigations/containers-and-resources/BEHAVIOR.md#shared-semantic-boundary-and-exact-deltas)
+  records this unresolved correspondence finding. No budget, timeout, new
+  source refusal, or measured asymptotic guarantee has been selected.
 - **At most eight peers may wait at once on a host without a native ring.**
   On Darwin, and under `WF_IO_NO_NATIVE_RING`, a peer wait beyond the eighth
   concurrent one has no helper and queues with no timeout. The readiness-
@@ -69,11 +67,6 @@ of them is a decision. Remove an item when its fix and test land.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
-- **The unique-parameter container refusal.** [BLK-4] refuses a `&uniq`
-  parameter that can reach a container, the fourth disposition of the
-  replace-through-unique-borrow defect the containers investigation records,
-  after refusal by written type, a conservative fact kill, and doctrine each
-  failed. The owner wants to reconsider the rule before it enters the tree.
 - **A view-valued match or if.** [OWN-5] rejects a `match` or `if` expression
   whose value is a view, rather than joining the arms' origin sets, which the
   origin machinery could represent. If the join can be admitted it should be;

@@ -9,10 +9,12 @@ fn publish<const n: u64>['s](store: &uniq Heap<'s>, source: own FixedVector<u8, 
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "One instance, at the entry heap's store region.";
   let run = fixed_vector::<u8, 4>();
-  set run = place_back(vector: move run, value: 9_u8);
+  region {
+    place_back(vector: &uniq run, value: 9_u8);
+  }
   region {
     match publish::<4>(store: &uniq heap, source: move run) {
       Some(value: made) => {

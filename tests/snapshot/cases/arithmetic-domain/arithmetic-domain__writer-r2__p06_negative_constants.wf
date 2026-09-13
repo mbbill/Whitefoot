@@ -9,7 +9,7 @@ fn offset_from_origin(step: own i32) -> result: own i32 pure contract {
   return position;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = offset_from_origin(step: 10_i32);
   if result == -970_i32 {
   } else {

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-0, CALL-6: the Some arm publishes what the acquisition did to the store as well as the run it made. A take of 4080 bytes out of a 4096-byte extent leaves exactly 16, and the proved take of 16 that follows discharges its own room requirement from len_of(store) = len_of(store at the call) + advance<T>(count) and MSR-2's standing identity, with no read of room_of anywhere.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

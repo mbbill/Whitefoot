@@ -7,7 +7,7 @@ fn negate_by_division(n: own i64) -> result: own i64 pure {
   return 0_i64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = negate_by_division(n: 41_i64);
   let b = negate_by_division(n: -41_i64);
   if a == -41_i64 {

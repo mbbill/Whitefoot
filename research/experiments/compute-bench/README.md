@@ -34,12 +34,16 @@ measures.
 
 The `wf` row is the module `whitefootc` emits from the kernel's `.wf` source
 under **plain `--par --emit-llvm` and no other flag**, linked with
-`compiler/src/backend/sched/{core,prim_host,entry}.c` and
-`compiler/src/backend/wf_floor.c` **from this same tree**, built with the flags
+the complete ordinary native library under `compiler/src/backend/`
+**from this same tree**, built with the flags
 whitefootc itself passes clang, and called through a host adapter of at most
 eighteen lines of LLVM IR that does nothing but build buffer descriptors and
-forward. The adapter is LLVM IR rather than a C prototype because every user
-function the compiler emits has internal linkage.
+forward. The adapter is LLVM IR so it also works with versions whose source
+functions have internal linkage. The two emissions are isolated by renaming
+their defined functions and all corresponding references; this preserves
+linkage and optimization attributes and leaves library imports and weak
+runtime hooks unchanged. Changing a strong definition to internal linkage
+would change the compiler optimization being measured.
 
 - No C adapter to any runtime is labelled WF.
 - No research copy of the Whitefoot runtime is carried here; the runtime
@@ -90,9 +94,9 @@ header saying in the table itself that it is not the plain program. The
 bundle's gate target, `programs-check`, never reads the variable.
 
 `WF_RUNTIME_CONTROL_FLAGS` is the same handle on the other side of the link,
-under the same discipline. It is appended to the compile of the four Whitefoot
-runtime translation units — `floor.o`, `sched_core.o`, `sched_prim_host.o` and
-`sched_entry.o` — so one tree can answer "what would this runtime constant be
+under the same discipline. It is appended to all twelve native-library
+translation units of the twin, including the floor, scheduler, completion and
+ordinary-value bodies, so one tree can answer "what would this runtime constant be
 worth on this block of kernels" without editing the constant per run:
 
 ```sh
@@ -128,7 +132,7 @@ oversubscription cap alike.
 `WF_MODULE_CONTROL_FLAGS` is the third handle, and the one that moves how the
 Whitefoot side of the twin is **compiled** rather than what it says. It is
 appended to the twin's compile of the emitted `--par` module object and of its
-four Whitefoot runtime units — both sides of the link that `WF_FLAGS` owns — so
+Whitefoot native-library units — both sides of the link that `WF_FLAGS` owns — so
 one tree can answer "what would this code generation flag be worth on exactly
 the translation units `whitefootc` builds":
 
@@ -138,7 +142,7 @@ make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/ali
 ```
 
 It is **empty by default**, kept in its own stamp file that the twin's module
-object and its four runtime objects depend on — so setting it or clearing it
+object and its native-library objects depend on — so setting it or clearing it
 recompiles and relinks the twin rather than re-timing the one the last run left
 — recorded in `manifest.txt` on every run, and announced in the table header as
 a `WF module control flags=` line when it is not empty. **A table recorded in
@@ -174,10 +178,10 @@ make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/nul
 ```
 
 The pad sits ahead of every function in the scheduler core, so the core's own
-functions and the two runtime objects the link places after it —
-`sched_prim_host-b.o` and `sched_entry-b.o` — move by its size, and nothing else
+functions and the library objects the link places after it — scheduler
+primitives and entry, completion and ordinary-value bodies — move by its size, and nothing else
 about either image changes. What it does **not** move is the emitted module:
-that object is linked ahead of the four runtime ones, so the kernel's own code
+that object is linked ahead of the native-library ones, so the kernel's own code
 sits at the same offsets in both arms and what the arm shifts is the scheduler
 the kernel calls into. Read against `WF_AB=1`, whose arms are byte-identical,
 the difference between the two is what that placement alone is worth on the
@@ -226,8 +230,7 @@ make compare RESULTS=$WHITEFOOT_SCRATCH_ROOT/whitefoot-compute-bench/results/nul
 **What is doubled and what is shared.** The twin gets its own emitted module
 (`<kernel>-par-b.ll`), its own object from it, its own kernel object with the
 weight read out of *that* module (`$(BUILD)/b/<kernel>_split.h`), and its own
-four Whitefoot runtime objects (`floor-b.o`, `sched_core-b.o`,
-`sched_prim_host-b.o`, `sched_entry-b.o`). It shares `harness.o`, every
+complete set of Whitefoot native-library objects. It shares `harness.o`, every
 `backend_*.o` and the `--no-overlap` control object with the plain image,
 because no control reaches those and a second copy of the same bytes under
 another name would move code placement, which is this bundle's largest
@@ -275,6 +278,14 @@ worktree of the merge base they make `wf-b` the program the branch started
 from, which is the whole of [the compute regression
 check](#the-compute-regression-check). Nothing about the twin's rules, its link
 line or its assertions changes; only its inputs do.
+
+The ordinary-call build requires the complete native library beside
+`WF_B_SCHED_DIR`, including `ordinary_values.c` and `ordinary_values.ll`.
+Same-version control and null twins use that version's library in both arms.
+Comparison with the pre-C2 compiler is unresolved: it requires `command` at
+the entry while C2 forbids that form, and its launcher/library boundary also
+differs. No transition comparison or exemption is implemented; the old
+baseline cannot currently complete the regression build.
 
 Two link-time assertions make a `wf` row a `wf` row. The emitted module carries
 **weak no-op stubs for every `wf__par_*` symbol**, so a link that loses the
@@ -352,7 +363,7 @@ baseline source the twin was built from, and the table header carries a
 `WF A/B twin source=` line, so a table from a regression run says in its own
 first lines that its `wf-b` rows are another tree's program. The same hashes
 are what make a changed baseline rebuild the twin: they are kept in a stamp the
-twin's module and its four runtime objects depend on, so a moved merge base
+twin's module and its native-library objects depend on, so a moved merge base
 re-emits and recompiles the `-b` side and nothing else, while the same bytes
 under another path rebuild nothing.
 
@@ -475,8 +486,12 @@ back-to-back cadence, and "The gap between calls" below is what a value does.
 `make programs-check` and `make verdict-test` are the two targets the
 repository's `make check` runs, and neither times anything. `programs-check`
 compiles each program in exactly the two modes the table uses and asserts that
-`--par` emits a publish site and `--no-overlap` emits none; it takes about two
-seconds, links nothing, and needs no dependency. `verdict-test` feeds the
+`--par` emits a publish site and `--no-overlap` emits none. It also links both
+emissions with the complete ordinary library, checking adapter symbols and
+strong runtime bindings. A small executed symbol test checks quoted and bare
+references, imports and weak overrides without timing a kernel. These checks
+need Clang but no third-party scheduler dependencies; kernel numerical
+correctness remains `verify`'s job. `verdict-test` feeds the
 regression rule crafted table fragments and asserts its verdicts; it needs no
 compiler at all.
 
@@ -613,7 +628,7 @@ is inside a grid that measures nothing, where it would lengthen `verify` and
 check nothing. What `verify` does with it is read it, report it in its
 `VERIFY PASS` line, and refuse a malformed value cheaply, before a long
 `compare` pays for the same mistake. `programs-check` reads it no more than it
-reads the three controls: it links nothing and runs no image.
+reads the three controls: it performs untimed emission and link checks.
 
 A hosted run takes the gap as the `gap_us` input of
 `.github/workflows/compute-bench.yml`, beside the three control inputs, and a
@@ -1004,8 +1019,8 @@ WFB_GAP_US ?=
 `-fno-lto` is repeated on every link line, not only on compiles.
 
 **The two flag sets are an admitted asymmetry, and it is disclosed rather than
-glossed.** `WF_FLAGS` applies to `<kernel>-par.o`, `<kernel>-seq.o` and the four
-Whitefoot runtime units; `CFLAGS`/`CXXFLAGS` apply to every reference, every
+glossed.** `WF_FLAGS` applies to `<kernel>-par.o`, `<kernel>-seq.o` and the full
+Whitefoot native library; `CFLAGS`/`CXXFLAGS` apply to every reference, every
 oracle and the harness. So **the WF module and the Whitefoot runtime are built
 at `-O2` with no `-march` and no loop alignment, because that is what a
 Whitefoot program gets, while every reference is built at `-O3` with both.**

@@ -161,7 +161,7 @@ static wf_file_result wf_file_windows_pread(const wf_file_request *request) {
     return result;
 }
 
-/* One unpositioned stream read [SYS-15], made to wait here.
+/* One unpositioned stream read (ordinary native library), made to wait here.
  *
  * A Windows read names its position in an `OVERLAPPED`, and this operation has
  * none to name: the position it reads at is the handle's own. The two shapes a
@@ -308,7 +308,7 @@ static wf_file_result wf_file_windows_close(const wf_file_request *request) {
     memset(&result, 0, sizeof(result));
     result.head.kind = request->kind;
     /* A listener's explicit close is the ordinary close every descriptor-shaped
-     * resource takes [SYS-17], and on this target the object behind it decides
+     * resource takes (ordinary native library), and on this target the object behind it decides
      * the call: a Winsock object is ended by `closesocket`, a file by the CRT's
      * own close. */
     if (wf_file_windows_is_socket(request->operation.close.descriptor)) {
@@ -366,10 +366,9 @@ static void wf_file_windows_disable_nagle(SOCKET native_socket) {
  * and one socket of that address's family.
  *
  * Both endpoint kinds do exactly these two things before their own host call,
- * and both dispose of the socket on any refusal, because a listener or a
- * connection that was never created holds no credit and the permit goes back
- * to the program [SYS-10].  This is `file_posix.c`'s `wf_socket_endpoint` with
- * this platform's socket call in place of that platform's. */
+ * and both dispose of the socket on any refusal. The ordinary linked caller
+ * restores the factory's reserved credit on failure. This is
+ * `file_posix.c`'s `wf_socket_endpoint` with this platform's socket call. */
 static int wf_file_windows_endpoint(
     const wf_file_request *request,
     wf_socket_native_address *native,
@@ -513,7 +512,7 @@ static wf_file_result wf_file_windows_socket_accept(wf_file_request *request) {
     return result;
 }
 
-/* One transfer attempt on one direction of one connection [SYS-18].  Winsock
+/* One transfer attempt on one direction of one connection (ordinary native library).  Winsock
  * counts bytes in an `int`, so a longer range is the host's own refusal and
  * never a silent truncation. */
 static wf_file_result wf_file_windows_socket_transfer(
@@ -566,7 +565,7 @@ static wf_file_result wf_file_windows_socket_transfer(
 }
 
 /* One direction's half-close, and the close of the target's object when it is
- * the pair's second release [SYS-18].
+ * the pair's second release (ordinary native library).
  *
  * The count is the shared one in `file_adapter.c` and is taken first, so two
  * directions released on two threads agree on which of them is the second
@@ -598,10 +597,10 @@ static wf_file_result wf_file_windows_socket_shutdown(
         result.head.value = 0;
         return result;
     }
-    result.head.value = wf__windows_socket_close(descriptor);
-    if (result.head.value < 0) {
+    if (wf__windows_socket_close(descriptor) < 0) {
         result.head.error_code = *wf__windows_error_location();
     }
+    result.head.value = 1;
     return result;
 }
 

@@ -1,17 +1,37 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an ordinary loop advances two independent cursors together over two equal-length arrays, guarding both against their bound before each step and accumulating a wrapped dot product.";
   let left = fixed_vector::<u32, 5>();
-  set left = place_back(vector: move left, value: 0_u32);
-  set left = place_back(vector: move left, value: 0_u32);
-  set left = place_back(vector: move left, value: 0_u32);
-  set left = place_back(vector: move left, value: 0_u32);
-  set left = place_back(vector: move left, value: 0_u32);
+  region {
+    place_back(vector: &uniq left, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq left, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq left, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq left, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq left, value: 0_u32);
+  }
   let right = fixed_vector::<u32, 5>();
-  set right = place_back(vector: move right, value: 0_u32);
-  set right = place_back(vector: move right, value: 0_u32);
-  set right = place_back(vector: move right, value: 0_u32);
-  set right = place_back(vector: move right, value: 0_u32);
-  set right = place_back(vector: move right, value: 0_u32);
+  region {
+    place_back(vector: &uniq right, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq right, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq right, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq right, value: 0_u32);
+  }
+  region {
+    place_back(vector: &uniq right, value: 0_u32);
+  }
   set left[0_u64] = 2_u32;
   set left[1_u64] = 3_u32;
   set left[2_u64] = 4_u32;

@@ -107,8 +107,8 @@ fn the_fixed_run_library_proves_and_runs() {
 /// receives its provider, the take is a real allocation, and the release is a
 /// real free.
 ///
-/// The program is the whole path in one source: `command.heap` supplies the
-/// provider value, `heap_vector` takes a run of four slots from it, a counted
+/// The program is the whole path in one source: an ordinary Heap parameter
+/// supplies the provider, `heap_vector` takes a run of four slots from it, a counted
 /// loop fills the run under the three invariants 3.L.3 writes, and a helper
 /// holding the provider adds the bytes and lets the run reach its scope exit.
 /// D3 is what makes that last step legal, and the helper's own row carries the

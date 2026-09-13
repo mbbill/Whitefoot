@@ -35,7 +35,7 @@ fn ipv4_checksum(header: own Slice<u8>) -> result: own u16 reads(header) contrac
   return checksum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&ipv4_header);
     let view_length = len_of(view);
@@ -61,7 +61,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant flat: head_of(runtime_header) <= 0_u64
       ) {
         let byte = ipv4_header[at];
-        set runtime_header = place_back(vector: move runtime_header, value: byte);
+        place_back(vector: &uniq runtime_header, value: byte);
       }
       region {
         let view = slice_of(&runtime_header);

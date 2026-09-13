@@ -112,33 +112,6 @@ impl CallTransport {
         }
     }
 
-    /// The transport one declared system-operation parameter selects.
-    ///
-    /// A system operation has no body, so its [SYS-2] declaration record
-    /// together with the rules stating that record's behaviour is the whole
-    /// of its declared contract, and [CALL-5]'s selector reads that record
-    /// rather than any summary of a target. [SYS-8] declares that the
-    /// half-open `[start, end)` extent its range-bearing family names is the
-    /// complete extent such an operation may change and that the extent is
-    /// element storage; the operand class carrying that extent is the
-    /// declared type of that parameter, so the row itself selects [CALL-3]'s
-    /// transport. Every other parameter selects from its declared mode.
-    pub(crate) fn of_system_parameter(operation: &crate::SystemOperation, ordinal: usize) -> Self {
-        let Some(parameter) = operation.parameters.get(ordinal) else {
-            return Self::Conservative;
-        };
-        match parameter.ty {
-            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
-                Self::ViewedRange
-            }
-            _ => match parameter.mode {
-                crate::SystemParameterMode::Borrow(_) => Self::SharedBorrow,
-                crate::SystemParameterMode::Own => Self::Value,
-                crate::SystemParameterMode::UniqueBorrow(_) => Self::Conservative,
-            },
-        }
-    }
-
     /// The transport one declared kernel-domain parameter selects [BLK-0].
     ///
     /// A row has no body either, so the same reading applies: the declared
@@ -175,6 +148,7 @@ impl CallTransport {
 /// write reaches [CALL-1, CALL-2, CALL-3].
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EntailmentCallee {
+    pub(crate) parameter_declarations: Vec<crate::DeclarationId>,
     pub(crate) parameter_modes: Vec<CheckedMode>,
     pub(crate) parameter_writes: Vec<Vec<Vec<u32>>>,
     pub(crate) parameter_transports: Vec<CallTransport>,
@@ -193,6 +167,10 @@ impl EntailmentCallee {
     ) -> Self {
         let parameters = parameters.collect::<Vec<_>>();
         Self {
+            parameter_declarations: parameters
+                .iter()
+                .map(|(declaration, _, _)| *declaration)
+                .collect(),
             parameter_writes: parameters
                 .iter()
                 .map(|(declaration, _, _)| {
@@ -222,6 +200,7 @@ pub(crate) struct EntailmentContext<'check> {
     /// mathematical value.
     pub(crate) constant_ids: &'check HashMap<DeclarationId, CheckedConstantId>,
     pub(crate) nominals: &'check [CheckedNominal],
+    pub(crate) elements: &'check [CheckedType],
     /// Published earlier-component FN-9 declarations and proofs, indexed by
     /// concrete [`FunctionId`]. Same-component entries remain absent until
     /// the component's atomic publication boundary.
@@ -287,8 +266,6 @@ pub(crate) enum ObligationFamily {
     IntegerDomain,
     /// A runtime-sized buffer allocation's canonical fit predicate [OP-9].
     AllocationFit,
-    /// One independent half-open system range goal [SYS-8].
-    SystemRange,
     /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
     /// a call to that row and judged under [MSR-4] exactly as every other
     /// consumer's obligation is.
@@ -319,11 +296,10 @@ pub(crate) struct ObligationOutcome {
     pub(crate) node_path: NodePath,
     /// The obligation family this occurrence belongs to.
     pub(crate) family: ObligationFamily,
-    /// Family-local occurrence ordinal: zero for every family except the two
-    /// independent SystemRange goals, which use zero and one.
+    /// Requirement ordinal within a kernel row; zero for single-goal families.
     pub(crate) conjunct: u8,
     /// The canonical total Bool domain predicate. Bounds obligations alone
-    /// carry `None`; OP-2, OP-9, and SYS-8 always retain one exact identity,
+    /// carry `None`; OP-2, OP-9, and ordinary call requirements retain one exact identity,
     /// using an occurrence-local evaluated-value leaf only when no stable
     /// structural operand identity exists.
     pub(crate) canonical_goal: Option<GoalExpression>,
@@ -1045,8 +1021,7 @@ pub(crate) struct CallGoalOutcome {
     pub(crate) goal: ConcreteGoal,
     /// The same goal in the terms the source wrote it in, rendered here
     /// because this is where the caller's binding names are in scope. [FN-8]
-    /// publishes it as its `instantiated_goal` payload, the way [OP-4] and
-    /// [SYS-8] publish their residual.
+    /// publishes it as its `instantiated_goal` payload, the way [OP-4] publishes its residual.
     pub(crate) rendered_goal: String,
     /// Exact declared-order actual count at this concrete call occurrence.
     /// This remains zero for a legal zero-argument call with a requirement.
@@ -1153,7 +1128,11 @@ pub(crate) fn postcondition_schedule<'function>(
             return None;
         }
         let start = calls.len();
-        collect_statement_calls(function.id, &function.body, &mut calls);
+        collect_statement_calls(
+            function.id,
+            function.body.as_deref().unwrap_or_default(),
+            &mut calls,
+        );
         calls[start..].sort_by(|left, right| {
             left.node_path
                 .components()

@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "IDENT, TYPEID, REGIONID, LABEL, and OPNAME lexical classes [FORM-3].";
   let a = 3_i32;
   region {

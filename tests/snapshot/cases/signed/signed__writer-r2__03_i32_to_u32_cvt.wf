@@ -10,7 +10,7 @@ fn to_unsigned(x: own i32) -> as_unsigned: own u32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let positive = to_unsigned(x: 42_i32);
   let negative = to_unsigned(x: -1_i32);
   if positive == 42_u32 {

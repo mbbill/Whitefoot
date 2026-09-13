@@ -13,7 +13,7 @@ fn remainder_neg1_guarded(n: own i32) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = remainder_neg1(n: -2147483648_i32);
   let safe_result = remainder_neg1_guarded(n: -100_i32);
   return exit_status(code: 0_u8);

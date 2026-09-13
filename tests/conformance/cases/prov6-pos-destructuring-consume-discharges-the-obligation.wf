@@ -1,9 +1,9 @@
-linear struct Chunk {
+linear struct Chunk['heap] {
   page: Vector<u8>;
   spare: u8;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "PROV-6: `let N(f1: b1, ..., fk: bk) = move v;` consumes a value of nominal struct type whole and binds every declared field in declaration order. No residual of the consumed value survives it, so the statement is the second route out of a scope for a value linear in it, and its binders are ordinary own bindings of the enclosing block.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {

@@ -18,7 +18,7 @@ fn step_three(value: own i32) -> result: own i32 pure contract {
   return b;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: a three-hop postcondition chain (step_one -> step_two -> step_three) each ensures result == value; every hop's ensures is consumed by its caller to discharge its own ensures.";
   let observed = step_three(value: 11_i32);
   if observed == 11_i32 {

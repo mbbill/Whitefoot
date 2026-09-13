@@ -1,27 +1,42 @@
 fn attempt(fail: own Bool) -> result: own u8 pure {
   let empty = fixed_vector::<Ticket, 2>();
   let first_ticket = Ticket(number: 1_u8);
-  let one = place_back(vector: move empty, value: move first_ticket);
+  region {
+    place_back(vector: &uniq empty, value: move first_ticket);
+  }
+  let one = move empty;
   match acquire(fail: fail) {
     Err(error: problem) => {
-      let (drained, first) = take_back(vector: move one);
-      let number = consume(ticket: move first);
-      invariant empty_again: len_of(drained) <= 0_u64;
-      return problem;
+      region {
+        let first = take_back(vector: &uniq one);
+        let drained = move one;
+        let number = consume(ticket: move first);
+        invariant empty_again: len_of(drained) <= 0_u64;
+        return problem;
+      }
     }
     Ok(value: second) => {
-      let two = place_back(vector: move one, value: move second);
-      let (rest, last) = take_back(vector: move two);
-      let (drained, first) = take_back(vector: move rest);
-      let last_number = consume(ticket: move last);
-      let first_number = consume(ticket: move first);
-      invariant empty_again: len_of(drained) <= 0_u64;
-      return first_number +wrap last_number;
+      region {
+        place_back(vector: &uniq one, value: move second);
+      }
+      let two = move one;
+      region {
+        let last = take_back(vector: &uniq two);
+        let rest = move two;
+        region {
+          let first = take_back(vector: &uniq rest);
+          let drained = move rest;
+          let last_number = consume(ticket: move last);
+          let first_number = consume(ticket: move first);
+          invariant empty_again: len_of(drained) <= 0_u64;
+          return first_number +wrap last_number;
+        }
+      }
     }
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let yes = 0_u8 == 0_u8;
   let result = attempt(fail: yes);
   return exit_status(code: result);

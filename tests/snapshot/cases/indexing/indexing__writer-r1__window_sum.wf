@@ -13,16 +13,32 @@ fn window_sum<const n: u64>(data: own FixedVector<u8, n>, start: own u64, end: o
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let data = fixed_vector::<u8, 8>();
-  set data = place_back(vector: move data, value: 3_u8);
-  set data = place_back(vector: move data, value: 3_u8);
-  set data = place_back(vector: move data, value: 3_u8);
-  set data = place_back(vector: move data, value: 3_u8);
-  set data = place_back(vector: move data, value: 3_u8);
-  set data = place_back(vector: move data, value: 3_u8);
-  set data = place_back(vector: move data, value: 3_u8);
-  set data = place_back(vector: move data, value: 3_u8);
+  region {
+    place_back(vector: &uniq data, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 3_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 3_u8);
+  }
   let total = window_sum::<8>(data: move data, start: 2_u64, end: 6_u64);
   if total == 12_u32 {
   } else {

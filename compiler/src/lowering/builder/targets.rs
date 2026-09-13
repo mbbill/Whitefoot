@@ -70,7 +70,7 @@ impl IrBuilder<'_> {
             }
             CheckedSetTarget::ArrayIndex(target) => {
                 let root = CheckedContainerRoot {
-                    binding: target.binding,
+                    root: crate::semantic::CheckedPlaceRoot::Binding(target.binding),
                     path: target
                         .fields
                         .iter()

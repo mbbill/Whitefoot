@@ -1,6 +1,6 @@
-//! The entry's standard input stream, end to end [SYS-15].
+//! The invocation's ordinary standard input stream, end to end [PRE-1].
 //!
-//! `stdin_echo.wf` reads `command.stdin` to its end with `read_next` and
+//! `stdin_echo.wf` reads the stream in `Inputs.stdin` to its end with `read_next` and
 //! publishes every byte it observed, so one run exercises both halves of the
 //! stream pair against a real host. The two shapes a standard input takes are
 //! different runtime paths and both are run here: a pipe, whose end the writer
@@ -13,7 +13,7 @@
 //! file adapter's own `read`. The two must agree byte for byte, because the
 //! route is an implementation choice and not a language one.
 
-use super::support::{build_program, compile_program};
+use super::support::{build_program, compile_program, emitted_function};
 
 /// Larger than the program's 4096-byte chunk, so every run makes several
 /// `read_next` calls and the program's own loop, not one lucky call, is what
@@ -27,23 +27,30 @@ fn payload() -> Vec<u8> {
 }
 
 #[test]
-fn the_stream_read_lowers_through_the_one_submit_and_join_shape() {
+fn the_stream_uses_ordinary_linked_calls_and_an_ordinary_inputs_argument() {
     let llvm = compile_program("stdin_echo.wf");
-    // One lowering: the unpositioned request kind, submitted into the frame's
-    // own record and joined where the outcome is needed. No positioned read
-    // and no direct arm.
-    assert!(llvm.contains("call void @wf__completion_file_read_submit"));
-    assert!(!llvm.contains("wf__completion_file_pread_submit"));
-    assert!(llvm.contains("call void @wf__completion_file_join"));
-    // The entry supplies the two standard handles the invocation already
-    // holds — descriptor 1 for `command.stdout` and descriptor 0 for
-    // `command.stdin` — and opens nothing for either [SYS-15]. The general
-    // store the chunk lives in follows them as the seventh row's operand.
-    let entry = llvm
-        .split("define i32 @wf__main_body")
-        .nth(1)
-        .expect("the emitted entry body");
-    assert!(entry.contains("call i8 @wf_main(i32 1, i32 0, "));
+    // The source calls ordinary PRE-1 signatures. Native submission and join
+    // belong to their linked bodies and cannot select a compiler call path.
+    for (caller, callee) in [("main", "read_next"), ("publish_all", "write_once")] {
+        let body = emitted_function(&llvm, caller);
+        assert_eq!(body.matches(&format!("call void @wf_{callee}(")).count(), 1);
+        assert_eq!(
+            llvm.lines()
+                .filter(|line| line.starts_with(&format!("declare void @wf_{callee}(")))
+                .count(),
+            1
+        );
+    }
+    assert!(!llvm.contains("call void @wf_read_at("));
+    assert!(!llvm.contains("@wf__completion_"));
+    // Build initialization supplies one ordinary Inputs owner and the Heap
+    // value, then receives the ordinary opaque ExitStatus through its result
+    // destination. The launcher does not open either standard stream.
+    let entry = emitted_function(&llvm, "_main_body");
+    assert!(entry.contains("call i32 @wf__ordinary_inputs(ptr %inputs, i32 %argc, ptr %argv)"));
+    assert!(entry.contains(
+        "call void @\"wf_main\"(ptr %status, ptr %inputs, { ptr, i64 } zeroinitializer)"
+    ));
     assert!(!entry.contains("@open"));
 }
 

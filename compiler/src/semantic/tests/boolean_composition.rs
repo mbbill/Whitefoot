@@ -174,7 +174,7 @@ fn read_pair(low: own u64, high: own u64) -> result: own u8 pure {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -205,7 +205,7 @@ fn get(symbol: own u64) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -265,7 +265,7 @@ fn disjunctive_signs_and_bxor_record_nothing() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -320,7 +320,7 @@ fn guard(index: own u64) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -389,7 +389,7 @@ fn caller(low: own u64, high: own u64) -> result: own u8 pure {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -442,7 +442,7 @@ fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() 
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -463,7 +463,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -502,7 +502,7 @@ fn band_guard_over_a_derived_binding_admits_the_true_edge_only() {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -523,7 +523,7 @@ command fn main() -> status: own ExitStatus pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -559,7 +559,7 @@ fn band_over_derived_bindings_proves_no_unnamed_bound() {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -584,7 +584,7 @@ command fn main() -> status: own ExitStatus pure {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

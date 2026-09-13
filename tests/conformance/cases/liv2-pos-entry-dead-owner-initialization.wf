@@ -1,0 +1,33 @@
+struct Item {
+  value: u64;
+}
+
+fn reuse(owner: own Item, incoming: own Item) -> (current: own Item, previous: own Item) pure {
+  let previous = move owner;
+  set owner = move incoming;
+  return move owner, move previous;
+}
+
+fn relay(owner: own Item) -> result: own Item pure {
+  return move owner;
+}
+
+fn rebind(owner: own Item) -> result: own Item reads(owner), writes(owner) {
+  set owner = relay(owner: move owner);
+  return move owner;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "LIV-2, EFF-2: reinitializing a complete binding already dead at statement entry writes no previous owner. In contrast, a same-statement read-out keeps its read and commit write. Both forms preserve the transferred ordinary struct values.";
+  let first = Item(value: 11_u64);
+  let second = Item(value: 22_u64);
+  let (current, previous) = reuse(owner: move first, incoming: move second);
+  let returned = rebind(owner: move current);
+  if returned.value != 22_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if previous.value != 11_u64 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

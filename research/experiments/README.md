@@ -196,8 +196,9 @@ still execute against HEAD are included by the root `make check` target.
 - `scoped-alias-channel/` — channel 1: ownership provenance -> alias.scope.
   Short-trip wins, 17x code size vs Rust's guard-versioned loops; parity at
   long trips (Rust recovers via runtime checks).
-- `checked-law-channel/` — channel 3: FN-4 discharged laws license
-  reassociation. 3.3x over the obvious fold; refutes false laws compile-time.
+- `checked-law-channel/` — historical channel 3: the retired law table licensed
+  reassociation, measuring 3.3x over the obvious fold. D7 removes that syntax;
+  its two WF kernels remain dated evidence and are not active test targets.
 - `frequency-study/` — completed one-time directional scan of popular Rust
   sources/applications; points the next real port at relational bounds proofs.
 

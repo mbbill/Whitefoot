@@ -3,7 +3,7 @@ enum Tagged {
   Nil();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Statement-position match over an owned payload enum: the moved scrutinee's payload is copied into the arm as a fresh local, and the signed-remainder range proves the exact multiplication [TYPE-2, GRAM-10, OWN-13, OP-1].";
   let t = Num(n: 21_i32);
   match t {

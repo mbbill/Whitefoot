@@ -3,6 +3,6 @@ fn widen_ok(x: own u16) -> result: own i32 pure {
   return cvt::<u16, i32>(x);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

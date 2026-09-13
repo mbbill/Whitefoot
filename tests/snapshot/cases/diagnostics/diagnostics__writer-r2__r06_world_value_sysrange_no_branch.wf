@@ -1,7 +1,7 @@
-fn publish(output: &uniq OutputStream, source: &Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
-  doc "EXPECT REJECT under Sys8: start and end are threaded straight through from an external world value with no compile-time bound, so an invariant asserting the range fits source would be dishonest here; the correct repair is a real dominating branch on the range before publishing.";
+fn publish(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(factory, output, source), writes(factory, output) {
+  doc "EXPECT REJECT under FN-8: the ordinary write_once requirements have no proved ordering or source-length bound for these parameters; guard the actual range or require its bounds at the wrapper boundary.";
   region {
-    match write_once(output: &uniq deref(output), source: source, start: start, end: end) {
+    match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: source, start: start, end: end) {
       Ok(value: next) => {
       }
       Err(error: problem) => {
@@ -11,7 +11,7 @@ fn publish(output: &uniq OutputStream, source: &Slice<u8>, start: own u64, end: 
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.stdout as output: own OutputStream) -> status: own ExitStatus reads(args, output), writes(output) {
+fn main(factory: own HandleFactory, args: own Args, output: own OutputStream) -> status: own ExitStatus reads(factory, args, output), writes(factory, output) {
   region {
     let n = args_count(args: &args);
     let bytes = fixed_vector::<u8, 4>();
@@ -21,12 +21,12 @@ command fn main(command.args as args: own Args, command.stdout as output: own Ou
       invariant spare: room_of(bytes) + at >= 4_u64,
       invariant flat: head_of(bytes) <= 0_u64
     ) {
-      set bytes = place_back(vector: move bytes, value: 65_u8);
+      place_back(vector: &uniq bytes, value: 65_u8);
     }
     region 'o {
       let payload = slice_of(&bytes);
       region {
-        let result = publish(output: &uniq 'o output, source: &payload, start: 0_u64, end: n);
+        let result = publish(factory: &uniq factory, output: &uniq 'o output, source: &payload, start: 0_u64, end: n);
       }
     }
   }

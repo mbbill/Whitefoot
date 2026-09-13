@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "An Arena<'r, bytes, align> stays within its region 'r, a cell taken at it is read through deref, and the extent is released at 'r's block exit [STOR-4].";
   region 'r {
     let a = arena_frame::<8, 8, 'r>();

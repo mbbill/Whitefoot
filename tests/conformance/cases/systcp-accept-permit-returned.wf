@@ -1,55 +1,148 @@
-command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles) {
-  doc "SYS-10, SYS-17: `tcp_accept` borrows the listener shared and consumes one `HandlePermit` of its own, so several accepts may overlap on one listener; a refused accept hands its permit back inside `AcceptFailed` and that permit accepts again. `close_connection` returns the one credit the connection pair holds and `close_listener` the listener's. The checker admits this program and lowering lowers it; the target has no approved row for a TCP submission in this version, so it stops at target qualification, which is not a source-language rejection [QUAL-1].";
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "Ordinary tcp_accept takes &uniq listener and &uniq factory. Refusal leaves both ordinary values available; a successful public connection is destructured and both halves explicitly closed. No shared-listener overlap or permit-return rule survives.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  }
   let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9106_u16);
   region {
-    match reserve_handle(factory: &uniq handles) {
-      Ok(value: listen_permit) => {
-        region {
-          match tcp_listen(permit: move listen_permit, address: &address) {
-            Listening(listener: bound) => {
-              region 'l {
-                match reserve_handle(factory: &uniq handles) {
-                  Ok(value: accept_permit) => {
-                    region {
-                      match tcp_accept(permit: move accept_permit, listener: &'l bound) {
-                        Accepted(connection: link, peer: from) => {
-                          let credit = close_connection(connection: move link);
-                          let listener_credit = close_listener(listener: move bound);
-                          return exit_status(code: 0_u8);
-                        }
-                        AcceptFailed(error: problem, permit: handed_back) => {
-                          region {
-                            match tcp_accept(permit: move handed_back, listener: &'l bound) {
-                              Accepted(connection: retry, peer: retry_from) => {
-                                let credit = close_connection(connection: move retry);
-                                let listener_credit = close_listener(listener: move bound);
-                                return exit_status(code: 0_u8);
-                              }
-                              AcceptFailed(error: second_problem, permit: spent) => {
-                                let listener_credit = close_listener(listener: move bound);
-                                return exit_status(code: 3_u8);
-                              }
-                            }
-                          }
-                        }
-                      }
+    region {
+      match tcp_listen(factory: &uniq handles, address: &address) {
+        Listening(listener: bound) => {
+          region {
+            region {
+              match tcp_accept(factory: &uniq handles, listener: &uniq bound) {
+                Accepted(connection: link, peer: from) => {
+                  let TcpConnection(receive: close_receive_29, send: close_send_29) = move link;
+                  close_receive(factory: &uniq handles, receive: move close_receive_29);
+                  close_send(factory: &uniq handles, send: move close_send_29);
+                  let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
+                  return exit_status(code: 0_u8);
+                }
+                AcceptFailed(error: problem) => {
+                  region {
+                    if factory_refusal(error: &problem) {
+                      let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
+                      return exit_status(code: 4_u8);
                     }
                   }
-                  Err(error: problem) => {
-                    let listener_credit = close_listener(listener: move bound);
-                    return exit_status(code: 4_u8);
+                  region {
+                    match tcp_accept(factory: &uniq handles, listener: &uniq bound) {
+                      Accepted(connection: retry, peer: retry_from) => {
+                        let TcpConnection(receive: close_receive_30, send: close_send_30) = move retry;
+                        close_receive(factory: &uniq handles, receive: move close_receive_30);
+                        close_send(factory: &uniq handles, send: move close_send_30);
+                        let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
+                        return exit_status(code: 0_u8);
+                      }
+                      AcceptFailed(error: second_problem) => {
+                        let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
+                        return exit_status(code: 3_u8);
+                      }
+                    }
                   }
                 }
               }
             }
-            ListenFailed(error: problem, permit: handed_back) => {
-              return exit_status(code: 5_u8);
-            }
           }
         }
-      }
-      Err(error: problem) => {
-        return exit_status(code: 6_u8);
+        ListenFailed(error: problem) => {
+          region {
+            if factory_refusal(error: &problem) {
+              return exit_status(code: 6_u8);
+            }
+          }
+          return exit_status(code: 5_u8);
+        }
       }
     }
   }

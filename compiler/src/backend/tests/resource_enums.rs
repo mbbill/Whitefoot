@@ -34,7 +34,7 @@ fn consume(owner: own Owner) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let abandoned_left = buffer_new(1_u64, 7_u8);
   let abandoned_right = buffer_new(1_u64, 9_u8);
   let abandoned_pair = PairBuffers(left: move abandoned_left, right: move abandoned_right);
@@ -53,9 +53,26 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+    // C2 deletes value-history effect roots. After the ordinary owned match,
+    // payload bindings are local; reading them does not publish reads(owner).
+    // Check both exact-row directions: pure is accepted, the wider row fails.
+    let excessive = std::str::from_utf8(source).unwrap().replace(
+        "fn consume(owner: own Owner) -> result: own u8 pure",
+        "fn consume(owner: own Owner) -> result: own u8 reads(owner)",
+    );
+    let failure = compile_rejection(excessive.as_bytes());
+    assert_eq!(failure.rule_id(), Some("EFF-2"));
+    assert!(failure.detail().contains("reads(owner)"));
     let llvm = compile(source);
+    let abandon = emitted_function(&llvm, "abandon");
+    let cleanup_calls: Vec<_> = abandon
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("call void @wf.drop."))
+        .collect();
+    assert_eq!(cleanup_calls.len(), 1, "abandon releases its one owner");
+    let cleanup = format!("wf.drop.{}", cleanup_calls[0].split('(').next().unwrap());
     let helper_start = llvm
-        .find("define private void @wf.drop.t1")
+        .find(&format!("define private void @{cleanup}"))
         .expect("resource enum must have one drop helper");
     let helper_end = llvm[helper_start..]
         .find("\n}\n\n")
@@ -66,14 +83,9 @@ command fn main() -> status: own ExitStatus pure {
     assert!(helper.contains("i32 0, label %variant.0"));
     assert!(helper.contains("i32 1, label %variant.1"));
     assert_eq!(helper.matches("call void @free").count(), 2);
-    assert_eq!(
-        emitted_function(&llvm, "abandon")
-            .matches("call void @wf.drop.t1")
-            .count(),
-        1
-    );
+    assert_eq!(abandon.matches(&format!("call void @{cleanup}")).count(), 1);
     let consume = emitted_function(&llvm, "consume");
-    assert!(!consume.contains("call void @wf.drop.t1"));
+    assert!(!consume.contains(&format!("call void @{cleanup}")));
     assert_eq!(consume.matches("call void @free").count(), 2);
 
     let output = compile_and_run(&llvm);
@@ -111,9 +123,7 @@ fn result_run_transfer_error_and_abandonment_execute() {
     assert!(!llvm.contains("call void @free"));
     let transforms: Vec<_> = llvm
         .lines()
-        .filter(|line| {
-            line.starts_with("define internal ") && line.contains("@wf_transform$instance$")
-        })
+        .filter(|line| line.starts_with("define ") && line.contains("@wf_transform$instance$"))
         .collect();
     assert_eq!(
         transforms.len(),
@@ -122,12 +132,24 @@ fn result_run_transfer_error_and_abandonment_execute() {
     );
     assert!(
         transforms.iter().all(|header| {
-            header.starts_with("define internal void ")
-                && header.contains("(ptr %wf.result, ptr %wf.arg.")
+            header.starts_with("define void ") && header.contains("(ptr %wf.result, ptr %wf.arg.")
         }),
         "each transform takes inline input storage and a caller-owned outcome destination"
     );
-    let abandon = emitted_function(&llvm, "abandon$instance$5");
+    let abandon_names: Vec<_> = llvm
+        .lines()
+        .filter(|line| line.starts_with("define ") && line.contains("@wf_abandon$instance$"))
+        .map(|line| {
+            line.split("@wf_")
+                .nth(1)
+                .unwrap()
+                .split('(')
+                .next()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(abandon_names.len(), 1);
+    let abandon = emitted_function(&llvm, abandon_names[0]);
     assert!(!abandon.contains("call void @wf.drop."));
 
     let output = compile_and_run(&llvm);
@@ -146,7 +168,7 @@ fn option_buffer_some_none_and_transfer_execute() {
   return unit;
 }
 
-fn consume(value: own Option<buffer<u8>>) -> result: own u8 reads(value) {
+fn consume(value: own Option<buffer<u8>>) -> result: own u8 pure {
   match move value {
     None() => {
       return 0_u8;
@@ -164,7 +186,7 @@ fn consume(value: own Option<buffer<u8>>) -> result: own u8 reads(value) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let abandoned_bytes = buffer_new(1_u64, 5_u8);
   let abandoned_some = Some<buffer<u8>>(value: move abandoned_bytes);
   abandon(value: move abandoned_some);

@@ -8,25 +8,57 @@ struct FirFilter {
   delay: DelayLine;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let taps = fixed_vector::<f64, 8>();
-  set taps = place_back(vector: move taps, value: 0.125_f64);
-  set taps = place_back(vector: move taps, value: 0.125_f64);
-  set taps = place_back(vector: move taps, value: 0.125_f64);
-  set taps = place_back(vector: move taps, value: 0.125_f64);
-  set taps = place_back(vector: move taps, value: 0.125_f64);
-  set taps = place_back(vector: move taps, value: 0.125_f64);
-  set taps = place_back(vector: move taps, value: 0.125_f64);
-  set taps = place_back(vector: move taps, value: 0.125_f64);
+  region {
+    place_back(vector: &uniq taps, value: 0.125_f64);
+  }
+  region {
+    place_back(vector: &uniq taps, value: 0.125_f64);
+  }
+  region {
+    place_back(vector: &uniq taps, value: 0.125_f64);
+  }
+  region {
+    place_back(vector: &uniq taps, value: 0.125_f64);
+  }
+  region {
+    place_back(vector: &uniq taps, value: 0.125_f64);
+  }
+  region {
+    place_back(vector: &uniq taps, value: 0.125_f64);
+  }
+  region {
+    place_back(vector: &uniq taps, value: 0.125_f64);
+  }
+  region {
+    place_back(vector: &uniq taps, value: 0.125_f64);
+  }
   let samples = fixed_vector::<f64, 8>();
-  set samples = place_back(vector: move samples, value: 0.0_f64);
-  set samples = place_back(vector: move samples, value: 0.0_f64);
-  set samples = place_back(vector: move samples, value: 0.0_f64);
-  set samples = place_back(vector: move samples, value: 0.0_f64);
-  set samples = place_back(vector: move samples, value: 0.0_f64);
-  set samples = place_back(vector: move samples, value: 0.0_f64);
-  set samples = place_back(vector: move samples, value: 0.0_f64);
-  set samples = place_back(vector: move samples, value: 0.0_f64);
+  region {
+    place_back(vector: &uniq samples, value: 0.0_f64);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0.0_f64);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0.0_f64);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0.0_f64);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0.0_f64);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0.0_f64);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0.0_f64);
+  }
+  region {
+    place_back(vector: &uniq samples, value: 0.0_f64);
+  }
   let delay = DelayLine(samples: move samples, cursor: 0_u64);
   let filter = FirFilter(taps: move taps, delay: move delay);
   let tap_count = len_of(filter.taps);

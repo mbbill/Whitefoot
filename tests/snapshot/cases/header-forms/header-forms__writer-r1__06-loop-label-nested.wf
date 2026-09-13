@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "SNAPSHOT REJECT [OP-2]: the finder expected ACCEPT for nested labeled loops, but nothing bounds inner_count, so the checked increment leaves the domain obligation inner_count +defined 1_u64 unproved.";
   let outer_count = 0_u64;
   let inner_count = 0_u64;

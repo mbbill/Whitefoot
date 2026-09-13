@@ -29,9 +29,7 @@ use super::super::super::super::model::{
     CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedKernelInstance,
     CheckedMeasure, CheckedType, CheckedValue, IntegerType, MeasuredKind,
 };
-use super::super::super::borrows::{
-    AccessKind, BorrowInfo, BorrowKind, TemporaryLoan, places_overlap,
-};
+use super::super::super::borrows::{AccessKind, BorrowInfo, BorrowKind, TemporaryLoan};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, TypedExpression,
 };
@@ -104,7 +102,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut goal_arguments = Vec::with_capacity(fields.len());
         let mut checked_borrows = Vec::with_capacity(fields.len());
         let mut argument_holders = Vec::with_capacity(fields.len());
-        let mut state_origins = Vec::with_capacity(fields.len());
         let mut argument_places = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<TemporaryLoan> = Vec::new();
         let mut effects = EffectSet::NONE;
@@ -129,26 +126,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .is_some();
             let argument =
                 self.check_call_argument_atom(function, atom, bindings, loop_depth, true, false)?;
-            for access in &argument.accesses {
-                for temporary in &call_scoped_borrows {
-                    let borrow = &temporary.borrow;
-                    if places_overlap(&access.place, &borrow.place)
-                        && match access.kind {
-                            AccessKind::Read => borrow.kind == BorrowKind::Unique,
-                            AccessKind::Write
-                            | AccessKind::Move
-                            | AccessKind::SharedBorrow
-                            | AccessKind::UniqueBorrow => true,
-                        }
-                    {
-                        return self.issue_node(
-                            SemanticRule::Own12,
-                            atom,
-                            SemanticIssueKind::BorrowConflict,
-                        );
-                    }
-                }
-            }
+            self.check_call_argument_loans(
+                bindings,
+                &argument,
+                explicit_borrow,
+                &call_scoped_borrows,
+                atom,
+            )?;
             // A parameter whose shape supplies the row's own parameters reads
             // them off the actual; every other position is checked against
             // the shape the instance already fixed [BLK-0].
@@ -180,7 +164,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             let (passed_borrow, expected_mode) =
                 self.call_argument_borrow(expectation, &argument, atom)?;
-            state_origins.push(self.state_origins_of_value(&argument, bindings)?);
             argument_places.push(
                 argument
                     .accesses
@@ -217,7 +200,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             signature,
             &checked_borrows,
             &argument_holders,
-            &state_origins,
             &argument_places,
             function,
             bindings,
@@ -230,7 +212,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let result = self.kernel_result_type(node, record, signature, &instance)?;
         let requirements = self.kernel_requirements(signature, &instance, &goal_arguments)?;
-
         self.statement_loans
             .borrow_mut()
             .extend(call_scoped_borrows);
@@ -268,7 +249,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         let targ = self
             .tree
-            .first_child_with(node, Production::Targs)?
+            .argument_list(node)?
             .map(|targs| self.tree.children_with(targs, Production::Targ))
             .transpose()?
             .and_then(|arguments| arguments.last().copied())
@@ -366,7 +347,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if record.row != KernelRow::ArenaFrame {
             return Ok(false);
         }
-        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(call)? else {
             return Ok(false);
         };
         let Some(last) = self
@@ -405,7 +386,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .filter(|generic| !generic.supplied)
             .collect();
-        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+        let arguments = match self.tree.argument_list(node)? {
             Some(targs) => self.tree.children_with(targs, Production::Targ)?,
             None => Vec::new(),
         };
@@ -433,6 +414,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             ),
                         );
                     };
+                    self.reject_region_bearing_storage_type(ty, &function.substitution)?;
                     instance.element = Some(self.parse_type_with(ty, &function.substitution)?);
                 }
                 KernelGenericKind::Const(which) => {
@@ -455,12 +437,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 KernelGenericKind::Region => {
                     if self
                         .tree
-                        .first_child_with(argument, Production::Type)?
-                        .is_some()
-                        || self
-                            .tree
-                            .first_child_with(argument, Production::Const)?
-                            .is_some()
+                        .direct_token_with(argument, crate::TerminalPredicate::RegionIdentifier)?
+                        .is_none()
                     {
                         return self.issue_node(
                             SemanticRule::Blk0,
@@ -512,6 +490,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | KernelShape::MutSlice
             // No row takes an outcome as an operand S39.
             | KernelShape::ResultBox => Err(SemanticCompilerFailure::InvalidResolution.into()),
+            KernelShape::Unit => Ok(CheckedType::Unit),
             KernelShape::U64 => Ok(CheckedType::Integer(IntegerType::U64)),
             // `T` is written on every row that has no operand of this shape,
             // and supplied by this operand on the two cell formations S39,
@@ -566,7 +545,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     instance.capacity = Some(length);
                 }
                 instance.run = Some(actual);
-                instance.element = Some(element.ty());
+                instance.element = Some(self.element_type(element)?);
                 Ok(actual)
             }
             // A provider operand supplies its own store region and, for a
@@ -608,7 +587,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 instance.region = Some(region);
                 Ok(actual)
             }
-            KernelShape::FixedVector | KernelShape::Vector | KernelShape::OptionVector => {
+            KernelShape::Array | KernelShape::FixedVector => {
+                let actual = argument.expression.ty();
+                let (element, length) = match (shape, actual) {
+                    (KernelShape::Array, CheckedType::Array { element, length })
+                    | (KernelShape::FixedVector, CheckedType::FixedVector { element, length }) => (element, length),
+                    _ => return self.issue_node(
+                        SemanticRule::Type5,
+                        atom,
+                        SemanticIssueKind::type_mismatch(
+                            if shape == KernelShape::Array { "an `array<T, n>`" } else { "a `FixedVector<T, n>`" },
+                            self.checked_type_name(actual)?,
+                        ),
+                    ),
+                };
+                instance.element = Some(self.element_type(element)?);
+                instance.capacity = Some(length);
+                Ok(actual)
+            }
+            KernelShape::Vector | KernelShape::OptionVector => {
                 Err(SemanticCompilerFailure::InvalidResolution.into())
             }
         }
@@ -713,12 +710,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             KernelShape::Viewable | KernelShape::Slice | KernelShape::MutSlice => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
+            KernelShape::Unit => CheckedType::Unit,
             KernelShape::U64 => CheckedType::Integer(IntegerType::U64),
             KernelShape::Element => instance.element,
             KernelShape::Run => instance
                 .run
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?,
             KernelShape::FixedVector => CheckedType::FixedVector {
+                element: self.kernel_element(instance.element, node)?,
+                length: instance
+                    .capacity
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+            },
+            KernelShape::Array => CheckedType::Array {
                 element: self.kernel_element(instance.element, node)?,
                 length: instance
                     .capacity
@@ -766,32 +770,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// The element type of a run at one instance [BLK-1].
-    ///
-    /// [BLK-1] states what a slot may hold: every copy element, one
-    /// region-free affine nominal stored by value, one type parameter at the
-    /// symbolic instance, and one element that is itself a run. The last is
-    /// the one-level lift, so an element run whose own element is already a
-    /// run is outside the domain this version represents and is an explicit
-    /// unsupported capability rather than a source rejection.
+    /// [BLK-1] admits every nameable slot type. Stored-position restrictions
+    /// are checked independently by STOR-5 at the written type argument.
     fn kernel_element(
         &self,
         element: CheckedType,
-        node: NodeId,
+        _node: NodeId,
     ) -> Result<super::super::super::super::model::CheckedElement, CheckStop> {
-        use super::super::super::super::model::{CheckedElement, CheckedFlatElement};
-        if let CheckedType::Generic(declaration) = element {
-            return Ok(CheckedElement::Flat(CheckedFlatElement::Generic(
-                declaration,
-            )));
-        }
-        if let Some(lifted) = Self::run_element(element) {
-            return Ok(lifted);
-        }
-        match self.buffer_element(element)? {
-            Some(element) => Ok(CheckedElement::Flat(element)),
-            None => self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, node),
-        }
+        self.intern_element(element)
     }
 
     /// The row's declared requirement list, instantiated at this call.
@@ -999,7 +985,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [EFF-2] the row's declared effect row projected through its actuals,
     /// exactly as an ordinary call's is: a `&uniq` state operand projects
     /// through its loan, and every operand projects through the resolved
-    /// places and state origins of the actual itself.
+    /// actual place or its ordinary view-loan origins.
     #[allow(clippy::too_many_arguments)]
     fn project_kernel_call_effects(
         &self,
@@ -1007,7 +993,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature: &KernelSignature,
         borrows: &[Option<BorrowInfo>],
         holders: &[Option<DeclarationId>],
-        state_origins: &[Option<super::super::super::super::model::CheckedStateOrigins>],
         argument_places: &[Vec<super::super::super::borrows::ResolvedPlace>],
         caller: &FunctionSignature,
         bindings: &HashMap<DeclarationId, LocalBinding>,
@@ -1042,24 +1027,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     access,
                     node,
                 )?;
-                paths.extend(self.effect_paths_for_place(&borrow.place, bindings)?);
+                paths.extend(self.effect_paths_for_whole_place(node, &borrow.place, bindings)?);
             }
-            for place in argument_places.get(index).into_iter().flatten() {
-                paths.push(self.state_path(place, bindings)?);
-            }
-            if let Some(origins) = state_origins.get(index).and_then(Option::as_ref) {
-                if origins.unknown && !self.deriving_result_state_origin.get() {
-                    return Err(SemanticCompilerFailure::InvalidResolution.into());
-                }
-                for origin in &origins.formals {
-                    paths.push(origin.source.clone());
-                }
+            for place in argument_places
+                .get(index)
+                .into_iter()
+                .flatten()
+                .filter(|_| parameter.mode == KernelMode::Own)
+            {
+                paths.push(self.state_path(place, bindings)?.into());
             }
             for path in paths {
                 if !caller
                     .parameters
                     .iter()
-                    .any(|parameter| parameter.declaration == path.root)
+                    .any(|parameter| parameter.declaration == path.path.root)
                 {
                     continue;
                 }

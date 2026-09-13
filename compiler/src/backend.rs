@@ -1,9 +1,9 @@
 //! Conservative textual LLVM emission for the active Whitefoot specification.
 
-mod abi;
-mod emitter;
+pub(crate) mod abi;
+pub(crate) mod emitter;
 mod graph;
-mod qualification;
+mod runtime;
 mod stack_ledger;
 mod storage;
 mod target;
@@ -18,9 +18,9 @@ pub use emitter::{
     COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
     COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WAIT_WINDOWS_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER,
     COMPLETION_WINDOWS_IOCP_SOURCE, FLOOR_RUNTIME_SOURCE, FLOOR_STACK_BYTES,
-    FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
+    FLOOR_WINDOWS_RUNTIME_SOURCE, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
+    ORDINARY_VALUES_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
     SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_PRIM_WINDOWS_SOURCE,
-    WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, emit_llvm, module_requires_completion_runtime,
-    module_requires_parallel_runtime,
+    WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, emit_llvm, module_requires_parallel_runtime,
 };
 pub use stack_ledger::{Architecture, stack_ledger};

@@ -4,7 +4,7 @@ fn drain['s](store: &uniq Heap<'s>, cell: own Vector<'s, u8>) -> code: own u8 pu
   return 4_u8;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "The caller.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {

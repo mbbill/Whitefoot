@@ -1,16 +1,21 @@
-# Program-level I/O measurement for the unified-state completion model.
+# Program-level measurement of ordinary linked I/O functions and native controls.
 #
 # Three lines per workload, all publishing the same bytes:
 #   N  the best hand-written native shape (thread pool, io_uring)
-#   S  the Whitefoot program built with --no-overlap, the sequential reference
-#   C  the Whitefoot program built the way it ships, with completion overlap
+#   S  the Whitefoot program built with --no-overlap
+#   C  the same Whitefoot program built with the default lowering
+#
+# These retained labels do not assert that the two WF modules differ. C2's
+# ordinary shared-factory calls serialize, and PAR-3 staging is deleted; the
+# measured many-files modules are identical in both modes. See C2-RESULTS.md.
 #
 # This is a measurement bundle, not a gate. Its protocols are deliberately not
 # reachable from the repository's `make check`: they generate a large tree,
 # run for minutes, and report timings that no build should depend on. The one
-# target the gate does run is `programs-check`, which only compiles every
-# program here with the current compiler, so a language change that leaves a
-# program behind fails the gate instead of silently emptying a table.
+# source target the gate runs is `programs-check`, which compiles every program
+# here with the current compiler, so a language change cannot leave one behind.
+# The gate also runs `uring-check`, a deterministic correctness fixture for the
+# native reference; neither target measures performance.
 #
 #   make -C research/experiments/io-completion-bench verify   correctness only
 #   make -C research/experiments/io-completion-bench bench     the macOS table
@@ -18,8 +23,8 @@
 #   make -C research/experiments/io-completion-bench linux     the Linux table
 #
 # Generated trees, binaries, and raw output stay in the scratch root. Only the
-# summarized table is committed, in
-# research/investigations/io-model/RESULTS.md.
+# summarized tables and their owned sample artifacts are retained here and in
+# research/investigations/io-model/RESULTS.md (historical completion results).
 
 ROOT := $(abspath ../../..)
 WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
@@ -152,9 +157,8 @@ programs-check: compiler | prepare
 $(BUILD)/checked_%: programs/%.wf | prepare
 	$(WFC) -o $@ $<
 
-# The C line and the S line are one source compiled two ways. Nothing else
-# differs between them, which is what makes the pair a statement about the
-# lowering rather than about two programs.
+# The C and S labels retain the same source under two lowering configurations.
+# An identical emitted module makes this pair a measurement-noise control.
 $(BUILD)/%: programs/%.wf compiler | prepare
 	$(WFC) -o $@ $<
 
@@ -488,7 +492,8 @@ linux-read: linux-image
 		$(DOCKER_IMAGE) \
 		sh /work/research/experiments/io-completion-bench/read-bench.sh
 
-# The four-stage chain of design section 12's fourth item, in its four shapes.
+# Historical four-stage chain: its managed wf_sched_core API has been retired.
+# This optional evidence target does not build against the current core.
 # Not one of the three lines: it is a C program on raw io_uring, it links the
 # scheduler core for the stack-switch shape, and what it reports is the
 # dependent stage's in-flight depth beside the wall time.

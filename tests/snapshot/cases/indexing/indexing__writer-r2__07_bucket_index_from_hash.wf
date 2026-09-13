@@ -13,7 +13,7 @@ fn bucket_of(counts: &uniq MutSlice<u32>, hash: own u64) -> result: own unit rea
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a nonzero constant-length bucket table plus a runtime-value modulus keeps the remainder inside [0, buckets) automatically under [OP-2, OP-4]; a plain buffer literal always has that fact, no invariant needed.";
   region 'w {
     let workspace = arena_frame::<32, 4, 'w>();
@@ -25,7 +25,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_counts: room_of(counts) + at >= 8_u64,
         invariant flat_counts: head_of(counts) <= 0_u64
       ) {
-        set counts = place_back(vector: move counts, value: 0_u32);
+        place_back(vector: &uniq counts, value: 0_u32);
       }
       region {
         let view_counts = mut_slice_of(&uniq counts);

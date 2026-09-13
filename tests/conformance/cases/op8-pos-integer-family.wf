@@ -6,7 +6,7 @@ fn mix(word: own u32) -> return_value: own u32 pure {
   return biased;
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "OP-8: the extended integer family supports binary-data kernels through the normal compiler path.";
   let mixed = mix(word: 305419896_u32);
   let bits = ipopcount(mixed);

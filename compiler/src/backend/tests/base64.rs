@@ -10,8 +10,12 @@ fn compiler_independent_base64_rfc_vectors_execute() {
     // B7c4b-1: the three inputs are const runs and the three outputs come from
     // one bump extent, so nothing in this program reaches the host allocator
     // and no edge carries a free.
-    assert!(encode.starts_with("define internal void @wf_encode(ptr %wf.result, { ptr, i64 } "));
-    assert!(encode.contains("store %wf.t4 "));
+    assert!(encode.starts_with("define void @wf_encode(ptr %wf.result, { ptr, i64 } "));
+    // Ordinary prelude declarations now precede this Result instantiation in
+    // the nominal table. Keep its independent physical ABI expectation: tag,
+    // u64 success payload, and the one-bit fieldless IndexError payload.
+    assert!(llvm.contains("%wf.t34 = type { i32, i64, i1 }"));
+    assert!(encode.contains("store %wf.t34 "));
     assert_eq!(encode.matches("call ptr @malloc").count(), 0);
     assert_eq!(encode.matches("call void @free").count(), 0);
     assert_eq!(main.matches("call void @wf_encode(ptr ").count(), 3);

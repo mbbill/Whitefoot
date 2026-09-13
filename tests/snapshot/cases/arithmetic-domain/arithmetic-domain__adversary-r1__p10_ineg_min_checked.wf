@@ -16,7 +16,7 @@ fn probe() -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: ineg.checked(i8::MIN) is Err, ineg.wrap(i8::MIN) wraps to itself.";
   let v = probe();
   if v == 0_u8 {

@@ -1,0 +1,35 @@
+struct Marker['s] {
+  value: u64;
+}
+
+struct Pair['a, 'b] {
+  first: Marker<'a>;
+  second: Marker<'b>;
+}
+
+struct Wrapped['a, 'b] {
+  pair: Pair<'a, 'b>;
+}
+
+fn second_value['a, 'b](wrapped: &Wrapped<'a, 'b>) -> value: own u64 reads(wrapped.pair.second.value) {
+  return deref(wrapped).pair.second.value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "FORM-8 and TYPE-5: a constructor field and a function parameter each determine all explicit brand positions of their declared nominal type. The wrapper's one field supplies both brands; neither construction nor the reader call writes a determined argument.";
+  region 'outer {
+    let first = Marker<'outer>(value: 7_u64);
+    region 'inner {
+      let second = Marker<'inner>(value: 9_u64);
+      let pair = Pair(first: move first, second: move second);
+      let wrapped = Wrapped(pair: move pair);
+      region {
+        let value = second_value(wrapped: &wrapped);
+        if value == 9_u64 {
+          return exit_status(code: 0_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}

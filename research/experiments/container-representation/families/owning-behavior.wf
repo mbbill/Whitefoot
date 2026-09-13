@@ -1,0 +1,1119 @@
+struct Seed {
+  salt: u64;
+}
+
+fn seed_hash(env: &Seed, key: &u64) -> hash: own u64 reads(env.salt, key) {
+  let mixed = deref(key) +wrap deref(env).salt;
+  return mixed;
+}
+
+fn seed_equal(env: &Seed, left: &u64, right: &u64) -> equal: own Bool reads(left, right) {
+  let same = deref(left) == deref(right);
+  return same;
+}
+
+struct Resource {
+  id: u64;
+  data0: u64;
+  data1: u64;
+  data2: u64;
+  data3: u64;
+}
+
+enum Slot<K: linear>['s] {
+  Vacant();
+  Deleted();
+  Occupied(fingerprint: u8, key: K, payload: Box<'s, Resource>);
+}
+
+enum Probe {
+  Stop();
+  Skip();
+  Miss();
+  Match();
+}
+
+enum KeyPut<K: linear>['s] {
+  Installed(previous: Slot<'s, K>);
+  Rejected(key: K, payload: Box<'s, Resource>);
+}
+
+enum PutOutcome['s] {
+  Inserted();
+  Replaced(previous: Box<'s, Resource>);
+  Full(offered: Box<'s, Resource>);
+  AllocationRefused();
+}
+
+struct Progress<K: linear>['s] {
+  held: Slot<'s, K>;
+  source_next: u64;
+  next_probe: u64;
+  phase: u8;
+}
+
+struct Rehash<K: linear>['s] {
+  source: Vector<'s, Slot<'s, K>>;
+  target: Vector<'s, Slot<'s, K>>;
+  progress: Progress<'s, K>;
+}
+
+enum Begin<K: linear>['s] {
+  Refused(source: Vector<'s, Slot<'s, K>>);
+  Started(state: Rehash<'s, K>);
+}
+
+formal Key<K: linear, E: linear> {
+  fn hash(env: &E, key: &K) -> hash: own u64 reads(env, key);
+  fn equal(env: &E, left: &K, right: &K) -> equal: own Bool reads(env, left, right);
+}
+
+struct Map<Key<K, E>>['s] {
+  slots: Vector<'s, Slot<'s, K>>;
+}
+
+actual SeedKey : Key<u64, Seed> {
+  hash = seed_hash;
+  equal = seed_equal;
+}
+
+struct Empty {
+}
+
+fn word_hash(env: &Empty, key: &u64) -> hash: own u64 reads(key) {
+  return deref(key);
+}
+
+fn word_equal(env: &Empty, left: &u64, right: &u64) -> equal: own Bool reads(left, right) {
+  return deref(left) == deref(right);
+}
+
+actual WordKey : Key<u64, Empty> {
+  hash = word_hash;
+  equal = word_equal;
+}
+
+fn fingerprint(key: own u64) -> result: own u8 pure {
+  let tag = 0_u8;
+  let bit0 = iand(key, 1_u64);
+  if bit0 != 0_u64 {
+    set tag = ior(tag, 1_u8);
+  }
+  let bit1 = iand(key, 2_u64);
+  if bit1 != 0_u64 {
+    set tag = ior(tag, 2_u8);
+  }
+  let bit2 = iand(key, 4_u64);
+  if bit2 != 0_u64 {
+    set tag = ior(tag, 4_u8);
+  }
+  let bit3 = iand(key, 8_u64);
+  if bit3 != 0_u64 {
+    set tag = ior(tag, 8_u8);
+  }
+  let bit4 = iand(key, 16_u64);
+  if bit4 != 0_u64 {
+    set tag = ior(tag, 16_u8);
+  }
+  let bit5 = iand(key, 32_u64);
+  if bit5 != 0_u64 {
+    set tag = ior(tag, 32_u8);
+  }
+  let bit6 = iand(key, 64_u64);
+  if bit6 != 0_u64 {
+    set tag = ior(tag, 64_u8);
+  }
+  return tag;
+}
+
+fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 pure contract {
+  requires home < count;
+  requires step < count;
+  ensures index < count;
+} {
+  let until_end = count - home;
+  if step >= until_end {
+    let wrapped = step - until_end;
+    return wrapped;
+  }
+  let straight = home + step;
+  return straight;
+}
+
+fn key_probe<Key<K, E>>['s](slot: &Slot<'s, K>, tag: own u8, key: &K, env: &E) -> action: own Probe reads(slot, key, env) {
+  match deref(slot) {
+    Vacant() => {
+      return Stop();
+    }
+    Deleted() => {
+      return Skip();
+    }
+    Occupied(fingerprint: saved, key: present, payload: owner) => {
+      if deref(saved) == tag {
+        let same = Key::equal(env: env, left: present, right: key);
+        if same {
+          return Match();
+        }
+      }
+      return Miss();
+    }
+  }
+}
+
+fn key_put<Key<K, E>>['s](slots: &uniq Vector<'s, Slot<'s, K>>, key: own K, payload: own Box<'s, Resource>, env: &E) -> outcome: own KeyPut<'s, K> reads(slots, key, env), writes(slots) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  let hash = 0_u64;
+  region {
+    set hash = Key::hash(env: env, key: &key);
+  }
+  let tag = fingerprint(key: hash);
+  let count = len_of(deref(slots));
+  let first_deleted = count;
+  for (step in 0_u64..count) {
+    let home = hash % count;
+    let index = probe_index(home: home, step: step, count: count);
+    let action = Miss();
+    region {
+      set action = key_probe::<Key<K, E>>(slot: &deref(slots)[index], tag: tag, key: &key, env: env);
+    }
+    match action {
+      Match() => {
+        let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+        let previous = replace deref(slots)[index] = move offered;
+        return Installed<K>(previous: move previous);
+      }
+      Skip() => {
+        if first_deleted == count {
+          set first_deleted = index;
+        }
+      }
+      Stop() => {
+        let destination = index;
+        if first_deleted < count {
+          set destination = first_deleted;
+        }
+        let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+        let previous = replace deref(slots)[destination] = move offered;
+        return Installed<K>(previous: move previous);
+      }
+      Miss() => {
+      }
+    }
+  }
+  if first_deleted < count {
+    let offered = Occupied<K>(fingerprint: tag, key: move key, payload: move payload);
+    let previous = replace deref(slots)[first_deleted] = move offered;
+    return Installed<K>(previous: move previous);
+  }
+  return Rejected<K>(key: move key, payload: move payload);
+}
+
+fn key_find_index<Key<K, E>>['s](slots: &Vector<'s, Slot<'s, K>>, key: &K, env: &E) -> found: own Result<u64, unit> reads(slots, key, env) contract {
+  ensures when Ok(value: index): index < len_of(deref(slots));
+} {
+  let hash = Key::hash(env: env, key: key);
+  let tag = fingerprint(key: hash);
+  let count = len_of(deref(slots));
+  for (step in 0_u64..count) {
+    let home = hash % count;
+    let index = probe_index(home: home, step: step, count: count);
+    region {
+      let action = key_probe::<Key<K, E>>(slot: &deref(slots)[index], tag: tag, key: key, env: env);
+      match action {
+        Match() => {
+          return Ok<u64, unit>(value: index);
+        }
+        Stop() => {
+          return Err<u64, unit>(error: unit);
+        }
+        Skip() => {
+        }
+        Miss() => {
+        }
+      }
+    }
+  }
+  return Err<u64, unit>(error: unit);
+}
+
+fn key_fill<K: linear>['s](slots: &uniq Vector<'s, Slot<'s, K>>, count: own u64) -> result: own unit reads(slots), writes(slots) contract {
+  requires len_of(deref(slots)) == 0_u64;
+  requires head_of(deref(slots)) <= 0_u64;
+  requires room_of(deref(slots)) >= count;
+  ensures len_of(deref(slots)) == count;
+  ensures head_of(deref(slots)) <= 0_u64;
+} {
+  for (
+    index in 0_u64..count,
+    invariant filled: len_of(deref(slots)) >= index,
+    invariant bounded: len_of(deref(slots)) <= index,
+    invariant spare: room_of(deref(slots)) + index >= count,
+    invariant flat: head_of(deref(slots)) <= 0_u64
+  ) {
+    let vacant = Vacant<'s, K>();
+    region {
+      place_back(vector: &uniq deref(slots), value: move vacant);
+    }
+  }
+  invariant complete_min: len_of(deref(slots)) >= count;
+  invariant complete_max: len_of(deref(slots)) <= count;
+  return unit;
+}
+
+fn key_occupied<K: linear>['s](slot: &Slot<'s, K>) -> full: own Bool reads(slot) {
+  match deref(slot) {
+    Occupied(fingerprint: tag, key: present, payload: owner) => {
+      return True();
+    }
+    Vacant() => {
+      return False();
+    }
+    Deleted() => {
+      return False();
+    }
+  }
+}
+
+fn key_slot_hash<Key<K, E>>['s](slot: &Slot<'s, K>, env: &E) -> hash: own u64 reads(slot, env) {
+  match deref(slot) {
+    Occupied(fingerprint: tag, key: present, payload: owner) => {
+      return Key::hash(env: env, key: present);
+    }
+    Vacant() => {
+      return 0_u64;
+    }
+    Deleted() => {
+      return 0_u64;
+    }
+  }
+}
+
+fn key_begin<K: linear>['s](store: &uniq Heap<'s>, source: own Vector<'s, Slot<'s, K>>, count: own u64) -> result: own Begin<'s, K> reads(store), writes(store), allocates(store) {
+  let fits = buffer_fits::<Slot<'s, K>>(count);
+  if fits {
+  } else {
+    return Refused<K>(source: move source);
+  }
+  region {
+    match heap_vector::<Slot<'s, K>>(store: &uniq deref(store), count: count) {
+      None() => {
+        return Refused<K>(source: move source);
+      }
+      Some(value: spare) => {
+        region {
+          key_fill::<K>(slots: &uniq spare, count: count);
+        }
+        let held = Vacant<'s, K>();
+        let progress = Progress<K>(held: move held, source_next: 0_u64, next_probe: 0_u64, phase: 0_u8);
+        let state = Rehash<K>(source: move source, target: move spare, progress: move progress);
+        return Started<K>(state: move state);
+      }
+    }
+  }
+}
+
+fn key_advance<Key<K, E>>['s](store: &uniq Heap<'s>, source: &uniq Vector<'s, Slot<'s, K>>, target: &uniq Vector<'s, Slot<'s, K>>, progress: &uniq Progress<'s, K>, budget: own u64, env: &E) -> (examined: own u64, moved: own u64) reads(env, source, target, progress.held, progress.source_next, progress.next_probe, progress.phase), writes(store, source, target, progress.held, progress.source_next, progress.next_probe, progress.phase) {
+  let source_cursor = deref(progress).source_next;
+  let probe_cursor = deref(progress).next_probe;
+  let phase = deref(progress).phase;
+  let inspected = 0_u64;
+  let transfers = 0_u64;
+  if phase < 2_u8 {
+    for (
+      tick in 0_u64..budget,
+      invariant work_min: inspected >= tick,
+      invariant work_max: inspected <= tick,
+      invariant moved_bound: transfers <= inspected
+    ) {
+      if phase == 0_u8 {
+        let count = len_of(deref(source));
+        if source_cursor >= count {
+          set phase = 3_u8;
+          break;
+        }
+        let index = source_cursor;
+        set source_cursor = source_cursor + 1_u64;
+        region {
+          let full = key_occupied::<K>(slot: &deref(source)[index]);
+          if full {
+            let deleted = Deleted<'s, K>();
+            let held_slot = replace deref(source)[index] = move deleted;
+            let previous_held = replace deref(progress).held = move held_slot;
+            dispose previous_held;
+            set probe_cursor = 0_u64;
+            set phase = 1_u8;
+          }
+        }
+      } else {
+        let count = len_of(deref(target));
+        if probe_cursor >= count {
+          set phase = 2_u8;
+          break;
+        }
+        region {
+          let key = key_slot_hash::<Key<K, E>>(slot: &deref(progress).held, env: env);
+          let home = key % count;
+          let index = probe_index(home: home, step: probe_cursor, count: count);
+          set probe_cursor = probe_cursor + 1_u64;
+          let full = key_occupied::<K>(slot: &deref(target)[index]);
+          if full {
+          } else {
+            let vacant = Vacant<'s, K>();
+            let held_slot = replace deref(progress).held = move vacant;
+            let previous = replace deref(target)[index] = move held_slot;
+            dispose previous;
+            set transfers = transfers + 1_u64;
+            set phase = 0_u8;
+          }
+        }
+      }
+      set inspected = inspected + 1_u64;
+    }
+    if phase == 0_u8 {
+      let source_count = len_of(deref(source));
+      if source_cursor == source_count {
+        set phase = 3_u8;
+      }
+    }
+  }
+  set deref(progress).source_next = source_cursor;
+  set deref(progress).next_probe = probe_cursor;
+  set deref(progress).phase = phase;
+  return inspected, transfers;
+}
+
+fn key_rehash_all<Key<K, E>>['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s, K>>, count: own u64, env: &E) -> (code: own u8, examined: own u64, moved: own u64) reads(store, slots, env), writes(store, slots), allocates(store) contract {
+  requires len_of(deref(slots)) <= 1048576_u64;
+  requires count >= len_of(deref(slots));
+  requires count <= 2097152_u64;
+} {
+  let fits = buffer_fits::<Slot<'s, K>>(count);
+  if fits {
+  } else {
+    return 1_u8, 0_u64, 0_u64;
+  }
+  region {
+    match heap_vector::<Slot<'s, K>>(store: &uniq deref(store), count: count) {
+      None() => {
+        return 1_u8, 0_u64, 0_u64;
+      }
+      Some(value: target) => {
+        let held = Vacant<'s, K>();
+        let progress = Progress<K>(held: move held, source_next: 0_u64, next_probe: 0_u64, phase: 0_u8);
+        region {
+          key_fill::<K>(slots: &uniq target, count: count);
+          let (work, moved) = key_advance::<Key<K, E>>(store: &uniq deref(store), source: &uniq deref(slots), target: &uniq target, progress: &uniq progress, budget: 18446744073709551615_u64, env: env);
+          let phase = progress.phase;
+          let old = replace deref(slots) = move target;
+          dispose old;
+          return phase, work, moved;
+        }
+      }
+    }
+  }
+}
+
+fn key_create<K: linear>['s](store: &uniq Heap<'s>, count: own u64) -> result: own Option<Vector<'s, Slot<'s, K>>> reads(store), writes(store), allocates(store) {
+  let fits = buffer_fits::<Slot<'s, K>>(count);
+  if fits {
+  } else {
+    return None<Vector<'s, Slot<'s, K>>>();
+  }
+  region {
+    match heap_vector::<Slot<'s, K>>(store: &uniq deref(store), count: count) {
+      None() => {
+        return None<Vector<'s, Slot<'s, K>>>();
+      }
+      Some(value: spare) => {
+        region {
+          key_fill::<K>(slots: &uniq spare, count: count);
+        }
+        return Some<Vector<'s, Slot<'s, K>>>(value: move spare);
+      }
+    }
+  }
+}
+
+fn key_remove<Key<K, E>>['s](slots: &uniq Vector<'s, Slot<'s, K>>, key: &K, env: &E) -> removed: own Slot<'s, K> reads(slots, key, env), writes(slots) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  region {
+    match key_find_index::<Key<K, E>>(slots: &deref(slots), key: key, env: env) {
+      Err(error: absent) => {
+        return Vacant<'s, K>();
+      }
+      Ok(value: index) => {
+        let deleted = Deleted<'s, K>();
+        let old = replace deref(slots)[index] = move deleted;
+        return move old;
+      }
+    }
+  }
+}
+
+fn key_inspect<Key<K, E>>['s](slot: &Slot<'s, K>, tag: own u8, key: &K, env: &E) -> (action: own Probe, id: own u64) reads(slot, key, env) {
+  match deref(slot) {
+    Vacant() => {
+      return Stop(), 0_u64;
+    }
+    Deleted() => {
+      return Skip(), 0_u64;
+    }
+    Occupied(fingerprint: saved, key: present, payload: owner) => {
+      if deref(saved) == tag {
+        let same = Key::equal(env: env, left: present, right: key);
+        if same {
+          return Match(), deref(deref(owner)).id;
+        }
+      }
+      return Miss(), 0_u64;
+    }
+  }
+}
+
+fn key_find<Key<K, E>>['s](slots: &Vector<'s, Slot<'s, K>>, key: &K, env: &E) -> (found: own Option<u64>, examined: own u64) reads(slots, key, env) {
+  let hash = Key::hash(env: env, key: key);
+  let tag = fingerprint(key: hash);
+  let count = len_of(deref(slots));
+  for (offset in 0_u64..count) {
+    let home = hash % count;
+    let index = probe_index(home: home, step: offset, count: count);
+    let work = offset + 1_u64;
+    region {
+      let (action, id) = key_inspect::<Key<K, E>>(slot: &deref(slots)[index], tag: tag, key: key, env: env);
+      match action {
+        Stop() => {
+          return None<u64>(), work;
+        }
+        Match() => {
+          return Some<u64>(value: id), work;
+        }
+        Skip() => {
+        }
+        Miss() => {
+        }
+      }
+    }
+  }
+  return None<u64>(), count;
+}
+
+fn put['s](slots: &uniq Vector<'s, Slot<'s, u64>>, key: own u64, payload: own Box<'s, Resource>) -> outcome: own PutOutcome<'s> reads(slots, key), writes(slots) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  let env = Empty();
+  region {
+    match key_put::<WordKey>(slots: &uniq deref(slots), key: key, payload: move payload, env: &env) {
+      Rejected(key: offered_key, payload: owner) => {
+        return Full(offered: move owner);
+      }
+      Installed(previous: old) => {
+        match move old {
+          Vacant() => {
+            return Inserted<'s>();
+          }
+          Deleted() => {
+            return Inserted<'s>();
+          }
+          Occupied(fingerprint: tag, key: old_key, payload: owner) => {
+            return Replaced(previous: move owner);
+          }
+        }
+      }
+    }
+  }
+}
+
+fn find['s](slots: &Vector<'s, Slot<'s, u64>>, key: own u64) -> (found: own Option<u64>, examined: own u64) reads(slots) {
+  let env = Empty();
+  region {
+    let (found, examined) = key_find::<WordKey>(slots: &deref(slots), key: &key, env: &env);
+    return move found, examined;
+  }
+}
+
+fn remove['s](slots: &uniq Vector<'s, Slot<'s, u64>>, key: own u64) -> removed: own Option<Box<'s, Resource>> reads(slots), writes(slots) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  let env = Empty();
+  region {
+    let old = key_remove::<WordKey>(slots: &uniq deref(slots), key: &key, env: &env);
+    match move old {
+      Vacant() => {
+        return None<Box<'s, Resource>>();
+      }
+      Deleted() => {
+        return None<Box<'s, Resource>>();
+      }
+      Occupied(fingerprint: tag, key: old_key, payload: owner) => {
+        return Some<Box<'s, Resource>>(value: move owner);
+      }
+    }
+  }
+}
+
+fn begin['s](store: &uniq Heap<'s>, source: own Vector<'s, Slot<'s, u64>>, count: own u64) -> result: own Begin<'s, u64> reads(store), writes(store), allocates(store) {
+  region {
+    return key_begin::<u64>(store: &uniq deref(store), source: move source, count: count);
+  }
+}
+
+fn advance['s](store: &uniq Heap<'s>, source: &uniq Vector<'s, Slot<'s, u64>>, target: &uniq Vector<'s, Slot<'s, u64>>, progress: &uniq Progress<'s, u64>, budget: own u64) -> (examined: own u64, moved: own u64) reads(source, target, progress.held, progress.source_next, progress.next_probe, progress.phase), writes(store, source, target, progress.held, progress.source_next, progress.next_probe, progress.phase) {
+  let env = Empty();
+  region {
+    let (examined, moved) = key_advance::<WordKey>(store: &uniq deref(store), source: &uniq deref(source), target: &uniq deref(target), progress: &uniq deref(progress), budget: budget, env: &env);
+    return examined, moved;
+  }
+}
+
+fn rehash_all['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s, u64>>, count: own u64) -> (code: own u8, examined: own u64, moved: own u64) reads(store, slots), writes(store, slots), allocates(store) contract {
+  requires len_of(deref(slots)) <= 1048576_u64;
+  requires count >= len_of(deref(slots));
+  requires count <= 2097152_u64;
+} {
+  let env = Empty();
+  region {
+    let (code, examined, moved) = key_rehash_all::<WordKey>(store: &uniq deref(store), slots: &uniq deref(slots), count: count, env: &env);
+    return code, examined, moved;
+  }
+}
+
+fn create_table['s](store: &uniq Heap<'s>, count: own u64) -> result: own Option<Vector<'s, Slot<'s, u64>>> reads(store), writes(store), allocates(store) {
+  region {
+    return key_create::<u64>(store: &uniq deref(store), count: count);
+  }
+}
+
+fn read_slot['s](slot: &Slot<'s, u64>) -> (control: own u8, key: own u64, id: own u64) reads(slot) {
+  match deref(slot) {
+    Vacant() => {
+      return 128_u8, 0_u64, 0_u64;
+    }
+    Deleted() => {
+      return 254_u8, 0_u64, 0_u64;
+    }
+    Occupied(fingerprint: saved_tag, key: saved_key, payload: owner) => {
+      return deref(saved_tag), deref(saved_key), deref(deref(owner)).id;
+    }
+  }
+}
+
+fn allocate_put['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s, u64>>, key: own u64, id: own u64) -> outcome: own PutOutcome<'s> reads(store, slots, key), writes(store, slots), allocates(store) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  let data0 = id *wrap 17_u64;
+  let data1 = data0 +wrap 1_u64;
+  let data2 = data0 +wrap 2_u64;
+  let data3 = data0 +wrap 3_u64;
+  let resource = Resource(id: id, data0: data0, data1: data1, data2: data2, data3: data3);
+  region {
+    match heap_box(store: &uniq deref(store), value: move resource) {
+      Err(error: back) => {
+        return AllocationRefused<'s>();
+      }
+      Ok(value: owner) => {
+        let result = put(slots: &uniq deref(slots), key: key, payload: move owner);
+        return move result;
+      }
+    }
+  }
+}
+
+fn check_put['s](store: &uniq Heap<'s>, outcome: own PutOutcome<'s>, kind: own u64, expected: own u64) -> code: own u8 writes(store) {
+  match move outcome {
+    Inserted() => {
+      if kind != 1_u64 {
+        return 1_u8;
+      }
+      return 0_u8;
+    }
+    Replaced(previous: old) => {
+      if kind != 2_u64 {
+        return 2_u8;
+      }
+      if deref(old).id != expected {
+        return 3_u8;
+      }
+      return 0_u8;
+    }
+    Full(offered: back) => {
+      if kind != 3_u64 {
+        return 4_u8;
+      }
+      if deref(back).id != expected {
+        return 5_u8;
+      }
+      return 0_u8;
+    }
+    AllocationRefused() => {
+      return 70_u8;
+    }
+  }
+}
+
+fn digest['s](slots: &Vector<'s, Slot<'s, u64>>) -> result: own u64 reads(slots) {
+  let count = len_of(deref(slots));
+  let start = ixor(1469598103934665603_u64, count);
+  let hash = start *wrap 1099511628211_u64;
+  for (index in 0_u64..count) {
+    let (control, key, id) = read_slot(slot: &deref(slots)[index]);
+    let wide = cvt::<u8, u64>(control);
+    let with_tag = ixor(hash, wide);
+    set hash = with_tag *wrap 1099511628211_u64;
+    if control <= 127_u8 {
+      let with_key = ixor(hash, key);
+      let keyed = with_key *wrap 1099511628211_u64;
+      let with_id = ixor(keyed, id);
+      set hash = with_id *wrap 1099511628211_u64;
+    }
+  }
+  return hash;
+}
+
+fn cleanup['s](store: &uniq Heap<'s>, state: own Rehash<'s, u64>) -> result: own unit writes(store, state) {
+  dispose state;
+  return unit;
+}
+
+fn checked_insert['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s, u64>>, key: own u64, id: own u64, kind: own u64, expected: own u64) -> code: own u8 reads(store, slots, key), writes(store, slots), allocates(store) {
+  region {
+    let outcome = allocate_put(store: &uniq deref(store), slots: &uniq deref(slots), key: key, id: id);
+    let verdict = check_put(store: &uniq deref(store), outcome: move outcome, kind: kind, expected: expected);
+    return verdict;
+  }
+}
+
+fn state_hash['s](state: &Rehash<'s, u64>) -> result: own u64 reads(state.source, state.target, state.progress.held, state.progress.source_next, state.progress.next_probe, state.progress.phase) {
+  region {
+    let source = digest(slots: &deref(state).source);
+    let target = digest(slots: &deref(state).target);
+    let (control, key, id) = read_slot(slot: &deref(state).progress.held);
+    let first = source *wrap 131_u64;
+    let second = first +wrap target;
+    let third = second *wrap 131_u64;
+    let fourth = third +wrap deref(state).progress.source_next;
+    let fifth = fourth *wrap 131_u64;
+    let sixth = fifth +wrap deref(state).progress.next_probe;
+    let phase = cvt::<u8, u64>(deref(state).progress.phase);
+    let seventh = sixth *wrap 131_u64;
+    let eighth = seventh +wrap phase;
+    let ninth = eighth *wrap 131_u64;
+    if control <= 127_u8 {
+      let tenth = ninth +wrap key;
+      let eleventh = tenth *wrap 131_u64;
+      return eleventh +wrap id;
+    }
+    return ninth *wrap 131_u64;
+  }
+}
+
+fn check_lookup['s](slots: &Vector<'s, Slot<'s, u64>>, key: own u64, expected: own u64, work: own u64) -> code: own u8 reads(slots) {
+  region {
+    let (found, examined) = find(slots: &deref(slots), key: key);
+    if examined != work {
+      return 11_u8;
+    }
+    match move found {
+      None() => {
+        return 12_u8;
+      }
+      Some(value: present) => {
+        if present != expected {
+          return 13_u8;
+        }
+        return 0_u8;
+      }
+    }
+  }
+}
+
+fn map_contract['s](store: &uniq Heap<'s>, seed: own u64, scenario: own u64, budget: own u64) -> result: own u64 reads(store), writes(store), allocates(store) {
+  let initial = 8_u64;
+  let entries = 3_u64;
+  if scenario == 0_u64 {
+    set entries = 5_u64;
+  }
+  if scenario >= 3_u64 {
+    set initial = 1_u64;
+    set entries = 1_u64;
+  }
+  let base = seed *wrap 100_u64;
+  region {
+    match create_table(store: &uniq deref(store), count: initial) {
+      None() => {
+        return 70_u64;
+      }
+      Some(value: slots) => {
+        for (ordinal in 0_u64..entries) {
+          let key_offset = ordinal *wrap 8_u64;
+          let kind = 1_u64;
+          let expected = 0_u64;
+          if scenario == 0_u64 {
+            if ordinal == 2_u64 {
+              set key_offset = 8_u64;
+              set kind = 2_u64;
+              set expected = base +wrap 2_u64;
+            }
+            if ordinal == 3_u64 {
+              let removed = remove(slots: &uniq slots, key: seed);
+              match move removed {
+                None() => {
+                  return 14_u64;
+                }
+                Some(value: owner) => {
+                  let expected_removed = base +wrap 1_u64;
+                  if deref(owner).id != expected_removed {
+                    return 15_u64;
+                  }
+                }
+              }
+              set key_offset = 8_u64;
+              set kind = 2_u64;
+              set expected = base +wrap 3_u64;
+              let query = seed +wrap 8_u64;
+              let query_id = base +wrap 3_u64;
+              region {
+                let checked_lookup = check_lookup(slots: &slots, key: query, expected: query_id, work: 2_u64);
+                if checked_lookup != 0_u8 {
+                  return cvt::<u8, u64>(checked_lookup);
+                }
+              }
+            }
+            if ordinal == 4_u64 {
+              set key_offset = 16_u64;
+            }
+          }
+          let key = seed +wrap key_offset;
+          let index_id = base +wrap ordinal;
+          let id = index_id +wrap 1_u64;
+          region {
+            let checked_put = checked_insert(store: &uniq deref(store), slots: &uniq slots, key: key, id: id, kind: kind, expected: expected);
+            if checked_put != 0_u8 {
+              return cvt::<u8, u64>(checked_put);
+            }
+          }
+        }
+        if scenario == 4_u64 {
+          let key = seed +wrap 1_u64;
+          let id = base +wrap 2_u64;
+          region {
+            let checked_full = checked_insert(store: &uniq deref(store), slots: &uniq slots, key: key, id: id, kind: 3_u64, expected: id);
+            if checked_full != 0_u8 {
+              return cvt::<u8, u64>(checked_full);
+            }
+            region {
+              return digest(slots: &slots);
+            }
+          }
+        }
+        let target_capacity = 8_u64;
+        if scenario == 0_u64 {
+          set target_capacity = 16_u64;
+        }
+        if scenario == 3_u64 {
+          set target_capacity = 1_u64;
+        }
+        region {
+          let before = digest(slots: &slots);
+          match begin(store: &uniq deref(store), source: move slots, count: target_capacity) {
+            Refused(source: original) => {
+              region {
+                let after = digest(slots: &original);
+                if before != after {
+                  return 16_u64;
+                }
+              }
+              return 70_u64;
+            }
+            Started(state: migration) => {
+              region {
+                let total_work = 0_u64;
+                let total_moved = 0_u64;
+                if scenario == 3_u64 {
+                  let key = seed +wrap 1_u64;
+                  let id = base +wrap 2_u64;
+                  let checked_target = checked_insert(store: &uniq deref(store), slots: &uniq migration.target, key: key, id: id, kind: 1_u64, expected: 0_u64);
+                  if checked_target != 0_u8 {
+                    return cvt::<u8, u64>(checked_target);
+                  }
+                }
+                if scenario == 2_u64 {
+                  for (round in 0_u64..14_u64) {
+                    let unchanged = state_hash(state: &migration);
+                    let (idle_work, idle_moved) = advance(store: &uniq deref(store), source: &uniq migration.source, target: &uniq migration.target, progress: &uniq migration.progress, budget: 0_u64);
+                    let after_idle = state_hash(state: &migration);
+                    if unchanged != after_idle {
+                      return 17_u64;
+                    }
+                    if idle_work != 0_u64 {
+                      return 18_u64;
+                    }
+                    if idle_moved != 0_u64 {
+                      return 19_u64;
+                    }
+                    let (work, moved) = advance(store: &uniq deref(store), source: &uniq migration.source, target: &uniq migration.target, progress: &uniq migration.progress, budget: 1_u64);
+                    set total_work = total_work +wrap work;
+                    set total_moved = total_moved +wrap moved;
+                    if work != 1_u64 {
+                      return 20_u64;
+                    }
+                  }
+                } else {
+                  let (work, moved) = advance(store: &uniq deref(store), source: &uniq migration.source, target: &uniq migration.target, progress: &uniq migration.progress, budget: budget);
+                  set total_work = work;
+                  set total_moved = moved;
+                  if work > budget {
+                    return 21_u64;
+                  }
+                  if scenario == 3_u64 {
+                    let unchanged = state_hash(state: &migration);
+                    let (retry_work, retry_moved) = advance(store: &uniq deref(store), source: &uniq migration.source, target: &uniq migration.target, progress: &uniq migration.progress, budget: 99_u64);
+                    let after_retry = state_hash(state: &migration);
+                    if unchanged != after_retry {
+                      return 22_u64;
+                    }
+                    if retry_work != 0_u64 {
+                      return 23_u64;
+                    }
+                    if retry_moved != 0_u64 {
+                      return 24_u64;
+                    }
+                  }
+                }
+                let hash = state_hash(state: &migration);
+                cleanup(store: &uniq deref(store), state: move migration);
+                let first = hash *wrap 131_u64;
+                let second = first +wrap total_work;
+                let third = second *wrap 131_u64;
+                return third +wrap total_moved;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+struct Branded['s] {
+  value: Box<'s, u64>;
+}
+
+fn branded_hash['s](env: &Seed, key: &Branded<'s>) -> hash: own u64 reads(env.salt, key.value) {
+  let value = deref(deref(key).value);
+  return value +wrap deref(env).salt;
+}
+
+fn branded_equal['s](env: &Seed, left: &Branded<'s>, right: &Branded<'s>) -> equal: own Bool reads(left.value, right.value) {
+  let a = deref(deref(left).value);
+  let b = deref(deref(right).value);
+  return a == b;
+}
+
+actual BrandedKey['s] : Key<Branded<'s>, Seed> {
+  hash = branded_hash;
+  equal = branded_equal;
+}
+
+fn never_equal(env: &Empty, left: &u64, right: &u64) -> equal: own Bool pure {
+  return False();
+}
+
+actual HostileKey : Key<u64, Empty> {
+  hash = word_hash;
+  equal = never_equal;
+}
+
+fn demo_payload['s](store: &uniq Heap<'s>, id: own u64) -> result: own Result<Box<'s, Resource>, Resource> reads(store), writes(store), allocates(store) {
+  let data0 = id *wrap 17_u64;
+  let data1 = data0 +wrap 1_u64;
+  let data2 = data0 +wrap 2_u64;
+  let data3 = data0 +wrap 3_u64;
+  let value = Resource(id: id, data0: data0, data1: data1, data2: data2, data3: data3);
+  region {
+    return heap_box(store: &uniq deref(store), value: move value);
+  }
+}
+
+fn seed_case['s](store: &uniq Heap<'s>) -> code: own u8 reads(store), writes(store), allocates(store) {
+  let env = Seed(salt: 8_u64);
+  let query = 5_u64;
+  region {
+    match key_create::<u64>(store: &uniq deref(store), count: 4_u64) {
+      None() => {
+        return 70_u8;
+      }
+      Some(value: slots) => {
+        let map = Map<SeedKey>(slots: move slots);
+        region {
+          match demo_payload(store: &uniq deref(store), id: 81_u64) {
+            Err(error: failed) => {
+              return 70_u8;
+            }
+            Ok(value: owner) => {
+              let outcome = key_put::<SeedKey>(slots: &uniq map.slots, key: 5_u64, payload: move owner, env: &env);
+              dispose outcome;
+              let (found, examined) = key_find::<SeedKey>(slots: &map.slots, key: &query, env: &env);
+              match move found {
+                None() => {
+                  return 1_u8;
+                }
+                Some(value: id) => {
+                  if id != 81_u64 {
+                    return 2_u8;
+                  }
+                }
+              }
+            }
+          }
+          return 0_u8;
+        }
+      }
+    }
+  }
+}
+
+fn branded_case['s](store: &uniq Heap<'s>) -> code: own u8 reads(store), writes(store), allocates(store) {
+  let env = Seed(salt: 8_u64);
+  region {
+    match key_create::<Branded<'s>>(store: &uniq deref(store), count: 4_u64) {
+      None() => {
+        return 70_u8;
+      }
+      Some(value: slots) => {
+        let map = Map<BrandedKey<'s>>(slots: move slots);
+        region {
+          match heap_box(store: &uniq deref(store), value: 9_u64) {
+            Err(error: failed_key) => {
+              return 70_u8;
+            }
+            Ok(value: key_owner) => {
+              let key = Branded(value: move key_owner);
+              match heap_box(store: &uniq deref(store), value: 9_u64) {
+                Err(error: failed_query) => {
+                  return 70_u8;
+                }
+                Ok(value: query_owner) => {
+                  let query = Branded(value: move query_owner);
+                  region {
+                    match demo_payload(store: &uniq deref(store), id: 81_u64) {
+                      Err(error: failed_payload) => {
+                        return 70_u8;
+                      }
+                      Ok(value: owner) => {
+                        let outcome = key_put::<BrandedKey<'s>>(slots: &uniq map.slots, key: move key, payload: move owner, env: &env);
+                        dispose outcome;
+                        let (found, examined) = key_find::<BrandedKey<'s>>(slots: &map.slots, key: &query, env: &env);
+                        match move found {
+                          None() => {
+                            return 3_u8;
+                          }
+                          Some(value: id) => {
+                            if id != 81_u64 {
+                              return 4_u8;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          return 0_u8;
+        }
+      }
+    }
+  }
+}
+
+fn hostile_case['s](store: &uniq Heap<'s>) -> code: own u8 reads(store), writes(store), allocates(store) {
+  let env = Empty();
+  let query = 5_u64;
+  region {
+    match key_create::<u64>(store: &uniq deref(store), count: 2_u64) {
+      None() => {
+        return 70_u8;
+      }
+      Some(value: slots) => {
+        let map = Map<HostileKey>(slots: move slots);
+        region {
+          for (ordinal in 0_u64..2_u64) {
+            let id = ordinal +wrap 81_u64;
+            match demo_payload(store: &uniq deref(store), id: id) {
+              Err(error: failed) => {
+                return 70_u8;
+              }
+              Ok(value: owner) => {
+                let outcome = key_put::<HostileKey>(slots: &uniq map.slots, key: 5_u64, payload: move owner, env: &env);
+                match move outcome {
+                  Rejected(key: offered_key, payload: offered_owner) => {
+                    return 5_u8;
+                  }
+                  Installed(previous: old) => {
+                    match move old {
+                      Occupied(fingerprint: tag, key: old_key, payload: old_owner) => {
+                        return 6_u8;
+                      }
+                      Vacant() => {
+                      }
+                      Deleted() => {
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          let (found, examined) = key_find::<HostileKey>(slots: &map.slots, key: &query, env: &env);
+          match move found {
+            Some(value: id) => {
+              return 7_u8;
+            }
+            None() => {
+              if examined != 2_u64 {
+                return 8_u8;
+              }
+            }
+          }
+          return 0_u8;
+        }
+      }
+    }
+  }
+}
+
+fn behavior_contract['s](store: &uniq Heap<'s>, variant: own u64) -> code: own u8 reads(store), writes(store), allocates(store) {
+  region {
+    if variant == 0_u64 {
+      return seed_case(store: &uniq deref(store));
+    }
+    if variant == 1_u64 {
+      return branded_case(store: &uniq deref(store));
+    }
+    return hostile_case(store: &uniq deref(store));
+  }
+}
+
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  for (variant in 0_u64..3_u64) {
+    let code = behavior_contract(store: &uniq heap, variant: variant);
+    if code != 0_u8 {
+      return exit_status(code: code);
+    }
+  }
+  region {
+    let observed = map_contract(store: &uniq heap, seed: 0_u64, scenario: 0_u64, budget: 100_u64);
+    if observed <= 70_u64 {
+      return exit_status(code: 1_u8);
+    }
+    return exit_status(code: 0_u8);
+  }
+}

@@ -288,8 +288,8 @@ jobs:
           echo "--- native adapter probe: exit status: ${status} ---"
           exit "$status"
 
-      # This probe proves the namespace facilities the Windows target row
-      # uses. It moves the ambient cwd away after taking its directory
+      # This probe proves the namespace facilities the native library uses.
+      # It moves the ambient cwd away after taking its directory
       # handle, then uses NtCreateFile and NtQueryDirectoryFile through that
       # handle. A runner unable to create the reparse-point fixture exits 77;
       # this evidence job treats that as fail-closed rather than a partial pass.
@@ -314,10 +314,27 @@ jobs:
           tr -d $'\r' < "$probe_dir/namespace-probe.err" || true
           echo "--- native namespace probe: exit status: ${status} ---"
           if [ "$status" -eq 77 ]; then
-            echo "the runner could not create the reparse-point fixture; Windows namespace qualification remains fail-closed" >&2
+            echo "the runner could not create the required reparse-point fixture" >&2
             exit 1
           fi
           exit "$status"
+
+      - name: Build and run the ordinary values probe
+        run: |
+          probe_dir="$RUNNER_TEMP/completion/ordinary-values"
+          mkdir -p "$probe_dir"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            $WINDOWS_UNITS \
+            compiler/src/backend/ordinary_values.c \
+            compiler/src/backend/ordinary_values_probe.c \
+            -o "$RUNNER_TEMP/completion/windows-ordinary-values-probe.exe" \
+            -lws2_32 -lshell32
+          for helpers in 0 2; do
+            WF_IO_HELPERS="$helpers" \
+              "$RUNNER_TEMP/completion/windows-ordinary-values-probe.exe" "$probe_dir"
+          done
 
       # Strict-check the same native units the ordinary compiler links.
       - name: Strict-check the complete Windows runtime
@@ -326,6 +343,7 @@ jobs:
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
             $WINDOWS_UNITS \
+            compiler/src/backend/ordinary_values.c \
             compiler/src/backend/wf_floor_windows.c
 
       # A bridge with no engine at all is a trusted-computing-base failure and
@@ -403,7 +421,7 @@ jobs:
       # bootstrap or the shipped driver forgets one Windows runtime unit. This
       # is the production boundary: native whitefootc emits and links a real
       # .wf program, whose two argument paths are UTF-16, whose files are
-      # opened relative to command.cwd, whose first independent read_at must
+      # opened relative to Inputs.cwd, whose first independent read_at must
       # submit to IOCP, and whose bytes leave through OutputStream.write_once. The
       # opt-in runtime assertion aborts at process exit unless at least one
       # IOCP submission was also reaped, so a silent direct fallback cannot
@@ -498,8 +516,8 @@ jobs:
           & $compiler "tests/programs/tcp_refused.wf" -o $refused
           if ($LASTEXITCODE -ne 0) { Fail "tcp_refused.wf did not compile or link" }
 
-          # The specification declares no operation reporting a listener's own
-          # local address ([SYS-17]), so the harness picks the port and passes
+          # The prelude declares no function reporting a listener's own
+          # local address, so the harness picks the port and passes
           # it as an argument, exactly as `compiler/tests/programs/network.rs`
           # does. A listener that never accepted leaves no connection in
           # TIME_WAIT, so the port is free the moment this releases it.
@@ -564,7 +582,7 @@ jobs:
             $stream.Flush()
             # The connection's receiving direction ends where this peer stops
             # sending, and the server's `receive_next` answers `ReadEnd` for
-            # exactly that [SYS-8, SYS-18].
+            # exactly that under the ordinary receive function's contract.
             $client.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
             $returned = New-Object System.IO.MemoryStream
             $chunk = New-Object byte[] 4096
@@ -599,8 +617,8 @@ jobs:
             # A port this step reserved and released: nothing is listening on
             # it, so the host answers the connect with its own refusal. The
             # program exits zero only when both attempts answered
-            # `ConnectFailed(ConnectionRefused, permit)` and the second used
-            # the very permit the first handed back [SYS-10, SYS-17].
+            # `ConnectFailed(ConnectionRefused)` and the second reused the same factory
+            # after the first refusal returned its open credit.
             $run = Start-Program $refused (Get-FreePort) $stem $variable
             if (-not $run.Process.WaitForExit(60000)) {
               Show-Run $label $run.Out $run.Err "still running"
@@ -630,7 +648,7 @@ jobs:
       # U+4241 is one native UTF-16 code unit whose little-endian memory bytes
       # are 0x41, 0x42. The program measures the HostString, copies its complete
       # lossless route, and requires bytes 0x41, 0x42. This is the native
-      # qualification record for the wider-code-unit [SYS-9] target row.
+      # library representation check for wider host code units under PRE-1.
       - name: Run the Windows HostString raw-code-unit boundary
         shell: pwsh
         run: |
@@ -816,26 +834,26 @@ jobs:
           # the core's own steal count at process exit and is linked into no
           # shipped program -- against the runtime the driver stages here.
           #
-          # `$WINDOWS_UNITS` is exactly what the driver stages for this module,
-          # not a superset of it. `par_layout` reaches `OutputStream.write_once`, so
-          # `module_requires_completion_runtime` is true for it and
-          # `whitefootc` stages the floor group, the core group *and* the
-          # completion group (`src/bin/whitefootc.rs`, `runtime_units`); that
-          # union is this list plus `wf_floor_windows.c`. So the only thing
+          # The link uses the same ordinary library, floor, scheduler and
+          # private completion engines as the driver. The ordinary LLVM
+          # library bridges view descriptors through the shared callable ABI.
+          # Its launcher defines main; Unicode argument conversion happens
+          # inside ordinary input initialization. So the only thing
           # this executable has that the production one above does not is the
           # observer, and the only thing it does that the production one does
           # not is run a C-runtime call from an exit handler while the detached
           # pool is still in its loop.
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
             $WINDOWS_UNITS \
             compiler/src/backend/wf_floor_windows.c \
+            compiler/src/backend/ordinary_values.c \
             compiler/src/backend/sched/grant_observer.c \
-            -x ir "$par_dir/par-layout.ll" \
+            -x ir compiler/src/backend/ordinary_values.ll "$par_dir/par-layout.ll" \
             -Wno-override-module \
             -o "$par_dir/par-layout-observed.exe" \
-            -lws2_32 || \
+            -lws2_32 -lshell32 || \
             fail_par "the observed executable did not link" "$?"
           set +e
           WF_WORKERS=4 "$par_dir/par-layout-observed.exe" \
@@ -860,15 +878,16 @@ jobs:
             # shape itself is, and the production executable above differing
             # from it becomes the thing to explain.
             echo "--- control: the same link without the observer ---"
-            clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+            clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
               -I compiler/src/backend \
               -I compiler/src/backend/completion \
               $WINDOWS_UNITS \
               compiler/src/backend/wf_floor_windows.c \
-              -x ir "$par_dir/par-layout.ll" \
+              compiler/src/backend/ordinary_values.c \
+              -x ir compiler/src/backend/ordinary_values.ll "$par_dir/par-layout.ll" \
               -Wno-override-module \
               -o "$par_dir/par-layout-control.exe" \
-              -lws2_32 \
+              -lws2_32 -lshell32 \
               > "$par_dir/control-link.txt" 2>&1 \
               && {
                 set +e
@@ -893,16 +912,17 @@ jobs:
             # the program. A runner without either the runtime or that
             # directory says so here and the step goes on.
             echo "--- observed link under AddressSanitizer ---"
-            if clang -std=c11 -O2 -g -municode -fsanitize=address \
+            if clang -std=c11 -O2 -g -fsanitize=address \
               -I compiler/src/backend \
               -I compiler/src/backend/completion \
               $WINDOWS_UNITS \
               compiler/src/backend/wf_floor_windows.c \
+              compiler/src/backend/ordinary_values.c \
               compiler/src/backend/sched/grant_observer.c \
-              -x ir "$par_dir/par-layout.ll" \
+              -x ir compiler/src/backend/ordinary_values.ll "$par_dir/par-layout.ll" \
               -Wno-override-module \
               -o "$par_dir/par-layout-asan.exe" \
-              -lws2_32 \
+              -lws2_32 -lshell32 \
               > "$par_dir/asan-link.txt" 2>&1; then
               set +e
               PATH="/c/Program Files/LLVM/bin:$PATH" \
@@ -977,7 +997,7 @@ jobs:
             return fadd.strict(a, b);
           }
 
-          command fn main() -> status: own ExitStatus pure {
+          fn main() -> status: own ExitStatus pure {
             let total = spine(depth: 100000000_u64, v: 1.0009765625_f64);
             let bits = reinterpret::<f64, u64>(total);
             let low = iand(bits, 1_u64);

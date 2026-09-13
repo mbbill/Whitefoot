@@ -1,0 +1,92 @@
+struct Record {
+  tag: u64;
+  owner: box<u64>;
+}
+
+fn record(tag: own u64) -> result: own Record pure {
+  let owner = box_new(tag);
+  return Record(tag: tag, owner: move owner);
+}
+
+fn seal<T: linear, const n: u64>(values: own FixedVector<T, n>) -> result: own array<T, n> reads(values) contract {
+  requires len_of(values) == n;
+} {
+  return array_from_fixed(vector: move values);
+}
+
+fn open<T: linear, const n: u64>(values: own array<T, n>) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) == n;
+  ensures head_of(result) == 0_u64;
+} {
+  let full = fixed_from_array(values: move values);
+  return move full;
+}
+
+fn first(values: &array<Record, 3>) -> result: own u64 reads(values) {
+  return deref(values)[0_u64].tag;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "BLK-3 transfers every initialized owner in logical order, including a wrapped full window. Both row generics come from the operand. General array elements survive generic helpers, shared reads, affine replacement and draining after the inverse conversion; neither conversion leaves a second owner.";
+  let a = record(tag: 11_u64);
+  let b = record(tag: 22_u64);
+  let c = record(tag: 33_u64);
+  let empty = fixed_vector::<Record, 3>();
+  region {
+    place_back(vector: &uniq empty, value: move a);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: move b);
+  }
+  let two = move one;
+  region {
+    place_front(vector: &uniq two, value: move c);
+  }
+  let wrapped = move two;
+  let values = seal::<Record, 3>(values: move wrapped);
+  region {
+    let observed = first(values: &values);
+    if observed != 33_u64 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  let old = replace values[1_u64] = record(tag: 99_u64);
+  let Record(tag: old_tag, owner: old_owner) = move old;
+  if old_tag != 11_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if deref(old_owner) != 11_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let full = open::<Record, 3>(values: move values);
+  region {
+    let last = take_back(vector: &uniq full);
+    let rest_two = move full;
+    region {
+      let middle = take_back(vector: &uniq rest_two);
+      let rest_one = move rest_two;
+      region {
+        let earliest = take_back(vector: &uniq rest_one);
+        let rest_empty = move rest_one;
+        if last.tag != 22_u64 {
+          return exit_status(code: 4_u8);
+        }
+        if middle.tag != 99_u64 {
+          return exit_status(code: 5_u8);
+        }
+        if earliest.tag != 33_u64 {
+          return exit_status(code: 6_u8);
+        }
+        let zero = fixed_vector::<Record, 0>();
+        let complete = seal::<Record, 0>(values: move zero);
+        let zero_again = open::<Record, 0>(values: move complete);
+        let remaining = len_of(zero_again);
+        if remaining != 0_u64 {
+          return exit_status(code: 7_u8);
+        }
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+}

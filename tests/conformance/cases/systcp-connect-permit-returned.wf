@@ -1,34 +1,129 @@
-command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles) {
-  doc "SYS-10, SYS-17: `tcp_connect` consumes one `HandlePermit` and hands it back inside `ConnectFailed` when the peer refuses or the target's ephemeral-port pool is empty, because no handle was taken; the returned permit connects again. `AddressUnavailable` is the target's own exhaustion and `ConnectionRefused` the peer's answer, and neither is the program's own descriptor accounting. The checker admits this program and lowering lowers it; the target has no approved row for a TCP submission in this version, so it stops at target qualification, which is not a source-language rejection [QUAL-1].";
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "Ordinary tcp_connect borrows a factory and returns an ordinary success or failure enum. Refusal preserves that factory for another attempt; success requires explicit close of both linear halves.";
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  }
   let first = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9107_u16);
   let second = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9108_u16);
   region {
-    match reserve_handle(factory: &uniq handles) {
-      Ok(value: permit) => {
-        region {
-          match tcp_connect(permit: move permit, address: &first) {
-            Connected(connection: link) => {
-              let credit = close_connection(connection: move link);
-              return exit_status(code: 0_u8);
+    region {
+      match tcp_connect(factory: &uniq handles, address: &first) {
+        Connected(connection: link) => {
+          let TcpConnection(receive: close_receive_13, send: close_send_13) = move link;
+          close_receive(factory: &uniq handles, receive: move close_receive_13);
+          close_send(factory: &uniq handles, send: move close_send_13);
+          return exit_status(code: 0_u8);
+        }
+        ConnectFailed(error: problem) => {
+          region {
+            if factory_refusal(error: &problem) {
+              return exit_status(code: 4_u8);
             }
-            ConnectFailed(error: problem, permit: handed_back) => {
-              region {
-                match tcp_connect(permit: move handed_back, address: &second) {
-                  Connected(connection: retry) => {
-                    let credit = close_connection(connection: move retry);
-                    return exit_status(code: 0_u8);
-                  }
-                  ConnectFailed(error: second_problem, permit: spent) => {
-                    return exit_status(code: 3_u8);
-                  }
-                }
+          }
+          region {
+            match tcp_connect(factory: &uniq handles, address: &second) {
+              Connected(connection: retry) => {
+                let TcpConnection(receive: close_receive_14, send: close_send_14) = move retry;
+                close_receive(factory: &uniq handles, receive: move close_receive_14);
+                close_send(factory: &uniq handles, send: move close_send_14);
+                return exit_status(code: 0_u8);
+              }
+              ConnectFailed(error: second_problem) => {
+                return exit_status(code: 3_u8);
               }
             }
           }
         }
-      }
-      Err(error: problem) => {
-        return exit_status(code: 4_u8);
       }
     }
   }

@@ -10,7 +10,7 @@ fn narrow_or_default(wide: own u32) -> result: own u16 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let fits = narrow_or_default(wide: 4000_u32);
   let overflows = narrow_or_default(wide: 90000_u32);
   if fits == 4000_u16 {

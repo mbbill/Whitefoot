@@ -229,7 +229,7 @@ int wf_windows_iocp_associate(
  * than a preference: it writes the local and the remote address into a caller
  * buffer that must live until the operation completes, and its two length
  * arguments must each be sixteen bytes past the largest address of the
- * transport, which for the two families [SYS-16] admits is
+ * transport, which for the two families (ordinary native library) admits is
  * `2 * (sizeof(struct sockaddr_in6) + 16)` = 88 bytes.  The completion record
  * is 160 bytes on this platform and holds exactly that today: the accept's own
  * union arm is 40 bytes, which is the open's arm and therefore the ceiling
@@ -299,7 +299,7 @@ static LPFN_CONNECTEX wf_windows_connect_ex(void) {
 /* The kinds this ring carries.
  *
  * A positioned read, and the three TCP kinds whose host call has an overlapped
- * form worth a packet: the connect, the receive and the send [SYS-17, SYS-18].
+ * form worth a packet: the connect, the receive and the send (ordinary native library).
  * What is missing is not a gap: `write_once` is an unpositioned stream write
  * whose current-position contract the port's positioned write does not have,
  * an open is a namespace operation with no overlapped form here, a close and a
@@ -454,10 +454,9 @@ static void wf_windows_complete_record(
         error_code = (DWORD)wf__windows_error_from_socket((int)error_code);
     }
     if (record->request.kind == WF_FILE_SOCKET_CONNECT) {
-        /* This ring's connect answers the descriptor of the socket it created
-         * at submit, and a refusal disposes of it, because a connection that
-         * was never made holds no credit and the permit goes back to the
-         * program [SYS-10].  A connection that was made needs
+        /* This port's connect answers the descriptor of the socket it created
+         * at submit, and a refusal disposes of it. The ordinary linked caller
+         * restores the factory's credit on failure. A connection that was made needs
          * SO_UPDATE_CONNECT_CONTEXT before it behaves like any other socket:
          * until it is set, the socket carries none of the properties the
          * connect established, which `shutdown` and every later transfer
@@ -900,20 +899,10 @@ int wf_windows_iocp_park(
         wf_completion_wait_unlock(&adapter->runtime->wait);
         return 0;
     }
-    /* Sequentially consistent, and paired with the sequentially consistent
-     * epoch load below: a core publisher raises the epoch and then reads this
-     * count without taking the wait's lock, so this announcement and that read
-     * are what keeps a posted wake from being lost. */
-    atomic_fetch_add_explicit(
-        &adapter->runtime->parked_schedulers,
-        1,
-        memory_order_seq_cst
-    );
-    atomic_fetch_add_explicit(
-        &adapter->runtime->stat_parks,
-        1,
-        memory_order_relaxed
-    );
+    /* Arm the shared notifier before the SC epoch recheck. Registering only
+     * the sleeper count would leave wake_needed clear and lose a helper's
+     * completion, which produces no kernel I/O packet of its own. */
+    wf_completion_announce_park_locked(adapter->runtime);
     if (atomic_load_explicit(
             &adapter->runtime->wake_epoch,
             memory_order_seq_cst

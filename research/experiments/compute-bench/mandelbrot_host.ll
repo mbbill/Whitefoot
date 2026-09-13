@@ -1,9 +1,8 @@
 ; Serves compute-bench: the Mandelbrot host adapter. It is LLVM IR rather than
-; C because every user function the compiler emits has internal linkage, so
-; nothing outside the module can call @wf_render_points or @wf_release_points.
+; C so it also works when @wf_render_points and @wf_release_points have internal linkage.
 ; It builds the two buffer descriptors and forwards; it computes nothing.
-; The Makefile appends this file to each emitted module and sed-renames the
-; two entry points to the -par or -seq spelling, so one text serves both.
+; The Makefile appends this file to each emitted module and isolates its
+; definitions with the -par or -seq adapter spellings, so one text serves both.
 ; Eighteen lines of IR, the ceiling section 2 of the specification records.
 define void @wf_bench_mandelbrot(ptr %real, ptr %imaginary, i64 %count, i64 %limit, ptr %out, ptr %out_len) {
   %a = insertvalue { ptr, i64 } poison, ptr %real, 0

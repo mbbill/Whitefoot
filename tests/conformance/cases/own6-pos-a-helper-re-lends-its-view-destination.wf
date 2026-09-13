@@ -19,14 +19,18 @@ fn outer(destination: &uniq MutSlice<u8>, value: own u8) -> written: own u64 wri
   return 2_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "[OWN-6] a helper handed `&uniq MutSlice<u8>` re-lends that destination through its own holder: `&uniq deref(destination)` is the ordinary child reborrow, the child carries the parent's range and loan region, the parent is suspended while the child lives, and [CALL-3] classifies the inner callee's write as element storage of the viewed range. The outer caller reads back what the innermost helper wrote, which is what a decoder chaining one output destination through three frames needs.";
   region 'a {
     let workspace = arena_frame::<4, 1, 'a>();
     region {
       let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
-      set table = place_back(vector: move table, value: 3_u8);
-      set table = place_back(vector: move table, value: 3_u8);
+      region {
+        place_back(vector: &uniq table, value: 3_u8);
+      }
+      region {
+        place_back(vector: &uniq table, value: 3_u8);
+      }
       region {
         let window = mut_slice_of(&uniq table);
         region {

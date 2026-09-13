@@ -4,7 +4,7 @@ fn halve(n: own i32) -> result: own i32 pure {
   return h;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let h = halve(n: 90_i32);
   if h == 30_i32 {
   } else {

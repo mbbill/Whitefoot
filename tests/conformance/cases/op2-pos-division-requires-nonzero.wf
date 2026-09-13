@@ -6,7 +6,7 @@ fn divide(n: own u64, d: own u64) -> return_value: own u64 pure contract {
   return q;
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   let v = divide(n: 84_u64, d: 2_u64);
   if v == 42_u64 {
   } else {

@@ -3,7 +3,7 @@
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
-use super::{assert_rule_kind, assert_unsupported, with_semantics};
+use super::{assert_rule_at, assert_rule_kind, assert_unsupported, with_semantics};
 
 const ROWS: &str = r#"struct Row {
   left: u64;
@@ -14,12 +14,18 @@ fn identity['r](value: &'r Row) -> result: &'r Row pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 4>();
   let first = Row(left: 3_u64, right: 4_u64);
-  let prefix = place_back(vector: move empty, value: move first);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let prefix = move empty;
   let second = Row(left: 5_u64, right: 6_u64);
-  let rows = place_back(vector: move prefix, value: move second);
+  region {
+    place_back(vector: &uniq prefix, value: move second);
+  }
+  let rows = move prefix;
 "#;
 
 fn rows(body: &str) -> String {
@@ -33,6 +39,195 @@ fn accepts(source: &str) {
             "{outcome:?}"
         );
     });
+}
+
+const BOX_READ_OUT: &str = r#"struct Payload {
+  value: u64;
+}
+
+struct Pair {
+  left: Payload;
+  right: Payload;
+}
+
+fn fresh['s](owner: own Box<'s, Payload>, store: &uniq Heap<'s>) -> result: own Payload writes(store) {
+  return Payload(value: 7_u64);
+}
+
+"#;
+
+fn box_read_out(body: &str) -> String {
+    let body = body.trim().replace("}\nfn", "}\n\nfn");
+    format!(
+        "{}\n\n{body}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n",
+        BOX_READ_OUT.trim()
+    )
+}
+
+#[test]
+fn box_referent_read_out_reinitializes_direct_borrowed_and_nested_storage() {
+    accepts(&box_read_out(
+        r#"
+fn direct['s](owner: own Box<'s, Payload>) -> result: own Box<'s, Payload> reads(owner), writes(owner) {
+  set deref(owner) = move deref(owner);
+  return move owner;
+}
+fn borrowed['heap](owner: &uniq Box<'heap, Payload>) -> result: own unit reads(owner), writes(owner) {
+  set deref(deref(owner)) = move deref(deref(owner));
+  return unit;
+}
+fn nested['s](owner: own Box<'s, Box<'s, Payload>>) -> result: own Box<'s, Box<'s, Payload>> reads(owner), writes(owner) {
+  set deref(deref(owner)) = move deref(deref(owner));
+  return move owner;
+}
+fn field['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(owner), writes(owner) {
+  set deref(owner).left = move deref(owner).left;
+  return move owner;
+}
+fn append['s](storage: own Box<'s, FixedVector<u64, 16>>, value: own u64) -> result: own Box<'s, FixedVector<u64, 16>> reads(storage), writes(storage) contract {
+  requires room_of(deref(storage)) > 0_u64;
+} {
+  region {
+    place_back(vector: &uniq deref(storage), value: value);
+  }
+  return move storage;
+}
+"#,
+    ));
+}
+
+#[test]
+fn box_referent_read_out_spends_the_selected_storage_once() {
+    for statement in [
+        "set (deref(owner).left, deref(owner).right) = move deref(owner).left, move deref(owner).left;",
+        "set (deref(owner).left, scalar) = move deref(owner).left, deref(owner).left.value;",
+        "set (deref(owner).left, moved) = move deref(owner).left, move owner;",
+    ] {
+        let source = box_read_out(&format!(
+            r#"
+fn repeat['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(owner), writes(owner) {{
+  let scalar = 0_u64;
+  {statement}
+  return move owner;
+}}
+"#
+        ));
+        assert_rule_kind(source.as_bytes(), SemanticRule::Own1, |kind| {
+            matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+        });
+    }
+}
+
+#[test]
+fn box_referent_target_does_not_turn_an_owner_move_into_a_read_out() {
+    let source = box_read_out(
+        r#"
+fn outer['s](owner: own Box<'s, Payload>, store: &uniq Heap<'s>) -> result: own unit writes(owner, store) {
+  set deref(owner) = fresh(owner: move owner, store: move store);
+  return unit;
+}
+"#,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
+}
+
+#[test]
+fn box_referent_read_out_preserves_shared_and_non_target_boundaries() {
+    let source = box_read_out(
+        r#"
+fn shared['heap](owner: &Box<'heap, Payload>) -> result: own unit reads(owner) {
+  set deref(deref(owner)) = move deref(deref(owner));
+  return unit;
+}
+
+"#,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
+        matches!(kind, SemanticIssueKind::BorrowConflict)
+    });
+    for body in [
+        "let value = move deref(owner);",
+        "set deref(owner) = move deref(other);",
+    ] {
+        let source = box_read_out(&format!(
+            r#"
+fn extract['s](owner: own Box<'s, Payload>, other: own Box<'s, Payload>) -> result: own unit reads(owner, other), writes(owner) {{
+  {body}
+  return unit;
+}}
+"#
+        ));
+        assert_unsupported(
+            source.as_bytes(),
+            UnsupportedSemanticFeature::BoxReferentMove,
+        );
+    }
+}
+
+#[test]
+fn box_referent_read_out_preserves_holder_suspension() {
+    let source = box_read_out(
+        r#"
+fn identity_box['r, 's](value: &uniq 'r Box<'s, Payload>) -> result: &uniq 'r Box<'s, Payload> pure {
+  return &uniq 'r deref(value);
+}
+
+fn suspended['heap](owner: &uniq Box<'heap, Payload>) -> result: own unit reads(owner), writes(owner) {
+  region {
+    let child = identity_box(value: &uniq deref(owner));
+    set deref(deref(owner)) = move deref(deref(owner));
+  }
+  return unit;
+}
+"#,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
+        matches!(kind, SemanticIssueKind::BorrowConflict)
+    });
+}
+
+#[test]
+fn box_referent_descendant_extraction_keeps_its_cleanup_capability_boundary() {
+    let source = box_read_out(
+        r#"
+fn rebuild(value: own Payload) -> result: own Pair pure {
+  let other = Payload(value: 9_u64);
+  return Pair(left: move value, right: move other);
+}
+
+fn descendant['s](owner: own Box<'s, Pair>) -> result: own Box<'s, Pair> reads(owner), writes(owner) {
+  set deref(owner) = rebuild(value: move deref(owner).left);
+  return move owner;
+}
+"#,
+    );
+    assert_unsupported(
+        source.as_bytes(),
+        UnsupportedSemanticFeature::BoxReferentMove,
+    );
+}
+
+#[test]
+fn box_referent_read_out_rejects_a_later_reborrow_at_its_use() {
+    let source = box_read_out(
+        r#"
+fn keep['heap](value: own Payload, alias: &uniq Box<'heap, Payload>) -> result: own Payload pure {
+  return move value;
+}
+
+fn late['heap](owner: &uniq Box<'heap, Payload>) -> result: own unit reads(owner), writes(owner) {
+  region {
+    set deref(deref(owner)) = keep(value: move deref(deref(owner)), alias: &uniq deref(owner));
+  }
+  return unit;
+}
+"#,
+    );
+    // [LIV-2] the target is spent during RHS evaluation. Its later borrow
+    // fails at that use, before post-RHS writability can fail at the target.
+    assert_rule_at(source.as_bytes(), SemanticRule::Own1, "&uniq deref(owner)");
 }
 
 fn rejects(source: &str, rule: SemanticRule) {
@@ -151,10 +346,13 @@ struct Table {
   rows: FixedVector<Row, 1>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 1>();
   let item = Row(left: 3_u64, right: 4_u64);
-  let rows = place_back(vector: move empty, value: move item);
+  region {
+    place_back(vector: &uniq empty, value: move item);
+  }
+  let rows = move empty;
   let table = Table(rows: move rows);
   region {
     let left = &table.rows[0_u64].left;
@@ -196,7 +394,7 @@ fn scalar_element_field_selection_keeps_its_type_error_on_legacy_storage() {
         "  set values[0_u64].missing = 1_u8;\n",
     ] {
         let source = format!(
-            "command fn main() -> status: own ExitStatus pure {{\n  let values = buffer_new(1_u64, 0_u8);\n{body}  return exit_status(code: 0_u8);\n}}\n"
+            "fn main() -> status: own ExitStatus pure {{\n  let values = buffer_new(1_u64, 0_u8);\n{body}  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Type5, |kind| {
             matches!(kind, SemanticIssueKind::TypeMismatch { .. })
@@ -255,8 +453,8 @@ fn returned_scalar_borrow_writes_preserve_the_enclosing_run_measure() {
 "#,
     )
     .replace(
-        "command fn main()",
-        "fn exclusive['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {\n  return &uniq 'r deref(value);\n}\n\ncommand fn main()",
+        "fn main()",
+        "fn exclusive['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {\n  return &uniq 'r deref(value);\n}\n\nfn main()",
     );
     accepts(&source);
     rejects(
@@ -279,11 +477,14 @@ struct Entry {
   other: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Entry, 2>();
   let payload = Payload(value: 3_u64);
-  let entry = Entry(payload: move payload, other: 5_u64);
-  let entries = place_back(vector: move empty, value: move entry);
+  let stored_entry = Entry(payload: move payload, other: 5_u64);
+  region {
+    place_back(vector: &uniq empty, value: move stored_entry);
+  }
+  let entries = move empty;
   let replacement = Payload(value: 7_u64);
   let old = replace entries[0_u64].payload = move replacement;
   set entries[0_u64].payload = move entries[0_u64].payload;
@@ -322,10 +523,13 @@ fn update(value: &uniq u64) -> result: own Payload writes(value) {
   return move replacement;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Payload, 1>();
   let payload = Payload(value: 3_u64);
-  let entries = place_back(vector: move empty, value: move payload);
+  region {
+    place_back(vector: &uniq empty, value: move payload);
+  }
+  let entries = move empty;
   region {
     let previous = replace entries[0_u64] = update(value: &uniq entries[0_u64].value);
     let observed = previous.value;
@@ -337,9 +541,12 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-const INLINE_VIEW: &str = r#"command fn main() -> status: own ExitStatus pure {
+const INLINE_VIEW: &str = r#"fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
-  let built = place_back(vector: move empty, value: 7_u8);
+  region {
+    place_back(vector: &uniq empty, value: 7_u8);
+  }
+  let built = move empty;
   region {
     let view = mut_slice_of(&uniq built);
     set view[0_u64] = 9_u8;
@@ -359,7 +566,7 @@ fn inspect(value: &u64) -> result: own u64 reads(value) {
   return deref(value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = 3_u64;
   let left = 0_u64;
   let right = 0_u64;
@@ -393,8 +600,8 @@ fn argument_loans_cover_later_rhs_accesses_and_the_commit() {
 #[test]
 fn owned_match_headers_end_their_non_escaping_temporary_loans() {
     let source = TEMPORARY_SCALARS.replace(
-        "command fn main()",
-        "fn decide(value: &uniq u64) -> result: own Option<u64> pure {\n  return Some<u64>(value: 7_u64);\n}\n\ncommand fn main()",
+        "fn main()",
+        "fn decide(value: &uniq u64) -> result: own Option<u64> pure {\n  return Some<u64>(value: 7_u64);\n}\n\nfn main()",
     );
     let arms = "      None() => {\n      }\n      Some(value: chosen) => {\n        set value = chosen;\n      }\n    }";
     accepts(&source.replace(
@@ -446,7 +653,7 @@ fn sink(value: &uniq Pair) -> result: own u64 pure {
   return 11_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let pair = Pair(left: 3_u64, right: 5_u64);
   let left = 0_u64;
   let right = 0_u64;
@@ -460,9 +667,16 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_unsupported(
-        source.as_bytes(),
-        UnsupportedSemanticFeature::RegionsAndBorrows,
+    // Static-field reborrows now use ordinary addressed storage. Preserve
+    // this source as the positive sibling case and challenge overlapping
+    // fields before the existing parent-transfer controls below.
+    accepts(source);
+    rejects(
+        &source.replace(
+            "change(value: &uniq deref(holder).right)",
+            "change(value: &uniq deref(holder).left)",
+        ),
+        SemanticRule::Own5,
     );
     let buffers = source
         .replace("left: u64;", "left: buffer<u8>;")
@@ -511,9 +725,12 @@ fn view_descriptor_loans_cover_element_reads_measures_and_commits() {
   return 7_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
-  let bytes = place_back(vector: move empty, value: 3_u8);
+  region {
+    place_back(vector: &uniq empty, value: 3_u8);
+  }
+  let bytes = move empty;
   let left = 0_u64;
   let right = 0_u64;
   let byte = 0_u8;
@@ -567,9 +784,12 @@ fn exclusive_inline_field_view_keeps_sibling_storage_independent() {
   other: u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let bytes = place_back(vector: move empty, value: 3_u8);
+  region {
+    place_back(vector: &uniq empty, value: 3_u8);
+  }
+  let bytes = move empty;
   let pair = Pair(bytes: move bytes, other: 4_u64);
   region {
     let view = mut_slice_of(&uniq pair.bytes);
@@ -591,10 +811,19 @@ const GUARDED_ELEMENT: &str = r#"fn overwrite(value: &uniq u64) -> result: own u
 
 fn read_if_valid(index: own u64) -> result: own unit pure {
   let no_indices = fixed_vector::<u64, 2>();
-  let prefix = place_back(vector: move no_indices, value: index);
-  let indices = place_back(vector: move prefix, value: 9_u64);
+  region {
+    place_back(vector: &uniq no_indices, value: index);
+  }
+  let prefix = move no_indices;
+  region {
+    place_back(vector: &uniq prefix, value: 9_u64);
+  }
+  let indices = move prefix;
   let no_data = fixed_vector::<u8, 1>();
-  let data = place_back(vector: move no_data, value: 7_u8);
+  region {
+    place_back(vector: &uniq no_data, value: 7_u8);
+  }
+  let data = move no_data;
   region {
     let guarded = &uniq indices[0_u64];
     let valid = deref(guarded) < 1_u64;
@@ -605,7 +834,7 @@ fn read_if_valid(index: own u64) -> result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   read_if_valid(index: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -636,7 +865,7 @@ const BORROWED_BUFFER_REPLACEMENT: &str = r#"fn renew(values: &uniq buffer<u64>,
   return 11_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = buffer_new(1_u64, 3_u64);
   let second = buffer_new(1_u64, 7_u64);
   region {
@@ -676,7 +905,7 @@ fn borrowed_buffer_descriptor_replacement_is_an_explicit_capability_stop() {
         |kind| matches!(kind, SemanticIssueKind::UseAfterMove { .. }),
     );
     accepts(
-        r#"command fn main() -> status: own ExitStatus pure {
+        r#"fn main() -> status: own ExitStatus pure {
   let first = buffer_new(1_u64, 3_u64);
   let second = buffer_new(1_u64, 7_u64);
   let previous = replace first = move second;
@@ -698,7 +927,7 @@ fn renew(holder: &uniq Holder, replacement: own buffer<u64>) -> result: own unit
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

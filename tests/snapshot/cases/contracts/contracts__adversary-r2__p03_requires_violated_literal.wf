@@ -5,17 +5,33 @@ fn get_bounded<const n: u64>(b: own FixedVector<u8, n>, i: own u64) -> value: ow
   return b[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT REJECT: caller passes i = 8 against a buffer of len 8, so 8 < 8 is false; requires is unproved.";
   let buf = fixed_vector::<u8, 8>();
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
   let value = get_bounded::<8>(b: move buf, i: 8_u64);
   if value == 0_u8 {
   } else {

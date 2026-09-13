@@ -13,13 +13,13 @@
 //! merely parseable: subscripts are either constant against a known buffer
 //! length or the binder of a `for` whose upper endpoint is that length,
 //! divisors are nonzero literals, every borrow is taken inside a region the
-//! generator opened, every affine value is consumed once, and the entry's
-//! effect row is computed from what the body actually exhibited rather than
-//! guessed. Acceptance is still verified by the compiler, never assumed: the
+//! generator opened, and every linear value is consumed on each exit. The
+//! ordinary entry owns its local state, while helpers declare exact parameter
+//! rows and contracts. Acceptance is still verified by the compiler: the
 //! campaign counts every rejection by the rule its diagnostic cites, which is
 //! how a bias in this file becomes visible instead of silent.
 //!
-//! The shape weights lean toward what [PAR-1], [PAR-2], and [PAR-3] can permit
+//! The shape weights lean toward what [PAR-1] and [PAR-2] can permit
 //! and toward their exact boundaries, because a permission that is never
 //! granted and a permission that is wrongly granted are both invisible to a
 //! generator that only writes the easy middle.
@@ -52,7 +52,7 @@ pub enum Shape {
     FileLoopBreakAfterSubmission,
     FileLoopSharedScratch,
     DirectoryScan,
-    Claim,
+    Invariant,
     GiveMatch,
     SliceView,
     TypedExit,
@@ -81,7 +81,7 @@ impl Shape {
             Shape::FileLoopBreakAfterSubmission => "file-loop-break-after-submission",
             Shape::FileLoopSharedScratch => "file-loop-shared-scratch",
             Shape::DirectoryScan => "directory-scan",
-            Shape::Claim => "claim",
+            Shape::Invariant => "invariant",
             Shape::GiveMatch => "give-match",
             Shape::SliceView => "slice-view",
             Shape::TypedExit => "typed-exit",
@@ -147,7 +147,6 @@ struct Gen {
     body: Emit,
     next_name: u32,
     next_label: u32,
-    next_region: u32,
     depth: usize,
     statements: usize,
     limit: usize,
@@ -155,12 +154,6 @@ struct Gen {
     have_err: bool,
     have_files: bool,
     have_args: bool,
-
-    used_err: bool,
-    used_files: bool,
-    used_args: bool,
-    allocates: bool,
-    traps: bool,
 
     need_fold: bool,
     need_render: bool,
@@ -183,18 +176,12 @@ pub fn generate(seed: u64) -> Program {
         body: Emit::new(),
         next_name: 0,
         next_label: 0,
-        next_region: 0,
         depth: 0,
         statements: 0,
         limit: 220,
         have_err,
         have_files,
         have_args,
-        used_err: false,
-        used_files: false,
-        used_args: false,
-        allocates: false,
-        traps: false,
         need_fold: false,
         need_render: true,
         need_mix: false,
@@ -208,6 +195,13 @@ pub fn generate(seed: u64) -> Program {
 }
 
 impl Gen {
+    fn close_cwd(&mut self) {
+        self.body.open("region {");
+        self.body
+            .line("close_directory(factory: &uniq files, directory: move cwd);");
+        self.body.close();
+    }
+
     fn name(&mut self, stem: &str) -> String {
         self.next_name += 1;
         format!("{stem}_{}", self.next_name)
@@ -216,11 +210,6 @@ impl Gen {
     fn label(&mut self) -> String {
         self.next_label += 1;
         format!("@walk_{}", self.next_label)
-    }
-
-    fn region(&mut self) -> String {
-        self.next_region += 1;
-        format!("'zone_{}", self.next_region)
     }
 
     fn budget(&self) -> bool {
@@ -251,12 +240,13 @@ impl Gen {
     fn condition(&mut self) -> String {
         let left = self.scalar_atom();
         let right = self.scalar_atom();
-        let op = *self.rng.pick(&["ilt", "ile", "igt", "ige", "ieq", "ine"]);
-        format!("{op}({left}, {right})")
+        let op = *self.rng.pick(&["<", "<=", ">", ">=", "==", "!="]);
+        format!("{left} {op} {right}")
     }
 
     fn program(mut self) -> Program {
         self.body.line("doc \"A generated differential-fuzz program: real I/O, real control flow, one published digest.\";");
+        self.body.line("let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: files, stdin: input) = move inputs;");
         self.body.line("let total = 0_u64;");
         self.scalars.push("total".to_owned());
 
@@ -269,7 +259,7 @@ impl Gen {
         }
         self.publish_digest();
 
-        let mut source = String::new();
+        let mut source = String::from(IO_HELPERS);
         if self.need_mix {
             source.push_str(MIX_HELPER);
             source.push('\n');
@@ -297,52 +287,10 @@ impl Gen {
         }
     }
 
-    /// The entry header, declaring exactly the inputs the body used and the
-    /// exact row it exhibited, in [EFF-1] canonical order. `command.cwd`
-    /// carries `writes(cwd)` whenever it is declared, because the entry's
-    /// normal return edge performs the directory state's compiler-derived
-    /// close whether the body touched it or not.
+    /// The ordinary entry transfers its aggregate into local owners. Opaque
+    /// cleanup is explicit; all accesses in this owned body are local.
     fn header(&self) -> String {
-        let mut inputs = Vec::new();
-        let mut reads = Vec::new();
-        let mut writes = Vec::new();
-        if self.used_args {
-            inputs.push("command.args as args: own Args");
-            reads.push("args");
-        }
-        if self.used_files {
-            inputs.push("command.cwd as cwd: own DirectoryRead");
-            reads.push("cwd");
-            writes.push("cwd");
-        }
-        inputs.push("command.stdout as out: own OutputStream");
-        reads.push("out");
-        writes.push("out");
-        if self.used_err {
-            inputs.push("command.stderr as err: own OutputStream");
-            reads.push("err");
-            writes.push("err");
-        }
-        if self.used_files {
-            inputs.push("command.handles as files: own HandleFactory");
-            reads.push("files");
-            writes.push("files");
-        }
-        let mut row = vec![
-            format!("reads({})", reads.join(", ")),
-            format!("writes({})", writes.join(", ")),
-        ];
-        if self.allocates {
-            row.push("allocates(heap)".to_owned());
-        }
-        if self.traps {
-            row.push("traps".to_owned());
-        }
-        format!(
-            "command fn main({}) -> status: own ExitStatus {} {{\n",
-            inputs.join(", "),
-            row.join(", ")
-        )
+        "fn main(inputs: own Inputs) -> status: own ExitStatus pure {\n".to_owned()
     }
 
     /// Renders the accumulated total as a fixed twenty-digit line and publishes
@@ -353,22 +301,19 @@ impl Gen {
     fn publish_digest(&mut self) {
         let line = self.name("digest");
         let cursor = self.name("cursor");
-        let render = self.region();
-        let publish = self.region();
-        self.allocates = true;
         self.body
             .line(&format!("let {line} = buffer_new(32_u64, 32_u8);"));
         self.body.line(&format!("let {cursor} = 0_u64;"));
-        self.body.open(&format!("region {render} {{"));
+        self.body.open("region {");
         self.body.line(&format!(
-            "set {cursor} = render_u64<{render}>(destination: &uniq {render} {line}, at: 0_u64, value: total);"
+            "set {cursor} = render_u64(destination: &uniq {line}, at: 0_u64, value: total);"
         ));
         self.body.close();
         self.body.line(&format!("set {line}[20_u64] = 10_u8;"));
         let outcome = self.name("published");
-        self.body.open(&format!("region {publish} {{"));
+        self.body.open("region {");
         self.body.open(&format!(
-            "match write_once<{publish}, {publish}>(output: &uniq {publish} out, source: &{publish} {line}, start: 0_u64, end: 21_u64) {{"
+            "match publish_bytes(factory: &uniq files, output: &uniq out, source: &{line}, start: 0_u64, end: 21_u64) {{"
         ));
         self.body.open(&format!("Ok(value: {outcome}) => {{"));
         self.body.close();
@@ -385,7 +330,7 @@ impl Gen {
         let failed = self.name("code_failed");
         self.body.line(&format!("let {wide} = total % 251_u64;"));
         self.body
-            .line(&format!("let {narrow} = cvt<u64, u8>({wide});"));
+            .line(&format!("let {narrow} = cvt::<u64, u8>({wide});"));
         self.body.open(&format!("let {code} = match {narrow} {{"));
         self.body.open(&format!("Ok(value: {exact}) => {{"));
         self.body.line(&format!("give {exact};"));
@@ -394,10 +339,85 @@ impl Gen {
         self.body.line("give 9_u8;");
         self.body.close();
         self.body.close();
+        self.close_cwd();
         self.body
             .line(&format!("return exit_status(code: {code});"));
     }
 }
+
+const IO_HELPERS: &str = r#"fn publish_bytes(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(factory, output, source), writes(factory, output) contract {
+  requires start <= end;
+  requires end <= len_of(deref(source));
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+} {
+  region {
+    let view = slice_of(&deref(source));
+    region {
+      match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &view, start: start, end: end) {
+        Ok(value: next) => {
+          return Ok<u64, IoError>(value: next);
+        }
+        Err(error: problem) => {
+          return Err<u64, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+}
+
+fn open_named(factory: &uniq HandleFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own FileOpenOutcome reads(factory, root, name), writes(factory) contract {
+  requires start <= end;
+  requires end <= len_of(deref(name));
+} {
+  region {
+    let view = slice_of(&deref(name));
+    region {
+      let opened = open_file(factory: &uniq deref(factory), root: root, name: &view, start: start, end: end);
+      return move opened;
+    }
+  }
+}
+
+fn read_prefix(factory: &uniq HandleFactory, file: &uniq ReadFile, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> reads(factory, file, destination), writes(factory, file, destination) contract {
+  requires start <= end;
+  requires end <= len_of(deref(destination));
+  ensures when Ok(value: next): start <= next;
+  ensures when Ok(value: next): next <= end;
+  ensures len_of(deref(destination)) == len_of(deref(entry(destination)));
+} {
+  region {
+    let view = mut_slice_of(&uniq deref(destination));
+    region {
+      match read_at(factory: &uniq deref(factory), file: &uniq deref(file), destination: &uniq view, file_offset: 0_u64, start: start, end: end) {
+        Ok(value: next) => {
+          return Ok<u64, ReadStop>(value: next);
+        }
+        Err(error: problem) => {
+          return Err<u64, ReadStop>(error: move problem);
+        }
+      }
+    }
+  }
+}
+
+fn list_batch(source: &uniq DirectorySource, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) reads(source, destination), writes(source, destination) contract {
+  requires start <= end;
+  requires end <= len_of(deref(destination));
+  ensures start <= next;
+  ensures next <= end;
+  ensures len_of(deref(destination)) == len_of(deref(entry(destination)));
+} {
+  region {
+    let view = mut_slice_of(&uniq deref(destination));
+    region {
+      let (copied, endpoint, count) = directory_next(source: &uniq deref(source), destination: &uniq view, start: start, end: end);
+      return move copied, endpoint, count;
+    }
+  }
+}
+
+"#;
 
 const MIX_HELPER: &str = r#"fn mix(a: own u64, b: own u64) -> result: own u64 pure {
   doc "Mixes two scalars into one with total operations and no effect of any kind.";
@@ -408,23 +428,23 @@ const MIX_HELPER: &str = r#"fn mix(a: own u64, b: own u64) -> result: own u64 pu
 }
 "#;
 
-const FOLD_HELPER: &str = r#"fn fold_prefix['s](source: &'s buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
+const FOLD_HELPER: &str = r#"fn fold_prefix(source: &buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
   doc "Folds one prefix of a buffer into a running order-sensitive checksum.";
-  let room = len(deref(source));
+  let room = len_of(deref(source));
   let sum = seed;
   let at = 0_u64;
   loop @fold {
-    let scanned = ige(at, produced);
+    let scanned = at >= produced;
     if scanned {
       break @fold;
     }
-    let readable = ilt(at, room);
+    let readable = at < room;
     if readable {
     } else {
       break @fold;
     }
     let byte = deref(source)[at];
-    let widened = cvt<u8, u64>(byte);
+    let widened = cvt::<u8, u64>(byte);
     set sum = sum *wrap 31_u64;
     set sum = sum +wrap widened;
     set at = at +wrap 1_u64;
@@ -433,23 +453,23 @@ const FOLD_HELPER: &str = r#"fn fold_prefix['s](source: &'s buffer<u8>, produced
 }
 "#;
 
-const VIEW_HELPER: &str = r#"fn fold_view['r](view: own slice<'r, u8>, produced: own u64, seed: own u64) -> result: own u64 reads(view) {
+const VIEW_HELPER: &str = r#"fn fold_view(view: own Slice<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(view) {
   doc "Folds one prefix of a direct view into a running order-sensitive checksum.";
-  let room = len(view);
+  let room = len_of(view);
   let sum = seed;
   let at = 0_u64;
   loop @scan {
-    let scanned = ige(at, produced);
+    let scanned = at >= produced;
     if scanned {
       break @scan;
     }
-    let readable = ilt(at, room);
+    let readable = at < room;
     if readable {
     } else {
       break @scan;
     }
     let byte = view[at];
-    let widened = cvt<u8, u64>(byte);
+    let widened = cvt::<u8, u64>(byte);
     set sum = sum *wrap 31_u64;
     set sum = sum +wrap widened;
     set at = at +wrap 1_u64;
@@ -458,19 +478,21 @@ const VIEW_HELPER: &str = r#"fn fold_view['r](view: own slice<'r, u8>, produced:
 }
 "#;
 
-const RENDER_HELPER: &str = r#"fn render_u64['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+const RENDER_HELPER: &str = r#"fn render_u64(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) contract {
+  ensures len_of(deref(destination)) == len_of(deref(entry(destination)));
+} {
   doc "Renders one twenty-digit zero-padded decimal number and reports the position after it.";
-  let room = len(deref(destination));
+  let room = len_of(deref(destination));
   let remaining = value;
   let position = at +wrap 20_u64;
   loop @digits {
-    let done = ile(position, at);
+    let done = position <= at;
     if done {
       break @digits;
     }
     set position = position -wrap 1_u64;
     let digit = remaining % 10_u64;
-    let narrowed = cvt<u64, u8>(digit);
+    let narrowed = cvt::<u64, u8>(digit);
     let byte = match narrowed {
       Ok(value: exact) => {
         give 48_u8 +wrap exact;
@@ -479,7 +501,7 @@ const RENDER_HELPER: &str = r#"fn render_u64['d](destination: &uniq 'd buffer<u8
         give 48_u8;
       }
     }
-    let writable = ilt(position, room);
+    let writable = position < room;
     if writable {
       set deref(destination)[position] = byte;
     }
@@ -506,7 +528,7 @@ impl Gen {
             (Shape::BulkWrite, 3),
             (Shape::SameOutputPair, 8),
             (Shape::PureCallPair, 7),
-            (Shape::Claim, 7),
+            (Shape::Invariant, 7),
             (Shape::GiveMatch, 6),
             (Shape::SliceView, 6),
             (Shape::TypedExit, 3),
@@ -559,7 +581,7 @@ impl Gen {
             }
             Shape::FileLoopSharedScratch => self.file_loop_block(FileLoop::SharedScratch),
             Shape::DirectoryScan => self.directory_block(),
-            Shape::Claim => self.claim_block(),
+            Shape::Invariant => self.invariant_block(),
             Shape::GiveMatch => self.give_match_block(),
             Shape::SliceView => self.slice_view_block(),
             Shape::TypedExit => self.typed_exit_block(),
@@ -582,7 +604,6 @@ impl Gen {
 
     fn declare_buffer(&mut self, length: u64, fill: u64) -> String {
         let name = self.name("store");
-        self.allocates = true;
         self.spend();
         self.body.line(&format!(
             "let {name} = buffer_new({length}_u64, {fill}_u8);"
@@ -611,7 +632,7 @@ impl Gen {
                 let failed = self.name("slot_failed");
                 self.body.line(&format!("let {modulus} = {index} % 8_u64;"));
                 self.body
-                    .line(&format!("let {narrow} = cvt<u64, u8>({modulus});"));
+                    .line(&format!("let {narrow} = cvt::<u64, u8>({modulus});"));
                 self.body.open(&format!("let {byte} = match {narrow} {{"));
                 self.body.open(&format!("Ok(value: {exact}) => {{"));
                 self.body.line(&format!("give 48_u8 +wrap {exact};"));
@@ -753,9 +774,8 @@ impl Gen {
         let ok = self.name("writable");
         let byte = self.byte_literal();
         self.spend();
-        self.body.line(&format!("let {room} = len({target});"));
-        self.body
-            .line(&format!("let {ok} = ilt({position}, {room});"));
+        self.body.line(&format!("let {room} = len_of({target});"));
+        self.body.line(&format!("let {ok} = {position} < {room};"));
         self.body.open(&format!("if {ok} {{"));
         self.body
             .line(&format!("set {target}[{position}] = {byte};"));
@@ -791,7 +811,7 @@ impl Gen {
         let binder = self.name("step");
         self.spend();
         self.body
-            .open(&format!("for {label} {binder} in 0_u64..{length}_u64 {{"));
+            .open(&format!("for {label} ({binder} in 0_u64..{length}_u64) {{"));
         let inner = binder.clone();
         self.scope(|generator| {
             generator.scalars.push(inner.clone());
@@ -840,7 +860,7 @@ impl Gen {
         };
         self.spend();
         self.body
-            .open(&format!("for {label} {binder} in 0_u64..{bound}_u64 {{"));
+            .open(&format!("for {label} ({binder} in 0_u64..{bound}_u64) {{"));
         let mut carrier = binder.clone();
         let steps = self.rng.between(1, 3);
         for _ in 0..steps {
@@ -873,7 +893,7 @@ impl Gen {
         let binder = self.name("inner");
         self.spend();
         self.body
-            .open(&format!("for {label} {binder} in 0_u64..{bound}_u64 {{"));
+            .open(&format!("for {label} ({binder} in 0_u64..{bound}_u64) {{"));
         let inner = binder.clone();
         self.scope(|generator| {
             generator.scalars.push(inner.clone());
@@ -901,7 +921,7 @@ impl Gen {
             generator.scalars.push(inner.clone());
             generator
                 .body
-                .line(&format!("let {stop} = ige({inner}, {bound}_u64);"));
+                .line(&format!("let {stop} = {inner} >= {bound}_u64;"));
             generator.body.open(&format!("if {stop} {{"));
             generator.body.line(&format!("break {exit};"));
             generator.body.close();
@@ -919,12 +939,11 @@ impl Gen {
 
     fn fold_buffer(&mut self, store: &str, length: u64) {
         self.need_fold = true;
-        let region = self.region();
         let digest = self.name("digest");
         self.spend();
-        self.body.open(&format!("region {region} {{"));
+        self.body.open("region {");
         self.body.line(&format!(
-            "let {digest} = fold_prefix<{region}>(source: &{region} {store}, produced: {length}_u64, seed: 7_u64);"
+            "let {digest} = fold_prefix(source: &{store}, produced: {length}_u64, seed: 7_u64);"
         ));
         self.body
             .line(&format!("set total = total +wrap {digest};"));
@@ -936,19 +955,13 @@ impl Gen {
         let length = *self.rng.pick(&[4_u64, 8, 16, 24, 32]);
         let fill = self.rng.between(48, 90);
         let store = self.declare_buffer(length, fill);
-        let sink = if to_error {
-            self.used_err = true;
-            "err"
-        } else {
-            "out"
-        };
-        let region = self.region();
+        let sink = if to_error { "err" } else { "out" };
         let ok = self.name("wrote");
         let failed = self.name("write_failed");
         self.spend();
-        self.body.open(&format!("region {region} {{"));
+        self.body.open("region {");
         self.body.open(&format!(
-            "match write_once<{region}, {region}>(output: &uniq {region} {sink}, source: &{region} {store}, start: 0_u64, end: {length}_u64) {{"
+            "match publish_bytes(factory: &uniq files, output: &uniq {sink}, source: &{store}, start: 0_u64, end: {length}_u64) {{"
         ));
         self.body.open(&format!("Ok(value: {ok}) => {{"));
         self.body.line(&format!("set total = total +wrap {ok};"));
@@ -967,13 +980,12 @@ impl Gen {
         let fill = self.rng.between(65, 90);
         let store = self.declare_buffer(length, fill);
         self.bulk_output = true;
-        let region = self.region();
         let ok = self.name("bulk_wrote");
         let failed = self.name("bulk_failed");
         self.spend();
-        self.body.open(&format!("region {region} {{"));
+        self.body.open("region {");
         self.body.open(&format!(
-            "match write_once<{region}, {region}>(output: &uniq {region} out, source: &{region} {store}, start: 0_u64, end: {length}_u64) {{"
+            "match publish_bytes(factory: &uniq files, output: &uniq out, source: &{store}, start: 0_u64, end: {length}_u64) {{"
         ));
         self.body.open(&format!("Ok(value: {ok}) => {{"));
         self.body.line(&format!("set total = total +wrap {ok};"));
@@ -985,11 +997,10 @@ impl Gen {
         self.body.close();
     }
 
-    /// Two adjacent publication statements. `independent` sends them to the two
-    /// distinct `OutputStream` values, the pair [PAR-1] can permit; otherwise both go
-    /// to stdout, where one exclusive loan stands against the other and the
-    /// published order is the source order. `shared_source` additionally has
-    /// both read one buffer, so two shared loans meet on one place.
+    /// Two adjacent publication statements, either to distinct stream wrappers
+    /// or to stdout twice. The explicit shared factory state preserves order
+    /// even when both wrappers are redirected to one native file. Shared-source
+    /// variants additionally borrow the same backing buffer twice.
     fn output_pair_block(&mut self, independent: bool, shared_source: bool) {
         let length = *self.rng.pick(&[8_u64, 16, 32, 48]);
         let left = self.declare_buffer(length, 65);
@@ -998,25 +1009,17 @@ impl Gen {
         } else {
             self.declare_buffer(length, 66)
         };
-        let second_sink = if independent {
-            self.used_err = true;
-            "err"
-        } else {
-            "out"
-        };
-        let outer = self.region();
-        let inner = self.region();
+        let second_sink = if independent { "err" } else { "out" };
         let first = self.name("first");
         let second = self.name("second");
         self.spend();
-        self.body.open(&format!("region {outer} {{"));
-        self.body.open(&format!("region {inner} {{"));
+        self.body.open("region {");
+        self.body.open("region {");
         self.body.line(&format!(
-            "let {first} = write_once<{outer}, {outer}>(output: &uniq {outer} out, source: &{outer} {left}, start: 0_u64, end: {length}_u64);"
+            "let {first} = publish_bytes(factory: &uniq files, output: &uniq out, source: &{left}, start: 0_u64, end: {length}_u64);"
         ));
-        let source_region = if shared_source { &outer } else { &inner };
         self.body.line(&format!(
-            "let {second} = write_once<{inner}, {source_region}>(output: &uniq {inner} {second_sink}, source: &{source_region} {right}, start: 0_u64, end: {length}_u64);"
+            "let {second} = publish_bytes(factory: &uniq files, output: &uniq {second_sink}, source: &{right}, start: 0_u64, end: {length}_u64);"
         ));
         for binding in [first, second] {
             let ok = self.name("reached");
@@ -1057,8 +1060,8 @@ impl Gen {
     }
 }
 
-/// The four staged-loop variants: one shape [PAR-3] grants and three the rule
-/// denies for three different written reasons.
+/// Four retained file-loop storage and control-flow variants. The former
+/// PAR-3 stage permission is deleted; these remain observable workloads.
 #[derive(Clone, Copy)]
 enum FileLoop {
     IterationOwn,
@@ -1068,18 +1071,14 @@ enum FileLoop {
 }
 
 impl Gen {
-    /// A loop that opens and reads one fixture file per iteration. The variant
-    /// decides which [PAR-3] condition the loop meets or breaks, and every
-    /// variant publishes something that depends on what it read, so a wrongly
-    /// granted permission shows up as a wrong digest rather than as nothing.
+    /// A loop that opens and reads one fixture file per iteration. Every
+    /// storage/control-flow variant publishes a digest of what it read.
     fn file_loop_block(&mut self, variant: FileLoop) {
-        self.used_files = true;
         self.need_fold = true;
         let rounds = *self.rng.pick(&[4_u64, 6, 8, 12]);
         let window = *self.rng.pick(&[64_u64, 256, 1024, 4096]);
 
-        // The scratch the variant shares across iterations, declared above the
-        // loop, is exactly what costs the loop its pipeline.
+        // The hoisted variant retains its previous bytes across iterations.
         let hoisted_data = match variant {
             FileLoop::HoistedScratch => Some(self.declare_buffer(window, 0)),
             _ => None,
@@ -1092,8 +1091,20 @@ impl Gen {
         let label = self.label();
         let binder = self.name("index");
         self.spend();
-        self.body
-            .open(&format!("for {label} {binder} in 0_u64..{rounds}_u64 {{"));
+        if let Some(data) = &hoisted_data {
+            let retained = self.name("scratch_length");
+            self.body.line(&format!("for {label} ("));
+            self.body.indent += 1;
+            self.body.line(&format!("{binder} in 0_u64..{rounds}_u64,"));
+            self.body.line(&format!(
+                "invariant {retained}: len_of({data}) >= {window}_u64"
+            ));
+            self.body.indent -= 1;
+            self.body.open(") {");
+        } else {
+            self.body
+                .open(&format!("for {label} ({binder} in 0_u64..{rounds}_u64) {{"));
+        }
         let binder_name = binder.clone();
         let loop_label = label.clone();
         self.scope(|generator| {
@@ -1114,41 +1125,32 @@ impl Gen {
                 Some(existing) => existing.clone(),
                 None => generator.declare_buffer(window, 0),
             };
-            let factory = generator.region();
-            let name_region = generator.region();
-            let permit = generator.name("permit");
-            generator.body.open(&format!("region {factory} {{"));
-            generator.body.line(&format!(
-                "let {permit} = reserve_handle<{factory}>(factory: &uniq {factory} files);"
-            ));
-            generator.body.open(&format!("region {name_region} {{"));
+            generator.body.open("region {");
+            generator.body.open("region {");
             generator.body.open(&format!(
-                "match open_file<{factory}, {name_region}>(permit: move {permit}, root: &{factory} cwd, name: &{name_region} {name}, start: 0_u64, end: 7_u64) {{"
+                "match open_named(factory: &uniq files, root: &cwd, name: &{name}, start: 0_u64, end: 7_u64) {{"
             ));
             let handle = generator.name("handle");
-            generator.body.open(&format!("Ok(value: {handle}) => {{"));
-            let file_region = generator.region();
-            let data_region = generator.region();
-            generator.body.open(&format!("region {file_region} {{"));
-            generator.body.open(&format!("region {data_region} {{"));
+            generator.body.open(&format!("FileOpened(value: {handle}) => {{"));
+            generator.body.open("region {");
+            generator.body.open("region {");
             generator.body.open(&format!(
-                "match read_at<{file_region}, {data_region}>(file: &{file_region} {handle}, destination: &uniq {data_region} {data}, file_offset: 0_u64, start: 0_u64, end: {window}_u64) {{"
+                "match read_prefix(factory: &uniq files, file: &uniq {handle}, destination: &uniq {data}, start: 0_u64, end: {window}_u64) {{"
             ));
             let produced = generator.name("produced");
             generator
                 .body
-                .open(&format!("ReadBytes(next: {produced}) => {{"));
+                .open(&format!("Ok(value: {produced}) => {{"));
             generator
                 .body
                 .line(&format!("set total = total +wrap {produced};"));
             // Folding the bytes is what makes a shared destination genuinely
             // order-dependent: after a short read the tail is the previous
             // iteration's bytes.
-            let fold_region = generator.region();
             let digest = generator.name("read_digest");
-            generator.body.open(&format!("region {fold_region} {{"));
+            generator.body.open("region {");
             generator.body.line(&format!(
-                "let {digest} = fold_prefix<{fold_region}>(source: &{fold_region} {data}, produced: {window}_u64, seed: {produced});"
+                "let {digest} = fold_prefix(source: &{data}, produced: {window}_u64, seed: {produced});"
             ));
             generator
                 .body
@@ -1160,12 +1162,16 @@ impl Gen {
                 let stop = generator.name("enough");
                 generator
                     .body
-                    .line(&format!("let {stop} = ige(total, 1000000000_u64);"));
+                    .line(&format!("let {stop} = total >= 1000000000_u64;"));
                 generator.body.open(&format!("if {stop} {{"));
+                generator.body.line(&format!("close_read(factory: &uniq files, file: move {handle});"));
                 generator.body.line(&format!("break {loop_label};"));
                 generator.body.close();
             }
             generator.body.close();
+            let read_stop = generator.name("read_stop");
+            generator.body.open(&format!("Err(error: {read_stop}) => {{"));
+            generator.body.open(&format!("match move {read_stop} {{"));
             generator.body.open("ReadEnd() => {");
             generator.body.line("set total = total +wrap 13_u64;");
             generator.body.close();
@@ -1179,8 +1185,11 @@ impl Gen {
             generator.body.close();
             generator.body.close();
             generator.body.close();
+            generator.body.close();
+            generator.body.line(&format!("close_read(factory: &uniq files, file: move {handle});"));
+            generator.body.close();
             let denied = generator.name("open_problem");
-            generator.body.open(&format!("Err(error: {denied}) => {{"));
+            generator.body.open(&format!("FileOpenFailed(error: {denied}) => {{"));
             generator.body.line("set total = total +wrap 19_u64;");
             generator.body.close();
             generator.body.close();
@@ -1194,39 +1203,33 @@ impl Gen {
     /// the buffer the read wrote, so no permission may overlap the two, and the
     /// published bytes are the file's.
     fn read_then_write_block(&mut self) {
-        self.used_files = true;
         let window = *self.rng.pick(&[32_u64, 64, 128, 256]);
         let name = self.declare_name(None);
         let data = self.declare_buffer(window, 46);
         let got = self.name("got");
         self.body.line(&format!("let {got} = 0_u64;"));
         self.scalars.push(got.clone());
-        let factory = self.region();
-        let name_region = self.region();
-        let permit = self.name("permit");
         self.spend();
-        self.body.open(&format!("region {factory} {{"));
-        self.body.line(&format!(
-            "let {permit} = reserve_handle<{factory}>(factory: &uniq {factory} files);"
-        ));
-        self.body.open(&format!("region {name_region} {{"));
+        self.body.open("region {");
+        self.body.open("region {");
         self.body.open(&format!(
-            "match open_file<{factory}, {name_region}>(permit: move {permit}, root: &{factory} cwd, name: &{name_region} {name}, start: 0_u64, end: 7_u64) {{"
+            "match open_named(factory: &uniq files, root: &cwd, name: &{name}, start: 0_u64, end: 7_u64) {{"
         ));
         let handle = self.name("handle");
-        self.body.open(&format!("Ok(value: {handle}) => {{"));
-        let file_region = self.region();
-        let data_region = self.region();
-        self.body.open(&format!("region {file_region} {{"));
-        self.body.open(&format!("region {data_region} {{"));
+        self.body
+            .open(&format!("FileOpened(value: {handle}) => {{"));
+        self.body.open("region {");
+        self.body.open("region {");
         self.body.open(&format!(
-            "match read_at<{file_region}, {data_region}>(file: &{file_region} {handle}, destination: &uniq {data_region} {data}, file_offset: 0_u64, start: 0_u64, end: {window}_u64) {{"
+            "match read_prefix(factory: &uniq files, file: &uniq {handle}, destination: &uniq {data}, start: 0_u64, end: {window}_u64) {{"
         ));
         let produced = self.name("produced");
-        self.body
-            .open(&format!("ReadBytes(next: {produced}) => {{"));
+        self.body.open(&format!("Ok(value: {produced}) => {{"));
         self.body.line(&format!("set {got} = {produced};"));
         self.body.close();
+        let read_stop = self.name("read_stop");
+        self.body.open(&format!("Err(error: {read_stop}) => {{"));
+        self.body.open(&format!("match move {read_stop} {{"));
         self.body.open("ReadEnd() => {");
         self.body.close();
         let problem = self.name("read_problem");
@@ -1237,29 +1240,32 @@ impl Gen {
         self.body.close();
         self.body.close();
         self.body.close();
+        self.body.close();
+        self.body.line(&format!(
+            "close_read(factory: &uniq files, file: move {handle});"
+        ));
+        self.body.close();
         let denied = self.name("open_problem");
-        self.body.open(&format!("Err(error: {denied}) => {{"));
+        self.body
+            .open(&format!("FileOpenFailed(error: {denied}) => {{"));
         self.body.close();
         self.body.close();
         self.body.close();
         self.body.close();
 
-        // [SYS-8] wants `end` proved inside the buffer, and the read's reported
-        // endpoint is a boundary result the checker publishes no range for, so
-        // the relation is tested with a real branch before the publication --
-        // the P12 form, not a claim.
+        // Preserve the original conditional publication workload. The ordinary
+        // helper's source requirement owns the window bound.
         let room = self.name("room");
         let publishable = self.name("publishable");
-        let publish = self.region();
         let ok = self.name("relayed");
         let failed = self.name("relay_failed");
-        self.body.line(&format!("let {room} = len({data});"));
+        self.body.line(&format!("let {room} = len_of({data});"));
         self.body
-            .line(&format!("let {publishable} = ile({got}, {room});"));
+            .line(&format!("let {publishable} = {got} <= {room};"));
         self.body.open(&format!("if {publishable} {{"));
-        self.body.open(&format!("region {publish} {{"));
+        self.body.open("region {");
         self.body.open(&format!(
-            "match write_once<{publish}, {publish}>(output: &uniq {publish} out, source: &{publish} {data}, start: 0_u64, end: {got}) {{"
+            "match publish_bytes(factory: &uniq files, output: &uniq out, source: &{data}, start: 0_u64, end: {got}) {{"
         ));
         self.body.open(&format!("Ok(value: {ok}) => {{"));
         self.body.line(&format!("set total = total +wrap {ok};"));
@@ -1276,46 +1282,47 @@ impl Gen {
     /// because the byte order of one batch is the host's and folding it would
     /// make the program its own unstable oracle.
     fn directory_block(&mut self) {
-        self.used_files = true;
         let entries = self.declare_buffer(4096, 0);
         let ended = self.name("ended");
         self.body.line(&format!("let {ended} = 0_u8;"));
-        let factory = self.region();
-        let permit = self.name("permit");
         self.spend();
-        self.body.open(&format!("region {factory} {{"));
-        self.body.line(&format!(
-            "let {permit} = reserve_handle<{factory}>(factory: &uniq {factory} files);"
-        ));
-        self.body.open(&format!(
-            "match open_directory_source<{factory}>(permit: move {permit}, directory: &{factory} cwd) {{"
-        ));
+        self.body.open("region {");
+        self.body
+            .open("match open_directory_source(factory: &uniq files, directory: &cwd) {");
         let source = self.name("listing");
-        self.body.open(&format!("Ok(value: {source}) => {{"));
+        self.body
+            .open(&format!("SourceOpened(value: {source}) => {{"));
         let rounds = self.name("rounds");
         let label = self.label();
         let stop = self.name("stop");
         let live = self.name("live");
         self.body.line(&format!("let {rounds} = 0_u64;"));
-        self.body.open(&format!("loop {label} {{"));
-        self.body
-            .line(&format!("let {stop} = ige({rounds}, 8_u64);"));
+        let retained = self.name("entries_length");
+        self.body.line(&format!("loop {label} ("));
+        self.body.indent += 1;
+        self.body.line(&format!(
+            "invariant {retained}: len_of({entries}) >= 4096_u64"
+        ));
+        self.body.indent -= 1;
+        self.body.open(") {");
+        self.body.line(&format!("let {stop} = {rounds} >= 8_u64;"));
         self.body.open(&format!("if {stop} {{"));
         self.body.line(&format!("break {label};"));
         self.body.close();
-        let batch = self.region();
-        self.body.open(&format!("region {batch} {{"));
-        self.body.open(&format!(
-            "match directory_next<{batch}, {batch}>(source: &uniq {batch} {source}, destination: &uniq {batch} {entries}, start: 0_u64, end: 4096_u64) {{"
-        ));
+        self.body.open("region {");
         let endpoint = self.name("endpoint");
         let reported = self.name("reported");
-        self.body.open(&format!(
-            "ListBytes(next: {endpoint}, entries: {reported}) => {{"
-        ));
+        let result = self.name("batch_result");
+        let done = self.name("batch_done");
+        self.body.line(&format!("let ({result}, {endpoint}, {reported}) = list_batch(source: &uniq {source}, destination: &uniq {entries}, start: 0_u64, end: 4096_u64);"));
+        self.body.open(&format!("match move {result} {{"));
+        self.body.open(&format!("Ok(value: {done}) => {{"));
         self.body
             .line(&format!("set total = total +wrap {reported};"));
         self.body.close();
+        let stop = self.name("list_stop");
+        self.body.open(&format!("Err(error: {stop}) => {{"));
+        self.body.open(&format!("match move {stop} {{"));
         self.body.open("ListEnd() => {");
         self.body.line(&format!("set {ended} = 1_u8;"));
         self.body.close();
@@ -1326,7 +1333,9 @@ impl Gen {
         self.body.close();
         self.body.close();
         self.body.close();
-        self.body.line(&format!("let {live} = ieq({ended}, 0_u8);"));
+        self.body.close();
+        self.body.close();
+        self.body.line(&format!("let {live} = {ended} == 0_u8;"));
         self.body.open(&format!("if {live} {{"));
         self.body.indent -= 1;
         self.body.line("} else {");
@@ -1336,36 +1345,34 @@ impl Gen {
         self.body
             .line(&format!("set {rounds} = {rounds} +wrap 1_u64;"));
         self.body.close();
+        self.body.line(&format!(
+            "close_directory_source(factory: &uniq files, source: move {source});"
+        ));
         self.body.close();
         let denied = self.name("source_problem");
-        self.body.open(&format!("Err(error: {denied}) => {{"));
+        self.body
+            .open(&format!("SourceOpenFailed(error: {denied}) => {{"));
         self.body.line("set total = total +wrap 29_u64;");
         self.body.close();
         self.body.close();
         self.body.close();
     }
 
-    /// One always-true claim, in the residual shape [CLM-2] admits: the checker
-    /// proves the remainder's domain but publishes no range for its result, so
-    /// the following subscript has no other route to its bound. The predicate
-    /// is true in every execution, so the trap path is never taken and the
-    /// program's observables are the ordinary ones.
-    fn claim_block(&mut self) {
+    /// The former claim shape now states an erased invariant over a local
+    /// unsigned remainder. The indexed mutation and digest stay unchanged.
+    fn invariant_block(&mut self) {
         let length = *self.rng.pick(&[8_u64, 16, 32, 64]);
         let store = self.declare_buffer(length, 65);
         let seed = self.name("seed");
         let index = self.name("offset");
         let guard = self.name("guard");
         let literal = self.rng.between(1, 4096);
-        self.traps = true;
         self.spend();
         self.body.line(&format!("let {seed} = {literal}_u64;"));
         self.body
             .line(&format!("let {index} = {seed} % {length}_u64;"));
-        self.body.line(&format!(
-            "claim {guard}: ilt({index}, {length}_u64) because \"premises: {index} is {seed} remainder {length}_u64 computed in this function and {store} has length {length}\\nderivation: an unsigned remainder by {length}_u64 is at most {} and is therefore strictly less than the buffer length\\nconclusion: ilt({index}, {length}_u64) is true\\nchecker gap: ENT proves the remainder operation domain but publishes no range for its result\\nconsumers: the following subscript of {store} needs this upper Range component\";",
-            length - 1
-        ));
+        self.body
+            .line(&format!("invariant {guard}: {index} < {length}_u64;"));
         let byte = self.byte_literal();
         self.body.line(&format!("set {store}[{index}] = {byte};"));
         self.body.line(&format!("set total = total +wrap {index};"));
@@ -1387,18 +1394,16 @@ impl Gen {
                 (self.declare_buffer(length, fill), length)
             }
         };
-        let region = self.region();
         let view = self.name("view");
         let room = self.name("view_room");
         let digest = self.name("view_digest");
         let seed = self.rng.between(1, 97);
         self.spend();
-        self.body.open(&format!("region {region} {{"));
-        self.body
-            .line(&format!("let {view} = slice_of(&{region} {store});"));
-        self.body.line(&format!("let {room} = len({view});"));
+        self.body.open("region {");
+        self.body.line(&format!("let {view} = slice_of(&{store});"));
+        self.body.line(&format!("let {room} = len_of({view});"));
         self.body.line(&format!(
-            "let {digest} = fold_view<{region}>(view: move {view}, produced: {length}_u64, seed: {seed}_u64);"
+            "let {digest} = fold_view(view: {view}, produced: {length}_u64, seed: {seed}_u64);"
         ));
         self.body
             .line(&format!("set total = total +wrap {digest};"));
@@ -1418,11 +1423,11 @@ impl Gen {
         let fallback = self.rng.between(100, 4000);
         self.spend();
         self.body
-            .line(&format!("let {narrow} = cvt<u64, u8>({source});"));
+            .line(&format!("let {narrow} = cvt::<u64, u8>({source});"));
         self.body.open(&format!("let {picked} = match {narrow} {{"));
         self.body.open(&format!("Ok(value: {exact}) => {{"));
         self.body
-            .line(&format!("let {widened} = cvt<u8, u64>({exact});"));
+            .line(&format!("let {widened} = cvt::<u8, u64>({exact});"));
         self.body.line(&format!("give {widened};"));
         self.body.close();
         self.body.open(&format!("Err(error: {failed}) => {{"));
@@ -1441,19 +1446,19 @@ impl Gen {
         let length = *self.rng.pick(&[4_u64, 8, 16]);
         let fill = self.rng.between(48, 90);
         let store = self.declare_buffer(length, fill);
-        let region = self.region();
         let ok = self.name("exit_wrote");
         let failed = self.name("exit_failed");
         let code = self.rng.between(20, 90);
         self.spend();
-        self.body.open(&format!("region {region} {{"));
+        self.body.open("region {");
         self.body.open(&format!(
-            "match write_once<{region}, {region}>(output: &uniq {region} out, source: &{region} {store}, start: 0_u64, end: {length}_u64) {{"
+            "match publish_bytes(factory: &uniq files, output: &uniq out, source: &{store}, start: 0_u64, end: {length}_u64) {{"
         ));
         self.body.open(&format!("Ok(value: {ok}) => {{"));
         self.body.line(&format!("set total = total +wrap {ok};"));
         self.body.close();
         self.body.open(&format!("Err(error: {failed}) => {{"));
+        self.close_cwd();
         self.body
             .line(&format!("return exit_status(code: {code}_u8);"));
         self.body.close();
@@ -1470,29 +1475,24 @@ impl Gen {
     /// reports a difference that is not the compiler's. Positions one and two
     /// are the two literal arguments the oracle passes, identical everywhere.
     fn argument_block(&mut self) {
-        self.used_args = true;
-        let region = self.region();
         let count = self.name("argument_count");
         self.spend();
-        self.body.open(&format!("region {region} {{"));
-        self.body.line(&format!(
-            "let {count} = args_count<{region}>(args: &{region} args);"
-        ));
+        self.body.open("region {");
+        self.body
+            .line(&format!("let {count} = args_count(args: &args);"));
         self.body.line(&format!("set total = total +wrap {count};"));
         if self.rng.chance(60) {
             let value = self.name("argument");
             let failed = self.name("argument_missing");
-            let inner = self.region();
             let length = self.name("argument_length");
             let position = self.rng.between(1, 2);
             self.body.open(&format!(
-                "match arg_get<{region}>(args: &{region} args, position: {position}_u64) {{"
+                "match arg_get(args: &args, position: {position}_u64) {{"
             ));
             self.body.open(&format!("Ok(value: {value}) => {{"));
-            self.body.open(&format!("region {inner} {{"));
-            self.body.line(&format!(
-                "let {length} = host_bytes_len<{inner}>(value: &{inner} {value});"
-            ));
+            self.body.open("region {");
+            self.body
+                .line(&format!("let {length} = host_bytes_len(value: &{value});"));
             self.body
                 .line(&format!("set total = total +wrap {length};"));
             self.body.close();

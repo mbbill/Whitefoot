@@ -1,31 +1,121 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "The enumeration source is a cursor with one position, opened above the loop and advanced by every iteration through a retained exclusive borrow. It is not read-only, it is not prologue-only, and an opaque system nominal has no copy element type to replicate, so PAR-3 denies it permanently rather than for a stage-one reason. This is the ownership model working, not a gap.";
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(files) {
+  doc "C2 deletes PAR-3 outright: this case retains its ordinary source acceptance and source-order control flow after explicit factory and linear-close migration. Its former staged grant or numbered denial is retired, not reproduced by a native classification. Ordinary loans, field effects, loop ownership and exits still apply.";
   let total = 0_u64;
   region {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        match open_directory_source(permit: move permit, directory: &cwd) {
-          SourceOpened(value: list) => {
-            for @scan (index in 0_u64..4_u64) {
-              region 'w {
-                let workspace = arena_frame::<1024, 1, 'w>();
+    match open_directory_source(factory: &uniq deref(files), directory: cwd) {
+      SourceOpened(value: list) => {
+        for @scan (index in 0_u64..4_u64) {
+          region 'w {
+            let workspace = arena_frame::<1024, 1, 'w>();
+            region {
+              let entries = arena_vector_proved::<u8>(store: &uniq workspace, count: 1024_u64);
+              for @prime (
+                at in 0_u64..1024_u64,
+                invariant grown: len_of(entries) >= at,
+                invariant spare: room_of(entries) + at >= 1024_u64,
+                invariant flat: head_of(entries) <= 0_u64
+              ) {
+                place_back(vector: &uniq entries, value: 0_u8);
+              }
+              region {
+                let destination = mut_slice_of(&uniq entries);
                 region {
-                  let entries = arena_vector_proved::<u8>(store: &uniq workspace, count: 1024_u64);
-                  for @prime (
-                    at in 0_u64..1024_u64,
-                    invariant grown: len_of(entries) >= at,
-                    invariant spare: room_of(entries) + at >= 1024_u64,
-                    invariant flat: head_of(entries) <= 0_u64
-                  ) {
-                    set entries = place_back(vector: move entries, value: 0_u8);
-                  }
-                  region {
-                    let destination = mut_slice_of(&uniq entries);
-                    region {
-                      match directory_next(source: &uniq list, destination: &uniq destination, start: 0_u64, end: 1024_u64) {
-                        ListBytes(next: bytes, entries: reported) => {
-                          set total = total +wrap reported;
-                        }
+                  let (list_result_15, bytes, reported) = directory_next(source: &uniq list, destination: &uniq destination, start: 0_u64, end: 1024_u64);
+                  match list_result_15 {
+                    Ok(value: done) => {
+                      set total = total +wrap reported;
+                    }
+                    Err(error: list_stop_15) => {
+                      match list_stop_15 {
                         ListEnd() => {
                         }
                         ListFailed(error: problem) => {
@@ -37,14 +127,27 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files:
               }
             }
           }
-          SourceOpenFailed(error: problem, permit: refused) => {
+        }
+        close_directory_source(factory: &uniq deref(files), source: move list);
+      }
+      SourceOpenFailed(error: problem) => {
+        region {
+          if factory_refusal(error: &problem) {
+            return exit_status(code: 1_u8);
           }
         }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 1_u8);
       }
     }
   }
   return exit_status(code: 0_u8);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

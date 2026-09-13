@@ -26,7 +26,7 @@ fn ratio(n: own u64, d: own u64) -> result: own u64 pure {
   return quotient;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = ratio(n: 12_u64, d: 4_u64);
   if total != 3_u64 {
     return exit_status(code: 1_u8);
@@ -107,7 +107,7 @@ fn a_constant_divisor_site_emits_one_plain_instruction() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let half = halve(n: 9_i32);
   if half != 4_i32 {
     return exit_status(code: 1_u8);
@@ -138,7 +138,7 @@ fn generic_exact_division_emits_no_runtime_guards() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let unsigned = divide::<u32>(n: 12_u32, d: 1_u32);
   let signed = divide::<i32>(n: 9_i32, d: 1_i32);
   return exit_status(code: 0_u8);

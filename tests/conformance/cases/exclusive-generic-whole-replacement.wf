@@ -1,0 +1,30 @@
+fn exchange<T: affine>(target: &uniq T, incoming: own T) -> previous: own T reads(target), writes(target) {
+  let previous = replace deref(target) = move incoming;
+  return move previous;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let scalar = 3_u64;
+  let values = fixed_vector::<u64, 2>();
+  let fresh = fixed_vector::<u64, 2>();
+  region {
+    place_back(vector: &uniq values, value: 7_u64);
+    let old_scalar = exchange::<u64>(target: &uniq scalar, incoming: 9_u64);
+    let old_values = exchange::<FixedVector<u64, 2>>(target: &uniq values, incoming: move fresh);
+    let now = len_of(values);
+    let before = len_of(old_values);
+    if old_scalar != 3_u64 {
+      return exit_status(code: 1_u8);
+    }
+    if scalar != 9_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if now != 0_u64 {
+      return exit_status(code: 3_u8);
+    }
+    if before != 1_u64 {
+      return exit_status(code: 4_u8);
+    }
+    return exit_status(code: 0_u8);
+  }
+}

@@ -2,7 +2,7 @@
 #define WHITEFOOT_COMPLETION_SOCKET_ADDRESS_H
 
 /*
- * The address vocabulary every socket engine shares [SYS-16, SYS-17].
+ * The address vocabulary every socket engine shares (ordinary native library).
  *
  * A `SocketAddress` crosses the ABI as the three scalars of its emitted
  * layout (`contract.h`, `wf_socket_address`), and every engine that makes a
@@ -87,8 +87,8 @@ _Static_assert(
 #endif
 
 /* The flags a send carries.  A write to a connection whose peer has gone is
- * an ordinary `BrokenPipe` outcome [SYS-8], and the bootstrap already ignores
- * the write-to-closed-pipe signal once before the entry [QUAL-3]; where the
+ * an ordinary `BrokenPipe` outcome, and native initialization already ignores
+ * the write-to-closed-pipe signal once before invocation; where the
  * host offers the per-call form as well, it is used, so a runtime unit with no
  * bootstrap in front of it -- a probe -- answers the same way.  Windows raises
  * no such signal and offers no such flag, so it carries none. */
@@ -200,7 +200,7 @@ static inline unsigned wf_socket_native_wildcard(
  * neither family, or one shorter than its family needs, answers the all-zero
  * address rather than reading a byte the host did not write; the target
  * reported the peer and a target that reports nothing usable is not a program
- * outcome [SYS-17]. */
+ * outcome (ordinary native library). */
 static inline void wf_socket_address_from_native(
     const wf_socket_native_address *native,
     unsigned length,

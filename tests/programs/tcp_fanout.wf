@@ -1,3 +1,92 @@
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
 fn byte_at(store: &Slice<u8>, index: own u64) -> result: own u8 reads(store) {
   doc "Reads one stored byte, delivering zero for a position the view does not hold.";
   let room = len_of(deref(store));
@@ -67,37 +156,39 @@ fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result:
   return Ok<unit, IoError>(value: unit);
 }
 
-fn zero_fill['s: affine](vector: own Vector<'s, u8>) -> result: own Vector<'s, u8> reads(vector), writes(vector) contract {
-  define spare = room_of(vector);
-  define start = head_of(vector);
+fn zero_fill['s: affine](vector: &uniq Vector<'s, u8>) -> result: own unit reads(vector), writes(vector) contract {
+  define spare = room_of(deref(vector));
+  define start = head_of(deref(vector));
   requires 256_u64 <= spare;
   requires start <= 0_u64;
-  ensures len_of(result) >= 256_u64;
-  ensures head_of(result) <= 0_u64;
+  ensures len_of(deref(vector)) >= 256_u64;
+  ensures head_of(deref(vector)) <= 0_u64;
 } {
-  doc "Opens a fresh run's whole capacity, so a view formed over it holds the 256 slots one connection's scratch needs. It is a helper rather than a loop written where the run is taken because its contract is what publishes the opened length: a caller reads `len_of(result) >= 256_u64` off the signature instead of re-deriving it from three loop invariants at every site [FN-9].";
-  let run = move vector;
+  doc "Opens a fresh run's whole capacity, so a view formed over it holds the 256 slots one connection's scratch needs. It is a helper rather than a loop written where the run is taken because its contract is what publishes the opened length: a caller reads the exclusive referent's exit length bound off the signature instead of re-deriving it from three loop invariants at every site [FN-9].";
   for @fill_run (
     at in 0_u64..256_u64,
-    invariant grown_run: len_of(run) >= at,
-    invariant spare_run: room_of(run) + at >= 256_u64,
-    invariant flat_run: head_of(run) <= 0_u64
+    invariant grown_run: len_of(deref(vector)) >= at,
+    invariant spare_run: room_of(deref(vector)) + at >= 256_u64,
+    invariant flat_run: head_of(deref(vector)) <= 0_u64
   ) {
-    set run = place_back(vector: move run, value: 0_u8);
+    place_back(vector: &uniq deref(vector), value: 0_u8);
   }
-  return move run;
+  return unit;
 }
 
-fn serve_one(listener: &TcpListener, permit: own HandlePermit) -> result: own u8 reads(listener, permit), writes(permit) {
-  doc "Takes one connection from the listener, returns the first chunk the peer sent, and releases the pair, so the caller's fixed-trip loop serves one peer per iteration [SYS-17, SYS-18]. The scratch is this call's own bump extent rather than the caller's, because on the container surface no iteration-own run can travel from that loop's prologue into its staged call: a borrow of a run is the address of the run's own storage, which pins the run to one frame slot four in-flight iterations cannot share, and an owned run parameter occurring at one position may carry no region name and therefore no affine bound [FORM-8], so its store region is the fail-closed general one and the callee may not release it [PROV-6]. Reserved here, the extent belongs to the activation the lane hands out, and the two system rows read and write it through the views the run hands back [VIEW-1, SYS-8].";
+fn serve_one(listener: &uniq TcpListener, handles: &uniq HandleFactory) -> result: own u8 reads(listener, handles), writes(listener, handles) {
+  doc "Accepts one peer through exclusive listener and factory values, echoes its first chunk, and explicitly closes both halves. Its arena scratch belongs to this call and remains alive until every ordinary call returns.";
   let outcome = 0_u8;
   region 'scratch {
     let store = arena_frame::<256, 8, 'scratch>();
     region {
       let fresh = arena_vector_proved::<u8>(store: &uniq store, count: 256_u64);
-      let scratch = zero_fill(vector: move fresh);
       region {
-        match tcp_accept(permit: move permit, listener: listener) {
+        zero_fill(vector: &uniq fresh);
+      }
+      let scratch = move fresh;
+      region {
+        match tcp_accept(factory: &uniq deref(handles), listener: &uniq deref(listener)) {
           Accepted(connection: link, peer: from) => {
             let available = 0_u64;
             let refused = 0_u8;
@@ -105,15 +196,19 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit) -> result: own u8
               let window = mut_slice_of(&uniq scratch);
               region {
                 match receive_next(receive: &uniq link.receive, destination: &uniq window, start: 0_u64, end: 256_u64) {
-                  ReadBytes(next: endpoint) => {
+                  Ok(value: endpoint) => {
                     set available = endpoint;
                   }
-                  ReadEnd() => {
-                    set refused = 1_u8;
-                  }
-                  ReadFailed(error: problem) => {
-                    set outcome = 3_u8;
-                    set refused = 1_u8;
+                  Err(error: read_stop_11) => {
+                    match read_stop_11 {
+                      ReadEnd() => {
+                        set refused = 1_u8;
+                      }
+                      ReadFailed(error: problem) => {
+                        set outcome = 3_u8;
+                        set refused = 1_u8;
+                      }
+                    }
                   }
                 }
               }
@@ -132,10 +227,18 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit) -> result: own u8
                 }
               }
             }
-            let credit = close_connection(connection: move link);
+            let TcpConnection(receive: close_receive_12, send: close_send_12) = move link;
+            close_receive(factory: &uniq deref(handles), receive: move close_receive_12);
+            close_send(factory: &uniq deref(handles), send: move close_send_12);
           }
-          AcceptFailed(error: problem, permit: handed_back) => {
-            set outcome = 5_u8;
+          AcceptFailed(error: problem) => {
+            region {
+              if factory_refusal(error: &problem) {
+                set outcome = 6_u8;
+              } else {
+                set outcome = 5_u8;
+              }
+            }
           }
         }
       }
@@ -144,8 +247,12 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit) -> result: own u8
   return outcome;
 }
 
-command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles) {
-  doc "Listens on the loopback port named by the invocation and serves four connections in a fixed-trip loop the staged permission admits: each iteration takes its own permit before its accept and leaves the loop only from its prologue, so the four accepts may be in flight at once and several peers reach one listener together [PAR-3, SYS-17]. The argument scratch is an arena extent viewed exclusively where the argument is copied into it and shared where the port is read out. The per-connection scratch is not this loop's at all: `serve_one` reserves its own extent, because the container surface has no run an iteration can build here and hand to its staged call, and the reason is written at that function.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "Listens on the invocation port and serves four peers in order. Each ordinary call borrows the same listener and factory until return; deleting PAR-3 removes the former staged overlap.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq handles, directory: move unused_cwd);
+  }
   region 'arguments {
     let names = arena_frame::<16, 8, 'arguments>();
     region {
@@ -156,7 +263,7 @@ command fn main(command.args as args: own Args, command.handles as handles: own 
         invariant spare_digits: room_of(digits) + at >= 16_u64,
         invariant flat_digits: head_of(digits) <= 0_u64
       ) {
-        set digits = place_back(vector: move digits, value: 0_u8);
+        place_back(vector: &uniq digits, value: 0_u8);
       }
       let room = len_of(digits);
       let port = 0_u16;
@@ -173,11 +280,11 @@ command fn main(command.args as args: own Args, command.handles as handles: own 
       region {
         match arg_get(args: &args, position: 1_u64) {
           Ok(value: text) => {
-            region 'v {
+            region {
               region {
                 let window = mut_slice_of(&uniq digits);
                 region {
-                  match host_copy_utf8(value: &'v text, destination: &uniq window, start: 0_u64, end: room) {
+                  match host_copy_utf8(value: &text, destination: &uniq window, start: 0_u64, end: room) {
                     Ok(value: written) => {
                       set carried = written;
                     }
@@ -206,38 +313,34 @@ command fn main(command.args as args: own Args, command.handles as handles: own 
       let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
       let outcome = 0_u8;
       region {
-        match reserve_handle(factory: &uniq handles) {
-          Ok(value: listen_permit) => {
-            region {
-              match tcp_listen(permit: move listen_permit, address: &address) {
-                Listening(listener: bound) => {
-                  for (
-                    served in 0_u64..4_u64,
-                    invariant progress: served <= 4_u64
-                  ) {
-                    match reserve_handle(factory: &uniq handles) {
-                      Ok(value: accept_permit) => {
-                        let reported = serve_one(listener: &bound, permit: move accept_permit);
-                        if reported == 0_u8 {
-                        } else {
-                          set outcome = reported;
-                        }
-                      }
-                      Err(error: problem) => {
-                        return exit_status(code: 6_u8);
-                      }
-                    }
-                  }
-                  let listener_credit = close_listener(listener: move bound);
+        region {
+          match tcp_listen(factory: &uniq handles, address: &address) {
+            Listening(listener: bound) => {
+              for (
+                served in 0_u64..4_u64,
+                invariant progress: served <= 4_u64
+              ) {
+                let reported = serve_one(listener: &uniq bound, handles: &uniq handles);
+                if reported == 6_u8 {
+                  close_listener(factory: &uniq handles, listener: move bound);
+                  return exit_status(code: 6_u8);
                 }
-                ListenFailed(error: problem, permit: handed_back) => {
+                if reported == 0_u8 {
+                } else {
+                  set outcome = reported;
+                }
+              }
+              let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
+            }
+            ListenFailed(error: problem) => {
+              region {
+                if factory_refusal(error: &problem) {
+                  set outcome = 8_u8;
+                } else {
                   set outcome = 7_u8;
                 }
               }
             }
-          }
-          Err(error: problem) => {
-            set outcome = 8_u8;
           }
         }
       }

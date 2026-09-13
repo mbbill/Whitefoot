@@ -1,12 +1,10 @@
 use super::*;
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    /// The planned backing that gives a binding its stable address. An issue
-    /// stage selects its own pipeline slot before exposing any borrowed address.
+    /// The planned backing that gives a binding its stable address.
     ///
-    /// This is the address of stored content. Source borrows of descriptors
-    /// and handles keep their existing value ABI; they do not implicitly
-    /// expose a mutable descriptor slot.
+    /// This includes a Box owner's pointer slot: replacing through its borrow
+    /// must update that slot, rather than only changing a callee's pointer.
     pub(super) fn emit_address_of(
         &mut self,
         result: IrValueId,
@@ -21,18 +19,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         }
         let address = self.binding_place(result)?;
-        if self
-            .frame
-            .slots
-            .contains_key(&FunctionSlot::StagedAddress(result))
-        {
-            writeln!(
-                self.output,
-                "  {} = getelementptr i8, ptr {address}, i64 0",
-                value_name(result)
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-        }
         if self
             .storage
             .slot(value)
@@ -89,7 +75,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         Ok(match referent {
             IrAddressed::Nominal(nominal) => matches!(
                 self.nominal(nominal)?.kind(),
-                IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. }
+                IrNominalKind::Struct { .. }
+                    | IrNominalKind::Enum { .. }
+                    | IrNominalKind::Box { .. }
+                    | IrNominalKind::Opaque
             ),
             IrAddressed::Unit
             | IrAddressed::Bool

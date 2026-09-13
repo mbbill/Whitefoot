@@ -1,13 +1,7 @@
-use crate::{DeclarationId, NodePath, PreludeDeclarationId};
+use crate::{BuiltinPreludeId, DeclarationId, NodePath};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct FunctionId(pub(crate) u32);
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ContractId(pub(crate) u32);
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct ConformanceId(pub(crate) u32);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct BindingId(pub(crate) u32);
@@ -342,7 +336,7 @@ pub(crate) enum CheckedFlatElement {
     TagOnlyNominal(NominalId),
     /// One affine aggregate element type: a region-free non-copy nominal
     /// stored by value. [TYPE-2] admits this element domain for `buffer`
-    /// formation only; arrays and slices keep the flat copy domain, so
+    /// formation only; slices keep the flat copy domain, so
     /// their element constructors never produce this variant.
     Nominal(NominalId),
     /// One unbounded type parameter in a run's element position [BLK-1].
@@ -381,8 +375,7 @@ impl CheckedFlatElement {
 /// region-erased lowering still select the right action.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedReleaseClass {
-    /// The entry heap, an unbounded region parameter, or a `linear`-bounded
-    /// one: the release is a free to that store, and an unbounded parameter is
+    /// An unbounded region parameter or a `linear`-bounded one: the release is a free to that store, and an unbounded parameter is
     /// this class fail-closed [PROV-6].
     General,
     /// An `affine`-bounded region parameter or a `region_stmt` region: the
@@ -391,75 +384,16 @@ pub(crate) enum CheckedReleaseClass {
     Extent,
 }
 
-/// [BLK-1] the type of one slot of a run: what a slot may hold.
-///
-/// The flat element domain is what every other storage type admits, and a run
-/// admits one thing more — an element that is itself a run, its descriptor
-/// included. The lift is exactly **one level**: the inner run's own element is
-/// flat, so `FixedVector<Vector<'s, u8>, 8>` and `FixedVector<FixedVector<u8,
-/// 4>, 4>` are representable and a third level is not. One level is what
-/// carries [MSR-1]'s `len_of(P[i])`, [BLK-1]'s element-position commit at a
-/// run element, and 3.L.4's block pool; a deeper nesting is an explicit
-/// unsupported capability and never a source rejection.
-///
-/// It is a lift and not a recursion for the reason [`CheckedType`] is `Copy`:
-/// an arbitrarily deep element would need an interned element table travelling
-/// with the checked program, or a boxed element that costs every checked type
-/// its `Copy`, and neither buys a program this language can write yet.
+/// [TYPE-2, BLK-1] the complete type of one array or run element, interned in
+/// the checked program.
+/// Structural children precede parents; recursive ownership graphs pass through
+/// nominal identities. The handle keeps every checked type compact and Copy.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum CheckedElement {
-    /// The flat element domain [TYPE-2]: every copy element, one region-free
-    /// affine nominal stored by value, and one type parameter at the symbolic
-    /// instance.
-    Flat(CheckedFlatElement),
-    /// One `FixedVector<T, n>` element, its two descriptor words inline in the
-    /// slot [BLK-1, OP-9].
-    FixedVector {
-        element: CheckedFlatElement,
-        length: CheckedConst,
-    },
-    /// One `Vector<'s, T>` element: the four-word descriptor lives in the
-    /// slot and the run it names lives in the store `'s` [PROV-1].
-    Vector {
-        region: DeclarationId,
-        element: CheckedFlatElement,
-        release: CheckedReleaseClass,
-    },
-}
+pub(crate) struct CheckedElement(pub(crate) u32);
 
 impl CheckedElement {
-    /// The complete type one slot holds.
-    pub(crate) const fn ty(self) -> CheckedType {
-        match self {
-            Self::Flat(element) => element.ty(),
-            Self::FixedVector { element, length } => CheckedType::FixedVector {
-                element: Self::Flat(element),
-                length,
-            },
-            Self::Vector {
-                region,
-                element,
-                release,
-            } => CheckedType::Vector {
-                region,
-                element: Self::Flat(element),
-                release,
-            },
-        }
-    }
-
-    /// The flat element this one is, when it is one.
-    pub(crate) const fn flat(self) -> Option<CheckedFlatElement> {
-        match self {
-            Self::Flat(element) => Some(element),
-            Self::FixedVector { .. } | Self::Vector { .. } => None,
-        }
-    }
-
-    /// Whether this element is itself a run, which is what [PROV-6]'s release
-    /// walk visits before the holding run's own backing is released.
-    pub(crate) const fn is_run(self) -> bool {
-        matches!(self, Self::FixedVector { .. } | Self::Vector { .. })
+    pub(crate) const fn index(self) -> usize {
+        self.0 as usize
     }
 }
 
@@ -511,7 +445,7 @@ pub(crate) enum CheckedType {
     GenericFloat(DeclarationId),
     Nominal(NominalId),
     Array {
-        element: CheckedFlatElement,
+        element: CheckedElement,
         length: CheckedConst,
     },
     /// One view [VIEW-1]: `Slice<'r, T>` at shared strength and
@@ -551,8 +485,8 @@ pub(crate) enum CheckedType {
         release: CheckedReleaseClass,
     },
     /// One `Heap<'s>` [PROV-1]: the proof-only provider value of the general
-    /// store `'s` names. [FN-7]'s `command.heap` entry supplies the provider;
-    /// calls transport it through their declared store region.
+    /// store `'s` names. Ordinary calls transport this provider through
+    /// their declared store region.
     Heap {
         region: DeclarationId,
     },
@@ -566,15 +500,21 @@ pub(crate) enum CheckedType {
 }
 
 impl CheckedType {
-    pub(crate) const fn is_concrete(self) -> bool {
+    pub(crate) fn is_concrete(self, elements: &[CheckedType]) -> bool {
         match self {
             Self::Generic(_) | Self::GenericInt(_) | Self::GenericFloat(_) => false,
-            Self::Array { element, length } => element.ty().is_concrete() && length.is_concrete(),
-            Self::FixedVector { element, length } => {
-                element.ty().is_concrete() && length.is_concrete()
+            Self::Array { element, length } | Self::FixedVector { element, length } => {
+                elements
+                    .get(element.0 as usize)
+                    .is_some_and(|ty| ty.is_concrete(elements))
+                    && length.is_concrete()
             }
-            Self::Vector { element, .. } => element.ty().is_concrete(),
-            Self::Slice { element, .. } | Self::Buffer { element } => element.ty().is_concrete(),
+            Self::Vector { element, .. } => elements
+                .get(element.0 as usize)
+                .is_some_and(|ty| ty.is_concrete(elements)),
+            Self::Slice { element, .. } | Self::Buffer { element } => {
+                element.ty().is_concrete(elements)
+            }
             Self::Extent { bytes, align, .. } => bytes.is_concrete() && align.is_concrete(),
             Self::Unit
             | Self::Bool
@@ -763,6 +703,9 @@ pub(crate) struct CheckedConstant {
     /// Resolved declaration identity retained for named-const goal leaves.
     pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
+    /// Source value type, before a fixed-run constant's descriptor-free
+    /// dense storage normalization. Borrowing cannot change this identity.
+    pub(crate) declared_type: CheckedType,
     pub(crate) ty: CheckedType,
     pub(crate) value: CheckedValue,
 }
@@ -784,8 +727,7 @@ pub(crate) struct CheckedVariant {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedConstructor {
     Source(DeclarationId),
-    Prelude(PreludeDeclarationId),
-    System(crate::SystemDeclarationId),
+    Prelude(BuiltinPreludeId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -822,12 +764,8 @@ pub(crate) enum CheckedNominalKind {
     /// drop walks and frees every registered allocation, which is exactly
     /// the region's [STOR-3] storage release.
     ArenaStorage,
-    /// One [SYS-2] opaque resource type, by index into the system
-    /// nominal catalog. It has no source-visible content; its
-    /// compiler-derived release carries the fixed [SYS-5] row.
-    SystemResource {
-        nominal: u8,
-    },
+    /// An ordinary opaque nominal has no fields or constructor.
+    Opaque,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1393,7 +1331,7 @@ pub(crate) struct CheckedSliceRoot {
 /// constant is stored nowhere at run time.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedContainerRoot {
-    pub(crate) binding: BindingId,
+    pub(crate) root: super::places::PlaceRoot,
     /// The path below the root: field selections and subscripts, in written
     /// order [MSR-1]. `len_of(table[i])` is a term, so a measured place is
     /// not a field path.
@@ -1407,6 +1345,10 @@ pub(crate) struct CheckedContainerRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedPlaceStep {
     Field(u32),
+    /// One explicit dereference of an owning Box. Borrow-holder dereferences
+    /// begin from an already-addressed binding and therefore need no step in
+    /// this lowering path.
+    BoxReferent(NominalId),
     Subscript(Box<CheckedPlaceSubscript>),
 }
 
@@ -1432,23 +1374,33 @@ pub(crate) struct CheckedPlaceSubscript {
 }
 
 impl CheckedContainerRoot {
+    pub(crate) const fn binding(&self) -> Option<BindingId> {
+        match self.root {
+            super::places::PlaceRoot::Binding(binding) => Some(binding),
+            super::places::PlaceRoot::Constant(_) => None,
+        }
+    }
+
     /// The exact storage projection consumed by [OWN-7] and [ENT-5].
     pub(crate) fn place_path(&self) -> Vec<super::places::PlaceStep> {
-        self.path.iter().map(CheckedPlaceStep::place_step).collect()
+        self.path
+            .iter()
+            .filter_map(CheckedPlaceStep::place_step)
+            .collect()
     }
 
     /// Offset evaluations are children of the place, including when its
     /// terminal operation only takes an address or reads a measure.
     pub(crate) fn offsets(&self) -> impl Iterator<Item = &CheckedExpression> {
         self.path.iter().filter_map(|step| match step {
-            CheckedPlaceStep::Field(_) => None,
+            CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
             CheckedPlaceStep::Subscript(index) => Some(&index.offset),
         })
     }
 
     pub(crate) fn offsets_mut(&mut self) -> impl Iterator<Item = &mut CheckedExpression> {
         self.path.iter_mut().filter_map(|step| match step {
-            CheckedPlaceStep::Field(_) => None,
+            CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
             CheckedPlaceStep::Subscript(index) => Some(&mut index.offset),
         })
     }
@@ -1459,6 +1411,7 @@ impl CheckedContainerRoot {
             .iter()
             .map(|step| match step {
                 CheckedPlaceStep::Field(field) => super::goal::GoalProjection::Field(*field),
+                CheckedPlaceStep::BoxReferent(_) => super::goal::GoalProjection::Deref,
                 CheckedPlaceStep::Subscript(subscript) => {
                     super::goal::GoalProjection::Subscript(subscript.place_offset)
                 }
@@ -1469,6 +1422,7 @@ impl CheckedContainerRoot {
     /// The measure-table row this place selects [MSR-1].
     pub(crate) const fn measured(&self) -> Option<MeasuredKind> {
         match self.ty {
+            CheckedType::Array { .. } => Some(MeasuredKind::Array),
             CheckedType::FixedVector { .. } => Some(MeasuredKind::FixedVector),
             CheckedType::Vector { .. } => Some(MeasuredKind::Vector),
             CheckedType::Extent { .. } => Some(MeasuredKind::Extent),
@@ -1476,12 +1430,12 @@ impl CheckedContainerRoot {
         }
     }
 
-    /// The element type of a run, which a bump extent has none of.
+    /// The element type of a full array or run; a bump extent has none.
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
-            CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                Some(element)
-            }
+            CheckedType::Array { element, .. }
+            | CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. } => Some(element),
             _ => None,
         }
     }
@@ -1491,7 +1445,9 @@ impl CheckedContainerRoot {
     /// none.
     pub(crate) const fn type_constant(&self) -> Option<CheckedConst> {
         match self.ty {
-            CheckedType::FixedVector { length, .. } => Some(length),
+            CheckedType::Array { length, .. } | CheckedType::FixedVector { length, .. } => {
+                Some(length)
+            }
             CheckedType::Extent { bytes, .. } => Some(bytes),
             _ => None,
         }
@@ -1499,10 +1455,13 @@ impl CheckedContainerRoot {
 }
 
 impl CheckedPlaceStep {
-    pub(crate) fn place_step(&self) -> super::places::PlaceStep {
+    pub(crate) fn place_step(&self) -> Option<super::places::PlaceStep> {
         match self {
-            Self::Field(field) => super::places::PlaceStep::Field(*field),
-            Self::Subscript(index) => super::places::PlaceStep::Subscript(index.place_offset),
+            Self::Field(field) => Some(super::places::PlaceStep::Field(*field)),
+            // The allocated referent remains within the owning Box root for
+            // overlap. Source-term identity retains this as Deref above.
+            Self::BoxReferent(_) => None,
+            Self::Subscript(index) => Some(super::places::PlaceStep::Subscript(index.place_offset)),
         }
     }
 }
@@ -1561,147 +1520,6 @@ pub(crate) enum CheckedSliceOrigin {
     },
 }
 
-/// The finite set of caller-formal state paths a checked value may carry.
-///
-/// An empty formal set means every identity in the value is invocation-local;
-/// the value's affine type, not this attribution summary, says whether such an
-/// identity exists.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct CheckedStateOrigins {
-    pub(crate) unknown: bool,
-    pub(crate) formals: Vec<CheckedStateOrigin>,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct CheckedStateOrigin {
-    /// Path inside the value carrying this origin.
-    pub(crate) value_fields: Vec<u32>,
-    /// Selected enum variant while the origin is still correlated with a
-    /// direct constructor or match. `None` is the conservative whole-enum
-    /// route used at callable boundaries.
-    pub(crate) variant: Option<u32>,
-    /// Exact incoming formal state leaf supplying it.
-    pub(crate) source: CheckedStatePath,
-}
-
-impl CheckedStateOrigins {
-    pub(crate) fn fresh() -> Self {
-        Self {
-            unknown: false,
-            formals: Vec::new(),
-        }
-    }
-
-    pub(crate) fn formal_leaves(formal: DeclarationId, leaves: Vec<Vec<u32>>) -> Self {
-        Self {
-            unknown: false,
-            formals: leaves
-                .into_iter()
-                .map(|fields| CheckedStateOrigin {
-                    value_fields: fields.clone(),
-                    variant: None,
-                    source: CheckedStatePath {
-                        root: formal,
-                        fields,
-                    },
-                })
-                .collect(),
-        }
-    }
-
-    pub(crate) fn union(&mut self, other: &Self) {
-        self.unknown |= other.unknown;
-        for formal in &other.formals {
-            if !self.formals.contains(formal) {
-                self.formals.push(formal.clone());
-            }
-        }
-        self.formals.sort();
-    }
-
-    pub(crate) fn unknown() -> Self {
-        Self {
-            unknown: true,
-            formals: Vec::new(),
-        }
-    }
-
-    pub(crate) fn projected(mut self, fields: &[u32]) -> Self {
-        self.formals.retain_mut(|formal| {
-            if !formal.value_fields.starts_with(fields) {
-                return false;
-            }
-            formal.value_fields.drain(..fields.len());
-            true
-        });
-        self
-    }
-
-    pub(crate) fn enum_payload(mut self, variant: u32, field: u32) -> Self {
-        self.formals.retain_mut(|origin| match origin.variant {
-            Some(actual) if actual != variant => false,
-            Some(_) => {
-                if origin.value_fields.first() != Some(&field) {
-                    return false;
-                }
-                origin.value_fields.remove(0);
-                origin.variant = None;
-                true
-            }
-            // A formal whole-enum route cannot distinguish variants. Keep it
-            // conservatively, but expose it as the selected payload's root.
-            None => {
-                origin.value_fields.clear();
-                true
-            }
-        });
-        self
-    }
-
-    pub(crate) fn replace_path(mut self, fields: &[u32], replacement: Option<Self>) -> Self {
-        if fields.is_empty() {
-            return replacement.unwrap_or_else(Self::fresh);
-        }
-        self.formals
-            .retain(|origin| !origin.value_fields.starts_with(fields));
-        if let Some(mut replacement) = replacement {
-            self.unknown |= replacement.unknown;
-            for mut origin in replacement.formals.drain(..) {
-                let mut value_fields = fields.to_vec();
-                value_fields.extend_from_slice(&origin.value_fields);
-                origin.value_fields = value_fields;
-                if !self.formals.contains(&origin) {
-                    self.formals.push(origin);
-                }
-            }
-            self.formals.sort();
-        }
-        self
-    }
-}
-
-/// Closed-world origin summary for one concrete function result.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedResultStateOrigin {
-    /// The complete result type carries no opaque state identity.
-    NoState,
-    /// Every result state identity comes from this finite origin set.
-    Finite {
-        /// Formal paths which may supply the returned state.
-        formals: Vec<CheckedResultStatePath>,
-    },
-    /// The current compiler could not close the result-origin equation.
-    Unknown,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct CheckedResultStatePath {
-    pub(crate) result_fields: Vec<u32>,
-    pub(crate) result_variant: Option<u32>,
-    pub(crate) parameter: u32,
-    pub(crate) parameter_fields: Vec<u32>,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSliceSource {
     Array {
@@ -1726,12 +1544,13 @@ pub(crate) enum CheckedSliceSource {
         binding: BindingId,
         element: CheckedFlatElement,
     },
-    /// One run [BLK-1], viewed over its initialized window.
+    /// Typed owner storage: a run [BLK-1] or a complete array [TYPE-2].
     ///
     /// The window is `len_of` slots beginning at `head_of`, and the row's own
     /// requirement is what makes that one contiguous range: `head_of(vector)
     /// <= room_of(vector)` [VIEW-2], so the view is the slots from `head_of`
-    /// onward and never wraps.
+    /// onward and never wraps. A complete array has its type's length and a
+    /// zero head, and the view addresses its original storage in both modes.
     Run(CheckedContainerRoot),
 }
 
@@ -1752,17 +1571,17 @@ pub(crate) struct CheckedIntegerArgument {
     pub(crate) source: CheckedIntegerArgumentSource,
 }
 
-/// The caller-side root a bound borrow-mode call result reads and writes
-/// through: the resolved place of the single provenance-candidate actual
-/// [OWN-6, ENT-5]. The record deliberately keeps the complete actual place
-/// even when the callee returned a narrower suffix of it.
+/// The conservative caller storage claim of a bound borrow-mode result:
+/// the complete single provenance-candidate actual [OWN-6, ENT-5]. The
+/// delivered referent may be a narrower suffix or unrelated immutable
+/// constant. This record supports exclusion and kills, never value identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedResultBorrow {
     /// The sole provenance-candidate argument, in declared parameter order.
     /// Lowering retains this relation to the actual argument value rather
     /// than reconstructing an address from the resolved source path.
     pub(crate) argument: usize,
-    pub(crate) binding: BindingId,
+    pub(crate) root: super::places::PlaceRoot,
     pub(crate) path: Vec<super::places::PlaceStep>,
 }
 
@@ -1778,7 +1597,6 @@ pub(crate) enum CheckedExpression {
     Binding {
         carrier: NodePath,
         binding: BindingId,
-        state_origins: Option<CheckedStateOrigins>,
         ty: CheckedType,
         slice_origins: Vec<CheckedSliceOrigin>,
         /// The owning checker admitted this occurrence as an affine consume.
@@ -1788,6 +1606,10 @@ pub(crate) enum CheckedExpression {
     },
     UserCall {
         function: FunctionId,
+        /// The authoritative function-formal row [FN-4, EFF-2], rebased to
+        /// the selected concrete callee's parameter declarations. It is
+        /// proof-only: lowering still calls `function` directly.
+        formal_effects: Option<Box<CheckedEffects>>,
         /// Exact source call occurrence and declared-order argument atoms.
         call: NodePath,
         argument_nodes: Vec<NodePath>,
@@ -1837,22 +1659,6 @@ pub(crate) enum CheckedExpression {
         requirements: Vec<super::goal::ConcreteGoal>,
         /// The declared result type: one value, or the compiler-owned
         /// result-list nominal that carries an ordered result list [CALL-4].
-        result: CheckedType,
-    },
-    /// One call to an admitted [SYS-2] system operation, by index into the
-    /// system operation catalog. Arguments follow declared parameter order.
-    SystemCall {
-        operation: u8,
-        /// Exact compiler-owned execution metadata selected with the catalog
-        /// row. It is not a source effect.
-        target_action: crate::TargetAction,
-        /// Exact source call occurrence and declared-order argument atoms.
-        call: NodePath,
-        /// Concrete caller regions supplied for the operation's borrow
-        /// parameters, in declaration order.
-        regions: Vec<DeclarationId>,
-        argument_nodes: Vec<NodePath>,
-        arguments: Vec<CheckedExpression>,
         result: CheckedType,
     },
     IntegerOperation {
@@ -2043,17 +1849,6 @@ pub(crate) enum CheckedExpression {
         binding: BindingId,
         nominal: NominalId,
     },
-    BorrowSystemResource {
-        carrier: NodePath,
-        binding: BindingId,
-        /// The struct-field path from the binding to the borrowed resource,
-        /// empty when the binding is the resource itself. A system struct's
-        /// direction fields are ordinary field places [SYS-18], so a borrow of
-        /// one is this expression with a one-element path.
-        fields: Vec<u32>,
-        state_origins: Option<CheckedStateOrigins>,
-        nominal: NominalId,
-    },
     /// The same address, taken from a binding that already holds one: a borrow
     /// whose place is rooted at another borrow holder [OWN-6, OWN-10].
     ReborrowAddressed {
@@ -2083,7 +1878,6 @@ pub(crate) enum CheckedExpression {
     Project {
         carrier: NodePath,
         binding: BindingId,
-        state_origins: Option<CheckedStateOrigins>,
         fields: Vec<u32>,
         ty: CheckedType,
         consume_root: bool,
@@ -2109,9 +1903,7 @@ impl CheckedExpression {
             | Self::ContainerMeasure { .. }
             | Self::PostconditionResultMeasure { .. }
             | Self::SliceMeasure { .. } => None,
-            Self::UserCall { call, .. }
-            | Self::SystemCall { call, .. }
-            | Self::KernelCall { call, .. } => Some(call),
+            Self::UserCall { call, .. } | Self::KernelCall { call, .. } => Some(call),
             Self::Binding { carrier, .. }
             | Self::IntegerOperation { carrier, .. }
             | Self::FloatOperation { carrier, .. }
@@ -2135,7 +1927,6 @@ impl CheckedExpression {
             | Self::BorrowBuffer { carrier, .. }
             | Self::BorrowAddressed { carrier, .. }
             | Self::BorrowBox { carrier, .. }
-            | Self::BorrowSystemResource { carrier, .. }
             | Self::ReborrowAddressed { carrier, .. }
             | Self::DerefAddressed { carrier, .. }
             | Self::ConstructStruct { carrier, .. }
@@ -2151,7 +1942,6 @@ impl CheckedExpression {
             Self::NamedConstant { value, .. } => value.ty(),
             Self::Binding { ty, .. }
             | Self::UserCall { result: ty, .. }
-            | Self::SystemCall { result: ty, .. }
             | Self::KernelCall { result: ty, .. } => *ty,
             Self::IntegerOperation { result, .. } | Self::NumericConversion { result, .. } => {
                 *result
@@ -2198,9 +1988,7 @@ impl CheckedExpression {
             },
             Self::BorrowAddressed { root, .. } => root.ty,
             Self::ReborrowAddressed { ty, .. } | Self::DerefAddressed { ty, .. } => *ty,
-            Self::BorrowBox { nominal, .. } | Self::BorrowSystemResource { nominal, .. } => {
-                CheckedType::Nominal(*nominal)
-            }
+            Self::BorrowBox { nominal, .. } => CheckedType::Nominal(*nominal),
             Self::ConstructStruct { nominal, .. } | Self::ConstructEnum { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
             }
@@ -2235,24 +2023,22 @@ pub(crate) struct CheckedMatchArm {
 /// One compiler-derived release on a normal control-flow edge [STOR-3].
 ///
 /// The record is explicit in the checked program [DIAG-2] rather than being
-/// rederived from the type by every consumer: [EFF-2]'s release contribution
-/// reads its row, and lowering carries the same record into the typed IR so a
-/// target stage can emit the exact [SYS-5] action.
+/// rederived from the type by every consumer. Lowering carries the record
+/// into typed IR to emit the ordinary storage release [STOR-3]. Opaque
+/// nominals have the empty release.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedDrop {
+    /// The existing source edge whose normal exit performs this release.
+    pub(crate) source_edge: NodePath,
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
-    pub(crate) state_origins: Option<CheckedStateOrigins>,
-    pub(crate) release: crate::SystemRelease,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedProjectedDrop {
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
-    pub(crate) state_origins: Option<CheckedStateOrigins>,
-    pub(crate) release: crate::SystemRelease,
 }
 
 /// A SET-1 target whose root, path, copy type, and post-RHS writability have
@@ -2321,7 +2107,9 @@ impl CheckedSetTarget {
             Self::Place(target) => target.binding,
             Self::ArrayIndex(target) => target.binding,
             Self::BufferIndex(target) => target.root.binding,
-            Self::Storage(target) => target.binding,
+            Self::Storage(target) => target
+                .binding()
+                .expect("checked mutation targets have local roots"),
             Self::SliceIndex(target) => target.root.binding,
         }
     }
@@ -2394,14 +2182,14 @@ pub(crate) enum CheckedStatement {
         value: CheckedExpression,
     },
     /// [GRAM-4, CALL-4] `let (a, b) = f(...);`. One evaluation of a call whose
-    /// callee declares an ordered result list, and one fresh binding per
-    /// result ordinal in written order: binder i takes ordinal i, which is
-    /// field i of the callee's result-list value.
+    /// callee declares an ordered result list, or the source consumes a
+    /// struct or cell. Binders follow field order for products; a cell's
+    /// sole binder receives its referent.
     DestructuringLet {
         node_path: NodePath,
-        /// Binder i and the type of result ordinal i, in written order.
+        /// Each binder and its selected value type, in written order.
         bindings: Vec<(BindingId, CheckedType)>,
-        /// The callee's result-list nominal [CALL-4].
+        /// The consumed product or cell nominal [CALL-4, TYPE-6, S39].
         nominal: NominalId,
         value: CheckedExpression,
     },
@@ -2445,8 +2233,6 @@ pub(crate) enum CheckedStatement {
     /// compiler-derived release it runs [STOR-3].
     DropExpression {
         value: CheckedExpression,
-        state_origins: Option<CheckedStateOrigins>,
-        release: crate::SystemRelease,
     },
     /// A finite source-written local invariant checked before it is published
     /// and erased before lowering. It has no runtime expression, effect,
@@ -2546,31 +2332,31 @@ pub(crate) struct CheckedStatePath {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedFunction {
+    /// A function-kind hypothesis exists only during symbolic template
+    /// checking. The concrete inventory and lowering contain none.
+    pub(crate) formal_hypothesis: bool,
     pub(crate) id: FunctionId,
     pub(crate) declaration: DeclarationId,
     pub(crate) name: String,
     pub(crate) symbol: String,
+    /// Formal regions in the same declaration order `UserCall::goal_regions`
+    /// uses. Retained for post-acceptance physical release specialization;
+    /// semantic identity remains the canonical [`FunctionId`].
+    pub(crate) region_parameters: Vec<DeclarationId>,
     pub(crate) parameters: Vec<CheckedParameter>,
     pub(crate) result_mode: CheckedMode,
     pub(crate) result: CheckedType,
-    /// Closed-world state origin of this function's result.
-    pub(crate) result_state_origin: CheckedResultStateOrigin,
+    /// Ordinary loan-origin ceiling of this function's view result.
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
-    /// Whether this function's own body reaches an ambient-heap allocation
-    /// [STOR-1]. The ambient heap has no provider value, so [EFF-1] gives it
-    /// no written entry and this is derived rather than declared [S23].
-    pub(crate) reaches_ambient_heap: bool,
     /// Formal state paths named by `writes(...)`.
     pub(crate) declared_state_writes: Vec<CheckedStatePath>,
-    /// Conservative fixed-point summary of every reachable target action.
-    pub(crate) target_action: crate::TargetAction,
     /// Callable-boundary predicates in `requires_clause` source order.
     pub(crate) requirements: Vec<super::goal::CheckedRequirement>,
     /// Verified-relation surfaces in `ensures_clause` source order. H1
     /// constructs this metadata; the shared entailment flow proves every
     /// clause at every selected exit.
     pub(crate) postconditions: Vec<super::postcondition::CheckedPostcondition>,
-    pub(crate) body: Vec<CheckedStatement>,
+    pub(crate) body: Option<Vec<CheckedStatement>>,
     /// Whether the independently established body-entry requirements close to
     /// a contradiction. The contradiction is retained proof metadata.
     pub(crate) body_disposition: CheckedBodyDisposition,
@@ -2607,124 +2393,43 @@ pub(crate) struct CheckedEffects {
     pub(crate) writes: Vec<CheckedStatePath>,
     /// [S23] the declared `allocates` paths.
     pub(crate) allocates: Vec<CheckedStatePath>,
-    /// The ambient heap [STOR-1], which has no `effect_path` and no written
-    /// entry; derived, never declared.
-    pub(crate) allocates_heap: bool,
+    /// Transitional ordinary region allocation [STOR-2, EFF-1].
     pub(crate) allocates_arenas: Vec<DeclarationId>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedContractParameter {
-    pub(crate) mode: CheckedMode,
-    pub(crate) ty: CheckedType,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedContractMember {
-    pub(crate) name: String,
-    pub(crate) region_parameters: Vec<DeclarationId>,
-    pub(crate) parameters: Vec<CheckedContractParameter>,
-    pub(crate) result_mode: CheckedMode,
-    pub(crate) result: CheckedType,
-    pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
-    pub(crate) effects: CheckedEffects,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedContractLawKind {
-    Associative,
-    Commutative,
-    Identity,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CheckedLawIdentity {
-    Literal(CheckedValue),
-    Constant(CheckedConstantId),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedContractLaw {
-    pub(crate) node_path: NodePath,
-    pub(crate) kind: CheckedContractLawKind,
-    pub(crate) member: u32,
-    pub(crate) identity: Option<CheckedLawIdentity>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedContract {
-    pub(crate) id: ContractId,
-    pub(crate) declaration: DeclarationId,
-    pub(crate) name: String,
-    pub(crate) members: Vec<CheckedContractMember>,
-    pub(crate) laws: Vec<CheckedContractLaw>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedConformanceBinding {
-    pub(crate) member: u32,
-    pub(crate) function: FunctionId,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedConformance {
-    pub(crate) id: ConformanceId,
-    pub(crate) node_path: NodePath,
-    pub(crate) subject: CheckedType,
-    pub(crate) contract: ContractId,
-    pub(crate) bindings: Vec<CheckedConformanceBinding>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedLawDerivation {
-    pub(crate) conformance: ConformanceId,
-    pub(crate) contract_law: u32,
-    pub(crate) function: FunctionId,
-    pub(crate) operation: CheckedIntegerOperation,
-    pub(crate) domain: IntegerType,
-    pub(crate) law: CheckedContractLawKind,
-    pub(crate) identity: Option<CheckedLawIdentity>,
-}
-
-/// The [FN-7] entry form the checker admitted for one compilation unit.
-///
-/// The only admitted entry is `command`. Lowering retains the standard-input
-/// table ordinals in declaration order because ordinal identity — never type
-/// identity — selects each supplied value.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedEntryForm {
-    /// Selected [FN-7] table ordinals in strictly increasing order.
-    pub(crate) inputs: Vec<u8>,
 }
 
 #[derive(Debug)]
 pub(crate) struct CheckedProgramData {
     pub(crate) nominals: Vec<CheckedNominal>,
-    /// Which interned nominals are [SYS-2] system-declared structs, by catalog
-    /// index, in catalog order.
-    ///
-    /// A system struct is interned as an ordinary checked struct on purpose,
-    /// so field places, disjoint-field loans, partial moves and derived
-    /// release all take the one normal path [SYS-18]. That leaves nothing in
-    /// the nominal itself saying which catalog row it came from, and the
-    /// backend needs exactly that to resolve the operation-table type of an
-    /// operation taking one — `close_connection` takes the whole
-    /// `TcpConnection`. This side table carries the fact without giving the
-    /// struct a second checked form, and it is data the checker already had.
-    pub(crate) system_structs: Vec<(u8, NominalId)>,
+    /// [BLK-4, DIAG-2] retained confinement for each complete nominal,
+    /// including phantom brands. Structural types carry their region and
+    /// element handles directly, so together these retain every value's set.
+    #[allow(dead_code)]
+    pub(crate) nominal_confinement: Vec<Vec<DeclarationId>>,
+    /// Append-only structural elements, including unreachable replay history.
+    /// Only handles reachable from executable types belong to lowering.
+    pub(crate) elements: Vec<CheckedType>,
     // Nominal instances discovered by the ordinary function path form this
     // prefix. Later instances exist only to type-check static metadata.
     pub(crate) executable_nominal_count: usize,
     /// For each nominal, the instance it lowers as: itself, or the first
-    /// instance of the same declaration whose type and const arguments agree
-    /// and whose region axis differs [S20, PROV-1].
+    /// instance of the same region-erased source family whose complete
+    /// reclamation graph agrees [S20, PROV-1].
     ///
     /// A region is a proof-time identity. Two instances at two regions are two
     /// checked types — that is what makes a run of one store unusable at
-    /// another — and the same one runtime representation, exactly as
-    /// `Vector<'a, T>` and `Vector<'b, T>` are one [`IrType::Vector`]. This is
-    /// where the region leaves the program.
+    /// another. They share one runtime representation only when their store
+    /// release classes agree at every owning position. Physical lowering may
+    /// specialize the declaration-level classes in this default alias table.
     pub(crate) nominal_lowering_alias: Vec<NominalId>,
+    /// Region-erased nominal families before a store-backed Box or Vector's
+    /// release class is selected. Post-acceptance physical specialization
+    /// combines this identity with its closed release environment; it never
+    /// participates in source type equality or acceptance.
+    pub(crate) nominal_physical_alias: Vec<NominalId>,
+    /// Declaration-selected storage release classes for post-acceptance
+    /// physical function specialization. Loan regions do not become
+    /// specialization axes merely by occurring in this table.
+    pub(crate) region_release_defaults: Vec<(DeclarationId, CheckedReleaseClass)>,
     pub(crate) constants: Vec<CheckedConstant>,
     /// Immutable structural table for every symbolic const expression named
     /// by retained schema metadata. `DerivedConstId` is meaningful only
@@ -2741,16 +2446,6 @@ pub(crate) struct CheckedProgramData {
     /// function inventory or executable lowering path.
     #[allow(dead_code)]
     pub(crate) generic_requirements: Vec<CheckedGenericRequirement>,
-    // Deliberately unread by ordinary lowering: FN-3/FN-4 metadata is
-    // source-acceptance evidence and grants no executable authority.
-    #[allow(dead_code)]
-    pub(crate) contracts: Vec<CheckedContract>,
-    #[allow(dead_code)]
-    pub(crate) conformances: Vec<CheckedConformance>,
-    #[allow(dead_code)]
-    pub(crate) law_derivations: Vec<CheckedLawDerivation>,
-    pub(crate) main: FunctionId,
-    pub(crate) entry: CheckedEntryForm,
     /// Read-only [PAR-1 candidate] permission table: which sibling call pairs
     /// may be overlapped, and which of those are actualizable. Acceptance
     /// never reads it, and it is identical facts-on and facts-off. The
@@ -2777,7 +2472,6 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowBox { .. }
-        | CheckedExpression::BorrowSystemResource { .. }
         | CheckedExpression::ReborrowAddressed { .. }
         | CheckedExpression::DerefAddressed { .. }
         | CheckedExpression::Project { .. } => Vec::new(),
@@ -2790,7 +2484,6 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         } => root.offsets().collect(),
         CheckedExpression::SliceOf { .. } => Vec::new(),
         CheckedExpression::UserCall { arguments, .. }
-        | CheckedExpression::SystemCall { arguments, .. }
         | CheckedExpression::KernelCall { arguments, .. }
         | CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::FloatOperation { arguments, .. }

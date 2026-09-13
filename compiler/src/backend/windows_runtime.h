@@ -18,7 +18,7 @@ extern "C" {
 #define WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE 3u
 #define WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT 4u
 #define WF_WINDOWS_DESCRIPTOR_CLASS_INPUT 5u
-/* One Winsock object [SYS-17, SYS-18]: a listener, or one direction pair of a
+/* One Winsock object (ordinary native library): a listener, or one direction pair of a
  * connection.  It is a class of its own because the completion port carries a
  * socket's transfers and a file's transfers through different calls, and
  * because a socket is ended by `closesocket` and a file by the CRT's own
@@ -135,7 +135,7 @@ int wf__windows_socket_startup(void);
  * transfers; the no-inherit flag is this platform's spelling of the
  * close-on-exec the POSIX leaf asks `socket` for.  `SO_REUSEADDR` is
  * deliberately not set, for the reason `completion/file_posix.h` states at
- * `wf_socket_open`: [SYS-17] already fixes what a second bind of one port
+ * `wf_socket_open`: (ordinary native library) already fixes what a second bind of one port
  * means. */
 int wf__windows_socket_open(int family);
 
@@ -143,7 +143,7 @@ int wf__windows_socket_open(int family);
 uintptr_t wf__windows_socket_handle(int descriptor);
 
 /* Ends one socket: `closesocket` on the Winsock object, then the release of
- * the descriptor number the program's permit accounting is written in.
+ * its CRT descriptor number.
  * Returns 0, or -1 with the host's own refusal recorded. */
 int wf__windows_socket_close(int descriptor);
 
@@ -153,7 +153,7 @@ int wf__windows_socket_close(int descriptor);
  * and the same request failing on the completion port reports the Win32 code
  * `GetQueuedCompletionStatus` gives for it.  They are different numbers for
  * one condition, so both are normalized here onto the single code the
- * [SYS-7] class table in `backend/qualification.rs` reads.  A code this
+ * ordinary library's portable error conversion reads. A code this
  * function does not name is its own answer, so nothing is hidden. */
 int wf__windows_error_from_socket(int error_code);
 

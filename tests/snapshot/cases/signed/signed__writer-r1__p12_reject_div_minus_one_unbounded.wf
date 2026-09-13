@@ -4,7 +4,7 @@ fn negate(n: own i32) -> result: own i32 pure {
   return m;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let sample = 5_i32;
   let is_positive = sample > 0_i32;
   if is_positive {

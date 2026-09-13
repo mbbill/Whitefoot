@@ -37,6 +37,9 @@ RESULTS := $(RESULTS)
 WFC    := $(ROOT)/compiler/target/gate/whitefootc
 FLOOR  := $(ROOT)/compiler/src/backend/wf_floor.c
 SCHED  := $(ROOT)/compiler/src/backend/sched
+NATIVE := $(ROOT)/compiler/src/backend
+COMPLETION := $(NATIVE)/completion
+NATIVE_HEADERS := $(wildcard $(NATIVE)/*.h $(SCHED)/*.h $(COMPLETION)/*.h)
 CC     := /usr/bin/clang
 CXX    := /usr/bin/clang++
 ARCH   := $(shell uname -m)
@@ -109,9 +112,9 @@ FORCE:
 
 # The same handle on the other side of the link, and the same discipline. The
 # emission control above changes the module the compiler writes; this one is
-# appended to the compile of the four Whitefoot RUNTIME translation units of
-# the B TWIN below -- never to the plain image's four, which are compiled with
-# this variable empty whatever it is set to -- so a run can measure what one
+# appended to the compile of the Whitefoot native-library translation units of
+# the B TWIN below -- never to the plain image's library units, which are built
+# with this variable empty whatever it is set to -- so a run can measure what one
 # runtime constant is worth on this block of kernels, against the shipped
 # runtime in the same passes, without editing the constant per run: for example
 # `make compare WF_RUNTIME_CONTROL_FLAGS=-DWF_PAR_SPLIT_WORK_UNIT=300000`,
@@ -126,10 +129,10 @@ FORCE:
 WF_RUNTIME_CONTROL_FLAGS ?=
 
 # Kept in a stamp for the same reason the emission control is: the value is
-# part of what compiled an object, so the twin's four runtime objects depend on
+# part of what compiled an object, so the twin's native-library objects depend on
 # it and a changed value recompiles and relinks the twin instead of silently
 # re-timing the one the last run left. A run that changes nothing rebuilds
-# nothing, and the plain image's four objects never read it at all.
+# nothing, and the plain image's library objects never read it at all.
 RUNTIME_CONTROL := $(BUILD)/runtime-control-flags.txt
 $(RUNTIME_CONTROL): FORCE
 	@mkdir -p $(BUILD)
@@ -139,7 +142,7 @@ $(RUNTIME_CONTROL): FORCE
 
 # The third handle, and the one that moves how the B TWIN's Whitefoot side is
 # COMPILED rather than what it says. Whatever is set here is appended to the
-# twin's compile of the emitted `--par` module object AND of its four Whitefoot
+# twin's compile of the emitted `--par` module object AND of its Whitefoot
 # runtime units -- never to the plain image's, which are compiled with
 # $(WF_FLAGS) alone whatever this is set to -- so a run can measure what a code
 # generation flag is worth on exactly the translation units whitefootc itself
@@ -160,7 +163,7 @@ $(RUNTIME_CONTROL): FORCE
 WF_MODULE_CONTROL_FLAGS ?=
 
 # Kept in a stamp for the same reason the other two are: the value is part of
-# what compiled an object, so the twin's module object and its four runtime
+# what compiled an object, so the twin's module object and its native-library
 # objects depend on it and a changed value recompiles and relinks the twin
 # instead of silently re-timing the one the last run left. The plain image's
 # objects never read it at all.
@@ -176,10 +179,10 @@ $(MODULE_CONTROL): FORCE
 # side comes from rather than what is appended to its build. The three control
 # variables above answer "what would this flag be worth here" from one tree;
 # these three answer "what would the tree this branch started from read here",
-# which is the question a regression check asks. They name the twin's four
-# Whitefoot runtime sources and the compiler that emits its `--par` module:
+# which is the question a regression check asks. They name the twin's
+# Whitefoot native-library sources and the compiler that emits its `--par` module:
 #
-#   WF_B_SCHED_DIR  the directory holding core.c, prim_host.c and entry.c
+#   WF_B_SCHED_DIR  sched/ inside the complete native backend directory
 #   WF_B_FLOOR      the wf_floor.c translation unit
 #   WF_B_WFC        the whitefootc binary that emits the twin's module
 #
@@ -198,6 +201,8 @@ $(MODULE_CONTROL): FORCE
 WF_B_SCHED_DIR ?= $(SCHED)
 WF_B_FLOOR     ?= $(FLOOR)
 WF_B_WFC       ?= $(WFC)
+WF_B_NATIVE    := $(abspath $(WF_B_SCHED_DIR)/..)
+WF_B_COMPLETION := $(WF_B_NATIVE)/completion
 
 # What the twin was built from, for manifest.txt: the merge-base revision on a
 # regression run, and the words below when the twin's sources are this tree's.
@@ -216,14 +221,14 @@ BASELINE := $(if $(filter-out $(SCHED),$(WF_B_SCHED_DIR)),1,)$(if $(filter-out $
 # second regression run against a moved merge-base is precisely that -- and
 # make would compare timestamps against sources it had never seen. So the
 # stamp carries the CONTENT HASH of the twin's inputs, and the twin's module
-# and its four runtime objects depend on it: different baseline bytes,
+# and its native-library objects depend on it: different baseline bytes,
 # different stamp, re-emitted module and recompiled runtime. Identical bytes
 # under another path rebuild nothing, which is right -- that is the same build.
 #
-# It hashes every `.c` and `.h` of the scheduler directory rather than the
-# three units the link takes, because those three include the directory's
-# headers and a header is exactly what a rule listing source files alone would
-# miss. The probe and smoke units are hashed too and compile into nothing; the
+# It hashes the scheduler and completion sources and headers, ordinary-value
+# bodies, native headers, floor and compiler. A header is exactly what a rule
+# listing source units alone would miss. Probe and smoke units are hashed too
+# and compile into nothing; the
 # cost of that over-approximation is a twin rebuilt when it need not have been,
 # which is the side of this trade to be wrong on.
 BASELINE_STAMP := $(BUILD)/baseline-source.txt
@@ -231,13 +236,17 @@ $(BASELINE_STAMP): FORCE
 	@mkdir -p $(BUILD)
 	@test -f $(WF_B_SCHED_DIR)/core.c && test -f $(WF_B_SCHED_DIR)/prim_host.c \
 	  && test -f $(WF_B_SCHED_DIR)/entry.c && test -f $(WF_B_FLOOR) \
+	  && test -f $(WF_B_NATIVE)/ordinary_values.c && test -f $(WF_B_NATIVE)/ordinary_values.ll \
 	  && test -x $(WF_B_WFC) || { \
-	    echo 'compute-bench: the twin sources named by WF_B_SCHED_DIR, WF_B_FLOOR and' >&2; \
-	    echo 'WF_B_WFC must all exist; the defaults are this tree'"'"'s own.' >&2; exit 1; }
-	@$(SHA256) $(WF_B_SCHED_DIR)/*.c $(WF_B_SCHED_DIR)/*.h $(WF_B_FLOOR) $(WF_B_WFC) \
-	  | awk '{ print $$1 }' > $@.new
+	    echo 'compute-bench: the twin needs a complete ordinary native library beside' >&2; \
+	    echo 'WF_B_SCHED_DIR, plus WF_B_FLOOR and WF_B_WFC; defaults use this tree.' >&2; exit 1; }
+	@$(SHA256) $(WF_B_SCHED_DIR)/*.c $(WF_B_SCHED_DIR)/*.h \
+	  $(WF_B_COMPLETION)/*.c $(WF_B_COMPLETION)/*.h $(WF_B_NATIVE)/*.h \
+	  $(WF_B_NATIVE)/ordinary_values.c $(WF_B_NATIVE)/ordinary_values.ll \
+	  $(WF_B_FLOOR) $(WF_B_WFC) > $@.hashes.new
+	@awk '{ print $$1 }' $@.hashes.new > $@.new
 	@cmp -s $@.new $@ || mv -f $@.new $@
-	@rm -f $@.new
+	@rm -f $@.new $@.hashes.new
 
 # ---------------------------------------------------------------- the twin --
 # The A/B instrument. Either control above answers "what would this be worth
@@ -306,8 +315,8 @@ CALLS  ?= 5
 # sparse-cadence table can never be read as a plain one. It is handed to the
 # timed passes and to `verify` -- `verify` reads it, reports it and waits
 # nothing, because it drives no timed call loop; the harness comment on
-# do_verify says so. Nothing in the gate reads it: `programs-check` links
-# nothing and runs no image.
+# do_verify says so. Nothing in the gate reads it: `programs-check` makes
+# no timed kernel calls; its link check and symbol test measure nothing.
 WFB_GAP_US ?=
 
 # Passed down only when it is set, so an unset gap leaves every command line
@@ -327,21 +336,24 @@ PARLAY_OBJ := $(if $(wildcard $(DEPS)/parlay-unavailable.txt),,$(BUILD)/backend_
 # plain image and the twin: no control reaches them, so a second copy
 # would be the same bytes under another name and would move code placement,
 # which is this bundle's largest confound. Only the Whitefoot side of the link
-# is doubled -- the emitted module object and the four runtime units -- because
+# is doubled -- the emitted module object and the native-library units -- because
 # only those read WF_RUNTIME_CONTROL_FLAGS or WF_MODULE_CONTROL_FLAGS.
 SHARED_OBJS := $(BUILD)/harness.o $(BUILD)/backend_serial.o $(BUILD)/backend_static.o \
                $(BUILD)/backend_tbb.o $(PARLAY_OBJ) $(BUILD)/backend_rayon.o
 RUNTIME_OBJS   := $(BUILD)/floor.o $(BUILD)/sched_core.o $(BUILD)/sched_prim_host.o \
-                  $(BUILD)/sched_entry.o
-RUNTIME_OBJS_B := $(BUILD)/floor-b.o $(BUILD)/sched_core-b.o $(BUILD)/sched_prim_host-b.o \
-                  $(BUILD)/sched_entry-b.o
+                  $(BUILD)/sched_entry.o $(BUILD)/completion_runtime.o \
+                  $(BUILD)/completion_wait_host.o $(BUILD)/completion_file_adapter.o \
+                  $(BUILD)/completion_file_posix.o $(BUILD)/completion_bridge.o \
+                  $(BUILD)/completion_linux_io_uring.o $(BUILD)/ordinary_values_c.o \
+                  $(BUILD)/ordinary_values_ll.o
+RUNTIME_OBJS_B := $(patsubst %.o,%-b.o,$(RUNTIME_OBJS))
 COMMON_OBJS := $(SHARED_OBJS) $(RUNTIME_OBJS)
 
 LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
              $(DEPS)/rayon/libwf_compute_bench_rayon.a -ldl -lm
 
 .PHONY: all compiler deps build images verify compare programs-check verdict \
-        verdict-test clean clean-deps FORCE
+        verdict-test module-symbols-test clean clean-deps FORCE
 all: build
 
 # ---------------------------------------------------------------- compiler --
@@ -380,10 +392,10 @@ deps:
 
 # ------------------------------------------------------- the two WF modules --
 # One source, two compilations, because --par and --no-overlap are opposite
-# lowerings and the compiler rejects them together. The @main/@wf__main_body
-# rename is necessary because both modules export them and harness.c owns
-# both; every user function the compiler emits has internal linkage, which is
-# also why the host adapter has to be LLVM IR rather than a C prototype. The
+# lowerings and the compiler rejects them together. Both modules export their
+# ordinary source functions. module-symbols.awk isolates their definitions and
+# adapter calls while preserving linkage, attributes and library imports. The
+# weak runtime hooks retain their names and bind to the real runtime. The
 # two greps are structural assertions about the module, not stored counts: the
 # --par module really offers work and the control really does not.
 #
@@ -400,13 +412,11 @@ deps:
 # research/investigations/compute-runtime/RESULTS.md timed quadrature on a
 # module emitted at 33ed2c00; the fresh emission is the table that replaced it).
 define kernel-modules
-$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll $$(WFC) | compiler
+$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll module-symbols.awk $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WFC) --par --par-ledger --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par.ledger
-	sed -e 's/@main(/@wfb_$(1)_par_main(/g' \
-	    -e 's/@wf__main_body(/@wfb_$(1)_par_body(/g' $$@.raw > $$@
-	sed -e 's/@wf_bench_$(1)(/@wf_bench_$(1)_par(/' \
-	    -e 's/@wf_bench_$(1)_release(/@wf_bench_$(1)_par_release(/' $(1)_host.ll >> $$@
+	awk -v prefix=wfb_$(1)_par -v api=wf_bench_$(1) -v mode=par \
+	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
 	grep -q 'call void @wf__par_publish(' $$@
 
 # The twin's module: the same recipe with WF_PAR_CONTROL_FLAGS appended and its
@@ -421,23 +431,19 @@ $$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll $$(WFC) | compiler
 # .wf source has to be measured on the source the branch ships, and the
 # baseline compiler either accepts it or the run says so. $(BASELINE_STAMP)
 # carries the content hash of that compiler, so a moved baseline re-emits.
-$$(BUILD)/$(1)-par-b.ll: programs/$(1).wf $(1)_host.ll $$(WF_B_WFC) $$(PAR_CONTROL) \
+$$(BUILD)/$(1)-par-b.ll: programs/$(1).wf $(1)_host.ll module-symbols.awk $$(WF_B_WFC) $$(PAR_CONTROL) \
                          $$(BASELINE_STAMP) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WF_B_WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par-b.ledger
-	sed -e 's/@main(/@wfb_$(1)_par_main(/g' \
-	    -e 's/@wf__main_body(/@wfb_$(1)_par_body(/g' $$@.raw > $$@
-	sed -e 's/@wf_bench_$(1)(/@wf_bench_$(1)_par(/' \
-	    -e 's/@wf_bench_$(1)_release(/@wf_bench_$(1)_par_release(/' $(1)_host.ll >> $$@
+	awk -v prefix=wfb_$(1)_par -v api=wf_bench_$(1) -v mode=par \
+	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
 	grep -q 'call void @wf__par_publish(' $$@
 
-$$(BUILD)/$(1)-seq.ll: programs/$(1).wf $(1)_host.ll $$(WFC) | compiler
+$$(BUILD)/$(1)-seq.ll: programs/$(1).wf $(1)_host.ll module-symbols.awk $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WFC) --no-overlap --emit-llvm programs/$(1).wf -o $$@.raw
-	sed -e 's/@main(/@wfb_$(1)_seq_main(/g' \
-	    -e 's/@wf__main_body(/@wfb_$(1)_seq_body(/g' $$@.raw > $$@
-	sed -e 's/@wf_bench_$(1)(/@wf_bench_$(1)_seq(/' \
-	    -e 's/@wf_bench_$(1)_release(/@wf_bench_$(1)_seq_release(/' $(1)_host.ll >> $$@
+	awk -v prefix=wfb_$(1)_seq -v api=wf_bench_$(1) -v mode=seq \
+	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
 	! grep -q 'call void @wf__par_publish(' $$@
 
 # The constant weight operand of the emitted wf__par_split_budget call. The
@@ -473,20 +479,29 @@ $(BUILD)/%-par-b.o: $(BUILD)/%-par-b.ll $(MODULE_CONTROL)
 $(BUILD)/%-seq.o: $(BUILD)/%-seq.ll
 	$(CC) $(WF_FLAGS) -c $< -o $@
 
-# The plain image's four Whitefoot runtime units. NO CONTROL FLAG REACHES
+# The complete native library that whitefootc links. NO CONTROL FLAG REACHES
 # THESE, whatever WF_RUNTIME_CONTROL_FLAGS is set to: the `wf` row is the
 # runtime this tree ships, and an A/B run must not quietly move both arms.
-$(BUILD)/floor.o: $(FLOOR)
+$(BUILD)/floor.o: $(FLOOR) $(NATIVE_HEADERS)
 	@mkdir -p $(BUILD)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_core.o: $(SCHED)/core.c
+$(BUILD)/sched_core.o: $(SCHED)/core.c $(NATIVE_HEADERS)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_prim_host.o: $(SCHED)/prim_host.c
+$(BUILD)/sched_prim_host.o: $(SCHED)/prim_host.c $(NATIVE_HEADERS)
 	$(CC) $(WF_FLAGS) -c $< -o $@
-$(BUILD)/sched_entry.o: $(SCHED)/entry.c
+$(BUILD)/sched_entry.o: $(SCHED)/entry.c $(NATIVE_HEADERS)
+	$(CC) $(WF_FLAGS) -c $< -o $@
+$(BUILD)/completion_%.o: $(COMPLETION)/%.c $(NATIVE_HEADERS)
+	@mkdir -p $(BUILD)
+	$(CC) $(WF_FLAGS) -c $< -o $@
+$(BUILD)/ordinary_values_c.o: $(NATIVE)/ordinary_values.c $(NATIVE_HEADERS)
+	@mkdir -p $(BUILD)
+	$(CC) $(WF_FLAGS) -c $< -o $@
+$(BUILD)/ordinary_values_ll.o: $(NATIVE)/ordinary_values.ll
+	@mkdir -p $(BUILD)
 	$(CC) $(WF_FLAGS) -c $< -o $@
 
-# The twin's four. The same four translation units, read from $(WF_B_SCHED_DIR)
+# The twin's complete library, read from $(WF_B_SCHED_DIR)'s backend directory
 # and $(WF_B_FLOOR) -- this tree's own unless a baseline named another tree --
 # with the runtime control appended and the two stamps that recompile them when
 # a control value or the baseline's bytes change.
@@ -498,6 +513,12 @@ $(BUILD)/sched_core-b.o: $(WF_B_SCHED_DIR)/core.c $(RUNTIME_CONTROL) $(MODULE_CO
 $(BUILD)/sched_prim_host-b.o: $(WF_B_SCHED_DIR)/prim_host.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
 $(BUILD)/sched_entry-b.o: $(WF_B_SCHED_DIR)/entry.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/completion_%-b.o: $(WF_B_COMPLETION)/%.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/ordinary_values_c-b.o: $(WF_B_NATIVE)/ordinary_values.c $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
+	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/ordinary_values_ll-b.o: $(WF_B_NATIVE)/ordinary_values.ll $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
 
 $(BUILD)/%_bench.o: %_bench.c harness.h backend.h $(BUILD)/%_split.h
@@ -576,8 +597,7 @@ $(BUILD)/$(1): $(BUILD)/$(1)_bench.o $(BUILD)/$(1)-par.o $(BUILD)/$(1)-seq.o \
 	    $(BUILD)/$(1)_bench.o $$(BUILD)/harness.o $$(BUILD)/backend_serial.o \
 	    $$(BUILD)/backend_static.o $$(BUILD)/backend_tbb.o $$(PARLAY_OBJ) \
 	    $$(BUILD)/backend_rayon.o $(BUILD)/$(1)-par.o $(BUILD)/$(1)-seq.o \
-	    $$(BUILD)/floor.o $$(BUILD)/sched_core.o $$(BUILD)/sched_prim_host.o \
-	    $$(BUILD)/sched_entry.o $$(LINK_LIBS) -o $$@
+	    $$(RUNTIME_OBJS) $$(LINK_LIBS) -o $$@
 	@$$(call assert-real-runtime,$$@)
 	@$$(call require-strong,$$@,wf__floor_run)
 	@$$(call require-strong,$$@,wf__par_acquire_lane)
@@ -586,7 +606,7 @@ $(foreach k,$(KERNELS),$(eval $(call kernel-image,$(k))))
 
 # The twin image, link line for link line the same as the plain one above --
 # the same object order, the same libraries, the same three assertions -- with
-# the four `-b` runtime objects, the `-b` module object and the `-b` kernel
+# the `-b` native-library objects, the `-b` module object and the `-b` kernel
 # object in place of the plain ones. It shares the harness, the references and
 # the sequential control object with the plain image. The assertions apply to
 # it because a twin that silently lost the scheduler would read as a runtime
@@ -599,8 +619,7 @@ $(BUILD)/$(1)-b: $(BUILD)/$(1)_bench-b.o $(BUILD)/$(1)-par-b.o $(BUILD)/$(1)-seq
 	    $(BUILD)/$(1)_bench-b.o $$(BUILD)/harness.o $$(BUILD)/backend_serial.o \
 	    $$(BUILD)/backend_static.o $$(BUILD)/backend_tbb.o $$(PARLAY_OBJ) \
 	    $$(BUILD)/backend_rayon.o $(BUILD)/$(1)-par-b.o $(BUILD)/$(1)-seq.o \
-	    $$(BUILD)/floor-b.o $$(BUILD)/sched_core-b.o $$(BUILD)/sched_prim_host-b.o \
-	    $$(BUILD)/sched_entry-b.o $$(LINK_LIBS) -o $$@
+	    $$(RUNTIME_OBJS_B) $$(LINK_LIBS) -o $$@
 	@$$(call assert-real-runtime,$$@)
 	@$$(call require-strong,$$@,wf__floor_run)
 	@$$(call require-strong,$$@,wf__par_acquire_lane)
@@ -825,16 +844,23 @@ compare: build
 # asserts is a property of what whitefootc emits, so a rebuilt compiler makes
 # every stamp stale even when no program changed. `programs-check` builds
 # $(WFC) through `compiler` before the sub-make reads it as a prerequisite.
-programs-check: compiler
+programs-check: compiler module-symbols-test
 	@mkdir -p $(CHECK)
 	$(MAKE) -j$(JOBS) $(CHECKED)
 
-$(CHECK)/checked_%: programs/%.wf $(WFC)
-	$(WFC) --par        --emit-llvm programs/$*.wf -o $(CHECK)/$*-par.ll
-	$(WFC) --no-overlap --emit-llvm programs/$*.wf -o $(CHECK)/$*-seq.ll
-	grep -q 'call void @wf__par_publish(' $(CHECK)/$*-par.ll
-	! grep -q 'call void @wf__par_publish(' $(CHECK)/$*-seq.ll
+$(CHECK)/checked_%: programs/%.wf Makefile $(WFC) $(BUILD)/%-par.o $(BUILD)/%-seq.o $(RUNTIME_OBJS)
+	grep -q 'call void @wf__par_publish(' $(BUILD)/$*-par.ll
+	! grep -q 'call void @wf__par_publish(' $(BUILD)/$*-seq.ll
+	printf '%s\n' 'int wf__main_body(int argc, char **argv) { (void)argc; (void)argv; return 0; }' \
+	    'int main(void) { return 0; }' | $(CC) $(WF_FLAGS) \
+	    -x c - -x none $(BUILD)/$*-par.o $(BUILD)/$*-seq.o $(RUNTIME_OBJS) -lm -o $(CHECK)/$*-link
+	$(call require-strong,$(CHECK)/$*-link,wf_bench_$*_par)
+	$(call require-strong,$(CHECK)/$*-link,wf_bench_$*_seq)
+	$(call assert-real-runtime,$(CHECK)/$*-link)
 	touch $@
+
+module-symbols-test:
+	CC="$(CC)" sh module-symbols-test.sh
 
 # ---------------------------------------------------------------- verdict ---
 # The one target in this bundle whose exit status is decided by a measured

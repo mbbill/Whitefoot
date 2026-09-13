@@ -25,8 +25,6 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
         record.production,
         Production::Field
             | Production::Variant
-            | Production::FnSig
-            | Production::Law
             | Production::FnBind
             | Production::ConstDecl
             | Production::Doc
@@ -98,7 +96,7 @@ fn stated_space_open_paren(
     match record.production {
         // `-> (a: own T, b: own U)`: the `(` is the terminal before the first
         // `result_binding`, because the single-result form writes none.
-        Production::FnDecl => {
+        Production::FnDecl | Production::FnSig => {
             if counted(Production::ResultBinding)? < 2 {
                 return Ok(None);
             }
@@ -144,8 +142,8 @@ fn is_block_bearing(record: &crate::syntax::parser::finalize::topology::NodeReco
         record.production,
         Production::StructDecl
             | Production::EnumDecl
-            | Production::ContractDecl
-            | Production::ConformDecl
+            | Production::FormalDecl
+            | Production::ActualDecl
             | Production::FnDecl
             | Production::ContractBlock
             | Production::LoopStmt
@@ -215,6 +213,26 @@ pub(super) fn build_gap_styles(
     for (index, record) in topology.nodes.iter().enumerate() {
         work.spend(1)?;
         let node = NodeId::from_index(index).ok_or(CanonicalCompilerFailure::CounterOverflow)?;
+        // A formal member owns its signature; the group's `;` terminates
+        // that line. A raw function parameter stays in its generic header.
+        if record.production == Production::FnSig
+            && record
+                .parent
+                .and_then(|parent| topology.node(parent))
+                .is_some_and(|parent| parent.production == Production::FormalDecl)
+        {
+            mark_before(&mut gaps, topology, record.first_terminal, GapStyle::Break)?;
+            let next = record
+                .last_terminal()
+                .and_then(|last| last.checked_add(2))
+                .ok_or(CanonicalCompilerFailure::CounterOverflow)?;
+            if usize::try_from(next)
+                .ok()
+                .is_some_and(|next| next < gaps.len())
+            {
+                mark_before(&mut gaps, topology, next, GapStyle::Break)?;
+            }
+        }
         if is_line_bearing(topology, node)? {
             let last = record
                 .last_terminal()
@@ -411,7 +429,14 @@ pub(super) fn attachment(
             .production
             == Production::CompareOp
     };
-    if compare_angle {
+    let actual_separator = predicate == TerminalPredicate::Fixed(FixedTerminal::Colon)
+        && topology
+            .terminals
+            .get(ordinal)
+            .and_then(|record| record.owner)
+            .and_then(|owner| topology.node(owner))
+            .is_some_and(|owner| owner.production == Production::ActualDecl);
+    if compare_angle || actual_separator {
         return Ok(Attachment {
             left: false,
             right: false,

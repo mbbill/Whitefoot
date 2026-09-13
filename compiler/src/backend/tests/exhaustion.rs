@@ -76,7 +76,7 @@ fn depth(chain: &box<Chain>) -> result: own u64 reads(chain) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let end = End();
   let bottom = box_new(move end);
   let one = More(next: move bottom);
@@ -184,7 +184,7 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {{
   return fadd.strict(a, b);
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let total = spine(depth: {depth}_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
   let low = iand(bits, 1_u64);
@@ -933,7 +933,7 @@ fn both(n: own u64) -> result: own u64 pure {
   return a +wrap c;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let r = both(n: 5_u64);
   let ok = r > 0_u64;
   if ok {
@@ -990,7 +990,11 @@ const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 pure
   return element;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let count = 0_u64;
   region {
     set count = args_count(args: &args);
@@ -1030,7 +1034,7 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure 
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = shapes(n: 4_u64);
   match cvt::<u64, u8>(total) {
     Ok(value: byte) => {
@@ -1141,26 +1145,42 @@ fn every_allocation_refusal_edge_reaches_the_resource_abort() {
 }
 
 /// A recursion whose every activation carries an array far larger than a guard
-/// page, written and read at an index only the caller knows so the frame cannot
-/// be shrunk away. The controlled harness below enters only its base case; the
+/// page, handed to a retained reader so the frame cannot be shrunk away. A
+/// same-index local store/load can forward its scalar value and erase the
+/// array entirely; it does not establish a large physical frame. The
+/// controlled harness below enters only its base case; the
 /// recursive edge keeps the generated function representative of an ordinary
 /// source recursion without making the fault depend on a sequence of frames.
 const LARGE_FRAME_SPINE: &[u8] =
-    br#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
+    br#"fn read_pad(values: &array<u64, 7168>, index: own u64) -> result: own u64 reads(values) contract {
+  requires index < 7168_u64;
+} {
+  return deref(values)[index];
+}
+
+fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
   let pad = array_new::<u64, 7168>(v);
   let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
   let done = depth == 0_u64;
   if done {
-    return pad[wide];
+    region {
+      return read_pad(values: &pad, index: wide);
+    }
   }
   let next = depth -wrap 1_u64;
   let a = spine(depth: next, v: v, i: i);
-  let b = pad[wide];
-  return a +wrap b;
+  region {
+    let b = read_pad(values: &pad, index: wide);
+    return a +wrap b;
+  }
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let count = 0_u64;
   region {
     set count = args_count(args: &args);
@@ -1266,13 +1286,13 @@ fn a_frame_larger_than_the_guard_region_is_still_reported() {
     let output = Command::new(&executable)
         .output()
         .expect("run the probed large frame");
-    assert_resource_record(&output.stderr, "stack");
     assert_eq!(
         signal_of(&output),
         Some(libc_sigabrt()),
         "a probed frame that exhausts its stack ends in the floor's abort: {:?}",
         output.status,
     );
+    assert_resource_record(&output.stderr, "stack");
 
     let ablated = ablate_probe(&module, "@wf_spine(");
     assert_eq!(
@@ -1315,11 +1335,30 @@ fn expose_large_frame_spine(module: &str) -> String {
             1,
         )
         .replacen("define i32 @main(", "define i32 @wf__unused_main(", 1);
+    // Keep the ordinary source borrow crossing an opaque call boundary. The
+    // reader's body and result stay unchanged; external visibility prevents
+    // whole-program argument specialization and noinline preserves its call.
+    exposed = exposed
+        .lines()
+        .map(|line| {
+            if line.starts_with("define i64 @wf_read_pad(") {
+                line.replace(" #0 {", " noinline #0 {")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     exposed.push_str("\ndeclare i32 @wf__main_body(i32, ptr)\n");
     assert_eq!(
-        module.matches("define internal i64 @wf_spine(").count(),
+        module.matches("define i64 @wf_spine(").count(),
         1,
         "the fixture must expose exactly one generated spine"
+    );
+    assert_eq!(
+        exposed.matches("define i64 @wf_read_pad(").count(),
+        1,
+        "the fixture retains exactly one source array reader"
     );
     assert_eq!(
         exposed.matches("define i32 @wf__unused_main_body(").count(),
@@ -1391,7 +1430,7 @@ fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tr
   return box_new(move branch);
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let seed = boxed_leaf();
   let held = Holder(node: move seed);
   for @grow (i in 0_u64..{depth}_u64) {{
@@ -1441,7 +1480,7 @@ fn nest(inner: own Chain) -> result: own Chain pure {{
   return Cons(kids: move held);
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   let holder = buffer_vacant::<Chain>(1_u64);
   let seed = Nil();
   let seeded = Some<Chain>(value: move seed);
@@ -1480,7 +1519,7 @@ command fn main() -> status: own ExitStatus pure {{
 
 /// A value whose ownership graph is a chain rather than a cycle: deep in
 /// nothing, and reached by the same emitter.
-const SHALLOW_OWNERSHIP: &[u8] = br#"command fn main() -> status: own ExitStatus pure {
+const SHALLOW_OWNERSHIP: &[u8] = br#"fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<box<u64>>(2_u64);
   let boxed = box_new(7_u64);
   let wrapped = Some<box<u64>>(value: move boxed);
@@ -1690,7 +1729,7 @@ const BUFFER_CYCLE: &[u8] = br#"enum Chain {
   Cons(kids: box<buffer<Option<Chain>>>);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let inner = buffer_vacant::<Chain>(2_u64);
   let b = box_new(move inner);
   let node = Cons(kids: move b);
@@ -1759,7 +1798,7 @@ fn leafy() -> result: own Chain pure {
   return Cons(kids: move held);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<Chain>(4_u64);
   let child0 = leafy();
   let first = Some<Chain>(value: move child0);

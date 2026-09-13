@@ -15,7 +15,7 @@ fn resign_checked(x: own i8) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let checked_value = resign_checked(x: -1_i8);
   if checked_value == 0_u8 {
   } else {

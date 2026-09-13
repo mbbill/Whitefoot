@@ -1,3 +1,105 @@
+fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+  match deref(error) {
+    NotFound(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    PermissionDenied(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AlreadyExists(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    IsDirectory(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DirectoryNotEmpty(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ReadOnly(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceBusy(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidInput(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    InvalidPath(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Unsupported(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    TimedOut(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    BrokenPipe(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    WriteZero(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    UnexpectedEnd(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionRefused(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionReset(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ConnectionAborted(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NotConnected(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressInUse(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    AddressUnavailable(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    ResourceExhausted(code: native_code, origin: native_origin) => {
+      return deref(native_origin) == 0_u8;
+    }
+    FileTooLarge(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    NoSpace(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    QuotaExceeded(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    CrossDevice(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    DeviceFailure(code: native_code, origin: native_origin) => {
+      return False();
+    }
+    Other(code: native_code, origin: native_origin) => {
+      return False();
+    }
+  }
+}
+
+fn discard_open_result(factory: &uniq HandleFactory, outcome: own FileOpenOutcome) -> result: own unit reads(factory), writes(factory) {
+  match move outcome {
+    FileOpened(value: file) => {
+      region {
+        close_read(factory: &uniq deref(factory), file: move file);
+      }
+    }
+    FileOpenFailed(error: problem) => {
+    }
+  }
+  return unit;
+}
+
 fn name_at(name: &uniq MutSlice<u8>, index: own u64) -> result: own unit reads(name), writes(name) {
   doc "Renders the fixed ten-byte generated file name for one index as f00000.dat.";
   let room = len_of(deref(name));
@@ -106,7 +208,7 @@ fn block_at(index: own u64) -> result: own u64 pure {
   return mixed % 1024_u64;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files) {
+fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(out, files) {
   doc "Opens the eight generated files once and then reads eight independent positioned windows per round, publishing one folded checksum.";
   let name_0 = buffer_new(16_u64, 0_u8);
   let name_1 = buffer_new(16_u64, 0_u8);
@@ -182,348 +284,533 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
       let rendered_7 = name_at(name: &uniq name_7_window, index: 7_u64);
     }
   }
-  region 'f {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit_0) => {
-        match reserve_handle(factory: &uniq files) {
-          Ok(value: permit_1) => {
-            match reserve_handle(factory: &uniq files) {
-              Ok(value: permit_2) => {
-                match reserve_handle(factory: &uniq files) {
-                  Ok(value: permit_3) => {
-                    match reserve_handle(factory: &uniq files) {
-                      Ok(value: permit_4) => {
-                        match reserve_handle(factory: &uniq files) {
-                          Ok(value: permit_5) => {
-                            match reserve_handle(factory: &uniq files) {
-                              Ok(value: permit_6) => {
-                                match reserve_handle(factory: &uniq files) {
-                                  Ok(value: permit_7) => {
-                                    region {
-                                      let opened_0 = open_file(permit: move permit_0, root: &'f cwd, name: &name_0, start: 0_u64, end: 10_u64);
-                                      let opened_1 = open_file(permit: move permit_1, root: &'f cwd, name: &name_1, start: 0_u64, end: 10_u64);
-                                      let opened_2 = open_file(permit: move permit_2, root: &'f cwd, name: &name_2, start: 0_u64, end: 10_u64);
-                                      let opened_3 = open_file(permit: move permit_3, root: &'f cwd, name: &name_3, start: 0_u64, end: 10_u64);
-                                      let opened_4 = open_file(permit: move permit_4, root: &'f cwd, name: &name_4, start: 0_u64, end: 10_u64);
-                                      let opened_5 = open_file(permit: move permit_5, root: &'f cwd, name: &name_5, start: 0_u64, end: 10_u64);
-                                      let opened_6 = open_file(permit: move permit_6, root: &'f cwd, name: &name_6, start: 0_u64, end: 10_u64);
-                                      let opened_7 = open_file(permit: move permit_7, root: &'f cwd, name: &name_7, start: 0_u64, end: 10_u64);
-                                      match opened_0 {
-                                        FileOpened(value: handle_0) => {
-                                          match opened_1 {
-                                            FileOpened(value: handle_1) => {
-                                              match opened_2 {
-                                                FileOpened(value: handle_2) => {
-                                                  match opened_3 {
-                                                    FileOpened(value: handle_3) => {
-                                                      match opened_4 {
-                                                        FileOpened(value: handle_4) => {
-                                                          match opened_5 {
-                                                            FileOpened(value: handle_5) => {
-                                                              match opened_6 {
-                                                                FileOpened(value: handle_6) => {
-                                                                  match opened_7 {
-                                                                    FileOpened(value: handle_7) => {
-                                                                      let base = 0_u64;
-                                                                      loop @scan {
-                                                                        let done = base >= 32768_u64;
-                                                                        if done {
-                                                                          break @scan;
-                                                                        }
-                                                                        let position_0 = base +wrap 0_u64;
-                                                                        let position_1 = base +wrap 1_u64;
-                                                                        let position_2 = base +wrap 2_u64;
-                                                                        let position_3 = base +wrap 3_u64;
-                                                                        let position_4 = base +wrap 4_u64;
-                                                                        let position_5 = base +wrap 5_u64;
-                                                                        let position_6 = base +wrap 6_u64;
-                                                                        let position_7 = base +wrap 7_u64;
-                                                                        let block_0 = block_at(index: position_0);
-                                                                        let offset_0 = block_0 *wrap 65536_u64;
-                                                                        let block_1 = block_at(index: position_1);
-                                                                        let offset_1 = block_1 *wrap 65536_u64;
-                                                                        let block_2 = block_at(index: position_2);
-                                                                        let offset_2 = block_2 *wrap 65536_u64;
-                                                                        let block_3 = block_at(index: position_3);
-                                                                        let offset_3 = block_3 *wrap 65536_u64;
-                                                                        let block_4 = block_at(index: position_4);
-                                                                        let offset_4 = block_4 *wrap 65536_u64;
-                                                                        let block_5 = block_at(index: position_5);
-                                                                        let offset_5 = block_5 *wrap 65536_u64;
-                                                                        let block_6 = block_at(index: position_6);
-                                                                        let offset_6 = block_6 *wrap 65536_u64;
-                                                                        let block_7 = block_at(index: position_7);
-                                                                        let offset_7 = block_7 *wrap 65536_u64;
-                                                                        region 'h {
+  region {
+    let native_window_49 = slice_of(&name_0);
+    region {
+      region {
+        let opened_0 = open_file(factory: &uniq deref(files), root: cwd, name: &native_window_49, start: 0_u64, end: 10_u64);
+        region {
+          let native_window_50 = slice_of(&name_1);
+          region {
+            let opened_1 = open_file(factory: &uniq deref(files), root: cwd, name: &native_window_50, start: 0_u64, end: 10_u64);
+            region {
+              let native_window_51 = slice_of(&name_2);
+              region {
+                let opened_2 = open_file(factory: &uniq deref(files), root: cwd, name: &native_window_51, start: 0_u64, end: 10_u64);
+                region {
+                  let native_window_52 = slice_of(&name_3);
+                  region {
+                    let opened_3 = open_file(factory: &uniq deref(files), root: cwd, name: &native_window_52, start: 0_u64, end: 10_u64);
+                    region {
+                      let native_window_53 = slice_of(&name_4);
+                      region {
+                        let opened_4 = open_file(factory: &uniq deref(files), root: cwd, name: &native_window_53, start: 0_u64, end: 10_u64);
+                        region {
+                          let native_window_54 = slice_of(&name_5);
+                          region {
+                            let opened_5 = open_file(factory: &uniq deref(files), root: cwd, name: &native_window_54, start: 0_u64, end: 10_u64);
+                            region {
+                              let native_window_55 = slice_of(&name_6);
+                              region {
+                                let opened_6 = open_file(factory: &uniq deref(files), root: cwd, name: &native_window_55, start: 0_u64, end: 10_u64);
+                                region {
+                                  let native_window_56 = slice_of(&name_7);
+                                  region {
+                                    let opened_7 = open_file(factory: &uniq deref(files), root: cwd, name: &native_window_56, start: 0_u64, end: 10_u64);
+                                    match opened_0 {
+                                      FileOpened(value: handle_0) => {
+                                        match opened_1 {
+                                          FileOpened(value: handle_1) => {
+                                            match opened_2 {
+                                              FileOpened(value: handle_2) => {
+                                                match opened_3 {
+                                                  FileOpened(value: handle_3) => {
+                                                    match opened_4 {
+                                                      FileOpened(value: handle_4) => {
+                                                        match opened_5 {
+                                                          FileOpened(value: handle_5) => {
+                                                            match opened_6 {
+                                                              FileOpened(value: handle_6) => {
+                                                                match opened_7 {
+                                                                  FileOpened(value: handle_7) => {
+                                                                    let base = 0_u64;
+                                                                    loop @scan {
+                                                                      let done = base >= 32768_u64;
+                                                                      if done {
+                                                                        break @scan;
+                                                                      }
+                                                                      let position_0 = base +wrap 0_u64;
+                                                                      let position_1 = base +wrap 1_u64;
+                                                                      let position_2 = base +wrap 2_u64;
+                                                                      let position_3 = base +wrap 3_u64;
+                                                                      let position_4 = base +wrap 4_u64;
+                                                                      let position_5 = base +wrap 5_u64;
+                                                                      let position_6 = base +wrap 6_u64;
+                                                                      let position_7 = base +wrap 7_u64;
+                                                                      let block_0 = block_at(index: position_0);
+                                                                      let offset_0 = block_0 *wrap 65536_u64;
+                                                                      let block_1 = block_at(index: position_1);
+                                                                      let offset_1 = block_1 *wrap 65536_u64;
+                                                                      let block_2 = block_at(index: position_2);
+                                                                      let offset_2 = block_2 *wrap 65536_u64;
+                                                                      let block_3 = block_at(index: position_3);
+                                                                      let offset_3 = block_3 *wrap 65536_u64;
+                                                                      let block_4 = block_at(index: position_4);
+                                                                      let offset_4 = block_4 *wrap 65536_u64;
+                                                                      let block_5 = block_at(index: position_5);
+                                                                      let offset_5 = block_5 *wrap 65536_u64;
+                                                                      let block_6 = block_at(index: position_6);
+                                                                      let offset_6 = block_6 *wrap 65536_u64;
+                                                                      let block_7 = block_at(index: position_7);
+                                                                      let offset_7 = block_7 *wrap 65536_u64;
+                                                                      region {
+                                                                        let native_window_57 = mut_slice_of(&uniq data_0);
+                                                                        region {
                                                                           region {
-                                                                            let read_0 = read_at(file: &'h handle_0, destination: &uniq data_0, file_offset: offset_0, start: 0_u64, end: 65536_u64);
-                                                                            let read_1 = read_at(file: &'h handle_1, destination: &uniq data_1, file_offset: offset_1, start: 0_u64, end: 65536_u64);
-                                                                            let read_2 = read_at(file: &'h handle_2, destination: &uniq data_2, file_offset: offset_2, start: 0_u64, end: 65536_u64);
-                                                                            let read_3 = read_at(file: &'h handle_3, destination: &uniq data_3, file_offset: offset_3, start: 0_u64, end: 65536_u64);
-                                                                            let read_4 = read_at(file: &'h handle_4, destination: &uniq data_4, file_offset: offset_4, start: 0_u64, end: 65536_u64);
-                                                                            let read_5 = read_at(file: &'h handle_5, destination: &uniq data_5, file_offset: offset_5, start: 0_u64, end: 65536_u64);
-                                                                            let read_6 = read_at(file: &'h handle_6, destination: &uniq data_6, file_offset: offset_6, start: 0_u64, end: 65536_u64);
-                                                                            let read_7 = read_at(file: &'h handle_7, destination: &uniq data_7, file_offset: offset_7, start: 0_u64, end: 65536_u64);
-                                                                            match read_0 {
-                                                                              ReadBytes(next: produced_0) => {
-                                                                                let digest_0 = 0_u64;
+                                                                            let read_0 = read_at(factory: &uniq deref(files), file: &uniq handle_0, destination: &uniq native_window_57, file_offset: offset_0, start: 0_u64, end: 65536_u64);
+                                                                            region {
+                                                                              let native_window_58 = mut_slice_of(&uniq data_1);
+                                                                              region {
+                                                                                let read_1 = read_at(factory: &uniq deref(files), file: &uniq handle_1, destination: &uniq native_window_58, file_offset: offset_1, start: 0_u64, end: 65536_u64);
                                                                                 region {
-                                                                                  set digest_0 = fold_bytes(source: &data_0, produced: 1024_u64, seed: 0_u64);
+                                                                                  let native_window_59 = mut_slice_of(&uniq data_2);
+                                                                                  region {
+                                                                                    let read_2 = read_at(factory: &uniq deref(files), file: &uniq handle_2, destination: &uniq native_window_59, file_offset: offset_2, start: 0_u64, end: 65536_u64);
+                                                                                    region {
+                                                                                      let native_window_60 = mut_slice_of(&uniq data_3);
+                                                                                      region {
+                                                                                        let read_3 = read_at(factory: &uniq deref(files), file: &uniq handle_3, destination: &uniq native_window_60, file_offset: offset_3, start: 0_u64, end: 65536_u64);
+                                                                                        region {
+                                                                                          let native_window_61 = mut_slice_of(&uniq data_4);
+                                                                                          region {
+                                                                                            let read_4 = read_at(factory: &uniq deref(files), file: &uniq handle_4, destination: &uniq native_window_61, file_offset: offset_4, start: 0_u64, end: 65536_u64);
+                                                                                            region {
+                                                                                              let native_window_62 = mut_slice_of(&uniq data_5);
+                                                                                              region {
+                                                                                                let read_5 = read_at(factory: &uniq deref(files), file: &uniq handle_5, destination: &uniq native_window_62, file_offset: offset_5, start: 0_u64, end: 65536_u64);
+                                                                                                region {
+                                                                                                  let native_window_63 = mut_slice_of(&uniq data_6);
+                                                                                                  region {
+                                                                                                    let read_6 = read_at(factory: &uniq deref(files), file: &uniq handle_6, destination: &uniq native_window_63, file_offset: offset_6, start: 0_u64, end: 65536_u64);
+                                                                                                    region {
+                                                                                                      let native_window_64 = mut_slice_of(&uniq data_7);
+                                                                                                      region {
+                                                                                                        let read_7 = read_at(factory: &uniq deref(files), file: &uniq handle_7, destination: &uniq native_window_64, file_offset: offset_7, start: 0_u64, end: 65536_u64);
+                                                                                                        match read_0 {
+                                                                                                          Ok(value: produced_0) => {
+                                                                                                            let digest_0 = 0_u64;
+                                                                                                            region {
+                                                                                                              set digest_0 = fold_bytes(source: &data_0, produced: 1024_u64, seed: 0_u64);
+                                                                                                            }
+                                                                                                            let weight_0 = position_0 +wrap 1_u64;
+                                                                                                            set digest_0 = digest_0 *wrap weight_0;
+                                                                                                            set sum_0 = sum_0 +wrap digest_0;
+                                                                                                            set bytes = bytes +wrap produced_0;
+                                                                                                          }
+                                                                                                          Err(error: read_stop_41) => {
+                                                                                                            match read_stop_41 {
+                                                                                                              ReadEnd() => {
+                                                                                                              }
+                                                                                                              ReadFailed(error: problem_0) => {
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                        match read_1 {
+                                                                                                          Ok(value: produced_1) => {
+                                                                                                            let digest_1 = 0_u64;
+                                                                                                            region {
+                                                                                                              set digest_1 = fold_bytes(source: &data_1, produced: 1024_u64, seed: 0_u64);
+                                                                                                            }
+                                                                                                            let weight_1 = position_1 +wrap 1_u64;
+                                                                                                            set digest_1 = digest_1 *wrap weight_1;
+                                                                                                            set sum_1 = sum_1 +wrap digest_1;
+                                                                                                            set bytes = bytes +wrap produced_1;
+                                                                                                          }
+                                                                                                          Err(error: read_stop_42) => {
+                                                                                                            match read_stop_42 {
+                                                                                                              ReadEnd() => {
+                                                                                                              }
+                                                                                                              ReadFailed(error: problem_1) => {
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                        match read_2 {
+                                                                                                          Ok(value: produced_2) => {
+                                                                                                            let digest_2 = 0_u64;
+                                                                                                            region {
+                                                                                                              set digest_2 = fold_bytes(source: &data_2, produced: 1024_u64, seed: 0_u64);
+                                                                                                            }
+                                                                                                            let weight_2 = position_2 +wrap 1_u64;
+                                                                                                            set digest_2 = digest_2 *wrap weight_2;
+                                                                                                            set sum_2 = sum_2 +wrap digest_2;
+                                                                                                            set bytes = bytes +wrap produced_2;
+                                                                                                          }
+                                                                                                          Err(error: read_stop_43) => {
+                                                                                                            match read_stop_43 {
+                                                                                                              ReadEnd() => {
+                                                                                                              }
+                                                                                                              ReadFailed(error: problem_2) => {
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                        match read_3 {
+                                                                                                          Ok(value: produced_3) => {
+                                                                                                            let digest_3 = 0_u64;
+                                                                                                            region {
+                                                                                                              set digest_3 = fold_bytes(source: &data_3, produced: 1024_u64, seed: 0_u64);
+                                                                                                            }
+                                                                                                            let weight_3 = position_3 +wrap 1_u64;
+                                                                                                            set digest_3 = digest_3 *wrap weight_3;
+                                                                                                            set sum_3 = sum_3 +wrap digest_3;
+                                                                                                            set bytes = bytes +wrap produced_3;
+                                                                                                          }
+                                                                                                          Err(error: read_stop_44) => {
+                                                                                                            match read_stop_44 {
+                                                                                                              ReadEnd() => {
+                                                                                                              }
+                                                                                                              ReadFailed(error: problem_3) => {
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                        match read_4 {
+                                                                                                          Ok(value: produced_4) => {
+                                                                                                            let digest_4 = 0_u64;
+                                                                                                            region {
+                                                                                                              set digest_4 = fold_bytes(source: &data_4, produced: 1024_u64, seed: 0_u64);
+                                                                                                            }
+                                                                                                            let weight_4 = position_4 +wrap 1_u64;
+                                                                                                            set digest_4 = digest_4 *wrap weight_4;
+                                                                                                            set sum_4 = sum_4 +wrap digest_4;
+                                                                                                            set bytes = bytes +wrap produced_4;
+                                                                                                          }
+                                                                                                          Err(error: read_stop_45) => {
+                                                                                                            match read_stop_45 {
+                                                                                                              ReadEnd() => {
+                                                                                                              }
+                                                                                                              ReadFailed(error: problem_4) => {
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                        match read_5 {
+                                                                                                          Ok(value: produced_5) => {
+                                                                                                            let digest_5 = 0_u64;
+                                                                                                            region {
+                                                                                                              set digest_5 = fold_bytes(source: &data_5, produced: 1024_u64, seed: 0_u64);
+                                                                                                            }
+                                                                                                            let weight_5 = position_5 +wrap 1_u64;
+                                                                                                            set digest_5 = digest_5 *wrap weight_5;
+                                                                                                            set sum_5 = sum_5 +wrap digest_5;
+                                                                                                            set bytes = bytes +wrap produced_5;
+                                                                                                          }
+                                                                                                          Err(error: read_stop_46) => {
+                                                                                                            match read_stop_46 {
+                                                                                                              ReadEnd() => {
+                                                                                                              }
+                                                                                                              ReadFailed(error: problem_5) => {
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                        match read_6 {
+                                                                                                          Ok(value: produced_6) => {
+                                                                                                            let digest_6 = 0_u64;
+                                                                                                            region {
+                                                                                                              set digest_6 = fold_bytes(source: &data_6, produced: 1024_u64, seed: 0_u64);
+                                                                                                            }
+                                                                                                            let weight_6 = position_6 +wrap 1_u64;
+                                                                                                            set digest_6 = digest_6 *wrap weight_6;
+                                                                                                            set sum_6 = sum_6 +wrap digest_6;
+                                                                                                            set bytes = bytes +wrap produced_6;
+                                                                                                          }
+                                                                                                          Err(error: read_stop_47) => {
+                                                                                                            match read_stop_47 {
+                                                                                                              ReadEnd() => {
+                                                                                                              }
+                                                                                                              ReadFailed(error: problem_6) => {
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                        match read_7 {
+                                                                                                          Ok(value: produced_7) => {
+                                                                                                            let digest_7 = 0_u64;
+                                                                                                            region {
+                                                                                                              set digest_7 = fold_bytes(source: &data_7, produced: 1024_u64, seed: 0_u64);
+                                                                                                            }
+                                                                                                            let weight_7 = position_7 +wrap 1_u64;
+                                                                                                            set digest_7 = digest_7 *wrap weight_7;
+                                                                                                            set sum_7 = sum_7 +wrap digest_7;
+                                                                                                            set bytes = bytes +wrap produced_7;
+                                                                                                          }
+                                                                                                          Err(error: read_stop_48) => {
+                                                                                                            match read_stop_48 {
+                                                                                                              ReadEnd() => {
+                                                                                                              }
+                                                                                                              ReadFailed(error: problem_7) => {
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
                                                                                 }
-                                                                                let weight_0 = position_0 +wrap 1_u64;
-                                                                                set digest_0 = digest_0 *wrap weight_0;
-                                                                                set sum_0 = sum_0 +wrap digest_0;
-                                                                                set bytes = bytes +wrap produced_0;
-                                                                              }
-                                                                              ReadEnd() => {
-                                                                              }
-                                                                              ReadFailed(error: problem_0) => {
-                                                                              }
-                                                                            }
-                                                                            match read_1 {
-                                                                              ReadBytes(next: produced_1) => {
-                                                                                let digest_1 = 0_u64;
-                                                                                region {
-                                                                                  set digest_1 = fold_bytes(source: &data_1, produced: 1024_u64, seed: 0_u64);
-                                                                                }
-                                                                                let weight_1 = position_1 +wrap 1_u64;
-                                                                                set digest_1 = digest_1 *wrap weight_1;
-                                                                                set sum_1 = sum_1 +wrap digest_1;
-                                                                                set bytes = bytes +wrap produced_1;
-                                                                              }
-                                                                              ReadEnd() => {
-                                                                              }
-                                                                              ReadFailed(error: problem_1) => {
-                                                                              }
-                                                                            }
-                                                                            match read_2 {
-                                                                              ReadBytes(next: produced_2) => {
-                                                                                let digest_2 = 0_u64;
-                                                                                region {
-                                                                                  set digest_2 = fold_bytes(source: &data_2, produced: 1024_u64, seed: 0_u64);
-                                                                                }
-                                                                                let weight_2 = position_2 +wrap 1_u64;
-                                                                                set digest_2 = digest_2 *wrap weight_2;
-                                                                                set sum_2 = sum_2 +wrap digest_2;
-                                                                                set bytes = bytes +wrap produced_2;
-                                                                              }
-                                                                              ReadEnd() => {
-                                                                              }
-                                                                              ReadFailed(error: problem_2) => {
-                                                                              }
-                                                                            }
-                                                                            match read_3 {
-                                                                              ReadBytes(next: produced_3) => {
-                                                                                let digest_3 = 0_u64;
-                                                                                region {
-                                                                                  set digest_3 = fold_bytes(source: &data_3, produced: 1024_u64, seed: 0_u64);
-                                                                                }
-                                                                                let weight_3 = position_3 +wrap 1_u64;
-                                                                                set digest_3 = digest_3 *wrap weight_3;
-                                                                                set sum_3 = sum_3 +wrap digest_3;
-                                                                                set bytes = bytes +wrap produced_3;
-                                                                              }
-                                                                              ReadEnd() => {
-                                                                              }
-                                                                              ReadFailed(error: problem_3) => {
-                                                                              }
-                                                                            }
-                                                                            match read_4 {
-                                                                              ReadBytes(next: produced_4) => {
-                                                                                let digest_4 = 0_u64;
-                                                                                region {
-                                                                                  set digest_4 = fold_bytes(source: &data_4, produced: 1024_u64, seed: 0_u64);
-                                                                                }
-                                                                                let weight_4 = position_4 +wrap 1_u64;
-                                                                                set digest_4 = digest_4 *wrap weight_4;
-                                                                                set sum_4 = sum_4 +wrap digest_4;
-                                                                                set bytes = bytes +wrap produced_4;
-                                                                              }
-                                                                              ReadEnd() => {
-                                                                              }
-                                                                              ReadFailed(error: problem_4) => {
-                                                                              }
-                                                                            }
-                                                                            match read_5 {
-                                                                              ReadBytes(next: produced_5) => {
-                                                                                let digest_5 = 0_u64;
-                                                                                region {
-                                                                                  set digest_5 = fold_bytes(source: &data_5, produced: 1024_u64, seed: 0_u64);
-                                                                                }
-                                                                                let weight_5 = position_5 +wrap 1_u64;
-                                                                                set digest_5 = digest_5 *wrap weight_5;
-                                                                                set sum_5 = sum_5 +wrap digest_5;
-                                                                                set bytes = bytes +wrap produced_5;
-                                                                              }
-                                                                              ReadEnd() => {
-                                                                              }
-                                                                              ReadFailed(error: problem_5) => {
-                                                                              }
-                                                                            }
-                                                                            match read_6 {
-                                                                              ReadBytes(next: produced_6) => {
-                                                                                let digest_6 = 0_u64;
-                                                                                region {
-                                                                                  set digest_6 = fold_bytes(source: &data_6, produced: 1024_u64, seed: 0_u64);
-                                                                                }
-                                                                                let weight_6 = position_6 +wrap 1_u64;
-                                                                                set digest_6 = digest_6 *wrap weight_6;
-                                                                                set sum_6 = sum_6 +wrap digest_6;
-                                                                                set bytes = bytes +wrap produced_6;
-                                                                              }
-                                                                              ReadEnd() => {
-                                                                              }
-                                                                              ReadFailed(error: problem_6) => {
-                                                                              }
-                                                                            }
-                                                                            match read_7 {
-                                                                              ReadBytes(next: produced_7) => {
-                                                                                let digest_7 = 0_u64;
-                                                                                region {
-                                                                                  set digest_7 = fold_bytes(source: &data_7, produced: 1024_u64, seed: 0_u64);
-                                                                                }
-                                                                                let weight_7 = position_7 +wrap 1_u64;
-                                                                                set digest_7 = digest_7 *wrap weight_7;
-                                                                                set sum_7 = sum_7 +wrap digest_7;
-                                                                                set bytes = bytes +wrap produced_7;
-                                                                              }
-                                                                              ReadEnd() => {
-                                                                              }
-                                                                              ReadFailed(error: problem_7) => {
                                                                               }
                                                                             }
                                                                           }
+                                                                          set base = base +wrap 8_u64;
                                                                         }
-                                                                        set base = base +wrap 8_u64;
                                                                       }
                                                                     }
-                                                                    FileOpenFailed(error: failed_7, permit: refused) => {
-                                                                      return exit_status(code: 11_u8);
+                                                                    close_read(factory: &uniq deref(files), file: move handle_7);
+                                                                  }
+                                                                  FileOpenFailed(error: failed_7) => {
+                                                                    region {
+                                                                      let failure_status = if factory_refusal(error: &failed_7) {
+                                                                        give 19_u8;
+                                                                      } else {
+                                                                        give 11_u8;
+                                                                      }
+                                                                      close_read(factory: &uniq deref(files), file: move handle_6);
+                                                                      close_read(factory: &uniq deref(files), file: move handle_5);
+                                                                      close_read(factory: &uniq deref(files), file: move handle_4);
+                                                                      close_read(factory: &uniq deref(files), file: move handle_3);
+                                                                      close_read(factory: &uniq deref(files), file: move handle_2);
+                                                                      close_read(factory: &uniq deref(files), file: move handle_1);
+                                                                      close_read(factory: &uniq deref(files), file: move handle_0);
+                                                                      return exit_status(code: failure_status);
                                                                     }
                                                                   }
                                                                 }
-                                                                FileOpenFailed(error: failed_6, permit: refused) => {
-                                                                  return exit_status(code: 10_u8);
+                                                                close_read(factory: &uniq deref(files), file: move handle_6);
+                                                              }
+                                                              FileOpenFailed(error: failed_6) => {
+                                                                region {
+                                                                  let failure_status = if factory_refusal(error: &failed_6) {
+                                                                    give 18_u8;
+                                                                  } else {
+                                                                    give 10_u8;
+                                                                  }
+                                                                  close_read(factory: &uniq deref(files), file: move handle_5);
+                                                                  close_read(factory: &uniq deref(files), file: move handle_4);
+                                                                  close_read(factory: &uniq deref(files), file: move handle_3);
+                                                                  close_read(factory: &uniq deref(files), file: move handle_2);
+                                                                  close_read(factory: &uniq deref(files), file: move handle_1);
+                                                                  close_read(factory: &uniq deref(files), file: move handle_0);
+                                                                  discard_open_result(factory: &uniq deref(files), outcome: move opened_7);
+                                                                  return exit_status(code: failure_status);
                                                                 }
                                                               }
                                                             }
-                                                            FileOpenFailed(error: failed_5, permit: refused) => {
-                                                              return exit_status(code: 9_u8);
+                                                            close_read(factory: &uniq deref(files), file: move handle_5);
+                                                          }
+                                                          FileOpenFailed(error: failed_5) => {
+                                                            region {
+                                                              let failure_status = if factory_refusal(error: &failed_5) {
+                                                                give 17_u8;
+                                                              } else {
+                                                                give 9_u8;
+                                                              }
+                                                              close_read(factory: &uniq deref(files), file: move handle_4);
+                                                              close_read(factory: &uniq deref(files), file: move handle_3);
+                                                              close_read(factory: &uniq deref(files), file: move handle_2);
+                                                              close_read(factory: &uniq deref(files), file: move handle_1);
+                                                              close_read(factory: &uniq deref(files), file: move handle_0);
+                                                              discard_open_result(factory: &uniq deref(files), outcome: move opened_7);
+                                                              discard_open_result(factory: &uniq deref(files), outcome: move opened_6);
+                                                              return exit_status(code: failure_status);
                                                             }
                                                           }
                                                         }
-                                                        FileOpenFailed(error: failed_4, permit: refused) => {
-                                                          return exit_status(code: 8_u8);
+                                                        close_read(factory: &uniq deref(files), file: move handle_4);
+                                                      }
+                                                      FileOpenFailed(error: failed_4) => {
+                                                        region {
+                                                          let failure_status = if factory_refusal(error: &failed_4) {
+                                                            give 16_u8;
+                                                          } else {
+                                                            give 8_u8;
+                                                          }
+                                                          close_read(factory: &uniq deref(files), file: move handle_3);
+                                                          close_read(factory: &uniq deref(files), file: move handle_2);
+                                                          close_read(factory: &uniq deref(files), file: move handle_1);
+                                                          close_read(factory: &uniq deref(files), file: move handle_0);
+                                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_7);
+                                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_6);
+                                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_5);
+                                                          return exit_status(code: failure_status);
                                                         }
                                                       }
                                                     }
-                                                    FileOpenFailed(error: failed_3, permit: refused) => {
-                                                      return exit_status(code: 7_u8);
+                                                    close_read(factory: &uniq deref(files), file: move handle_3);
+                                                  }
+                                                  FileOpenFailed(error: failed_3) => {
+                                                    region {
+                                                      let failure_status = if factory_refusal(error: &failed_3) {
+                                                        give 15_u8;
+                                                      } else {
+                                                        give 7_u8;
+                                                      }
+                                                      close_read(factory: &uniq deref(files), file: move handle_2);
+                                                      close_read(factory: &uniq deref(files), file: move handle_1);
+                                                      close_read(factory: &uniq deref(files), file: move handle_0);
+                                                      discard_open_result(factory: &uniq deref(files), outcome: move opened_7);
+                                                      discard_open_result(factory: &uniq deref(files), outcome: move opened_6);
+                                                      discard_open_result(factory: &uniq deref(files), outcome: move opened_5);
+                                                      discard_open_result(factory: &uniq deref(files), outcome: move opened_4);
+                                                      return exit_status(code: failure_status);
                                                     }
                                                   }
                                                 }
-                                                FileOpenFailed(error: failed_2, permit: refused) => {
-                                                  return exit_status(code: 6_u8);
+                                                close_read(factory: &uniq deref(files), file: move handle_2);
+                                              }
+                                              FileOpenFailed(error: failed_2) => {
+                                                region {
+                                                  let failure_status = if factory_refusal(error: &failed_2) {
+                                                    give 14_u8;
+                                                  } else {
+                                                    give 6_u8;
+                                                  }
+                                                  close_read(factory: &uniq deref(files), file: move handle_1);
+                                                  close_read(factory: &uniq deref(files), file: move handle_0);
+                                                  discard_open_result(factory: &uniq deref(files), outcome: move opened_7);
+                                                  discard_open_result(factory: &uniq deref(files), outcome: move opened_6);
+                                                  discard_open_result(factory: &uniq deref(files), outcome: move opened_5);
+                                                  discard_open_result(factory: &uniq deref(files), outcome: move opened_4);
+                                                  discard_open_result(factory: &uniq deref(files), outcome: move opened_3);
+                                                  return exit_status(code: failure_status);
                                                 }
                                               }
                                             }
-                                            FileOpenFailed(error: failed_1, permit: refused) => {
-                                              return exit_status(code: 5_u8);
+                                            close_read(factory: &uniq deref(files), file: move handle_1);
+                                          }
+                                          FileOpenFailed(error: failed_1) => {
+                                            region {
+                                              let failure_status = if factory_refusal(error: &failed_1) {
+                                                give 13_u8;
+                                              } else {
+                                                give 5_u8;
+                                              }
+                                              close_read(factory: &uniq deref(files), file: move handle_0);
+                                              discard_open_result(factory: &uniq deref(files), outcome: move opened_7);
+                                              discard_open_result(factory: &uniq deref(files), outcome: move opened_6);
+                                              discard_open_result(factory: &uniq deref(files), outcome: move opened_5);
+                                              discard_open_result(factory: &uniq deref(files), outcome: move opened_4);
+                                              discard_open_result(factory: &uniq deref(files), outcome: move opened_3);
+                                              discard_open_result(factory: &uniq deref(files), outcome: move opened_2);
+                                              return exit_status(code: failure_status);
                                             }
                                           }
                                         }
-                                        FileOpenFailed(error: failed_0, permit: refused) => {
-                                          return exit_status(code: 4_u8);
+                                        close_read(factory: &uniq deref(files), file: move handle_0);
+                                      }
+                                      FileOpenFailed(error: failed_0) => {
+                                        region {
+                                          let failure_status = if factory_refusal(error: &failed_0) {
+                                            give 12_u8;
+                                          } else {
+                                            give 4_u8;
+                                          }
+                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_7);
+                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_6);
+                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_5);
+                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_4);
+                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_3);
+                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_2);
+                                          discard_open_result(factory: &uniq deref(files), outcome: move opened_1);
+                                          return exit_status(code: failure_status);
                                         }
                                       }
                                     }
                                   }
-                                  Err(error: spent) => {
-                                    return exit_status(code: 19_u8);
-                                  }
                                 }
-                              }
-                              Err(error: spent) => {
-                                return exit_status(code: 18_u8);
                               }
                             }
                           }
-                          Err(error: spent) => {
-                            return exit_status(code: 17_u8);
-                          }
                         }
-                      }
-                      Err(error: spent) => {
-                        return exit_status(code: 16_u8);
                       }
                     }
                   }
-                  Err(error: spent) => {
-                    return exit_status(code: 15_u8);
-                  }
                 }
-              }
-              Err(error: spent) => {
-                return exit_status(code: 14_u8);
               }
             }
           }
-          Err(error: spent) => {
-            return exit_status(code: 13_u8);
+        }
+      }
+      let sum = sum_0;
+      set sum = sum +wrap sum_1;
+      set sum = sum +wrap sum_2;
+      set sum = sum +wrap sum_3;
+      set sum = sum +wrap sum_4;
+      set sum = sum +wrap sum_5;
+      set sum = sum +wrap sum_6;
+      set sum = sum +wrap sum_7;
+      let room = len_of(line);
+      let cursor = 0_u64;
+      region {
+        let line_window = mut_slice_of(&uniq line);
+        region {
+          set cursor = render_u64(destination: &uniq line_window, at: cursor, value: sum);
+        }
+      }
+      let space_fits = cursor < room;
+      if space_fits {
+        set line[cursor] = 32_u8;
+        set cursor = cursor +wrap 1_u64;
+      }
+      region {
+        let line_window = mut_slice_of(&uniq line);
+        region {
+          set cursor = render_u64(destination: &uniq line_window, at: cursor, value: bytes);
+        }
+      }
+      let end_fits = cursor < room;
+      if end_fits {
+        set line[cursor] = 10_u8;
+        set cursor = cursor +wrap 1_u64;
+      }
+      let status = 0_u8;
+      let publishable = cursor <= room;
+      if publishable {
+        region {
+          let native_window_65 = slice_of(&line);
+          region {
+            match write_once(factory: &uniq deref(files), output: &uniq deref(out), source: &native_window_65, start: 0_u64, end: cursor) {
+              Ok(value: written) => {
+              }
+              Err(error: problem) => {
+                set status = 2_u8;
+              }
+            }
           }
         }
+      } else {
+        set status = 3_u8;
       }
-      Err(error: spent) => {
-        return exit_status(code: 12_u8);
-      }
+      return exit_status(code: status);
     }
   }
-  let sum = sum_0;
-  set sum = sum +wrap sum_1;
-  set sum = sum +wrap sum_2;
-  set sum = sum +wrap sum_3;
-  set sum = sum +wrap sum_4;
-  set sum = sum +wrap sum_5;
-  set sum = sum +wrap sum_6;
-  set sum = sum +wrap sum_7;
-  let room = len_of(line);
-  let cursor = 0_u64;
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
   region {
-    let line_window = mut_slice_of(&uniq line);
-    region {
-      set cursor = render_u64(destination: &uniq line_window, at: cursor, value: sum);
-    }
+    let outcome = exercise(cwd: &cwd, out: &uniq out, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
   }
-  let space_fits = cursor < room;
-  if space_fits {
-    set line[cursor] = 32_u8;
-    set cursor = cursor +wrap 1_u64;
-  }
-  region {
-    let line_window = mut_slice_of(&uniq line);
-    region {
-      set cursor = render_u64(destination: &uniq line_window, at: cursor, value: bytes);
-    }
-  }
-  let end_fits = cursor < room;
-  if end_fits {
-    set line[cursor] = 10_u8;
-    set cursor = cursor +wrap 1_u64;
-  }
-  let status = 0_u8;
-  let publishable = cursor <= room;
-  if publishable {
-    region {
-      match write_once(output: &uniq out, source: &line, start: 0_u64, end: cursor) {
-        Ok(value: written) => {
-        }
-        Err(error: problem) => {
-          set status = 2_u8;
-        }
-      }
-    }
-  } else {
-    set status = 3_u8;
-  }
-  return exit_status(code: status);
 }

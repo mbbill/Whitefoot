@@ -11,7 +11,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> 
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: value);
+    place_back(vector: &uniq built, value: value);
   }
   return move built;
 }
@@ -24,7 +24,7 @@ fn probe(taken: own FixedVector<u8, 8>) -> (outcome: own Result<u64, Overflow>, 
   return Ok<u64, Overflow>(value: measured), measured;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "CALL-4: the ordinal binder may be omitted exactly when one declared ordinal has the route's enum type.";
   let run = filled::<u8, 8>(value: 0_u8);
   let (outcome, spare) = probe(taken: move run);

@@ -17,19 +17,37 @@ fn fold_pair['r](left: own Slice<'r, u64>, right: own Slice<'r, u64>, length: ow
   return acc;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: requires uses two independent defines (left_length, right_length) each from len_of(deref(.)); length 3 satisfies both against buffers of len 4 and 5.";
   let left = fixed_vector::<u64, 4>();
-  set left = place_back(vector: move left, value: 2_u64);
-  set left = place_back(vector: move left, value: 2_u64);
-  set left = place_back(vector: move left, value: 2_u64);
-  set left = place_back(vector: move left, value: 2_u64);
+  region {
+    place_back(vector: &uniq left, value: 2_u64);
+  }
+  region {
+    place_back(vector: &uniq left, value: 2_u64);
+  }
+  region {
+    place_back(vector: &uniq left, value: 2_u64);
+  }
+  region {
+    place_back(vector: &uniq left, value: 2_u64);
+  }
   let right = fixed_vector::<u64, 5>();
-  set right = place_back(vector: move right, value: 3_u64);
-  set right = place_back(vector: move right, value: 3_u64);
-  set right = place_back(vector: move right, value: 3_u64);
-  set right = place_back(vector: move right, value: 3_u64);
-  set right = place_back(vector: move right, value: 3_u64);
+  region {
+    place_back(vector: &uniq right, value: 3_u64);
+  }
+  region {
+    place_back(vector: &uniq right, value: 3_u64);
+  }
+  region {
+    place_back(vector: &uniq right, value: 3_u64);
+  }
+  region {
+    place_back(vector: &uniq right, value: 3_u64);
+  }
+  region {
+    place_back(vector: &uniq right, value: 3_u64);
+  }
   region {
     let lp = slice_of(&left);
     let rp = slice_of(&right);

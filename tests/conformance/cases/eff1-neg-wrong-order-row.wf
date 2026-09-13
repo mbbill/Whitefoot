@@ -1,9 +1,9 @@
-fn f(heap: &uniq Heap, x: &i32) -> result: own i32 allocates(heap), reads(x) {
+fn f['heap](heap: &uniq Heap<'heap>, x: &i32) -> result: own i32 allocates(heap), reads(x) {
   doc "Row order violates EFF-1 canonical order: reads must precede allocates.";
   return deref(x);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The malformed declaration above is rejected before this independent entry executes.";
   return exit_status(code: 0_u8);
 }

@@ -20,10 +20,16 @@ fn view_total(window: own Slice<u8>) -> total: own u64 reads(window) {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
-  let one = place_back(vector: move empty, value: 3_u8);
-  let two = place_back(vector: move one, value: 4_u8);
+  region {
+    place_back(vector: &uniq empty, value: 3_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 4_u8);
+  }
+  let two = move one;
   region {
     let window = slice_of(&two);
     let width = len_of(window);
@@ -41,7 +47,8 @@ command fn main() -> status: own ExitStatus pure {
     } else {
       return exit_status(code: 23_u8);
     }
-    let three = place_back(vector: move two, value: 5_u8);
+    place_back(vector: &uniq two, value: 5_u8);
+    let three = move two;
     region {
       let after = slice_of(&three);
       let extended = view_total(window: after);
@@ -50,15 +57,24 @@ command fn main() -> status: own ExitStatus pure {
         return exit_status(code: 24_u8);
       }
     }
-    let (rest, taken) = take_front(vector: move three);
-    let (shorter, next) = take_front(vector: move rest);
-    let (drained, last) = take_front(vector: move shorter);
     region {
-      let nothing = slice_of(&drained);
-      let empty_width = len_of(nothing);
-      if empty_width == 0_u64 {
-      } else {
-        return exit_status(code: 25_u8);
+      let taken = take_front(vector: &uniq three);
+      let rest = move three;
+      region {
+        let next = take_front(vector: &uniq rest);
+        let shorter = move rest;
+        region {
+          let last = take_front(vector: &uniq shorter);
+          let drained = move shorter;
+          region {
+            let nothing = slice_of(&drained);
+            let empty_width = len_of(nothing);
+            if empty_width == 0_u64 {
+            } else {
+              return exit_status(code: 25_u8);
+            }
+          }
+        }
       }
     }
   }
@@ -66,9 +82,15 @@ command fn main() -> status: own ExitStatus pure {
     let workspace = arena_frame::<3, 1, 'a>();
     region {
       let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 3_u64);
-      set table = place_back(vector: move table, value: 7_u8);
-      set table = place_back(vector: move table, value: 7_u8);
-      set table = place_back(vector: move table, value: 7_u8);
+      region {
+        place_back(vector: &uniq table, value: 7_u8);
+      }
+      region {
+        place_back(vector: &uniq table, value: 7_u8);
+      }
+      region {
+        place_back(vector: &uniq table, value: 7_u8);
+      }
       region {
         let writer = mut_slice_of(&uniq table);
         set writer[0_u64] = 9_u8;

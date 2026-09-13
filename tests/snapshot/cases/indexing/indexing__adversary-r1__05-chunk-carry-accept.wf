@@ -25,17 +25,35 @@ fn sum_chunks<const n: u64>(buf: own FixedVector<u8, n>, chunk_size: own u64) ->
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let buf = fixed_vector::<u8, 9>();
-  set buf = place_back(vector: move buf, value: 2_u8);
-  set buf = place_back(vector: move buf, value: 2_u8);
-  set buf = place_back(vector: move buf, value: 2_u8);
-  set buf = place_back(vector: move buf, value: 2_u8);
-  set buf = place_back(vector: move buf, value: 2_u8);
-  set buf = place_back(vector: move buf, value: 2_u8);
-  set buf = place_back(vector: move buf, value: 2_u8);
-  set buf = place_back(vector: move buf, value: 2_u8);
-  set buf = place_back(vector: move buf, value: 2_u8);
+  region {
+    place_back(vector: &uniq buf, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 2_u8);
+  }
   let total = sum_chunks::<9>(buf: move buf, chunk_size: 3_u64);
   if total == 6_u64 {
   } else {

@@ -9,7 +9,7 @@ fn keep['s](store: &uniq Heap<'s>, cell: own Vector<'s, u8>) -> code: own u8 wri
   return 5_u8;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "The caller runs both and reports the sum of what they returned.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: signed comparison ordering on i8 and an i8->i32->i8 cvt round trip both hold.";
   let a = -100_i8;
   let b = -1_i8;

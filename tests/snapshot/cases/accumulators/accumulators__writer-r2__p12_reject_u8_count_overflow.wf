@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "REJECT: a u8 counter incremented by a plain `+ 1_u8` across 300 iterations has no invariant or wrap bounding it, so the OP-2 overflow obligation is undischarged and the count genuinely wraps past 255.";
   let count = 0_u8;
   for (i in 0_u64..300_u64) {

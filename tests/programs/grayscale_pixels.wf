@@ -62,7 +62,7 @@ fn grayscale(input: own Slice<u8>, output: &uniq MutSlice<u8>) -> result: own Re
   return Ok<unit, NarrowError>(value: unit);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<8, 1, 'w>();
     region {
@@ -73,7 +73,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare: room_of(output) + at >= 8_u64,
         invariant flat: head_of(output) <= 0_u64
       ) {
-        set output = place_back(vector: move output, value: 0_u8);
+        place_back(vector: &uniq output, value: 0_u8);
       }
       region {
         let window = mut_slice_of(&uniq output);

@@ -28,7 +28,7 @@ use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 /// `arena<'r, T>`; the rule and the type are untouched by that batch, so the
 /// program is kept here rather than lost with the case.
 #[test]
-fn arena_results_reject_citing_stor4_before_missing_main() {
+fn arena_results_reject_citing_stor4_without_an_entry_requirement() {
     assert_rule(
         br#"fn make['r]() -> function_result: own arena<'r, i32> allocates(arena 'r) {
   doc "A value of type arena<'r,T> may not be returned outside 'r's block [STOR-4]; returning it escapes the region.";
@@ -44,16 +44,16 @@ fn arena_results_reject_citing_stor4_before_missing_main() {
     );
 }
 
-/// A contract member signature is judged at the same callable boundary, so an
+/// A formal member signature is judged at the same callable boundary, so an
 /// arena member result is the same STOR-4 rejection.
 #[test]
-fn contract_member_arena_results_reject_citing_stor4() {
+fn formal_member_arena_results_reject_citing_stor4() {
     assert_rule(
-        br#"contract Maker {
+        br#"formal Maker {
   fn make['r]() -> result: own arena<'r, i32> allocates(arena 'r);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -65,36 +65,27 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// The missing-`main` salvage is not a rewrite: a unit whose declarations all
-/// check clean still reports the FN-7 whole-unit rejection at `BundleRoot`.
+/// v0.58 FN-7 leaves launcher selection to the build: a library needs no main.
 #[test]
-fn missing_main_still_rejects_when_nothing_else_does() {
+fn a_library_without_main_is_accepted() {
     with_semantics(
         b"fn quiet() -> result: own unit pure {\n  return unit;\n}\n",
         |outcome| {
-            let SemanticOutcome::SourceIssue { issue } = outcome else {
-                panic!("a main-less unit must reject: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), SemanticRule::Fn7);
-            assert_eq!(issue.kind(), &SemanticIssueKind::MissingMain);
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
         },
     );
 }
 
-/// An unsupported capability in a main-less unit must not mask the definite
-/// FN-7 violation [DIAG-1]: the salvage pre-pass only promotes established
-/// source rejections.
+/// Removing FN-7's missing-main rejection exposes the existing explicit
+/// legacy representation limitation; it does not reclassify that as source.
 #[test]
-fn missing_main_wins_over_an_unsupported_capability() {
-    with_semantics(
-        b"fn quiet(storage: own FixedVector<Slice<u8>, 1>) -> result: own unit pure {\n  return unit;\n}\n",
-        |outcome| {
-            let SemanticOutcome::SourceIssue { issue } = outcome else {
-                panic!("a main-less unit must reject: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), SemanticRule::Fn7);
-            assert_eq!(issue.kind(), &SemanticIssueKind::MissingMain);
-        },
+fn a_library_without_main_retains_its_unsupported_capability() {
+    assert_unsupported(
+        b"fn quiet(storage: own buffer<buffer<u8>>) -> result: own unit pure {\n  return unit;\n}\n",
+        UnsupportedSemanticFeature::CompositeValues,
     );
 }
 
@@ -115,7 +106,7 @@ fn arena_content_views_stay_outside_the_slice_return_ceiling() {
   return view;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -138,7 +129,7 @@ fn arena_content_borrows_obey_own10_with_the_arena_region() {
   return view;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -165,7 +156,7 @@ fn checked_arena_parameters_stop_at_the_explicit_runtime_gate() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -180,7 +171,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn local_arena_content_views_stop_at_the_explicit_runtime_gate() {
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let values = fixed_vector::<u8, 2>();
   region 'r {
     let a = arena_new::<'r, FixedVector<u8, 2>>(move values);
@@ -210,7 +201,7 @@ fn arena_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
     bump(n: &uniq deref(a));
@@ -226,7 +217,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
     region {
@@ -245,7 +236,7 @@ command fn main() -> status: own ExitStatus pure {
   return deref(n);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
     let v = peek(n: &deref(a));
@@ -256,7 +247,7 @@ command fn main() -> status: own ExitStatus pure {
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
     let h = &uniq deref(a);
@@ -276,7 +267,7 @@ fn arena_content_borrows_keep_their_region_rejections() {
     // An enclosing region outlives the arena's, so its storage is too
     // short-lived for the borrow.
     assert_rule_kind(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   region 'o {
     region 'r {
       let a = arena_new::<'r, i32>(4_i32);
@@ -304,7 +295,7 @@ fn outer['s](anchor: &'s i32) -> result: &'s i32 pure {
   return anchor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -314,7 +305,7 @@ command fn main() -> status: own ExitStatus pure {
     // [OWN-11] a loop body hosts its own borrows, so reaching the arena's own
     // region from inside the body means naming it.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
     loop @once {
@@ -343,7 +334,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn arena_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
     set deref(a) = 7_i32;
@@ -360,7 +351,7 @@ fn arena_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
 #[test]
 fn arena_deliveries_may_not_leave_their_region_block() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   let escaped = if flag {
     region 'r {
@@ -385,7 +376,7 @@ fn arena_deliveries_may_not_leave_their_region_block() {
 #[test]
 fn arena_new_operands_must_match_the_written_content_type() {
     assert_rule_kind(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_u64);
   }
@@ -408,14 +399,14 @@ fn caller_region_allocation_and_owning_content_stop_at_the_runtime_gate() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: own ExitStatus pure {
   let run = fixed_vector::<u8, 1>();
   region 'r {
     let a = arena_new::<'r, FixedVector<u8, 1>>(move run);
@@ -454,12 +445,12 @@ fn from_unconstrained['s](run: own Vector<'s, u64>) -> back: own Vector<'s, u64>
   return move run;
 }
 
-fn from_entry_heap(run: own Vector<u64>) -> back: own Vector<u64> pure {
+fn from_general_store['heap](run: own Vector<'heap, u64>) -> back: own Vector<'heap, u64> pure {
   doc "An elided store brand at a parameter position is the entry heap's store region.";
   return move run;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The four declarations are checked; none is called, because no program can produce a general store's run yet.";
   return exit_status(code: 0_u8);
 }
@@ -493,8 +484,62 @@ command fn main() -> status: own ExitStatus pure {
             crate::semantic::CheckedReleaseClass::General
         );
         assert_eq!(
-            class("from_entry_heap"),
+            class("from_general_store"),
             crate::semantic::CheckedReleaseClass::General
+        );
+    });
+}
+
+/// [S20, PROV-6] region erasure may merge two boxes only when their cleanup
+/// representations agree. Two affine stores both lower as extent-backed
+/// boxes, while an unbounded store's box must keep its general-store release.
+#[test]
+fn box_lowering_aliases_preserve_release_class() {
+    let source =
+        br#"fn first_extent['a: affine](cell: own Box<'a, u64>) -> back: own Box<'a, u64> pure {
+  return move cell;
+}
+
+fn second_extent['b: affine](cell: own Box<'b, u64>) -> back: own Box<'b, u64> pure {
+  return move cell;
+}
+
+fn general['g](cell: own Box<'g, u64>) -> back: own Box<'g, u64> pure {
+  return move cell;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the three box declarations must check: {outcome:?}");
+        };
+        let box_id = |name: &str| {
+            let function = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("each declaration is one checked function");
+            let crate::semantic::CheckedType::Nominal(id) = function.parameters[0].ty else {
+                panic!("{name} must take a box");
+            };
+            id
+        };
+        let first = box_id("first_extent");
+        let second = box_id("second_extent");
+        let general = box_id("general");
+        assert_eq!(
+            checked.data.nominal_lowering_alias[first.0 as usize],
+            checked.data.nominal_lowering_alias[second.0 as usize],
+            "two extent boxes differing only in region have one representation"
+        );
+        assert_ne!(
+            checked.data.nominal_lowering_alias[first.0 as usize],
+            checked.data.nominal_lowering_alias[general.0 as usize],
+            "extent and general boxes need different cleanup representations"
         );
     });
 }

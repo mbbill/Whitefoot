@@ -1,12 +1,20 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'a {
     let workspace = arena_frame::<4, 1, 'a>();
     region {
       let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
-      set table = place_back(vector: move table, value: 7_u8);
-      set table = place_back(vector: move table, value: 7_u8);
-      set table = place_back(vector: move table, value: 7_u8);
-      set table = place_back(vector: move table, value: 7_u8);
+      region {
+        place_back(vector: &uniq table, value: 7_u8);
+      }
+      region {
+        place_back(vector: &uniq table, value: 7_u8);
+      }
+      region {
+        place_back(vector: &uniq table, value: 7_u8);
+      }
+      region {
+        place_back(vector: &uniq table, value: 7_u8);
+      }
       region {
         let first = mut_slice_of(&uniq table);
         let second = mut_slice_of(&uniq table);

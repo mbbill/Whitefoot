@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT REJECT: an inner for-loop reuses the label '@walk' while the enclosing outer loop of the same label is still live (not disjoint scopes).";
   let total = 0_u64;
   for @walk (i in 0_u64..2_u64) {

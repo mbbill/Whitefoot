@@ -10,7 +10,7 @@ fn narrow(x: own i32) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: cvt i32->i8 checked, 300 not representable, Err arm taken.";
   let v = narrow(x: 300_i32);
   if v == 0_u8 {

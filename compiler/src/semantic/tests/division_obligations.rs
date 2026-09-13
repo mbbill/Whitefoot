@@ -61,7 +61,7 @@ fn a_positive_requirement_discharges_an_unsigned_site() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -93,7 +93,7 @@ fn a_canonical_branch_discharges_the_site() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -122,7 +122,7 @@ fn an_unconstrained_divisor_rejects_citing_op2_with_the_exact_residual() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -139,9 +139,7 @@ command fn main() -> status: own ExitStatus pure {
                 mechanical_fix: DIVISION_FIX,
             },
         );
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("expected a source-node citation: {:?}", issue.location());
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(
@@ -162,7 +160,7 @@ fn the_remainder_row_carries_the_same_obligation() {
   return r;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -192,7 +190,7 @@ fn a_nonzero_constant_divisor_discharges_with_no_fact_source() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -213,7 +211,7 @@ command fn main() -> status: own ExitStatus pure {
 /// conjunct and is therefore rejected at every non-contradictory point.
 #[test]
 fn a_constant_zero_divisor_is_rejected_everywhere() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let x = 10_i32;
   let q = x / 0_i32;
   return exit_status(code: 0_u8);
@@ -246,7 +244,7 @@ fn a_minus_one_divisor_demands_the_dividend_disequality() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -277,7 +275,7 @@ fn a_bounded_dividend_over_minus_one_discharges() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -304,7 +302,7 @@ fn a_signed_two_variable_site_requires_static_domain_proof() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -315,12 +313,12 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(issue.rule(), SemanticRule::Op2);
     });
     let extra_effect_row =
-        br#"fn ratio(heap: &uniq Heap, n: own i32, d: own i32) -> result: own i32 allocates(heap) {
+        br#"fn ratio['heap](heap: &uniq Heap<'heap>, n: own i32, d: own i32) -> result: own i32 allocates(heap) {
   let q = n / d;
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -337,7 +335,7 @@ command fn main() -> status: own ExitStatus pure {
 /// value rather than a source rejection.
 #[test]
 fn a_checked_division_attaches_no_obligation() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let n = 10_i64;
   let d = 0_i64;
   match n /checked d {
@@ -367,13 +365,13 @@ fn a_checked_division_attaches_no_obligation() {
 #[test]
 fn effect_mismatch_precedes_static_division_rejection() {
     let source =
-        br#"fn ratio(heap: &uniq Heap, n: own u64, d: own u64) -> result: own u64 allocates(heap) {
+        br#"fn ratio['heap](heap: &uniq Heap<'heap>, n: own u64, d: own u64) -> result: own u64 allocates(heap) {
   let q = n / d;
   let r = n % d;
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -389,7 +387,7 @@ command fn main() -> status: own ExitStatus pure {
 /// the obligation-focused test entry.
 #[test]
 fn the_default_checker_rejects_a_constant_zero_divisor() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let x = 10_i32;
   let q = x / 0_i32;
   return exit_status(code: 0_u8);
@@ -420,7 +418,7 @@ fn the_default_checker_accepts_a_discharged_exact_division() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -441,7 +439,7 @@ fn unsigned_literal_division_publishes_the_quotient_bound() {
   return quotient;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -475,7 +473,7 @@ fn unsigned_literal_division_publishes_the_scaled_quotient_image() {
   return doubled;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -520,7 +518,7 @@ fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
   return byte;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -559,7 +557,7 @@ fn signed_literal_division_does_not_publish_unsigned_ordering_images() {
   return quotient;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -582,7 +580,7 @@ fn unsigned_zero_literal_still_fails_the_division_domain() {
   return quotient;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -611,7 +609,7 @@ fn replacing_the_quotient_does_not_transfer_its_old_division_image() {
   return doubled;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -634,7 +632,7 @@ fn replacing_the_dividend_does_not_retarget_the_old_division_image() {
   return difference;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -643,9 +641,7 @@ command fn main() -> status: own ExitStatus pure {
             panic!("the old dividend value must not constrain its replacement: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("the rejection must cite the exact arithmetic site");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
         let end = usize::try_from(coordinate.end().value()).expect("offset fits");
         assert_eq!(&source[start..end], b"count - doubled");
@@ -664,7 +660,7 @@ fn a_live_alias_keeps_the_old_quotient_value_image_after_set() {
   return doubled;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -691,7 +687,7 @@ fn independent_branch_images_are_not_merged_without_a_value_transfer_rule() {
   return doubled;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -716,7 +712,7 @@ fn a_generic_divisor_site_uses_one_static_domain_requirement() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = 10_i32;
   let b = 3_i32;
   let signed = ratio::<i32>(n: a, d: b);
@@ -746,7 +742,7 @@ fn the_signed_zero_divisor_conjunct_is_discharged_by_its_own_mechanical_fix() {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -770,7 +766,7 @@ command fn main() -> status: own ExitStatus pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -790,7 +786,7 @@ command fn main() -> status: own ExitStatus pure {
   return q;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -838,7 +834,7 @@ fn active_invariants_prove_signed_division_and_remainder_domains() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -927,9 +923,12 @@ fn a_fixed_run_indexed_defined_guard_discharges_the_same_structural_exact_operat
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
-  let values = place_back(vector: move empty, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let values = move empty;
   let result = increment(values: move values);
   return exit_status(code: result);
 }
@@ -976,9 +975,12 @@ fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
-  let values = place_back(vector: move empty, value: 0_u8);
+  region {
+    place_back(vector: &uniq empty, value: 0_u8);
+  }
+  let values = move empty;
   let result = increment_after_write(values: move values);
   return exit_status(code: result);
 }
@@ -1003,7 +1005,8 @@ fn a_store_run_indexed_defined_guard_discharges_the_same_structural_exact_operat
     // The borrowed store-resident run replaces the retiring `&buffer<u8>`.
     // Its measured kind is `Vector` where the fixed run above is
     // `FixedVector`, so the two cases still pin two distinct index rows.
-    let source = br#"fn increment(values: &Vector<u8>) -> result: own u8 reads(values) {
+    let source =
+        br#"fn increment['heap](values: &Vector<'heap, u8>) -> result: own u8 reads(values) {
   let spare = len_of(deref(values));
   if 0_u64 < spare {
     if deref(values)[0_u64] +defined 1_u8 {
@@ -1017,7 +1020,7 @@ fn a_store_run_indexed_defined_guard_discharges_the_same_structural_exact_operat
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1065,7 +1068,7 @@ fn a_slice_indexed_defined_guard_discharges_the_same_structural_exact_operation(
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1110,7 +1113,7 @@ fn increment_other() -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1145,7 +1148,7 @@ fn increment_after_index_write() -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

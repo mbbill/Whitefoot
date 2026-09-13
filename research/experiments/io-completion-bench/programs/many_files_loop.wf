@@ -92,7 +92,7 @@ fn fold_bytes(source: &buffer<u8>, produced: own u64, seed: own u64) -> result: 
   return sum;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files) {
+fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(out, files) {
   doc "Opens and reads the generated file set with per-iteration scratch and publishes one folded checksum.";
   let line = buffer_new(64_u64, 0_u8);
   let sum = 0_u64;
@@ -106,39 +106,42 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
         let rendered = name_at(name: &uniq name_window, index: index);
       }
     }
-    region 'f {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          region {
-            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 10_u64) {
-              FileOpened(value: handle) => {
-                region 'h {
-                  region {
-                    match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
-                      ReadBytes(next: produced) => {
-                        let digest = 0_u64;
-                        region {
-                          set digest = fold_bytes(source: &data, produced: produced, seed: 0_u64);
+    region {
+      let native_window_177 = slice_of(&name);
+      region {
+        match open_file(factory: &uniq deref(files), root: cwd, name: &native_window_177, start: 0_u64, end: 10_u64) {
+          FileOpened(value: handle) => {
+            region {
+              let native_window_176 = mut_slice_of(&uniq data);
+              region {
+                region {
+                  match read_at(factory: &uniq deref(files), file: &uniq handle, destination: &uniq native_window_176, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
+                    Ok(value: produced) => {
+                      let digest = 0_u64;
+                      region {
+                        set digest = fold_bytes(source: &data, produced: produced, seed: 0_u64);
+                      }
+                      let weight = index +wrap 1_u64;
+                      set digest = digest *wrap weight;
+                      set sum = sum +wrap digest;
+                      set bytes = bytes +wrap produced;
+                    }
+                    Err(error: read_stop_175) => {
+                      match read_stop_175 {
+                        ReadEnd() => {
                         }
-                        let weight = index +wrap 1_u64;
-                        set digest = digest *wrap weight;
-                        set sum = sum +wrap digest;
-                        set bytes = bytes +wrap produced;
-                      }
-                      ReadEnd() => {
-                      }
-                      ReadFailed(error: problem) => {
+                        ReadFailed(error: problem) => {
+                        }
                       }
                     }
                   }
                 }
-              }
-              FileOpenFailed(error: problem, permit: refused) => {
+                close_read(factory: &uniq deref(files), file: move handle);
               }
             }
           }
-        }
-        Err(error: spent) => {
+          FileOpenFailed(error: problem) => {
+          }
         }
       }
     }
@@ -171,11 +174,14 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
   let publishable = cursor <= room;
   if publishable {
     region {
-      match write_once(output: &uniq out, source: &line, start: 0_u64, end: cursor) {
-        Ok(value: written) => {
-        }
-        Err(error: problem) => {
-          set status = 2_u8;
+      let native_window_178 = slice_of(&line);
+      region {
+        match write_once(factory: &uniq deref(files), output: &uniq deref(out), source: &native_window_178, start: 0_u64, end: cursor) {
+          Ok(value: written) => {
+          }
+          Err(error: problem) => {
+            set status = 2_u8;
+          }
         }
       }
     }
@@ -183,4 +189,14 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
     set status = 3_u8;
   }
   return exit_status(code: status);
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(cwd: &cwd, out: &uniq out, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
 }

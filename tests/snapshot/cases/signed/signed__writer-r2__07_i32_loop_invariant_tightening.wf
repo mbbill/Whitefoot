@@ -16,7 +16,7 @@ fn alternate_sum(count: own u64) -> total: own i32 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = alternate_sum(count: 7_u64);
   if result == 1_i32 {
     return exit_status(code: 0_u8);

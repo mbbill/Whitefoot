@@ -32,7 +32,7 @@ fn through_holder(value: &uniq u64) -> result: own u64 reads(value), writes(valu
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = 3_u64;
   region {
     match choose(value: &uniq value) {

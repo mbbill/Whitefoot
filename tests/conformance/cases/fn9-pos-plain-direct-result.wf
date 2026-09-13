@@ -11,7 +11,7 @@ fn relay(value: own i32) -> result: own i32 pure contract {
   return called;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let observed = relay(value: 7_i32);
   if observed == 7_i32 {
   } else {

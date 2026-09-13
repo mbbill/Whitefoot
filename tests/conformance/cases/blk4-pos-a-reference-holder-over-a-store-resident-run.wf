@@ -1,4 +1,4 @@
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "A reference holder over a store-resident run.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
@@ -6,7 +6,10 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
         return exit_status(code: 70_u8);
       }
       Some(value: fresh) => {
-        let items = place_back(vector: move fresh, value: 5_u8);
+        region {
+          place_back(vector: &uniq fresh, value: 5_u8);
+        }
+        let items = move fresh;
         region {
           let holder = &items;
           let size = len_of(deref(holder));

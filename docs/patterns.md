@@ -43,10 +43,10 @@ in-place writes. Those are unrepresentable here BY DESIGN.
 
 Problem: many homogeneous-ish nodes with cross-references (AST, graph, ECS).
 Pattern: one struct of parallel `Vector<'s, T>` columns plus a count; a node is
-a `u64` index; indices never recycle; the whole pool drops at once. Appends go
-**by value**: [BLK-4] refuses a `&uniq` parameter whose referent reaches a run,
-so a helper that grows a column takes the column and returns it, or is handed a
-view of it and writes elements through that. Current v0.17 executable reference for the
+a `u64` index; indices never recycle; the whole pool drops at once. A helper
+that appends takes the column through `&uniq` and states its length transition
+using `entry(column)` in an ensures [BLK-3, MSR-3]; a helper restricted to
+existing elements can take a view. Executable reference for the
 fixed-capacity append-only shape:
 `tests/conformance/cases/x-borrowed-pool-tree-run.wf`.
 Current value: contiguous per-field columns improve locality and avoid
@@ -67,7 +67,7 @@ the innermost suitable one. A value taken from an extent is branded with that
 extent's region and stays inside it: [BLK-4] refuses a destination the value
 could outlive, rather than promoting it implicitly. A value that truly needs a
 different lifetime therefore belongs in an outer extent from the start, or at
-the general store, whose provider is the entry's own `command.heap` input.
+the general store, whose provider is an ordinary `Heap<'s>` parameter.
 A single value at a store is `Box<'s, T>` [S39], formed by `heap_box(store: h,
 value: e)` or `arena_box(store: a, value: e)`: the call writes no type or region
 argument, its outcome is `Result<Box<'s, T>, T>` whose `Err` arm hands the value
@@ -80,9 +80,9 @@ right: Box<'s, Tree<'s>>); }` — and its release is the recursive walk.
 Effect rows keep the allocation site visible in a signature. Since [S23] the
 `allocates` entry takes the same formal-rooted paths `reads` and `writes` take,
 so an allocation from a store whose provider is a value names that provider:
-`allocates(store)` for a helper taking `&uniq Arena<'s, ...>` or `&uniq Heap`,
-and `allocates(heap)` for a `main` whose `command.heap` binder is spelled
-`heap`. The ambient heap of `box<T>` and `buffer<T>` has no provider value and
+`allocates(store)` for a helper taking `&uniq Arena<'s, ...>` or
+`&uniq Heap<'s>`, and `allocates(heap)` for a function whose ordinary Heap
+parameter is named `heap`. The ambient heap of `box<T>` and `buffer<T>` has no provider value and
 therefore no path, so it writes no entry at all; `allocates(arena 'r)` is the
 one remaining region-keyed entry and retires with `arena<'r, T>`.
 
@@ -121,6 +121,12 @@ match header or exact `own Bool` condition, it ends after the header completes
 and before the selected arm or branch begins. Bound holders, surviving views,
 borrowed-result candidates, and borrowed matches keep their own longer loans, so
 the token never silently forks or escapes.
+The child's local region need not end with its receiving statement. For an
+owned result, this permits `let previous = exchange(target: &uniq deref(holder),
+incoming: move incoming);` followed by `let old = deref(previous);` in the same
+region. The first statement ends the argument loan; the region keeps the owned
+result in scope. The parent can be used again on the next statement unless a
+borrowed result or another surviving loan still excludes that use.
 Current value: borrow-holder singleton provenance keeps the checker simple; a
 suspended parent yields no usable alias under the checked relation.
 Direct slices are the separate v0.17 case: they carry a finite static origin
@@ -134,36 +140,43 @@ selected non-escaping control-header boundary, and cannot escape.
 
 ## P5. Env-struct behavior parameterization (FN-5)
 
-Problem: callbacks / strategy objects / closures.
-Pattern status: DEFERRED in v0.17. The active specification defines static
-contract, complete-conformance, and checked-law validation, but it rejects
-source-contract generic bounds and defines no member-call operation that could
-select a conformance binding. Therefore contract-driven env-struct behavior is
-not currently a writable Whitefoot pattern. For a closed behavior set, use an
-enum and exhaustive `match`; otherwise use explicitly named direct functions
-and thread the environment struct by value or borrow.
-Candidate direction: a possible future specification form would keep the
-environment explicit and monomorphize a checked member call to a direct call, but v0.17
-does not provide that mechanism or its performance evidence.
-Would replace: closures capturing mutable environments, trait objects, and
-function pointers.
+Problem: write a map, queue or traversal once with user-supplied behavior.
+Declare a flat `formal Key<K: linear, E: linear>` containing the hash and
+equality signatures, each with its own row and source contract. Bind concrete
+functions with `actual SeedKey : Key<u64, Seed>`. A function writes
+`fn find<Key<K, E>>`, calls `Key::hash(env: env, key: key)`, and is
+instantiated as `find::<SeedKey>(...)`; a nominal writes `Map<'s, SeedKey>`.
+When two written Key applications are present, select
+`Key<K1, E1>::hash(...)` explicitly. Ordinary parameters carry the environment;
+the group itself has no value or storage.
 
-## P6. Checked-law reduction (FN-4)
+The formal row is the caller's boundary even when the actual reads fewer
+fields. Actual requirements and ensures match structurally; members state
+their own loan regions and instantiate them at each call. Actual header
+regions capture store brands in type arguments. Owned member results follow
+ordinary ownership transfer. C2 removes the fresh-result restriction and its
+state-routing summary; an actual may return an input when its signature,
+linearity, effects and contracts permit it.
 
-Problem: custom folds/reductions that a compiler cannot legally reorder.
-Pattern status: validation-only in v0.17. State the admitted algebra
-(`law associative/commutative/identity`) in a contract and conform its
-ordinary top-level function. The compiler must discharge the law for source
-acceptance and refutes an invalid or unavailable law at compile time. The
-checked law is not yet optimizer authority, so v0.17 does not reassociate the
-sequential fold from that fact.
-Potential speed: the archived channel-3 experiment measured 3.3x over the
-serial shape. Shipping that transform requires one specification-fixed consumer
-of the originating checked fact and an exact permitted consequence. The
-originating semantic decision remains the only proof authority. Until then
-facts-off lowering is unchanged.
-Replaces: hand-written multi-accumulator loops resting on unchecked human
-algebra.
+The selected calls monomorphize to ordinary direct calls. No runtime
+dictionary, closure object, function pointer or dispatch is formed. The
+[behavior investigation](../research/investigations/containers-and-resources/BEHAVIOR.md)
+owns the worked forms and measurement evidence.
+
+## P6. Behavior laws are not safety premises (FN-4)
+
+Problem: a user-supplied equality or comparison may be inconsistent.
+Prove ownership, initialization, index bounds and cleanup from the container's
+own control flow and source contracts. Do not use reflexivity, transitivity,
+ordering consistency or agreement between hash and equality as implicit facts.
+An equality that always returns False can change which entries the map holds;
+it cannot justify an out-of-bounds access or an omitted release. Member
+contracts may bound a comparison's returned integer without asserting an
+ordering law.
+
+The former `law` declarations are retired. Behavior bindings authorize no
+reassociation or parallel reduction; a law-dependent optimization would need
+a separately defined proof and consumer.
 
 ## P7. Branchless classifier (i1 dataflow)
 
@@ -253,8 +266,9 @@ put a merely common-case size or a rare worst-case allocation in `requires`.
 Current value: one `contract` block may state several independent `requires`
 goals. Every ordinary caller establishes every goal in the same pre-transfer
 state; the callee body receives them as static facts and executes no prologue.
-The sole `command fn main` has no contract, so there is no entry exception or
-wrapper check. Recoverable boundary control preserves the useful small-buffer
+A function named `main` has the same contract rules as every other function.
+A build-selected caller must establish its requirements; its name grants no
+source exception. Recoverable boundary control preserves the useful small-buffer
 domain. The current compiler can use these facts to discharge existing finite
 obligations but provides no general Boolean theorem prover. Any future guarded
 fast region must re-establish its authority without weakening OP-4 safety.
@@ -430,190 +444,48 @@ fallback.
 Replaces: assertions, intentional aborts, "trust me" comments, and compiler
 guessing over proof candidates.
 
-## P15. Per-iteration scratch in an I/O loop
+## P15. Own the handles and storage for the whole call
 
-Problem: a loop opens and reads one file per iteration and folds what it read.
-The habit imported from every other systems language is to allocate the name
-buffer and the destination buffer once above the loop and reuse them, because
-allocation is expensive. Under [PAR-3] that habit is exactly what costs the
-loop its pipeline: the destination is storage the body writes and the iteration
-does not introduce, a `may-suspend` call retains a borrow of it past its own
-submission, and the staged permission denies. Reusing one buffer is also what
-makes the program genuinely order-dependent — after a short read the bytes
-beyond it are the previous iteration's.
+Problem: an I/O helper uses caller storage, and one of its exits must release a
+handle. Pattern: treat both the storage and the handle as ordinary values.
+Allocate storage in the region that outlives its uses; pass a view for the
+range and an exclusive loan for mutable state. A call holds these loans until
+it returns, regardless of how its implementation waits for native work.
 
-Pattern: construct the per-iteration scratch **inside** the loop body.
+The ordinary `Inputs` struct can be destructured at `main`. Its `cwd` field is
+linear. Either consume it on every exit or call a helper that borrows it and
+then close it once after the helper returns:
 
 ```whitefoot
-for @scan (index in 0_u64..8192_u64) {
-  region 'iteration {
-  let workspace = arena_frame::<65552, 8, 'iteration>();  // reserved and reset per iteration
-  let name = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
-  let data = arena_vector_proved::<u8>(store: &uniq workspace, count: 65536_u64);
-  /* fill both to capacity with counted `place_back` appends */
-  let window = mut_slice_of(&uniq name);
-  let rendered = name_at(destination: &uniq window, index: index);
-  region 'f {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        region {
-          match open_file(permit: move permit, root: &'f cwd,
-                          name: &name, start: 0_u64, end: 10_u64) {
-            FileOpened(value: handle) => { /* read, fold, accumulate */ }
-            FileOpenFailed(error: problem, permit: refused) => { }
-          }
-        }
-      }
-      Err(error: spent) => { break; }   // the factory is out of credits: leave before any submission
-    }
-  }
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err,
+             handles: factory, stdin: input) = move inputs;
+  region {
+    let answer = exercise(root: &cwd, factory: &uniq factory);
+    close_directory(factory: &uniq factory, directory: move cwd);
+    return move answer;
   }
 }
 ```
 
-The extent is the store whose release is empty [BLK-2], so nothing gives storage
-back in the remainder and the take stays in the prologue. A per-iteration run
-taken from the **general** store is denied instead: its release spends that
-store's own capability on the iteration's own exit [PROV-6, STOR-1], which puts
-the store on both sides of the cut.
+`exercise` is an ordinary function with `reads(root, factory), writes(factory)`
+when its actual body exhibits those effects. `open_read` and `open_file` take
+`factory: &uniq HandleFactory` directly. Success transfers one linear owner;
+failure returns an error, with no permit value to recover. A helper opening a
+file closes it or returns it on every exit. `close_read` consumes the file and
+returns `Result<unit, IoError>`; deciding whether a close error changes the
+program's result belongs to the caller.
 
-*Compiler limit, recorded 6.0x.* The permission above is granted, and the
-lowering does not yet take it for this shape: `whitefootc --par` hands a staged
-loop out only when the regions enclosing its cut carry no compiler-derived drop
-record, and a region that binds a store-backed run, or a view of one, carries
-one. Until that is repaired the run form is staged on paper and sequential in
-the emitted module, and `tests/programs/tcp_fanout.wf` keeps its `buffer_new`
-scratch for exactly that reason.
+The same factory is explicit shared state for `read_at`, `read_next` and
+`write_once`, covering redirected-stream offset and content aliases. TCP
+receive/send calls borrow their separate linear direction owners. This API
+choice is visible in ordinary rows; no alias exception is supplied by the
+compiler. The native implementation may wait or park inside these calls.
 
-Three companion rules make the rest of that body work, and each is a form to
-copy rather than a fact to rediscover:
-
-- **Take every early exit before the first submission.** A `break` or `return`
-  written after the submission denies the loop: with later iterations already
-  in flight, the decision to leave would be taken after opens the source-order
-  execution never performs. Write the guard and its `break` at the top of the
-  body, before any I/O. `let written = propagate write_once(…);` is such an
-  exit and not an exception to it: the `Err` edge is selected by the
-  submission's own outcome, so it leaves from the remainder however early the
-  statement is written. Match on the outcome instead and handle the error
-  inside the body. An open has no `propagate` form at all: its outcome is
-  `FileOpened(value: …)` or `FileOpenFailed(error: …, permit: …)`, and the
-  failed arm hands the permit back, so the body decides what to do with the
-  error and the credit in the same place.
-- **Write the accumulator as an ordinary source-order `set`.** `set sum = sum
-  +wrap digest;` needs no associativity, no identity element, and no
-  combination tree, because [PAR-3] commits the remainder's writes to storage
-  rooted outside the body in iteration order. This is strictly more general
-  than [PAR-2]'s admitted operation set: a non-associative fold, a float fold,
-  and a `Result` route are all admitted here.
-- **Reserve the handle factory in the prologue, inline.** `reserve_handle` takes
-  and returns a short unique `&uniq HandleFactory` loan inline [SYS-10], and
-  prologues run in index order without overlapping, so one enclosing factory
-  serves every iteration with no replication and no [OWN-5] relaxation. Its
-  `Err(ResourceExhausted)` edge is the program's own source-order outcome (the
-  factory's capacity is real: one credit per descriptor the target provides),
-  so match on it and take the exit there, before the open: that is an early
-  exit before the first submission, which the first rule admits. A program
-  that reuses its capacity closes explicitly (`close_read`,
-  `close_directory`, `close_directory_source`, `close_listener` and
-  `close_connection` return the permit); derived release closes but returns
-  nothing. One factory serves every handle the target counts, so a listener
-  and a connection draw from the same capacity a file open draws from
-  [SYS-10, SYS-17, SYS-18]. Write
-  the reserve and the open in the loop body itself. Factoring the pair into a
-  helper — `fn open_source_from(factory: &uniq HandleFactory, …)` — costs the
-  loop its pipeline, because the callee's own retained loan is what
-  the staged judgment then sees. Two programs identical except for that
-  factoring (‹loop› stands for the writer's own file and line; the verdict text
-  after it is byte-exact):
-
-  ```text
-  inline  PAR stage  ‹loop›             for  permitted  staged at open_file(…); 5 places classified
-  helper  PAR stage  ‹loop›             for  denied     condition 3: a may-suspend call retains a borrow
-                     past its own submission on storage the body writes and the iteration does not
-                     introduce; instead, give each iteration its own resource; or, where the body only
-                     publishes to that storage — an output stream is the pointed case — hoist the
-                     per-iteration write out of the loop, folding a total in the body and writing it
-                     once after the loop; or leave this loop sequential, because storage that carries
-                     one position cannot be held by two iterations at once, at &uniq files
-  ```
-
-  When the factory is itself a borrow — as in a recursive walker — put the
-  child reborrow in the acquiring call that is the direct `match` scrutinee.
-  The header-created temporary ends after the owned outcome is complete and
-  before an arm begins, so the arm may reborrow the factory for a later
-  acquisition. The child's local region remains its formation and type ceiling;
-  it still may not extend beyond the enclosing match statement. Binding the
-  outcome in a preceding `let` is not equivalent: that child's region cannot
-  span the `let` and the later match, and direct-result route facts attach only
-  to the direct matched call. A helper that retains the factory loan in its own
-  signature remains a different shape and [PAR-3] judges that retained loan.
-  The control-header boundary does not grant staged permission by itself.
-
-Read the verdict rather than guessing it. An ordinary `whitefootc` compile
-prints a denied staged verdict to stderr, prefixed `whitefootc: note:`, with
-every denied row of that loop's disposition table under it; the compilation
-succeeded and the note is not a rejection. A loop whose staged verdict is
-granted says nothing at all — including when its counted [PAR-2] verdict is
-denied, which is the ordinary case for the form above: the counted rule refuses
-the short factory loan the staged rule exists to admit, and that denial is
-deliberately withheld from the default channel rather than telling a writer
-their granted loop was denied. It is in the full report. A `--no-overlap`
-build prints none of these notes: that flag has already said this build takes
-no overlap at all, so a denied loop is the build the writer asked for rather
-than news about the program they wrote.
-
-`whitefootc --par-ledger` is that full report: one `PAR stage` line per loop
-that performs I/O, and one `PAR place` line for every place the judgment
-classified, with its disposition and the reason, plus the `PAR pair`, `PAR
-chain`, and `PAR loop` lines of the other judgments. A denial names the
-offending place, the numbered condition, and the admitted form, and the flag
-prints it under every lowering. Every notice is one of those lines, byte for
-byte.
-
-One remedy the report can print is not one a writer can take, and it says so:
-where a loop's exit is selected by the may-suspend call's own outcome — the
-`ReadEnd` break of a read-to-EOF loop over one file — the condition-2 line
-states that [PAR-3] cannot stage that loop as written. The shapes staged today
-by the permission judgment include a fixed-trip bounded loop and a per-file loop
-over names; one file's chunk loop stays sequential. Permission does not by
-itself promise that the backend has a multi-operation schedule for the whole
-permitted set.
-
-The current multi-operation actualizer covers one smaller form: one direct
-counted loop, one straight-line prologue, and a final `match` whose scrutinee is
-the selected may-suspend system call. It derives a fixed two-slot driver from
-the checked source. A native POSIX completion target asks once for a window in
-`1..2`; a qualified target without native completion keeps the same generated
-control flow, fixes the window at one, and issues direct calls. The driver
-issues one batch, drains every issued result in source order, then reuses slot
-zero. Executable tests cover a changing path slice on each iteration, an odd
-five-iteration final batch, the ordinary success and error arms, twelve issued
-iterations, and helper counts zero, one, and four.
-
-That evidence does not cover the full P15 example above. In particular, wider
-open/read/fold bodies, a remainder that needs the counted binder or a prologue
-local, additional branch or cleanup shapes, other operation families, and more
-than one staged loop in a function remain on the ordinary path. If a function
-contains two staged loops, the compiler currently transforms neither. The
-permission judgment and its ledger still apply to those loops; only the
-multi-operation schedule is narrower.
-
-`dir_walk.wf`, `wfgrep.wf`, and `byte_string.wf` remain useful negative
-boundaries for the current actualizer. Their walker loops retain helper
-factoring, whose declared retained loan [PAR-3] sees, and their chunk loops leave
-on a read result, so condition 2 keeps them sequential. The control-header loan
-boundary makes the direct borrowed-factory spelling source-valid; it does not
-change what these existing sources say or establish that the narrower driver
-covers their complete bodies. The driver evidence currently lives in lowering
-and backend tests rather than in a selected real program.
-
-Replaces: hoisting scratch buffers out of loops for allocation cost, and every
-writer-visible depth, window, batch, or `par for` marker a language would
-otherwise need to express I/O overlap. There is no source spelling for how many
-operations stay outstanding. The compiler fixes the available storage at two
-slots for the implemented form, and the selected target chooses a window no
-larger than those two slots.
+The earlier staged-loop pattern depended on deleted [PAR-3]. It no longer
+supplies source permission or an optimization promise. Use [PAR-1] sibling
+calls and [PAR-2] maps/reductions only where their ordinary dependencies,
+loans and effect footprints admit them.
 
 ## P16. One length fact above the writes
 
@@ -637,17 +509,17 @@ At a call the transports decide which of those two a projected callee write is:
 
 - a **shared borrow** `&'r T` of any type kills nothing at all [CALL-1];
 - a **view** parameter — `&uniq MutSlice<'r, T>`, or the range-bearing operand
-  of an [SYS-8] operation — writes the viewed range's element storage, so every
+  of an ordinary prelude function — writes the viewed range's element storage, so every
   measure of the origin place and of the view survives it [CALL-3];
 - an **`own`** parameter consumes an affine or linear actual and duplicates a
   copy one: a `Slice` handed at an `own` parameter leaves the caller's place and
   its facts standing, which is what lets a view-taking helper be called in a
   loop [CALL-2];
-- **every other `&uniq` parameter** — a `&uniq Heap<'s>` or a
-  `&uniq Arena<'s, ...>` provider among them — selects no transport and kills
-  the actual's descriptor storage, whatever the callee's body does [CALL-5]. A
-  run is never in this bullet: [BLK-4] refuses a `&uniq` parameter that reaches
-  one at all.
+- **every other `&uniq` parameter**, including runs and storage providers,
+  applies the callee's exact declared writes to the actual's resolved places.
+  Each overlapping descriptor fact dies; disjoint supports survive. Verified
+  ensures then establish exit facts. An exclusive parameter absent from the
+  write row causes no write kill [CALL-5, CALL-6].
 
 So the helper that fills a caller's storage without costing it the length takes
 `destination: &uniq MutSlice<u8>`, and the caller forms the view:
@@ -728,8 +600,8 @@ The clause and the invariant now share one production [GRAM-4, GRAM-5, MSR-5],
 so what a loop header may state a contract may state too:
 
 ```whitefoot
-requires at + 2_u64 <= len_of(vector);
-ensures len_of(rest) + 1_u64 == len_of(vector);
+requires at + 2_u64 <= len_of(deref(vector));
+ensures len_of(deref(vector)) + 1_u64 == len_of(deref(entry(vector)));
 ```
 
 Before this version the `+` was a [GRAM-2] parse rejection at the operator, and
@@ -870,95 +742,57 @@ write its own parameter back and every clause naming it still means what it
 read as at entry:
 
 ```whitefoot
-fn try_place(vector: own FixedVector<u8, 4>, value: own u8)
-    -> (rest: own FixedVector<u8, 4>, unplaced: own Option<u8>)
-    reads(vector), writes(vector) contract {
-  ensures len_of(rest) <= len_of(vector) + 1_u64;
+fn rebuild(vector: own FixedVector<u8, 4>)
+    -> result: own FixedVector<u8, 4> reads(vector), writes(vector) contract {
+  requires len_of(vector) == 1_u64;
+  ensures len_of(result) == len_of(vector) + 1_u64;
 } {
-  set vector = place_back(vector: move vector, value: value);
+  let fresh = fixed_vector::<u8, 4>();
+  region {
+    place_back(vector: &uniq fresh, value: 7_u8);
+    place_back(vector: &uniq fresh, value: 9_u8);
+  }
+  let old = replace vector = move fresh;
+  return move vector;
+}
 ```
 
-Before this version the `set` killed `len_of(vector)` and the clause was
-unproved, so the shape this pattern recommends could not be used in any
-function with a contract over the value it commits.
+The result is newly constructed storage. Replacing the incoming owner's local
+binding does not change the entry datum named by `len_of(vector)` in the
+contract. An ordinary mutation helper instead takes `&uniq` and relates its
+exit measure to `entry(parameter)`, as in P21.
 
 **And a `let` that only renames a measured value keeps its measures.** The same
 former stands at the rebind, so `let built = move spare;` carries every measure
 `spare` had onto `built`; a rename is not a place a proof falls out of. The
-other four naming events — a `construct`, a [LIV-2] `set` target, a `match`
-payload binder and a destructuring binder — do not carry them yet, so a
-measured value that reaches its new name through one of those arrives with no
-measures and the fact has to be re-established from the operation that
-published it.
+other placements admitted by [MSR-3] carry the same source/destination relation:
+a measured `set` target, a displaced `replace` result, a construct field, a
+destructuring binder, and a payload binder of a single-payload-variant enum.
+Each requires the source place and offset shape stated by that rule; there is
+no arbitrary history of values pushed into and removed from a run.
 
-Replaces: a mutable accumulator parameter threaded by reference, `+=` into a
-caller's struct, and the three-line temporary-variable swap.
+Replaces: an unnecessary temporary-variable swap and manual reconstruction of
+a value whose old owner must be returned. Mutable run helpers use P21.
 
-## P18. The loop's own buffer, published once
+## P18. Build a result locally, then publish it
 
-Problem: a loop reads a file per iteration and writes one line to an output —
-`command.stdout`, or another positioned write target — from inside the body.
-[PAR-3] denies it: the resource carries one position, so no iteration can be
-given its own. (‹loop› is the writer's file and line; verdicts are byte-exact.)
+Problem: each iteration computes output and immediately mutates a shared
+stream. Pattern: build the output in ordinary caller-owned storage, then pass
+a shared view to a publishing helper. The computation and the stream mutation
+then have separate ordinary effect boundaries. Whether this improves elapsed
+time needs measurement; allocating a buffer is not automatically worthwhile.
 
-```whitefoot
-for @scan (index in 0_u64..8_u64) {
-  /* P15's reserve, open, and read; then */
-  region {
-    let written = write_once(output: &uniq out, source: &data, start: 0_u64, end: 2_u64);
-  }
-}
-```
+An output call takes both `&uniq OutputStream` and the shared
+`&uniq HandleFactory` state. Consecutive writes using either common object are
+ordered by their ordinary effects and loans. A fact that an iteration owns a
+buffer does not make those writes independent. Conversely, disjoint pure
+computations can use the ordinary parallel permissions without a stream- or
+suspension-specific judgment.
 
-```text
-PAR stage  ‹loop›  for  denied  condition 3: a may-suspend call retains a borrow past its own submission
-           on storage the body writes and the iteration does not introduce; instead, give each iteration
-           its own resource; or, where the body only publishes to that storage — an output stream is the
-           pointed case — hoist the per-iteration write out of the loop, folding a total in the body and
-           writing it once after the loop; or leave this loop sequential, because storage that carries
-           one position cannot be held by two iterations at once, at &uniq out
-```
-
-Pattern: **hold no `&uniq` resource inside a loop body; hold a buffer instead,
-and publish it once after the loop.** Each iteration folds its line into the
-loop's own buffer with an element `set` under one length fact above the loop
-(P16); that element is `serialized-E`, the remainder's writes to storage
-outside the loop being taken in index order.
-
-```whitefoot
-let page = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
-/* fill it to capacity with eight counted `place_back` appends */
-let spare = len_of(page);
-for @scan (index in 0_u64..8_u64) {
-  /* reserve, open, and read into the iteration's own data buffer */
-  let writable = index < spare;
-  if writable {
-    set page[index] = data[0_u64];
-  }
-}
-region {
-  let written = write_once(output: &uniq out, source: &page, start: 0_u64, end: 8_u64);
-}
-```
-
-```text
-PAR stage  ‹loop›  for  permitted  staged at open_file(permit: move permit, root: &cwd,
-           name: &name, start: 0_u64, end: 2_u64); 6 places classified
-```
-
-Write into the page by element. A helper taking `&uniq` of it costs the loop
-its pipeline under condition 4 instead: `denied  &uniq page  a call of
-the remainder holds an exclusive loan on it, and two remainders coexist`.
-
-Current value: this is the explicit writer form. The [PAR-3] judgment can grant
-it, but the current fixed two-slot actualizer does not cover the shown
-remainder because it reads the counted binder and per-iteration data while
-writing the enclosing page. The loop therefore keeps ordinary lowering today.
-The implicit alternative, a per-iteration output write committed by a final
-ordered stage, is also not implemented. Output accumulated through this pattern
-appears only when the one write after the loop runs.
-
-Replaces: writing each line where it is produced, as every other language does.
+The v0.57 staged-loop ledger examples are retired with [PAR-3]. Existing
+traversal and staged workloads remain measurement inputs for C2, with the lost
+overlap attributed separately from factory serialization and ordinary call
+cost. They do not establish a current staging capability.
 
 ## P19. Advance a tracked binding the same way on every arm
 
@@ -1083,9 +917,7 @@ now costs nothing to write.
 for @concat (at in 0_u64..count) {
   match bs_byte(s: &deref(source), index: at) {
     Some(value: byte) => {
-      region {
-        bs_push(s: &uniq deref(destination), value: byte);
-      }
+      bs_push(s: &uniq deref(destination), value: byte);
     }
     None() => {
     }
@@ -1093,28 +925,24 @@ for @concat (at in 0_u64..count) {
 }
 ```
 
-The inner block stays: it is not the loop body's only statement, it is the
-statement scope [OWN-6] needs for the `&uniq deref(destination)` child
-reborrow, and only the outer wrapper the body no longer needs is gone.
+The loop body's region suffices for both child reborrows. The `bs_byte` header
+ends its temporary loan before the arm; `bs_push` ends its temporary loan at
+its own statement. Neither requires an extra one-statement region.
 
 Because that region exists, a `region` block that is the loop body's only
 statement is now a hard error citing [FORM-8]: its block is the body, so it is a
 second spelling of one region. Delete it and keep its statements as the body.
 
 A block the body writes another statement beside is a different region — it ends
-strictly earlier than the iteration — and stays legal, and there are two reasons
-to write one. The first is [OWN-6]: a statement-scoped child reborrow needs a
-region whose block does not extend beyond the enclosing statement, which a
-one-statement block inside a longer body gives and the body's own region does
-not. The second is a borrow that must be dead before a later statement of the
-same iteration writes the place it borrowed.
+strictly earlier than the iteration — and stays legal. It remains useful for a
+bound borrow that must end before a later statement of the same iteration
+writes the borrowed place [OWN-4]. An unbound argument child already has its
+statement endpoint [OWN-6] and needs no such block.
 
 ```whitefoot
 for @append (i in 0_u64..count) {
   let byte = deref(src)[i];
-  region {
-    let pushed = propagate vec_push(v: &uniq deref(dst), x: byte);
-  }
+  let pushed = propagate vec_push(v: &uniq deref(dst), x: byte);
 }
 ```
 
@@ -1128,53 +956,51 @@ blocks were already narrower than their bodies.
 Replaces: the habit of opening a `region` block as the first line of every loop
 body.
 
-## P21. Hand the measure back by value, and never through a `&uniq`
+## P21. Mutate through an exclusive parameter and state both measures
 
-Status: active in v0.44. Two of its rules decide one writer choice together.
+Problem: a helper changes a run's initialized window, and its caller needs the
+new length without transporting the complete owning run into and out of the
+helper.
 
-Problem: a helper receives a run, does something with it, and the caller
-afterwards needs to know a measure of what it got back. The reflex is to lend
-the run — `fn fill(destination: &uniq Vector<'s, u8>, ...)`, which [BLK-4]
-refuses outright — and publish the
-measure from the callee: `ensures written <= len_of(deref(destination));`. That
-clause is a claim about a caller's object at a point the callee cannot name,
-because the callee may have replaced the very thing the measure describes, and
-[MSR-3] refuses it at the clause.
-
-Pattern: take the value by value and relate the *result*; state the fact the
-caller must supply as a `requires` instead of an `ensures`.
+Pattern: take the run through `&uniq`. In ensures, a bare measure of the
+referent is its exit state; `entry(parameter)` selects its entry state. Entry
+is proof-only, is admitted only directly on an exclusive formal in ensures,
+and is followed by the ordinary `deref` and field projections [MSR-3].
 
 ```whitefoot
-fn size_of['s](taken: own Vector<'s, u8>) -> measured: own u64 reads(taken) contract {
-  ensures measured == len_of(taken);
-} { ... }
-
-let run = /* one take from a store, matched on its refusal */;
-let measured = size_of(taken: move run);
+fn push(values: &uniq FixedVector<u64, 4>, value: own u64) -> result: own unit reads(values), writes(values) contract {
+  requires room_of(deref(values)) > 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values))) + 1_u64;
+} {
+  region {
+    place_back(vector: &uniq deref(values), value: value);
+  }
+  return unit;
+}
 ```
 
-The relation reads at the caller as it is written, and it survives the `move`
-in the very same statement, because an `own` operand of a published relation
-denotes that call's **call datum** [MSR-3] — the value at transfer, a term
-with no place in it, which no consume and no later write can kill. That is the
-whole reason the value-in form is not merely tolerated but preferred: a
-borrowed run's measure cannot be published at all, and a consumed run's can.
+The boundary rows mutate the borrowed run in place. Placements return unit;
+takes return only the removed element. Neither transfers the run owner or
+changes its backing address. Keep by-value input/output for an operation that
+creates a new owning value, such as the full-array conversions.
 
-The second half is a discipline on the contract as a set. Everything a
-contract publishes is closed together at the caller [ENT-4], so two clauses
-that cannot both hold do not make one caller goal wrong — they make every
-caller goal discharge. [CALL-6] refuses such a contract at its declaration, so
-write the clauses that hold and check that they hold together; a clause added
-"to be safe" that contradicts an earlier one is not conservative, it is the
-end of every proof downstream of the call.
+At a call, the exact projected write row first invalidates the old facts on
+its support. The verified ensures then relates the resolved exit place to
+immutable call datums recording entry. The same rule works through a nested
+field. A whole-referent replacement invalidates the old measure, and a live
+view still prevents an overlapping exclusive call. Without ensures, reread
+the measure and use an ordinary branch when both outcomes are intended
+program behavior; an impossible-case return is not a proof technique.
 
-Current value: measured on the v0.44 batch branch. The `ensures` over a consumed
-operand's measure is a real fact at the caller, where before v0.44 the
-consume in the same statement deleted it and the caller was left proving the
-measure again from its own allocation.
+`ensures len_of(deref(values)) == len_of(deref(values)) + 1_u64` is not a
+transition: both sides denote exit state, so [CALL-6] rejects the contradictory
+relation. Clauses are verified independently and their published set must
+also be consistent.
 
-Replaces: publishing a caller's post-state through a `&uniq` parameter, and
-re-measuring a run the caller just handed away.
+The [counted push/pop case](../tests/conformance/cases/run-exclusive-push-pop-counted.wf)
+shows these relations across loop edges; the
+[nested-field case](../tests/conformance/cases/run-exclusive-nested-field.wf)
+shows disjoint facts surviving the projected write.
 
 ## P22. Write `linear` for a logical obligation, and never for a storage one
 
@@ -1298,16 +1124,18 @@ is the statement for the one place where the peak is the point.
 Replaces: holding a value to the end of its scope because there was no way to
 say otherwise.
 
-## P25. Write a store's region only where it relates two positions
+## P25. Name a generic store brand; elide an already-determined brand
 
-Problem: the two runs and the two providers carry the store that backs them in
-their own types [PROV-1], so every one of them names a region. Writing that
+Problem: store-backed containers and providers carry the store that backs them
+in their own types [PROV-1]. Writing that
 region everywhere would put a region parameter on every hosted nominal and
 every hosted signature, and the design counted fifteen brand occurrences and
 twelve call-site brand arguments in one byte-string program before it stopped.
 
-Pattern: write the region exactly where it relates two positions, and elide it
-everywhere else. An elided store brand at a field, an enum payload, a run
+Pattern: write a formal region when a type is generic over its brand, including
+a reader with only one branded input. Elision uses the brand PROV-1 already
+fixes, either an enclosing nominal's formal or the concrete entry heap; it
+introduces no anonymous generic store. An elided store brand at a field, an enum payload, a run
 element, or a written type argument denotes the enclosing nominal's sole region
 parameter when it declares one, and the entry heap's store region otherwise; at
 a parameter or a result it denotes the entry heap's store region. So a nominal
@@ -1319,8 +1147,9 @@ struct Bytes {
 }
 ```
 
-and a nominal over a bump extent declares exactly one and writes it at the one
-field that must be branded to it:
+and a nominal over a bump extent declares a region. This example writes that
+brand at the field explicitly; PROV-1 also fixes an elided brand there to the
+nominal's sole region parameter:
 
 ```whitefoot
 struct Chunk['s] {
@@ -1328,11 +1157,27 @@ struct Chunk['s] {
 }
 ```
 
-The rule is the ordinary [FORM-8] discipline read over stores: a region a
-reader cannot check and a transposition cannot catch is deleted, and a region
-the caller must choose is written. A bump extent's own region is always the
-second kind, so an `Arena` writes it at every position: `Arena<4096, 16>` is a
-[FORM-8] rejection and `Arena<'s, 4096, 16>` is the form.
+An ordinary reader can name the brand while leaving its independent, single
+input loan lifetime elided:
+
+```whitefoot
+fn chunk_length['s](chunk: &Chunk<'s>) -> count: own u64 reads(chunk.page) {
+  return len_of(deref(chunk).page);
+}
+```
+
+The caller's actual chunk fixes `'s`; the call writes no region argument.
+The reader's temporary loan does not become the chunk's store lifetime. With
+multiple or nested brands, the parameter's explicit type positions determine
+each one. Two occurrences of one formal brand must receive the same actual
+brand, even when one store outlives the other. A pure loan name appearing at
+only one input position is still elided under FORM-8.
+
+A bump extent has no default concrete brand, so an `Arena` writes it at every
+position: `Arena<4096, 16>` is a FORM-8 rejection and `Arena<'s, 4096, 16>` is
+the form. An empty variant whose fields supply no brand still requires its
+constructor's undetermined brand argument; the reader rule does not introduce
+expected-type inference for construction.
 
 Replaces: putting a region parameter on every declaration that touches a run.
 
@@ -1353,7 +1198,9 @@ region 'a {
   let workspace = arena_frame::<256, 8, 'a>();
   region {
     let page = arena_vector_proved::<u64>(store: &uniq workspace, count: 4_u64);
-    let one = place_back(vector: move page, value: 11_u64);
+    region {
+      place_back(vector: &uniq page, value: 11_u64);
+    }
   }
 }
 ```
@@ -1419,25 +1266,27 @@ in.
 Replaces: two functions with two signatures where one body would do, and
 `let limit = ...;`-style workarounds for a bound a declaration could not state.
 
-## P28. Take a run out of a run before you read it
+## P28. Borrow a contained run or take ownership of it
 
 A run's element type may itself be a run — `FixedVector<Vector<'s, u8>, 8>` is
 a free list of eight store-backed blocks, and `FixedVector<FixedVector<u8, 4>,
 4>` is a fixed grid — and the slot holds the element run's complete
 representation, its descriptor words included.
 
-An element that is a run is **affine**, and that decides how you read one:
+An element that is a run is **affine**. Borrow it to read or mutate it in
+place, or remove it when the caller needs its ownership:
 
 ```whitefoot
-let (rest, block) = take_back(vector: move free);   // the element comes out
-let width = cap_of(block);                          // and is read there
-let back = place_back(vector: move rest, value: move block);
+let block = take_back(vector: &uniq free);   // the element comes out
+let width = cap_of(block);                  // and is read there
+place_back(vector: &uniq free, value: move block);
 ```
 
 A bare `free[0_u64]` is [OWN-1]'s ordinary refusal at an affine element, exactly
-as it is for any other affine element type, so the two routes are the boundary
-rows [BLK-3] and the element-position exchange `let old = replace free[i] = e;`
-[SET-2]. Reach for `take_back` and `place_back` first: a free list is used at
+as it is for any other affine element type. `&free[i]` and `&uniq free[i]`
+borrow the element; the boundary rows [BLK-3] and the element-position exchange
+`let old = replace free[i] = e;` [SET-2] hand its owner out.
+Reach for `take_back` and `place_back` for a free list used at
 one end, and the pair is total under `room_of > 0` and `len_of > 0`.
 
 A helper over such a run is generic over the store the *elements* live in, and
@@ -1445,8 +1294,8 @@ A helper over such a run is generic over the store the *elements* live in, and
 level down, in the element position, and the actual determines it.
 
 ```whitefoot
-fn pool_take['s: affine](free: own FixedVector<Vector<'s, u8>, 8>)
-    -> (rest: own FixedVector<Vector<'s, u8>, 8>, leased: own Option<Vector<'s, u8>>)
+fn pool_take['s: affine](free: &uniq FixedVector<Vector<'s, u8>, 8>)
+    -> leased: own Option<Vector<'s, u8>>
 ```
 
 A measure of an element is an ordinary term — `len_of(free[i])`, `cap_of(free[i])`
@@ -1457,7 +1306,9 @@ come out for it:
 let rows = len_of(grid);
 if rows > 0_u64 {
   let width = len_of(grid[0_u64]);          // the element's own descriptor
-  let cell = grid[0_u64][0_u64];            // and, for a copy element, its slot
+  if width > 0_u64 {
+    let cell = grid[0_u64][0_u64];          // a proved initialized copy element
+  }
 }
 ```
 
@@ -1478,31 +1329,37 @@ reaches exactly the two routes that name the position:
 ```whitefoot
 let spare = replace free[0_u64] = move fresh;   // free[0]'s measures are fresh's
 let held = replace free[0_u64] = move other;    // held's measures are fresh's
-let filled = place_back(vector: move held, value: 3_u8);   // and this discharges
+region {
+  place_back(vector: &uniq held, value: 3_u8);  // and this discharges
+}
 ```
 
 The boundary rows are the exception, and they are the common case, so plan for
-it: `place_back` puts its value at position `len_of(vector)` and `take_back`
-takes one from position `len_of(rest)`, and neither is an offset the place rules
+it: `place_back` puts its value at the referent's entry length and `take_back`
+takes one from its exit length, and neither is an offset the place rules
 can name. **A block pushed onto a free list with `place_back` and leased off it
 with `take_back` therefore comes back with no measures of its own**, and a
 caller that needs its room reads `room_of` once and branches:
 
 ```whitefoot
-let (rest, block) = take_back(vector: move free);
+let block = take_back(vector: &uniq free);
 let spare = room_of(block);
 if spare > 0_u64 {
-  let filled = place_back(vector: move block, value: 7_u8);
+  region {
+    place_back(vector: &uniq block, value: 7_u8);
+  }
 }
 ```
 
-That branch is not a workaround for a missing check; it is the honest price of a
-capacity that lives in a descriptor rather than in a type. Reach for
+The branch handles the returned block's current room at runtime. A fixed
+capacity type retains its capacity, but its current length can still vary;
+the limitation here is the boundary row's missing element-state relation.
+Reach for
 `replace free[i] = e` when the position is written and you want the figure to
 travel, and for the boundary rows when you want the end of the run.
 
-One limit remains: one level of *element* is what exists, so a run of runs of
-runs is an unsupported capability.
+Nested owners use the same ownership and measure rules. A measure of an
+element must still use a place and offset that [MSR-1] can name.
 
 Replaces: an `Option<T>` slot array standing in for a run of runs, a parallel
 array of lengths beside a run of buffers, and a hand-written `cap` field beside
@@ -1559,8 +1416,8 @@ At a call you write **nothing**: a parameter whose type names the nominal's
 region determines it from the actual, exactly as `Vector<'s, T>` does.
 
 ```whitefoot
-fn pool_take['s: affine](pool: own BlockPool<'s>)
-    -> (rest: own BlockPool<'s>, leased: own Option<Lease<'s>>)
+fn pool_take['s: affine](pool: &uniq BlockPool<'s>)
+    -> leased: own Option<Lease<'s>>
 ```
 
 Two instances at two regions are two types, and a store region is invariant: a
@@ -1579,7 +1436,9 @@ not lose its room by being put in a `Lease` and taken out again:
 ```whitefoot
 let ticket = Lease(run: move block);          // lease.run has block's measures
 let Lease(run: back) = move ticket;           // and back has lease.run's
-let filled = place_back(vector: move back, value: 7_u8);
+region {
+  place_back(vector: &uniq back, value: 7_u8);
+}
 ```
 
 The same holds through an enum whose nominal has **one** payload-carrying
@@ -1595,7 +1454,7 @@ header-created child ends before the selected arm, so later statements in that
 arm may reuse the store while the acquired owned value remains live. A preceding
 `let` plus a later match still cannot share that child's local region. Separately,
 a contract clause may name a measure of a **parameter**'s field
-(`requires room_of(pool.free) > 0_u64;`) but not of a *result*'s, so a caller
+(`requires room_of(deref(pool).free) > 0_u64;`) but not of a *result*'s, so a caller
 that needs a figure about a returned nominal reads it and branches.
 
 Replaces: threading the bare container the struct would have held through every
@@ -1678,7 +1537,7 @@ inside the same region block, so
 ```whitefoot
 let window = slice_of(&run);
 let sum = total(window: window);
-let longer = place_back(vector: move run, value: 9_u8);
+place_back(vector: &uniq run, value: 9_u8);
 ```
 
 compiles, while moving the `place_back` above the `total` call does not. A
@@ -1799,7 +1658,7 @@ run whose contents are literals.
 ## P34. Read a stream to its end, and publish through a helper
 
 The stream operations `read_next` and `receive_next` have no offset: the
-position they advance is the stream's own [SYS-15, SYS-18]. A read to end is
+position they advance is the stream's ordinary state. A read to end is
 therefore an uncounted loop whose only exit is the `ReadEnd` arm, and the run
 it reads into is the loop's own — one store-resident `Vector` filled once
 before the loop, whose length the loop reads back as `held`.
@@ -1812,11 +1671,15 @@ loop @chunks {
   region {
     let sink = mut_slice_of(&uniq chunk);
     region {
-      match read_next(input: &uniq input, destination: &uniq sink,
+      match read_next(factory: &uniq factory, input: &uniq input, destination: &uniq sink,
                       start: 0_u64, end: held) {
-        ReadBytes(next: endpoint) => { set available = endpoint; }
-        ReadEnd() => { set ended = 1_u8; }
-        ReadFailed(error: problem) => { set outcome = 3_u8; set ended = 2_u8; }
+        Ok(value: endpoint) => { set available = endpoint; }
+        Err(error: stop) => {
+          match move stop {
+            ReadEnd() => { set ended = 1_u8; }
+            ReadFailed(error: problem) => { set outcome = 3_u8; set ended = 2_u8; }
+          }
+        }
       }
     }
   }
@@ -1824,7 +1687,7 @@ loop @chunks {
     region {
       let payload = slice_of(&chunk);
       region {
-        match publish_all(output: &uniq out, source: &payload, length: available) {
+        match publish_all(factory: &uniq factory, output: &uniq out, source: &payload, length: available) {
           Ok(value: published) => { }
           Err(error: problem) => { set outcome = 4_u8; set ended = 2_u8; }
         }
@@ -1847,8 +1710,8 @@ Three rules make it work, and all three are forms to copy:
   other.
 - **Publish through the helper of P16's shape, not through a second inner
   loop.** `write_once` over the same run the read filled needs
-  `available <= len_of(payload)` at its call site. The read's own [SYS-8]
-  relation gives `available <= held` on the `ReadBytes` edge, and both views
+  `available <= len_of(payload)` at its call site. The read's ordinary ensures
+  gives `available <= held` on the `Ok` edge, and both views
   carry their origin's length, so `len_of(sink) == len_of(payload) == held`;
   the facts are live immediately after the read region and neither survives a
   second loop header. A helper whose contract states
@@ -1856,15 +1719,29 @@ Three rules make it work, and all three are forms to copy:
   live point, and the writer never restates the bound. Reading `held` once,
   before the loop, is what lets the bound be the run's own length rather than a
   literal the writer must keep in step with the allocation.
-- **Leave through one flag, at the bottom.** The `ReadEnd` break is selected
-  by the submission's own outcome, so it can never be taken in a staged
-  prologue and the loop stays sequential ([PAR-3] says so in as many words).
-  Writing the exit as a flag the body sets and one `break` at the end keeps the
-  failure and the end on the same edge and keeps the body's shape readable.
+- **Select the exit from the returned value.** `Err(ReadEnd())` ends the stream;
+  `Err(ReadFailed(...))` reports an actual error. A flag can combine those
+  outcomes at the bottom of the loop, or an ordinary helper can return early.
+  Neither form changes the lifetime of the call's loans.
 
-Current value: measured on the v0.46 batch branch, on `tests/programs/stdin_echo.wf`
-against a pipe and against a redirected file, on both runtime routes; carried
-onto the view forms with the same two shapes and the same two routes.
+Current executable reference: `tests/programs/stdin_echo.wf`. C2 updates its
+source to ordinary factory parameters, views and `Result` endpoints; earlier
+v0.46 runtime-route measurements remain historical evidence.
+
+Directory batches return their endpoint separately from their outcome:
+
+```whitefoot
+let (batch, next, entries) = directory_next(source: &uniq cursor, destination: &uniq sink,
+                                           start: 0_u64, end: held);
+```
+
+Here `batch` is `Result<unit, ListStop>`. The ordinary contract publishes
+`0_u64 <= next <= held` for the numeric result on every return; an error
+returns the starting endpoint. Saving and later matching `batch` therefore
+does not have to recover an endpoint fact from inside an enum. The directory
+walker uses this existing multi-result form when it must end the writable
+view's loan before consuming a batch. CALL-4 does not yet transport a
+selected enum-bound fact through a later match of an owned local.
 
 Replaces: a positioned read with a writer-tracked offset, which is the wrong
 operation for a stream, and an inner publish loop, which loses the length

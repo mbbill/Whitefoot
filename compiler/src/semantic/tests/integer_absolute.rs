@@ -7,7 +7,7 @@ use super::{assert_rule, with_semantics};
 
 #[test]
 fn retains_each_mode_and_rejects_unsigned_types() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let wrapped = iabs.wrap(-128_i8);
   let exact = iabs(-42_i16);
   let absolute_value_is_defined = iabs.defined(-42_i64);
@@ -21,6 +21,8 @@ fn retains_each_mode_and_rejects_unsigned_types() {
         };
         let operations = checked.data.functions[0]
             .body
+            .as_deref()
+            .expect("WF body")
             .iter()
             .filter_map(|statement| match statement {
                 CheckedStatement::Let {
@@ -42,7 +44,7 @@ fn retains_each_mode_and_rejects_unsigned_types() {
     });
 
     assert_rule(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = iabs.wrap(1_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = iabs.wrap(1_u8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
@@ -68,7 +70,7 @@ fn active_invariant_excludes_the_signed_minimum_from_exact_absolute_value() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

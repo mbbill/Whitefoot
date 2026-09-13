@@ -1,0 +1,16 @@
+fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
+  let previous = replace deref(slot) = move incoming;
+  return move previous;
+}
+
+fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own u64 reads(owner), writes(owner, store) {
+  region {
+    let previous = exchange(slot: &uniq owner, incoming: move incoming);
+  }
+  return deref(owner);
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "EFF-2: replacement changes the value at owner without changing that storage place. Its later read names owner, and provider reclamation writes store; no input ancestry is retained.";
+  return exit_status(code: 0_u8);
+}

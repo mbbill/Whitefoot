@@ -2,7 +2,7 @@ fn peek(value: &i32) -> result: own i32 reads(value) {
   return deref(value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The callee's only region occupies a parameter position, so this call's own argument determines it and [FORM-8] writes no type application.";
   let a = 40_i32;
   region 'r {

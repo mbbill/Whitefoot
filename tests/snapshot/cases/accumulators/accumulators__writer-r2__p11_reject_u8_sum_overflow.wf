@@ -1,6 +1,6 @@
 const samples: FixedVector<u8, 4> =[200_u8, 200_u8, 200_u8, 200_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "REJECT: accumulating bytes directly into a u8 sum with plain `+` and no invariant or wrap leaves the OP-2 overflow obligation undischarged, and 200+200 genuinely exceeds u8.";
   let sum = 0_u8;
   for (i in 0_u64..4_u64) {

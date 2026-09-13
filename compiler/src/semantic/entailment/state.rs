@@ -16,7 +16,7 @@ use super::super::model::{
 };
 use super::VerifiedPostconditionSummaryRef;
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
-use crate::{NodePath, PreludeDeclarationId};
+use crate::{BuiltinPreludeId, NodePath};
 
 /// One normalized source relation over interned terms.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -209,7 +209,6 @@ pub(crate) enum FlowEventKind {
     S6,
     S7,
     S9,
-    S10,
     S11,
     /// [ENT-3.S13] one declared relation instantiated at its call.
     S13,
@@ -298,6 +297,8 @@ pub(crate) struct PostconditionCallSubstitution {
     /// recorded, because [FN-9]'s narrow receiver routes are stated over
     /// which formal an actual supplies and not over what the operand denotes.
     pub(crate) datum: bool,
+    /// This operand is read after the call's own effects; later kills still apply.
+    pub(crate) exit_state: bool,
 }
 
 /// The closed set of proof steps emitted by the existing entailment flow.
@@ -486,6 +487,13 @@ pub(crate) enum DerivationNode {
         relation_ordinal: u32,
         parents: Vec<DerivationId>,
     },
+    /// A signature's declared contract: a function-formal premise [FN-4]
+    /// or a prelude declaration [PRE-1]. Definitions instead discharge every
+    /// selected return under [FN-9].
+    SignatureContract {
+        block: NodePath,
+        relation_ordinal: u32,
+    },
     /// Caller-local S12 evidence for one instantiated earlier-component
     /// summary, held out of line by [`PostconditionCallDetail`].
     PostconditionCall {
@@ -499,8 +507,8 @@ pub(crate) enum DerivationNode {
     },
     PostconditionDirectMatch {
         call: NodePath,
-        variant: PreludeDeclarationId,
-        field: PreludeDeclarationId,
+        variant: BuiltinPreludeId,
+        field: BuiltinPreludeId,
         tag: u32,
         binding: BindingId,
         relation: Box<Relation>,
@@ -672,6 +680,7 @@ impl DerivationNode {
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
+            | Self::SignatureContract { .. }
             | Self::ImplicitBound { .. } => {}
         }
     }
@@ -724,6 +733,7 @@ impl DerivationNode {
             | Self::SourceDistinct { .. }
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
+            | Self::SignatureContract { .. }
             | Self::ImplicitBound { .. } => 0,
         }
     }
@@ -764,6 +774,7 @@ impl DerivationNode {
             Self::MaterializedContradiction { .. } => 22,
             Self::PostconditionExit { .. } => 23,
             Self::PostconditionAggregate { .. } => 24,
+            Self::SignatureContract { .. } => 35,
             Self::PostconditionCall { .. } => 25,
             Self::PostconditionDirectResult { .. } => 26,
             Self::PostconditionDirectMatch { .. } => 27,
@@ -818,6 +829,9 @@ pub(crate) enum DerivationRootKind {
     },
     PostconditionAggregate {
         relation_ordinal: u32,
+    },
+    PostconditionState {
+        occurrence: u32,
     },
     PostconditionDirectResult {
         occurrence: u32,
@@ -1378,7 +1392,8 @@ impl DerivationLedger {
                 .iter()
                 .filter_map(|node| match node {
                     DerivationNode::PostconditionExit { statement, .. } => Some(statement),
-                    DerivationNode::PostconditionAggregate { block, .. } => Some(block),
+                    DerivationNode::PostconditionAggregate { block, .. }
+                    | DerivationNode::SignatureContract { block, .. } => Some(block),
                     DerivationNode::PostconditionCall { detail } => Some(&detail.call),
                     DerivationNode::PostconditionDirectMatch { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectResult { statement, .. }
@@ -1566,6 +1581,9 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         DerivationNode::PostconditionAggregate { parents, .. } => {
             parents.get(index).map(|parent| parent.0)
         }
+        DerivationNode::SignatureContract {
+            relation_ordinal, ..
+        } => (index == 0).then_some(*relation_ordinal),
         DerivationNode::PostconditionCall { detail } => {
             let PostconditionCallDetail {
                 summary,
@@ -1792,6 +1810,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         | DerivationNode::SourceDistinct { .. }
         | DerivationNode::SourceGoal { .. }
         | DerivationNode::BooleanLiteral { .. }
+        | DerivationNode::SignatureContract { .. }
         | DerivationNode::ImplicitBound { .. } => {}
     }
 }
@@ -1941,25 +1960,22 @@ impl Relation {
 }
 
 /// What one match arm's value binder gains when the scrutinee is an
-/// outcome-carrying call [ENT-3] S7, S10.
+/// checked arithmetic call [ENT-3] S7.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OutcomeRelation {
     /// S7 checked arithmetic: the binder equals the base term shifted by this
     /// constant.
     Shifted(i128),
-    /// S10 absolute endpoint: `base <= binder <= upper`.
-    Between { upper: TermId },
 }
 
 /// One pending arm fact: the relation the observing arm's value binder gains,
 /// against a base term whose support must survive the path to the match.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OutcomeFact {
-    /// The variant whose arm observes it — `Ok` for checked arithmetic and
-    /// for the `Result`-shaped boundary calls, `ReadBytes` for `read_at`.
+    /// The variant whose arm observes it: `Ok` for checked arithmetic.
     /// Every other arm establishes nothing [ENT-3].
     pub(crate) variant: &'static str,
-    /// The term the binder is related to: p for S7, k for S10.
+    /// The term the binder is related to under S7.
     pub(crate) base: TermId,
     pub(crate) relation: OutcomeRelation,
     pub(crate) event_kind: FlowEventKind,
@@ -3568,9 +3584,9 @@ fn close_goal_contradictions(
 /// its reflexive and integer-range edges cannot be a useful middle: entering
 /// and leaving it adds a nonnegative range cycle to the path already available
 /// through `ZERO` (and an equal path has greater proof depth). Live relation
-/// endpoints can be useful, as can an exact array-length alias connected to
-/// one, so those are the only additional middle vertices the fixed point
-/// needs. Opaque goals are included because their opposite sign can be proved
+/// endpoints can be useful, as can the endpoints of implicit edges between
+/// distinct nonzero terms, including measure aliases and length/capacity
+/// orderings. Opaque goals are included because their opposite sign can be proved
 /// from a projected or normalized relation and form a contradiction.
 fn closure_middle_terms(
     state: &FactState,
@@ -3629,17 +3645,18 @@ fn closure_middle_terms(
         }
     }
 
-    // Array/slice length aliases are the only implicit non-zero-to-non-zero
-    // edges. Every such edge needs both endpoints as middles even without a
-    // live source: the length range transfers to an otherwise unbounded const
-    // parameter, and two lengths equal to that parameter become equal to one
-    // another. `available` keeps an excluded receiver out of this universe.
+    // A standing relation can need transitivity without any written fact:
+    // len(P) <= cap(P) and cap(P) == 0 imply len(P) == 0. Omitting capacity
+    // as a middle loses that proof until an unrelated source read happens to
+    // mention it. Derive this inventory from the complete implicit edge set,
+    // so future measure rows cannot silently evade the same fixed point.
     for id in ids {
-        let Some(MeasureBound::Equal(parameter)) = terms.measure_bound(*id) else {
-            continue;
-        };
-        active.0[id.0 as usize] = true;
-        admit(parameter, &mut active);
+        for_each_implicit_bound(terms, *id, |left, right, _, _| {
+            if left != right && left != ZERO && right != ZERO {
+                admit(left, &mut active);
+                admit(right, &mut active);
+            }
+        });
     }
     active
 }

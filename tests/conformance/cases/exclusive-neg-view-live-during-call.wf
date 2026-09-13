@@ -1,0 +1,24 @@
+fn push(values: &uniq FixedVector<u64, 4>, value: own u64) -> result: own unit reads(values), writes(values) contract {
+  requires room_of(deref(values)) > 0_u64;
+  ensures len_of(deref(values)) == len_of(deref(entry(values))) + 1_u64;
+  ensures cap_of(deref(values)) == cap_of(deref(entry(values)));
+} {
+  region {
+    place_back(vector: &uniq deref(values), value: value);
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = fixed_vector::<u64, 4>();
+  region {
+    let view = slice_of(&values);
+    push(values: &uniq values, value: 7_u64);
+    let size = len_of(view);
+    invariant upper: len_of(values) <= 1_u64;
+    invariant lower: len_of(values) >= 1_u64;
+    let last = take_back(vector: &uniq values);
+    invariant empty: len_of(values) <= 0_u64;
+    return exit_status(code: 0_u8);
+  }
+}

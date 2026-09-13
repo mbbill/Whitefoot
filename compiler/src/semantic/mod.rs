@@ -14,15 +14,14 @@ mod model;
 pub(crate) mod permission;
 mod permission_ledger;
 mod places;
+pub(crate) use places::PlaceRoot as CheckedPlaceRoot;
 mod postcondition;
-mod staged_permission;
-mod target_action;
 mod tree;
 
 #[cfg(test)]
 mod tests;
 
-use crate::{BundleSourceExtent, NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
+use crate::{NodePath, ResolutionIssue, ResolvedSyntaxUnit, SyntaxCoordinate};
 
 pub use check::check_semantics;
 #[cfg(test)]
@@ -41,15 +40,15 @@ pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission}
 
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
-    CheckedBufferRoot, CheckedCommitValues, CheckedConst, CheckedConstructor, CheckedContainerRoot,
-    CheckedDrop, CheckedElement, CheckedEntryForm, CheckedEnumType, CheckedExpression,
-    CheckedFlatElement, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
-    CheckedKernelInstance, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
-    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType,
-    CheckedParameter, CheckedPlaceStep, CheckedProgramData, CheckedProjectedDrop,
-    CheckedReleaseClass, CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
-    CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
-    CheckedWritablePlace, MeasureCell, MeasuredKind, NominalId, PropagationContext,
+    CheckedBufferRoot, CheckedCommitValues, CheckedConst, CheckedContainerRoot, CheckedDrop,
+    CheckedElement, CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation,
+    CheckedFunction, CheckedIntegerOperation, CheckedKernelInstance, CheckedLayoutCeiling,
+    CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure, CheckedMode,
+    CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedPlaceStep, CheckedProgramData,
+    CheckedProjectedDrop, CheckedReleaseClass, CheckedRuntimeTargetObligations, CheckedSetTarget,
+    CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
+    CheckedType, CheckedValue, CheckedWritablePlace, FunctionId, MeasureCell, MeasuredKind,
+    NominalId, PropagationContext, expression_children,
 };
 
 /// Numbered rule owning one post-resolution semantic rejection.
@@ -110,7 +109,7 @@ pub enum SemanticRule {
     Blk1,
     /// Formation and reservation: where a reserving occurrence may stand.
     Blk2,
-    /// Confinement: the position closure and the `&uniq` parameter refusal.
+    /// Confinement and the stored-position closure.
     Blk4,
     /// A commit may not displace a live loan.
     View4,
@@ -141,14 +140,14 @@ pub enum SemanticRule {
     Fn1,
     /// Explicit generic-instantiation argument presence.
     Fn2,
-    /// Generic bounds and source-contract conformance.
+    /// Numeric bounds and named parameter/argument group formation.
     Fn3,
-    /// Closed source-law declaration and discharge.
+    /// Function-kind signature, effect and structural-contract matching.
     Fn4,
+    /// Explicit static member selection from a formal parameter group.
+    Fn5,
     /// Polymorphic recursion in a call cycle among generic functions.
     Fn6,
-    /// Closed-program `main` contract.
-    Fn7,
     /// Finite atomic function requirement goal.
     Fn8,
     /// Verified narrow normal-return relation.
@@ -176,13 +175,6 @@ pub enum SemanticRule {
     Eff1,
     /// Exact exhibited-versus-declared effect row.
     Eff2,
-    /// The system inventory, and the region arguments a system operation's
-    /// call site must state. [TYPE-5] assigns the written arguments by callee
-    /// class — "region arguments for system operations [SYS-2]" — so this rule
-    /// owns that argument list exactly as FN-2 owns a user generic's.
-    Sys2,
-    /// Half-open system buffer-range discharge.
-    Sys8,
     /// Counted endpoint admission to the closed term-or-constant vocabulary.
     Ent2,
     /// One denotation per operand position, keyed on the parameter's mode.
@@ -242,8 +234,9 @@ impl SemanticRule {
             Self::Fn2 => "FN-2",
             Self::Fn3 => "FN-3",
             Self::Fn4 => "FN-4",
+            Self::Fn5 => "FN-5",
             Self::Fn6 => "FN-6",
-            Self::Fn7 => "FN-7",
+
             Self::Fn8 => "FN-8",
             Self::Fn9 => "FN-9",
             Self::Call4 => "CALL-4",
@@ -257,8 +250,7 @@ impl SemanticRule {
             Self::Give1 => "GIVE-1",
             Self::Eff1 => "EFF-1",
             Self::Eff2 => "EFF-2",
-            Self::Sys2 => "SYS-2",
-            Self::Sys8 => "SYS-8",
+
             Self::Ent2 => "ENT-2",
             Self::Msr3 => "MSR-3",
             Self::Call6 => "CALL-6",
@@ -331,18 +323,16 @@ impl SemanticRule {
             Self::Fn1 => Self::Fn2,
             Self::Fn2 => Self::Fn3,
             Self::Fn3 => Self::Fn4,
-            Self::Fn4 => Self::Fn6,
-            Self::Fn6 => Self::Fn7,
-            Self::Fn7 => Self::Fn8,
+            Self::Fn4 => Self::Fn5,
+            Self::Fn5 => Self::Fn6,
+            Self::Fn6 => Self::Fn8,
             Self::Fn8 => Self::Fn9,
             Self::Fn9 => Self::Call4,
             Self::Call4 => Self::Eff1,
             Self::Eff1 => Self::Eff2,
             Self::Eff2 => Self::Err2,
             Self::Err2 => Self::Err3,
-            Self::Err3 => Self::Sys2,
-            Self::Sys2 => Self::Sys8,
-            Self::Sys8 => Self::Ent2,
+            Self::Err3 => Self::Ent2,
             Self::Ent2 => Self::Msr3,
             Self::Msr3 => Self::Call6,
             Self::Call6 => Self::Inv1,
@@ -409,8 +399,9 @@ impl SemanticRule {
             Self::Fn2 => 44,
             Self::Fn3 => 45,
             Self::Fn4 => 46,
-            Self::Fn6 => 47,
-            Self::Fn7 => 48,
+            Self::Fn5 => 47,
+            Self::Fn6 => 48,
+
             Self::Fn8 => 49,
             Self::Fn9 => 50,
             Self::Call4 => 51,
@@ -418,13 +409,12 @@ impl SemanticRule {
             Self::Eff2 => 53,
             Self::Err2 => 54,
             Self::Err3 => 55,
-            Self::Sys2 => 56,
-            Self::Sys8 => 57,
-            Self::Ent2 => 58,
-            Self::Msr3 => 59,
-            Self::Call6 => 60,
-            Self::Inv1 => 61,
-            Self::Prf1 => 62,
+
+            Self::Ent2 => 56,
+            Self::Msr3 => 57,
+            Self::Call6 => 58,
+            Self::Inv1 => 59,
+            Self::Prf1 => 60,
         }
     }
 }
@@ -434,8 +424,6 @@ impl SemanticRule {
 pub enum SemanticLocation {
     /// One source-backed production node and its rule-selected coordinate.
     SourceNode(NodePath, SyntaxCoordinate),
-    /// The closed compilation-unit root when no source declaration exists.
-    BundleRoot(Vec<BundleSourceExtent>),
 }
 
 /// One non-discharged static source obligation disposition [ENT-6].
@@ -661,22 +649,6 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by PROV-6.
         mechanical_fix: &'static str,
     },
-    /// [BLK-4] a `&uniq` parameter of a source-declared `fn` whose referent
-    /// reaches a container nominal, a loan-bearing type, or a type parameter.
-    UniqueParameterReachesContainer {
-        /// The refused parameter's own spelling.
-        parameter: String,
-        /// What the referent reached, as [BLK-4] names it.
-        reached: &'static str,
-        /// Exact restructuring required by BLK-4.
-        mechanical_fix: &'static str,
-    },
-    /// [BLK-4] a stored position whose brand resolves to the entry heap's
-    /// store region in a unit whose entry selects no `command.heap` row.
-    ConfinedTypeWithoutStore {
-        /// Exact restructuring required by BLK-4.
-        mechanical_fix: &'static str,
-    },
     /// [PROV-6] a `dispose` whose operand releases to a store no live
     /// binding of this scope holds the provider of.
     DisposeHasNoProvider {
@@ -898,11 +870,6 @@ pub enum SemanticIssueKind {
         residual: String,
         mechanical_fix: &'static str,
     },
-    /// One half-open system buffer-range conjunct lacks a SYS-8 proof.
-    UndischargedSystemRangeObligation {
-        residual: String,
-        mechanical_fix: &'static str,
-    },
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),
@@ -999,6 +966,12 @@ pub enum SemanticIssueKind {
         /// Required STOR-4 restructuring.
         mechanical_fix: &'static str,
     },
+    /// [BLK-4] a complete value type names a region that does not outlive
+    /// the destination of an ordinary owned transfer.
+    ConfinedValueEscape {
+        region: String,
+        mechanical_fix: &'static str,
+    },
     /// A slice-valued value match would require an unselected origin join.
     SliceValueMatch {
         /// Required OWN-5 restructuring.
@@ -1038,12 +1011,9 @@ pub enum SemanticIssueKind {
     InvalidPostconditionClause,
     /// The alpha-expanded final condition is not one output-bearing L0 relation.
     InvalidPostconditionRelation,
-    /// [MSR-3] an `ensures` names a measure of a `&uniq` state parameter,
-    /// which denotes no state a source-declared callee can name.
-    InadmissibleStateParameterMeasure {
-        /// The written `&uniq` parameter whose measure the clause names.
-        parameter: String,
-        /// The restructuring this clause needs.
+    /// [MSR-3] entry is proof-only and directly names an exclusive formal.
+    InvalidEntryFormer {
+        /// The restructuring this occurrence needs.
         mechanical_fix: &'static str,
     },
     /// [CALL-6] the relations one contract publishes are contradictory at
@@ -1066,59 +1036,6 @@ pub enum SemanticIssueKind {
     /// A selected normal return's complete instantiated FN-9 relation is
     /// refuted or unproved after entry-image stability and ordinary kills.
     UndischargedPostcondition(Box<UndischargedPostconditionDetail>),
-    /// The unique source `main` declaration has a header shape FN-7 admits in
-    /// neither entry form.
-    InvalidMain,
-    /// No source `main` declaration exists.
-    MissingMain,
-    /// A declaration other than the unit's entry carries a `program_kind`.
-    NonEntryProgramKind {
-        /// Function that declared the program kind.
-        function: String,
-    },
-    /// A standard-input label is unknown, repeated, out of table-ordinal
-    /// order, or carries a foreign kind prefix.
-    InvalidStandardInputLabel {
-        /// Complete written label spelling.
-        label: String,
-        /// The kind's closed standard-input labels in table-ordinal order.
-        declared_labels: Vec<String>,
-    },
-    /// An `input_label` was written outside a kind-declaring entry's own
-    /// parameters, including in a `fn_sig`.
-    StandardInputLabelOutsideEntry {
-        /// Complete written label spelling.
-        label: String,
-    },
-    /// A selected standard input's written mode and type differ from its row.
-    InvalidStandardInput {
-        /// Complete written label spelling.
-        label: String,
-        /// The row's exact written mode and type.
-        declared: &'static str,
-    },
-    /// A kind-declaring entry declared a value parameter with no
-    /// `input_label`.
-    UnlabelledEntryParameter {
-        /// Binder spelling of the unlabelled parameter.
-        parameter: String,
-    },
-    /// The entry's written result differs from its form's fixed result.
-    InvalidEntryResult {
-        /// The form's exact written result.
-        required: &'static str,
-    },
-    /// The entry's written effect row is inadmissible for its form.
-    InvalidEntryEffects {
-        /// The rows or categories the entry's form admits.
-        admitted: &'static str,
-    },
-    /// A source `call` named the kind-declaring entry, which only program
-    /// start invokes.
-    CallToKindDeclaringEntry {
-        /// Entry spelling written at the call site.
-        entry: String,
-    },
     /// Named user-call arguments differ from the parameter list.
     InvalidNamedArguments {
         /// Callee spelling at the call site.
@@ -1179,45 +1096,8 @@ pub enum SemanticIssueKind {
     },
     /// The written effect row omits a category contributed only by a
     /// compiler-derived release, which has no source occurrence [EFF-2].
-    ReleaseEffectMismatch {
-        /// The parameter or binding whose release contributed the category.
-        owner: String,
-        /// Exact restructuring required by EFF-2.
-        mechanical_fix: &'static str,
-    },
-    /// A source contract carried the syntactically admitted generic list.
-    GenericContract,
-    /// Two members of one source contract have the same name.
-    DuplicateContractMember {
-        /// Repeated member name.
-        member: String,
-    },
-    /// A conformance subject is not one concrete type.
-    NonConcreteConformanceSubject,
-    /// A conformance named a prelude marker instead of a source contract.
-    InvalidConformanceContract,
-    /// A conformance supplied contract arguments.
-    ConformanceContractArguments,
-    /// A later conformance repeated an exact `(type, contract)` key.
-    DuplicateConformance,
-    /// A conformance binding did not exactly match the next contract member.
-    InvalidConformanceBinding {
-        /// Member required at this source position, if one remains.
-        expected_member: Option<String>,
-    },
-    /// A conformance ended before binding every contract member.
-    MissingConformanceBinding {
-        /// First member with no binding.
-        member: String,
-    },
-    /// A bound function was generic, had requirements, or had a different signature.
-    IncompatibleConformanceFunction,
     /// A generic type parameter named a source contract as its bound.
     SourceContractGenericBound,
-    /// A law declaration does not match FN-4's closed declaration table.
-    InvalidContractLaw,
-    /// A valid law declaration cannot be discharged for one conformance.
-    UndischargedContractLaw,
 }
 
 /// A written-argument count and the noun it agrees with, as `1 written type
@@ -1328,15 +1208,6 @@ pub enum UnsupportedSemanticFeature {
     /// that would carry one of those values to execution stops here rather
     /// than lowering wrong code.
     ContainerRuntime,
-    /// An exclusive view over an `array<T, N>` [VIEW-1, VIEW-2]. An array is
-    /// a value with no stable address in this lowering — an element commit
-    /// rebuilds the whole array and writes it back to its binding — so the
-    /// descriptor a view of one carries points at a snapshot, and a write
-    /// through that view would reach the snapshot and not the array. The
-    /// shared view is unaffected, because a live shared loan already refuses
-    /// every write to its origin [OWN-5]; only the exclusive one stops here,
-    /// and it stops rather than lowering a write nobody can observe.
-    ExclusiveViewOverArray,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.
@@ -1376,20 +1247,30 @@ pub struct CheckedProgram<'classified, 'lexed, 'source> {
 }
 
 impl CheckedProgram<'_, '_, '_> {
+    #[cfg(test)]
+    pub(crate) fn element_type(&self, element: CheckedElement) -> Option<CheckedType> {
+        self.data.elements.get(element.0 as usize).copied()
+    }
+
     /// Returns the number of checked source functions.
     #[must_use]
     #[cfg(test)]
     pub fn function_count(&self) -> usize {
-        self.data.functions.len()
+        self.data
+            .functions
+            .iter()
+            .filter(|function| function.body.is_some())
+            .count()
     }
 
-    /// Returns the exact source name of the checked entry function.
+    /// Returns main's ordinary source spelling when the test declares it.
     #[must_use]
     #[cfg(test)]
     pub fn entry_function_name(&self) -> &str {
         self.data
             .functions
-            .get(self.data.main.0 as usize)
+            .iter()
+            .find(|function| function.name == "main")
             .map_or("", |function| function.name.as_str())
     }
 }

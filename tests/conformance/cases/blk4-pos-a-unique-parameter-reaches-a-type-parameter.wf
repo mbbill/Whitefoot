@@ -1,0 +1,12 @@
+struct Holder<T: affine> {
+  value: T;
+}
+
+fn swapin<T: affine>(handle: &uniq Holder<T>, made: own T) -> code: own u8 pure {
+  doc "BLK-4 admits a unique referent reaching a generic type parameter; this pure helper declares no write and leaves the referent unchanged.";
+  return 0_u8;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

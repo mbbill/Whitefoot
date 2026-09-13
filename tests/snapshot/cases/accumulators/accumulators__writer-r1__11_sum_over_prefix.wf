@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: the loop walks only a computed prefix of the buffer, and the bound tracks that shorter span.";
   let data = fixed_vector::<u8, 10>();
   for (
@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare_data: room_of(data) + at_data >= 10_u64,
     invariant flat_data: head_of(data) <= 0_u64
   ) {
-    set data = place_back(vector: move data, value: 6_u8);
+    place_back(vector: &uniq data, value: 6_u8);
   }
   let spare = len_of(data);
   let half = spare / 2_u64;

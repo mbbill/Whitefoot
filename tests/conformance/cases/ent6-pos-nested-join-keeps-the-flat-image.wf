@@ -30,7 +30,7 @@ fn demux(count: own u64, ba: own u64, bb: own u64, bc: own u64) -> done: own u64
   return count;
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "ENT-6: the nested-join image is the flat-join image, so this compiles exactly as its match-shaped twin does.";
   let done = demux(count: 3_u64, ba: 0_u64, bb: 0_u64, bc: 0_u64);
   if done == 3_u64 {

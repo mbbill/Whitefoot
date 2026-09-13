@@ -17,6 +17,6 @@ fn get(b: own Slice<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) 
   return b[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

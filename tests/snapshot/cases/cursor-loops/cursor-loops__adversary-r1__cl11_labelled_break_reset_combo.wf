@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: an outer counted for resets an inner cursor each pass and a labelled break from the inner loop skips to the next outer row on sentinel";
   let grid = fixed_vector::<u8, 12>();
   for (
@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare_grid: room_of(grid) + at_grid >= 12_u64,
     invariant flat_grid: head_of(grid) <= 0_u64
   ) {
-    set grid = place_back(vector: move grid, value: 1_u8);
+    place_back(vector: &uniq grid, value: 1_u8);
   }
   set grid[9_u64] = 0_u8;
   let zero_row = 0_u64;

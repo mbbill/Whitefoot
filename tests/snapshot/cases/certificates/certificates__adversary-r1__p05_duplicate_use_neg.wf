@@ -17,6 +17,6 @@ fn triple_use(a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8,
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -12,7 +12,7 @@ use super::super::entailment::{
 use super::{with_semantics, with_semantics_dark};
 
 const COMMAND_MAIN: &str =
-    "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[derive(Clone, Copy)]
 enum ExpectedProofIssueNode<'source> {
@@ -55,9 +55,7 @@ fn assert_prf1_issue_named(
         };
         assert_eq!(name, expected_name);
         assert_eq!(*obligation, expected);
-        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
-            panic!("PRF-1 must cite the complete invariant statement");
-        };
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         let cited = std::str::from_utf8(&source[start..end]).expect("proof source is UTF-8");

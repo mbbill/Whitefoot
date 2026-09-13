@@ -10,8 +10,14 @@ fn hold['s](store: &uniq Heap<'s>, value: own u8) -> made: own Option<Holder<'s>
         return None<Holder<'s>>();
       }
       Some(value: fresh) => {
-        let one = place_back(vector: move fresh, value: value);
-        let two = place_back(vector: move one, value: value);
+        region {
+          place_back(vector: &uniq fresh, value: value);
+        }
+        let one = move fresh;
+        region {
+          place_back(vector: &uniq one, value: value);
+        }
+        let two = move one;
         let wrapped = Holder(data: move two);
         return Some<Holder<'s>>(value: move wrapped);
       }
@@ -19,40 +25,47 @@ fn hold['s](store: &uniq Heap<'s>, value: own u8) -> made: own Option<Holder<'s>
   }
 }
 
-fn walk['s](store: &uniq Heap<'s>, first: own Holder<'s>) -> code: own u8 reads(store, first.data), writes(store, first.data), allocates(store) {
+fn walk['s](store: &uniq Heap<'s>, first: own Holder<'s>) -> code: own u8 reads(store), writes(store), allocates(store) {
   doc "PROV-6: a container's elements are visited before its backing is released. The fixed run's own backing is this activation's frame and reclaims nothing, and its window holds elements that each own one run of the general store, so the derived release is exactly the window walk in ascending logical order and the storage every element owns is freed once.";
   let empty = fixed_vector::<Holder<'s>, 4>();
-  let one = place_back(vector: move empty, value: move first);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let one = move empty;
   region {
     match hold(store: &uniq deref(store), value: 5_u8) {
       None() => {
         return 70_u8;
       }
       Some(value: second) => {
-        let two = place_back(vector: move one, value: move second);
+        place_back(vector: &uniq one, value: move second);
+        let two = move one;
         let held = len_of(two);
         if held == 2_u64 {
         } else {
           return 1_u8;
         }
-        let (rest, back) = take_front(vector: move two);
-        let width = len_of(back.data);
-        if width == 2_u64 {
-        } else {
-          return 2_u8;
+        region {
+          let back = take_front(vector: &uniq two);
+          let rest = move two;
+          let width = len_of(back.data);
+          if width == 2_u64 {
+          } else {
+            return 2_u8;
+          }
+          let left = len_of(rest);
+          if left == 1_u64 {
+          } else {
+            return 3_u8;
+          }
+          return 0_u8;
         }
-        let left = len_of(rest);
-        if left == 1_u64 {
-        } else {
-          return 3_u8;
-        }
-        return 0_u8;
       }
     }
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "The entry hands the general store's provider to the walk, whose own region parameter names the store the run's elements live in.";
   region {
     match hold(store: &uniq heap, value: 3_u8) {

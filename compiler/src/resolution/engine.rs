@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
 use crate::{ByteOffset, CanonicalSyntaxUnit, Production, SourceId};
 
-use super::catalog::{PRELUDE_DECLARATIONS, system_declarations};
+use super::catalog::PRELUDE_DECLARATIONS;
 use super::scopes::ScopeBuild;
 use super::{
     DeclarationClass, DeclarationDomain, DeclarationId, DeclarationRecord, DeclarationRole,
@@ -11,12 +11,13 @@ use super::{
     LexicalUseRecord, LexicalUseRole, PostconditionCandidateRecord, PostconditionFieldRecord,
     PostconditionResolutionRecord, PostconditionSelectorClass, PostconditionSelectorUseRecord,
     PreludeDeclarationRecord, ResolutionCompilerFailure, ResolutionIssue, ResolutionIssueKind,
-    ResolutionOutcome, ResolvedSyntaxUnit, ScopeId, SourceOrigin, SystemDeclarationRecord,
+    ResolutionOutcome, ResolvedSyntaxUnit, ScopeId, SourceOrigin,
 };
 
 mod admission;
 mod inventory;
 mod lookup;
+mod prelude;
 mod roles;
 
 use admission::check_clause_blocks;
@@ -55,11 +56,6 @@ enum RawRoleKind {
     Selector(SelectorRole),
     LexicalUse(LexicalUseRole),
     DeferredUse(DeferredUseRole),
-    /// A DIAG-1 table-checked carrier: the `program_kind` IDENT and both
-    /// IDENTs of an `input_label`. It declares nothing and enters no lexical
-    /// name domain; its FN-7 kind-table judgment is an unimplemented compiler
-    /// capability, so classification produces no retained record yet.
-    TableChecked,
 }
 
 impl RawRoleKind {
@@ -69,7 +65,6 @@ impl RawRoleKind {
             Self::Selector(_) => 1,
             Self::LexicalUse(_) => 2,
             Self::DeferredUse(_) => 3,
-            Self::TableChecked => 4,
         }
     }
 }
@@ -156,7 +151,6 @@ struct UseMeta {
 struct Tables {
     scopes: Vec<super::ScopeRecord>,
     prelude: Vec<PreludeDeclarationRecord>,
-    system: Vec<SystemDeclarationRecord>,
     declarations: Vec<DeclarationRecord>,
     dependent_declarations: Vec<DependentDeclarationRecord>,
     lexical_uses: Vec<LexicalUseRecord>,
@@ -185,7 +179,6 @@ pub fn resolve<'classified, 'lexed, 'source>(
             syntax,
             scopes: tables.scopes,
             prelude: tables.prelude,
-            system: tables.system,
             declarations: tables.declarations,
             dependent_declarations: tables.dependent_declarations,
             lexical_uses: tables.lexical_uses,
@@ -202,18 +195,15 @@ pub fn resolve<'classified, 'lexed, 'source>(
 
 fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, BuildStop> {
     let topology = &syntax.finalized.topology;
-    let scopes = ScopeBuild::build(topology)?;
+    let scopes = ScopeBuild::build(topology, syntax.finalized.parsed.classified.source_bundle())?;
     // [DIAG-1] fixes this order: complete unit-wide FN-8 admission precedes
     // declaration inventory, and only complete inventory permits lexical
     // resolution.
     if let Some(issue) = check_clause_blocks(topology, &scopes)? {
         return Err(BuildStop::Issue(Box::new(issue)));
     }
-    // [SYS-3] admits the complete [SYS-2] inventory into every compilation
-    // unit as the third declaration source [SYS-1]. Entry-form validation is
-    // deliberately later and cannot change which system names exist.
-    let system = system_declarations();
     let mut roles = classify_roles(syntax, &scopes)?;
+    let prelude = prelude::PreludeInventory::build(syntax, &roles)?;
     // [LIV-2] a `set` target identifier that resolves to no binding declares
     // one exactly as a `let` does. Which targets those are is not a syntactic
     // property — it is the outcome of the ordinary lookup — so the candidates
@@ -238,7 +228,34 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                 RawRoleKind::Declaration(declaration_role) => {
                     let id = DeclarationId::from_index(declarations.len())
                         .ok_or(ResolutionCompilerFailure::CounterOverflow)?;
-                    let entries = declaration_classes(declaration_role);
+                    // A named formal's members have stable function-parameter
+                    // identities, but FN-3 introduces no unqualified lexical
+                    // names. Only a raw function binder enters that domain.
+                    // Member distinctness is the formal table's FN-3 judgment.
+                    let grouped_member = declaration_role == DeclarationRole::FunctionParameter
+                        && role
+                            .owner_chain
+                            .get(1)
+                            .and_then(|owner| topology.node(*owner))
+                            .is_some_and(|record| record.production == Production::FormalDecl);
+                    let mut entries = if grouped_member {
+                        Vec::new()
+                    } else {
+                        declaration_classes(declaration_role)
+                    };
+                    if declaration_role == DeclarationRole::Struct
+                        && syntax
+                            .finalized
+                            .parsed
+                            .classified
+                            .source_bundle()
+                            .file(role.origin.coordinate.source())
+                            .is_some_and(|file| {
+                                file.prelude() == Some(crate::source::PreludeSource::Opaque)
+                            })
+                    {
+                        entries.retain(|class| *class != DeclarationClass::StructConstructor);
+                    }
                     let record_index = declarations.len();
                     declarations.push(DeclarationRecord {
                         id,
@@ -247,15 +264,45 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                         origin: role.origin.clone(),
                         scope: declaration_scope(role, declaration_role, &scopes)?,
                         classes: entries.clone(),
+                        diagnostic_origins: prelude.roles[role_index].clone(),
                     });
                     declaration_by_role[role_index] = Some(record_index);
                     declaration_metas.push(DeclarationMeta {
                         role_index,
                         record_index,
                         scope: declarations[record_index].scope,
-                        owner: role.owner_chain.first().copied(),
+                        owner: if declaration_role == DeclarationRole::FunctionParameter {
+                            // The callable binder belongs to the receiving
+                            // generic declaration; its own parameters and
+                            // regions remain owned by the nested FnSig.
+                            Some(
+                                *role
+                                    .owner_chain
+                                    .get(1)
+                                    .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?,
+                            )
+                        } else {
+                            role.owner_chain.first().copied()
+                        },
                         region_owner: region_scope_owner(topology, role.owner),
-                        visibility: declaration_visibility(topology, role, declaration_role)?,
+                        visibility: if matches!(
+                            declaration_role,
+                            DeclarationRole::Function
+                                | DeclarationRole::Struct
+                                | DeclarationRole::Enum
+                                | DeclarationRole::Variant
+                        ) && syntax
+                            .finalized
+                            .parsed
+                            .classified
+                            .source_bundle()
+                            .file(role.origin.coordinate.source())
+                            .is_some_and(|file| file.prelude().is_some())
+                        {
+                            Visibility::Always
+                        } else {
+                            declaration_visibility(topology, role, declaration_role)?
+                        },
                         entries,
                     });
                 }
@@ -291,7 +338,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                     origin: role.origin.clone(),
                 }),
                 // Table-checked carriers await the FN-7 kind-table capability, and
-                RawRoleKind::Selector(_) | RawRoleKind::TableChecked => {}
+                RawRoleKind::Selector(_) => {}
             }
         }
 
@@ -305,7 +352,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             &declaration_metas,
             &declaration_index,
             &declaration_by_role,
-            &system,
+            &prelude.builtins,
         )? {
             return Err(BuildStop::Issue(Box::new(issue)));
         }
@@ -315,7 +362,6 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             &declaration_metas,
             &declaration_index,
             &uses,
-            &system,
         )?;
         if let Some(issue) = unresolved {
             // [LIV-2] exactly one candidate is promoted per pass, and only the one
@@ -339,12 +385,11 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             &declaration_index,
             &postcondition_entry_uses,
             &lexical_uses,
-            &system,
         )?;
         return Ok(Tables {
             scopes: scopes.records,
-            prelude: PRELUDE_DECLARATIONS.to_vec(),
-            system,
+            prelude: prelude.records,
+
             declarations,
             dependent_declarations,
             lexical_uses,
@@ -376,7 +421,7 @@ fn declaring_set_target_candidates(
         let record = topology
             .node(pbase)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
-        if record.production != Production::Pbase {
+        if record.production != Production::Pbase || record.terminal_count != 1 {
             continue;
         }
         // `pbase := IDENT | "deref" "(" place ")"`: a `deref` base owns a
@@ -454,7 +499,6 @@ fn build_postcondition_records(
     declaration_index: &DeclarationIndex,
     entry_uses: &[UseMeta],
     lexical_uses: &[LexicalUseRecord],
-    system: &[SystemDeclarationRecord],
 ) -> Result<Vec<PostconditionResolutionRecord>, BuildStop> {
     let mut blocks = Vec::new();
     for (index, record) in topology.nodes.iter().enumerate() {
@@ -479,7 +523,7 @@ fn build_postcondition_records(
 
     let mut out = Vec::with_capacity(blocks.len());
     for block in blocks {
-        let function = ancestor_with_production(topology, block, Production::FnDecl)
+        let function = function_owner(topology, block)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
         // [GRAM-2] the declaration writes one result or an ordered result
         // list; every ordinal's binder is a candidate a clause may name
@@ -661,7 +705,6 @@ fn build_postcondition_records(
                 declaration_metas,
                 declaration_index,
                 &ordinary_entry_uses,
-                system,
             )?;
             if issue.is_some() {
                 (Vec::new(), issue)
@@ -705,7 +748,7 @@ fn build_postcondition_candidate(
         .iter()
         .filter_map(|candidate| metas.get(*candidate))
     {
-        if meta.scope != ScopeId(0)
+        if !scopes.is_unit_scope(meta.scope)
             && meta
                 .owner
                 .is_some_and(|owner| !role.owner_chain.contains(&owner))
@@ -773,7 +816,8 @@ fn owner_chain(
                 | Production::FnDecl
                 | Production::StructDecl
                 | Production::EnumDecl
-                | Production::ContractDecl
+                | Production::FormalDecl
+                | Production::ActualDecl
         ) {
             owners.push(node);
         }
@@ -810,7 +854,12 @@ fn region_scope_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<
         let record = topology.node(node)?;
         if matches!(
             record.production,
-            Production::FnDecl | Production::FnSig | Production::StructDecl | Production::EnumDecl
+            Production::FnDecl
+                | Production::FnSig
+                | Production::StructDecl
+                | Production::EnumDecl
+                | Production::FormalDecl
+                | Production::ActualDecl
         ) {
             return Some(node);
         }
@@ -821,13 +870,15 @@ fn region_scope_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<
 fn declaration_classes(role: DeclarationRole) -> Vec<DeclarationClass> {
     match role {
         DeclarationRole::Function => vec![DeclarationClass::Function],
+        DeclarationRole::FunctionParameter => vec![DeclarationClass::FunctionParameter],
         DeclarationRole::Struct => vec![
             DeclarationClass::NominalType,
             DeclarationClass::StructConstructor,
         ],
         DeclarationRole::Enum => vec![DeclarationClass::NominalType],
         DeclarationRole::Variant => vec![DeclarationClass::EnumVariant],
-        DeclarationRole::Contract => vec![DeclarationClass::Contract],
+        DeclarationRole::Formal => vec![DeclarationClass::Formal],
+        DeclarationRole::Actual => vec![DeclarationClass::Actual],
         DeclarationRole::NamedConst => vec![DeclarationClass::NamedConst],
         DeclarationRole::GenericType => vec![DeclarationClass::GenericType],
         DeclarationRole::ConstGeneric => vec![DeclarationClass::ConstGeneric],
@@ -851,7 +902,12 @@ fn declaration_scope(
     scopes: &ScopeBuild,
 ) -> Result<ScopeId, ResolutionCompilerFailure> {
     match declaration_role {
-        DeclarationRole::Variant => Ok(ScopeId(0)),
+        DeclarationRole::Variant => scopes.node_scope(
+            *role
+                .owner_chain
+                .first()
+                .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?,
+        ),
         DeclarationRole::LoopLabel | DeclarationRole::LocalRegion => {
             scopes.declaration_scope(role.owner)
         }
@@ -871,6 +927,7 @@ fn declaration_visibility(
     let byte = match declaration_role {
         DeclarationRole::NamedConst
         | DeclarationRole::ConstGeneric
+        | DeclarationRole::FunctionParameter
         | DeclarationRole::Parameter
         | DeclarationRole::CountedBinder
         | DeclarationRole::Invariant => node_end(topology, role.owner)?.value(),
@@ -947,16 +1004,18 @@ fn is_visible(
 fn declaration_domain(class: DeclarationClass) -> Option<DeclarationDomain> {
     match class {
         DeclarationClass::Function
+        | DeclarationClass::FunctionParameter
         | DeclarationClass::NamedConst
         | DeclarationClass::ConstGeneric
         | DeclarationClass::Value => Some(DeclarationDomain::LexicalIdentifier),
-        DeclarationClass::GenericType | DeclarationClass::NominalType => {
-            Some(DeclarationDomain::NominalType)
-        }
+        DeclarationClass::GenericType
+        | DeclarationClass::NominalType
+        | DeclarationClass::Formal
+        | DeclarationClass::Actual => Some(DeclarationDomain::NominalType),
         DeclarationClass::StructConstructor | DeclarationClass::EnumVariant => {
             Some(DeclarationDomain::Constructor)
         }
-        DeclarationClass::Contract => Some(DeclarationDomain::Contract),
+        DeclarationClass::NumericBound => Some(DeclarationDomain::NumericBound),
         DeclarationClass::Region => Some(DeclarationDomain::Region),
         DeclarationClass::Label => Some(DeclarationDomain::Label),
         DeclarationClass::Invariant => Some(DeclarationDomain::Invariant),

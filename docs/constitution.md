@@ -65,6 +65,15 @@ that requirements are correct or fully capture the intended behavior. Logic
 errors, including unintended nontermination, may remain. Expected input and
 environment failures must have defined program behavior.
 
+## External interaction through ordinary objects
+
+I/O and external resources must be represented through the same object,
+ownership, borrowing, effect, and proof abstractions as other program state.
+Their required relations belong in ordinary callable contracts. An external
+role grants no source-language exception. No declaration, type, ownership,
+effect, proof, diagnostic or semantic rule distinguishes a value or function
+by whether its implementation crosses the host boundary.
+
 ## Compatibility and evolution
 
 Backward compatibility may yield to the language's objectives and long-term
