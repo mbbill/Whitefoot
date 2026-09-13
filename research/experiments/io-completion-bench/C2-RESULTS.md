@@ -400,3 +400,70 @@ and four emitted modules, four module objects and twelve native objects are
 byte-identical with all twin controls empty. That instrument check does not
 supply the missing cross-version comparison; its entry/library adaptation is
 still an owner question, with no exemption or retry applied.
+
+## Read-heavy CI on b9d79cd0
+
+[Run 34747240600](https://github.com/mbbill/Whitefoot/actions/runs/34747240600)
+completed all four measurement jobs at
+`b9d79cd001202d06af2a0e8491a189991a135a6f`. The
+[Linux read job](https://github.com/mbbill/Whitefoot/actions/runs/34747240600/job/103697856694)
+used an AMD EPYC 7763, four visible processors, Linux
+`6.17.0-1022-azure`, ext4 on `/dev/sda1`, and io_uring enabled. The
+[macOS read job](https://github.com/mbbill/Whitefoot/actions/runs/34747240600/job/103697856865)
+used macOS 14.8.9, an Apple M1 virtual machine with three processors and
+7 GiB memory. Its initial load averages were 5.85/8.23/7.13. These are
+different machines from the preceding traversal and Windows cohorts.
+
+The unchanged `read-bench.sh` protocol generated eight 64 MiB files, then
+made 32,768 positioned reads per process: 2 GiB at 64 KiB or 128 MiB at
+4 KiB. Every line checked the existing digest before measurement and on
+every timed pass. Each of the four tables per host had two warm-up passes
+and seven recorded passes, reversing the whole plan on alternate passes.
+The following fixed columns are medians in milliseconds; the artifacts
+also retain every pool, io_uring and helper-count variant with min/max and
+user/system summaries. No individual timing samples were uploaded by these
+jobs, and the four-thread control is not a claim about the best pool size.
+
+| Host and requested cache policy | Read size | C direct | C pool 4 | WF narrow, no overlap | WF narrow, default | WF wide 8, default |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Linux, evict at open | 64 KiB | 1717.07 | 1267.26 | 1786.54 | 1746.91 | 1777.31 |
+| Linux, evict at open | 4 KiB | 3724.83 | 1496.82 | 3916.55 | 3835.01 | 3864.59 |
+| Linux, warm | 64 KiB | 236.63 | 83.83 | 253.84 | 249.91 | 272.48 |
+| Linux, warm | 4 KiB | 33.76 | 12.03 | 62.93 | 62.57 | 65.73 |
+| macOS, uncached requested | 64 KiB | 1934.03 | 986.56 | 2182.44 | 2330.63 | 2100.47 |
+| macOS, uncached requested | 4 KiB | 2257.17 | 1039.38 | 2494.84 | 2358.17 | 2230.64 |
+| macOS, warm | 64 KiB | 217.59 | 79.31 | 234.71 | 225.03 | 228.55 |
+| macOS, warm | 4 KiB | 39.27 | 20.48 | 39.20 | 40.66 | 43.89 |
+
+The cache probes remain part of the result. Linux confirmed both pre-table
+eviction probes; its 64 KiB after-probe found warm pages, as expected from
+an eviction at open rather than an uncached descriptor mode. The macOS
+64 KiB pre-table probe **refused** the uncached label (111 of 128 sampled
+reads at or below 40 us); its after-probe confirmed it. That table therefore
+does not establish uncached performance. The macOS 4 KiB table passed both
+probes, and all warm tables passed both probes. Each probe samples 64 KiB
+reads even beside a 4 KiB workload; none observes every measured read.
+
+The Linux warm 4 KiB medians expose a material total-path gap: WF narrow
+62.57 ms (60.95–65.89) and wide 8 65.73 ms (62.98–69.04), versus direct C
+33.76 ms (33.61–34.45). That is 1.85–1.95 times the direct median, not
+parity. The macOS distributions are much broader: its warm wide-8 4 KiB
+range alone is 37.24–102.89 ms. These measurements use the ordinary call
+path, with no restored PAR-3 permission. They price the complete source
+and native paths; they do not separate factory serialization, native engine
+overhead, ownership transport and wrapper calls into timed components.
+
+The same macOS job also completed the unchanged 8192-file traversal and
+digest with two warm-ups and seven recorded passes. Direct C measured
+217.48 ms (152.90–229.30), pool 4 90.62 ms (61.98–124.61), and default WF
+narrow/loop/wide/wide8 188.42/229.44/226.75/220.75 ms. Its full 36-line table
+is in `bench-many.txt`; the wide distributions do not establish a narrow
+speedup or a regression against a different host.
+
+Artifact identities: `bench-linux-read` SHA-256
+`e5ea76c2a428c41ba7e8464a988173e73724564dbad8ae413033de3ba0295a37`;
+`bench-macos-read` SHA-256
+`c3ac03543dfcced033ff2d76f1429cb8aa8da0a7a894242b3389f991f6a34b67`.
+Their host records and complete tables are attached to the linked run.
+These successful jobs do not supply WF TCP samples or repair the separate
+pre-C2 compute-regression baseline boundary described above.
