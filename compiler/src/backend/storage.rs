@@ -1535,7 +1535,7 @@ fn build(seed: own u64) -> result: own Row pure {
   return Row(left: seed, right: next);
 }
 
-fn exchange(old: &uniq Row) -> result: own Row reads(old.left, old.right), writes(old.left, old.right) {
+fn exchange(old: &uniq Row) -> result: own Row reads(old), writes(old, old.left) {
   let fresh = build(seed: 37_u64);
   let previous = replace deref(old) = move fresh;
   set deref(old).left = 99_u64;
@@ -1829,7 +1829,28 @@ fn main() -> status: own ExitStatus pure {
                     })
                     .collect();
                 assert_eq!(slots.len(), 1, "construction and append use one backing");
-                assert_eq!(plan.slots().len(), 1);
+                // PRE-1's ExitStatus is an ordinary opaque nominal, so its
+                // direct-call result owns backing independently of the run.
+                let IrType::Nominal(result) = function.result() else {
+                    panic!("the source entry returns an ordinary nominal");
+                };
+                assert!(matches!(
+                    program.nominal(result).expect("result nominal").kind(),
+                    IrNominalKind::Opaque
+                ));
+                assert_eq!(
+                    plan.slots()
+                        .iter()
+                        .filter(|ty| **ty == function.result())
+                        .count(),
+                    1,
+                    "the opaque result uses exactly one separate slot"
+                );
+                assert_ne!(
+                    plan.slots()[*slots.first().expect("run slot")],
+                    function.result()
+                );
+                assert_eq!(plan.slots().len(), 2);
             },
         );
     }

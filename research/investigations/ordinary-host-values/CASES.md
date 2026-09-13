@@ -35,6 +35,14 @@ register does not report an unrun acceptance check as passed.
 
 ### Changed source verdicts
 
+The maintained `wfgrep-double-walk` replay sources use ordinary `MutSlice`
+parameters for element-only append, copy and diagnostic assembly, and `Slice`
+for publication. EFF-2 therefore does not claim whole-buffer descriptor writes
+at those calls. This avoids relying on an affine length theorem after ENT-6's
+conservative join; it introduces no runtime proof guard or stronger inference.
+The inherited algorithms and manifest are unchanged. The original performance
+cohort remains frozen; compiling these sources does not renew its measurements.
+
 Each change below is selected by the amended rule, before compiler execution.
 All other original expectations, including the exact native exit codes, remain.
 
@@ -125,6 +133,8 @@ by renaming it into an unrelated passing case.
 | [run-sysfile-multichunk](../../../tests/conformance/cases/run-sysfile-multichunk.wf) | Source advances its explicit file offset across ordinary read_at calls. Ok payloads are absolute destination endpoints; the final short prefix and later Err(ReadEnd) preserve the original observations. |
 | [run-sysout-basic-write](../../../tests/conformance/cases/run-sysout-basic-write.wf) | The ordinary write_once signature borrows its output and shared invocation factory state. Its linked implementation makes one output attempt and returns the absolute accepted endpoint. |
 | [run-sysout-redirect-same-sink-order](../../../tests/conformance/cases/run-sysout-redirect-same-sink-order.wf) | Output calls and the later file read explicitly borrow the same HandleFactory state. Ordinary EFF-2/PAR-1 interference preserves the arranged shared sink order, including independently named aliased output streams; the readback observes the combined bytes. |
+| [fn2-neg-two-stores-give-two-result-types](../../../tests/conformance/cases/fn2-neg-two-stores-give-two-result-types.wf) | Restore the helper's declared allocates(store) contribution from arena_vector under BLK-0/EFF-2. This removes an unrelated earlier diagnostic; the two distinct store brands still reject the original assignment under TYPE-5. |
+| [run-exclusive-owning-map-put](../../../tests/conformance/cases/run-exclusive-owning-map-put.wf) | C2 EFF-2 roots reads after match move outcome in the local extracted payload, so check_put removes reads(outcome). Memory reclamation still writes the supplied store. The map operations, byte checks and run verdict are unchanged. |
 | [sys14-list-outcome-exhaustive](../../../tests/conformance/cases/sys14-list-outcome-exhaustive.wf) | directory_next returns an ordinary Result<unit,ListStop>, numeric endpoint and entry count. Complete Ok and nested ListEnd/ListFailed matches are exhaustive under ERR-2; the fixture reaches a successful batch. The endpoint contract is unconditional and follows its ordinary numeric result. |
 | [reject-sys14-list-end-beyond-buffer](../../../tests/conformance/cases/reject-sys14-list-end-beyond-buffer.wf) | The original end 4104 exceeds the 4096-byte destination. FN-8 rejects directory_next through its ordinary end <= len_of(deref(destination)) requirement; SYS-8 is retired. |
 | [sys14-list-zero-range](../../../tests/conformance/cases/sys14-list-zero-range.wf) | The ordinary directory_next library operation returns Ok(unit), next=start and zero entries for an empty range, leaving enumeration available for a later transfer. |

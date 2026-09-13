@@ -504,11 +504,9 @@ pub(super) fn build_linked_executable_with_library_defines(
     let floor_unit = directory.join("wf_floor.c");
     std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
-    // The runtime units join the link on exactly the conditions the driver
-    // uses: the emitted module names the core's entry points, or a submit. A
-    // test therefore cannot link a runtime a shipped build would not, and a
-    // module that overlaps nothing and submits nothing is linked here with
-    // nothing extra at all.
+    // Every executable links the ordinary library and its private runtime
+    // dependencies, using the same build inputs as the driver. Source
+    // classification never selects a second linkage or callable ABI.
     let completion_units =
         append_runtime_units_with_library_defines(&mut command, directory, library_defines);
     let compile = command
@@ -696,6 +694,7 @@ fn nominal_lowering_keeps_selected_tag_widths_and_initialized_payloads() {
   Off();
   On();
 }
+
 enum Payload {
   Empty();
   Value(number: i32);
@@ -768,14 +767,17 @@ fn checked_affine_cleanup_survives_lowering_and_emission() {
     let source = br#"struct Cell {
   value: i32;
 }
+
 struct Inner {
   selected: Cell;
   sibling: Cell;
 }
+
 struct Outer {
   inner: Inner;
   sibling: Cell;
 }
+
 enum Holder {
   Held(cell: Cell);
   Empty();
@@ -848,6 +850,7 @@ fn copy_place_set_executes_for_root_and_nested_struct_fields() {
     let source = br#"struct Inner {
   value: i32;
 }
+
 struct Outer {
   inner: Inner;
   other: i32;
@@ -964,8 +967,7 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
   }
   let chained = if other {
     give False();
-  }
-  else if flag {
+  } else if flag {
     give True();
   } else {
     give False();
@@ -1158,10 +1160,12 @@ fn result_values_checked_arithmetic_and_propagation_execute_through_host_llvm() 
     let source = br#"enum StepError {
   Failed();
 }
+
 struct Pair {
   left: i32;
   right: i32;
 }
+
 struct Envelope {
   result: Result<i32, StepError>;
   residue: Pair;

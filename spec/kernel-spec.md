@@ -2382,7 +2382,7 @@ Any diagnostic or debug projection is explanatory only: it establishes no source
 
 The language defines no writer-reachable runtime proof-failure report, because every writer-visible proof obligation is discharged before lowering or rejects the source.
 Static source diagnostics follow [DIAG-1]. Diagnostic derivations follow [DIAG-2] and explain the source semantic decision; they are never reloaded or checked as a second acceptance step.
-An implementation may report target qualification, unavailable external resources, trusted-computing-base failures, or compiler failures on implementation-defined channels, but none is a source-language outcome and none may be mistaken for a successful source judgment.
+An implementation may report unavailable resources, trusted-computing-base failures, or compiler failures on implementation-defined channels, but none is a source-language outcome and none may be mistaken for a successful source judgment.
 
 ## 13. Execution overlap
 

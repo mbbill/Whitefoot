@@ -727,11 +727,6 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     function_templates: Vec<FunctionTemplate>,
     templates_by_declaration: HashMap<DeclarationId, usize>,
     functions_by_declaration: HashMap<DeclarationId, Vec<FunctionId>>,
-    /// Closed-world structural state origins for the currently selected
-    /// concrete or symbolic function inventory, indexed by FunctionId.
-    /// The preliminary body pass records enough checked control/data flow to
-    /// derive the summaries but deliberately postpones EFF-2 equality until
-    /// the summaries reach a fixed point.
     constants: HashMap<DeclarationId, CheckedConstantId>,
     checked_constants: Vec<CheckedConstant>,
     /// Hash-consed symbolic const operations [CONST-1 candidate]. Written by

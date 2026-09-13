@@ -8250,10 +8250,13 @@ fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positiv
                     // B7c4b's migration of the raw DEFLATE chain: the Huffman
                     // table reserves its three inline runs by counted loops,
                     // `decode_dynamic` its three length runs, and the boundary
-                    // driver's `main` its four extent-resident runs.
+                    // driver's `exercise` its four extent-resident runs.
+                    // v0.58's ordinary Inputs wrapper keeps main separate
+                    // from that unchanged four-loop operation chain.
                     (1, "build_huffman_table") => 5,
                     (1, "decode_dynamic") => 3,
-                    (1, "main") => 4,
+                    (1, "exercise") => 4,
+                    (1, "main") => 0,
                     // `wfgrep.wf`'s two fill helpers, which carry the zero
                     // fill its runs took from `buffer_new` before B7c4b.
                     (2, "zeroed_bytes") => 1,
@@ -8310,8 +8313,10 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
     let mut calls = Vec::new();
     for (caller, function) in program.functions.iter().enumerate() {
         let mut found = Vec::new();
+        // An ordinary fn_sig has no source statements or source call sites.
+        // Its contract derivations are checked by the enclosing traversal.
         collect_direct_calls(
-            function.body.as_deref().expect("WF body"),
+            function.body.as_deref().unwrap_or(&[]),
             read_bits,
             &mut found,
         );
@@ -8463,6 +8468,49 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         }));
     }
 
+    // PRE-1 supplies ordinary signatures: write_once and read_at each publish
+    // their two endpoint clauses through the same CALL-6 direct-match route.
+    // The original fourteen read_bits sites above remain unchanged.
+    for (caller_name, callee_name) in [("publish_all", "write_once"), ("exercise", "read_at")] {
+        let caller = program
+            .functions
+            .iter()
+            .find(|function| function.name == caller_name)
+            .expect("boundary caller");
+        let callee = program
+            .functions
+            .iter()
+            .find(|function| function.name == callee_name)
+            .expect("ordinary endpoint signature");
+        let mut sites = Vec::new();
+        collect_direct_calls(
+            caller.body.as_deref().expect("WF body"),
+            callee.id,
+            &mut sites,
+        );
+        let [(path, _)] = sites.as_slice() else {
+            panic!("{caller_name} has exactly one {callee_name} call");
+        };
+        assert_eq!(
+            caller
+                .entailment
+                .derivations
+                .roots
+                .iter()
+                .filter(|root| matches!(
+                    root.kind,
+                    DerivationRootKind::PostconditionDirectMatch { .. }
+                ))
+                .filter(|root| matches!(
+                    &caller.entailment.derivations.nodes[root.node.0 as usize],
+                    DerivationNode::PostconditionDirectMatch { call, .. } if call == *path
+                ))
+                .count(),
+            2,
+            "{callee_name} retains both endpoint clauses at its source call"
+        );
+    }
+
     assert_eq!(
         program
             .functions
@@ -8473,7 +8521,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                 DerivationRootKind::PostconditionDirectMatch { .. }
             ))
             .count(),
-        14
+        18
     );
     assert_eq!(
         program

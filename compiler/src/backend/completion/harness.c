@@ -36,23 +36,8 @@
 #include <time.h>
 #include <unistd.h>
 
-/* The runtime's own answer to the window query when nothing else bounds it. A
- * test which means to reach that boundary must name the same number the bridge
- * does.
- *
- * It used to be half the process-wide operation capacity.  There is no
- * operation capacity any more -- the record is a block of the submitting frame
- * -- and every submitted operation's batch carries the compiler's ceiling of
- * two, so the only form this number reaches is a staged loop whose call is a
- * lane hand-out, and it is the lane's own slot count (design §7). */
-#define WF_HARNESS_WINDOW_DEFAULT 1024u
-/* The private storage the window query affords one loop before the compiler's
- * ceiling and the loop's own slot size apply.  A test which means to reach
- * that boundary must name the same number the bridge does. */
-#define WF_HARNESS_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
-
-/* One operation record block, exactly as an emitted frame reserves it: the
- * size and alignment the contract states, and no knowledge of the layout. */
+/* One operation record block, exactly as an ordinary linked body reserves it:
+ * the size and alignment the contract states, and no knowledge of the layout. */
 typedef struct wf_harness_record {
     _Alignas(WF_COMPLETION_RECORD_ALIGN)
         unsigned char bytes[WF_COMPLETION_RECORD_BYTES];
@@ -2473,65 +2458,6 @@ static int test_readiness_refusal_is_not_a_terminal_outcome(void) {
     CHECK(close(descriptors[1]) == 0);
     return 0;
 }
-/* The runtime's own bound on how many iterations of one loop may be in flight
- * at once.
- *
- * The rules this checks are the only ones a lowering may rely on: every
- * argument is a bound and none can raise the answer, a zero argument places no
- * bound, and one is always a legal answer.  That last one is what makes the
- * query safe to emit at all — a loop whose window came back as zero would have
- * no legal schedule, and the sequential program is always a legal schedule. */
-static int test_completion_window_answers_at_the_boundaries(void) {
-    uint64_t unconstrained = wf__completion_window(0, 0, 0);
-    uint64_t budget = WF_HARNESS_WINDOW_BYTE_BUDGET;
-    uint64_t two;
-
-    /* The runtime's unconstrained answer is its own throughput choice.  It
-     * used to be half the process operation capacity, because a loop holding
-     * every record would have pushed the rest of the program onto the
-     * capacity-wait path; there is no capacity and no wait to be pushed onto
-     * any more, and the number is the lane's slot count, since a staged lane
-     * hand-out is the one form no compiler ceiling bounds below it (design
-     * §7). */
-    CHECK(unconstrained >= 1u);
-    CHECK(unconstrained <= WF_HARNESS_WINDOW_DEFAULT);
-
-    /* A trip count of one is a loop with nothing to overlap. */
-    CHECK(wf__completion_window(1, 0, 0) == 1u);
-    /* The compiler's own static cap is honoured exactly. */
-    CHECK(wf__completion_window(0, 0, 1) == 1u);
-    CHECK(wf__completion_window(0, 0, 2) == (unconstrained < 2u ? unconstrained : 2u));
-    CHECK(wf__completion_window(3, 0, 0) == (unconstrained < 3u ? unconstrained : 3u));
-    /* Neither a huge trip count nor a huge ceiling raises the runtime's own
-     * answer: every argument is a minimum with it, never a request. */
-    CHECK(wf__completion_window(UINT64_MAX, 0, 0) == unconstrained);
-    CHECK(wf__completion_window(0, 0, UINT64_MAX) == unconstrained);
-    CHECK(wf__completion_window(UINT64_MAX, 0, UINT64_MAX) == unconstrained);
-
-    /* The byte budget. One slot of the whole budget affords one iteration;
-     * half of it affords two; a slot larger than the budget affords none, and
-     * the floor turns that into the sequential program rather than into a
-     * schedule with no slots. */
-    CHECK(wf__completion_window(0, budget, 0) == 1u);
-    CHECK(wf__completion_window(0, budget + 1u, 0) == 1u);
-    CHECK(wf__completion_window(0, UINT64_MAX, 0) == 1u);
-    /* The design's own example: a loop privatizing a 16 MiB buffer gets one. */
-    CHECK(wf__completion_window(0, 16u * 1024u * 1024u, 0) == 1u);
-    two = budget / 2u;
-    CHECK(wf__completion_window(0, two, 0) == (unconstrained < 2u ? unconstrained : 2u));
-
-    /* The smallest argument decides, whichever one it is. */
-    CHECK(wf__completion_window(2, budget / 8u, 8) == 2u);
-    CHECK(wf__completion_window(8, budget / 2u, 8) == (unconstrained < 2u ? unconstrained : 2u));
-    CHECK(wf__completion_window(8, budget / 8u, 2) == 2u);
-
-    /* One is always legal: no combination of arguments answers zero. */
-    CHECK(wf__completion_window(0, 0, 0) >= 1u);
-    CHECK(wf__completion_window(1, UINT64_MAX, 1) == 1u);
-    CHECK(wf__completion_window(UINT64_MAX, UINT64_MAX, UINT64_MAX) == 1u);
-    return 0;
-}
-
 /* The io_uring doorbell is deferred, and every path that can stop reaches the
  * kernel before it does.
  *
@@ -3219,7 +3145,6 @@ int main(int argc, char **argv) {
     RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
     RUN_TEST(test_an_io_join_on_a_pool_stack_parks_and_is_resumed());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
-    RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
     RUN_TEST(test_socket_lifecycle_and_the_pair_two_count());
     RUN_TEST(test_a_peer_bound_request_is_left_to_a_helper());

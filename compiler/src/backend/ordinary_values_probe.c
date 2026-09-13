@@ -1,12 +1,16 @@
 /* Executable evidence for the ordinary linked library. The probe constructs
- * launcher values as a native caller would, then uses only the public linked
- * function ABI for ownership transfer, refusal, ranges and explicit close. */
+ * launcher values as a native caller would, then exercises ownership transfer,
+ * refusal, ranges and explicit close. View operations enter their private
+ * pointer-parameter C bodies; separate WF executions check the LLVM ABI. */
 #if !defined(_WIN32)
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
 #endif
 #include "ordinary_values.h"
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>

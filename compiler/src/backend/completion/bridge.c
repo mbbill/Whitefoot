@@ -63,27 +63,6 @@ _Static_assert(
     WF_BRIDGE_MAX_HELPERS <= WF_FILE_MAX_HELPERS,
     "the helper policy may not ask for more helpers than the adapter holds"
 );
-/* Private storage one loop may hold for its in-flight iterations, before the
- * compiler's own ceiling and the loop's per-iteration size are applied.  It
- * exists so a loop whose iteration owns a large buffer gets a small window
- * instead of a large multiple of that buffer: at 64 KiB an iteration this
- * budget affords 64 of them, and at 16 MiB it affords none, which the K >= 1
- * floor turns into the sequential program. */
-#define WF_BRIDGE_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
-/* The runtime's own answer when no argument of `wf__completion_window` bounds
- * it and the ring is the engine.
- *
- * It was half the process-wide operation capacity, because a loop that owned
- * every record would push every other operation in the program onto the
- * capacity-wait path.  There is no operation capacity any more and no capacity
- * wait to be pushed onto, and every submitted operation's batch carries the
- * compiler's own ceiling of two, so this number reaches one form only: a
- * staged loop whose call is a lane hand-out, whose ceiling is the lane's slot
- * count.  It is that count, so that a server keeping 1024 connections in
- * flight is bounded by its own trip count and its stacks rather than by a
- * number chosen here; it moves no file measurement because no file batch
- * reaches it. */
-#define WF_BRIDGE_WINDOW_DEFAULT 1024u
 /* How many completions one progress pass reaps before it returns to the
  * scheduler loop.  It was one, and one is what made the reap the serial
  * resource of the TCP echo control test: every idle thread took the
@@ -1840,64 +1819,6 @@ void wf__completion_directory_next_submit(
         "this target has no directory enumeration facility and no such request may reach this entry"
     );
 #endif
-}
-
-/* ------------------------------------------------------------ the window */
-
-/* How many iterations of one loop the runtime will carry in flight at once.
- *
- * Asked once per loop entry and never per iteration, exactly as
- * `wf__par_split_budget` is.  The writer never sees this number, never spells
- * it, and cannot influence it: there is no attribute, no environment variable,
- * and no source form for a window.
- *
- * `span` is the loop's trip count where it is statically known and zero where
- * it is not; `slot_bytes` is the private storage one in-flight iteration owns;
- * `ceiling` is the compiler's own static cap from that storage's cost.  A zero
- * in any of the three means "this one places no bound", so
- * `wf__completion_window(0, 0, 0)` is the runtime's unconstrained answer.
- *
- * **One is always a legal answer**, and it reproduces the sequential program
- * exactly, so this query can never make a correct program fail.  That is why
- * the fallback a link without this unit gets returns one.
- *
- * Every term that read an operation capacity is gone with the capacity: the
- * record is a block of the submitting frame, so no number of in-flight
- * iterations can exhaust a pool, and the ring's depth is a throughput
- * parameter rather than a bound on operations in flight (design §7).  What is
- * left is the byte budget, the span, the compiler's ceiling, and — where a
- * bounded helper pool is the engine — the pool's width. */
-uint64_t wf__completion_window(
-    uint64_t span,
-    uint64_t slot_bytes,
-    uint64_t ceiling
-) {
-    uint64_t window;
-    wf__sched_once(&wf_bridge_once, wf_bridge_initialize);
-    if (wf_bridge_ready == 0) {
-        /* With no completion runtime every operation is a blocking direct
-         * call, so depth buys nothing and one is the honest answer. */
-        return 1;
-    }
-    window = WF_BRIDGE_WINDOW_DEFAULT;
-    if (!wf_bridge_ring_ready()
-        && (uint64_t)WF_BRIDGE_MAX_HELPERS < window) {
-        window = (uint64_t)WF_BRIDGE_MAX_HELPERS;
-    }
-    if (ceiling != 0 && ceiling < window) {
-        window = ceiling;
-    }
-    if (span != 0 && span < window) {
-        window = span;
-    }
-    if (slot_bytes != 0) {
-        uint64_t affordable =
-            (uint64_t)WF_BRIDGE_WINDOW_BYTE_BUDGET / slot_bytes;
-        if (affordable < window) {
-            window = affordable;
-        }
-    }
-    return window == 0 ? 1u : window;
 }
 
 /* ------------------------------------------------------- the statistics */

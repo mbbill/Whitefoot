@@ -148,7 +148,8 @@ fn execute(module: &str, arrange: Option<&Arrangement>) -> Verdict {
         let file = match sinks.get(label.as_str()) {
             // Two streams naming one sink are one destination sharing one
             // open file description, which is what makes cross-owner call
-            // order observable in the combined bytes [EFF-5, SYS-12].
+            // order observable in the combined bytes. Ordinary EFF-2/PAR-1
+            // paths over the shared factory preserve that call order.
             Some(open) => open.try_clone().expect("duplicate the shared sink"),
             None => {
                 let file = std::fs::File::create(directory.join(label)).expect("create the sink");

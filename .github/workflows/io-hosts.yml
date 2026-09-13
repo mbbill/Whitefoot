@@ -242,8 +242,8 @@ jobs:
           echo "--- native adapter probe: exit status: ${status} ---"
           exit "$status"
 
-      # This probe proves the namespace facilities the Windows target row
-      # uses. It moves the ambient cwd away after taking its directory
+      # This probe proves the namespace facilities the native library uses.
+      # It moves the ambient cwd away after taking its directory
       # handle, then uses NtCreateFile and NtQueryDirectoryFile through that
       # handle. A runner unable to create the reparse-point fixture exits 77;
       # this evidence job treats that as fail-closed rather than a partial pass.
@@ -268,12 +268,29 @@ jobs:
           tr -d $'\r' < "$probe_dir/namespace-probe.err" || true
           echo "--- native namespace probe: exit status: ${status} ---"
           if [ "$status" -eq 77 ]; then
-            echo "the runner could not create the reparse-point fixture; Windows namespace qualification remains fail-closed" >&2
+            echo "the runner could not create the required reparse-point fixture" >&2
             exit 1
           fi
           exit "$status"
 
-      # The whole staged runtime plus the floor, under the warning set the
+      - name: Build and run the ordinary values probe
+        run: |
+          probe_dir="$RUNNER_TEMP/completion/ordinary-values"
+          mkdir -p "$probe_dir"
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            -I compiler/src/backend \
+            -I compiler/src/backend/completion \
+            $WINDOWS_UNITS \
+            compiler/src/backend/ordinary_values.c \
+            compiler/src/backend/ordinary_values_probe.c \
+            -o "$RUNNER_TEMP/completion/windows-ordinary-values-probe.exe" \
+            -lws2_32 -lshell32
+          for helpers in 0 2; do
+            WF_IO_HELPERS="$helpers" \
+              "$RUNNER_TEMP/completion/windows-ordinary-values-probe.exe" "$probe_dir"
+          done
+
+      # The whole linked runtime plus the floor, under the warning set the
       # repository gate uses. There is deliberately no second pass under
       # `-DWF_SCHED_ENUMERATE`: the enumerator (`sched/enumerate.c`) is a POSIX
       # test harness that reserves its own coroutine stacks with `mmap`, it is
@@ -285,6 +302,7 @@ jobs:
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
             $WINDOWS_UNITS \
+            compiler/src/backend/ordinary_values.c \
             compiler/src/backend/wf_floor_windows.c
 
       # A bridge with no engine at all is a trusted-computing-base failure and
@@ -362,7 +380,7 @@ jobs:
       # bootstrap or the shipped driver forgets one Windows runtime unit. This
       # is the production boundary: native whitefootc emits and links a real
       # .wf program, whose two argument paths are UTF-16, whose files are
-      # opened relative to command.cwd, whose first independent read_at must
+      # opened relative to Inputs.cwd, whose first independent read_at must
       # submit to IOCP, and whose bytes leave through OutputStream.write_once. The
       # opt-in runtime assertion aborts at process exit unless at least one
       # IOCP submission was also reaped, so a silent direct fallback cannot
@@ -961,7 +979,7 @@ jobs:
             return fadd.strict(a, b);
           }
 
-          command fn main() -> status: own ExitStatus pure {
+          fn main() -> status: own ExitStatus pure {
             let total = spine(depth: 100000000_u64, v: 1.0009765625_f64);
             let bits = reinterpret::<f64, u64>(total);
             let low = iand(bits, 1_u64);

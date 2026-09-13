@@ -658,9 +658,7 @@ mod tests {
     use std::collections::HashSet;
     use std::path::{Component, Path, PathBuf};
 
-    use super::{
-        CompilerLimits, Options, OverlapLowering, SourceInput, runtime_units, source_names,
-    };
+    use super::{Options, runtime_units, source_names};
 
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();

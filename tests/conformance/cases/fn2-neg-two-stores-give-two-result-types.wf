@@ -2,7 +2,7 @@ struct Holder['s] {
   run: Vector<'s, u8>;
 }
 
-fn hold['s: affine](store: &uniq Arena<'s, 4096, 16>) -> made: own Option<Holder<'s>> reads(store), writes(store) {
+fn hold['s: affine](store: &uniq Arena<'s, 4096, 16>) -> made: own Option<Holder<'s>> reads(store), writes(store), allocates(store) {
   doc "Takes one run out of the store and wraps it in a nominal generic over that store.";
   region {
     match arena_vector::<u8>(store: &uniq deref(store), count: 16_u64) {

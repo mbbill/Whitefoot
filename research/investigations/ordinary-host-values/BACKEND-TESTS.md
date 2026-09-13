@@ -124,3 +124,49 @@ implementation. `ordinary_values_probe.c` and the retained
 exercise the same invalid component outcomes. The traversal still checks
 ordinary calls and exact tree output. Its moved-source, byte-to-path and
 nonexhaustive-status negatives retain OWN-1, TYPE-5 and ERR-2 respectively.
+
+## Integrated proof-state repair
+
+Ordinary contracts exposed a branch-state implementation defect: checking a
+call in one branch changed the analyzer's shared measure image, so the other
+branch could lose an entering length fact before the branches even joined.
+The image now belongs to each cloned affine flow state. Atom allocation stays
+global, but writes kill only that edge's current image. A join keeps an image
+only when both entering images agree; this does not strengthen ENT-6's
+conservative common-fact rule.
+
+`a_conditional_unique_call_keeps_the_other_branch_measure_image` checks both
+branch orders. It refreshes storage after the conditional rather than asking
+the join to derive a stronger theorem. The complementary exclusive-replacement
+negative retains INV-1 for a stale length. Element-only mutation in maintained
+replay sources uses ordinary `MutSlice` parameters to avoid declaring a write
+to the owning descriptor.
+
+The frozen real-source proof census retains all fourteen `read_bits` call
+sites and their exact selected-result masks. PRE-1's ordinary `read_at` and
+`write_once` signatures each add two CALL-6 direct-match endpoint roots, so
+the total is eighteen; the test also checks those two roots at each exact call.
+Its four raw-DEFLATE initialization loops are counted in `exercise`, where
+the ordinary Inputs wrapper moved that operation chain, and main has zero.
+Bodyless signatures contribute no source call sites, while their derivation
+records remain part of the complete checked-program traversal.
+
+## Retired PAR-3 runtime window hook
+
+The final C1 D/M audit found `wf__completion_window` still declared in
+`backend/completion/bridge.h` and defined in `bridge.c`. A repository search
+over `compiler/src` and maintained `research/experiments` found no production
+caller: its only calls were the boundary assertions in
+`test_completion_window_answers_at_the_boundaries` in `completion/harness.c`.
+The old compiler's staged loop lowering had been its consumer; ordinary linked
+functions and the native engines do not query it.
+
+Deleting PAR-3 in v0.58 removes the lowering contract those assertions tested.
+This revision therefore deletes the hook, its two private window constants,
+the test's two mirrored constants, that single test function and its runner
+invocation. It does not change the native submit/join protocol, progress,
+directory, TCP, credit-transfer, queue, race, or resource-failure checks.
+The adjacent io_uring doorbell test remains: deferring a native submission is
+an implementation behavior, independent of the retired source permission.
+The orphan state-routing comment above `Checker::constants` is also removed;
+the state-routing field and implementation were already absent.
