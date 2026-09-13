@@ -260,11 +260,11 @@ index 6e71b6ea..52edc32a 100644
  - Shared-only child views through borrowed holders: rejected because they prevent recursive subdivision of exclusive output storage even when containment is proved and parent access is suspended, as the range consumers in research/investigations/range-loans/DESIGN.md demonstrate.
  - Every header-created child reborrow living through the complete enclosing statement including every arm: rejected because it blocked sequential typed acquisition through a retained unique provider after the header value had completed.
 diff --git a/design/language/ownership/slice-result-provenance.md b/design/language/ownership/slice-result-provenance.md
-index 586583c2..6532b5f7 100644
+index 0e4a0e4a..f5a23b1c 100644
 --- a/design/language/ownership/slice-result-provenance.md
 +++ b/design/language/ownership/slice-result-provenance.md
 @@ -1,6 +1,6 @@
- Decision: A direct slice carries a finite static set of ultimate storage origins, formation creates a singleton, every operation preserves the complete set, and a call computes its result's origin set from signatures alone, because a body-derived exact summary would make callable contracts depend on implementation bodies and need fixed points for recursive call groups, which conflicts with the signature-complete caller boundary, instead of body-derived origin summaries.
+ Decision: A direct slice carries a finite static set of ultimate storage origins, direct storage formation creates a singleton, formation over a parent view preserves every parent origin and appends the child's relative range, every operation preserves the complete set, and a call computes its result's origin set from signatures alone, because a body-derived exact summary would make callable contracts depend on implementation bodies and need fixed points for recursive call groups, which conflicts with the signature-complete caller boundary, instead of body-derived origin summaries.
 
 -Decision: The boundary is direct slices only, with region-bearing generic arguments and stored slice content rejected rather than approximated, because per-leaf origin metadata inside generic or stored values would import unresolved retained-state, cleanup, and stored-borrow obligations, and rejecting those hiding positions is sounder than approximating them, instead of tracking origins through generics and stored values.
 +Decision: The boundary is direct slices only, with generic arguments that hide loans or providers and stored slice content rejected rather than approximated, because per-leaf origin metadata inside generic or stored values would import unresolved retained-state, cleanup, and stored-borrow obligations, and rejecting those hiding positions is sounder than approximating them, instead of tracking origins through generics and stored values.
@@ -405,7 +405,7 @@ index 8166d5d4..83745e20 100644
 -Decision: Every range-bearing system operation makes at most one progress-producing host attempt and reports exactly what happened, with no read-exact, write-all, positioned, vectored, seek, peek, pushback, or framing operation in the inventory, because a source loop over the single-attempt primitive can inspect cancellation or signal state and accumulate progress and a terminal reason itself, which a built-in looping form would hide behind a convenience, instead of composite operations that loop to completion inside the system interface.
 +Decision: The ordinary byte-I/O primitives expose a single attempt's progress and terminal outcome, leaving looping read-exact and write-all policies to source helpers, because the caller can preserve partial progress and choose whether to retry while a composite native loop hides that decision, instead of requiring each caller to accept a built-in loop-to-completion policy.
 diff --git a/design/log.md b/design/log.md
-index 715a2d06..548f6fd4 100644
+index 993daabe..3bbeafd3 100644
 --- a/design/log.md
 +++ b/design/log.md
 @@ -4,6 +4,12 @@ Newest first. One entry per ruling on the tree, an approved change or a
@@ -418,6 +418,6 @@ index 715a2d06..548f6fd4 100644
 +
 +Summary: This revision records the owner's selected D5, D7 and C2 rules in the live tree: exclusive run mutation with entry and exit contracts, explicit formal/actual behavior with authoritative formal rows and ordinary function bindings, owned full arrays, and an ordinary prelude boundary for host values and functions. The ordinary-host-values DESIGN and DECISIONS retain the interface alternatives and grounds; the container investigation retains the transfer and sparse-layout experiments. Retired nodes for staged source permission, completion policies and native qualification lose their implementations under C2 and their refusals move to the surviving ancestors. Dependent records for generic instantiation, kernel minimality, automatic endpoint facts, explicit factory accounting, invocation backing, directory multi-results, empty opaque drop, ordinary entry calls and native call lifetimes follow the same selections. Main's unrelated decisions and native-runtime measurement grounds remain. C2-RESULTS and the backend witnesses supply revision-specific evidence, not a general performance or safety certification. The outstanding consumed-result-destinations and continuing-view-loans amendments remain separate. This reconciliation does not decide the recorded acyclic-instantiation cost conflict, the cross-version measurement adapter or the unverified concurrent-close ordering question.
 +
- ## 2026-09-13 Admit proved compute range loans
+ ## 2026-09-13 Clarify child-view origin preservation
 
- Nodes: language/ownership, language/ownership/no-reborrow, language/parallelism/loop-permission, compiler
+ Nodes: language/ownership/slice-result-provenance

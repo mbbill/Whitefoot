@@ -226,11 +226,13 @@ overlap remain implementation evidence to obtain, not completed proofs.
 ## Proposed reconciliation with the live design tree
 
 [TREE.patch](TREE.patch) is the unapplied tree revision for the combined
-container and ordinary-host work. It targets the tree imported from main
-`d17e7e0d`, retaining its approved range-loan and recursive-partition decisions.
+container and ordinary-host work. It targets the live tree after main
+`d17e7e0d` and the approved child-view origin clarification, retaining the
+approved range-loan and recursive-partition decisions.
 It supersedes the earlier local 17-file proposal: main subsequently recorded
 dependent decisions that the smaller patch did not cover. The live tree keeps
-main's approved bytes; this proposal is not applied to it.
+those approved decisions and their child-view clarification; this proposal is
+not applied to it.
 Remove the patch and this proposal section when the owner applies or withdraws
 the revision; the surviving reasons then belong in the tree and its log.
 

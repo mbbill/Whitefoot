@@ -4,6 +4,12 @@ Newest first. One entry per ruling on the tree, an approved change or a
 refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-13 Clarify child-view origin preservation
+
+Nodes: language/ownership/slice-result-provenance
+
+Summary: The owner approved the precise wording proposed in the main-integration DCR handoff: direct storage formation creates a singleton, while formation over a parent view preserves every parent origin and appends the child's relative range. The earlier unqualified formation sentence was broader than [OWN-5] and the implemented child-view path, which must preserve both possible origins when a returned view can refer to either input. This corrects the record without changing the specification, compiler or conformance expectations; the separate ordinary-host tree proposal retains the same correction.
+
 ## 2026-09-13 Admit proved compute range loans
 
 Nodes: language/ownership, language/ownership/no-reborrow, language/parallelism/loop-permission, compiler
