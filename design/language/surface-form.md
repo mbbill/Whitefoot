@@ -8,5 +8,7 @@ Decision: A body binder's mode and type are derived from its right-hand side and
 
 Decision: Iteration has two source forms, an ordinary loop with an optional label and break, and an ascending unit-stride half-open counted loop over once-captured endpoints whose binder is compiler-updated and source-immutable, because the sole-form commitment made every bounded walk spell its own counter, guard, and increment, whose carried facts the loop head then discarded, and three real SHA-256 index walks plus three of four hostile writer probes independently selected the same ascending half-open counted shape, instead of loop-plus-break as the only iteration form.
 
+Decision: Every numeric literal carries an explicit type suffix, the generic identities 0_T and 1_T under a numeric bound being the only relief, because the language is as explicit as it can be by design, instead of literal types inferred from context.
+
 Rejected:
 - Per-position relief, where an element is forbidden wherever the checker can reconstruct it and mandatory elsewhere: rejected because legality must be decidable from the grammar class alone, and a rule keyed on inference success at a site makes the writer simulate the checker and grows the specification by one conditional clause per position.
