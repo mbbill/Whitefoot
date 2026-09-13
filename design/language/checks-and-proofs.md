@@ -4,6 +4,8 @@ Decision: Required partial-operation domains are established only by the specifi
 
 Decision: A nonempty explicit certificate is rejected when the automatic families already prove its target, because the boundary between automatic and written proof must be decidable from the language rules rather than by probing the compiler, instead of tolerating redundant certificates.
 
+Decision: A proof_use certificate holds at most 4096 entries and one invariant's affine formation at most 4096 scheduled expression nodes, input terms, and result terms, each a structural ceiling on the source and never a work or time budget, because the specification must name a number and this one is arbitrary, instead of no structural ceiling or one fixed by a machine's capacity.
+
 Rejected:
 - Tolerating an unused explicit certificate as advice rather than an error: rejected because the redundancy rule ties the writer's choice to the exact language version instead of to compiler behavior.
 - Limiting the explicit certificate language to what the automatic families can already prove: rejected because a certificate that can only restate an automatic proof adds no proof, so the certificate language must reach beyond the automatic families.

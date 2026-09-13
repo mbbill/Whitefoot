@@ -18,7 +18,8 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - `notes/` and existing documents at this directory's root: bounded design
   questions and supporting analysis.
 - [Design trees](../design/): what was settled, why, and which alternatives
-  were refused. A tree change is planned and approved before the code it governs.
+  were refused. The [design-tree procedure](../design/skill/SKILL.md) owns
+  design proposals, owner rulings, and amendments as implementation evolves.
 - [Archive promotion audit](archive-promotion-audit.md): a non-authoritative
   map from historical findings to useful successors and remaining questions.
 - [Decision workflow investigation](investigations/decision-workflow/DESIGN.md):

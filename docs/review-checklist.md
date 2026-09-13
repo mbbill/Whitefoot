@@ -1,10 +1,16 @@
 # Task completion review
 
-Run this checklist when a repository-changing task is ready to finish, before
-reporting completion or handing over its result. Use a fast reviewing agent
-for the applicable checks. Fix concrete findings, then recheck the affected
-items. Review is part of completing the work; approval and merge conditions
-remain in [AGENTS.md](../AGENTS.md#branch-and-main-boundary).
+Run this checklist at the completion triggers the Design Correspondence
+Review section of `design/skill/SKILL.md` defines; that section is their
+definition. One review of the current content and scope can cover multiple
+triggers.
+
+Use a separate agent that did not implement the change, normally a small or
+mid-sized model, for the applicable checks. DCR follows the report-and-response
+rule in `design/skill/SKILL.md`: present findings with the primary agent's
+assessment and await the owner's direction before acting. For other reviews,
+fix concrete findings and recheck affected items. Merge conditions remain in
+[AGENTS.md](../AGENTS.md#branch-and-main-boundary).
 
 ## Review input and result
 
@@ -211,9 +217,10 @@ inapplicable.
   rules, cited sources, or evidence meeting a reopening condition, use the diff
   and direct references to check the named affected set. The explanation says
   which choices still stand, stand on different grounds, or need replacement.
-  Their current owners and the design tree agree. Remaining questions have a
-  concrete source; a log entry does not supersede contradictory standing
-  guidance. Do not require an unrelated project-wide sweep.
+  Their current owners agree with the design tree or the explicitly recorded
+  pending amendments that revise it. Remaining questions have a concrete
+  source; a log entry does not supersede contradictory standing guidance.
+  Do not require an unrelated project-wide sweep.
 - [ ] **R4 — Maintained tree.** Added, changed, or retired rules and changed
   grounds have corresponding design-tree updates under M1 to M3, and the
   sources a decision cites resolve and support the stated scope. A log entry
@@ -223,13 +230,23 @@ inapplicable.
 
 Use `design/skill/SKILL.md`; this section does not replace it.
 
-- [ ] **M1 — Tree and amendments.** A change that makes or revises a design
-  decision carries the tree diff and log entry the owner ruled, or an
-  amendment under `design/amendments/` for every decision the agent made on
-  its own, for the owner to accept or reject; none is only in code.
-- [ ] **M2 — Correspondence.** The procedure's correspondence checks ran over
-  the tree, the amendments, and the code or specification diff, and every
-  finding is resolved or listed.
+- [ ] **M1 — Design, tree, and amendments.** The design and proposed tree
+  revision explain the choices and their differences from the current tree.
+  Every live-tree change follows the owner's approval of that revision,
+  whenever it occurs during the work, and has a concise traceability log.
+  Decisions the agent makes on its own remain amendments under
+  `design/amendments/`; none is only in code, and a refused one leaves its
+  log entry. Design and implementation can evolve together without separate
+  phases or submissions.
+- [ ] **M2 — DCR.** Design Correspondence Review applies the procedure's
+  design checks to changed decisions and its correspondence checks in both
+  directions across the agreed delivery scope. Include relevant existing
+  commitments and pending revisions, not just changed tree nodes. Check for
+  missing or partial implementation as well as unrecorded or contradictory
+  choices. The owner receives the findings and primary agent's assessment
+  before any action on them. Pending rulings remain explicit; an amendment
+  alone does not establish correctness. Ongoing discussion needs neither a
+  finished implementation nor a separate completion review.
 - [ ] **M3 — Form.** `make design-lint` passes on the head revision.
 
 ## V. Validation and handoff — every change

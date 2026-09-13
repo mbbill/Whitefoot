@@ -1,0 +1,3 @@
+Decision: An admitted nonconstant integer multiplication's proved interval is published as an ordinary automatic fact on its value, because the checker had already computed that interval to discharge the multiplication's own domain obligation, and discarding it made a writer restate by hand what the checker had just proved, instead of keeping the interval as checker-internal state.
+
+Decision: The boundary-endpoint fact of a range-bearing system operation is stated for the whole family of those operations, because the system interface already treats the eight operations as one family and the compiler derived the same fact for all of them, instead of naming only the operations a given change happened to add first.

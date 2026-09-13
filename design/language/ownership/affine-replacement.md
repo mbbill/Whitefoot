@@ -6,5 +6,4 @@ Decision: Whole-binding replace of slice- and arena-typed places is rejected, be
 
 Rejected:
 - A bare take that is legal when the checker proves the hole is refilled before scope end: rejected because a hole open across statements needs per-place vacancy flow, prohibition or repair of every scope-leaving edge in the window, and a meaning for an exclusive borrow over a vacant referent, buying only a use-then-refill window neither consumer needs.
-- A two-place `swap`: rejected because it changes a live affine binding's value without death or a new binding, a third mutation path that breaks initialization-keyed facts, loans, and liveness, and everything it expresses is one atomic replace with the moved binding as the replacement.
 - Typed holes, flowing a taken slot to an Option-like vacant type state: rejected because per-place flow-sensitive type states are exactly what the simplified calculus excludes, and vacancy would leak into every boundary signature.

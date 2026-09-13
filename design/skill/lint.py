@@ -10,21 +10,22 @@ DECISION_MARKERS = (" because ", " instead of ")
 LOG_ENTRY = re.compile(r"^## \d{4}-\d{2}-\d{2} \S")
 LOG_REQUIRED = ("Nodes:", "Summary:")
 FORBIDDEN_HEADINGS = ("## Facts", "## Moves")
-TREES = ("language", "compiler")
 DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
 REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
 DATE = re.compile(r"\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b")
 FIELDS = ("Decision:", "Rejected:")
-AMENDMENT_NODE = re.compile(r"^Node: ((?:language|compiler)(?:/[a-z0-9-]+)*)$")
+AMENDMENT_NODE = re.compile(r"^Node: ([^/\\\x00-\x1f\x7f]+(?:/[^/\\\x00-\x1f\x7f]+)*)$")
 
 
 class Lint:
-    def __init__(self, root):
+    def __init__(self, root, trees):
         self.root = root
+        self.trees = trees
         self.errors = []
         self.nodes = {}  # node path (relative to root, no .md) -> lines
         self.decisions = 0
         self.rejected = 0
+        self.base_metrics = None
 
     def err(self, where, msg):
         self.errors.append(f"{where}: {msg}")
@@ -32,7 +33,7 @@ class Lint:
     # ---- discovery -----------------------------------------------------
 
     def discover(self):
-        for tree in TREES:
+        for tree in self.trees:
             self.discover_tree(tree)
         self.discover_amendments()
 
@@ -156,7 +157,9 @@ class Lint:
     def check_amendments(self):
         for name, lines in self.amendments.items():
             where = f"amendments/{name}"
-            if not lines or not AMENDMENT_NODE.match(lines[0]):
+            node = AMENDMENT_NODE.fullmatch(lines[0]) if lines else None
+            if not node or any(part in (".", "..") or not part.strip()
+                               for part in node.group(1).split("/")):
                 self.err(where + ".md:1", "an amendment starts with 'Node: <tree path>' naming the node it amends or adds")
                 continue
             if len(lines) < 2 or lines[1].strip():
@@ -193,29 +196,28 @@ class Lint:
                     self.err(loc, f"entry lacks {field}")
         return entries
 
-    def check_diff(self, base):
+    def base_exists(self, base):
         probe = subprocess.run(["git", "rev-parse", "--verify", "--quiet", base],
-                               capture_output=True, text=True)
-        if probe.returncode != 0:
-            print(f"notice: base {base!r} not found; skipping the log-per-change check")
-            return
-        names = subprocess.run(["git", "diff", "--name-only", base, "--", self.root],
-                               capture_output=True, text=True, check=True).stdout.split()
-        prefix = self.root.rstrip("/") + "/"
+                               cwd=self.root, capture_output=True, text=True)
+        return probe.returncode == 0
+
+    def check_diff(self, base):
+        names = subprocess.run(["git", "diff", "--name-only", "-z", "--relative", base, "--", "."],
+                               cwd=self.root, capture_output=True, text=True,
+                               check=True).stdout.split("\0")
         changed = []
-        for name in names:
-            rel = name[len(prefix):] if name.startswith(prefix) else name
-            if any(rel == tree + ".md" or rel.startswith(tree + "/") for tree in TREES):
+        for rel in names:
+            if any(rel == tree + ".md" or rel.startswith(tree + "/") for tree in self.trees):
                 if rel.endswith(".md"):
                     changed.append(rel[:-3])
         if not changed:
             return
-        log_rel = prefix + "log.md"
+        log_rel = "log.md"
         if log_rel not in names:
             self.err("log.md", "tree changed since base but the change log did not")
             return
         diff = subprocess.run(["git", "diff", base, "--", log_rel],
-                              capture_output=True, text=True, check=True).stdout
+                              cwd=self.root, capture_output=True, text=True, check=True).stdout
         added = "\n".join(line[1:] for line in diff.split("\n")
                           if line.startswith("+") and not line.startswith("+++"))
         for node in changed:
@@ -224,6 +226,27 @@ class Lint:
 
     # ---- metrics -------------------------------------------------------
 
+    def measure_base(self, base):
+        """The same counts at the review base, so a tree diff review can report net change."""
+        listing = subprocess.run(["git", "ls-tree", "-r", "--name-only", "-z", base, "--", "."],
+                                 cwd=self.root, capture_output=True, text=True,
+                                 check=True).stdout.split("\0")
+        counter = Lint(self.root, self.trees)
+        paths = []
+        for rel in listing:
+            if not rel.endswith(".md"):
+                continue
+            if not any(rel == tree + ".md" or rel.startswith(tree + "/") for tree in self.trees):
+                continue
+            text = subprocess.run(["git", "show", f"{base}:./{rel}"], cwd=self.root,
+                                 capture_output=True, text=True, check=True).stdout
+            counter.check_node(rel[:-3], text.split("\n"), set())
+            paths.append(rel[:-3])
+        return {"nodes": len(paths),
+                "depth": max((path.count("/") for path in paths), default=0),
+                "decisions": counter.decisions,
+                "rejected": counter.rejected}
+
     def metrics(self):
         depth = max((path.count("/") for path in self.nodes), default=0)
         per_subtree = {}
@@ -231,7 +254,16 @@ class Lint:
             parts = path.split("/")
             key = parts[0] if len(parts) == 1 else "/".join(parts[:2])
             per_subtree[key] = per_subtree.get(key, 0) + 1
-        print(f"nodes: {len(self.nodes)}  depth: {depth}  decisions: {self.decisions}  rejected: {self.rejected}  amendments: {len(self.amendments)}")
+        base = self.base_metrics
+
+        def show(name, value):
+            if base is None:
+                return f"{name}: {value}"
+            return f"{name}: {value} (base {base[name]}, {value - base[name]:+d})"
+
+        print(f"{show('nodes', len(self.nodes))}  {show('depth', depth)}  "
+              f"{show('decisions', self.decisions)}  {show('rejected', self.rejected)}  "
+              f"amendments: {len(self.amendments)}")
         for name, count in sorted(per_subtree.items()):
             print(f"  {name}: {count}")
 
@@ -239,15 +271,21 @@ class Lint:
 def main():
     parser = argparse.ArgumentParser(description="structural lint for the design tree")
     parser.add_argument("--root", default="design")
+    parser.add_argument("--trees", nargs="+", required=True,
+                        help="top-level concept names to check")
     parser.add_argument("--base", default=None)
     args = parser.parse_args()
-    lint = Lint(args.root)
+    lint = Lint(args.root, args.trees)
     lint.discover()
     lint.check_nodes()
     lint.check_amendments()
     lint.check_log()
     if args.base:
-        lint.check_diff(args.base)
+        if lint.base_exists(args.base):
+            lint.check_diff(args.base)
+            lint.base_metrics = lint.measure_base(args.base)
+        else:
+            print(f"notice: base {args.base!r} not found; skipping the log-per-change check")
     if lint.errors:
         for error in lint.errors:
             print("error: " + error, file=sys.stderr)
