@@ -65,6 +65,14 @@ destination preservation, relative path behavior, recoverable broken pipe,
 and source-visible error classes. The deterministic linked-library suite
 also preserves interrupted/would-block retries and provisional cleanup.
 
+The PAR-3 deletion also retires the permission ledger's per-place disposition
+index. All surviving pair, chain, loop and hint constructors supplied zero,
+so removing that field and its comparisons preserves ordering and duplicate
+collapse. `duplicate_instance_lines_collapse_but_distinct_verdicts_stay`
+retains its inputs and assertions; only the constructor arity changes.
+The checked-expression and provider-write comments now describe ordinary
+call datums and parameters instead of deleted owner images and entry inputs.
+
 ## Refusal paths and ordinary overlap
 
 The 34 host cases with an old reserve failure branch retain that real branch

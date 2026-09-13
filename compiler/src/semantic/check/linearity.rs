@@ -705,8 +705,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [PROV-6, D3] the provider place each general store reached by `ty`'s
     /// release graph spends, resolved against this function's own parameters.
     ///
-    /// A provider enters a function only as a parameter or as an entry input
-    /// [PROV-2, FN-7], so the parameter list is the complete candidate set,
+    /// A general-store provider enters a function as an ordinary parameter
+    /// [TYPE-2], so the parameter list is the complete candidate set,
     /// and the write this returns is what makes a derived or early release of
     /// store-backed storage visible in the declared row [EFF-2].
     pub(in crate::semantic) fn resolved_provider_writes(

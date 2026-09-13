@@ -1610,7 +1610,6 @@ pub(crate) enum CheckedExpression {
         /// the selected concrete callee's parameter declarations. It is
         /// proof-only: lowering still calls `function` directly.
         formal_effects: Option<Box<CheckedEffects>>,
-        /// Result image instantiated before any exclusive-referent writeback.
         /// Exact source call occurrence and declared-order argument atoms.
         call: NodePath,
         argument_nodes: Vec<NodePath>,
@@ -1652,8 +1651,6 @@ pub(crate) enum CheckedExpression {
         instance: Box<CheckedKernelInstance>,
         argument_nodes: Vec<NodePath>,
         arguments: Vec<CheckedExpression>,
-        /// Result origins derived from the captured argument images. Address
-        /// expressions do not themselves embed their referent's owner image.
         /// Pre-transfer caller images, exactly as an ordinary call retains
         /// them, so [ENT-3.S13] can mint this call's call datums.
         goal_arguments: Vec<super::goal::GoalExpression>,

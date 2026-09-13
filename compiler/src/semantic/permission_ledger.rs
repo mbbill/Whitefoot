@@ -70,17 +70,10 @@ pub(crate) trait LedgerSource {
 ///
 /// The table is dense by `FunctionId`, so one source function that is
 /// monomorphized more than once contributes its pairs more than once. Lines
-/// that come out byte-identical *at the same position of the same table* are
+/// that come out byte-identical at the same source site are
 /// therefore collapsed: the ledger reports source sites, and two instances of
 /// one generic that agree on the verdict are one reported site. Two instances
 /// that disagree keep both lines.
-///
-/// The position is part of the key because a disposition table holds one row
-/// per place and two different places can render identically: every operand
-/// read of one statement is cited at that statement, so two enclosing buffers
-/// read by one `let` carry the same citation, the same disposition, and the
-/// same reason. Collapsing those would print fewer rows than the `stage` line
-/// above them counts, and the table is only evidence if it is complete.
 pub(crate) fn render_ledger<Source: LedgerSource>(
     metadata: &PermissionMetadata,
     source: &Source,
@@ -93,11 +86,6 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
     const CHAIN: u8 = 1;
     const LOOP: u8 = 2;
     const HINT: u8 = 3;
-    // Every entry outside a disposition table is the only one of its kind at
-    // its position, so its ordinal is zero; a table's rows carry the source
-    // order of the walk that found them, which the text alone would not
-    // preserve.
-    const ONLY: u32 = 0;
     let mut entries: Vec<Entry> = Vec::new();
     for permissions in &metadata.functions {
         for pair in &permissions.pairs {
@@ -111,7 +99,6 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 display_path.clone(),
                 line,
                 PAIR,
-                ONLY,
                 format!(
                     "PAR {verdict:<10}  {display_path}:{line}  pair({}, {})  {detail}",
                     pair.first.callee_name, pair.second.callee_name
@@ -132,7 +119,6 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 display_path.clone(),
                 line,
                 CHAIN,
-                ONLY,
                 format!(
                     "PAR chain       {display_path}:{line}  run({members})  {} members through line {last_line}",
                     run.sites.len()
@@ -151,7 +137,6 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 display_path.clone(),
                 line,
                 LOOP,
-                ONLY,
                 format!("PAR loop        {display_path}:{line}  loop  {verdict:<10}  {detail}"),
             ));
             if !judged.advises_split {
@@ -165,7 +150,6 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 display_path.clone(),
                 line,
                 HINT,
-                ONLY,
                 format!(
                     "PAR hint        {display_path}:{line}  loop  refused by condition {condition}; a recursive split over its index range would be eligible, combining under {}",
                     judged.combines.join(", ")
@@ -187,17 +171,15 @@ struct Entry {
     display_path: String,
     line: u64,
     kind: u8,
-    ordinal: u32,
     text: String,
 }
 
 impl Entry {
-    fn new(display_path: String, line: u64, kind: u8, ordinal: u32, text: String) -> Self {
+    fn new(display_path: String, line: u64, kind: u8, text: String) -> Self {
         Self {
             display_path,
             line,
             kind,
-            ordinal,
             text,
         }
     }
@@ -206,20 +188,17 @@ impl Entry {
 /// Sorts the rendered lines into source order and collapses the duplicates one
 /// generic's several instances produce.
 ///
-/// The rendered text carries the path, line, and kind. Together with the
-/// ordinal, these fields give a deterministic reported identity across instances.
+/// The rendered text carries the path, line, and kind, giving a deterministic
+/// reported identity across instances.
 fn collapse(entries: &mut Vec<Entry>) {
     entries.sort_by(|left, right| {
         left.display_path
             .cmp(&right.display_path)
             .then(left.line.cmp(&right.line))
             .then(left.kind.cmp(&right.kind))
-            .then(left.ordinal.cmp(&right.ordinal))
             .then(left.text.cmp(&right.text))
     });
-    entries.dedup_by(|removed, retained| {
-        removed.ordinal == retained.ordinal && removed.text == retained.text
-    });
+    entries.dedup_by(|removed, retained| removed.text == retained.text);
 }
 
 /// The part of the line that states the outcome.
@@ -391,7 +370,7 @@ mod tests {
 
     #[test]
     fn duplicate_instance_lines_collapse_but_distinct_verdicts_stay() {
-        let line = |text: &str| Entry::new("walk.wf".to_owned(), 5, 2, 0, text.to_owned());
+        let line = |text: &str| Entry::new("walk.wf".to_owned(), 5, 2, text.to_owned());
         let mut entries = vec![
             line("PAR loop permitted"),
             line("PAR loop denied"),
