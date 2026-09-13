@@ -1,10 +1,17 @@
 # Task completion review
 
-Run this checklist when a repository-changing task is ready to finish, before
-reporting completion or handing over its result. Use a fast reviewing agent
-for the applicable checks. Fix concrete findings, then recheck the affected
-items. Review is part of completing the work; approval and merge conditions
-remain in [AGENTS.md](../AGENTS.md#branch-and-main-boundary).
+Run this checklist before declaring a goal or agreed repository-changing work
+complete, marking a draft PR ready for review, or presenting finished work as
+ready to merge. Opening a PR or publishing intermediate progress, including
+to a draft PR, does not trigger this review. Goal completion does trigger it
+even if the PR remains a draft. One review of the current content and scope
+can cover multiple triggers.
+
+Use a separate agent that did not implement the change, normally a small or
+mid-sized model, for the applicable checks. Fix concrete findings, then
+recheck the affected items. Review is part of completing the work; approval
+and merge conditions remain in
+[AGENTS.md](../AGENTS.md#branch-and-main-boundary).
 
 ## Review input and result
 
@@ -224,18 +231,22 @@ inapplicable.
 
 Use `design/skill/SKILL.md`; this section does not replace it.
 
-- [ ] **M1 — Design, tree, and amendments.** A design-phase delivery includes
-  the complete design and its proposed revision to the current tree; phase 1
-  is complete only after the owner's confirmation. Implementation carries
-  the tree revision the owner ruled, with a concise traceability log, or an
-  amendment under `design/amendments/` for every decision the agent made on
-  its own. Design changes during implementation follow the same procedure;
-  none is only in code.
-- [ ] **M2 — Correspondence.** The procedure's correspondence checks ran over
-  the tree, the amendments, and the code or specification diff at
-  implementation delivery, and every finding is resolved or listed. A
-  design-phase review applies the design gate without requiring a finished
-  implementation.
+- [ ] **M1 — Design, tree, and amendments.** The design and proposed tree
+  revision explain the choices and their differences from the current tree.
+  Every live-tree change follows the owner's approval of that revision,
+  whenever it occurs during the work, and has a concise traceability log.
+  Decisions the agent makes on its own remain amendments under
+  `design/amendments/`; none is only in code. Design and implementation can
+  evolve together without separate phases or submissions.
+- [ ] **M2 — Correspondence.** The independent review applies the procedure's
+  design checks to changed decisions and its correspondence checks in both
+  directions across the agreed delivery scope. Include relevant existing
+  commitments and pending revisions, not just changed tree nodes. Check for
+  missing or partial implementation as well as unrecorded or contradictory
+  choices. Findings and pending owner rulings are resolved or explicitly
+  listed; a pending amendment alone does not establish correctness. Ongoing
+  design discussion does not require a finished implementation or a separate
+  completion review.
 - [ ] **M3 — Form.** `make design-lint` passes on the head revision.
 
 ## V. Validation and handoff — every change

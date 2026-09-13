@@ -14,7 +14,7 @@ DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
 REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
 DATE = re.compile(r"\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b")
 FIELDS = ("Decision:", "Rejected:")
-AMENDMENT_NODE = re.compile(r"^Node: ([a-z0-9-]+(?:/[a-z0-9-]+)*)$")
+AMENDMENT_NODE = re.compile(r"^Node: ([^/\\\x00-\x1f\x7f]+(?:/[^/\\\x00-\x1f\x7f]+)*)$")
 
 
 class Lint:
@@ -156,7 +156,9 @@ class Lint:
     def check_amendments(self):
         for name, lines in self.amendments.items():
             where = f"amendments/{name}"
-            if not lines or not AMENDMENT_NODE.match(lines[0]):
+            node = AMENDMENT_NODE.fullmatch(lines[0]) if lines else None
+            if not node or any(part in (".", "..") or not part.strip()
+                               for part in node.group(1).split("/")):
                 self.err(where + ".md:1", "an amendment starts with 'Node: <tree path>' naming the node it amends or adds")
                 continue
             if len(lines) < 2 or lines[1].strip():
