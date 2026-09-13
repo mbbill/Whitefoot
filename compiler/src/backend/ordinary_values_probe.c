@@ -84,7 +84,7 @@ static void file_probe(wf_inputs *inputs) {
     };
     unsigned char bytes[4096];
     wf_view window = {bytes, sizeof(bytes)};
-    wf_open_result opened, listing;
+    wf_open_result opened, listing, independent;
     wf_read_result read;
     wf_list_result listed;
     wf_close_result closed;
@@ -117,7 +117,15 @@ static void file_probe(wf_inputs *inputs) {
     check_close(&closed);
     assert(inputs->handles.words[0] == saved - 1 && receiving_factory.words[0] == 1);
     wf_open_directory_source(&listing, &inputs->handles, &inputs->cwd);
+    if (listing.tag != 0) {
+        assert(listing.error.tag < 28);
+        fprintf(stderr, "directory source open: class=%u code=%u origin=%u\n",
+                listing.error.tag, listing.error.detail[listing.error.tag].code,
+                (unsigned)listing.error.detail[listing.error.tag].origin);
+    }
     assert(listing.tag == 0);
+    wf_open_directory_source(&independent, &inputs->handles, &inputs->cwd);
+    assert(independent.tag == 0);
     wf__body_directory_next(&listed, &listing.value, &window, 11, 11);
     assert(listed.result.tag == 0 && listed.next == 11 && listed.entries == 0);
     wf__body_directory_next(&listed, &listing.value, &window, 3, sizeof(bytes));
@@ -127,6 +135,11 @@ static void file_probe(wf_inputs *inputs) {
         assert(listed.next >= 3 && listed.next <= sizeof(bytes));
     } while (listed.result.tag == 0);
     assert(listed.result.error.tag == 0 && listed.next == 3 && listed.entries == 0);
+    /* Reopening the same directory must not share the first cursor's EOF. */
+    wf__body_directory_next(&listed, &independent.value, &window, 3, sizeof(bytes));
+    assert(listed.result.tag == 0 && listed.next > 3 && listed.entries > 0);
+    wf_close_directory_source(&closed, &inputs->handles, &independent.value);
+    check_close(&closed);
     wf_close_directory_source(&closed, &inputs->handles, &listing.value);
     check_close(&closed);
     assert(remove(filename) == 0);

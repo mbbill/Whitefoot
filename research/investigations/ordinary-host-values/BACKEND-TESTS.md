@@ -170,3 +170,23 @@ The adjacent io_uring doorbell test remains: deferring a native submission is
 an implementation behavior, independent of the retired source permission.
 The orphan state-routing comment above `Checker::constants` is also removed;
 the state-routing field and implementation were already absent.
+
+## Native Windows directory self-open
+
+The Windows ordinary-value probe on `4945e3df` reached the directory-source
+open and failed its success assertion. The old probe did not print the error
+payload, so that run establishes refusal, not a particular native error code.
+The library passed UTF-16 `"."` directly to `NtCreateFile`, which does not
+perform Win32 dot-directory normalization. The native implementation now uses
+an empty relative object name with the same root handle, retaining a fresh
+open and the existing kind validation, descriptor registration and cleanup.
+[Zig 0.14.0's NtCreateFile caller](https://github.com/ziglang/zig/blob/0.14.0/lib/std/os/windows.zig#L1009-L1012)
+provides independent implementation evidence for this representation; the
+native Windows job is the execution check.
+
+The probe now opens two directory sources before consuming either, exhausts
+one, and verifies that the other still yields entries. Both are explicitly
+closed and the exact factory-credit balance remains asserted. It also prints
+the ordinary error payload before the original open assertion on a refusal.
+This is a linked-library path correction under unchanged PRE-1 interfaces;
+no source acceptance rule or existing assertion is retired.

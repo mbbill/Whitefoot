@@ -508,7 +508,10 @@ void wf__body_open_file(wf_open_result *result, wf_value *factory, const wf_valu
 void wf_open_directory_source(wf_open_result *result, wf_value *factory,
                               const wf_value *directory) {
 #if defined(_WIN32)
-    static const uint16_t self[] = { '.', 0 };
+    /* NtCreateFile does not normalize the Win32 spelling ".". An empty
+     * relative object name reopens the supplied directory itself, producing
+     * an independent enumeration cursor rather than a duplicated handle. */
+    static const uint16_t self[] = { 0 };
 #else
     static const char self[] = ".";
 #endif
