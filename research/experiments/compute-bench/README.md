@@ -41,9 +41,13 @@ tests run that same dimension/step matrix in sequential and parallel modes at
 one, two, and four workers; `programs-check` also includes `stencil.wf` and the
 recursive `range_split.wf` consumer.
 
-The timed stencil is 1024 by 2048 for 16 steps. Set `WFB_STENCIL_SMALL=1` for the
-separate 17 by 13, three-step overhead measurement; the exact dimensions are
-printed in every process's workload header. Both WF and references allocate
+The default timed stencil is 1024 by 4096 for 16 steps. Set
+`WFB_STENCIL_GRID=original` for the initial 1024 by 2048 comparison, or
+`WFB_STENCIL_GRID=small` for the separate 17 by 13, three-step overhead
+measurement. The default `large` fixture affords four row chunks under the
+shipped split floor; the original fixture affords two after the direct-view
+permission correction. The exact dimensions are printed in every process's
+workload header. Both WF and references allocate
 and zero two grids, initialize them, compute and join every step, and release
 the inactive grid inside the timed interval. The returned grid is checked and
 released outside it. Native references submit one interior row per callback;

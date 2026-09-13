@@ -165,8 +165,8 @@ static double *native_run(size_t width, size_t height, size_t steps,
     return a;
 }
 
-static size_t grid_width = 1024, grid_height = 2048, grid_steps = 16;
-static char workload[96] = "width=1024 height=2048 steps=16 initial=squared-position";
+static size_t grid_width = 1024, grid_height = 4096, grid_steps = 16;
+static char workload[96] = "width=1024 height=4096 steps=16 initial=squared-position";
 static double *expected, *output;
 static stencil_release release_output;
 
@@ -177,13 +177,15 @@ static void native_release(double *grid, uint64_t length) {
 
 static void prepare(unsigned workers) {
     (void)workers;
-    const char *small = getenv("WFB_STENCIL_SMALL");
-    if (small && strcmp(small, "0") && strcmp(small, "1"))
-        fail("WFB_STENCIL_SMALL must be 0 or 1");
-    if (small && !strcmp(small, "1")) {
+    const char *grid = getenv("WFB_STENCIL_GRID");
+    if (grid && !strcmp(grid, "small")) {
         grid_width = 17;
         grid_height = 13;
         grid_steps = 3;
+    } else if (grid && !strcmp(grid, "original")) {
+        grid_height = 2048;
+    } else if (grid && strcmp(grid, "large")) {
+        fail("WFB_STENCIL_GRID must be large, original or small");
     }
     (void)snprintf(workload, sizeof(workload), "width=%zu height=%zu steps=%zu initial=squared-position",
                    grid_width, grid_height, grid_steps);

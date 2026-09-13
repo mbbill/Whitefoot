@@ -319,6 +319,18 @@ language rule. The measured call streams serve this comparison and may be
 removed when the benchmark question is retired or superseded by an equivalent
 retained measurement.
 
+The corrected row-loop weight is 292. The shipped rule's minimum chunk is
+`ceil(150000 / 292) = 514` rows, so 2046 interior rows afford only three
+chunks before rounding down to a power of two: two chunks. Before measuring
+the corrected implementation, the saturated fixture is therefore extended to
+1024 by 4096 for the same 16 steps; its 4094 interior rows afford four chunks.
+The original 1024 by 2048 fixture remains a matched-size control, and the small
+fixture remains 17 by 13 for three steps. One benchmark selector,
+`WFB_STENCIL_GRID=large|original|small`, names these cases, with `large` the
+default. This changes neither the compiled Whitefoot source nor the scheduler
+work unit and records the limited parallelism of the original size rather
+than hiding it in a renamed saturated result.
+
 The separate [CI regression run 34755631998](https://github.com/mbbill/Whitefoot/actions/runs/34755631998)
 failed at `records` W=2 (baseline/new wall ratio 0.969, baseline lower in 4/5
 pairs). Its retained manifest identifies the synthetic PR merge revision
