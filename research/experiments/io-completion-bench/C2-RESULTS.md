@@ -1,6 +1,7 @@
 # C2 ordinary-call workload measurements
 
-Measured 2026-09-12, 20:27–20:28 PDT, during the v0.58 amendment on PR #30.
+The first cohort was measured 2026-09-12, 20:27–20:28 PDT, during the then-named
+v0.58 amendment on PR #30. The combined release is now v0.55 over main v0.54.
 The worktree was based on `d695f38513a8513eac62b73108517f982435285f` with the
 ongoing C2 changes. These are measurements, not acceptance or speed gates.
 This note and [the 84 raw samples](c2-many-files-samples.csv) are one retained
@@ -296,3 +297,106 @@ No protocol, backlog, timeout, server line, or correctness check was changed
 to produce a timing table. Whether an ordinary source arrangement can serve
 this matched protocol is a separate question; this measurement alone does not
 establish that the ordinary object model cannot express it.
+
+## Main current-stack integration on f1285555
+
+These measurements use pushed revision
+`f1285555281881dca7bfea8eb3b58648fe5acd5e`, which integrates main
+`0b452d29` and its current-stack runtime. They describe this revision, without
+turning comparisons between different hosts or worker policies into a C2
+before/after claim. The earlier cohorts and TCP noncompletion above remain
+historical evidence.
+
+### Windows ordinary compute and I/O
+
+The [Windows measurement job](https://github.com/mbbill/Whitefoot/actions/runs/34746273240/job/103694674940)
+passed on an AMD EPYC 7763 guest with four visible logical processors, Windows
+Server 2025 build 26100, image `win25-vs2026 20260907.229.1`, Clang 20.1.8,
+Rust 1.98.1 and affinity mask `0xf`. Main's worker policy selects three workers
+on this host. Each cohort has two warm-up triplets and fifteen recorded
+position-balanced triplets, including the native Rust/Rayon compute control;
+all five cohorts used one attempt. The cache was warmed by a complete
+sequential read of the eight files. All [225 recorded children](c2-windows-main-samples.tsv)
+are retained, including native controls, worker count and QPC/process times.
+The native control indicates available CPU; it is not an I/O baseline.
+
+| Cohort | Reference / candidate | Reference median ms | Candidate median ms | Median paired ratio |
+| --- | --- | ---: | ---: | ---: |
+| Compute | Sequential / `--par` | 4775.681 | 2007.710 | 0.4215 |
+| Warm I/O | `--no-overlap` / default | 197.888 | 199.997 | 1.0120 |
+| Mixed default | `--no-overlap` / default | 277.966 | 278.131 | 0.9997 |
+| Mixed parallel | Default / `--par` | 278.048 | 158.838 | 0.5706 |
+| Mixed total | `--no-overlap` / `--par` | 278.786 | 159.273 | 0.5703 |
+
+The separately observed mixed run reported `grants=1024` and checked native
+IOCP submission/reaping. The two reads still return before later statements;
+the `--par` gain is ordinary compute parallelism, not restored PAR-3 permission.
+These comparisons do not separately time the shared factory or ordinary ABI.
+The preceding structural attribution remains distinct from these wall times.
+Worker count and the native-control protocol differ from the earlier Windows
+cohort, so the lower mixed median does not establish a compiler speedup.
+The retained TSV changes only artifact CRLF line endings to LF; its SHA-256 is
+`962088ecedcf370e08d9e9f1adf6574c7d357fd32315d7f4b93aaf0a907a2d34`.
+
+### Linux traversal and TCP coverage
+
+The [Linux measurement job](https://github.com/mbbill/Whitefoot/actions/runs/34746273240/job/103694674949)
+passed on an AMD EPYC 9V45 with four visible processors, Linux
+`6.17.0-1022-azure`, ext4 on `/dev/nvme0n1p1`, and io_uring enabled. It retained
+the 8192-file input, two warm-ups, nine recorded passes, alternating plan order
+and exact digest `17098009301725298919 00000000000071024640`.
+These representative rows are drawn from the complete 28-line artifact table:
+
+| Line | Median ms | Min ms | Max ms | User ms | System ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| N.direct | 76.14 | 74.42 | 81.86 | 52.15 | 23.06 |
+| N.pool2 | 38.94 | 38.25 | 42.37 | 52.20 | 26.10 |
+| N.pool4 | 21.86 | 21.54 | 24.59 | 56.25 | 29.13 |
+| N.pool8 | 25.52 | 22.67 | 29.10 | 52.79 | 34.52 |
+| N.uring4 | 77.51 | 76.26 | 83.50 | 47.58 | 31.72 |
+| S.narrow | 100.60 | 99.85 | 106.76 | 54.74 | 45.78 |
+| S.loop | 103.98 | 103.67 | 106.15 | 58.30 | 45.23 |
+| S.wide | 98.30 | 97.52 | 102.63 | 50.67 | 48.68 |
+| S.wide8 | 97.78 | 97.03 | 98.97 | 51.27 | 47.25 |
+| C.narrow.default | 101.04 | 100.14 | 105.29 | 55.97 | 44.98 |
+| C.loop.default | 104.14 | 103.80 | 106.58 | 54.72 | 49.36 |
+| C.wide.default | 99.36 | 97.61 | 103.75 | 55.00 | 43.85 |
+| C.wide8.default | 97.00 | 96.56 | 99.09 | 51.94 | 44.95 |
+
+Default WF medians are 1.27–1.37 times the direct control and 4.44–4.76 times
+the four-thread pool on this host. Those controls use different algorithms;
+their gap does not isolate wrapper cost or either lost overlap permission.
+The default/no-overlap pairs contain no restored staging mechanism.
+
+Main already sets `NET_LINES="uring epoll"` in this job, because its ordered WF
+server cannot complete the generator's concurrent-peer protocol. This run
+therefore verifies and measures only those two native TCP servers: it contains
+no WF TCP sample. Native four-peer verification passed and all three timed
+passes completed, but that success does not close the WF TCP measurement gap
+identified above. No C2 gate or correctness expectation was weakened here.
+
+### Compute scoreboard and the baseline boundary
+
+[Compute run 34746273228](https://github.com/mbbill/Whitefoot/actions/runs/34746273228)
+completed its existing Linux and macOS verification and five-pass tables.
+All four Linux kernels at four workers are shown here:
+
+| Kernel | WF median us | Native reference | Reference median us |
+| --- | ---: | --- | ---: |
+| Mandelbrot | 5797.9 | oneTBB | 5672.5 |
+| Quadrature | 6650.0 | Rayon join | 6737.7 |
+| Records | 9586.8 | Rayon join | 8866.3 |
+| FIR | 6800.8 | Static partition | 6739.0 |
+
+These are scoreboard medians, not paired before/after results. The macOS runner
+reports three CPUs; its four-worker rows are oversubscribed and its broad
+distributions do not justify fine differences.
+
+The separate [compute-regression run](https://github.com/mbbill/Whitefoot/actions/runs/34746273148/job/103694674579)
+failed while building the baseline arm, before correctness or timing: main's
+pre-C2 native library has no ordinary-values units. Its source entry also uses
+the removed `command` form. The same-version twin passes 132 correctness rows,
+and four emitted modules, four module objects and twelve native objects are
+byte-identical with all twin controls empty. That instrument check does not
+supply the missing cross-version comparison; its entry/library adaptation is
+still an owner question, with no exemption or retry applied.
