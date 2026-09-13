@@ -360,9 +360,24 @@ static int wf_windows_open_connect_socket(wf_completion_record *record) {
         &record->request.operation.endpoint.address.portable
     );
     int descriptor = wf__windows_socket_open(family);
+    int one = 1;
     if (descriptor < 0) {
         return -1;
     }
+    /* TCP_NODELAY on every socket this ring creates, right after creation.
+     * Nagle's coalescing measured an 11.78x-14.98x throughput loss and a p99
+     * tail of 41 ms against 2.4 ms without it
+     * (research/investigations/io-model/SCHEDULER-FINDINGS.md, experiment
+     * 17). A refusal leaves an ordinary, working socket -- just one that may
+     * coalesce small writes -- so it is not folded into this call's own
+     * outcome. */
+    (void)setsockopt(
+        (SOCKET)wf__windows_socket_handle(descriptor),
+        IPPROTO_TCP,
+        TCP_NODELAY,
+        (const char *)&one,
+        sizeof one
+    );
     wildcard_length = wf_socket_native_wildcard(family, &wildcard);
     if (bind(
             (SOCKET)wf__windows_socket_handle(descriptor),

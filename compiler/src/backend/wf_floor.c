@@ -83,6 +83,23 @@ size_t wf__floor_stack_bytes(void) { return WF_FLOOR_STACK_BYTES; }
 #define WF_FILE_RUNTIME_RESERVE 64L
 #define WF_FILE_CAPACITY_CEILING (1L << 20)
 
+/* Pinned against `completion/file_adapter.h`'s WF_FILE_CONNECTION_DESCRIPTORS,
+ * which must span every descriptor this ceiling can ever produce a credit
+ * for -- a table sized any narrower could be asked to release a descriptor
+ * it never allocated a byte for.  The two are not read from one shared
+ * header: this unit must build standalone, with no dependency on the
+ * completion directory, for a program that needs neither I/O nor
+ * parallelism (`tests/programs/support.rs`, `stage_runtime_units`, which
+ * stages `completion/` only when the module asks for it, while this file is
+ * always staged and always compiled alone).  A literal pinned on each side
+ * is what a shared constant cannot be here; changing this number without
+ * changing the other's fails one of the two builds immediately. */
+_Static_assert(
+    WF_FILE_CAPACITY_CEILING == (1L << 20),
+    "must change together with completion/file_adapter.h's "
+    "WF_FILE_CONNECTION_DESCRIPTORS"
+);
+
 static _Atomic long wf__handle_credits;
 static pthread_once_t wf__file_capacity_once = PTHREAD_ONCE_INIT;
 
