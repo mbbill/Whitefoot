@@ -34,6 +34,10 @@ its previous form with the requested change rather than judging only against
 the newly edited rule.
 
 Put a compact report in the existing PR, or the task reply when there is no PR.
+Also check the conversation handoff required by `design/skill/SKILL.md`:
+the reply explains each outstanding amendment and presents the DCR results
+with the primary agent's assessment. Publishing the report in the PR does
+not replace that explanation to the owner.
 Use the [PR template](../.github/pull_request_template.md)'s three bullets:
 
 - **Scope:** reviewer/model, base and head, checked groups and any skipped
@@ -232,6 +236,8 @@ Use `design/skill/SKILL.md`; this section does not replace it.
 
 - [ ] **M1 — Design, tree, and amendments.** The design and proposed tree
   revision explain the choices and their differences from the current tree.
+  The owner-facing reply explains each outstanding amendment as the skill's
+  Workflow section requires.
   Every live-tree change follows the owner's approval of that revision,
   whenever it occurs during the work, and has a concise traceability log.
   Decisions the agent makes on its own remain amendments under
@@ -243,8 +249,9 @@ Use `design/skill/SKILL.md`; this section does not replace it.
   directions across the agreed delivery scope. Include relevant existing
   commitments and pending revisions, not just changed tree nodes. Check for
   missing or partial implementation as well as unrecorded or contradictory
-  choices. The owner receives the findings and primary agent's assessment
-  before any action on them. Pending rulings remain explicit; an amendment
+  choices. The owner receives the results and primary agent's assessment
+  in the conversation before any action on findings, as the skill's DCR
+  handoff requires. Pending rulings remain explicit; an amendment
   alone does not establish correctness. Ongoing discussion needs neither a
   finished implementation nor a separate completion review.
 - [ ] **M3 — Form.** `make design-lint` passes on the head revision.

@@ -86,14 +86,25 @@ retain both, newest first.
 
 Discuss the design with the owner and develop the implementation in one
 continuous workflow, without required phases, separate design submissions,
-or separate design commits. A PR may open before coding and carry the whole
-discussion. Use documents, experiments, and changes to code, specifications,
-or tests as needed, following project conventions.
+or separate design commits. A PR may open before coding and hold reviewable
+artifacts and supporting discussion. Use documents, experiments, and changes
+to code, specifications, or tests as needed, following project conventions.
 
 Present a complete design for the agreed scope with its proposed tree
 revision: mechanism, requirements, alternatives, evidence, uncertainty, and
 exactly which decisions change and why. Scale the explanation to the work;
 the comparison with the current tree is central to the owner's review.
+
+Before stopping work to await owner input, marking work blocked, or reporting
+completion, explain every outstanding amendment in the task's scope in the
+conversation. For each amendment, name the affected node and current decision;
+explain what is added, replaced, or retired, the problem and evidence that
+motivate it, the alternatives and material tradeoffs, and remaining
+uncertainty. Give your recommendation and identify the ruling needed.
+Put this self-contained explanation in the reply that hands the work back,
+in the owner's language while preserving node names and identifiers. Links
+to amendments, evidence, or the PR support the explanation; a link, an
+amendment count, or earlier progress messages do not replace it.
 
 Keep affected nodes and ancestors in context, extending as needed. Discuss
 material discoveries with the owner when available. Otherwise choose a
@@ -113,12 +124,22 @@ when it covers these checks.
 Use a separate, read-only reviewer that did not implement the change,
 normally a small or mid-sized model with bounded inputs. It reads actual
 artifacts and reports scope, revision, findings, evidence, and uncertainty.
-The primary agent sends those results to the owner with its own assessment
-and recommended next steps, keeping findings and commentary distinct. Await
-the owner's direction before acting on the findings, including during
-unattended work; DCR does not authorize fixes or tree changes. Recheck affected
-items after directed changes, reusing unaffected review. Tests and merge
-rules belong to the project.
+The primary agent presents those results in the conversation before stopping
+or requesting direction, in the same reply as the amendment explanations
+above. State the reviewed revision and scope, passed checks, every finding
+with its affected artifact and evidence, and anything unverified or outside
+scope. If there are no findings, say so within the reviewed scope. Give the
+primary agent's assessment of the result and recommended next step. For each
+finding, separately state whether the primary agent agrees and why, the
+significance, and the recommended response. Identify exactly what needs the
+owner's direction. A report stored only in the PR or a linked document does
+not satisfy this handoff.
+
+Await the owner's direction before acting on the findings, including during
+unattended work; DCR does not authorize fixes or tree changes. This waiting
+rule does not excuse an incomplete explanation. Recheck affected items after
+directed changes, reusing unaffected review. Tests and merge rules belong to
+the project.
 
 ## Lint
 
