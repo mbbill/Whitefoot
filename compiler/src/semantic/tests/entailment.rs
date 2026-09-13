@@ -192,6 +192,7 @@ enum DerivationConclusion {
     IntegerDomain(Option<GoalId>),
     AffineConsequence,
     UnsignedDivisionProduct,
+    RequirementAffineImage,
     Contradiction,
     PostconditionAggregate,
 }
@@ -1149,6 +1150,29 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 );
                 DerivationConclusion::Contradiction
             }
+            DerivationNode::RequirementAffineImage { goal, sign, parent } => {
+                assert!(
+                    summary.inventory.goals[goal.0 as usize]
+                        .projection
+                        .is_none()
+                );
+                assert_eq!(
+                    retained_conclusion(&conclusions, *parent),
+                    &DerivationConclusion::Goal {
+                        goal: *goal,
+                        sign: *sign
+                    }
+                );
+                let event = summary
+                    .derivations
+                    .node_event(*parent)
+                    .expect("an S4 image keeps its established-goal source");
+                assert_eq!(
+                    summary.derivations.events[event.0 as usize].kind,
+                    FlowEventKind::S4
+                );
+                DerivationConclusion::RequirementAffineImage
+            }
             DerivationNode::UnsignedDivisionProduct {
                 product,
                 division,
@@ -1183,6 +1207,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         DerivationConclusion::Relation(_)
                             | DerivationConclusion::Contradiction
                             | DerivationConclusion::UnsignedDivisionProduct
+                            | DerivationConclusion::RequirementAffineImage
                     ));
                 }
                 for premise in premises {
@@ -1657,6 +1682,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::IntegerDomain(_)
                         | DerivationConclusion::AffineConsequence
                         | DerivationConclusion::UnsignedDivisionProduct
+                        | DerivationConclusion::RequirementAffineImage
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("delivery join parent must be a relation or contradiction")
                         }
@@ -1823,6 +1849,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         | DerivationConclusion::IntegerDomain(_)
                         | DerivationConclusion::AffineConsequence
                         | DerivationConclusion::UnsignedDivisionProduct
+                        | DerivationConclusion::RequirementAffineImage
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("this obligation root cannot conclude that goal")
                         }
@@ -1927,6 +1954,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     DerivationConclusion::IntegerDomain(_)
                     | DerivationConclusion::AffineConsequence
                     | DerivationConclusion::UnsignedDivisionProduct
+                    | DerivationConclusion::RequirementAffineImage
                     | DerivationConclusion::PostconditionAggregate => {
                         panic!("a discharged call root cannot be a postcondition aggregate")
                     }
@@ -1950,6 +1978,13 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     .find_map(|(candidate, atomic)| (candidate == atom).then_some(atomic.parent))
                     .expect("the fixed counted atom must exist");
                 assert_eq!(root.node, expected);
+            }
+            DerivationRootKind::RequirementAffineImage { .. } => {
+                assert!(matches!(
+                    &summary.derivations.nodes[root.node.0 as usize],
+                    DerivationNode::RequirementAffineImage { .. }
+                ));
+                assert_eq!(conclusion, &DerivationConclusion::RequirementAffineImage);
             }
             DerivationRootKind::UnsignedDivisionProduct(ordinal) => {
                 let obligation = &summary.obligations[ordinal as usize];

@@ -1416,7 +1416,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .incoming
             .get(block_id.index())
             .ok_or(BackendFailure::InvalidIr)?;
-        if incoming.is_empty()
+        if (incoming.is_empty() && block_id.index() == 0)
             || incoming
                 .iter()
                 .any(|edge| edge.arguments.len() != block.parameters().len())
@@ -1425,6 +1425,20 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         for (parameter_index, (parameter, ty)) in block.parameters().iter().enumerate() {
             if self.storage.slot(*parameter).is_some() {
+                continue;
+            }
+            if incoming.is_empty() {
+                // A loop with returns but no break leaves an unreachable
+                // structural exit. Its block parameters have no incoming
+                // values: define them locally so its checked continuation
+                // remains valid LLVM without inventing a predecessor edge.
+                writeln!(
+                    self.output,
+                    "  {} = freeze {} poison",
+                    self.value_name(*parameter),
+                    llvm_type(self.program, *ty)?
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
                 continue;
             }
             write!(

@@ -399,7 +399,7 @@ CHECK   := $(WORK)/check
 # Every compute consumer runs in the untimed gate. Prefix and histogram
 # also have opt-in timed references; their runtime division images require
 # this branch's language, so the baseline twin does not select them by default.
-CHECKED := $(addprefix $(CHECK)/checked_,$(sort $(KERNELS) stencil range_split prefix histogram))
+CHECKED := $(addprefix $(CHECK)/checked_,$(sort $(KERNELS) stencil range_split prefix histogram merge_sort bfs))
 JOBS    ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
 # The ParlayLib probe in `deps` decides whether this object exists at all.
@@ -486,11 +486,12 @@ deps:
 # research/investigations/compute-runtime/RESULTS.md timed quadrature on a
 # module emitted at 33ed2c00; the fresh emission is the table that replaced it).
 define kernel-modules
-$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll module-symbols.awk $$(WFC) | compiler
+$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll host-adapter.awk module-symbols.awk $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WFC) --par --par-ledger --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par.ledger
+	awk -f host-adapter.awk $$@.raw $(1)_host.ll > $$@.bound
 	awk -v prefix=wfb_$(1)_par -v api=wf_bench_$(1) -v mode=par \
-	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
+	    -f module-symbols.awk $$@.bound > $$@
 	grep -q 'call void @wf__par_publish(' $$@
 
 # The twin's module: the same recipe with WF_PAR_CONTROL_FLAGS appended and its
@@ -509,27 +510,30 @@ $$(BUILD)/$(1)-baseline.wf: programs/$(1).wf baseline-entry.sh $$(BASELINE_STAMP
 	@mkdir -p $$(BUILD)
 	sh baseline-entry.sh adapt $$(WF_B_INTERFACE) $$< $$@
 
-$$(BUILD)/$(1)-par-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll module-symbols.awk $$(WF_B_WFC) $$(PAR_CONTROL) \
+$$(BUILD)/$(1)-par-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll host-adapter.awk module-symbols.awk $$(WF_B_WFC) $$(PAR_CONTROL) \
                          $$(BASELINE_STAMP) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WF_B_WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm $$(BUILD)/$(1)-baseline.wf -o $$@.raw > $$(BUILD)/$(1)-par-b.ledger
+	awk -f host-adapter.awk $$@.raw $(1)_host.ll > $$@.bound
 	awk -v prefix=wfb_$(1)_par -v api=wf_bench_$(1) -v mode=par \
-	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
+	    -f module-symbols.awk $$@.bound > $$@
 	grep -q 'call void @wf__par_publish(' $$@
 
-$$(BUILD)/$(1)-seq.ll: programs/$(1).wf $(1)_host.ll module-symbols.awk $$(WFC) | compiler
+$$(BUILD)/$(1)-seq.ll: programs/$(1).wf $(1)_host.ll host-adapter.awk module-symbols.awk $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WFC) --no-overlap --emit-llvm programs/$(1).wf -o $$@.raw
+	awk -f host-adapter.awk $$@.raw $(1)_host.ll > $$@.bound
 	awk -v prefix=wfb_$(1)_seq -v api=wf_bench_$(1) -v mode=seq \
-	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
+	    -f module-symbols.awk $$@.bound > $$@
 	! grep -q 'call void @wf__par_publish(' $$@
 
 # A cross-interface image cannot link the current seq object's ordinary imports
 # against the legacy library. Build its untimed seq control with its compiler.
-$$(BUILD)/$(1)-seq-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll module-symbols.awk $$(WF_B_WFC) $$(BASELINE_STAMP) | compiler
+$$(BUILD)/$(1)-seq-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll host-adapter.awk module-symbols.awk $$(WF_B_WFC) $$(BASELINE_STAMP) | compiler
 	$$(WF_B_WFC) --no-overlap --emit-llvm $$< -o $$@.raw
+	awk -f host-adapter.awk $$@.raw $(1)_host.ll > $$@.bound
 	awk -v prefix=wfb_$(1)_seq -v api=wf_bench_$(1) -v mode=seq \
-	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
+	    -f module-symbols.awk $$@.bound > $$@
 	! grep -q 'call void @wf__par_publish(' $$@
 
 # The constant weight operand of the emitted wf__par_split_budget call. The

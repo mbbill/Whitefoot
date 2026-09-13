@@ -927,9 +927,10 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         .push(function.parameters.iter().map(|p| p.binding).collect());
     // [ENT-3] S4: every substituted `requires` goal independently enters the
     // body state in source order. No clause derives another clause.
-    for requirement in &function.requirements {
+    for (ordinal, requirement) in function.requirements.iter().enumerate() {
         let event = analyzer.proof_event(FlowEventKind::S4, Some(&requirement.clause));
         analyzer.establish_requires_facts(requirement, &mut state.facts, event);
+        analyzer.establish_requirement_affine_images(requirement, ordinal, &mut state);
     }
     let body_disposition = {
         let closed = close(
@@ -1601,6 +1602,61 @@ impl Analyzer<'_, '_> {
         state: &AffineFlowState,
     ) -> Option<AffineInequality> {
         self.affine_signed_goal_ordering_target(expression, state, GoalSign::Positive)
+    }
+
+    /// S4 captures only non-L0 affine ordering leaves already established by
+    /// the requirement's fixed signed decomposition. The immutable images
+    /// cannot be retargeted by a later scalar assignment or measure kill.
+    fn establish_requirement_affine_images(
+        &mut self,
+        requirement: &crate::semantic::goal::CheckedRequirement,
+        ordinal: usize,
+        state: &mut ProofFlowState,
+    ) {
+        let Some(expression) = self.body_requirement_goal(requirement) else {
+            return;
+        };
+        let goal = self.intern_goal_expression(expression);
+        let mut members = vec![(goal, GoalSign::Positive)];
+        members.extend(self.signed_boolean_decomposition(goal, GoalSign::Positive, &state.facts));
+        for (member, (goal, sign)) in members.into_iter().enumerate() {
+            // Existing L0 projections remain on their ordinary route; putting
+            // them in this list would widen AUTO's bounded premise sums.
+            if self.goals.projection(goal).is_some() {
+                continue;
+            }
+            let expression = self.goals.expression(goal).clone();
+            let Some(inequality) =
+                self.affine_signed_goal_ordering_target(&expression, &state.affine, sign)
+            else {
+                continue;
+            };
+            let parent = state
+                .facts
+                .opaque_proofs
+                .get(&(goal, sign))
+                .copied()
+                .expect("every S4 decomposition member is established");
+            let parent =
+                self.derivations
+                    .intern(super::state::DerivationNode::RequirementAffineImage {
+                        goal,
+                        sign,
+                        parent,
+                    });
+            self.derivations.add_root(
+                DerivationRootKind::RequirementAffineImage {
+                    requirement: u32::try_from(ordinal).expect("requirement ordinal exceeds u32"),
+                    member: u32::try_from(member).expect("decomposition ordinal exceeds u32"),
+                },
+                parent,
+            );
+            state.affine.facts.push(ActiveAffineFact {
+                inequality,
+                evidence: AffineFactEvidence::Derivation(parent),
+                active_loops: Vec::new(),
+            });
+        }
     }
 
     /// Converts either truth sign of one callable-boundary ordering leaf to
@@ -10069,6 +10125,12 @@ impl Analyzer<'_, '_> {
             return None;
         }
         match expression {
+            CheckedExpression::ArrayMeasure { .. }
+            | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::SliceMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. } => self
+                .checked_measure_term(expression)
+                .map(|term| self.measure_atom(term)),
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
             | CheckedExpression::NamedConstant {
                 value: CheckedValue::Integer { ty, bits },
@@ -11134,6 +11196,20 @@ impl Analyzer<'_, '_> {
         let [left, right] = arguments.as_slice() else {
             return;
         };
+        let Some(product) = state.values.get(&binding).and_then(AffineForm::unit_term) else {
+            return;
+        };
+        // Constant-scaled products already have a transparent affine image.
+        // Do not mint opaque operand handles for them: a handle established
+        // before a loop becomes invariant and can hide a stride's affine sum
+        // from the counted partition decomposition.
+        let nonconstant =
+            |image: Option<AffineForm>| image.is_some_and(|image| !image.terms().is_empty());
+        if !nonconstant(self.affine_pre_domain_form(left, state))
+            || !nonconstant(self.affine_pre_domain_form(right, state))
+        {
+            return;
+        }
         // What proved the domain and what the fold names are two questions.
         // The domain judgment reads the transparent images, whose intervals are
         // what admit the multiply at all; the record names the bindings, so a
@@ -11145,9 +11221,6 @@ impl Analyzer<'_, '_> {
             self.affine_operand_handle(left, state),
             self.affine_operand_handle(right, state),
         ) else {
-            return;
-        };
-        let Some(product) = state.values.get(&binding).and_then(AffineForm::unit_term) else {
             return;
         };
         self.product_atoms
@@ -11269,6 +11342,12 @@ impl Analyzer<'_, '_> {
             return self.affine_pure_expression_form(&CheckedExpression::Constant(value), state);
         }
         let formed = match expression {
+            CheckedExpression::ArrayMeasure { .. }
+            | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::SliceMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. } => self
+                .checked_measure_term(expression)
+                .map(|term| self.measure_atom(term)),
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
             | CheckedExpression::NamedConstant {
                 value: CheckedValue::Integer { ty, bits },

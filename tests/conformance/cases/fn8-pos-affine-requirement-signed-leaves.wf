@@ -1,0 +1,17 @@
+fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {
+  define sum = a + b;
+  define overflow = sum > limit;
+  define excluded = a > 16_u64;
+  define either = bor(overflow, excluded);
+  requires bnot(either);
+  requires a <= 16_u64;
+  requires b <= 16_u64;
+} {
+  let total = a + b;
+  let remaining = limit - total;
+  return remaining;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

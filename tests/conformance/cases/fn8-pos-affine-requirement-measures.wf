@@ -1,0 +1,35 @@
+fn fill(first: own Slice<u64>, second: own Slice<u64>, output: own MutSlice<u64>) -> result: own u64 reads(first, second, output), writes(output) contract {
+  requires len_of(first) <= 16_u64;
+  requires len_of(second) <= 16_u64;
+  requires len_of(first) + len_of(second) <= len_of(output);
+} {
+  let a = len_of(first);
+  let b = len_of(second);
+  let capacity = len_of(output);
+  let total = a + b;
+  invariant fits: total <= capacity;
+  if total > 0_u64 {
+    let last = total - 1_u64;
+    set output[last] = 7_u64;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let first = buffer_new(3_u64, 0_u64);
+  let second = buffer_new(5_u64, 0_u64);
+  let output = buffer_new(8_u64, 0_u64);
+  region {
+    let a = slice_of(&first);
+    let b = slice_of(&second);
+    let destination = mut_slice_of(&uniq output, 0_u64, 8_u64);
+    let count = fill(first: a, second: b, output: move destination);
+    if count != 8_u64 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  if output[7_u64] != 7_u64 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

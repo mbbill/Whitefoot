@@ -305,6 +305,12 @@ pub(crate) struct PostconditionCallSubstitution {
 /// Parent IDs always precede their child in the arena.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum DerivationNode {
+    /// The fixed affine projection of an established S4 ordering leaf.
+    RequirementAffineImage {
+        goal: GoalId,
+        sign: GoalSign,
+        parent: DerivationId,
+    },
     /// The fixed S7 quotient-product consequence. Both operations have
     /// already discharged their domains; the product source identifies the
     /// checked operand images matched against the retained division.
@@ -637,6 +643,7 @@ impl DerivationNode {
                 visit(*distinct);
             }
             Self::SubsumedBound { parent, .. }
+            | Self::RequirementAffineImage { parent, .. }
             | Self::DisequalityFromStrictBound { parent, .. }
             | Self::GoalProjection { parent, .. }
             | Self::GoalAffineConsequence { parent, .. }
@@ -719,6 +726,7 @@ impl DerivationNode {
             | Self::Equality { .. }
             | Self::GoalContradiction { .. } => 2,
             Self::SubsumedBound { .. }
+            | Self::RequirementAffineImage { .. }
             | Self::DisequalityFromStrictBound { .. }
             | Self::GoalProjection { .. }
             | Self::GoalAffineConsequence { .. }
@@ -801,6 +809,7 @@ impl DerivationNode {
             Self::IntegerDomain { .. } => 32,
             Self::AffineConsequence { .. } => 33,
             Self::GoalAffineConsequence { .. } => 34,
+            Self::RequirementAffineImage { .. } => 36,
         }
     }
 }
@@ -839,6 +848,10 @@ pub(crate) enum DerivationRootKind {
     ShiftOneNonzero(u32),
     UnsignedDivisionBound(u32),
     UnsignedDivisionProduct(u32),
+    RequirementAffineImage {
+        requirement: u32,
+        member: u32,
+    },
     UnsignedRemainderBound(u32),
     SignedRemainderBound(u32),
     CountedS11 {
@@ -1560,7 +1573,8 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
         .get(index)
         .copied()
         .or_else(|| parents.get(index.checked_sub(3)?).map(|parent| parent.0)),
-        DerivationNode::GoalAffineConsequence { goal, sign, parent } => [
+        DerivationNode::GoalAffineConsequence { goal, sign, parent }
+        | DerivationNode::RequirementAffineImage { goal, sign, parent } => [
             goal.0,
             match sign {
                 GoalSign::Positive => 0,
@@ -1819,6 +1833,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         | DerivationNode::DisequalityFromStrictBound { parent, .. }
         | DerivationNode::GoalProjection { parent, .. }
         | DerivationNode::GoalAffineConsequence { parent, .. }
+        | DerivationNode::RequirementAffineImage { parent, .. }
         | DerivationNode::L0Contradiction { parent, .. }
         | DerivationNode::MaterializedBound { parent, .. }
         | DerivationNode::MaterializedDistinct { parent, .. }

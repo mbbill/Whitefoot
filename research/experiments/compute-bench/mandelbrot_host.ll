@@ -3,7 +3,7 @@
 ; It builds the two buffer descriptors and forwards; it computes nothing.
 ; The Makefile appends this file to each emitted module and isolates its
 ; definitions with the -par or -seq adapter spellings, so one text serves both.
-; Eighteen lines of IR, the ceiling section 2 of the specification records.
+; host-adapter.awk supplies entry-equivalent execution-world selection.
 define void @wf_bench_mandelbrot(ptr %real, ptr %imaginary, i64 %count, i64 %limit, ptr %out, ptr %out_len) {
   %a = insertvalue { ptr, i64 } poison, ptr %real, 0
   %b = insertvalue { ptr, i64 } %a, i64 %count, 1

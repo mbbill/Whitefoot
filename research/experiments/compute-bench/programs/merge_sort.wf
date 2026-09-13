@@ -1,0 +1,188 @@
+fn search_step(input: own Slice<u64>, lower: own u64, upper: own u64, key: own u64) -> (next_lower: own u64, next_upper: own u64) reads(input) contract {
+  requires len_of(input) <= 16777216_u64;
+  requires lower < upper;
+  requires upper <= len_of(input);
+  ensures next_lower <= next_upper;
+  ensures next_upper <= len_of(input);
+} {
+  let last = upper - 1_u64;
+  let span = last - lower;
+  let half = span / 2_u64;
+  let middle = lower + half;
+  let value = input[middle];
+  if value < key {
+    let first = middle + 1_u64;
+    return first, upper;
+  }
+  return lower, middle;
+}
+
+fn lower_bound(input: own Slice<u64>, key: own u64) -> result: own u64 reads(input) contract {
+  requires len_of(input) <= 16777216_u64;
+  ensures result <= len_of(input);
+} {
+  let count = len_of(input);
+  let lower = 0_u64;
+  let upper = count;
+  loop (
+    invariant ordered: lower <= upper,
+    invariant bounded: upper <= count
+  ) {
+    if lower >= upper {
+      return lower;
+    }
+    let (next_lower, next_upper) = search_step(input: input, lower: lower, upper: upper, key: key);
+    set lower = next_lower;
+    set upper = next_upper;
+  }
+  return count;
+}
+
+fn copy_values(input: own Slice<u64>, output: own MutSlice<u64>) -> result: own u64 reads(input), writes(output) contract {
+  requires len_of(input) <= len_of(output);
+} {
+  let count = len_of(input);
+  for (i in 0_u64..count) {
+    set output[i] = input[i];
+  }
+  return count;
+}
+
+fn merge_values(first: own Slice<u64>, second: own Slice<u64>, output: own MutSlice<u64>) -> result: own u64 reads(first, second, output), writes(output) contract {
+  requires len_of(first) <= 16777216_u64;
+  requires len_of(second) <= 16777216_u64;
+  requires len_of(first) <= len_of(output);
+  requires len_of(second) <= len_of(output);
+  requires len_of(first) + len_of(second) <= len_of(output);
+} {
+  doc "Binary-split merge. The pivot's rank in the other sorted input determines two disjoint output views. Sibling recursive calls expose data-dependent output partitions without a shared scatter.";
+  let n = len_of(first);
+  let m = len_of(second);
+  let capacity = len_of(output);
+  let total = n + m;
+  invariant total_output: total <= capacity;
+  if n == 0_u64 {
+    return copy_values(input: second, output: move output);
+  }
+  if m == 0_u64 {
+    return copy_values(input: first, output: move output);
+  }
+  if total <= 64_u64 {
+    let a = 0_u64;
+    let b = 0_u64;
+    for (at in 0_u64..total) {
+      if a < n {
+        if b < m {
+          let x = first[a];
+          let y = second[b];
+          if x <= y {
+            set output[at] = x;
+            set a = a + 1_u64;
+          } else {
+            set output[at] = y;
+            set b = b + 1_u64;
+          }
+        } else {
+          set output[at] = first[a];
+          set a = a + 1_u64;
+        }
+      } else if b < m {
+        set output[at] = second[b];
+        set b = b + 1_u64;
+      }
+    }
+    return total;
+  }
+  if n < m {
+    return merge_values(first: second, second: first, output: move output);
+  }
+  let last = n - 1_u64;
+  let middle = last / 2_u64;
+  let pivot = first[middle];
+  let rank = lower_bound(input: second, key: pivot);
+  let split = middle + rank;
+  invariant split_total: split <= total;
+  region {
+    let a0 = slice_of(&first, 0_u64, middle);
+    let a1 = slice_of(&first, middle, n);
+    let b0 = slice_of(&second, 0_u64, rank);
+    let b1 = slice_of(&second, rank, m);
+    let out0 = mut_slice_of(&uniq output, 0_u64, split);
+    let out1 = mut_slice_of(&uniq output, split, total);
+    let left = merge_values(first: a0, second: b0, output: move out0);
+    let right = merge_values(first: a1, second: b1, output: move out1);
+  }
+  return total;
+}
+
+fn sort_values(input: own MutSlice<u64>, output: own MutSlice<u64>) -> result: own u64 reads(input, output), writes(input, output) contract {
+  requires len_of(input) <= 16777216_u64;
+  requires len_of(output) <= len_of(input);
+  requires len_of(input) <= len_of(output);
+} {
+  let count = len_of(input);
+  if count <= 1_u64 {
+    for (i in 0_u64..count) {
+      set output[i] = input[i];
+    }
+    return count;
+  }
+  let middle = count / 2_u64;
+  region {
+    let in0 = mut_slice_of(&uniq input, 0_u64, middle);
+    let in1 = mut_slice_of(&uniq input, middle, count);
+    let out0 = mut_slice_of(&uniq output, 0_u64, middle);
+    let out1 = mut_slice_of(&uniq output, middle, count);
+    let left = sort_values(input: move out0, output: move in0);
+    let right = sort_values(input: move out1, output: move in1);
+    let sorted0 = slice_of(&input, 0_u64, middle);
+    let sorted1 = slice_of(&input, middle, count);
+    let destination = mut_slice_of(&uniq output, 0_u64, count);
+    let merged = merge_values(first: sorted0, second: sorted1, output: move destination);
+  }
+  return count;
+}
+
+fn merge_sort(input: own Slice<u64>) -> result: own buffer<u64> reads(input) contract {
+  requires len_of(input) <= 16777216_u64;
+} {
+  doc "Out-of-place comparison sort with two reusable buffers and parallel recursive merges. It preserves every unsigned key; stability is not part of the result contract.";
+  let count = len_of(input);
+  let scratch = buffer_new(count, 0_u64);
+  let output = buffer_new(count, 0_u64);
+  for (i in 0_u64..count) {
+    set scratch[i] = input[i];
+    set output[i] = input[i];
+  }
+  region {
+    let source = mut_slice_of(&uniq scratch, 0_u64, count);
+    let destination = mut_slice_of(&uniq output, 0_u64, count);
+    let sorted = sort_values(input: move source, output: move destination);
+  }
+  return move output;
+}
+
+fn release_merge_sort(output: own buffer<u64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let input = buffer_new(257_u64, 0_u64);
+  for (i in 0_u64..257_u64) {
+    set input[i] = 256_u64 - i;
+  }
+  region {
+    let view = slice_of(&input);
+    let output = merge_sort(input: view);
+    let count = len_of(output);
+    if count != 257_u64 {
+      return exit_status(code: 1_u8);
+    }
+    for (i in 0_u64..count) {
+      if output[i] != i {
+        return exit_status(code: 2_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

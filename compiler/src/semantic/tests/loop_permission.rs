@@ -85,6 +85,21 @@ fn permitted(source: &[u8], function: &str) -> LoopPermission {
     judged
 }
 
+#[test]
+fn bfs_pull_is_permitted_while_sparse_discovery_remains_source_ordered() {
+    let source = include_bytes!("../../../../research/experiments/compute-bench/programs/bfs.wf");
+    let table = permission_of(source);
+    assert_eq!(
+        only_loop(&table, "pull_level").verdict,
+        LoopVerdict::PermittedEligible
+    );
+    assert!(
+        loops(&table, "bfs_sparse")
+            .iter()
+            .all(|item| matches!(item.verdict, LoopVerdict::Denied(_)))
+    );
+}
+
 // ----------------------------------------------------------------------
 // Grants
 // ----------------------------------------------------------------------

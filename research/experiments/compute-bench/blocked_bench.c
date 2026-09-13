@@ -91,7 +91,7 @@ static size_t compare(const uint64_t *expected, const uint64_t *actual, size_t c
 static size_t verify_matrix(blocked_entry entry, blocked_release release) {
     static const size_t shapes[][2] = {
         {0, 1}, {0, 64}, {1, 1}, {1, 3}, {2, 1}, {17, 3}, {17, 64},
-        {257, 1}, {257, 16}, {4099, 64}, {65537, 1024}, {131089, 65536}
+        {257, 1}, {257, 16}, {4099, 64}, {8193, 1}, {65537, 1024}, {131089, 65536}
     };
 #ifdef WFB_PREFIX
     static const size_t bucket_counts[] = {1};
@@ -137,11 +137,25 @@ static size_t verify_matrix(blocked_entry entry, blocked_release release) {
 extern void ENTRY(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
 extern void RELEASE(uint64_t *, uint64_t);
 
-int main(void) {
+extern int wf__floor_run(int, char **);
+#ifdef WFB_ORACLE_PARALLEL
+extern int wf__par_pool_active(void);
+extern unsigned long wf__par_grants(void);
+#endif
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
     size_t compared = verify_matrix(ENTRY, RELEASE);
+#ifdef WFB_ORACLE_PARALLEL
+    const char *workers = getenv("WF_WORKERS");
+    if (workers && atoi(workers) > 1 &&
+        (!wf__par_pool_active() || wf__par_grants() == 0)) fail("oracle did not exercise a worker pool");
+    if (workers && atoi(workers) == 1 && wf__par_grants() != 0) fail("pool-off oracle handed out work");
+#endif
     (void)printf("%s oracle PASS: compared=%zu\n", KERNEL_NAME, compared);
     return 0;
 }
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+
 #else
 #include "backend.h"
 #include "harness.h"

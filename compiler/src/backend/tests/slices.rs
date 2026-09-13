@@ -1,5 +1,28 @@
 use super::*;
 
+/// Use the benchmark's actual binding path, including pool-off world selection.
+fn bind_compute_host_adapter(module: &str, adapter: &str) -> String {
+    let directory = test_directory();
+    std::fs::create_dir_all(&directory).expect("create adapter directory");
+    let input = directory.join("module.ll");
+    let host = directory.join("adapter.ll");
+    std::fs::write(&input, module).expect("write adapter module");
+    std::fs::write(&host, adapter).expect("write host adapter");
+    let output = Command::new("awk")
+        .arg("-f")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../research/experiments/compute-bench/host-adapter.awk"
+        ))
+        .arg(input)
+        .arg(host)
+        .output()
+        .expect("bind compute host adapter");
+    assert!(output.status.success(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove adapter directory");
+    String::from_utf8(output.stdout).expect("adapter LLVM text")
+}
+
 #[test]
 fn borrowed_storage_subranges_write_the_original_array_and_run() {
     let source = r#"struct Packet {
@@ -107,12 +130,16 @@ fn blocked_compute_matches_independent_oracles_at_runtime_dimensions() {
             include_str!("../../../../research/experiments/compute-bench/blocked_bench.c")
         );
         for emitted in [compile(source), emit_with_overlap(source)] {
-            let llvm = format!(
-                "{}\n{adapter}",
-                emitted.replace("@main(", "@wf_blocked_smoke_main(")
-            );
+            let llvm = bind_compute_host_adapter(&emitted, adapter)
+                .replace("@main(", "@wf_blocked_smoke_main(")
+                .replace("@wf__main_body(", "@wf_blocked_smoke_body(");
             let directory = test_directory();
-            let executable = build_linked_executable(&llvm, Some(&oracle), &[], &directory);
+            let defines = if emitted.contains("call void @wf__par_publish(") {
+                vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+            } else {
+                Vec::new()
+            };
+            let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
             for workers in [1, 2, 4] {
                 let output = Command::new(&executable)
                     .env("WF_WORKERS", workers.to_string())
@@ -156,12 +183,16 @@ fn stencil_matches_an_independent_dimension_and_step_matrix() {
         include_str!("../../../../research/experiments/compute-bench/stencil_bench.c")
     );
     for emitted in [compile(source), emit_with_overlap(source)] {
-        let llvm = format!(
-            "{}\n{adapter}",
-            emitted.replace("@main(", "@wf_stencil_smoke_main(")
-        );
+        let llvm = bind_compute_host_adapter(&emitted, adapter)
+            .replace("@main(", "@wf_stencil_smoke_main(")
+            .replace("@wf__main_body(", "@wf_stencil_smoke_body(");
         let directory = test_directory();
-        let executable = build_linked_executable(&llvm, Some(&oracle), &[], &directory);
+        let defines = if emitted.contains("call void @wf__par_publish(") {
+            vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+        } else {
+            Vec::new()
+        };
+        let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
         for workers in [1, 2, 4] {
             let output = Command::new(&executable)
                 .env("WF_WORKERS", workers.to_string())
@@ -870,4 +901,82 @@ fn a_view_of_a_frame_resident_run_reaches_its_own_slots_until_call_return() {
     assert!(output.status.success());
     assert_eq!(output.stdout, b"AAAA");
     assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn a_returning_loop_with_no_break_has_a_valid_unreachable_continuation() {
+    let source = br#"fn count_down(count: own u64) -> result: own u64 pure {
+  let remaining = count;
+  loop {
+    if remaining == 0_u64 {
+      return 7_u64;
+    }
+    set remaining = remaining - 1_u64;
+  }
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let value = count_down(count: 17_u64);
+  if value != 7_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for module in [compile(source), emit_with_overlap(source)] {
+        let output = compile_and_run(&module);
+        assert!(output.status.success(), "{output:?}");
+    }
+}
+
+#[test]
+fn irregular_compute_matches_independent_sort_and_graph_oracles() {
+    let kernels: [(&str, &[u8], &str, &str, &str); 2] = [
+        (
+            "merge_sort",
+            include_bytes!("../../../../research/experiments/compute-bench/programs/merge_sort.wf"),
+            include_str!("../../../../research/experiments/compute-bench/merge_sort_host.ll"),
+            "WFB_SORT_ORACLE",
+            include_str!("../../../../research/experiments/compute-bench/merge_sort_bench.c"),
+        ),
+        (
+            "bfs",
+            include_bytes!("../../../../research/experiments/compute-bench/programs/bfs.wf"),
+            include_str!("../../../../research/experiments/compute-bench/bfs_host.ll"),
+            "WFB_BFS_ORACLE",
+            include_str!("../../../../research/experiments/compute-bench/bfs_bench.c"),
+        ),
+    ];
+    for (name, source, adapter, selection, harness) in kernels {
+        let oracle = format!("#define {selection}\n{harness}");
+        for emitted in [compile(source), emit_with_overlap(source)] {
+            let llvm = bind_compute_host_adapter(&emitted, adapter)
+                .replace("@main(", "@wf_irregular_smoke_main(")
+                .replace("@wf__main_body(", "@wf_irregular_smoke_body(");
+            let directory = test_directory();
+            let defines = if emitted.contains("call void @wf__par_publish(") {
+                vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+            } else {
+                Vec::new()
+            };
+            let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+            for workers in [1, 2, 4] {
+                let output = Command::new(&executable)
+                    .env("WF_WORKERS", workers.to_string())
+                    .env_remove("WF_SPLIT_WORK")
+                    .output()
+                    .expect("run independent irregular-compute oracle");
+                assert!(
+                    output.status.success(),
+                    "{name} workers={workers}: {output:?}"
+                );
+                assert!(
+                    String::from_utf8_lossy(&output.stdout)
+                        .contains(&format!("{name} oracle PASS:"))
+                );
+            }
+            std::fs::remove_dir_all(directory).expect("remove irregular-compute test files");
+        }
+    }
 }

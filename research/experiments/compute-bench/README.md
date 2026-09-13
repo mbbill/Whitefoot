@@ -54,6 +54,9 @@ released outside it. Native references submit one interior row per callback;
 WF uses the compiler's default decomposition. Several nested loops and
 initialization have different spans, so the stencil reports no single chunk
 count, while actual scheduler grants are still measured.
+`WFB_STENCIL_WIDTH` and `WFB_STENCIL_HEIGHT` may override those dimensions
+within 3..4096 for an explicit size sweep; the workload header records the
+actual values. The original, large, and small presets remain unchanged.
 
 Stencil is included in the default timed comparison now that the baseline
 compiler admits range loans. Cross-version twins still use the entry and
@@ -81,14 +84,38 @@ checking and release happen outside. The native `serial` reference uses the
 direct one-pass algorithm, while parallel references use complete blocks plus
 a tail. Worker counts never appear as an unrolled source decomposition.
 
+`KERNELS=merge_sort` selects the comparison sort with recursively partitioned
+merges. Binary-search ranks determine disjoint destination views. The native
+parallel references share this algorithm and its 64-element merge leaf;
+`serial` uses `qsort`. The default is 1,048,593 random keys, with
+`WFB_SORT_GRID=small|skew|equal` retaining a 257-key input, mostly repeated
+keys, or all-equal keys. Two work buffers are allocated inside timing;
+native copies use `memcpy` while Whitefoot copies ordinary element loops.
+
+`KERNELS=bfs` selects the bounded-degree sparse graph experiment.
+`WFB_BFS_MODE=sparse|pull` selects intrusive frontier lists or a full-vertex
+pull round; `WFB_BFS_GRAPH=tree|chain|grid|disconnected` selects the fixture.
+The graph and independent FIFO distances are prepared outside timing. Both
+Whitefoot modes use two vertex-sized work arrays, allocated inside timing.
+The native `serial` row always uses FIFO; the parallel native rows use FIFO
+in sparse mode and the same pull algorithm in pull mode. Each process prints
+levels, reachable vertices, sparse adjacency slots, and pull vertex visits.
+The graph family is undirected with at most four adjacency entries per vertex;
+it does not stand in for arbitrary CSR or high-degree graphs. The compiler
+oracle covers 86 graph/mode configurations and checks every distance and
+unchanged edge. The sort and graph consumers are opt-in for timing and always
+included in `programs-check`.
+
 The `wf` row is the module `whitefootc` emits from the kernel's `.wf` source
 under **plain `--par --emit-llvm` and no other flag**, linked with
 the complete ordinary native library under `compiler/src/backend/`
 **from this same tree**, built with the driver's clang flags plus the symmetric
-x86_64 `WF_ALIGN` placement control documented below, and called through a host adapter of at most
-eighteen lines of LLVM IR that does nothing but build buffer descriptors and
-forward. The adapter is LLVM IR so it also works with versions whose source
-functions have internal linkage. The two emissions are isolated by renaming
+x86_64 `WF_ALIGN` placement control documented below, and called through a
+descriptor-only LLVM IR host adapter. `host-adapter.awk` binds its calls to the
+same execution world as entry: the emitted sequential clone when the worker
+pool is off, and the ordinary parallel symbol otherwise. Selection occurs at
+each host entry, outside the kernel algorithm. LLVM IR also supports versions
+whose source functions have internal linkage. The two emissions are isolated by renaming
 their defined functions and all corresponding references; this preserves
 linkage and optimization attributes and leaves library imports and weak
 runtime hooks unchanged. Changing a strong definition to internal linkage

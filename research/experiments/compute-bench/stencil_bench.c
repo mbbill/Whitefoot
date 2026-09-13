@@ -78,7 +78,7 @@ static size_t compare(const double *expected, const double *actual, size_t cells
 
 static size_t verify_matrix(stencil_entry entry, stencil_release release) {
     static const size_t shapes[][2] = {
-        {3, 3}, {3, 17}, {19, 3}, {5, 7}, {31, 18}, {64, 65}, {257, 129}
+        {3, 3}, {3, 17}, {19, 3}, {5, 7}, {31, 18}, {64, 65}, {257, 129}, {257, 2049}
     };
     static const size_t rounds[] = {0, 1, 2, 3, 7, 16};
     size_t compared = 0;
@@ -114,11 +114,25 @@ static size_t verify_matrix(stencil_entry entry, stencil_release release) {
 extern void wf_bench_stencil(uint64_t, uint64_t, uint64_t, double **, uint64_t *);
 extern void wf_bench_stencil_release(double *, uint64_t);
 
-int main(void) {
+extern int wf__floor_run(int, char **);
+#ifdef WFB_ORACLE_PARALLEL
+extern int wf__par_pool_active(void);
+extern unsigned long wf__par_grants(void);
+#endif
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
     size_t compared = verify_matrix(wf_bench_stencil, wf_bench_stencil_release);
+#ifdef WFB_ORACLE_PARALLEL
+    const char *workers = getenv("WF_WORKERS");
+    if (workers && atoi(workers) > 1 &&
+        (!wf__par_pool_active() || wf__par_grants() == 0)) fail("oracle did not exercise a worker pool");
+    if (workers && atoi(workers) == 1 && wf__par_grants() != 0) fail("pool-off oracle handed out work");
+#endif
     (void)printf("stencil oracle PASS: compared=%zu\n", compared);
     return 0;
 }
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+
 #else
 #include "backend.h"
 #include "harness.h"
@@ -167,6 +181,15 @@ static double *native_run(size_t width, size_t height, size_t steps,
 
 static size_t grid_width = 1024, grid_height = 4096, grid_steps = 16;
 static char workload[96] = "width=1024 height=4096 steps=16 initial=squared-position";
+
+static size_t dimension(const char *name, size_t fallback) {
+    const char *value = getenv(name);
+    if (!value) return fallback;
+    char *end;
+    unsigned long parsed = strtoul(value, &end, 10);
+    if (!*value || *end || parsed < 3 || parsed > 4096) fail("stencil dimension must be 3..4096");
+    return (size_t)parsed;
+}
 static double *expected, *output;
 static stencil_release release_output;
 
@@ -187,6 +210,8 @@ static void prepare(unsigned workers) {
     } else if (grid && strcmp(grid, "large")) {
         fail("WFB_STENCIL_GRID must be large, original or small");
     }
+    grid_width = dimension("WFB_STENCIL_WIDTH", grid_width);
+    grid_height = dimension("WFB_STENCIL_HEIGHT", grid_height);
     (void)snprintf(workload, sizeof(workload), "width=%zu height=%zu steps=%zu initial=squared-position",
                    grid_width, grid_height, grid_steps);
     expected = oracle(grid_width, grid_height, grid_steps);
