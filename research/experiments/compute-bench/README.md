@@ -110,7 +110,9 @@ included in `programs-check`.
 compute-model main run and diagnostic fixtures, with an interpretation in the
 [investigation](../../investigations/compute-model/DESIGN.md#measurements-and-assessment-2026-09-13).
 Each line starts with a fixture name and record kind (`manifest`, `raw`, or
-`table`), followed by the original line. For example, extract the main raw
+`table`), followed by the original line. Metadata normalizes host and scratch
+paths; manifests and tables omit empty rendered lines and terminal padding.
+Raw numerical rows are unchanged. For example, extract the main raw
 stream with `awk -F '\t' '$1 == "main" && $2 == "raw" { sub(/^[^\t]*\t[^\t]*\t/, ""); print }' compute-model-2026-09-13.tsv`.
 The manifest records the 10,000-unit runtime control; pass
 `-v runtimecontrol=-DWF_PAR_SPLIT_WORK_UNIT=10000` when reducing these rows.

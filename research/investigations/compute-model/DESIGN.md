@@ -280,7 +280,8 @@ grid's although each row does far less actual work.
 
 The [retained stream](../../experiments/compute-bench/compute-model-2026-09-13.tsv)
 contains the raw rows, manifests, and reducer tables for the nine-kernel main
-run and 20 additional fixture groups. The compiled source is `2f5617a9` on an
+run, 20 additional final fixture groups, and three initial pool-off controls.
+The compiled source for the final matrix is `2f5617a9` on an
 eight-CPU Apple M1 Pro, Darwin arm64, Apple Clang 21 and Rust 1.98.1, using the
 bundle's pinned oneTBB, ParlayLib and Rayon versions. Whitefoot uses the
 driver's `-O2`; native references use `-O3` with the documented scalar flags.
