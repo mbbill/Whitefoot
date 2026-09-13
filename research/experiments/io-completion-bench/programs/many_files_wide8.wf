@@ -87,14 +87,14 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn discard_open_result(factory: &uniq HandleFactory, outcome: own FileOpenOutcome) -> result: own unit reads(factory), writes(factory) {
+fn discard_open_result(factory: &uniq HandleFactory, outcome: own Result<ReadFile, IoError>) -> result: own unit reads(factory), writes(factory) {
   match move outcome {
-    FileOpened(value: file) => {
+    Ok(value: file) => {
       region {
         close_read(factory: &uniq deref(factory), file: move file);
       }
     }
-    FileOpenFailed(error: problem) => {
+    Err(error: problem) => {
     }
   }
   return unit;
@@ -326,21 +326,21 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
                                     region {
                                       let opened_h = open_file(factory: &uniq deref(files), root: cwd, name: &native_window_110, start: 0_u64, end: 10_u64);
                                       match opened_a {
-                                        FileOpened(value: handle_a) => {
+                                        Ok(value: handle_a) => {
                                           match opened_b {
-                                            FileOpened(value: handle_b) => {
+                                            Ok(value: handle_b) => {
                                               match opened_c {
-                                                FileOpened(value: handle_c) => {
+                                                Ok(value: handle_c) => {
                                                   match opened_d {
-                                                    FileOpened(value: handle_d) => {
+                                                    Ok(value: handle_d) => {
                                                       match opened_e {
-                                                        FileOpened(value: handle_e) => {
+                                                        Ok(value: handle_e) => {
                                                           match opened_f {
-                                                            FileOpened(value: handle_f) => {
+                                                            Ok(value: handle_f) => {
                                                               match opened_g {
-                                                                FileOpened(value: handle_g) => {
+                                                                Ok(value: handle_g) => {
                                                                   match opened_h {
-                                                                    FileOpened(value: handle_h) => {
+                                                                    Ok(value: handle_h) => {
                                                                       region {
                                                                         let native_window_111 = mut_slice_of(&uniq data_a);
                                                                         region {
@@ -553,7 +553,7 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
                                                                         }
                                                                       }
                                                                     }
-                                                                    FileOpenFailed(error: failed_h) => {
+                                                                    Err(error: failed_h) => {
                                                                       region {
                                                                         let failure_status = if factory_refusal(error: &failed_h) {
                                                                           give 19_u8;
@@ -573,7 +573,7 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
                                                                   }
                                                                   close_read(factory: &uniq deref(files), file: move handle_g);
                                                                 }
-                                                                FileOpenFailed(error: failed_g) => {
+                                                                Err(error: failed_g) => {
                                                                   region {
                                                                     let failure_status = if factory_refusal(error: &failed_g) {
                                                                       give 18_u8;
@@ -593,7 +593,7 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
                                                               }
                                                               close_read(factory: &uniq deref(files), file: move handle_f);
                                                             }
-                                                            FileOpenFailed(error: failed_f) => {
+                                                            Err(error: failed_f) => {
                                                               region {
                                                                 let failure_status = if factory_refusal(error: &failed_f) {
                                                                   give 17_u8;
@@ -613,7 +613,7 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
                                                           }
                                                           close_read(factory: &uniq deref(files), file: move handle_e);
                                                         }
-                                                        FileOpenFailed(error: failed_e) => {
+                                                        Err(error: failed_e) => {
                                                           region {
                                                             let failure_status = if factory_refusal(error: &failed_e) {
                                                               give 16_u8;
@@ -633,7 +633,7 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
                                                       }
                                                       close_read(factory: &uniq deref(files), file: move handle_d);
                                                     }
-                                                    FileOpenFailed(error: failed_d) => {
+                                                    Err(error: failed_d) => {
                                                       region {
                                                         let failure_status = if factory_refusal(error: &failed_d) {
                                                           give 15_u8;
@@ -653,7 +653,7 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
                                                   }
                                                   close_read(factory: &uniq deref(files), file: move handle_c);
                                                 }
-                                                FileOpenFailed(error: failed_c) => {
+                                                Err(error: failed_c) => {
                                                   region {
                                                     let failure_status = if factory_refusal(error: &failed_c) {
                                                       give 14_u8;
@@ -673,7 +673,7 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
                                               }
                                               close_read(factory: &uniq deref(files), file: move handle_b);
                                             }
-                                            FileOpenFailed(error: failed_b) => {
+                                            Err(error: failed_b) => {
                                               region {
                                                 let failure_status = if factory_refusal(error: &failed_b) {
                                                   give 13_u8;
@@ -693,7 +693,7 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
                                           }
                                           close_read(factory: &uniq deref(files), file: move handle_a);
                                         }
-                                        FileOpenFailed(error: failed_a) => {
+                                        Err(error: failed_a) => {
                                           region {
                                             let failure_status = if factory_refusal(error: &failed_a) {
                                               give 12_u8;

@@ -97,14 +97,14 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   region {
     region {
       match tcp_connect(factory: &uniq handles, address: &address) {
-        Connected(connection: link) => {
+        Ok(value: link) => {
           let half = move link.receive;
           let TcpConnection(receive: close_receive_6, send: close_send_6) = move link;
           close_receive(factory: &uniq handles, receive: move close_receive_6);
           close_send(factory: &uniq handles, send: move close_send_6);
           return exit_status(code: 0_u8);
         }
-        ConnectFailed(error: problem) => {
+        Err(error: problem) => {
           region {
             if factory_refusal(error: &problem) {
               return exit_status(code: 5_u8);

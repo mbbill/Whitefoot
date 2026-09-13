@@ -2264,10 +2264,10 @@ fn heap_box_loop_keeps_provider_order_and_updates_borrowed_owners() {
   let previous = deref(deref(cell));
   region {
     match open_file(factory: &uniq deref(files), root: root, name: name, start: 0_u64, end: 4_u64) {
-      FileOpened(value: handle) => {
+      Ok(value: handle) => {
         close_read(factory: &uniq deref(files), file: move handle);
       }
-      FileOpenFailed(error: problem) => {
+      Err(error: problem) => {
       }
     }
   }

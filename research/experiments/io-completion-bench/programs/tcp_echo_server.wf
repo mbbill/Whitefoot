@@ -199,7 +199,8 @@ fn serve_one(listener: &uniq TcpListener, handles: &uniq HandleFactory, scratch:
   let outcome = 0_u8;
   region {
     match tcp_accept(factory: &uniq deref(handles), listener: &uniq deref(listener)) {
-      Accepted(connection: link, peer: from) => {
+      Ok(value: accepted_link) => {
+        let AcceptedConnection(connection: link, peer: from) = move accepted_link;
         loop @chunks {
           let available = 0_u64;
           let ended = 0_u8;
@@ -248,7 +249,7 @@ fn serve_one(listener: &uniq TcpListener, handles: &uniq HandleFactory, scratch:
         close_receive(factory: &uniq deref(handles), receive: move close_receive_160);
         close_send(factory: &uniq deref(handles), send: move close_send_160);
       }
-      AcceptFailed(error: problem) => {
+      Err(error: problem) => {
         region {
           if factory_refusal(error: &problem) {
             set outcome = 6_u8;
@@ -306,7 +307,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   region {
     region {
       match tcp_listen(factory: &uniq handles, address: &address) {
-        Listening(listener: bound) => {
+        Ok(value: bound) => {
           for (
             served in 0_u64..count,
             invariant progress: served <= count
@@ -326,7 +327,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
           }
           let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
         }
-        ListenFailed(error: problem) => {
+        Err(error: problem) => {
           region {
             if factory_refusal(error: &problem) {
               set outcome = 8_u8;

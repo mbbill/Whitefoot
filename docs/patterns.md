@@ -470,11 +470,19 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 
 `exercise` is an ordinary function with `reads(root, factory), writes(factory)`
 when its actual body exhibits those effects. `open_read` and `open_file` take
-`factory: &uniq HandleFactory` directly. Success transfers one linear owner;
-failure returns an error, with no permit value to recover. A helper opening a
+`factory: &uniq HandleFactory` directly and return `Result<ReadFile, IoError>`.
+Success transfers one linear owner; failure returns an error, with no permit
+value to recover. Ordinary `propagate` can transfer that error from a helper
+whose result has the same error type. A helper opening a
 file closes it or returns it on every exit. `close_read` consumes the file and
 returns `Result<unit, IoError>`; deciding whether a close error changes the
 program's result belongs to the caller.
+
+Directory opens, TCP listen and TCP connect use Result in the same way.
+`tcp_accept` returns `Result<AcceptedConnection, IoError>`; destructure its
+successful value with `let AcceptedConnection(connection: link, peer: from) =
+move accepted;` to obtain the ordinary connection and peer address. Both TCP
+directions remain linear and require explicit consumption.
 
 The same factory is explicit shared state for `read_at`, `read_next` and
 `write_once`, covering redirected-stream offset and content aliases. TCP

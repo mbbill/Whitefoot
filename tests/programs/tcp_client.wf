@@ -286,7 +286,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
             region {
               region {
                 match tcp_connect(factory: &uniq handles, address: &address) {
-                  Connected(connection: link) => {
+                  Ok(value: link) => {
                     let refused = 0_u8;
                     region {
                       let greeting = slice_of(&payload);
@@ -352,7 +352,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
                     close_receive(factory: &uniq handles, receive: move close_receive_4);
                     close_send(factory: &uniq handles, send: move close_send_4);
                   }
-                  ConnectFailed(error: problem) => {
+                  Err(error: problem) => {
                     region {
                       if factory_refusal(error: &problem) {
                         set outcome = 9_u8;

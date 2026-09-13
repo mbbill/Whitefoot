@@ -1043,7 +1043,7 @@ void wf__completion_file_open_join(
  * side holds a pointer into the other's layout.
  *
  * A refused accept publishes the all-zero address, which the linked caller
- * ignores: AcceptFailed carries an error and no peer address. */
+ * ignores: a failed accept carries an error and no peer address. */
 void wf__completion_socket_accept_join(
     const void *record,
     int64_t *value,

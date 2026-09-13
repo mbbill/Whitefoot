@@ -29,6 +29,38 @@ without migrating every outcome and partial move is not an implementation.
 
 ## 2. Factory parameter or one-shot permits?
 
+### Acquisition results
+
+The selected acquisition signatures return ordinary `Result<Success, IoError>`:
+`ReadFile` for `open_read` and `open_file`, `DirectoryRead` for
+`open_directory`, `DirectorySource` for `open_directory_source`, `TcpListener`
+for `tcp_listen`, `TcpConnection` for `tcp_connect`, and `AcceptedConnection`
+for `tcp_accept`. `AcceptedConnection` is an ordinary struct containing
+`connection: TcpConnection` and `peer: SocketAddress`; no successful value or
+error detail is lost.
+
+The former six acquisition enums carried a returned permit beside the error.
+That payload motivated the file/directory enums introduced in `34614df0`;
+the later [TCP design](../io-model/NETWORK.md#4-operations) adopted the same
+shape. It did not require an independent enum rather than a Result with a
+structured error payload.
+The direct factory interface removes that permit. Keeping the binary enums
+then adds conversions before ordinary ERR-3 propagation without expressing
+another outcome. The existing `wfgrep` wrappers already performed those
+conversions. Use Result instead of preserving the historical enum shapes.
+Aggregate payloads use ordinary layout and ownership; this adds no allocation,
+source syntax, acceptance rule or operation-specific lowering path.
+
+This refines the combined v0.55 amendment. Delta: numbered rules, grammar,
+tokens and exceptions unchanged; six enum names and twelve variant names
+removed, one ordinary struct/constructor name `AcceptedConnection` added;
+seven prelude signatures now return Result. Selection ground:
+minimality-selected, using the same success/error data and ordinary
+propagation rather than equivalent acquisition-specific variants. Released
+v0.54 bytes remain unchanged.
+
+### Factory state
+
 **Recommend direct `&uniq HandleFactory` on open and close for the first
 ordinary API.** The factory is an explicit state operand, not a special
 capability kind. Refusal returns its temporary borrow and leaves the existing

@@ -110,6 +110,11 @@ pub(crate) const DECLARATIONS: &[(&str, PreludeSource, &str)] = &[
   send: TcpSend;
 }
 
+struct AcceptedConnection {
+  connection: TcpConnection;
+  peer: SocketAddress;
+}
+
 struct Inputs {
   args: Args;
   cwd: DirectoryRead;
@@ -184,36 +189,6 @@ enum ListStop {
   ListEnd();
   ListFailed(error: IoError);
 }
-
-enum FileOpenOutcome {
-  FileOpened(value: ReadFile);
-  FileOpenFailed(error: IoError);
-}
-
-enum DirectoryOpenOutcome {
-  DirectoryOpened(value: DirectoryRead);
-  DirectoryOpenFailed(error: IoError);
-}
-
-enum SourceOpenOutcome {
-  SourceOpened(value: DirectorySource);
-  SourceOpenFailed(error: IoError);
-}
-
-enum ListenOutcome {
-  Listening(listener: TcpListener);
-  ListenFailed(error: IoError);
-}
-
-enum AcceptOutcome {
-  Accepted(connection: TcpConnection, peer: SocketAddress);
-  AcceptFailed(error: IoError);
-}
-
-enum ConnectOutcome {
-  Connected(connection: TcpConnection);
-  ConnectFailed(error: IoError);
-}
 "#,
     ),
     (
@@ -271,7 +246,7 @@ enum ConnectOutcome {
     (
         "prelude/open_read.wf",
         PreludeSource::Function,
-        r#"fn open_read(factory: &uniq HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own FileOpenOutcome reads(factory, root, path), writes(factory);
+        r#"fn open_read(factory: &uniq HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(factory, root, path), writes(factory);
 "#,
     ),
     (
@@ -305,7 +280,7 @@ enum ConnectOutcome {
     (
         "prelude/open_directory.wf",
         PreludeSource::Function,
-        r#"fn open_directory(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own DirectoryOpenOutcome reads(factory, root, name), writes(factory) contract {
+        r#"fn open_directory(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
   requires start <= end;
   requires end <= len_of(deref(name));
 };
@@ -314,7 +289,7 @@ enum ConnectOutcome {
     (
         "prelude/open_directory_source.wf",
         PreludeSource::Function,
-        r#"fn open_directory_source(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own SourceOpenOutcome reads(factory, directory), writes(factory);
+        r#"fn open_directory_source(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory);
 "#,
     ),
     (
@@ -331,7 +306,7 @@ enum ConnectOutcome {
     (
         "prelude/open_file.wf",
         PreludeSource::Function,
-        r#"fn open_file(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own FileOpenOutcome reads(factory, root, name), writes(factory) contract {
+        r#"fn open_file(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
   requires start <= end;
   requires end <= len_of(deref(name));
 };
@@ -381,19 +356,19 @@ enum ConnectOutcome {
     (
         "prelude/tcp_listen.wf",
         PreludeSource::Function,
-        r#"fn tcp_listen(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own ListenOutcome reads(factory, address), writes(factory);
+        r#"fn tcp_listen(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own Result<TcpListener, IoError> reads(factory, address), writes(factory);
 "#,
     ),
     (
         "prelude/tcp_accept.wf",
         PreludeSource::Function,
-        r#"fn tcp_accept(factory: &uniq HandleFactory, listener: &uniq TcpListener) -> result: own AcceptOutcome reads(factory, listener), writes(factory, listener);
+        r#"fn tcp_accept(factory: &uniq HandleFactory, listener: &uniq TcpListener) -> result: own Result<AcceptedConnection, IoError> reads(factory, listener), writes(factory, listener);
 "#,
     ),
     (
         "prelude/tcp_connect.wf",
         PreludeSource::Function,
-        r#"fn tcp_connect(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own ConnectOutcome reads(factory, address), writes(factory);
+        r#"fn tcp_connect(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own Result<TcpConnection, IoError> reads(factory, address), writes(factory);
 "#,
     ),
     (

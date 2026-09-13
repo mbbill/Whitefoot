@@ -774,11 +774,11 @@ fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
     let window = slice_of(&name);
     region {{
       match open_file(factory: &uniq deref(factory), root: cwd, name: &window, start: 0_u64, end: 1_u64) {{
-        FileOpened(value: file) => {{
+        Ok(value: file) => {{
           close_read(factory: &uniq deref(factory), file: move file);
           return exit_status(code: 24_u8);
         }}
-        FileOpenFailed(error: problem) => {{
+        Err(error: problem) => {{
           match move problem {{
 {arms}          }}
         }}

@@ -211,14 +211,14 @@ static void tcp_probe(wf_inputs *inputs) {
     wf_tcp_accept(&second_server, &inputs->handles, &listener.value);
     assert(second_server.tag == 0);
     assert(inputs->handles.words[0] == before - 5);
-    wf__body_send_once(&sent, &first_client.connection.send, &source, 0, 1);
+    wf__body_send_once(&sent, &first_client.value.send, &source, 0, 1);
     assert(sent.tag == 0 && sent.value == 1);
-    wf__body_receive_next(&received, &first_server.connection.receive, &destination, 0, 1);
+    wf__body_receive_next(&received, &first_server.value.connection.receive, &destination, 0, 1);
     assert(received.tag == 0 && received.value == 1 && target == 'x');
-    crossed_a.receive = first_server.connection.receive;
-    crossed_a.send = second_server.connection.send;
-    crossed_b.receive = second_server.connection.receive;
-    crossed_b.send = first_server.connection.send;
+    crossed_a.receive = first_server.value.connection.receive;
+    crossed_a.send = second_server.value.connection.send;
+    crossed_b.receive = second_server.value.connection.receive;
+    crossed_b.send = first_server.value.connection.send;
     wf_close_receive(&closed, &inputs->handles, &crossed_a.receive); check_close(&closed);
     wf_close_send(&closed, &inputs->handles, &crossed_a.send); check_close(&closed);
     assert(inputs->handles.words[0] == before - 5);
@@ -226,10 +226,10 @@ static void tcp_probe(wf_inputs *inputs) {
     assert(other_factory.words[0] == 1);
     wf_close_receive(&closed, &inputs->handles, &crossed_b.receive); check_close(&closed);
     assert(inputs->handles.words[0] == before - 4);
-    wf_close_receive(&closed, &inputs->handles, &first_client.connection.receive); check_close(&closed);
-    wf_close_send(&closed, &inputs->handles, &first_client.connection.send); check_close(&closed);
-    wf_close_send(&closed, &inputs->handles, &second_client.connection.send); check_close(&closed);
-    wf_close_receive(&closed, &inputs->handles, &second_client.connection.receive); check_close(&closed);
+    wf_close_receive(&closed, &inputs->handles, &first_client.value.receive); check_close(&closed);
+    wf_close_send(&closed, &inputs->handles, &first_client.value.send); check_close(&closed);
+    wf_close_send(&closed, &inputs->handles, &second_client.value.send); check_close(&closed);
+    wf_close_receive(&closed, &inputs->handles, &second_client.value.receive); check_close(&closed);
     wf_close_listener(&closed, &inputs->handles, &listener.value); check_close(&closed);
     assert(inputs->handles.words[0] + other_factory.words[0] == before);
 }

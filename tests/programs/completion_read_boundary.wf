@@ -146,9 +146,9 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, fi
                                       let opened_a = open_read(factory: &uniq deref(files), root: cwd, path: &path_a);
                                       let opened_b = open_read(factory: &uniq deref(files), root: cwd, path: &path_b);
                                       match move opened_a {
-                                        FileOpened(value: file_a) => {
+                                        Ok(value: file_a) => {
                                           match move opened_b {
-                                            FileOpened(value: file_b) => {
+                                            Ok(value: file_b) => {
                                               region {
                                                 region {
                                                   let view_a = mut_slice_of(&uniq data_a);
@@ -233,7 +233,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, fi
                                                 }
                                               }
                                             }
-                                            FileOpenFailed(error: problem_b) => {
+                                            Err(error: problem_b) => {
                                               close_read(factory: &uniq deref(files), file: move file_a);
                                               region {
                                                 if factory_refusal(error: &problem_b) {
@@ -244,12 +244,12 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, fi
                                             }
                                           }
                                         }
-                                        FileOpenFailed(error: problem_a) => {
+                                        Err(error: problem_a) => {
                                           match move opened_b {
-                                            FileOpened(value: file_b) => {
+                                            Ok(value: file_b) => {
                                               close_read(factory: &uniq deref(files), file: move file_b);
                                             }
-                                            FileOpenFailed(error: problem_b) => {
+                                            Err(error: problem_b) => {
                                             }
                                           }
                                           region {

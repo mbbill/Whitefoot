@@ -340,7 +340,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uni
               Ok(value: path) => {
                 region {
                   match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                    FileOpened(value: file) => {
+                    Ok(value: file) => {
                       let ended = 0_u8;
                       region {
                         let scratch_window = mut_slice_of(&uniq scratch);
@@ -385,7 +385,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uni
                       }
                       close_read(factory: &uniq deref(files), file: move file);
                     }
-                    FileOpenFailed(error: problem) => {
+                    Err(error: problem) => {
                       set status = 2_u8;
                     }
                   }

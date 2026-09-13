@@ -332,11 +332,12 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
             region {
               region {
                 match tcp_listen(factory: &uniq handles, address: &address) {
-                  Listening(listener: bound) => {
+                  Ok(value: bound) => {
                     region {
                       region {
                         match tcp_accept(factory: &uniq handles, listener: &uniq bound) {
-                          Accepted(connection: link, peer: from) => {
+                          Ok(value: accepted_link) => {
+                            let AcceptedConnection(connection: link, peer: from) = move accepted_link;
                             loop @chunks {
                               let available = 0_u64;
                               let ended = 0_u8;
@@ -387,7 +388,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
                             close_receive(factory: &uniq handles, receive: move close_receive_2);
                             close_send(factory: &uniq handles, send: move close_send_2);
                           }
-                          AcceptFailed(error: problem) => {
+                          Err(error: problem) => {
                             region {
                               if factory_refusal(error: &problem) {
                                 set outcome = 8_u8;
@@ -401,7 +402,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
                       let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
                     }
                   }
-                  ListenFailed(error: problem) => {
+                  Err(error: problem) => {
                     region {
                       if factory_refusal(error: &problem) {
                         set outcome = 10_u8;

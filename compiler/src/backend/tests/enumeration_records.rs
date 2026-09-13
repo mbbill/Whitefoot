@@ -267,7 +267,7 @@ const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &uniq
   let available = 0_u64;
   region {
     match open_directory_source(factory: &uniq deref(files), directory: cwd) {
-      SourceOpened(value: list) => {
+      Ok(value: list) => {
         region {
           let destination = mut_slice_of(&uniq entries);
           region {
@@ -306,7 +306,7 @@ const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &uniq
         }
         close_directory_source(factory: &uniq deref(files), source: move list);
       }
-      SourceOpenFailed(error: problem) => {
+      Err(error: problem) => {
         return exit_status(code: 5_u8);
       }
     }

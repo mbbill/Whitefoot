@@ -97,18 +97,19 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   region {
     region {
       match tcp_listen(factory: &uniq handles, address: &address) {
-        Listening(listener: bound) => {
+        Ok(value: bound) => {
           region {
             region {
               match tcp_accept(factory: &uniq handles, listener: &uniq bound) {
-                Accepted(connection: link, peer: from) => {
+                Ok(value: accepted_link) => {
+                  let AcceptedConnection(connection: link, peer: from) = move accepted_link;
                   let TcpConnection(receive: close_receive_29, send: close_send_29) = move link;
                   close_receive(factory: &uniq handles, receive: move close_receive_29);
                   close_send(factory: &uniq handles, send: move close_send_29);
                   let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
                   return exit_status(code: 0_u8);
                 }
-                AcceptFailed(error: problem) => {
+                Err(error: problem) => {
                   region {
                     if factory_refusal(error: &problem) {
                       let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
@@ -117,14 +118,15 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
                   }
                   region {
                     match tcp_accept(factory: &uniq handles, listener: &uniq bound) {
-                      Accepted(connection: retry, peer: retry_from) => {
+                      Ok(value: accepted_retry) => {
+                        let AcceptedConnection(connection: retry, peer: retry_from) = move accepted_retry;
                         let TcpConnection(receive: close_receive_30, send: close_send_30) = move retry;
                         close_receive(factory: &uniq handles, receive: move close_receive_30);
                         close_send(factory: &uniq handles, send: move close_send_30);
                         let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
                         return exit_status(code: 0_u8);
                       }
-                      AcceptFailed(error: second_problem) => {
+                      Err(error: second_problem) => {
                         let listener_credit = close_listener(factory: &uniq handles, listener: move bound);
                         return exit_status(code: 3_u8);
                       }
@@ -135,7 +137,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
             }
           }
         }
-        ListenFailed(error: problem) => {
+        Err(error: problem) => {
           region {
             if factory_refusal(error: &problem) {
               return exit_status(code: 6_u8);

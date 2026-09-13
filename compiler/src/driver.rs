@@ -807,10 +807,10 @@ mod tests {
         let source = br#"fn walk['c](factory: &uniq HandleFactory, root: &'c DirectoryRead, name: &'c Slice<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
   region {
     match open_file(factory: &uniq deref(factory), root: root, name: name, start: 0_u64, end: 1_u64) {
-      FileOpened(value: handle) => {
+      Ok(value: handle) => {
         close_read(factory: &uniq deref(factory), file: move handle);
       }
-      FileOpenFailed(error: problem) => {
+      Err(error: problem) => {
       }
     }
     let later = 0_u8;

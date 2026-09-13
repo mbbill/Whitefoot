@@ -2458,11 +2458,14 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
     assert_eq!(first[0].1, "Args");
     assert_eq!(first[14].1, "Bool");
     assert_eq!(first[36].1, "TcpConnection");
-    assert_eq!(first[185].1, "Int");
-    assert_eq!(first[186].1, "Float");
-    assert_eq!(first[187].1, "args_count");
-    assert_eq!(first[303].1, "close_send");
-    assert_eq!(first.len(), 306);
+    assert_eq!(first[40].1, "AcceptedConnection");
+    // PRE-1 removes 31 records for six outcome enums and adds four for the
+    // ordinary AcceptedConnection struct, constructor and two fields.
+    assert_eq!(first[158].1, "Int");
+    assert_eq!(first[159].1, "Float");
+    assert_eq!(first[160].1, "args_count");
+    assert_eq!(first[276].1, "close_send");
+    assert_eq!(first.len(), 279);
     assert_eq!(first.last().map(|record| record.1.as_str()), Some("send"));
     assert!(
         first.len() > 256,
@@ -2492,7 +2495,7 @@ fn a_late_prelude_function_collision_preserves_an_ordinal_above_u8() {
             };
             assert_eq!(conflicts.len(), 1);
             assert!(
-                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 303)
+                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 276)
             );
         },
     );

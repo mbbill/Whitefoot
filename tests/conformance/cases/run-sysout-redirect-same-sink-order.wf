@@ -150,7 +150,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, er
                   region {
                     region {
                       match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                        FileOpened(value: file) => {
+                        Ok(value: file) => {
                           region {
                             region {
                               let window = mut_slice_of(&uniq page);
@@ -211,7 +211,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, er
                             return exit_status(code: 18_u8);
                           }
                         }
-                        FileOpenFailed(error: problem) => {
+                        Err(error: problem) => {
                           region {
                             if factory_refusal(error: &problem) {
                               return exit_status(code: 22_u8);

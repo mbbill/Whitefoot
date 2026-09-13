@@ -366,7 +366,7 @@ const IO_HELPERS: &str = r#"fn publish_bytes(factory: &uniq HandleFactory, outpu
   }
 }
 
-fn open_named(factory: &uniq HandleFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own FileOpenOutcome reads(factory, root, name), writes(factory) contract {
+fn open_named(factory: &uniq HandleFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
   requires start <= end;
   requires end <= len_of(deref(name));
 } {
@@ -1131,7 +1131,7 @@ impl Gen {
                 "match open_named(factory: &uniq files, root: &cwd, name: &{name}, start: 0_u64, end: 7_u64) {{"
             ));
             let handle = generator.name("handle");
-            generator.body.open(&format!("FileOpened(value: {handle}) => {{"));
+            generator.body.open(&format!("Ok(value: {handle}) => {{"));
             generator.body.open("region {");
             generator.body.open("region {");
             generator.body.open(&format!(
@@ -1189,7 +1189,7 @@ impl Gen {
             generator.body.line(&format!("close_read(factory: &uniq files, file: move {handle});"));
             generator.body.close();
             let denied = generator.name("open_problem");
-            generator.body.open(&format!("FileOpenFailed(error: {denied}) => {{"));
+            generator.body.open(&format!("Err(error: {denied}) => {{"));
             generator.body.line("set total = total +wrap 19_u64;");
             generator.body.close();
             generator.body.close();
@@ -1217,7 +1217,7 @@ impl Gen {
         ));
         let handle = self.name("handle");
         self.body
-            .open(&format!("FileOpened(value: {handle}) => {{"));
+            .open(&format!("Ok(value: {handle}) => {{"));
         self.body.open("region {");
         self.body.open("region {");
         self.body.open(&format!(
@@ -1247,7 +1247,7 @@ impl Gen {
         self.body.close();
         let denied = self.name("open_problem");
         self.body
-            .open(&format!("FileOpenFailed(error: {denied}) => {{"));
+            .open(&format!("Err(error: {denied}) => {{"));
         self.body.close();
         self.body.close();
         self.body.close();
@@ -1291,7 +1291,7 @@ impl Gen {
             .open("match open_directory_source(factory: &uniq files, directory: &cwd) {");
         let source = self.name("listing");
         self.body
-            .open(&format!("SourceOpened(value: {source}) => {{"));
+            .open(&format!("Ok(value: {source}) => {{"));
         let rounds = self.name("rounds");
         let label = self.label();
         let stop = self.name("stop");
@@ -1351,7 +1351,7 @@ impl Gen {
         self.body.close();
         let denied = self.name("source_problem");
         self.body
-            .open(&format!("SourceOpenFailed(error: {denied}) => {{"));
+            .open(&format!("Err(error: {denied}) => {{"));
         self.body.line("set total = total +wrap 29_u64;");
         self.body.close();
         self.body.close();

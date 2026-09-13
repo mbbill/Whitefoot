@@ -114,10 +114,10 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory,
                     region {
                       region {
                         match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                          FileOpened(value: file) => {
+                          Ok(value: file) => {
                             let returned = close_read(factory: &uniq deref(files), file: move file);
                             match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                              FileOpened(value: again) => {
+                              Ok(value: again) => {
                                 region {
                                   region {
                                     match read_at(factory: &uniq deref(files), file: &uniq again, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 1_u64) {
@@ -141,12 +141,12 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory,
                                   }
                                 }
                               }
-                              FileOpenFailed(error: problem) => {
+                              Err(error: problem) => {
                                 return exit_status(code: 16_u8);
                               }
                             }
                           }
-                          FileOpenFailed(error: problem) => {
+                          Err(error: problem) => {
                             region {
                               if factory_refusal(error: &problem) {
                                 return exit_status(code: 15_u8);

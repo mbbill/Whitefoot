@@ -103,11 +103,11 @@ fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own Exit
     let component = slice_of(&name);
     region {
       match open_directory(factory: &uniq deref(files), root: cwd, name: &component, start: 0_u64, end: 3_u64) {
-        DirectoryOpened(value: opened) => {
+        Ok(value: opened) => {
           close_directory(factory: &uniq deref(files), directory: move opened);
           return exit_status(code: 7_u8);
         }
-        DirectoryOpenFailed(error: problem) => {
+        Err(error: problem) => {
           region {
             if factory_refusal(error: &problem) {
               return exit_status(code: 12_u8);

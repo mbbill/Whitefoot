@@ -53,6 +53,16 @@ The ordinary grammar-mutation checks and parser's
 
 ### Changed source verdicts
 
+The acquisition-result refinement of PRE-1 replaces the six binary outcome
+enums with ordinary Result and adds the ordinary AcceptedConnection success
+struct. All affected case sources match Ok/Err; accept cases destructure that
+success struct before using its connection and peer. The original successful
+owners, refusal handling, linear closes, fixtures and expected verdicts are
+preserved. No verdict is changed by this refinement. The runnable program
+and embedded-test migrations use the same transformation; the former
+`wfgrep` and `dir_walk` Result-conversion helpers now forward the Result.
+The selection ground is [Acquisition results](DECISIONS.md#acquisition-results).
+
 The maintained `wfgrep-double-walk` replay sources use ordinary `MutSlice`
 parameters for element-only append, copy and diagnostic assembly, and `Slice`
 for publication. EFF-2 therefore does not claim whole-buffer descriptor writes
@@ -192,7 +202,7 @@ by renaming it into an unrelated passing case.
 | [systcp-connection-moved-half-kills-binding](../../../tests/conformance/cases/systcp-connection-moved-half-kills-binding.wf) | C2 selects linear TcpReceive and TcpSend, so their ordinary TcpConnection aggregate is linear. The unchanged proper-field move without same-statement replacement rejects PROV-6 at move link.receive before the old later OWN-1 whole-binding use. This retirement is required by selected linearity, not by a special paired-handle rule. |
 | [systcp-connection-two-halves](../../../tests/conformance/cases/systcp-connection-two-halves.wf) | The ordinary TcpConnection receive and send fields are disjoint places. Two exclusive loans coexist under OWN-5/OWN-7 and the directional calls use normal effects and loans through return; no target classification authorizes overlap. |
 | [systcp-connection-field-effect-paths](../../../tests/conformance/cases/systcp-connection-field-effect-paths.wf) | A helper receiving only through link.receive declares that exact ordinary field effect plus its scratch effects. The untouched send field adds nothing; field row precision does not shorten the whole-connection borrow. |
-| [systcp-listen-permit-returned](../../../tests/conformance/cases/systcp-listen-permit-returned.wf) | Ordinary tcp_listen mutates a factory and returns ListenOpened or ListenFailed. Refusal retains the factory for another attempt; success is explicitly consumed by close_listener. Permit-return and qualification assertions are retired. |
+| [systcp-listen-permit-returned](../../../tests/conformance/cases/systcp-listen-permit-returned.wf) | Ordinary tcp_listen mutates a factory and returns Result<TcpListener, IoError>. Refusal retains the factory for another attempt; success is explicitly consumed by close_listener. Permit-return and qualification assertions are retired. |
 | [systcp-accept-permit-returned](../../../tests/conformance/cases/systcp-accept-permit-returned.wf) | Ordinary tcp_accept takes &uniq listener and &uniq factory. Refusal leaves both ordinary values available; a successful public connection is destructured and both halves explicitly closed. No shared-listener overlap or permit-return rule survives. |
 | [systcp-connect-permit-returned](../../../tests/conformance/cases/systcp-connect-permit-returned.wf) | Ordinary tcp_connect borrows a factory and returns an ordinary success or failure enum. Refusal preserves that factory for another attempt; success requires explicit close of both linear halves. |
 | [par3-pos-a-per-iteration-run-from-the-store-is-iteration-own](../../../tests/conformance/cases/par3-pos-a-per-iteration-run-from-the-store-is-iteration-own.wf) | The original allocation, failed-open loop and exit-zero observation remain an ordinary executable program. BLK-2 provider borrowing and PROV-6 cleanup still apply. C2 deletes the PAR-3 replication and staged-grant assertion outright. |

@@ -2511,6 +2511,11 @@ struct TcpConnection {
   send: TcpSend;
 }
 
+struct AcceptedConnection {
+  connection: TcpConnection;
+  peer: SocketAddress;
+}
+
 struct Inputs {
   args: Args;
   cwd: DirectoryRead;
@@ -2580,33 +2585,9 @@ enum ListStop {
   ListEnd();
   ListFailed(error: IoError);
 }
-enum FileOpenOutcome {
-  FileOpened(value: ReadFile);
-  FileOpenFailed(error: IoError);
-}
-enum DirectoryOpenOutcome {
-  DirectoryOpened(value: DirectoryRead);
-  DirectoryOpenFailed(error: IoError);
-}
-enum SourceOpenOutcome {
-  SourceOpened(value: DirectorySource);
-  SourceOpenFailed(error: IoError);
-}
-enum ListenOutcome {
-  Listening(listener: TcpListener);
-  ListenFailed(error: IoError);
-}
-enum AcceptOutcome {
-  Accepted(connection: TcpConnection, peer: SocketAddress);
-  AcceptFailed(error: IoError);
-}
-enum ConnectOutcome {
-  Connected(connection: TcpConnection);
-  ConnectFailed(error: IoError);
-}
 ```
 
-`TcpConnection` and `Inputs` have ordinary public constructors, fields, partial-move and destructuring rules. Their linearity follows their fields. No relation between two fields is implied by constructing either struct.
+`TcpConnection`, `AcceptedConnection` and `Inputs` have ordinary public constructors, fields, partial-move and destructuring rules. Their linearity follows their fields. No relation between two fields is implied by constructing a struct.
 The two built-in numeric bounds `Int` and `Float` admit exactly OP-1's integer and floating-point domains and imply `copy` under PROV-6. They are not source declarations, formal groups, implicit behaviors or logical-law bundles; a source actual cannot bind or extend either bound.
 
 The complete function declarations are the following ordinary GRAM-2 `fn_sig` records. A record's final semicolon is table punctuation, not a new top-level source production. Each signature uses ordinary parameter regions under FORM-8, ordinary parameter paths under EFF-1, and the same requirement and postcondition templates as any FN-8/FN-9 contract. No proposition is available merely from a function's name, implementation, result constructor, or prelude origin.
@@ -2629,7 +2610,7 @@ fn host_copy_utf8(value: &HostString, destination: &uniq MutSlice<u8>, start: ow
   ensures when Ok(value: next): next <= end;
 };
 fn relative_path(value: own HostString) -> result: own Result<RelativePath, PathError> pure;
-fn open_read(factory: &uniq HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own FileOpenOutcome reads(factory, root, path), writes(factory);
+fn open_read(factory: &uniq HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(factory, root, path), writes(factory);
 fn read_at(factory: &uniq HandleFactory, file: &uniq ReadFile, destination: &uniq MutSlice<u8>, file_offset: own u64, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> reads(factory, file, destination), writes(factory, file, destination) contract {
   requires start <= end;
   requires end <= len_of(deref(destination));
@@ -2643,18 +2624,18 @@ fn write_once(factory: &uniq HandleFactory, output: &uniq OutputStream, source: 
   ensures when Ok(value: next): next <= end;
 };
 fn exit_status(code: own u8) -> result: own ExitStatus pure;
-fn open_directory(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own DirectoryOpenOutcome reads(factory, root, name), writes(factory) contract {
+fn open_directory(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
   requires start <= end;
   requires end <= len_of(deref(name));
 };
-fn open_directory_source(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own SourceOpenOutcome reads(factory, directory), writes(factory);
+fn open_directory_source(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory);
 fn directory_next(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) reads(source, destination), writes(source, destination) contract {
   requires start <= end;
   requires end <= len_of(deref(destination));
   ensures start <= next;
   ensures next <= end;
 };
-fn open_file(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own FileOpenOutcome reads(factory, root, name), writes(factory) contract {
+fn open_file(factory: &uniq HandleFactory, root: &DirectoryRead, name: &Slice<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
   requires start <= end;
   requires end <= len_of(deref(name));
 };
@@ -2669,9 +2650,9 @@ fn read_next(factory: &uniq HandleFactory, input: &uniq InputStream, destination
 };
 fn socket_address_v4(a: own u8, b: own u8, c: own u8, d: own u8, port: own u16) -> result: own SocketAddress pure;
 fn socket_address_v6(a: own u16, b: own u16, c: own u16, d: own u16, e: own u16, f: own u16, g: own u16, h: own u16, port: own u16) -> result: own SocketAddress pure;
-fn tcp_listen(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own ListenOutcome reads(factory, address), writes(factory);
-fn tcp_accept(factory: &uniq HandleFactory, listener: &uniq TcpListener) -> result: own AcceptOutcome reads(factory, listener), writes(factory, listener);
-fn tcp_connect(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own ConnectOutcome reads(factory, address), writes(factory);
+fn tcp_listen(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own Result<TcpListener, IoError> reads(factory, address), writes(factory);
+fn tcp_accept(factory: &uniq HandleFactory, listener: &uniq TcpListener) -> result: own Result<AcceptedConnection, IoError> reads(factory, listener), writes(factory, listener);
+fn tcp_connect(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own Result<TcpConnection, IoError> reads(factory, address), writes(factory);
 fn receive_next(receive: &uniq TcpReceive, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> reads(receive, destination), writes(receive, destination) contract {
   requires start <= end;
   requires end <= len_of(deref(destination));
@@ -2690,7 +2671,7 @@ fn close_send(factory: &uniq HandleFactory, send: own TcpSend) -> result: own Re
 ```
 
 Each record is an ordinary callable boundary usable by a direct call or a function-kind binding under FN-2 through FN-5. Its definition is supplied by the build and must satisfy the declared boundary [SCOPE-3]; calls neither inspect nor classify that definition. There is one ordinary callable ABI for definitions written in Whitefoot and definitions supplied by linking. A loan passed to either lasts through that call's return under the same OWN rules. A missing definition or incompatible physical representation is a build/link failure, not a source-language rejection.
-PRE-1 requirement templates are discharged by FN-8 and verified declaration postconditions are instantiated only by CALL-6 and FN-9's ordinary selected-result rules. The supplied definition is responsible for those propositions; no compiler-owned operation fact or alternative acceptance judgment exists.
+PRE-1 requirement templates are discharged by FN-8 and declared postconditions are instantiated only by CALL-6 and FN-9's ordinary selected-result rules. The supplied definition is responsible for those propositions under SCOPE-3; its declaration has no Whitefoot body for FN-9 to verify. No compiler-owned operation fact or alternative acceptance judgment exists.
 The declaration preorder is opaque nominals in table order, then each struct or enum above in written order with its constructor or variants and their fields in declaration order, then `Int`, `Float`, and each function above with its region and value parameters in declared order. Owner-local fields and parameters do not enter compilation-root name lookup. This preorder fixes each PRE-1 diagnostic ordinal [DIAG-1].
 
 ## 15. Obligation discharge: deterministic facts, invariants, and local certificates (normative)

@@ -88,7 +88,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
 }
 
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  doc "Ordinary tcp_listen mutates a factory and returns ListenOpened or ListenFailed. Refusal retains the factory for another attempt; success is explicitly consumed by close_listener. Permit-return and qualification assertions are retired.";
+  doc "Ordinary tcp_listen mutates a factory and returns Result<TcpListener, IoError>. Refusal retains the factory for another attempt; success is explicitly consumed by close_listener. Permit-return and qualification assertions are retired.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
   region {
     close_directory(factory: &uniq handles, directory: move unused_cwd);
@@ -98,11 +98,11 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   region {
     region {
       match tcp_listen(factory: &uniq handles, address: &first) {
-        Listening(listener: bound) => {
+        Ok(value: bound) => {
           let credit = close_listener(factory: &uniq handles, listener: move bound);
           return exit_status(code: 0_u8);
         }
-        ListenFailed(error: problem) => {
+        Err(error: problem) => {
           region {
             if factory_refusal(error: &problem) {
               return exit_status(code: 4_u8);
@@ -110,11 +110,11 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
           }
           region {
             match tcp_listen(factory: &uniq handles, address: &second) {
-              Listening(listener: retry) => {
+              Ok(value: retry) => {
                 let credit = close_listener(factory: &uniq handles, listener: move retry);
                 return exit_status(code: 0_u8);
               }
-              ListenFailed(error: second_problem) => {
+              Err(error: second_problem) => {
                 return exit_status(code: 3_u8);
               }
             }

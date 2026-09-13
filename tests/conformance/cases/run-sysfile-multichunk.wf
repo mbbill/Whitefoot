@@ -115,7 +115,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory,
                   region {
                     region {
                       match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                        FileOpened(value: file) => {
+                        Ok(value: file) => {
                           loop @scan {
                             let failed = False();
                             region {
@@ -190,7 +190,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory,
                             return exit_status(code: 16_u8);
                           }
                         }
-                        FileOpenFailed(error: problem) => {
+                        Err(error: problem) => {
                           region {
                             if factory_refusal(error: &problem) {
                               return exit_status(code: 20_u8);

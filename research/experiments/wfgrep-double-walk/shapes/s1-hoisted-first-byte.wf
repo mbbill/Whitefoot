@@ -499,7 +499,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uni
             Ok(value: path) => {
               region {
                 match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                  FileOpened(value: file) => {
+                  Ok(value: file) => {
                     let carry = 0_u64;
                     let file_offset = 0_u64;
                     loop @chunks {
@@ -656,7 +656,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, err: &uni
                     }
                     close_read(factory: &uniq deref(files), file: move file);
                   }
-                  FileOpenFailed(error: problem) => {
+                  Err(error: problem) => {
                     set status = io_class(error: move problem);
                   }
                 }

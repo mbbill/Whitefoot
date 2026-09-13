@@ -1154,13 +1154,13 @@ fn an_ordinary_directory_wrapper_keeps_its_unique_loan() {
     let source = br#"fn probe(factory: &uniq HandleFactory, root: &DirectoryRead) -> result: own u64 reads(factory, root), writes(factory) {
   region {
     match open_directory_source(factory: &uniq deref(factory), directory: root) {
-      SourceOpened(value: listing) => {
+      Ok(value: listing) => {
         region {
           let closed = close_directory_source(factory: &uniq deref(factory), source: move listing);
         }
         return 1_u64;
       }
-      SourceOpenFailed(error: refused) => {
+      Err(error: refused) => {
         return 0_u64;
       }
     }

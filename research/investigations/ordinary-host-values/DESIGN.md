@@ -34,6 +34,10 @@ effect. An affine opaque value has the empty drop; a `linear` opaque value
 cannot reach a scope exit unconsumed under PROV-6.
 
 Ordinary enums keep ordinary variants, fields, matching, and derived linearity.
+File, directory and TCP acquisition use ordinary `Result` success/error
+branches; `AcceptedConnection` groups the connection and peer address in the
+successful accept value. The [acquisition-result decision](DECISIONS.md#acquisition-results)
+records why the former permit-return enums are no longer needed.
 The exception for a system struct with fields but no constructor disappears.
 `TcpConnection` therefore needs a deliberate ordinary API representation;
 being supplied by a host cannot prohibit construction of an otherwise ordinary
@@ -58,9 +62,12 @@ lying implementation sound.
 
 Use the ordinary resolved-place basis already used by OWN-6, OWN-7 and ENT-5.
 A borrow names its referent; a view names its backing range under CALL-3.
-A write at a resolved place kills the facts supported there, then ordinary
-verified ensures publish the exit facts. The actual's spelling and the origin
-of the callee do not change this rule.
+A write at a resolved place kills the facts supported there, then the
+callee's ordinary ensures publish the exit facts. FN-9 verifies a Whitefoot
+body's selected returns; a linked definition must satisfy its declared
+contract under SCOPE-3. Both use the same contract formation and caller
+instantiation rules. The actual's spelling and the origin of the callee do
+not change that call-site rule.
 
 Remove FN-1's inferred owned-result and exclusive-referent state-routing
 summaries and the effects-only identity that follows an owner through calls.

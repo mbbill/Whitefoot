@@ -596,8 +596,8 @@ void wf_tcp_connect(wf_connect_result *result, wf_value *factory, const wf_value
         result->tag = 1;
         wf_error(&result->error, error, 7);
     } else {
-        wf_descriptor_value(&result->connection.receive, (int)descriptor);
-        wf_descriptor_value(&result->connection.send, (int)descriptor);
+        wf_descriptor_value(&result->value.receive, (int)descriptor);
+        wf_descriptor_value(&result->value.send, (int)descriptor);
     }
 }
 
@@ -620,11 +620,11 @@ void wf_tcp_accept(wf_accept_result *result, wf_value *factory, wf_value *listen
         result->tag = 1;
         wf_error(&result->error, error, 6);
     } else {
-        wf_descriptor_value(&result->connection.receive, (int)descriptor);
-        wf_descriptor_value(&result->connection.send, (int)descriptor);
-        result->peer.words[0] = low;
-        result->peer.words[1] = high;
-        result->peer.words[2] = tag;
+        wf_descriptor_value(&result->value.connection.receive, (int)descriptor);
+        wf_descriptor_value(&result->value.connection.send, (int)descriptor);
+        result->value.peer.words[0] = low;
+        result->value.peer.words[1] = high;
+        result->value.peer.words[2] = tag;
     }
 }
 

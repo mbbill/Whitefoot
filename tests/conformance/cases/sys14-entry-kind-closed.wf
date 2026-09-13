@@ -108,7 +108,7 @@ fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq 
         let status = 0_u8;
         region {
           match open_directory_source(factory: &uniq deref(files), directory: cwd) {
-            SourceOpened(value: list) => {
+            Ok(value: list) => {
               let produced = 0_u64;
               let announced = 0_u64;
               region {
@@ -194,7 +194,7 @@ fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq 
               }
               close_directory_source(factory: &uniq deref(files), source: move list);
             }
-            SourceOpenFailed(error: problem) => {
+            Err(error: problem) => {
               region {
                 if factory_refusal(error: &problem) {
                   return exit_status(code: 13_u8);

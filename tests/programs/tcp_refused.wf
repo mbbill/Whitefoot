@@ -291,13 +291,13 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
         region {
           region {
             match tcp_connect(factory: &uniq handles, address: &address) {
-              Connected(connection: link) => {
+              Ok(value: link) => {
                 let TcpConnection(receive: close_receive_9, send: close_send_9) = move link;
                 close_receive(factory: &uniq handles, receive: move close_receive_9);
                 close_send(factory: &uniq handles, send: move close_send_9);
                 set outcome = 3_u8;
               }
-              ConnectFailed(error: problem) => {
+              Err(error: problem) => {
                 region {
                   let exhausted = factory_refusal(error: &problem);
                   let first = socket_class(error: move problem);
@@ -306,13 +306,13 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
                   } else {
                     region {
                       match tcp_connect(factory: &uniq handles, address: &address) {
-                        Connected(connection: again) => {
+                        Ok(value: again) => {
                           let TcpConnection(receive: close_receive_10, send: close_send_10) = move again;
                           close_receive(factory: &uniq handles, receive: move close_receive_10);
                           close_send(factory: &uniq handles, send: move close_send_10);
                           set outcome = 4_u8;
                         }
-                        ConnectFailed(error: second_problem) => {
+                        Err(error: second_problem) => {
                           let second = socket_class(error: move second_problem);
                           let refused = first == 1_u8;
                           let twice = second == 1_u8;

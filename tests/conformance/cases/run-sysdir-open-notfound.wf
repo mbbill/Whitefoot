@@ -97,11 +97,11 @@ fn exercise(args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory) -> sta
             region {
               region {
                 match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                  FileOpened(value: file) => {
+                  Ok(value: file) => {
                     close_read(factory: &uniq deref(files), file: move file);
                     return exit_status(code: 10_u8);
                   }
-                  FileOpenFailed(error: problem) => {
+                  Err(error: problem) => {
                     region {
                       if factory_refusal(error: &problem) {
                         return exit_status(code: 15_u8);

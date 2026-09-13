@@ -24,8 +24,9 @@ typedef struct { wf_list_status result; uint64_t next; uint64_t entries; } wf_li
 typedef struct { uint32_t tag; uint8_t value; wf_io_error error; } wf_close_result;
 typedef struct { uint32_t tag; wf_value value; wf_io_error error; } wf_open_result;
 typedef struct { wf_value receive; wf_value send; } wf_connection;
-typedef struct { uint32_t tag; wf_connection connection; wf_io_error error; } wf_connect_result;
-typedef struct { uint32_t tag; wf_connection connection; wf_value peer; wf_io_error error; } wf_accept_result;
+typedef struct { wf_connection connection; wf_value peer; } wf_accepted_connection;
+typedef struct { uint32_t tag; wf_connection value; wf_io_error error; } wf_connect_result;
+typedef struct { uint32_t tag; wf_accepted_connection value; wf_io_error error; } wf_accept_result;
 typedef struct {
     wf_value args, cwd, out, err, handles, in;
 } wf_inputs;
@@ -37,8 +38,12 @@ _Static_assert(sizeof(wf_list_status) == 240, "ordinary directory status Result 
 _Static_assert(offsetof(wf_list_result, next) == 240 &&
                offsetof(wf_list_result, entries) == 248 &&
                sizeof(wf_list_result) == 256, "ordinary directory three-result layout");
-_Static_assert(sizeof(wf_open_result) == 288, "ordinary open enum layout");
-_Static_assert(sizeof(wf_accept_result) == 352, "ordinary accept enum layout");
+_Static_assert(sizeof(wf_open_result) == 288, "ordinary open Result layout");
+_Static_assert(sizeof(wf_connect_result) == 320, "ordinary connect Result layout");
+_Static_assert(sizeof(wf_accepted_connection) == 96, "ordinary AcceptedConnection layout");
+_Static_assert(offsetof(wf_accept_result, value) == 16 &&
+               offsetof(wf_accept_result, error) == 112 &&
+               sizeof(wf_accept_result) == 352, "ordinary accept Result layout");
 _Static_assert(sizeof(wf_inputs) == 192, "ordinary Inputs layout");
 
 uint64_t wf_args_count(const wf_value *args);

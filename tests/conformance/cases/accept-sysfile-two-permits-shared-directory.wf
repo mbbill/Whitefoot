@@ -4,17 +4,17 @@ fn open_two(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: 
     let first = open_directory_source(factory: &uniq deref(factory), directory: directory);
     let second = open_directory_source(factory: &uniq deref(factory), directory: directory);
     match first {
-      SourceOpened(value: source) => {
+      Ok(value: source) => {
         close_directory_source(factory: &uniq deref(factory), source: move source);
       }
-      SourceOpenFailed(error: problem) => {
+      Err(error: problem) => {
       }
     }
     match second {
-      SourceOpened(value: source) => {
+      Ok(value: source) => {
         close_directory_source(factory: &uniq deref(factory), source: move source);
       }
-      SourceOpenFailed(error: problem) => {
+      Err(error: problem) => {
       }
     }
   }

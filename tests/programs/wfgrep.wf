@@ -829,14 +829,7 @@ fn search_file['heap](factory: &uniq HandleFactory, file: &uniq ReadFile, patter
 
 fn open_source_from_factory(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
   region {
-    match open_directory_source(factory: &uniq deref(factory), directory: directory) {
-      SourceOpened(value: opened) => {
-        return Ok<DirectorySource, IoError>(value: move opened);
-      }
-      SourceOpenFailed(error: problem) => {
-        return Err<DirectorySource, IoError>(error: move problem);
-      }
-    }
+    return open_directory_source(factory: &uniq deref(factory), directory: directory);
   }
 }
 
@@ -848,14 +841,7 @@ fn open_file_from_factory(factory: &uniq HandleFactory, root: &DirectoryRead, na
   requires within;
 } {
   region {
-    match open_file(factory: &uniq deref(factory), root: root, name: name, start: start, end: end) {
-      FileOpened(value: opened) => {
-        return Ok<ReadFile, IoError>(value: move opened);
-      }
-      FileOpenFailed(error: problem) => {
-        return Err<ReadFile, IoError>(error: move problem);
-      }
-    }
+    return open_file(factory: &uniq deref(factory), root: root, name: name, start: start, end: end);
   }
 }
 
@@ -867,14 +853,7 @@ fn open_directory_from_factory(factory: &uniq HandleFactory, root: &DirectoryRea
   requires within;
 } {
   region {
-    match open_directory(factory: &uniq deref(factory), root: root, name: name, start: start, end: end) {
-      DirectoryOpened(value: opened) => {
-        return Ok<DirectoryRead, IoError>(value: move opened);
-      }
-      DirectoryOpenFailed(error: problem) => {
-        return Err<DirectoryRead, IoError>(error: move problem);
-      }
-    }
+    return open_directory(factory: &uniq deref(factory), root: root, name: name, start: start, end: end);
   }
 }
 
@@ -1659,7 +1638,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, er
                             let root_name_view = slice_of(&root_name);
                             region {
                               match open_directory(factory: &uniq deref(files), root: cwd, name: &root_name_view, start: 0_u64, end: root_length) {
-                                DirectoryOpened(value: root) => {
+                                Ok(value: root) => {
                                   let outcome = 0_u8;
                                   region {
                                     let root_path_view = slice_of(&root_path);
@@ -1678,7 +1657,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, er
                                   }
                                   close_directory(factory: &uniq deref(files), directory: move root);
                                 }
-                                DirectoryOpenFailed(error: problem) => {
+                                Err(error: problem) => {
                                   set root_status = io_class(error: move problem);
                                 }
                               }
@@ -1694,7 +1673,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, er
                                     Ok(value: path) => {
                                       region {
                                         match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                                          FileOpened(value: file) => {
+                                          Ok(value: file) => {
                                             set single = 1_u8;
                                             let outcome = 0_u8;
                                             region {
@@ -1711,7 +1690,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, out: &uniq OutputStream, er
                                             }
                                             close_read(factory: &uniq deref(files), file: move file);
                                           }
-                                          FileOpenFailed(error: refused) => {
+                                          Err(error: refused) => {
                                           }
                                         }
                                       }

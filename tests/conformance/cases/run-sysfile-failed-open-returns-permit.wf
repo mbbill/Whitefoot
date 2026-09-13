@@ -118,18 +118,18 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory,
                             region {
                               region {
                                 match open_read(factory: &uniq deref(files), root: cwd, path: &absent) {
-                                  FileOpened(value: unexpected) => {
+                                  Ok(value: unexpected) => {
                                     close_read(factory: &uniq deref(files), file: move unexpected);
                                     return exit_status(code: 20_u8);
                                   }
-                                  FileOpenFailed(error: problem) => {
+                                  Err(error: problem) => {
                                     region {
                                       if factory_refusal(error: &problem) {
                                         return exit_status(code: 15_u8);
                                       }
                                     }
                                     match open_read(factory: &uniq deref(files), root: cwd, path: &present) {
-                                      FileOpened(value: again) => {
+                                      Ok(value: again) => {
                                         region {
                                           region {
                                             match read_at(factory: &uniq deref(files), file: &uniq again, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 1_u64) {
@@ -153,7 +153,7 @@ fn exercise['heap](args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory,
                                           }
                                         }
                                       }
-                                      FileOpenFailed(error: problem_again) => {
+                                      Err(error: problem_again) => {
                                         return exit_status(code: 21_u8);
                                       }
                                     }

@@ -442,9 +442,9 @@ fn exercise(factory: &uniq HandleFactory, address: &SocketAddress) -> result: ow
   let send_first = False();
   region {
     match tcp_connect(factory: &uniq deref(factory), address: address) {
-      Connected(connection: first) => {
+      Ok(value: first) => {
         match tcp_connect(factory: &uniq deref(factory), address: address) {
-          Connected(connection: second) => {
+          Ok(value: second) => {
             let (a, b) = cross(first: move first, second: move second);
             let first_status = close_pair(factory: &uniq deref(factory), connection: move a, receive_first: receive_first);
             let exchange_status = 0_u8;
@@ -462,7 +462,7 @@ fn exercise(factory: &uniq HandleFactory, address: &SocketAddress) -> result: ow
               return exchange_status;
             }
             match tcp_connect(factory: &uniq deref(factory), address: address) {
-              Connected(connection: checkpoint) => {
+              Ok(value: checkpoint) => {
                 let checkpoint_status = 0_u8;
                 region {
                   set checkpoint_status = remaining(connection: &uniq checkpoint);
@@ -473,18 +473,18 @@ fn exercise(factory: &uniq HandleFactory, address: &SocketAddress) -> result: ow
                 }
                 return checkpoint_status;
               }
-              ConnectFailed(error: problem) => {
+              Err(error: problem) => {
                 return 26_u8;
               }
             }
           }
-          ConnectFailed(error: problem) => {
+          Err(error: problem) => {
             close_pair(factory: &uniq deref(factory), connection: move first, receive_first: receive_first);
             return 23_u8;
           }
         }
       }
-      ConnectFailed(error: problem) => {
+      Err(error: problem) => {
         return 24_u8;
       }
     }

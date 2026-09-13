@@ -108,7 +108,7 @@ fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq 
           let window = mut_slice_of(&uniq entries);
           region {
             match open_directory_source(factory: &uniq deref(files), directory: cwd) {
-              SourceOpened(value: list) => {
+              Ok(value: list) => {
                 let held = move list;
                 region {
                   let (list_result_1, bytes, reported) = directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 1024_u64);
@@ -132,7 +132,7 @@ fn exercise['heap](cwd: &DirectoryRead, files: &uniq HandleFactory, heap: &uniq 
                   }
                 }
               }
-              SourceOpenFailed(error: problem) => {
+              Err(error: problem) => {
                 region {
                   if factory_refusal(error: &problem) {
                     return exit_status(code: 5_u8);

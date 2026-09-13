@@ -123,14 +123,7 @@ fn record_line['heap](records: &Vector<'heap, u8>, index: own u64, destination: 
 
 fn open_source_from_factory(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
   region {
-    match open_directory_source(factory: &uniq deref(factory), directory: directory) {
-      SourceOpened(value: opened) => {
-        return Ok<DirectorySource, IoError>(value: move opened);
-      }
-      SourceOpenFailed(error: problem) => {
-        return Err<DirectorySource, IoError>(error: move problem);
-      }
-    }
+    return open_directory_source(factory: &uniq deref(factory), directory: directory);
   }
 }
 
@@ -142,14 +135,7 @@ fn open_directory_from_factory(factory: &uniq HandleFactory, root: &DirectoryRea
   requires within;
 } {
   region {
-    match open_directory(factory: &uniq deref(factory), root: root, name: name, start: start, end: end) {
-      DirectoryOpened(value: opened) => {
-        return Ok<DirectoryRead, IoError>(value: move opened);
-      }
-      DirectoryOpenFailed(error: problem) => {
-        return Err<DirectoryRead, IoError>(error: move problem);
-      }
-    }
+    return open_directory(factory: &uniq deref(factory), root: root, name: name, start: start, end: end);
   }
 }
 

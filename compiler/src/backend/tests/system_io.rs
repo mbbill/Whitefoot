@@ -99,7 +99,7 @@ const OPEN_AND_READ: &[u8] = br#"fn exercise(args: &Args, cwd: &DirectoryRead, f
             region {
               region {
                 match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                  FileOpened(value: file) => {
+                  Ok(value: file) => {
                     let bytes = buffer_new(64_u64, 0_u8);
                     region {
                       region {
@@ -138,7 +138,7 @@ const OPEN_AND_READ: &[u8] = br#"fn exercise(args: &Args, cwd: &DirectoryRead, f
                       }
                     }
                   }
-                  FileOpenFailed(error: problem) => {
+                  Err(error: problem) => {
                     return exit_status(code: 203_u8);
                   }
                 }
@@ -177,7 +177,7 @@ pub(super) const CHUNKED_READ: &[u8] = br#"fn exercise(args: &Args, cwd: &Direct
             region {
               region {
                 match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                  FileOpened(value: file) => {
+                  Ok(value: file) => {
                     let bytes = buffer_new(3_u64, 0_u8);
                     let total = 0_u64;
                     let chunks = 0_u64;
@@ -222,7 +222,7 @@ pub(super) const CHUNKED_READ: &[u8] = br#"fn exercise(args: &Args, cwd: &Direct
                       }
                     }
                   }
-                  FileOpenFailed(error: problem) => {
+                  Err(error: problem) => {
                     return exit_status(code: 203_u8);
                   }
                 }
@@ -261,7 +261,7 @@ const VACANT_READ: &[u8] = br#"fn exercise(args: &Args, cwd: &DirectoryRead, fil
             region {
               region {
                 match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                  FileOpened(value: file) => {
+                  Ok(value: file) => {
                     let bytes = buffer_new(8_u64, 0_u8);
                     let vacant = 0_u64;
                     region {
@@ -332,7 +332,7 @@ const VACANT_READ: &[u8] = br#"fn exercise(args: &Args, cwd: &DirectoryRead, fil
                       }
                     }
                   }
-                  FileOpenFailed(error: problem) => {
+                  Err(error: problem) => {
                     return exit_status(code: 203_u8);
                   }
                 }
@@ -371,7 +371,7 @@ const EXACT_PREFIX: &[u8] = br#"fn exercise(args: &Args, cwd: &DirectoryRead, fi
             region {
               region {
                 match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                  FileOpened(value: file) => {
+                  Ok(value: file) => {
                     let bytes = buffer_new(8_u64, 7_u8);
                     region {
                       region {
@@ -434,7 +434,7 @@ const EXACT_PREFIX: &[u8] = br#"fn exercise(args: &Args, cwd: &DirectoryRead, fi
                       }
                     }
                   }
-                  FileOpenFailed(error: problem) => {
+                  Err(error: problem) => {
                     return exit_status(code: 203_u8);
                   }
                 }
@@ -661,7 +661,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"fn exercise(args: &Args, cwd: &Directory
             region {
               region {
                 match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
-                  FileOpened(value: file) => {
+                  Ok(value: file) => {
                     let page = buffer_new(16_u64, 0_u8);
                     let total = 0_u64;
                     let file_offset = 0_u64;
@@ -762,7 +762,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"fn exercise(args: &Args, cwd: &Directory
                       }
                     }
                   }
-                  FileOpenFailed(error: problem) => {
+                  Err(error: problem) => {
                     return exit_status(code: 6_u8);
                   }
                 }
@@ -820,6 +820,53 @@ fn a_short_read_is_progress_and_only_the_observed_end_is_read_end() {
             .code(),
         Some(0)
     );
+}
+
+#[test]
+fn an_acquisition_result_propagates_its_owner_or_error_through_an_ordinary_helper() {
+    let helper = r#"fn acquire(factory: &uniq HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(factory, root, path), writes(factory) {
+  region {
+    let file = propagate open_read(factory: &uniq deref(factory), root: root, path: path);
+    return Ok<ReadFile, IoError>(value: move file);
+  }
+}
+
+"#;
+    let source = format!(
+        "{helper}{}",
+        std::str::from_utf8(OPEN_AND_READ)
+            .expect("the fixture is source text")
+            .replace("match open_read(", "match acquire(")
+    );
+    let inputs = [crate::SourceInput::new(
+        "propagate-open.wf",
+        source.as_bytes(),
+    )];
+    for overlap in [
+        None,
+        Some(super::OverlapLowering::Off),
+        Some(super::OverlapLowering::On),
+    ] {
+        let llvm = match overlap {
+            None => crate::compile(&inputs, crate::CompilerLimits::default()),
+            Some(mode) => {
+                crate::compile_with_overlap(&inputs, crate::CompilerLimits::default(), mode)
+            }
+        }
+        .expect("Result acquisition uses ordinary propagation and linear ownership");
+        assert_eq!(
+            run_in_directory(&llvm, &[("present.txt", b"abc")], &[b"present.txt"])
+                .status
+                .code(),
+            Some(3)
+        );
+        assert_eq!(
+            run_in_directory(&llvm, &[], &[b"missing.txt"])
+                .status
+                .code(),
+            Some(203)
+        );
+    }
 }
 
 #[test]

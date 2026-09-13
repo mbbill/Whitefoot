@@ -91,10 +91,10 @@ fn exercise(cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own Exit
   doc "DirectoryRead and DirectorySource are ordinary linear opaque values. The program explicitly closes both acquired values through their ordinary factory parameter instead of relying on retired implicit native release.";
   region {
     match open_directory_source(factory: &uniq deref(files), directory: cwd) {
-      SourceOpened(value: list) => {
+      Ok(value: list) => {
         close_directory_source(factory: &uniq deref(files), source: move list);
       }
-      SourceOpenFailed(error: problem) => {
+      Err(error: problem) => {
         region {
           if factory_refusal(error: &problem) {
             return exit_status(code: 1_u8);

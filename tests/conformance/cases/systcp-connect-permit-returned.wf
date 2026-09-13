@@ -98,13 +98,13 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   region {
     region {
       match tcp_connect(factory: &uniq handles, address: &first) {
-        Connected(connection: link) => {
+        Ok(value: link) => {
           let TcpConnection(receive: close_receive_13, send: close_send_13) = move link;
           close_receive(factory: &uniq handles, receive: move close_receive_13);
           close_send(factory: &uniq handles, send: move close_send_13);
           return exit_status(code: 0_u8);
         }
-        ConnectFailed(error: problem) => {
+        Err(error: problem) => {
           region {
             if factory_refusal(error: &problem) {
               return exit_status(code: 4_u8);
@@ -112,13 +112,13 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
           }
           region {
             match tcp_connect(factory: &uniq handles, address: &second) {
-              Connected(connection: retry) => {
+              Ok(value: retry) => {
                 let TcpConnection(receive: close_receive_14, send: close_send_14) = move retry;
                 close_receive(factory: &uniq handles, receive: move close_receive_14);
                 close_send(factory: &uniq handles, send: move close_send_14);
                 return exit_status(code: 0_u8);
               }
-              ConnectFailed(error: second_problem) => {
+              Err(error: second_problem) => {
                 return exit_status(code: 3_u8);
               }
             }
