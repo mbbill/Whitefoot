@@ -8,9 +8,10 @@ even if the PR remains a draft. One review of the current content and scope
 can cover multiple triggers.
 
 Use a separate agent that did not implement the change, normally a small or
-mid-sized model, for the applicable checks. Fix concrete findings, then
-recheck the affected items. Review is part of completing the work; approval
-and merge conditions remain in
+mid-sized model, for the applicable checks. DCR follows the report-and-response
+rule in `design/skill/SKILL.md`: present findings with the primary agent's
+assessment and await the owner's direction before acting. For other reviews,
+fix concrete findings and recheck affected items. Merge conditions remain in
 [AGENTS.md](../AGENTS.md#branch-and-main-boundary).
 
 ## Review input and result
@@ -238,15 +239,15 @@ Use `design/skill/SKILL.md`; this section does not replace it.
   Decisions the agent makes on its own remain amendments under
   `design/amendments/`; none is only in code. Design and implementation can
   evolve together without separate phases or submissions.
-- [ ] **M2 — Correspondence.** The independent review applies the procedure's
+- [ ] **M2 — DCR.** Design Correspondence Review applies the procedure's
   design checks to changed decisions and its correspondence checks in both
   directions across the agreed delivery scope. Include relevant existing
   commitments and pending revisions, not just changed tree nodes. Check for
   missing or partial implementation as well as unrecorded or contradictory
-  choices. Findings and pending owner rulings are resolved or explicitly
-  listed; a pending amendment alone does not establish correctness. Ongoing
-  design discussion does not require a finished implementation or a separate
-  completion review.
+  choices. The owner receives the findings and primary agent's assessment
+  before any action on them. Pending rulings remain explicit; an amendment
+  alone does not establish correctness. Ongoing discussion needs neither a
+  finished implementation nor a separate completion review.
 - [ ] **M3 — Form.** `make design-lint` passes on the head revision.
 
 ## V. Validation and handoff — every change

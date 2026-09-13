@@ -21,4 +21,4 @@ evidence only when it helps assess the change. -->
 
 - Scope: _reviewer/model; base..head; checked and skipped groups_.
 - Checks: _actual commands/results; full-gate status and tested revision_.
-- Findings: _remaining issues or unverified items, or none within reviewed scope_.
+- Findings: _issues or unverified items; for DCR, add the primary agent's assessment and next steps for owner direction_.
