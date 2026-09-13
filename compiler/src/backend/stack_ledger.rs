@@ -8,7 +8,7 @@
 //! writer otherwise has no way to see.
 //!
 //! **Why it is measured after codegen and nowhere earlier.** The compiler does
-//! accumulate a frame size during target qualification, but that number counts
+//! accumulate a frame size during storage planning, but that number counts
 //! the slots the emitter asked for. Every frame the corpus actually dies on is
 //! made of things that do not exist until the register allocator has run: the
 //! ABI frame record a non-leaf function is forced to keep, and the
@@ -268,7 +268,7 @@ fn component_world(component: &[usize], frames: &[Frame]) -> World {
 /// compilation the frames came from.
 ///
 /// Almost every call is direct and can simply be read: [GRAM-3] has no
-/// function type and conformances lower to no vtable, dictionary, or indirect
+/// function type and behavior actuals lower to no vtable, dictionary, or indirect
 /// call, so a Whitefoot call site names its callee and this graph is exact
 /// where a general one would have to guess. The single exception is the
 /// parallel runtime's own protocol, which hands the pool a pointer to a thunk;
@@ -347,9 +347,11 @@ fn strip_comment(line: &str) -> &str {
 /// `l_wf_resource_abort`.
 /// Trying the plain name and each decoration in turn keeps that a property of
 /// the assembler rather than something the ledger has to be told per target,
-/// and an operand that resolves to nothing is an external call, which this
-/// module has no frame for anyway.
+/// ELF's `@PLT` suffix also decorates direct calls to public definitions in
+/// this module. It chooses a linkage route, not a different callee. A symbol
+/// absent from the frame index names code outside this measured module.
 fn resolve(symbol: &str, index: &HashMap<&str, usize>) -> Option<usize> {
+    let symbol = symbol.strip_suffix("@PLT").unwrap_or(symbol);
     for prefix in ["", "l_", "_", ".L"] {
         if let Some(rest) = symbol.strip_prefix(prefix)
             && let Some(position) = index.get(rest)
@@ -618,5 +620,40 @@ _main:                                  ; @main
                 "{name} has no frame row: {lines:#?}"
             );
         }
+    }
+
+    /// ELF public calls may go through a PLT entry even when their definitions
+    /// occur in the measured module. The same graph must retain both bounded
+    /// chains and recursive cycles, on a host that does not itself emit ELF.
+    #[test]
+    fn elf_plt_calls_keep_the_local_definitions_chain_and_cycle() {
+        let usage =
+            "m.ll:wf_root\t24\tstatic\nm.ll:wf_step\t16\tstatic\nm.ll:wf_cycle\t8\tstatic\n";
+        let assembly = "wf_root: # @wf_root
+\tcallq wf_step@PLT
+\tretq
+wf_step: # @wf_step
+\tcallq wf_cycle@PLT
+\tjmp wf_unmeasured@PLT
+wf_cycle: # @wf_cycle
+\tcallq wf_cycle@PLT
+\tretq
+";
+        let lines = stack_ledger(usage, assembly, 4_096, Architecture::X86_64);
+        assert_eq!(
+            lines,
+            stack_ledger(
+                usage,
+                &assembly.replace("@PLT", ""),
+                4_096,
+                Architecture::X86_64
+            )
+        );
+        let cycle = line(&lines, "STACK cycle     wf_cycle");
+        assert!(cycle.contains("16 B/level"), "{cycle}");
+        assert!(cycle.contains("256 levels"), "{cycle}");
+        let chain = line(&lines, "STACK chain     wf_root");
+        assert!(chain.contains("56 B"), "{chain}");
+        assert!(chain.contains("wf_root -> wf_step"), "{chain}");
     }
 }
