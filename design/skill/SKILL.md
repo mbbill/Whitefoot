@@ -123,16 +123,13 @@ entries, newest first.
    design-gate checks below over its amendments.
 3. Pull request. The lint and the gate run. The agent runs the
    correspondence checks below over the tree, the amendments, and the code
-   diff, and writes the report. The owner reads two things and nothing else:
-   the tree revision, which is the tree diff since the last review together
-   with every open amendment, and the correspondence report. The owner
-   accepts or rejects each amendment and each finding; the agent moves an
+   diff, and writes the report. The review covers the tree revision, which
+   is the tree diff since the last review together with every open
+   amendment, and the correspondence report. The owner accepts or rejects
+   each amendment and each finding; the agent moves an
    accepted amendment into the tree with a log entry and changes the code for
    a rejected one. Nothing merges with an open amendment or an unresolved
    finding.
-
-The owner reads tree revisions, amendments, and the correspondence report.
-The owner does not read code, and does not read a pull request beyond those.
 
 ## Lint
 

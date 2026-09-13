@@ -6,10 +6,9 @@ under AGENTS.md rule 4. -->
 
 ## Design tree
 
-<!-- The owner reads only this and the correspondence report. List the
-log entries this branch adds, every open amendment under design/amendments/,
-and the correspondence report's findings, or "none" when the change touches
-no decision. -->
+<!-- List the log entries this branch adds, every open amendment under
+design/amendments/, and the correspondence report's findings, or "none"
+when the change touches no decision. -->
 
 ## Agent review
 
