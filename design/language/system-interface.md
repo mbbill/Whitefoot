@@ -8,6 +8,8 @@ Decision: Every compilation unit has exactly one `command fn main`, which reques
 
 Decision: A resource's state is carried entirely by its type at the API boundary, and the compiler derives no result-state origin from a callee's body, because ownership and types state everything a resource must keep, a body-derived summary makes a function's acceptance depend on the bodies of the functions it calls, and the same shape was refused for slice and reborrow provenance, instead of a whole-program fixed point over callee bodies attributing compiler-derived releases.
 
+Decision: A system operation that would hand back several related parts of one resource returns one system-declared struct with those parts as ordinary fields from its first release, as a connection's receive and send halves, because a system operation has one fixed nongeneric signature, so a later split or reunite could not be added without inventing a second operation family, instead of one handle with a later split, or two independently permitted handles from one accept.
+
 Rejected:
 - Raw syscall numbers and integer file descriptors in source: rejected because they expose forgeable identities, an implicit global descriptor table, manual close, weak effect precision, poor Windows portability, and an unchecked pointer wall; they remain permitted only inside compiler-owned target code.
 - Ambient free functions such as args, open, stdin, and spawn callable from any function: rejected because they hide access, create inter-function channels against the no-global rule, and make system use invisible in signatures.

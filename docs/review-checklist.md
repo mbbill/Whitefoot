@@ -1,11 +1,9 @@
 # Task completion review
 
-Run this checklist before declaring a goal or agreed repository-changing work
-complete, marking a draft PR ready for review, or presenting finished work as
-ready to merge. Opening a PR or publishing intermediate progress, including
-to a draft PR, does not trigger this review. Goal completion does trigger it
-even if the PR remains a draft. One review of the current content and scope
-can cover multiple triggers.
+Run this checklist at the completion triggers the Design Correspondence
+Review section of `design/skill/SKILL.md` defines; that section is their
+definition. One review of the current content and scope can cover multiple
+triggers.
 
 Use a separate agent that did not implement the change, normally a small or
 mid-sized model, for the applicable checks. DCR follows the report-and-response
@@ -237,8 +235,9 @@ Use `design/skill/SKILL.md`; this section does not replace it.
   Every live-tree change follows the owner's approval of that revision,
   whenever it occurs during the work, and has a concise traceability log.
   Decisions the agent makes on its own remain amendments under
-  `design/amendments/`; none is only in code. Design and implementation can
-  evolve together without separate phases or submissions.
+  `design/amendments/`; none is only in code, and a refused one leaves its
+  log entry. Design and implementation can evolve together without separate
+  phases or submissions.
 - [ ] **M2 — DCR.** Design Correspondence Review applies the procedure's
   design checks to changed decisions and its correspondence checks in both
   directions across the agreed delivery scope. Include relevant existing

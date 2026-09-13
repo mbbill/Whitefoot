@@ -9,7 +9,8 @@ under AGENTS.md rule 4. -->
 <!-- Explain the proposed or approved changes to the current design tree
 and their reasons, linking supporting design discussion or documents where
 useful. List relevant open amendments under design/amendments/ and the
-applicable review findings.
+applicable review findings. Report node count, depth, and net change as the
+lint prints them against the base.
 Link log entries for traceability. Use "none" when no decision changes. -->
 
 ## Agent review

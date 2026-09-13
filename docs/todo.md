@@ -63,3 +63,27 @@ of them is a decision. Remove an item when its fix and test land.
   propagate g();` never overlaps. Allowing a `propagate` second member would
   need the lowering to join the hand-out before the `Err` return; a future
   investigation, taken up when a real program shows the gap.
+
+## Open language questions
+
+Questions the owner has left open on purpose. None of them is a decision;
+each is resolved by a discussion and a tree change.
+
+- **The unique-parameter container refusal.** [BLK-4] refuses a `&uniq`
+  parameter that can reach a container, the fourth disposition of the
+  replace-through-unique-borrow defect the containers investigation records,
+  after refusal by written type, a conservative fact kill, and doctrine each
+  failed. The owner wants to reconsider the rule before it enters the tree.
+- **A view-valued match or if.** [OWN-5] rejects a `match` or `if` expression
+  whose value is a view, rather than joining the arms' origin sets, which the
+  origin machinery could represent. If the join can be admitted it should be;
+  until then the rejection stands without a recorded reason.
+- **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
+  asymmetric set of arithmetic idioms as automatic facts, each added for one
+  proof pattern, with no general criterion and no counterpart for rows it
+  omits, such as a lower bound from `ior`. The owner wants it made principled;
+  nobody has had the time.
+- **The two-premise cutoff of automatic affine derivation.** [ENT-6] tries
+  zero, one, and two premises and no more without a written certificate. Why
+  the line sits at two, against one or three, is not remembered and needs a
+  study before it is recorded.
