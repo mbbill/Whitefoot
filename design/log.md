@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-13 Merge main's asymmetric-core window rule and IOCP wake repair
+
+Nodes: compiler/parallel-lowering/parallel-runtime, compiler/completion-runtime
+
+Summary: `main` merged the asymmetric-core rule for the idle window, the IOCP wake repair with the io_uring reference repairs, and the io-model handover after this branch's last merge; the compiler README stays retired and its new paragraph is carried here. parallel-runtime's idle-window decision now withholds the window on a machine whose CPUs are not of one performance level, exactly as on an oversubscribed pool, with the owner's own Apple M1 Pro reading as the ground. completion-runtime gains the Windows wake decision: one packet per previously unnotified waiter and a newcomer parked until the notified cohort drains, in place of a count-sized wake that let a newer park take an older sleeper's packet. The io_uring reference repairs, the concurrency catalog, and the handover are research records and decide nothing here.
+
 ## 2026-09-13 Give the rules-not-shapes decision its test
 
 Nodes: compiler

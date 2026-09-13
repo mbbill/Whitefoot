@@ -16,5 +16,7 @@ Decision: The runtime's tuning constants are measured and recorded beside their 
 
 Decision: The staged loop pipeline keeps two operations in flight per loop, a fixed two-slot ring with no per-slot byte accounting, as a provisional value, because the schedule, the permission shape, and the storage discipline shipped first against their falsifier program and the runtime-computed window the investigation designed was never selected, instead of a window derived from per-iteration storage cost and a runtime capacity query.
 
+Decision: On Windows the completion port's wake records each native wait in an intrusive list under the runtime wait lock, publishes one packet per previously unnotified waiter, re-posts a polled packet only while a notified cohort is outstanding, and parks a newcomer on the runtime condition until that cohort has left the kernel, because a wake sized by the parked-scheduler count let a newer park take an older sleeper's packet, which stalled a scheduler job at its 20-minute limit and replayed as two wakes expected and none received, instead of one unaddressed packet per announced sleeper consumed unconditionally by whichever park receives it.
+
 Rejected:
 - A fixed global slot pool with generation-checked tokens and a capacity wait: rejected because every frame is static and ledger-sized, so the stack already bounds outstanding operations and the pool only added refusals nothing could act on.
