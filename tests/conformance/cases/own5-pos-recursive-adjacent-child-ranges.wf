@@ -1,0 +1,47 @@
+fn fill(output: own MutSlice<u64>) -> result: own u64 reads(output), writes(output) {
+  let count = len_of(output);
+  if count <= 1_u64 {
+    if 0_u64 < count {
+      set output[0_u64] = 7_u64;
+    }
+    return count;
+  }
+  let middle = count / 2_u64;
+  region {
+    let left = mut_slice_of(&uniq output, 0_u64, middle);
+    let right = mut_slice_of(&uniq output, middle, count);
+    let a = fill(output: move left);
+    let b = fill(output: move right);
+    let restored = output[0_u64];
+    set output[0_u64] = restored;
+    return a +wrap b;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = buffer_new(17_u64, 0_u64);
+  for (i in 0_u64..17_u64) {
+    set values[i] = i;
+  }
+  region {
+    let output = mut_slice_of(&uniq values, 0_u64, 17_u64);
+    let filled = fill(output: move output);
+    if filled != 17_u64 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  for (i in 0_u64..17_u64) {
+    if values[i] != 7_u64 {
+      return exit_status(code: 2_u8);
+    }
+  }
+  let empty = buffer_new(0_u64, 0_u64);
+  region {
+    let output = mut_slice_of(&uniq empty, 0_u64, 0_u64);
+    let filled = fill(output: move output);
+    if filled != 0_u64 {
+      return exit_status(code: 3_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

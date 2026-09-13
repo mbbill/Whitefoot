@@ -1,0 +1,5 @@
+Node: language/ownership
+
+Decision: Refine resolved-storage overlap with proved half-open view extents and permit bounded subdivision at the parent's loan strength, because runtime-width rows and uneven recursive output partitions need independent access to one contiguous allocation while a child's exclusive authority still excludes conflicting parent access, instead of treating every view of one allocation as a whole-allocation conflict. This replaces the node's complete-path-only overlap decision for range-bearing accesses; whole-place accesses remain conservative. The mechanism and alternatives are in research/investigations/range-loans/DESIGN.md.
+
+Decision: A range loan captures its endpoint values when formed and carries its storage origin through ordinary view moves and signature-based call projection, because reassigning an endpoint must not retarget a live loan and a helper's effects must retain the actual range it receives, instead of rereading mutable endpoint bindings or deriving origin precision from callee bodies.

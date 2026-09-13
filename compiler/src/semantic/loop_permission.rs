@@ -26,9 +26,12 @@
 //!    iterations select distinct elements. Every other element
 //!    write. A same-map element read of that root is also refined to the same
 //!    per-iteration cell; a different map or whole-root read still denies. A
-//!    field of enclosing storage, a callee row projecting onto enclosing
-//!    storage, an arena append, and every write this judgment cannot resolve
-//!    all deny. The mapped root may be owned directly or reached through the
+//!    field of enclosing storage, an arena append, and every write this
+//!    judgment cannot resolve all deny. A checked adjacent-range assignment
+//!    additionally admits view formation, descendant reads/writes, and callee
+//!    rows projected inside its tile. Its runtime stride and base come from
+//!    retained flow proofs; overlapping sources require the same partition.
+//!    The mapped root may be owned directly or reached through the
 //!    live usable `&uniq` holder that made the `set` target writable.
 //! 3. **Complete target summaries.** Every call and derived release in B
 //!    identifies its target action. Ordinary effects and loans have already
@@ -103,7 +106,9 @@
 //! because a statement whose footprint is unknown has no condition-1 or
 //! condition-2 answer to give.
 
-use super::entailment::{ObligationFamily, ObligationOutcome, ProvedAffineIndexMap};
+use super::entailment::{
+    ObligationFamily, ObligationOutcome, ProvedAffineIndexMap, ProvedRangePartition,
+};
 use super::model::{
     BindingId, CheckedArrayRoot, CheckedBooleanOperation, CheckedExpression, CheckedFunction,
     CheckedIntegerOperation, CheckedLoopId, CheckedSetTarget, CheckedSliceSource, CheckedStatement,
@@ -362,9 +367,12 @@ fn judge<'check>(
         shared: None,
         loan: None,
         call_loans: Vec::new(),
+        call_reads: Vec::new(),
         unresolved: None,
         element_ranges: Vec::new(),
         element_reads: Vec::new(),
+        view_ranges: Vec::new(),
+        view_writes: Vec::new(),
         form: None,
         may_suspend: false,
         exit: None,
@@ -397,6 +405,14 @@ struct ProvenElementRead {
     binding: BindingId,
     place: ResolvedPlace,
     map: ProvedAffineIndexMap,
+}
+
+/// One assigned tile on a loop-invariant storage origin. Descendant ranges
+/// inherit this assignment through the common resolved-place prefix rule.
+struct ProvenViewRange {
+    source: ResolvedPlace,
+    place: ResolvedPlace,
+    map: ProvedRangePartition,
 }
 
 /// One source read occurrence and the place reached by that spelling.
@@ -438,10 +454,11 @@ struct Survey<'check, 'run> {
     carried: Option<NodePath>,
     shared: Option<NodePath>,
     loan: Option<NodePath>,
-    /// Every loan formed by a body call, including shared loans. The ordinary
-    /// external-loan rule below already refuses every exclusive one; exact
-    /// maps additionally refuse either strength when it overlaps their root.
+    /// Every loan formed by a body call or view formation. An enclosing
+    /// exclusive loan needs an adjacent-range assignment; element maps refuse
+    /// either strength when it overlaps their root.
     call_loans: Vec<super::permission::Loan>,
+    call_reads: Vec<Access>,
     unresolved: Option<NodePath>,
     /// Proven injective affine element writes admitted as disjoint ranges
     /// rather than as whole-collection writes.
@@ -451,6 +468,8 @@ struct Survey<'check, 'run> {
     /// same-index read-modify-write admissible while a stencil or whole-root
     /// read still fails closed.
     element_reads: Vec<ProvenElementRead>,
+    view_ranges: Vec<ProvenViewRange>,
+    view_writes: Vec<(ResolvedPlace, NodePath)>,
     form: Option<&'static str>,
     /// Permission remains recorded, but a may-suspend function keeps the
     /// synchronous ABI of the sequential world (design section 8), so this
@@ -618,6 +637,9 @@ impl<'check> Survey<'check, '_> {
         // private copy of it.
         let mut footprint = Footprint::default();
         set_target_place(self.places, target, node, &mut footprint, false);
+        if let Some(argument) = &footprint.unresolved {
+            self.unresolved.get_or_insert(argument.clone());
+        }
         let affine_map = if admits_element_map {
             self.proven_affine_map(target)
         } else {
@@ -627,7 +649,9 @@ impl<'check> Survey<'check, '_> {
             match write {
                 Access::Place { place, .. } if self.is_iteration_own(place) => {}
                 Access::Place { place, .. } => {
-                    if let Some(map) = affine_map {
+                    if self.assigned_range(place).is_some() {
+                        self.view_writes.push((place.clone(), node.clone()));
+                    } else if let Some(map) = affine_map {
                         if self
                             .element_ranges
                             .iter()
@@ -685,8 +709,10 @@ impl<'check> Survey<'check, '_> {
                 })?;
                 (target.binding, &index.obligation)
             }
-            CheckedSetTarget::SliceIndex(target) => (target.root.binding, &target.obligation),
-            CheckedSetTarget::Place(_) => return None,
+            // PAR-2's element family names direct storage, not a view's
+            // relative index frame. View writes use the independently proved
+            // adjacent-range assignment in `written_target` instead.
+            CheckedSetTarget::SliceIndex(_) | CheckedSetTarget::Place(_) => return None,
         };
         self.proven_affine_map_at(root, obligation)
     }
@@ -772,7 +798,13 @@ impl<'check> Survey<'check, '_> {
             }
             CheckedExpression::SliceMeasure { root, .. }
             | CheckedExpression::SliceIndex { root, .. } => {
-                Some((root.binding, rooted_place(self.places, root.binding, &[])))
+                match self.places.view_origin(root.binding) {
+                    Some(place) => Some((root.binding, place)),
+                    None => {
+                        self.refuse_form("a read through a view with an unresolved origin");
+                        None
+                    }
+                }
             }
             CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Binding { binding, fields },
@@ -801,28 +833,12 @@ impl<'check> Survey<'check, '_> {
                 root: CheckedArrayRoot::Constant(_),
                 ..
             } => None,
-            CheckedExpression::SliceOf { source, .. } => match source {
-                CheckedSliceSource::Array {
-                    root: CheckedArrayRoot::Binding { binding, .. },
-                    ..
-                } => Some((*binding, slice_source_place(self.places, source))),
-                CheckedSliceSource::Buffer(root) => {
-                    Some((root.binding, slice_source_place(self.places, source)))
-                }
-                CheckedSliceSource::ArenaContent { binding, .. } => {
-                    Some((*binding, slice_source_place(self.places, source)))
-                }
-                CheckedSliceSource::Run(root) => {
-                    Some((root.binding, slice_source_place(self.places, source)))
-                }
-                CheckedSliceSource::ViewHolder { binding, .. } => {
-                    Some((*binding, slice_source_place(self.places, source)))
-                }
-                CheckedSliceSource::Array {
-                    root: CheckedArrayRoot::Constant(_),
-                    ..
-                } => None,
-            },
+            CheckedExpression::SliceOf { .. } => {
+                self.record_view_formation(expression);
+                // Formation reads a descriptor and endpoints, not elements.
+                // Its element exclusion is the retained range loan below.
+                None
+            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::UserCall { .. }
@@ -914,6 +930,93 @@ impl<'check> Survey<'check, '_> {
         }
     }
 
+    fn assigned_range(&self, place: &ResolvedPlace) -> Option<&ProvenViewRange> {
+        self.view_ranges
+            .iter()
+            .find(|range| range.place.contains_path(place))
+    }
+
+    fn record_view_formation(&mut self, expression: &CheckedExpression) {
+        let CheckedExpression::SliceOf {
+            carrier,
+            source,
+            strength,
+            ..
+        } = expression
+        else {
+            return;
+        };
+        let Some(place) = self.places.view_origin_of(expression) else {
+            self.unresolved.get_or_insert(carrier.clone());
+            return;
+        };
+        let source_binding = match source {
+            CheckedSliceSource::Array {
+                root: CheckedArrayRoot::Binding { binding, .. },
+                ..
+            }
+            | CheckedSliceSource::ArenaContent { binding, .. }
+            | CheckedSliceSource::ViewHolder { binding, .. } => Some(*binding),
+            CheckedSliceSource::Buffer(root) => Some(root.binding),
+            CheckedSliceSource::Run(root) => Some(root.binding),
+            CheckedSliceSource::Array {
+                root: CheckedArrayRoot::Constant(_),
+                ..
+            } => None,
+        };
+        // A partition is relative to its source. A descriptor formed inside
+        // the iteration can vary its origin; only descendants of an already
+        // assigned tile may inherit permission from such a descriptor.
+        if *strength == super::model::LoanStrength::Exclusive
+            && !self.is_iteration_own(&place)
+            && self.assigned_range(&place).is_none()
+            && source_binding.is_none_or(|binding| !self.introduced.contains(&binding))
+            && let Some(map) = self
+                .obligations
+                .iter()
+                .filter(|outcome| outcome.discharged && outcome.node_path == *carrier)
+                .flat_map(|outcome| &outcome.range_partitions)
+                .find(|map| map.loop_id == self.outer_loop)
+                .cloned()
+            && let Some(source) = slice_source_place(self.places, source)
+        {
+            if self.view_ranges.iter().any(|range| {
+                self.places.overlaps(&range.source, &source)
+                    && (range.source != source
+                        || range.map.stride != map.stride
+                        || range.map.base != map.base)
+            }) {
+                // Two individually injective partitions may cross between
+                // iterations. Same-iteration sibling separation cannot prove
+                // their cross-iteration independence.
+                self.shared.get_or_insert(carrier.clone());
+            }
+            self.view_ranges.push(ProvenViewRange {
+                source,
+                place: place.clone(),
+                map,
+            });
+        }
+        self.record_loan(&super::permission::Loan {
+            strength: match strength {
+                super::model::LoanStrength::Shared => LoanStrength::Shared,
+                super::model::LoanStrength::Exclusive => LoanStrength::Exclusive,
+            },
+            place,
+            argument: carrier.clone(),
+        });
+    }
+
+    fn record_loan(&mut self, loan: &super::permission::Loan) {
+        self.call_loans.push(loan.clone());
+        if loan.strength == LoanStrength::Exclusive
+            && !self.is_iteration_own(&loan.place)
+            && self.assigned_range(&loan.place).is_none()
+        {
+            self.loan.get_or_insert(loan.argument.clone());
+        }
+    }
+
     /// The caller places one expression transfers away by consuming an `own`
     /// value. A move out of enclosing storage is a write of it.
     fn moved_places(&mut self, value: &CheckedExpression, node: &NodePath) {
@@ -978,21 +1081,23 @@ impl<'check> Survey<'check, '_> {
         if let Some(argument) = &footprint.unresolved {
             self.unresolved.get_or_insert(argument.clone());
         }
+        if let Some(argument) = &footprint.operand_unresolved {
+            self.unresolved.get_or_insert(argument.clone());
+        }
+        self.call_reads.extend(footprint.reads.iter().cloned());
         // The loans half of condition 2 [OWN-5, OWN-12]. Two overlapped
-        // iterations both hold every loan their body forms, so an exclusive
-        // loan on storage outliving the iteration always denies. Shared loans
-        // remain admissible for read-only enclosing storage, but every loan is
-        // retained so `denial` can reject either strength against a mapped
-        // write root.
+        // iterations may hold every loan their body forms simultaneously.
+        // An enclosing exclusive loan therefore needs a proved assignment;
+        // every loan is retained to check against all mapped write sources.
         for loan in &footprint.loans {
-            self.call_loans.push(loan.clone());
-            if loan.strength == LoanStrength::Exclusive && !self.is_iteration_own(&loan.place) {
-                self.loan.get_or_insert(loan.argument.clone());
-            }
+            self.record_loan(loan);
         }
         for write in &footprint.writes {
             match write {
                 Access::Place { place, .. } if self.is_iteration_own(place) => {}
+                Access::Place { place, argument } if self.assigned_range(place).is_some() => {
+                    self.view_writes.push((place.clone(), argument.clone()));
+                }
                 Access::Place { argument, .. } => {
                     self.shared.get_or_insert(argument.clone());
                 }
@@ -1047,7 +1152,7 @@ impl<'check> Survey<'check, '_> {
                 accumulator: accumulate.binding,
                 combine: accumulate.combine,
             })
-        } else if self.element_ranges.is_empty() {
+        } else if self.element_ranges.is_empty() && self.view_writes.is_empty() {
             None
         } else {
             Some(LoopActualization::IndependentMap)
@@ -1080,7 +1185,7 @@ impl<'check> Survey<'check, '_> {
         if let Some(loan) = self.call_loans.iter().find(|loan| {
             self.element_ranges
                 .iter()
-                .any(|range| loan.place.overlaps(&range.place))
+                .any(|range| self.places.overlaps(&loan.place, &range.place))
         }) {
             // A mapped write is disjoint from another iteration's mapped
             // write, not from a whole-root loan held by that iteration. Both
@@ -1094,11 +1199,55 @@ impl<'check> Survey<'check, '_> {
                 argument: argument.clone(),
             });
         }
+        for range in &self.view_ranges {
+            let in_assignment = |place: &ResolvedPlace| {
+                self.view_ranges.iter().any(|assigned| {
+                    assigned.source == range.source
+                        && assigned.map.stride == range.map.stride
+                        && assigned.map.base == range.map.base
+                        && assigned.place.contains_path(place)
+                })
+            };
+            if let Some(loan) = self.call_loans.iter().find(|loan| {
+                self.places.overlaps(&range.source, &loan.place) && !in_assignment(&loan.place)
+            }) {
+                return Some(LoopDenial::Loan {
+                    argument: loan.argument.clone(),
+                });
+            }
+            let uncovered_read = self.reads.iter().any(|read| {
+                self.places.overlaps(&range.source, &read.place) && !in_assignment(&read.place)
+            }) || self.call_reads.iter().any(|read| match read {
+                Access::Place { place, .. } => {
+                    self.places.overlaps(&range.source, place) && !in_assignment(place)
+                }
+                Access::Arena { .. } => true,
+            });
+            let mixed_element_map = self
+                .element_ranges
+                .iter()
+                .any(|element| self.places.overlaps(&range.source, &element.place));
+            if uncovered_read || mixed_element_map {
+                let argument = self
+                    .view_writes
+                    .iter()
+                    .find(|(place, _)| in_assignment(place))
+                    .map(|(_, node)| node.clone())
+                    .or_else(|| {
+                        self.call_loans
+                            .iter()
+                            .find(|loan| in_assignment(&loan.place))
+                            .map(|loan| loan.argument.clone())
+                    })
+                    .expect("an assigned range has a formation loan");
+                return Some(LoopDenial::SharedWrite { argument });
+            }
+        }
         if let Some(range) = self.element_ranges.iter().find(|range| {
             let reads = self
                 .reads
                 .iter()
-                .filter(|read| read.place.overlaps(&range.place))
+                .filter(|read| self.places.overlaps(&read.place, &range.place))
                 .count();
             let matching = self
                 .element_reads

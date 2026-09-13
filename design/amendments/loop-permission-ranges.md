@@ -1,0 +1,3 @@
+Node: language/parallelism/loop-permission
+
+Decision: A counted iteration may borrow a proved exclusive subrange of an adjacent stride partition with loop-invariant runtime stride and base, consuming retained source proofs and preserving the existing accumulator conditions, because runtime-width stencil rows and block-local workspaces are disjoint independently of worker count and need ordinary helper calls, instead of limiting every enclosing write to one constant-coefficient element map. This replaces the element-only extent of the current decision; it does not admit arbitrary scatter or general index search.

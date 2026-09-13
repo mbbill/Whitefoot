@@ -414,7 +414,38 @@ pub(crate) struct KernelSignature {
     /// `(T, count)`, which the record notation spells `fits::<T>(count)` and
     /// which is not a term [BLK-0].
     pub(crate) fits: Option<u32>,
+    /// VIEW-2's optional relative endpoint pair. Its formation submits
+    /// start <= end <= len_of(vector), and replaces the result extent by
+    /// the captured difference end - start. Ordinary kernel calls have no
+    /// positional range form.
+    pub(crate) range: Option<KernelRangeContract>,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct KernelRangeContract {
+    pub(crate) source: usize,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) endpoint_parameters: [KernelParameter; 2],
+}
+
+const VIEW_RANGE: KernelRangeContract = KernelRangeContract {
+    source: 0,
+    start: 1,
+    end: 2,
+    endpoint_parameters: [
+        KernelParameter {
+            name: "start",
+            mode: KernelMode::Own,
+            shape: KernelShape::U64,
+        },
+        KernelParameter {
+            name: "end",
+            mode: KernelMode::Own,
+            shape: KernelShape::U64,
+        },
+    ],
+};
 
 const TYPE_WRITTEN: KernelGenericParameter = KernelGenericParameter {
     name: "T",
@@ -517,6 +548,7 @@ const SEQ_FIXED: KernelSignature = KernelSignature {
         ),
     ],
     fits: None,
+    range: None,
 };
 
 /// The four measures a formation row publishes over its own new run, where
@@ -645,6 +677,7 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
         ),
     ],
     fits: Some(1),
+    range: None,
 };
 
 /// `arena_vector_proved<T, const bytes, const align>['s](store, count) ->
@@ -736,6 +769,7 @@ const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
         ),
     ],
     fits: Some(1),
+    range: None,
 };
 
 /// `heap_vector<T>['s](store, count) -> made: own Option<Vector<'s, T>>`.
@@ -769,6 +803,7 @@ const SEQ_HEAP: KernelSignature = KernelSignature {
     requires: &[],
     ensures: &SEQ_ARENA_PAYLOAD,
     fits: Some(1),
+    range: None,
 };
 
 /// `arena_box<T, const bytes, const align>['s](store: &uniq Arena<'s, bytes,
@@ -847,6 +882,7 @@ const ARENA_BOX: KernelSignature = KernelSignature {
         ),
     ],
     fits: None,
+    range: None,
 };
 
 /// `heap_box<T>['s](store: &uniq Heap<'s>, value: own T) -> made: own
@@ -867,6 +903,7 @@ const HEAP_BOX: KernelSignature = KernelSignature {
     requires: &[],
     ensures: &[],
     fits: None,
+    range: None,
 };
 
 /// The two value parameters each cell formation writes: the store's provider
@@ -937,6 +974,7 @@ const ARENA_FRAME: KernelSignature = KernelSignature {
         ),
     ],
     fits: None,
+    range: None,
 };
 
 /// The two value parameters every [BLK-3] placement row writes.
@@ -1136,6 +1174,7 @@ const SEQ_PLACE: KernelSignature = KernelSignature {
         head_retained(0),
     ],
     fits: None,
+    range: None,
 };
 
 /// `place_front(vector: own V, value: own T) -> result: own V`.
@@ -1158,6 +1197,7 @@ const SEQ_PLACE_FRONT: KernelSignature = KernelSignature {
         PLACE_FRONT_HEAD[1],
     ],
     fits: None,
+    range: None,
 };
 
 /// `take_back(vector: own V) -> (rest: own V, value: own T)`.
@@ -1171,6 +1211,7 @@ const SEQ_TAKE: KernelSignature = KernelSignature {
     requires: &[LENGTH_AVAILABLE],
     ensures: &[TAKE_BACK[0], TAKE_BACK[1], TAKE_BACK[2], head_retained(0)],
     fits: None,
+    range: None,
 };
 
 /// `take_front(vector: own V) -> (rest: own V, value: own T)`.
@@ -1190,6 +1231,7 @@ const SEQ_TAKE_FRONT: KernelSignature = KernelSignature {
         PLACE_FRONT_HEAD[1],
     ],
     fits: None,
+    range: None,
 };
 
 /// The one value parameter both [VIEW-2] formation rows write: the viewable
@@ -1293,6 +1335,7 @@ const SLICE_OF: KernelSignature = KernelSignature {
     requires: &[NON_WRAPPED],
     ensures: &VIEW_RELATIONS,
     fits: None,
+    range: Some(VIEW_RANGE),
 };
 
 /// `mut_slice_of['r, T](vector: &uniq 'r V) -> result: own MutSlice<'r, T>
@@ -1313,6 +1356,7 @@ const MUT_SLICE_OF: KernelSignature = KernelSignature {
     requires: &[NON_WRAPPED],
     ensures: &VIEW_RELATIONS,
     fits: None,
+    range: Some(VIEW_RANGE),
 };
 
 /// Every [BLK-0] signature record, in the `container_declaration_ordinal`

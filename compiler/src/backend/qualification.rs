@@ -388,7 +388,11 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // [ENT-3.S10]. Neither touches a system row, representation, release action,
 // entry form, or host mapping, so the qualified table carries forward
 // unchanged; the version tripwire remains in force.
-const REVIEWED_FOR: &str = "v0.54";
+// v0.55 qualification review: relative view ranges retain the existing
+// {pointer, u64 length} ABI and the backing allocation's qualified layout.
+// Their domain is proved before pointer adjustment. No command-entry,
+// system-operation, resource-release, or target-guarantee row changes.
+const REVIEWED_FOR: &str = "v0.55";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

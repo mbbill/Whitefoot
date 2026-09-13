@@ -289,6 +289,10 @@ pub(crate) enum ObligationFamily {
     AllocationFit,
     /// One independent half-open system range goal [SYS-8].
     SystemRange,
+    /// One independent half-open view formation goal [VIEW-2].
+    ViewRange,
+    /// Two incompatible live range loans must be disjoint [OWN-5, OWN-7].
+    RangeSeparation,
     /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
     /// a call to that row and judged under [MSR-4] exactly as every other
     /// consumer's obligation is.
@@ -308,6 +312,20 @@ pub(crate) struct ProvedAffineIndexMap {
     pub(crate) loop_id: CheckedLoopId,
     pub(crate) coefficient: i128,
     pub(crate) constant: i128,
+}
+
+/// One formation whose exact endpoint images are `[s*i+b, s*i+b+s)`.
+/// The stride and base depend only on values fixed at the loop preheader.
+/// The retained nonnegativity proofs complete PAR-2's adjacent-range family;
+/// permission combines this evidence with the formation's VIEW-2 bounds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProvedRangePartition {
+    pub(crate) loop_id: CheckedLoopId,
+    pub(crate) range: super::places::RangeId,
+    pub(crate) stride: affine::AffineForm,
+    pub(crate) base: affine::AffineForm,
+    pub(crate) stride_nonnegative: DerivationId,
+    pub(crate) base_nonnegative: DerivationId,
 }
 
 /// [ENT-6] disposition of one source obligation, judged at its source node.
@@ -362,6 +380,12 @@ pub(crate) struct ObligationOutcome {
     /// so the row's own identity is what the diagnostic names. Every other
     /// family retains `None`.
     pub(crate) kernel_row: Option<u8>,
+    /// Separation proved when one of these ranges was formed. Unlike a
+    /// later guarded access proof, this holds whenever both formations'
+    /// values coexist and may be reused by ordinary overlap consumers.
+    pub(crate) formed_range_separation: Option<(super::places::RangeId, super::places::RangeId)>,
+    /// Adjacent-range images retained only at a discharged VIEW-2 formation.
+    pub(crate) range_partitions: Vec<ProvedRangePartition>,
 }
 
 /// Exact normalized identity of one obligation query in the function-local

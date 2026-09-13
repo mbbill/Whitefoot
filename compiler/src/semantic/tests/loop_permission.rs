@@ -89,6 +89,153 @@ fn permitted(source: &[u8], function: &str) -> LoopPermission {
 // Grants
 // ----------------------------------------------------------------------
 
+const RUNTIME_PARTITION_SOURCE: &str = r#"fn paint(output: own MutSlice<u64>) -> result: own u64 reads(output), writes(output) {
+  let count = len_of(output);
+  for (x in 0_u64..count) {
+    set output[x] = 1_u64;
+  }
+  return count;
+}
+
+fn partition(width: own u64, padding: own u64, base: own u64) -> result: own buffer<u64> pure contract {
+  requires width <= 8_u64;
+  requires padding <= 8_u64;
+  requires base <= 8_u64;
+} {
+  let stride = width + padding;
+  let cells = 6_u64 * stride;
+  let total = cells + base;
+  let values = buffer_new(total, 0_u64);
+  for (i in 0_u64..4_u64) {
+    let offset = i * stride;
+    let start = offset + base;
+    let end = start + stride;
+    invariant bounded: end <= total {
+      use stride times (i + 1_u64 <= 6_u64);
+    }
+    region {
+      let row = mut_slice_of(&uniq values, start, end);
+      let count = len_of(row);
+      let child = mut_slice_of(&uniq row, 0_u64, count);
+      let painted = paint(output: move child);
+    }
+  }
+  return move values;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = partition(width: 3_u64, padding: 2_u64, base: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn direct_view_element_writes_need_a_range_assignment() {
+    assert!(matches!(
+        denied(RUNTIME_PARTITION_SOURCE.as_bytes(), "paint", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+#[test]
+fn runtime_stride_sum_base_and_descendant_helper_calls_are_permitted() {
+    with_semantics(RUNTIME_PARTITION_SOURCE.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("{outcome:?}");
+        };
+        for function in &program.data.functions {
+            super::entailment::validate_derivations(&function.entailment);
+        }
+    });
+    let judged = permitted(RUNTIME_PARTITION_SOURCE.as_bytes(), "partition");
+    assert_eq!(
+        judged.actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+
+#[test]
+fn equivalent_product_endpoints_use_checked_images() {
+    // The existing source-certificate family does not derive the order of
+    // these two separately bound products. Explicit source guards establish
+    // VIEW-2's domain; PAR-2 must still recognize the exact product images.
+    let source = RUNTIME_PARTITION_SOURCE.replace("    let end = start + stride;", "    let after = i + 1_u64;\n    let limit = after * stride;\n    let end = limit + base;")
+        .replace("    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }\n", "");
+    let begin = source.find("    region {").unwrap();
+    let finish = source.find("  return move values;").unwrap();
+    let body = source[begin..finish].strip_suffix("  }\n").unwrap();
+    let guarded = body
+        .lines()
+        .map(|line| format!("    {line}\n"))
+        .collect::<String>();
+    let source = format!(
+        "{}    if start <= end {{\n      if end <= total {{\n{guarded}      }}\n    }}\n  }}\n{}",
+        &source[..begin],
+        &source[finish..]
+    );
+    let judged = permitted(source.as_bytes(), "partition");
+    assert_eq!(
+        judged.actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+
+#[test]
+fn disjoint_siblings_with_shifted_partitions_can_cross_between_iterations() {
+    let source = RUNTIME_PARTITION_SOURCE.replace("      let painted = paint(output: move child);", "      let painted = paint(output: move child);\n      let shifted = end + stride;\n      invariant room: shifted <= total {\n        use stride times (i + 2_u64 <= 6_u64);\n      }\n      let other = mut_slice_of(&uniq values, end, shifted);\n      let second = paint(output: move other);");
+    assert!(matches!(
+        denied(source.as_bytes(), "partition", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+#[test]
+fn a_whole_origin_read_outside_the_tile_denies_overlap() {
+    let source = RUNTIME_PARTITION_SOURCE.replace("      let painted = paint(output: move child);\n    }", "      let painted = paint(output: move child);\n    }\n    if 0_u64 < total {\n      let outside = values[0_u64];\n    }");
+    assert!(matches!(
+        denied(source.as_bytes(), "partition", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+#[test]
+fn a_constant_nonempty_range_is_not_an_iteration_partition() {
+    let source = RUNTIME_PARTITION_SOURCE.replace(
+        "    let offset = i * stride;",
+        "    let offset = 0_u64 * stride;",
+    ).replace("    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }", "    invariant bounded: end <= total;");
+    assert!(matches!(
+        denied(source.as_bytes(), "partition", 2),
+        LoopDenial::Loan { .. }
+    ));
+}
+
+#[test]
+fn a_stride_computed_from_the_current_index_is_not_loop_invariant() {
+    let source = RUNTIME_PARTITION_SOURCE
+        .replace("  let stride = width + padding;\n  let cells = 6_u64 * stride;", "  let cells = 96_u64;")
+        .replace("    let offset = i * stride;", "    let stride = 4_u64 - i;\n    let offset = i * stride;")
+        .replace("    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }", "    invariant bounded: end <= total;");
+    assert!(matches!(
+        denied(source.as_bytes(), "partition", 2),
+        LoopDenial::Loan { .. }
+    ));
+}
+
+#[test]
+fn runtime_stencil_rows_retain_adjacent_range_permission() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
+    let table = permission_of(source);
+    let rows = loops(&table, "stencil");
+    assert_eq!(rows.len(), 4);
+    for row in [&rows[0], &rows[2], &rows[3]] {
+        assert_eq!(row.verdict, LoopVerdict::PermittedEligible, "{row:?}");
+        assert_eq!(row.actualization, Some(LoopActualization::IndependentMap));
+    }
+    assert!(matches!(rows[1].verdict, LoopVerdict::Denied(_)));
+}
+
 /// The reduction: a counted loop over a pure callee, folding one accumulator
 /// under `+wrap`. This is the shape the whole rule exists for — the escape
 /// count of the grid family, written as the loop a writer reaches for first.

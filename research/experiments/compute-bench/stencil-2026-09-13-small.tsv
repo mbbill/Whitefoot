@@ -1,0 +1,1215 @@
+# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	1	0	0	first	8875	7000	221	0
+stencil	wf	1	0	1	warm	4542	4000	221	0
+stencil	wf	1	0	2	warm	3125	2000	221	0
+stencil	wf	1	0	3	warm	2875	2000	221	0
+stencil	wf	1	0	4	warm	2833	1000	221	0
+stencil	wf	1	0	5	warm	2834	2000	221	0
+# batch form=wf width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=wf-seq grain=control width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf-seq	1	0	0	first	4667	3000	221	0
+stencil	wf-seq	1	0	1	warm	2833	2000	221	0
+stencil	wf-seq	1	0	2	warm	9042	8000	221	0
+stencil	wf-seq	1	0	3	warm	2750	1000	221	0
+stencil	wf-seq	1	0	4	warm	2917	2000	221	0
+stencil	wf-seq	1	0	5	warm	2666	0	221	0
+# batch form=wf-seq width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=250
+# driver=stencil form=serial grain=none: one thread, a loop over all callbacks width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	serial	1	0	0	first	5416	4000	221	0
+stencil	serial	1	0	1	warm	3667	2000	221	0
+stencil	serial	1	0	2	warm	3208	1000	221	0
+stencil	serial	1	0	3	warm	4458	4000	221	0
+stencil	serial	1	0	4	warm	4250	3000	221	0
+stencil	serial	1	0	5	warm	3083	1000	221	0
+# batch form=serial width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=wf grain=compiler-chosen width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	2	0	0	first	6292	5000	221	0
+stencil	wf	2	0	1	warm	3125	2000	221	0
+stencil	wf	2	0	2	warm	2917	2000	221	0
+stencil	wf	2	0	3	warm	4250	2000	221	0
+stencil	wf	2	0	4	warm	4000	3000	221	0
+stencil	wf	2	0	5	warm	2875	2000	221	0
+# batch form=wf width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	2	0	0	first	17667	17000	221	0
+stencil	static	2	0	1	warm	3458	2000	221	0
+stencil	static	2	0	2	warm	4541	4000	221	0
+stencil	static	2	0	3	warm	3375	2000	221	0
+stencil	static	2	0	4	warm	6625	5000	221	0
+stencil	static	2	0	5	warm	3208	2000	221	0
+# batch form=static width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=11542
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	2	0	0	first	101084	101000	221	0
+stencil	tbb	2	0	1	warm	5042	11000	221	0
+stencil	tbb	2	0	2	warm	5750	8000	221	0
+stencil	tbb	2	0	3	warm	6250	12000	221	0
+stencil	tbb	2	0	4	warm	6334	11000	221	0
+stencil	tbb	2	0	5	warm	5125	9000	221	0
+# batch form=tbb width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=166
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	2	0	0	first	27166	25000	221	0
+stencil	parlay	2	0	1	warm	7916	12000	221	0
+stencil	parlay	2	0	2	warm	3333	5000	221	0
+stencil	parlay	2	0	3	warm	4459	4000	221	0
+stencil	parlay	2	0	4	warm	4583	3000	221	0
+stencil	parlay	2	0	5	warm	3791	3000	221	0
+# batch form=parlay width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=15792
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	2	0	0	first	47208	47000	221	0
+stencil	rayon-join	2	0	1	warm	3833	7000	221	0
+stencil	rayon-join	2	0	2	warm	4958	6000	221	0
+stencil	rayon-join	2	0	3	warm	17875	27000	221	0
+stencil	rayon-join	2	0	4	warm	3959	4000	221	0
+stencil	rayon-join	2	0	5	warm	8208	8000	221	0
+# batch form=rayon-join width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=208
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	2	0	0	first	39166	39000	221	0
+stencil	rayon-iter	2	0	1	warm	3500	6000	221	0
+stencil	rayon-iter	2	0	2	warm	5458	10000	221	0
+stencil	rayon-iter	2	0	3	warm	3291	6000	221	0
+stencil	rayon-iter	2	0	4	warm	10708	16000	221	0
+stencil	rayon-iter	2	0	5	warm	5959	9000	221	0
+# batch form=rayon-iter width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	4	0	0	first	8708	7000	221	0
+stencil	wf	4	0	1	warm	4333	3000	221	0
+stencil	wf	4	0	2	warm	2916	2000	221	0
+stencil	wf	4	0	3	warm	2791	1000	221	0
+stencil	wf	4	0	4	warm	2708	2000	221	0
+stencil	wf	4	0	5	warm	2750	2000	221	0
+# batch form=wf width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	4	0	0	first	74125	99000	221	0
+stencil	static	4	0	1	warm	7000	5000	221	0
+stencil	static	4	0	2	warm	7083	5000	221	0
+stencil	static	4	0	3	warm	8500	8000	221	0
+stencil	static	4	0	4	warm	8375	6000	221	0
+stencil	static	4	0	5	warm	7083	6000	221	0
+# batch form=static width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=21667
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	4	0	0	first	102750	107000	221	0
+stencil	tbb	4	0	1	warm	5208	11000	221	0
+stencil	tbb	4	0	2	warm	7459	6000	221	0
+stencil	tbb	4	0	3	warm	7250	7000	221	0
+stencil	tbb	4	0	4	warm	6667	30000	221	0
+stencil	tbb	4	0	5	warm	6083	25000	221	0
+# batch form=tbb width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	4	0	0	first	46875	68000	221	0
+stencil	parlay	4	0	1	warm	32208	85000	221	0
+stencil	parlay	4	0	2	warm	3917	14000	221	0
+stencil	parlay	4	0	3	warm	5625	8000	221	0
+stencil	parlay	4	0	4	warm	5209	8000	221	0
+stencil	parlay	4	0	5	warm	4042	15000	221	0
+# batch form=parlay width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=64875
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	4	0	0	first	57250	71000	221	0
+stencil	rayon-join	4	0	1	warm	3916	4000	221	0
+stencil	rayon-join	4	0	2	warm	4291	6000	221	0
+stencil	rayon-join	4	0	3	warm	7000	16000	221	0
+stencil	rayon-join	4	0	4	warm	26375	76000	221	0
+stencil	rayon-join	4	0	5	warm	29334	85000	221	0
+# batch form=rayon-join width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=208
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	4	0	0	first	57042	75000	221	0
+stencil	rayon-iter	4	0	1	warm	3917	5000	221	0
+stencil	rayon-iter	4	0	2	warm	3583	7000	221	0
+stencil	rayon-iter	4	0	3	warm	7625	18000	221	0
+stencil	rayon-iter	4	0	4	warm	22667	69000	221	0
+stencil	rayon-iter	4	0	5	warm	23042	67000	221	0
+# batch form=rayon-iter width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=458
+# driver=stencil form=wf grain=compiler-chosen width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	8	0	0	first	6250	5000	221	0
+stencil	wf	8	0	1	warm	3084	1000	221	0
+stencil	wf	8	0	2	warm	4500	4000	221	0
+stencil	wf	8	0	3	warm	3125	1000	221	0
+stencil	wf	8	0	4	warm	2917	2000	221	0
+stencil	wf	8	0	5	warm	2875	1000	221	0
+# batch form=wf width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	8	0	0	first	483958	809000	221	0
+stencil	static	8	0	1	warm	6250	5000	221	0
+stencil	static	8	0	2	warm	9000	7000	221	0
+stencil	static	8	0	3	warm	6209	5000	221	0
+stencil	static	8	0	4	warm	9417	7000	221	0
+stencil	static	8	0	5	warm	6167	4000	221	0
+# batch form=static width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=41875
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	8	0	0	first	121917	137000	221	0
+stencil	tbb	8	0	1	warm	7750	10000	221	0
+stencil	tbb	8	0	2	warm	6208	14000	221	0
+stencil	tbb	8	0	3	warm	12250	15000	221	0
+stencil	tbb	8	0	4	warm	11459	28000	221	0
+stencil	tbb	8	0	5	warm	15166	46000	221	0
+# batch form=tbb width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	8	0	0	first	86500	176000	221	0
+stencil	parlay	8	0	1	warm	10042	37000	221	0
+stencil	parlay	8	0	2	warm	9958	10000	221	0
+stencil	parlay	8	0	3	warm	12083	80000	221	0
+stencil	parlay	8	0	4	warm	8042	112000	221	0
+stencil	parlay	8	0	5	warm	10375	21000	221	0
+# batch form=parlay width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=56250
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	8	0	0	first	124416	314000	221	0
+stencil	rayon-join	8	0	1	warm	4667	24000	221	0
+stencil	rayon-join	8	0	2	warm	8250	41000	221	0
+stencil	rayon-join	8	0	3	warm	6333	32000	221	0
+stencil	rayon-join	8	0	4	warm	5625	24000	221	0
+stencil	rayon-join	8	0	5	warm	5291	24000	221	0
+# batch form=rayon-join width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=83
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	8	0	0	first	89583	192000	221	0
+stencil	rayon-iter	8	0	1	warm	19459	122000	221	0
+stencil	rayon-iter	8	0	2	warm	9625	53000	221	0
+stencil	rayon-iter	8	0	3	warm	6917	36000	221	0
+stencil	rayon-iter	8	0	4	warm	21584	134000	221	0
+stencil	rayon-iter	8	0	5	warm	16875	109000	221	0
+# batch form=rayon-iter width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=458
+# driver=stencil form=wf grain=compiler-chosen width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	16	0	0	first	5833	5000	221	0
+stencil	wf	16	0	1	warm	4459	3000	221	0
+stencil	wf	16	0	2	warm	3041	2000	221	0
+stencil	wf	16	0	3	warm	2875	1000	221	0
+stencil	wf	16	0	4	warm	2750	2000	221	0
+stencil	wf	16	0	5	warm	2750	2000	221	0
+# batch form=wf width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=83
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	16	0	0	first	126266250	823703000	221	0
+stencil	static	16	0	1	warm	122673375	882837000	221	0
+stencil	static	16	0	2	warm	114689208	851091000	221	0
+stencil	static	16	0	3	warm	183729834	1405963000	221	0
+stencil	static	16	0	4	warm	105685791	807973000	221	0
+stencil	static	16	0	5	warm	121183917	872187000	221	0
+# batch form=static width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=160625
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	16	0	0	first	121708	120000	221	0
+stencil	tbb	16	0	1	warm	5667	5000	221	0
+stencil	tbb	16	0	2	warm	4750	6000	221	0
+stencil	tbb	16	0	3	warm	7666	9000	221	0
+stencil	tbb	16	0	4	warm	6583	11000	221	0
+stencil	tbb	16	0	5	warm	6375	6000	221	0
+# batch form=tbb width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	16	0	0	first	173000	601000	221	0
+stencil	parlay	16	0	1	warm	11666	14000	221	0
+stencil	parlay	16	0	2	warm	10041	9000	221	0
+stencil	parlay	16	0	3	warm	13084	12000	221	0
+stencil	parlay	16	0	4	warm	15000	24000	221	0
+stencil	parlay	16	0	5	warm	9667	8000	221	0
+# batch form=parlay width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=87750
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	16	0	0	first	276083	1154000	221	0
+stencil	rayon-join	16	0	1	warm	7417	26000	221	0
+stencil	rayon-join	16	0	2	warm	39667	172000	221	0
+stencil	rayon-join	16	0	3	warm	10167	40000	221	0
+stencil	rayon-join	16	0	4	warm	60042	312000	221	0
+stencil	rayon-join	16	0	5	warm	31083	156000	221	0
+# batch form=rayon-join width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=667
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=0 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	16	0	0	first	230584	763000	221	0
+stencil	rayon-iter	16	0	1	warm	120625	535000	221	0
+stencil	rayon-iter	16	0	2	warm	149500	638000	221	0
+stencil	rayon-iter	16	0	3	warm	80709	345000	221	0
+stencil	rayon-iter	16	0	4	warm	163542	712000	221	0
+stencil	rayon-iter	16	0	5	warm	72834	308000	221	0
+# batch form=rayon-iter width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=458
+# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	1	1	0	first	8917	7000	221	0
+stencil	wf	1	1	1	warm	3083	2000	221	0
+stencil	wf	1	1	2	warm	4292	2000	221	0
+stencil	wf	1	1	3	warm	3125	2000	221	0
+stencil	wf	1	1	4	warm	2959	1000	221	0
+stencil	wf	1	1	5	warm	2875	2000	221	0
+# batch form=wf width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=166
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	16	1	0	first	184875	550000	221	0
+stencil	rayon-iter	16	1	1	warm	208000	746000	221	0
+stencil	rayon-iter	16	1	2	warm	393709	821000	221	0
+stencil	rayon-iter	16	1	3	warm	8083	14000	221	0
+stencil	rayon-iter	16	1	4	warm	5541	14000	221	0
+stencil	rayon-iter	16	1	5	warm	3708	3000	221	0
+# batch form=rayon-iter width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=292
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	16	1	0	first	325667	1193000	221	0
+stencil	rayon-join	16	1	1	warm	159750	672000	221	0
+stencil	rayon-join	16	1	2	warm	55625	222000	221	0
+stencil	rayon-join	16	1	3	warm	91042	374000	221	0
+stencil	rayon-join	16	1	4	warm	30458	125000	221	0
+stencil	rayon-join	16	1	5	warm	7042	24000	221	0
+# batch form=rayon-join width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=542
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	16	1	0	first	189541	580000	221	0
+stencil	parlay	16	1	1	warm	13708	13000	221	0
+stencil	parlay	16	1	2	warm	12792	17000	221	0
+stencil	parlay	16	1	3	warm	14250	12000	221	0
+stencil	parlay	16	1	4	warm	17667	16000	221	0
+stencil	parlay	16	1	5	warm	11625	59000	221	0
+# batch form=parlay width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=85208
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	16	1	0	first	112458	111000	221	0
+stencil	tbb	16	1	1	warm	4875	4000	221	0
+stencil	tbb	16	1	2	warm	4417	3000	221	0
+stencil	tbb	16	1	3	warm	7292	6000	221	0
+stencil	tbb	16	1	4	warm	4750	7000	221	0
+stencil	tbb	16	1	5	warm	5000	4000	221	0
+# batch form=tbb width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	16	1	0	first	115958750	861895000	221	0
+stencil	static	16	1	1	warm	85166000	590386000	221	0
+stencil	static	16	1	2	warm	8721750	44613000	221	0
+stencil	static	16	1	3	warm	18170667	107393000	221	0
+stencil	static	16	1	4	warm	12357750	87501000	221	0
+stencil	static	16	1	5	warm	32904542	211517000	221	0
+# batch form=static width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=89250
+# driver=stencil form=wf grain=compiler-chosen width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	16	1	0	first	6417	5000	221	0
+stencil	wf	16	1	1	warm	4500	3000	221	0
+stencil	wf	16	1	2	warm	3125	2000	221	0
+stencil	wf	16	1	3	warm	2917	2000	221	0
+stencil	wf	16	1	4	warm	2708	1000	221	0
+stencil	wf	16	1	5	warm	2750	2000	221	0
+# batch form=wf width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	8	1	0	first	90000	186000	221	0
+stencil	rayon-iter	8	1	1	warm	5417	23000	221	0
+stencil	rayon-iter	8	1	2	warm	9875	49000	221	0
+stencil	rayon-iter	8	1	3	warm	7750	46000	221	0
+stencil	rayon-iter	8	1	4	warm	6583	13000	221	0
+stencil	rayon-iter	8	1	5	warm	11167	32000	221	0
+# batch form=rayon-iter width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=2000
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	8	1	0	first	78875	141000	221	0
+stencil	rayon-join	8	1	1	warm	9875	34000	221	0
+stencil	rayon-join	8	1	2	warm	5500	20000	221	0
+stencil	rayon-join	8	1	3	warm	54208	276000	221	0
+stencil	rayon-join	8	1	4	warm	117167	578000	221	0
+stencil	rayon-join	8	1	5	warm	39334	198000	221	0
+# batch form=rayon-join width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=542
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	8	1	0	first	94583	199000	221	0
+stencil	parlay	8	1	1	warm	9542	81000	221	0
+stencil	parlay	8	1	2	warm	10834	24000	221	0
+stencil	parlay	8	1	3	warm	8042	95000	221	0
+stencil	parlay	8	1	4	warm	5542	19000	221	0
+stencil	parlay	8	1	5	warm	8750	9000	221	0
+# batch form=parlay width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=44250
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	8	1	0	first	99084	107000	221	0
+stencil	tbb	8	1	1	warm	5041	5000	221	0
+stencil	tbb	8	1	2	warm	5042	6000	221	0
+stencil	tbb	8	1	3	warm	6708	5000	221	0
+stencil	tbb	8	1	4	warm	8875	21000	221	0
+stencil	tbb	8	1	5	warm	8750	14000	221	0
+# batch form=tbb width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	8	1	0	first	133000	237000	221	0
+stencil	static	8	1	1	warm	8250	7000	221	0
+stencil	static	8	1	2	warm	8041	7000	221	0
+stencil	static	8	1	3	warm	9791	8000	221	0
+stencil	static	8	1	4	warm	8875	8000	221	0
+stencil	static	8	1	5	warm	6125	5000	221	0
+# batch form=static width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=45750
+# driver=stencil form=wf grain=compiler-chosen width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	8	1	0	first	6333	5000	221	0
+stencil	wf	8	1	1	warm	3000	2000	221	0
+stencil	wf	8	1	2	warm	9792	8000	221	0
+stencil	wf	8	1	3	warm	3041	2000	221	0
+stencil	wf	8	1	4	warm	3958	3000	221	0
+stencil	wf	8	1	5	warm	2792	1000	221	0
+# batch form=wf width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=83
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	4	1	0	first	50208	62000	221	0
+stencil	rayon-iter	4	1	1	warm	3709	5000	221	0
+stencil	rayon-iter	4	1	2	warm	4333	5000	221	0
+stencil	rayon-iter	4	1	3	warm	6750	10000	221	0
+stencil	rayon-iter	4	1	4	warm	4875	10000	221	0
+stencil	rayon-iter	4	1	5	warm	5166	23000	221	0
+# batch form=rayon-iter width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	4	1	0	first	47291	62000	221	0
+stencil	rayon-join	4	1	1	warm	4000	4000	221	0
+stencil	rayon-join	4	1	2	warm	3500	5000	221	0
+stencil	rayon-join	4	1	3	warm	6167	11000	221	0
+stencil	rayon-join	4	1	4	warm	7000	25000	221	0
+stencil	rayon-join	4	1	5	warm	103625	187000	221	0
+# batch form=rayon-join width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=500
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	4	1	0	first	45625	55000	221	0
+stencil	parlay	4	1	1	warm	4625	6000	221	0
+stencil	parlay	4	1	2	warm	4583	3000	221	0
+stencil	parlay	4	1	3	warm	7000	15000	221	0
+stencil	parlay	4	1	4	warm	6125	29000	221	0
+stencil	parlay	4	1	5	warm	8542	17000	221	0
+# batch form=parlay width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=53500
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	4	1	0	first	112959	121000	221	0
+stencil	tbb	4	1	1	warm	5167	3000	221	0
+stencil	tbb	4	1	2	warm	5083	15000	221	0
+stencil	tbb	4	1	3	warm	9375	11000	221	0
+stencil	tbb	4	1	4	warm	6458	42000	221	0
+stencil	tbb	4	1	5	warm	6500	10000	221	0
+# batch form=tbb width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=291
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	4	1	0	first	62584	77000	221	0
+stencil	static	4	1	1	warm	7208	6000	221	0
+stencil	static	4	1	2	warm	7125	6000	221	0
+stencil	static	4	1	3	warm	9542	8000	221	0
+stencil	static	4	1	4	warm	7333	5000	221	0
+stencil	static	4	1	5	warm	7000	6000	221	0
+# batch form=static width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=17708
+# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	4	1	0	first	6584	5000	221	0
+stencil	wf	4	1	1	warm	3083	2000	221	0
+stencil	wf	4	1	2	warm	4459	4000	221	0
+stencil	wf	4	1	3	warm	3166	2000	221	0
+stencil	wf	4	1	4	warm	3042	2000	221	0
+stencil	wf	4	1	5	warm	2917	2000	221	0
+# batch form=wf width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	2	1	0	first	35208	34000	221	0
+stencil	rayon-iter	2	1	1	warm	3541	6000	221	0
+stencil	rayon-iter	2	1	2	warm	5250	9000	221	0
+stencil	rayon-iter	2	1	3	warm	5667	9000	221	0
+stencil	rayon-iter	2	1	4	warm	8667	15000	221	0
+stencil	rayon-iter	2	1	5	warm	6417	10000	221	0
+# batch form=rayon-iter width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	2	1	0	first	34834	34000	221	0
+stencil	rayon-join	2	1	1	warm	3709	5000	221	0
+stencil	rayon-join	2	1	2	warm	3625	4000	221	0
+stencil	rayon-join	2	1	3	warm	14292	24000	221	0
+stencil	rayon-join	2	1	4	warm	7375	11000	221	0
+stencil	rayon-join	2	1	5	warm	7875	14000	221	0
+# batch form=rayon-join width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	2	1	0	first	23375	21000	221	0
+stencil	parlay	2	1	1	warm	4333	2000	221	0
+stencil	parlay	2	1	2	warm	3375	2000	221	0
+stencil	parlay	2	1	3	warm	5000	4000	221	0
+stencil	parlay	2	1	4	warm	4750	3000	221	0
+stencil	parlay	2	1	5	warm	3459	2000	221	0
+# batch form=parlay width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=22709
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	2	1	0	first	110708	111000	221	0
+stencil	tbb	2	1	1	warm	5125	12000	221	0
+stencil	tbb	2	1	2	warm	6750	8000	221	0
+stencil	tbb	2	1	3	warm	6209	17000	221	0
+stencil	tbb	2	1	4	warm	7209	9000	221	0
+stencil	tbb	2	1	5	warm	5000	11000	221	0
+# batch form=tbb width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=84
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	2	1	0	first	26833	27000	221	0
+stencil	static	2	1	1	warm	3625	2000	221	0
+stencil	static	2	1	2	warm	4917	4000	221	0
+stencil	static	2	1	3	warm	3291	2000	221	0
+stencil	static	2	1	4	warm	4875	3000	221	0
+stencil	static	2	1	5	warm	3333	2000	221	0
+# batch form=static width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=11625
+# driver=stencil form=wf grain=compiler-chosen width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	2	1	0	first	6708	5000	221	0
+stencil	wf	2	1	1	warm	4541	4000	221	0
+stencil	wf	2	1	2	warm	3167	1000	221	0
+stencil	wf	2	1	3	warm	3000	2000	221	0
+stencil	wf	2	1	4	warm	2917	1000	221	0
+stencil	wf	2	1	5	warm	2833	2000	221	0
+# batch form=wf width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=84
+# driver=stencil form=serial grain=none: one thread, a loop over all callbacks width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	serial	1	1	0	first	4833	3000	221	0
+stencil	serial	1	1	1	warm	3084	2000	221	0
+stencil	serial	1	1	2	warm	3000	2000	221	0
+stencil	serial	1	1	3	warm	4542	3000	221	0
+stencil	serial	1	1	4	warm	4292	2000	221	0
+stencil	serial	1	1	5	warm	2916	2000	221	0
+# batch form=serial width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=333
+# driver=stencil form=wf-seq grain=control width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf-seq	1	1	0	first	6167	4000	221	0
+stencil	wf-seq	1	1	1	warm	3125	2000	221	0
+stencil	wf-seq	1	1	2	warm	4458	3000	221	0
+stencil	wf-seq	1	1	3	warm	2958	2000	221	0
+stencil	wf-seq	1	1	4	warm	2833	2000	221	0
+stencil	wf-seq	1	1	5	warm	2792	2000	221	0
+# batch form=wf-seq width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=serial grain=none: one thread, a loop over all callbacks width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	serial	1	2	0	first	5334	4000	221	0
+stencil	serial	1	2	1	warm	3583	2000	221	0
+stencil	serial	1	2	2	warm	3000	1000	221	0
+stencil	serial	1	2	3	warm	7125	6000	221	0
+stencil	serial	1	2	4	warm	4291	2000	221	0
+stencil	serial	1	2	5	warm	3042	2000	221	0
+# batch form=serial width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=166
+# driver=stencil form=wf grain=compiler-chosen width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	2	2	0	first	6917	6000	221	0
+stencil	wf	2	2	1	warm	3000	2000	221	0
+stencil	wf	2	2	2	warm	4208	3000	221	0
+stencil	wf	2	2	3	warm	2875	2000	221	0
+stencil	wf	2	2	4	warm	4250	3000	221	0
+stencil	wf	2	2	5	warm	2834	2000	221	0
+# batch form=wf width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=83
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	2	2	0	first	48667	48000	221	0
+stencil	static	2	2	1	warm	6250	5000	221	0
+stencil	static	2	2	2	warm	5792	4000	221	0
+stencil	static	2	2	3	warm	7417	6000	221	0
+stencil	static	2	2	4	warm	7500	7000	221	0
+stencil	static	2	2	5	warm	5917	4000	221	0
+# batch form=static width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=17208
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	2	2	0	first	154375	152000	221	0
+stencil	tbb	2	2	1	warm	8167	7000	221	0
+stencil	tbb	2	2	2	warm	18125	19000	221	0
+stencil	tbb	2	2	3	warm	13875	33000	221	0
+stencil	tbb	2	2	4	warm	13666	16000	221	0
+stencil	tbb	2	2	5	warm	12417	24000	221	0
+# batch form=tbb width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=166
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	2	2	0	first	29583	28000	221	0
+stencil	parlay	2	2	1	warm	9709	16000	221	0
+stencil	parlay	2	2	2	warm	3834	2000	221	0
+stencil	parlay	2	2	3	warm	4750	4000	221	0
+stencil	parlay	2	2	4	warm	4750	6000	221	0
+stencil	parlay	2	2	5	warm	3708	5000	221	0
+# batch form=parlay width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=15000
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	2	2	0	first	41667	44000	221	0
+stencil	rayon-join	2	2	1	warm	4958	8000	221	0
+stencil	rayon-join	2	2	2	warm	4708	7000	221	0
+stencil	rayon-join	2	2	3	warm	6875	12000	221	0
+stencil	rayon-join	2	2	4	warm	9541	16000	221	0
+stencil	rayon-join	2	2	5	warm	7375	12000	221	0
+# batch form=rayon-join width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=208
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	2	2	0	first	43208	41000	221	0
+stencil	rayon-iter	2	2	1	warm	7208	5000	221	0
+stencil	rayon-iter	2	2	2	warm	5542	6000	221	0
+stencil	rayon-iter	2	2	3	warm	9167	13000	221	0
+stencil	rayon-iter	2	2	4	warm	8750	12000	221	0
+stencil	rayon-iter	2	2	5	warm	8709	12000	221	0
+# batch form=rayon-iter width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=333
+# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	4	2	0	first	7291	6000	221	0
+stencil	wf	4	2	1	warm	3292	2000	221	0
+stencil	wf	4	2	2	warm	6917	5000	221	0
+stencil	wf	4	2	3	warm	3250	2000	221	0
+stencil	wf	4	2	4	warm	4125	4000	221	0
+stencil	wf	4	2	5	warm	3166	2000	221	0
+# batch form=wf width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=166
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	4	2	0	first	67291	69000	221	0
+stencil	static	4	2	1	warm	5833	4000	221	0
+stencil	static	4	2	2	warm	5417	4000	221	0
+stencil	static	4	2	3	warm	7042	6000	221	0
+stencil	static	4	2	4	warm	6833	6000	221	0
+stencil	static	4	2	5	warm	5458	4000	221	0
+# batch form=static width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=37166
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	4	2	0	first	131458	130000	221	0
+stencil	tbb	4	2	1	warm	5083	4000	221	0
+stencil	tbb	4	2	2	warm	5959	5000	221	0
+stencil	tbb	4	2	3	warm	5166	5000	221	0
+stencil	tbb	4	2	4	warm	7583	11000	221	0
+stencil	tbb	4	2	5	warm	5209	8000	221	0
+# batch form=tbb width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	4	2	0	first	54417	82000	221	0
+stencil	parlay	4	2	1	warm	6334	10000	221	0
+stencil	parlay	4	2	2	warm	5875	5000	221	0
+stencil	parlay	4	2	3	warm	17000	36000	221	0
+stencil	parlay	4	2	4	warm	8042	14000	221	0
+stencil	parlay	4	2	5	warm	8417	11000	221	0
+# batch form=parlay width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=27500
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	4	2	0	first	61291	78000	221	0
+stencil	rayon-join	4	2	1	warm	6625	17000	221	0
+stencil	rayon-join	4	2	2	warm	4125	7000	221	0
+stencil	rayon-join	4	2	3	warm	10167	18000	221	0
+stencil	rayon-join	4	2	4	warm	6541	14000	221	0
+stencil	rayon-join	4	2	5	warm	11209	30000	221	0
+# batch form=rayon-join width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=292
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	4	2	0	first	55042	68000	221	0
+stencil	rayon-iter	4	2	1	warm	4292	5000	221	0
+stencil	rayon-iter	4	2	2	warm	3958	8000	221	0
+stencil	rayon-iter	4	2	3	warm	8166	31000	221	0
+stencil	rayon-iter	4	2	4	warm	29875	93000	221	0
+stencil	rayon-iter	4	2	5	warm	32667	80000	221	0
+# batch form=rayon-iter width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=750
+# driver=stencil form=wf grain=compiler-chosen width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	8	2	0	first	10208	8000	221	0
+stencil	wf	8	2	1	warm	3125	3000	221	0
+stencil	wf	8	2	2	warm	2959	1000	221	0
+stencil	wf	8	2	3	warm	9167	8000	221	0
+stencil	wf	8	2	4	warm	4208	2000	221	0
+stencil	wf	8	2	5	warm	2791	2000	221	0
+# batch form=wf width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	8	2	0	first	159041	201000	221	0
+stencil	static	8	2	1	warm	6041	5000	221	0
+stencil	static	8	2	2	warm	5667	4000	221	0
+stencil	static	8	2	3	warm	7125	6000	221	0
+stencil	static	8	2	4	warm	6958	5000	221	0
+stencil	static	8	2	5	warm	5958	5000	221	0
+# batch form=static width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=40208
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	8	2	0	first	129292	139000	221	0
+stencil	tbb	8	2	1	warm	6791	13000	221	0
+stencil	tbb	8	2	2	warm	9292	7000	221	0
+stencil	tbb	8	2	3	warm	9708	24000	221	0
+stencil	tbb	8	2	4	warm	11042	30000	221	0
+stencil	tbb	8	2	5	warm	21250	109000	221	0
+# batch form=tbb width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=250
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	8	2	0	first	85125	171000	221	0
+stencil	parlay	8	2	1	warm	10083	33000	221	0
+stencil	parlay	8	2	2	warm	10750	12000	221	0
+stencil	parlay	8	2	3	warm	11458	73000	221	0
+stencil	parlay	8	2	4	warm	13750	158000	221	0
+stencil	parlay	8	2	5	warm	10625	22000	221	0
+# batch form=parlay width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=56084
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	8	2	0	first	96083	204000	221	0
+stencil	rayon-join	8	2	1	warm	8250	32000	221	0
+stencil	rayon-join	8	2	2	warm	5208	15000	221	0
+stencil	rayon-join	8	2	3	warm	6750	32000	221	0
+stencil	rayon-join	8	2	4	warm	29791	138000	221	0
+stencil	rayon-join	8	2	5	warm	9375	44000	221	0
+# batch form=rayon-join width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=375
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	8	2	0	first	81166	148000	221	0
+stencil	rayon-iter	8	2	1	warm	6916	23000	221	0
+stencil	rayon-iter	8	2	2	warm	45250	234000	221	0
+stencil	rayon-iter	8	2	3	warm	62500	287000	221	0
+stencil	rayon-iter	8	2	4	warm	10000	43000	221	0
+stencil	rayon-iter	8	2	5	warm	8416	39000	221	0
+# batch form=rayon-iter width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=250
+# driver=stencil form=wf grain=compiler-chosen width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	16	2	0	first	6541	5000	221	0
+stencil	wf	16	2	1	warm	3084	1000	221	0
+stencil	wf	16	2	2	warm	9792	9000	221	0
+stencil	wf	16	2	3	warm	3250	3000	221	0
+stencil	wf	16	2	4	warm	4334	2000	221	0
+stencil	wf	16	2	5	warm	3000	2000	221	0
+# batch form=wf width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=209
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	16	2	0	first	115836000	840843000	221	0
+stencil	static	16	2	1	warm	249697542	1948185000	221	0
+stencil	static	16	2	2	warm	89769583	662434000	221	0
+stencil	static	16	2	3	warm	223617209	1717447000	221	0
+stencil	static	16	2	4	warm	187361000	1422835000	221	0
+stencil	static	16	2	5	warm	33548250	247643000	221	0
+# batch form=static width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=138583
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	16	2	0	first	130833	128000	221	0
+stencil	tbb	16	2	1	warm	5250	4000	221	0
+stencil	tbb	16	2	2	warm	4584	3000	221	0
+stencil	tbb	16	2	3	warm	7583	10000	221	0
+stencil	tbb	16	2	4	warm	6083	9000	221	0
+stencil	tbb	16	2	5	warm	4666	8000	221	0
+# batch form=tbb width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	16	2	0	first	173666	535000	221	0
+stencil	parlay	16	2	1	warm	11500	9000	221	0
+stencil	parlay	16	2	2	warm	10208	9000	221	0
+stencil	parlay	16	2	3	warm	13541	58000	221	0
+stencil	parlay	16	2	4	warm	12292	11000	221	0
+stencil	parlay	16	2	5	warm	10750	9000	221	0
+# batch form=parlay width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=100167
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	16	2	0	first	166792	406000	221	0
+stencil	rayon-join	16	2	1	warm	52375	178000	221	0
+stencil	rayon-join	16	2	2	warm	276458	844000	221	0
+stencil	rayon-join	16	2	3	warm	87916	330000	221	0
+stencil	rayon-join	16	2	4	warm	259292	830000	221	0
+stencil	rayon-join	16	2	5	warm	254875	1030000	221	0
+# batch form=rayon-join width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=500
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	16	2	0	first	405958	1389000	221	0
+stencil	rayon-iter	16	2	1	warm	55292	232000	221	0
+stencil	rayon-iter	16	2	2	warm	280083	945000	221	0
+stencil	rayon-iter	16	2	3	warm	350917	1116000	221	0
+stencil	rayon-iter	16	2	4	warm	410167	1487000	221	0
+stencil	rayon-iter	16	2	5	warm	152125	534000	221	0
+# batch form=rayon-iter width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=416
+# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	1	2	0	first	6958	5000	221	0
+stencil	wf	1	2	1	warm	3292	2000	221	0
+stencil	wf	1	2	2	warm	4875	3000	221	0
+stencil	wf	1	2	3	warm	2958	2000	221	0
+stencil	wf	1	2	4	warm	2875	2000	221	0
+stencil	wf	1	2	5	warm	3000	2000	221	0
+# batch form=wf width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=wf-seq grain=control width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf-seq	1	2	0	first	5291	4000	221	0
+stencil	wf-seq	1	2	1	warm	3417	1000	221	0
+stencil	wf-seq	1	2	2	warm	7250	6000	221	0
+stencil	wf-seq	1	2	3	warm	3041	2000	221	0
+stencil	wf-seq	1	2	4	warm	2750	0	221	0
+stencil	wf-seq	1	2	5	warm	2875	2000	221	0
+# batch form=wf-seq width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=83
+# driver=stencil form=serial grain=none: one thread, a loop over all callbacks width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	serial	1	3	0	first	4958	3000	221	0
+stencil	serial	1	3	1	warm	3542	1000	221	0
+stencil	serial	1	3	2	warm	3083	2000	221	0
+stencil	serial	1	3	3	warm	4375	2000	221	0
+stencil	serial	1	3	4	warm	4250	3000	221	0
+stencil	serial	1	3	5	warm	3083	2000	221	0
+# batch form=serial width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=wf-seq grain=control width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf-seq	1	3	0	first	5417	5000	221	0
+stencil	wf-seq	1	3	1	warm	3041	2000	221	0
+stencil	wf-seq	1	3	2	warm	2875	2000	221	0
+stencil	wf-seq	1	3	3	warm	7583	6000	221	0
+stencil	wf-seq	1	3	4	warm	4500	3000	221	0
+stencil	wf-seq	1	3	5	warm	2875	2000	221	0
+# batch form=wf-seq width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=166
+# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	1	3	0	first	7250	6000	221	0
+stencil	wf	1	3	1	warm	3250	2000	221	0
+stencil	wf	1	3	2	warm	4375	3000	221	0
+stencil	wf	1	3	3	warm	3292	2000	221	0
+stencil	wf	1	3	4	warm	3000	2000	221	0
+stencil	wf	1	3	5	warm	2916	2000	221	0
+# batch form=wf width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=209
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	16	3	0	first	235458	809000	221	0
+stencil	rayon-iter	16	3	1	warm	6750	31000	221	0
+stencil	rayon-iter	16	3	2	warm	4750	11000	221	0
+stencil	rayon-iter	16	3	3	warm	11958	35000	221	0
+stencil	rayon-iter	16	3	4	warm	6500	16000	221	0
+stencil	rayon-iter	16	3	5	warm	5125	13000	221	0
+# batch form=rayon-iter width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=375
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	16	3	0	first	187666	467000	221	0
+stencil	rayon-join	16	3	1	warm	6625	13000	221	0
+stencil	rayon-join	16	3	2	warm	5167	10000	221	0
+stencil	rayon-join	16	3	3	warm	7792	24000	221	0
+stencil	rayon-join	16	3	4	warm	7417	23000	221	0
+stencil	rayon-join	16	3	5	warm	7583	21000	221	0
+# batch form=rayon-join width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=250
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	16	3	0	first	151666	431000	221	0
+stencil	parlay	16	3	1	warm	10916	9000	221	0
+stencil	parlay	16	3	2	warm	9375	9000	221	0
+stencil	parlay	16	3	3	warm	12167	10000	221	0
+stencil	parlay	16	3	4	warm	11667	10000	221	0
+stencil	parlay	16	3	5	warm	10917	10000	221	0
+# batch form=parlay width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=93250
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	16	3	0	first	108750	112000	221	0
+stencil	tbb	16	3	1	warm	5167	13000	221	0
+stencil	tbb	16	3	2	warm	5209	3000	221	0
+stencil	tbb	16	3	3	warm	9042	19000	221	0
+stencil	tbb	16	3	4	warm	9084	10000	221	0
+stencil	tbb	16	3	5	warm	6292	18000	221	0
+# batch form=tbb width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	16	3	0	first	108830292	823306000	221	0
+stencil	static	16	3	1	warm	233677167	1796459000	221	0
+stencil	static	16	3	2	warm	239499083	1845897000	221	0
+stencil	static	16	3	3	warm	105827875	818922000	221	0
+stencil	static	16	3	4	warm	148445167	1166212000	221	0
+stencil	static	16	3	5	warm	122335792	848596000	221	0
+# batch form=static width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=113208
+# driver=stencil form=wf grain=compiler-chosen width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	16	3	0	first	8625	7000	221	0
+stencil	wf	16	3	1	warm	3375	2000	221	0
+stencil	wf	16	3	2	warm	7250	6000	221	0
+stencil	wf	16	3	3	warm	3042	2000	221	0
+stencil	wf	16	3	4	warm	2875	2000	221	0
+stencil	wf	16	3	5	warm	2916	2000	221	0
+# batch form=wf width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=83
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	8	3	0	first	109542	216000	221	0
+stencil	rayon-iter	8	3	1	warm	7833	33000	221	0
+stencil	rayon-iter	8	3	2	warm	5625	13000	221	0
+stencil	rayon-iter	8	3	3	warm	19000	111000	221	0
+stencil	rayon-iter	8	3	4	warm	45834	216000	221	0
+stencil	rayon-iter	8	3	5	warm	32083	144000	221	0
+# batch form=rayon-iter width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=333
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	8	3	0	first	101792	196000	221	0
+stencil	rayon-join	8	3	1	warm	8000	31000	221	0
+stencil	rayon-join	8	3	2	warm	4958	14000	221	0
+stencil	rayon-join	8	3	3	warm	43458	199000	221	0
+stencil	rayon-join	8	3	4	warm	57458	248000	221	0
+stencil	rayon-join	8	3	5	warm	21333	82000	221	0
+# batch form=rayon-join width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=583
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	8	3	0	first	97042	162000	221	0
+stencil	parlay	8	3	1	warm	9250	45000	221	0
+stencil	parlay	8	3	2	warm	9500	42000	221	0
+stencil	parlay	8	3	3	warm	14417	139000	221	0
+stencil	parlay	8	3	4	warm	19542	54000	221	0
+stencil	parlay	8	3	5	warm	9375	8000	221	0
+# batch form=parlay width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=69000
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	8	3	0	first	118375	126000	221	0
+stencil	tbb	8	3	1	warm	6042	13000	221	0
+stencil	tbb	8	3	2	warm	7541	11000	221	0
+stencil	tbb	8	3	3	warm	10334	21000	221	0
+stencil	tbb	8	3	4	warm	20041	47000	221	0
+stencil	tbb	8	3	5	warm	8500	55000	221	0
+# batch form=tbb width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=250
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	8	3	0	first	68163542	365285000	221	0
+stencil	static	8	3	1	warm	18072541	108806000	221	0
+stencil	static	8	3	2	warm	8500	7000	221	0
+stencil	static	8	3	3	warm	6041	5000	221	0
+stencil	static	8	3	4	warm	10708	10000	221	0
+stencil	static	8	3	5	warm	6000	4000	221	0
+# batch form=static width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=81625
+# driver=stencil form=wf grain=compiler-chosen width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	8	3	0	first	6625	5000	221	0
+stencil	wf	8	3	1	warm	3084	2000	221	0
+stencil	wf	8	3	2	warm	4417	3000	221	0
+stencil	wf	8	3	3	warm	3000	2000	221	0
+stencil	wf	8	3	4	warm	2833	1000	221	0
+stencil	wf	8	3	5	warm	2875	2000	221	0
+# batch form=wf width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=83
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	4	3	0	first	58333	70000	221	0
+stencil	rayon-iter	4	3	1	warm	3875	3000	221	0
+stencil	rayon-iter	4	3	2	warm	4375	8000	221	0
+stencil	rayon-iter	4	3	3	warm	5292	6000	221	0
+stencil	rayon-iter	4	3	4	warm	7208	17000	221	0
+stencil	rayon-iter	4	3	5	warm	20083	65000	221	0
+# batch form=rayon-iter width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	4	3	0	first	49208	47000	221	0
+stencil	rayon-join	4	3	1	warm	6209	3000	221	0
+stencil	rayon-join	4	3	2	warm	4333	5000	221	0
+stencil	rayon-join	4	3	3	warm	6959	12000	221	0
+stencil	rayon-join	4	3	4	warm	5667	13000	221	0
+stencil	rayon-join	4	3	5	warm	4583	6000	221	0
+# batch form=rayon-join width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=916
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	4	3	0	first	79083	108000	221	0
+stencil	parlay	4	3	1	warm	45791	104000	221	0
+stencil	parlay	4	3	2	warm	4917	11000	221	0
+stencil	parlay	4	3	3	warm	14542	35000	221	0
+stencil	parlay	4	3	4	warm	9084	15000	221	0
+stencil	parlay	4	3	5	warm	9583	21000	221	0
+# batch form=parlay width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=33292
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	4	3	0	first	110167	118000	221	0
+stencil	tbb	4	3	1	warm	7500	6000	221	0
+stencil	tbb	4	3	2	warm	5750	3000	221	0
+stencil	tbb	4	3	3	warm	6542	7000	221	0
+stencil	tbb	4	3	4	warm	7000	14000	221	0
+stencil	tbb	4	3	5	warm	6208	15000	221	0
+# batch form=tbb width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	4	3	0	first	59292	74000	221	0
+stencil	static	4	3	1	warm	7041	6000	221	0
+stencil	static	4	3	2	warm	6959	6000	221	0
+stencil	static	4	3	3	warm	8667	7000	221	0
+stencil	static	4	3	4	warm	8375	7000	221	0
+stencil	static	4	3	5	warm	6875	6000	221	0
+# batch form=static width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=29959
+# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	4	3	0	first	6125	5000	221	0
+stencil	wf	4	3	1	warm	4292	3000	221	0
+stencil	wf	4	3	2	warm	3083	2000	221	0
+stencil	wf	4	3	3	warm	3041	1000	221	0
+stencil	wf	4	3	4	warm	2791	2000	221	0
+stencil	wf	4	3	5	warm	2958	1000	221	0
+# batch form=wf width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	2	3	0	first	43375	43000	221	0
+stencil	rayon-iter	2	3	1	warm	3542	7000	221	0
+stencil	rayon-iter	2	3	2	warm	3542	6000	221	0
+stencil	rayon-iter	2	3	3	warm	4417	6000	221	0
+stencil	rayon-iter	2	3	4	warm	6791	9000	221	0
+stencil	rayon-iter	2	3	5	warm	3833	5000	221	0
+# batch form=rayon-iter width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	2	3	0	first	36375	35000	221	0
+stencil	rayon-join	2	3	1	warm	3709	7000	221	0
+stencil	rayon-join	2	3	2	warm	5834	9000	221	0
+stencil	rayon-join	2	3	3	warm	5584	9000	221	0
+stencil	rayon-join	2	3	4	warm	4750	7000	221	0
+stencil	rayon-join	2	3	5	warm	5041	4000	221	0
+# batch form=rayon-join width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	2	3	0	first	32667	41000	221	0
+stencil	parlay	2	3	1	warm	3625	3000	221	0
+stencil	parlay	2	3	2	warm	4750	5000	221	0
+stencil	parlay	2	3	3	warm	4791	4000	221	0
+stencil	parlay	2	3	4	warm	4792	4000	221	0
+stencil	parlay	2	3	5	warm	3417	2000	221	0
+# batch form=parlay width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=18292
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	2	3	0	first	98500	98000	221	0
+stencil	tbb	2	3	1	warm	6417	14000	221	0
+stencil	tbb	2	3	2	warm	7709	13000	221	0
+stencil	tbb	2	3	3	warm	5750	12000	221	0
+stencil	tbb	2	3	4	warm	6750	14000	221	0
+stencil	tbb	2	3	5	warm	4625	9000	221	0
+# batch form=tbb width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=84
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	2	3	0	first	18250	18000	221	0
+stencil	static	2	3	1	warm	3625	2000	221	0
+stencil	static	2	3	2	warm	4833	5000	221	0
+stencil	static	2	3	3	warm	3333	2000	221	0
+stencil	static	2	3	4	warm	4458	3000	221	0
+stencil	static	2	3	5	warm	3250	1000	221	0
+# batch form=static width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=9375
+# driver=stencil form=wf grain=compiler-chosen width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	2	3	0	first	6292	5000	221	0
+stencil	wf	2	3	1	warm	2958	2000	221	0
+stencil	wf	2	3	2	warm	2833	2000	221	0
+stencil	wf	2	3	3	warm	4250	2000	221	0
+stencil	wf	2	3	4	warm	4167	3000	221	0
+stencil	wf	2	3	5	warm	2875	1000	221	0
+# batch form=wf width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	2	4	0	first	16625	16000	221	0
+stencil	static	2	4	1	warm	3542	3000	221	0
+stencil	static	2	4	2	warm	3208	3000	221	0
+stencil	static	2	4	3	warm	5500	4000	221	0
+stencil	static	2	4	4	warm	3333	1000	221	0
+stencil	static	2	4	5	warm	3167	2000	221	0
+# batch form=static width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=8459
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	2	4	0	first	98292	97000	221	0
+stencil	tbb	2	4	1	warm	7125	14000	221	0
+stencil	tbb	2	4	2	warm	6292	13000	221	0
+stencil	tbb	2	4	3	warm	8084	15000	221	0
+stencil	tbb	2	4	4	warm	5083	11000	221	0
+stencil	tbb	2	4	5	warm	4667	10000	221	0
+# batch form=tbb width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	2	4	0	first	21292	20000	221	0
+stencil	parlay	2	4	1	warm	7542	13000	221	0
+stencil	parlay	2	4	2	warm	3458	2000	221	0
+stencil	parlay	2	4	3	warm	4666	3000	221	0
+stencil	parlay	2	4	4	warm	5000	4000	221	0
+stencil	parlay	2	4	5	warm	3625	5000	221	0
+# batch form=parlay width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=14333
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	2	4	0	first	39083	38000	221	0
+stencil	rayon-join	2	4	1	warm	3583	7000	221	0
+stencil	rayon-join	2	4	2	warm	4166	5000	221	0
+stencil	rayon-join	2	4	3	warm	5959	10000	221	0
+stencil	rayon-join	2	4	4	warm	9750	17000	221	0
+stencil	rayon-join	2	4	5	warm	7709	12000	221	0
+# batch form=rayon-join width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	2	4	0	first	35084	35000	221	0
+stencil	rayon-iter	2	4	1	warm	4541	8000	221	0
+stencil	rayon-iter	2	4	2	warm	5000	7000	221	0
+stencil	rayon-iter	2	4	3	warm	4833	8000	221	0
+stencil	rayon-iter	2	4	4	warm	6167	5000	221	0
+stencil	rayon-iter	2	4	5	warm	3250	6000	221	0
+# batch form=rayon-iter width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	4	4	0	first	6041	5000	221	0
+stencil	wf	4	4	1	warm	2959	2000	221	0
+stencil	wf	4	4	2	warm	6583	4000	221	0
+stencil	wf	4	4	3	warm	2959	1000	221	0
+stencil	wf	4	4	4	warm	4083	3000	221	0
+stencil	wf	4	4	5	warm	2792	2000	221	0
+# batch form=wf width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	4	4	0	first	62458	77000	221	0
+stencil	static	4	4	1	warm	7209	6000	221	0
+stencil	static	4	4	2	warm	7125	5000	221	0
+stencil	static	4	4	3	warm	10000	8000	221	0
+stencil	static	4	4	4	warm	7208	6000	221	0
+stencil	static	4	4	5	warm	6875	6000	221	0
+# batch form=static width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=25667
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	4	4	0	first	100625	106000	221	0
+stencil	tbb	4	4	1	warm	7958	7000	221	0
+stencil	tbb	4	4	2	warm	5916	5000	221	0
+stencil	tbb	4	4	3	warm	6958	7000	221	0
+stencil	tbb	4	4	4	warm	9291	20000	221	0
+stencil	tbb	4	4	5	warm	5959	64000	221	0
+# batch form=tbb width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=334
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	4	4	0	first	37416	46000	221	0
+stencil	parlay	4	4	1	warm	4208	10000	221	0
+stencil	parlay	4	4	2	warm	4083	5000	221	0
+stencil	parlay	4	4	3	warm	8000	15000	221	0
+stencil	parlay	4	4	4	warm	4458	10000	221	0
+stencil	parlay	4	4	5	warm	4167	15000	221	0
+# batch form=parlay width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=51208
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	4	4	0	first	53500	70000	221	0
+stencil	rayon-join	4	4	1	warm	11125	16000	221	0
+stencil	rayon-join	4	4	2	warm	5709	11000	221	0
+stencil	rayon-join	4	4	3	warm	23583	73000	221	0
+stencil	rayon-join	4	4	4	warm	44875	127000	221	0
+stencil	rayon-join	4	4	5	warm	6416	21000	221	0
+# batch form=rayon-join width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=334
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	4	4	0	first	46250	59000	221	0
+stencil	rayon-iter	4	4	1	warm	3834	6000	221	0
+stencil	rayon-iter	4	4	2	warm	5458	7000	221	0
+stencil	rayon-iter	4	4	3	warm	5459	10000	221	0
+stencil	rayon-iter	4	4	4	warm	9375	21000	221	0
+stencil	rayon-iter	4	4	5	warm	3875	18000	221	0
+# batch form=rayon-iter width=4 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=wf grain=compiler-chosen width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	8	4	0	first	6292	4000	221	0
+stencil	wf	8	4	1	warm	3250	1000	221	0
+stencil	wf	8	4	2	warm	3000	2000	221	0
+stencil	wf	8	4	3	warm	4500	3000	221	0
+stencil	wf	8	4	4	warm	3958	3000	221	0
+stencil	wf	8	4	5	warm	2958	2000	221	0
+# batch form=wf width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=167
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	8	4	0	first	126500	194000	221	0
+stencil	static	8	4	1	warm	6250	4000	221	0
+stencil	static	8	4	2	warm	5750	4000	221	0
+stencil	static	8	4	3	warm	7375	6000	221	0
+stencil	static	8	4	4	warm	7250	6000	221	0
+stencil	static	8	4	5	warm	6250	5000	221	0
+# batch form=static width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=44667
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	8	4	0	first	101417	104000	221	0
+stencil	tbb	8	4	1	warm	5167	4000	221	0
+stencil	tbb	8	4	2	warm	4750	9000	221	0
+stencil	tbb	8	4	3	warm	8541	6000	221	0
+stencil	tbb	8	4	4	warm	8084	24000	221	0
+stencil	tbb	8	4	5	warm	8417	25000	221	0
+# batch form=tbb width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=333
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	8	4	0	first	93375	240000	221	0
+stencil	parlay	8	4	1	warm	18125	73000	221	0
+stencil	parlay	8	4	2	warm	11833	11000	221	0
+stencil	parlay	8	4	3	warm	16000	51000	221	0
+stencil	parlay	8	4	4	warm	16333	24000	221	0
+stencil	parlay	8	4	5	warm	13709	13000	221	0
+# batch form=parlay width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=42542
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	8	4	0	first	87666	139000	221	0
+stencil	rayon-join	8	4	1	warm	3916	10000	221	0
+stencil	rayon-join	8	4	2	warm	7000	17000	221	0
+stencil	rayon-join	8	4	3	warm	6125	12000	221	0
+stencil	rayon-join	8	4	4	warm	4042	11000	221	0
+stencil	rayon-join	8	4	5	warm	4125	10000	221	0
+# batch form=rayon-join width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=208
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=8 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	8	4	0	first	82333	166000	221	0
+stencil	rayon-iter	8	4	1	warm	6083	26000	221	0
+stencil	rayon-iter	8	4	2	warm	5292	21000	221	0
+stencil	rayon-iter	8	4	3	warm	6500	22000	221	0
+stencil	rayon-iter	8	4	4	warm	6583	24000	221	0
+stencil	rayon-iter	8	4	5	warm	7000	30000	221	0
+# batch form=rayon-iter width=8 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=208
+# driver=stencil form=wf grain=compiler-chosen width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	16	4	0	first	6958	5000	221	0
+stencil	wf	16	4	1	warm	3500	2000	221	0
+stencil	wf	16	4	2	warm	4333	3000	221	0
+stencil	wf	16	4	3	warm	3083	2000	221	0
+stencil	wf	16	4	4	warm	6166	5000	221	0
+stencil	wf	16	4	5	warm	2834	2000	221	0
+# batch form=wf width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=static grain=equal contiguous partition, persistent helpers, no stealing: a regular-work reference, not a dynamic-scheduling ceiling for skew width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note=excursions retained chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	static	16	4	0	first	133393708	1007924000	221	0
+stencil	static	16	4	1	warm	128107417	999546000	221	0
+stencil	static	16	4	2	warm	58165708	417633000	221	0
+stencil	static	16	4	3	warm	122926000	957079000	221	0
+stencil	static	16	4	4	warm	196079792	1532519000	221	0
+stencil	static	16	4	5	warm	123502667	968208000	221	0
+# batch form=static width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=162041
+# driver=stencil form=tbb grain=oneTBB v2023.1.0 parallel_for, auto_partitioner, range grain 1 width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	tbb	16	4	0	first	143541	151000	221	0
+stencil	tbb	16	4	1	warm	6750	19000	221	0
+stencil	tbb	16	4	2	warm	6541	6000	221	0
+stencil	tbb	16	4	3	warm	18709	38000	221	0
+stencil	tbb	16	4	4	warm	12584	36000	221	0
+stencil	tbb	16	4	5	warm	8750	15000	221	0
+# batch form=tbb width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=250
+# driver=stencil form=parlay grain=ParlayLib native scheduler, parallel_for granularity 1, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	parlay	16	4	0	first	176791	419000	221	0
+stencil	parlay	16	4	1	warm	12792	11000	221	0
+stencil	parlay	16	4	2	warm	10792	9000	221	0
+stencil	parlay	16	4	3	warm	13250	11000	221	0
+stencil	parlay	16	4	4	warm	13792	12000	221	0
+stencil	parlay	16	4	5	warm	12250	11000	221	0
+# batch form=parlay width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=1 shutdown_ns=106250
+# driver=stencil form=rayon-join grain=rayon 1.12.0 join, bisect the chunk range to one callback, right-offer fork width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-join	16	4	0	first	251917	766000	221	0
+stencil	rayon-join	16	4	1	warm	8042	33000	221	0
+stencil	rayon-join	16	4	2	warm	166917	575000	221	0
+stencil	rayon-join	16	4	3	warm	43084	187000	221	0
+stencil	rayon-join	16	4	4	warm	9791	30000	221	0
+stencil	rayon-join	16	4	5	warm	7417	19000	221	0
+# batch form=rayon-join width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=292
+# driver=stencil form=rayon-iter grain=rayon 1.12.0 parallel iterator, its own adaptive splitting width=16 cpus=8 oversubscribed=1 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	rayon-iter	16	4	0	first	174291	533000	221	0
+stencil	rayon-iter	16	4	1	warm	11416	47000	221	0
+stencil	rayon-iter	16	4	2	warm	10542	41000	221	0
+stencil	rayon-iter	16	4	3	warm	10750	47000	221	0
+stencil	rayon-iter	16	4	4	warm	6917	22000	221	0
+stencil	rayon-iter	16	4	5	warm	5042	12000	221	0
+# batch form=rayon-iter width=16 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=250
+# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	1	4	0	first	6541	5000	221	0
+stencil	wf	1	4	1	warm	4750	4000	221	0
+stencil	wf	1	4	2	warm	3167	2000	221	0
+stencil	wf	1	4	3	warm	3041	2000	221	0
+stencil	wf	1	4	4	warm	2875	2000	221	0
+stencil	wf	1	4	5	warm	2875	2000	221	0
+# batch form=wf width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=208
+# driver=stencil form=wf-seq grain=control width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf-seq	1	4	0	first	4916	3000	221	0
+stencil	wf-seq	1	4	1	warm	3042	2000	221	0
+stencil	wf-seq	1	4	2	warm	3041	2000	221	0
+stencil	wf-seq	1	4	3	warm	7125	6000	221	0
+stencil	wf-seq	1	4	4	warm	4458	3000	221	0
+stencil	wf-seq	1	4	5	warm	3000	1000	221	0
+# batch form=wf-seq width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125
+# driver=stencil form=serial grain=none: one thread, a loop over all callbacks width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	serial	1	4	0	first	5250	5000	221	0
+stencil	serial	1	4	1	warm	3334	2000	221	0
+stencil	serial	1	4	2	warm	3125	1000	221	0
+stencil	serial	1	4	3	warm	5708	5000	221	0
+stencil	serial	1	4	4	warm	3083	2000	221	0
+stencil	serial	1	4	5	warm	2958	1000	221	0
+# batch form=serial width=1 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=250
+# driver=stencil form=wf grain=compiler-chosen width=2 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=17 height=13 steps=3 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+stencil	wf	2	4	0	first	11209	9000	221	0
+stencil	wf	2	4	1	warm	3125	2000	221	0
+stencil	wf	2	4	2	warm	12459	11000	221	0
+stencil	wf	2	4	3	warm	3042	2000	221	0
+stencil	wf	2	4	4	warm	3042	3000	221	0
+stencil	wf	2	4	5	warm	2875	2000	221	0
+# batch form=wf width=2 calls=5 gap_us=0 outputs=1326 compared=1326 explicit_shutdown=0 shutdown_ns=125

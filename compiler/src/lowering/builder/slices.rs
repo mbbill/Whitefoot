@@ -1,5 +1,5 @@
 use crate::semantic::{
-    CheckedExpression, CheckedFlatElement, CheckedSliceRoot, CheckedSliceSource,
+    CheckedExpression, CheckedFlatElement, CheckedSliceRange, CheckedSliceRoot, CheckedSliceSource,
     CheckedTargetDomainObligation,
 };
 
@@ -7,6 +7,22 @@ use super::*;
 
 impl IrBuilder<'_> {
     pub(super) fn lower_slice_of(
+        &mut self,
+        source: &CheckedSliceSource,
+        range: Option<&CheckedSliceRange>,
+        expected_element: CheckedFlatElement,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let slice = self.lower_slice_source(source, expected_element)?;
+        let Some(range) = range else {
+            return Ok(slice);
+        };
+        let start = self.expression(&range.start)?;
+        let end = self.expression(&range.end)?;
+        let ty = self.value_type(slice)?;
+        self.define(ty, IrOperation::SliceRange { slice, start, end })
+    }
+
+    fn lower_slice_source(
         &mut self,
         source: &CheckedSliceSource,
         expected_element: CheckedFlatElement,

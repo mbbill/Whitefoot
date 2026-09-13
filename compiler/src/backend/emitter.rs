@@ -2191,6 +2191,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 self.emit_slice_from_buffer(result, ty, *buffer)
             }
             IrOperation::SliceFromRun { run } => self.emit_slice_from_run(result, ty, *run),
+            IrOperation::SliceRange { slice, start, end } => {
+                self.emit_slice_range(result, ty, *slice, *start, *end)
+            }
             IrOperation::SliceMeasure { slice } => self.emit_slice_length(result, ty, *slice),
             IrOperation::SliceIndex {
                 slice,
