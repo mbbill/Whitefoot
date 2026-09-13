@@ -250,3 +250,40 @@ counts, and equality with the undecorated graph. A current WF spine compiled
 to x86-64 Linux assembly independently confirms the `callq wf_spine@PLT`
 trigger. This repairs non-normative build output; no source rule, signature,
 lowering, frame size, or runtime stack budget changes.
+
+## Reusing identical native objects in integration tests
+
+The Linux corpus and conformance jobs on `f7261e05` reached their eight-minute
+ceiling. The corpus printed 70/70 passing program tests before cancellation;
+the native conformance adapter had not completed. Every executable was
+recompiling the same eleven C units and ordinary LLVM library unit. No source
+failure, test exclusion or budget increase follows from these timeouts.
+
+One freshly emitted `exit_status(0)` module was linked five times by each
+recipe, alternating their order, on arm64 macOS with Apple Clang 21.0.0.
+The source and object recipes use the same twelve inputs in the same order,
+`-pthread`, `-O2`, both include directories and `-lm`. Default C and explicit
+C11 remain separate recipes. The table records seconds and all five pairs:
+
+| C dialect | Full source link samples | Reused object link samples | Median full / reused | Initial object build |
+|---|---|---|---|---|
+| Host default | 1.5164, 1.5756, 1.9027, 1.9883, 1.7717 | 0.1347, 0.1333, 0.2141, 0.2214, 0.2141 | 1.7717 / 0.2141 | 2.5278 |
+| C11 | 1.8159, 1.7754, 1.8298, 1.9745, 1.6992 | 0.1413, 0.1610, 0.1386, 0.1750, 0.1532 | 1.8159 / 0.1532 | 2.3462 |
+
+Both sets occupy 86,320 object bytes. All ten paired executions had identical
+stdout, stderr and successful status; the linked `__text` bytes were identical
+between source and object recipes in both dialects. The repeated link cost
+fell by 87.9% and 91.6%, respectively. These are local build-cost measurements,
+not Linux deadline results or program runtime speedups.
+
+`compiler/tests/support/mod.rs`, used by the existing programs and conformance
+targets, now holds one in-process object-byte cache per dialect. Every native
+unit remains an explicit link input; no archive selection or program-content
+classification omits a body. Each emitted module and observer is still
+compiled afresh, with the observer in its original position after the floor.
+Temporary cache-build files are removed after their bytes are read. Cases
+retain their original source/header staging and cleanup policies, and the new
+object files are removed before execution so directory fixtures cannot see
+them. Backend tests with facility-substitution defines keep their existing
+uncached path. No acceptance, runtime, assertion, case collection or verdict
+changes accompany this build repair.

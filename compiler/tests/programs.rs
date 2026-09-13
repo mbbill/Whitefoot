@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod support;
+
 mod programs {
     mod binary;
     mod generics;

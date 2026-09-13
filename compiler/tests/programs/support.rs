@@ -7,17 +7,11 @@ use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
-    COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
-    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
-    COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
-    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
-    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailure,
-    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
-    ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, OverlapLowering,
-    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
-    WINDOWS_RUNTIME_HEADER, compile, compile_with_overlap, compile_with_permission_ledger,
+    CompilationFailure, CompilerLimits, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
+    OverlapLowering, SourceInput, compile, compile_with_overlap, compile_with_permission_ledger,
 };
+
+use crate::support::append_runtime_objects;
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 
@@ -43,112 +37,12 @@ fn invocation_argument(bytes: &[u8]) -> OsString {
     )
 }
 
-/// Links ordinary definitions and their private implementation dependencies.
-/// The build chooses this library independently of accepted-program contents.
-fn stage_runtime_units(command: &mut Command, directory: &Path) -> Option<Vec<&'static str>> {
-    let mut units = vec![
-        ("ordinary_values.h", ORDINARY_VALUES_HEADER),
-        ("ordinary_values.c", ORDINARY_VALUES_SOURCE),
-        ("ordinary_values.ll", ORDINARY_VALUES_LLVM),
-        ("sched/core.h", SCHED_CORE_HEADER),
-        ("sched/prim.h", SCHED_PRIM_HEADER),
-        ("sched/switch.h", SCHED_SWITCH_HEADER),
-        ("sched/entry.h", SCHED_ENTRY_HEADER),
-        ("sched/core.c", SCHED_CORE_SOURCE),
-        ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
-        ("sched/entry.c", SCHED_ENTRY_SOURCE),
-    ];
-    units.extend([
-        ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
-        ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-        ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
-        ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
-        (
-            "completion/socket_address.h",
-            COMPLETION_SOCKET_ADDRESS_HEADER,
-        ),
-        (
-            "completion/linux_io_uring.h",
-            COMPLETION_LINUX_IO_URING_HEADER,
-        ),
-        // Every header of the runtime is staged on every platform, exactly
-        // as the driver stages them (`src/bin/whitefootc.rs`): a header is
-        // never a clang input, and `bridge.c` is one shared unit whose
-        // Windows arm names these two in text this host does not compile.
-        ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
-        ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
-        ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-        ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
-        ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-        ("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
-        ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-        (
-            "completion/linux_io_uring.c",
-            COMPLETION_LINUX_IO_URING_SOURCE,
-        ),
-    ]);
-    // The staged tree keeps the repository's own two directories, because the
-    // completion header reaches the scheduler core by the relative path it
-    // uses in the tree.
-    std::fs::create_dir_all(directory.join("completion")).expect("stage completion directory");
-    std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
-    for (name, source) in &units {
-        std::fs::write(directory.join(name), source).expect("write runtime unit");
-    }
-    command
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("sched/core.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("sched/prim_host.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("sched/entry.c"));
-    command
-        .arg("-I")
-        .arg(directory.join("completion"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("completion/completion_runtime.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("completion/wait_host.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("completion/file_adapter.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("completion/file_posix.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("completion/completion_bridge.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("completion/linux_io_uring.c"));
-    command
-        .arg("-I")
-        .arg(directory)
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("ordinary_values.c"))
-        .arg("-x")
-        .arg("ir")
-        .arg(directory.join("ordinary_values.ll"));
-    Some(units.into_iter().map(|(name, _)| name).collect())
-}
-
 /// Links one emitted module with the same ordinary library as the driver.
 fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     let mut command = Command::new("/usr/bin/clang");
     command.arg("-x").arg("ir").arg(module);
-    // Every integration executable links the current resource floor so the
-    // harness exercises the same runtime boundary as the driver. Stack
-    // availability remains outside the language verdict modeled by this test.
-    let floor_unit = directory.join("wf_floor.c");
-    std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
-    command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
-    let completion_units = stage_runtime_units(&mut command, directory);
+    command.arg("-pthread");
+    let (sources, objects) = append_runtime_objects(&mut command, directory, None, None);
     let compilation = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(HOST_LINK_LIBRARIES)
@@ -162,17 +56,11 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
         String::from_utf8_lossy(&compilation.stderr),
         llvm
     );
-    std::fs::remove_file(&floor_unit).expect("remove the floor runtime unit");
-    if let Some(names) = completion_units {
-        for name in names {
-            std::fs::remove_file(directory.join(name)).expect("remove completion runtime unit");
-        }
-        // The staged tree keeps the repository's own two directories, because
-        // the completion header reaches the scheduler core by the relative
-        // path it uses in the tree.
-        for staged in ["completion", "sched"] {
-            std::fs::remove_dir(directory.join(staged)).expect("remove staged runtime directory");
-        }
+    for path in objects.into_iter().chain(sources) {
+        std::fs::remove_file(path).expect("remove staged native build input");
+    }
+    for name in ["completion", "sched"] {
+        std::fs::remove_dir(directory.join(name)).expect("remove staged native source directory");
     }
 }
 
@@ -338,11 +226,9 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
     ));
     std::fs::create_dir(&directory).expect("create unique grant-count directory");
     let module = directory.join("counted.ll");
-    let floor = directory.join("wf_floor.c");
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&module, llvm).expect("write the module");
-    std::fs::write(&floor, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     std::fs::write(
         &observer,
         "#include <stdio.h>\nextern unsigned long wf__par_grants(void);\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants());\n}\n",
@@ -354,16 +240,10 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
         .arg("-pthread")
         .arg("-x")
         .arg("ir")
-        .arg(&module)
-        .arg("-x")
-        .arg("c")
-        .arg(&floor)
-        .arg(&observer);
-    // This is the normal compiler link plus one read-only observer.  Keep its
-    // runtime-unit selection identical to every other executable path: a
-    // program that actualizes target I/O must never become linkable merely
-    // because the caller did not ask to observe the compute scheduler.
-    let _runtime_units = stage_runtime_units(&mut command, &directory);
+        .arg(&module);
+    // Keep the observer fresh and in its original position after the floor.
+    let (_sources, objects) =
+        append_runtime_objects(&mut command, &directory, Some("c11"), Some(&observer));
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(HOST_LINK_LIBRARIES)
@@ -376,6 +256,9 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
         "the runtime and its observer must link:\n{}",
         String::from_utf8_lossy(&linked.stderr)
     );
+    for object in objects {
+        std::fs::remove_file(object).expect("remove materialized native library object");
+    }
     let mut command = Command::new(&executable);
     command.current_dir(&directory);
     match workers {

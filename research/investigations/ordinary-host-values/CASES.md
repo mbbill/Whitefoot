@@ -33,6 +33,13 @@ The structure gate has passed: 25 runner tests and 130/130 active rules covered.
 The canonical adapter and native host CI report execution against their exact
 revision. This register records rule grounds, not a substitute gate result.
 
+The native adapter reuses identical compiled library object bytes within its
+test process; every case still compiles its own module and links every native
+body with the same options. New object files are removed before execution,
+preserving fixture-visible directory contents. This changes build cost only:
+case selection, source verdicts, arrangements and exit expectations are
+unchanged. The measured ground is in `BACKEND-TESTS.md`.
+
 The grammar binary's census is 86 productions, 136 decisions and 111 terminal
 predicates. C2 removes `program_kind`, `input_label`, their two optional use
 sites, and the `command`/`as` terminals. Its
