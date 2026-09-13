@@ -101,7 +101,7 @@ DOCKER_IMAGE ?= wf-io-bench:linux
 
 .PHONY: programs-check build prepare compiler gen verify bench bench-pipe linux linux-image expected clean chain \
 	read-build read-gen read-uncache read-settle read-warm read-verify expected-read bench-read \
-	linux-read net-tools net-verify linux-net
+	linux-read net-tools uring-check net-verify linux-net
 
 build: prepare compiler $(BUILD)/gen $(BUILD)/baseline $(BUILD)/runner \
 	$(BUILD)/pipe_producer $(BUILD)/pipe_harness \
@@ -519,6 +519,7 @@ chain: $(BUILD)/chain $(BUILD)/gen
 # and the runner all execute the same bytes.
 #
 #   make net-tools    build the three C tools
+#   make uring-check  the io_uring reference's own deterministic traces
 #   make net-verify   every server against netload at 4 connections
 #   make linux-net    the protocol, here
 NET_OUT := $(WORK)/net
@@ -530,6 +531,26 @@ net-tools: $(BUILD)/uring_echo $(BUILD)/epoll_echo $(BUILD)/netload
 
 $(BUILD)/uring_echo: uring_echo.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+# The reference's own correctness, separate from any measurement. The check
+# program includes `uring_echo.c` and replaces only kernel setup, enter and the
+# synchronous send result, so the buffer-loan queue, the receive re-arm and the
+# CQE handling under check are the ones the measured binary runs. It therefore
+# needs no io_uring on the host and no network, and it decides a verdict rather
+# than reporting a rate. The inline-send pair is built twice because the two
+# configurations retire a send along different paths.
+URING_CHECK_INLINE := 0 1
+URING_CHECK_BINARIES := \
+	$(URING_CHECK_INLINE:%=$(BUILD)/uring_echo_check_inline%)
+
+$(BUILD)/uring_echo_check_inline%: uring_echo_check.c uring_echo.c | prepare
+	$(CLANG) $(CFLAGS) -Wpedantic -g -pthread \
+		-DWF_BENCH_URING_INLINE_SEND=$* uring_echo_check.c -o $@
+
+uring-check: $(URING_CHECK_BINARIES)
+	@for binary in $(URING_CHECK_BINARIES); do \
+		"$$binary" || exit 1; \
+	done
 
 $(BUILD)/epoll_echo: epoll_echo.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@

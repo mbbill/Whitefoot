@@ -633,7 +633,10 @@ wins: 64 KiB against 8 KiB provided buffers gives paired throughput
 large-message sample, while all eight small-message ranges cross 1.0.
 *Verdict:* **holds** — a native baseline and a correctness repair to it,
 independent of any Whitefoot runtime, and the reason the earlier epoll-only
-panel cannot be read as a complete native target.
+panel cannot be read as a complete native target. `io/salvage-iocp-uring`
+carries both defects' repairs and the selectable provided-buffer size into the
+tree's `uring_echo.c`, with `make uring-check` deciding the queue, re-arm and
+retirement invariants without a kernel or a network.
 `codex/io-native-baselines@0357259d`, *Thirty-sixth experiment: strengthen the
 native completion reference* (screen at `475008b5`).
 
@@ -649,8 +652,10 @@ cleanup frees the operation's wake storage — and, separately, a missing
 store-to-load barrier on the unmeasured SQPOLL path between publishing the SQ
 tail and reading the wake-needed flag, matched against upstream liburing.
 *Verdict:* **holds** for the send-policy screen and the shutdown-loan
-correction, both native-reference facts; the SQPOLL barrier is separately
-**unresolved** and appears in the open section.
+correction, both native-reference facts; the SQPOLL barrier is a correctness
+fact of the same file and `io/salvage-iocp-uring` carries it, together with the
+inline-send configuration and the shutdown-loan correction, into
+`research/experiments/io-completion-bench/uring_echo.c`.
 `codex/io-native-baselines@0357259d`, *Thirty-eighth experiment: native
 completion receive with immediate send*.
 
@@ -1366,16 +1371,16 @@ a real Windows host. Settle the remainder by carrying those hooks and their
 wiring from the same branch, or by recording that the current wait structure
 cannot reach the interleaving.
 
-**Is the SQPOLL store-to-load barrier still missing?** The branch found that a
-release store of the submission tail and an acquire load of the ring flags do
+**Is the SQPOLL store-to-load barrier still missing?** No. The branch found that
+a release store of the submission tail and an acquire load of the ring flags do
 not by themselves order the publication against the read of the wake-needed bit,
-and matched the requirement against upstream liburing. The tree's
-`research/experiments/io-completion-bench/uring_echo.c` still publishes the tail
-with a release store and then reads the flags with an acquire load, with no
-fence between; the compiler's own io_uring path has no SQPOLL code at all. The
-path is optional, off by default and never enabled by any screen, so the risk is
-latent. Settle it by inserting the sequentially consistent fence in the
-benchmark's poll-thread path, or by recording that the path is retired.
+and matched the requirement against upstream liburing.
+`io/salvage-iocp-uring` carries the tree's
+`research/experiments/io-completion-bench/uring_echo.c` from that branch, and its
+poll-thread path now executes a sequentially consistent fence between the two.
+The compiler's own io_uring path still has no SQPOLL code at all, so the
+requirement has no second site in the tree, and the benchmark's path remains
+optional, off by default and enabled by no screen.
 
 **Which of the branch's dated memory facts remain true?** The branch's
 `mcts_mem/whitefoot/system-interface.md` carries 36 dated 2026-09-0x facts
