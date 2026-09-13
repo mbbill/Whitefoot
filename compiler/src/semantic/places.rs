@@ -14,11 +14,17 @@
 //! the overlap relation.
 
 use crate::DeclarationId;
+use std::collections::BTreeSet;
 
 use super::model::{
     BindingId, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedMatchArm, CheckedMode,
     CheckedStatement, CheckedType, IntegerType,
 };
+
+/// One source formation occurrence. Endpoint values are captured by the
+/// proof flow; an identifier alone never proves separation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct RangeId(pub(crate) u32);
 
 /// Root of a tracked place: a function-local binding (parameters, `let`
 /// bindings of every right-hand form, and match binders share the dense
@@ -87,6 +93,7 @@ impl PlaceOffset {
 pub(crate) enum PlaceStep {
     Field(u32),
     Subscript(PlaceOffset),
+    Range(RangeId),
 }
 
 impl PlaceStep {
@@ -95,6 +102,7 @@ impl PlaceStep {
         match (self, other) {
             (Self::Subscript(left), Self::Subscript(right)) => left.provably_same(right),
             (Self::Field(left), Self::Field(right)) => left == right,
+            (Self::Range(left), Self::Range(right)) => left.0 == right.0,
             _ => false,
         }
     }
@@ -106,6 +114,7 @@ impl PlaceStep {
         match (self, other) {
             (Self::Subscript(left), Self::Subscript(right)) => left.provably_distinct(right),
             (Self::Field(left), Self::Field(right)) => left != right,
+            (Self::Range(_), _) | (_, Self::Range(_)) => false,
             _ => true,
         }
     }
@@ -192,9 +201,46 @@ impl ResolvedPlace {
 /// Whether two paths select two disjoint storages: some step in their common
 /// prefix provably selects two different storages [OWN-7].
 pub(crate) fn paths_diverge(left: &[PlaceStep], right: &[PlaceStep]) -> bool {
-    left.iter()
-        .zip(right)
-        .any(|(left, right)| left.provably_distinct(*right))
+    paths_diverge_with_ranges(left, right, &BTreeSet::new())
+}
+
+fn paths_diverge_with_ranges(
+    left: &[PlaceStep],
+    right: &[PlaceStep],
+    separated: &BTreeSet<(RangeId, RangeId)>,
+) -> bool {
+    for (left, right) in left.iter().zip(right) {
+        if matches!(left, PlaceStep::Range(_)) || matches!(right, PlaceStep::Range(_)) {
+            if left != right {
+                // Later subscripts are relative to different descriptors:
+                // unequal relative offsets do not prove unequal elements.
+                return match (left, right) {
+                    (PlaceStep::Range(left), PlaceStep::Range(right)) => {
+                        separated.contains(&((*left).min(*right), (*left).max(*right)))
+                    }
+                    _ => false,
+                };
+            }
+        } else if left.provably_distinct(*right) {
+            return true;
+        }
+    }
+    false
+}
+
+/// The first different relative frames under one identical containing path.
+/// A source proof of their separation also separates all their descendants.
+pub(crate) fn range_pair(left: &[PlaceStep], right: &[PlaceStep]) -> Option<(RangeId, RangeId)> {
+    for (left, right) in left.iter().zip(right) {
+        if left == right {
+            continue;
+        }
+        return match (left, right) {
+            (PlaceStep::Range(left), PlaceStep::Range(right)) => Some((*left, *right)),
+            _ => None,
+        };
+    }
+    None
 }
 
 /// What one binding reads through by `deref`, for place resolution.
@@ -245,6 +291,7 @@ pub(crate) struct BindingSummary {
 pub(crate) struct PlaceMap {
     /// Dense per-binding summaries indexed by [`BindingId`].
     bindings: Vec<BindingSummary>,
+    separated_ranges: BTreeSet<(RangeId, RangeId)>,
 }
 
 impl PlaceMap {
@@ -263,9 +310,32 @@ impl PlaceMap {
             summary.holder = holder;
             summary.implicit_deref = implicit_deref;
             summary.delivery_carrier = matches!(parameter.mode, CheckedMode::Own);
+            if matches!(parameter.ty, CheckedType::Slice { .. }) {
+                // The formal range is an opaque incoming origin. The call
+                // boundary checked compatibility of the actual loans; it is
+                // enclosing storage, never a fresh iteration allocation.
+                summary.view_origin = Some(ResolvedPlace::binding(parameter.binding));
+            }
         }
         map.collect_block_bindings(&function.body);
+        for outcome in &function.entailment.obligations {
+            if outcome.discharged
+                && let Some((left, right)) = outcome.formed_range_separation
+            {
+                map.record_range_separation(left, right);
+            }
+        }
         map
+    }
+
+    pub(crate) fn record_range_separation(&mut self, left: RangeId, right: RangeId) {
+        self.separated_ranges
+            .insert((left.min(right), left.max(right)));
+    }
+
+    pub(crate) fn overlaps(&self, left: &ResolvedPlace, right: &ResolvedPlace) -> bool {
+        left.root == right.root
+            && !paths_diverge_with_ranges(&left.path, &right.path, &self.separated_ranges)
     }
 
     pub(crate) fn summary_mut(&mut self, binding: BindingId) -> &mut BindingSummary {
@@ -396,10 +466,21 @@ impl PlaceMap {
     /// it carries its source's origin unchanged. Everything else — a view
     /// parameter, a view a callee returned — leaves this `None`, and the
     /// judgments that read it deny rather than guess.
-    fn view_origin_of(&self, value: &CheckedExpression) -> Option<ResolvedPlace> {
+    pub(super) fn view_origin_of(&self, value: &CheckedExpression) -> Option<ResolvedPlace> {
         match value {
-            CheckedExpression::SliceOf { source, .. } => {
-                Some(super::permission::slice_source_place(self, source))
+            CheckedExpression::SliceOf {
+                source,
+                loan,
+                range,
+                ..
+            } => {
+                let mut place = super::permission::slice_source_place(self, source)?;
+                if range.is_some()
+                    || matches!(source, super::model::CheckedSliceSource::ViewHolder { .. })
+                {
+                    place.path.push(PlaceStep::Range(*loan));
+                }
+                Some(place)
             }
             CheckedExpression::Binding {
                 binding,

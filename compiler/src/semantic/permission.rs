@@ -229,10 +229,10 @@ impl LoanStrength {
 }
 
 impl Access {
-    fn conflicts(&self, other: &Self) -> bool {
+    fn conflicts(&self, other: &Self, places: &PlaceMap) -> bool {
         match (self, other) {
             (Self::Place { place: left, .. }, Self::Place { place: right, .. }) => {
-                left.overlaps(right)
+                places.overlaps(left, right)
             }
             (Self::Arena { region: left, .. }, Self::Arena { region: right, .. }) => left == right,
             (Self::Place { .. }, Self::Arena { .. }) | (Self::Arena { .. }, Self::Place { .. }) => {
@@ -798,7 +798,8 @@ enum InterposedRefusal {
 /// made the analysis O(m²·n) in place resolution and allocation. On the
 /// frozen real-source fixtures — whose entry blocks carry tens of calls — that
 /// was the difference between a suite that finishes and one that does not.
-struct BlockWindows<'check> {
+struct BlockWindows<'check, 'places> {
+    places: &'places PlaceMap,
     /// Every statement of the block, in source order, classified as an
     /// interposed member. Candidate statements are classified too: they are
     /// interposed members of the non-adjacent windows [`collect_runs`] judges.
@@ -887,6 +888,7 @@ impl<'check> Program<'check> {
             return;
         }
         let windows = BlockWindows {
+            places,
             statements: block
                 .iter()
                 .enumerate()
@@ -918,7 +920,7 @@ impl<'check> Program<'check> {
     /// yields no wait before B and exactly A before C.
     fn collect_completion_steps(
         &self,
-        windows: &BlockWindows<'check>,
+        windows: &BlockWindows<'check, '_>,
         permissions: &mut FunctionPermissions,
     ) {
         let candidates = &windows.candidates;
@@ -967,7 +969,11 @@ impl<'check> Program<'check> {
     /// its ordered pairs, so nothing in the window escapes judgment — which is
     /// [PAR-1]'s "permission for a chain is exactly permission for every
     /// ordered pair it contains", read over windows.
-    fn collect_runs(&self, windows: &BlockWindows<'check>, permissions: &mut FunctionPermissions) {
+    fn collect_runs(
+        &self,
+        windows: &BlockWindows<'check, '_>,
+        permissions: &mut FunctionPermissions,
+    ) {
         let group = &windows.candidates;
         let mut start = 0;
         while start + 1 < group.len() {
@@ -1024,7 +1030,7 @@ impl<'check> Program<'check> {
     /// statement is known.
     fn judge(
         &self,
-        windows: &BlockWindows<'check>,
+        windows: &BlockWindows<'check, '_>,
         first_ordinal: usize,
         second_ordinal: usize,
     ) -> PermissionVerdict {
@@ -1120,9 +1126,14 @@ impl<'check> Program<'check> {
                 return PermissionVerdict::Denied(Denial::UnresolvedFootprint { side, argument });
             }
         }
-        if let Some(denial) =
-            footprint_conflict(left, PairSide::First, right, PairSide::Second, true)
-        {
+        if let Some(denial) = footprint_conflict(
+            windows.places,
+            left,
+            PairSide::First,
+            right,
+            PairSide::Second,
+            true,
+        ) {
             return PermissionVerdict::Denied(denial);
         }
         for (offset, record) in interposed.iter().enumerate() {
@@ -1133,14 +1144,24 @@ impl<'check> Program<'check> {
             // interposed write can reach O(s1). The operand half is one-sided
             // for s1 and two-sided for s2, and that asymmetry is the whole
             // difference between this rule and judging T as an ordinary member.
-            if let Some(denial) =
-                footprint_conflict(left, PairSide::First, &record.footprint, side, false)
-            {
+            if let Some(denial) = footprint_conflict(
+                windows.places,
+                left,
+                PairSide::First,
+                &record.footprint,
+                side,
+                false,
+            ) {
                 return PermissionVerdict::Denied(denial);
             }
-            if let Some(denial) =
-                footprint_conflict(&record.footprint, side, right, PairSide::Second, true)
-            {
+            if let Some(denial) = footprint_conflict(
+                windows.places,
+                &record.footprint,
+                side,
+                right,
+                PairSide::Second,
+                true,
+            ) {
                 return PermissionVerdict::Denied(denial);
             }
         }
@@ -1584,14 +1605,21 @@ pub(super) struct Footprint {
 /// obligation there is the one place this rule is weaker than judging every
 /// window statement as an ordinary member, and it is derived, not assumed.
 fn footprint_conflict(
+    places: &PlaceMap,
     earlier: &Footprint,
     earlier_side: PairSide,
     later: &Footprint,
     later_side: PairSide,
     earlier_operands: bool,
 ) -> Option<Denial> {
-    if let Some(denial) = loan_conflict(earlier, earlier_side, later, later_side, earlier_operands)
-    {
+    if let Some(denial) = loan_conflict(
+        places,
+        earlier,
+        earlier_side,
+        later,
+        later_side,
+        earlier_operands,
+    ) {
         return Some(denial);
     }
     for write in &earlier.writes {
@@ -1617,7 +1645,7 @@ fn footprint_conflict(
                 )
             }))
         {
-            if write.conflicts(access) {
+            if write.conflicts(access, places) {
                 return Some(Denial::Footprint {
                     kind,
                     left: write.clone(),
@@ -1651,7 +1679,7 @@ fn footprint_conflict(
                     .flatten(),
             )
         {
-            if write.conflicts(read) {
+            if write.conflicts(read, places) {
                 return Some(Denial::Footprint {
                     kind,
                     left: read.clone(),
@@ -1678,6 +1706,7 @@ fn footprint_conflict(
 /// can reach an operand evaluation that either happened before the fork or
 /// after the earlier statement completed.
 fn loan_conflict(
+    places: &PlaceMap,
     earlier: &Footprint,
     earlier_side: PairSide,
     later: &Footprint,
@@ -1719,7 +1748,9 @@ fn loan_conflict(
 
     for loan in &earlier.loans {
         for other in &later.loans {
-            if loan.strength.excludes_loan(other.strength) && loan.place.overlaps(&other.place) {
+            if loan.strength.excludes_loan(other.strength)
+                && places.overlaps(&loan.place, &other.place)
+            {
                 return Some(Denial::Loan {
                     kind: ConflictKind::new(loan.strength.half(), other.strength.half()),
                     left: loan.argument.clone(),
@@ -1729,7 +1760,7 @@ fn loan_conflict(
             }
         }
         for (half, place, argument) in uses(later, true) {
-            if loan.strength.excludes_use(half) && loan.place.overlaps(place) {
+            if loan.strength.excludes_use(half) && places.overlaps(&loan.place, place) {
                 return Some(Denial::Loan {
                     kind: ConflictKind::new(loan.strength.half(), half),
                     left: loan.argument.clone(),
@@ -1741,7 +1772,7 @@ fn loan_conflict(
     }
     for loan in &later.loans {
         for (half, place, argument) in uses(earlier, earlier_operands) {
-            if loan.strength.excludes_use(half) && loan.place.overlaps(place) {
+            if loan.strength.excludes_use(half) && places.overlaps(&loan.place, place) {
                 return Some(Denial::Loan {
                     kind: ConflictKind::new(half, loan.strength.half()),
                     left: argument.clone(),
@@ -1822,9 +1853,11 @@ pub(super) fn set_target_place(
         // anchors at the binding exactly as an opaque holder does [OWN-6].
         CheckedSetTarget::SliceIndex(target) => {
             collect_operand_reads(places, &target.offset, node, footprint);
-            places
-                .view_origin(target.root.binding)
-                .unwrap_or_else(|| rooted_place(places, target.root.binding, &[]))
+            let Some(place) = places.view_origin(target.root.binding) else {
+                footprint.unresolved = Some(node.clone());
+                return;
+            };
+            place
         }
     };
     if reads_target {
@@ -2101,9 +2134,10 @@ pub(super) fn collect_operand_reads(
                 },
             ),
         },
-        CheckedExpression::SliceOf { source, .. } => {
-            read(footprint, node, slice_source_place(places, source));
-        }
+        CheckedExpression::SliceOf { source, .. } => match slice_source_place(places, source) {
+            Some(place) => read(footprint, node, place),
+            None => footprint.operand_unresolved = Some(node.clone()),
+        },
         // A read through a view is a read of the storage the view was formed
         // over [VIEW-1]: the element the subscript selects is a byte of that
         // origin, and a measure read is a read of the same claim. Where this
@@ -2136,7 +2170,7 @@ fn argument_place(places: &PlaceMap, argument: &CheckedExpression) -> Option<Res
         return Some(place);
     }
     match argument {
-        CheckedExpression::SliceOf { source, .. } => Some(slice_source_place(places, source)),
+        CheckedExpression::SliceOf { .. } => places.view_origin_of(argument),
         // [VIEW-1] a view is a claim on the storage it was formed over, and
         // [VIEW-2] puts the loan on that origin range rather than on the
         // descriptor the value occupies. A view written at the call and a
@@ -2155,8 +2189,11 @@ fn argument_place(places: &PlaceMap, argument: &CheckedExpression) -> Option<Res
 }
 
 /// The storage a direct slice value views.
-pub(super) fn slice_source_place(places: &PlaceMap, source: &CheckedSliceSource) -> ResolvedPlace {
-    match source {
+pub(super) fn slice_source_place(
+    places: &PlaceMap,
+    source: &CheckedSliceSource,
+) -> Option<ResolvedPlace> {
+    Some(match source {
         CheckedSliceSource::Array { root, .. } => match root {
             CheckedArrayRoot::Binding { binding, fields } => rooted_place(places, *binding, fields),
             CheckedArrayRoot::Constant(id) => ResolvedPlace {
@@ -2173,8 +2210,8 @@ pub(super) fn slice_source_place(places: &PlaceMap, source: &CheckedSliceSource)
         CheckedSliceSource::Run(root) => rooted_container_place(places, root),
         // The child views exactly what its parent views, and the parent is
         // reached through its holder [OWN-6].
-        CheckedSliceSource::ViewHolder { binding, .. } => rooted_place(places, *binding, &[]),
-    }
+        CheckedSliceSource::ViewHolder { binding, .. } => return places.view_origin(*binding),
+    })
 }
 
 /// The [OWN-5] place one measured or subscripted root names [MSR-1, MSR-2].

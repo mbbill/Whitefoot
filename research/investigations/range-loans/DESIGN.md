@@ -187,7 +187,29 @@ after formation, and exercises an empty range at the source end. Three
 negative formations cover reversed endpoints and an end outside the source,
 including an empty range outside it.
 
-This establishes range formation and sequential execution. Precise concurrent
-loan obligations, recursive subview formation, PAR-2 range permission, the
-independent dimension-matrix oracle, conformance integration, and performance
-measurements are still in progress. No parallel performance result is claimed.
+This establishes range formation and sequential execution. No parallel
+performance result is claimed by this first implementation milestone.
+
+## Recursive loans implementation, 2026-09-13
+
+Bounded views now retain relative range identities through owned and borrowed
+view parameters. Arithmetic-dependent conflicts become mandatory OWN-5
+obligations in the existing flow checker. The checker captures endpoint value
+images and checks the fixed four alternatives: either range ends before the
+other starts, or either range is empty. The shared resolved-place judgment
+consumes formation-time separation proofs for effects and parallel calls.
+Unequal relative indices alone cannot separate different range frames.
+
+The recursive witness forms adjacent exclusive children, subdivides each by
+ordinary recursive calls, and reads and writes the parent after both children
+are consumed, within the same region. Native sequential and parallel
+executions pass. The parallel ledger permits and actualizes the pair of
+recursive calls. Negative compiler cases cover overlap, parent access while
+children live, reassignment of a captured endpoint, and a parent consumed
+later in the same call as its child. Affine consumption releases the child
+after the statement, preserving the full statement's simultaneous loan set.
+
+The library suite passed 1591 tests before the final same-statement lifetime
+refinement; the 25 targeted slice tests then passed with that refinement.
+PAR-2 range permission, the independent dimension-matrix oracle, conformance
+integration, and performance measurements remain in progress.

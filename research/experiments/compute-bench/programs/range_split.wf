@@ -22,9 +22,9 @@ fn fill_recursive(output: own MutSlice<u64>, depth: own u64) -> result: own u64 
     let right = mut_slice_of(&uniq output, middle, count);
     let a = fill_recursive(output: move left, depth: remaining);
     let b = fill_recursive(output: move right, depth: remaining);
+    let restored = output[0_u64];
+    set output[0_u64] = restored;
   }
-  let restored = output[0_u64];
-  set output[0_u64] = restored;
   return count;
 }
 

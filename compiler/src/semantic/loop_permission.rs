@@ -772,7 +772,13 @@ impl<'check> Survey<'check, '_> {
             }
             CheckedExpression::SliceMeasure { root, .. }
             | CheckedExpression::SliceIndex { root, .. } => {
-                Some((root.binding, rooted_place(self.places, root.binding, &[])))
+                match self.places.view_origin(root.binding) {
+                Some(place) => Some((root.binding, place)),
+                None => {
+                    self.refuse_form("a read through a view with an unresolved origin");
+                    None
+                }
+                }
             }
             CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Binding { binding, fields },
@@ -801,22 +807,30 @@ impl<'check> Survey<'check, '_> {
                 root: CheckedArrayRoot::Constant(_),
                 ..
             } => None,
-            CheckedExpression::SliceOf { source, .. } => match source {
+            CheckedExpression::SliceOf {
+                source, carrier, ..
+            } => match source {
                 CheckedSliceSource::Array {
                     root: CheckedArrayRoot::Binding { binding, .. },
                     ..
-                } => Some((*binding, slice_source_place(self.places, source))),
+                } => slice_source_place(self.places, source).map(|place| (*binding, place)),
                 CheckedSliceSource::Buffer(root) => {
-                    Some((root.binding, slice_source_place(self.places, source)))
+                    slice_source_place(self.places, source).map(|place| (root.binding, place))
                 }
                 CheckedSliceSource::ArenaContent { binding, .. } => {
-                    Some((*binding, slice_source_place(self.places, source)))
+                    slice_source_place(self.places, source).map(|place| (*binding, place))
                 }
                 CheckedSliceSource::Run(root) => {
-                    Some((root.binding, slice_source_place(self.places, source)))
+                    slice_source_place(self.places, source).map(|place| (root.binding, place))
                 }
                 CheckedSliceSource::ViewHolder { binding, .. } => {
-                    Some((*binding, slice_source_place(self.places, source)))
+                    match slice_source_place(self.places, source) {
+                        Some(place) => Some((*binding, place)),
+                        None => {
+                            self.unresolved.get_or_insert(carrier.clone());
+                            None
+                        }
+                    }
                 }
                 CheckedSliceSource::Array {
                     root: CheckedArrayRoot::Constant(_),

@@ -15,6 +15,7 @@ use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
 };
 use super::CheckedIndexedPlace;
+use crate::semantic::places::{PlaceStep, RangeId};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// [VIEW-2] one view formation, at the strength the written row names.
@@ -115,6 +116,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             loop_depth,
             atoms[contract.source],
+            range.is_some(),
         )?;
         let CheckedExpression::SliceOf {
             range: destination, ..
@@ -137,6 +139,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         operand: NodeId,
+        bounded: bool,
     ) -> Result<TypedExpression, CheckStop> {
         let atoms = [operand];
         let borrow = self
@@ -194,12 +197,12 @@ inside the `region` block whose region it takes",
             .tree
             .first_child_with(place_node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if let Some(formed) = self.check_view_holder_slice_of(
+            node, borrow, place_node, pbase, region, strength, bindings, loop_depth, atoms[0],
+        )? {
+            return Ok(formed);
+        }
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
-            if let Some(formed) = self.check_view_holder_slice_of(
-                node, borrow, place_node, pbase, region, strength, bindings, loop_depth, atoms[0],
-            )? {
-                return Ok(formed);
-            }
             return self.check_arena_content_slice_of(
                 node, borrow, place_node, pbase, region, strength, function, bindings, loop_depth,
             );
@@ -271,7 +274,7 @@ inside the `region` block whose region it takes",
             CheckedIndexedPlace::Container(container) => container.offsets.clone(),
             _ => super::CarriedOperands::default(),
         };
-        let (source, resolved) = match indexed {
+        let (source, mut resolved) = match indexed {
             // TEMPORARY capability stop, judged after every source rejection
             // above: an array is a value with no stable address in this
             // lowering, so the descriptor a view of one carries points at a
@@ -332,6 +335,10 @@ inside the `region` block whose region it takes",
                 );
             }
         };
+        let loan = self.slice_loan_id(node)?;
+        if bounded {
+            resolved.path.push(PlaceStep::Range(loan));
+        }
         let origin = owner.map_or(CheckedSliceOrigin::ImmutableConst, |_| {
             CheckedSliceOrigin::SourcePlace {
                 root: resolved.root,
@@ -373,6 +380,7 @@ inside the `region` block whose region it takes",
         Ok(TypedExpression {
             expression: CheckedExpression::SliceOf {
                 carrier: self.tree.path(node)?.clone(),
+                loan,
                 source,
                 range: None,
                 region,
@@ -390,21 +398,11 @@ inside the `region` block whose region it takes",
         })
     }
 
-    /// [VIEW-2, OWN-6] `slice_of` over a **view holder**: the shared child
-    /// reborrow of the view a helper was handed.
-    ///
-    /// [VIEW-2]'s viewable operand class is stated over storage and reads
-    /// nothing about what that storage is made of, and a view of a view is a
-    /// view of the same storage under the narrower loan. So the operand
-    /// `&'c deref(destination)` of a `destination: &uniq MutSlice<'r, T>`
-    /// parameter forms the shared child [OWN-6] admits: the child carries the
-    /// parent's origin set and range, its loan region is the one the operand
-    /// borrow writes [VIEW-2] and the parent's own region must outlive it
-    /// [OWN-10], and the parent is frozen against element writes while the
-    /// child lives [OWN-5].
-    ///
-    /// `None` means the deref root is not a view holder, so the position
-    /// keeps its other dispositions.
+    /// [VIEW-2, OWN-6] Reborrow a directly owned view or the view reached by
+    /// one dereference of a holder. A child retains every parent origin and
+    /// appends its relative range. Its region and strength cannot exceed the
+    /// parent's; incompatible parent and sibling accesses remain subject to
+    /// [OWN-5]. `None` leaves other operand forms to their existing checker.
     #[allow(clippy::too_many_arguments)]
     fn check_view_holder_slice_of(
         &self,
@@ -418,11 +416,18 @@ inside the `region` block whose region it takes",
         loop_depth: usize,
         operand: NodeId,
     ) -> Result<Option<TypedExpression>, CheckStop> {
-        let Some(inner_place) = self.tree.first_child_with(pbase, Production::Place)? else {
-            return Ok(None);
-        };
-        let Some(inner_pbase) = self.tree.first_child_with(inner_place, Production::Pbase)? else {
-            return Ok(None);
+        let holder = self.has_fixed(pbase, FixedTerminal::Deref)?;
+        let (inner_place, inner_pbase) = if holder {
+            let Some(inner_place) = self.tree.first_child_with(pbase, Production::Place)? else {
+                return Ok(None);
+            };
+            let Some(inner_pbase) = self.tree.first_child_with(inner_place, Production::Pbase)?
+            else {
+                return Ok(None);
+            };
+            (inner_place, inner_pbase)
+        } else {
+            (place_node, pbase)
         };
         // One deref of a directly named holder, no suffix chain on either
         // half: a deeper chain keeps its existing disposition.
@@ -453,14 +458,12 @@ inside the `region` block whose region it takes",
         let CheckedType::Slice {
             region: parent_region,
             element,
-            ..
+            strength: parent_strength,
         } = local.ty
         else {
             return Ok(None);
         };
-        if local.mode == CheckedMode::Own {
-            // An owned view is not a holder; a child over the viewed place is
-            // the landed formation and this position is not it.
+        if holder == (local.mode == CheckedMode::Own) {
             return Ok(None);
         }
         // Every rejection below is a source verdict about a program this arm
@@ -488,9 +491,10 @@ inside the `region` block whose region it takes",
                 .map(Some);
         }
         self.check_holder_not_suspended(&local, place_node)?;
-        // [OWN-5] two exclusive loans on one range are what the rule refuses,
-        // and a child of a view is a second view of the parent's own range.
-        if strength == LoanStrength::Exclusive {
+        if strength == LoanStrength::Exclusive
+            && (parent_strength == LoanStrength::Shared
+                || matches!(local.mode, CheckedMode::Shared(_)))
+        {
             return self
                 .issue_node(
                     SemanticRule::Own5,
@@ -518,31 +522,37 @@ region outlives; name that region, or one it outlives, on this borrow"
         let Some(parent) = local.slice.clone() else {
             return Ok(None);
         };
-        let holder_place = ResolvedPlace::fields(declaration, Vec::new());
-        self.check_loan_access(
-            bindings,
-            Some(declaration),
-            &holder_place,
-            AccessKind::SharedBorrow,
-            borrow,
-        )?;
-        // [OWN-5] the freeze: while this child lives the parent may not write
-        // the elements it views. The parent is reached through its holder, so
-        // the loan stands at the holder's own place, which is exactly what an
-        // element write through that holder resolves its origin to.
-        bindings
-            .get_mut(&declaration)
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?
-            .push_slice_loan(SliceLoan {
-                region,
-                place: holder_place,
-                strength: LoanStrength::Shared,
-                descriptors: Vec::new(),
-            });
-        let origins = parent.origins.clone();
+        let loan = self.slice_loan_id(node)?;
+        let mut child = parent;
+        child.region = region;
+        for origin in &mut child.origins {
+            match origin {
+                CheckedSliceOrigin::SourcePlace { path, .. }
+                | CheckedSliceOrigin::FormalSlice { path, .. } => path.push(PlaceStep::Range(loan)),
+                CheckedSliceOrigin::ImmutableConst => {}
+            }
+        }
+        let taken = match strength {
+            LoanStrength::Shared => AccessKind::SharedBorrow,
+            LoanStrength::Exclusive => AccessKind::UniqueBorrow,
+        };
+        for place in child.effect_places() {
+            self.check_loan_access(bindings, Some(declaration), &place, taken, borrow)?;
+            bindings
+                .get_mut(&place.root)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .push_slice_loan(SliceLoan {
+                    region,
+                    place,
+                    strength,
+                    descriptors: Vec::new(),
+                });
+        }
+        let origins = child.origins;
         Ok(Some(TypedExpression {
             expression: CheckedExpression::SliceOf {
                 carrier: self.tree.path(node)?.clone(),
+                loan,
                 source: CheckedSliceSource::ViewHolder {
                     binding: local.binding,
                     element,
@@ -550,7 +560,7 @@ region outlives; name that region, or one it outlives, on this borrow"
                 range: None,
                 region,
                 element,
-                strength: LoanStrength::Shared,
+                strength,
                 origins: origins.clone(),
             },
             mode: CheckedMode::Own,
@@ -713,6 +723,7 @@ take the view in a region it outlives"
         Ok(TypedExpression {
             expression: CheckedExpression::SliceOf {
                 carrier: self.tree.path(node)?.clone(),
+                loan: self.slice_loan_id(node)?,
                 source: CheckedSliceSource::ArenaContent {
                     binding: local.binding,
                     fields: Vec::new(),
@@ -735,5 +746,11 @@ take the view in a region it outlives"
                 kind: taken,
             }],
         })
+    }
+
+    fn slice_loan_id(&self, node: NodeId) -> Result<RangeId, CheckStop> {
+        Ok(RangeId(
+            u32::try_from(node.index()).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        ))
     }
 }

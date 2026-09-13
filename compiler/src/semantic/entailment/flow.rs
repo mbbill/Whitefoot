@@ -35,7 +35,9 @@ use super::super::model::{
     CheckedValue, FloatType, IntegerType, LoanStrength, MeasureCell, MeasuredKind,
     ValueInitializerKind,
 };
-use super::super::places::{BindingSummary, PlaceMap, PlaceOffset, PlaceStep, ResolvedPlace};
+use super::super::places::{
+    BindingSummary, PlaceMap, PlaceOffset, PlaceStep, RangeId, ResolvedPlace,
+};
 use super::super::postcondition::{
     CheckedPostcondition, NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum,
     PostconditionReturnPlace, PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate,
@@ -210,6 +212,7 @@ struct ProofFlowState {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AffineFlowState {
     values: HashMap<BindingId, AffineForm>,
+    ranges: HashMap<RangeId, CapturedRange>,
     /// One atom standing for the whole value of a binding whose image is not
     /// already a single atom, minted on first demand.
     ///
@@ -231,6 +234,13 @@ struct AffineFlowState {
     /// declaration. Resolution owns visibility; this map carries only the
     /// canonical proposition proved at that declaration's execution point.
     published_invariants: HashMap<crate::DeclarationId, AffineInequality>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CapturedRange {
+    source: crate::NodePath,
+    start: AffineForm,
+    end: AffineForm,
 }
 
 /// The numeric/logical proof state at one exact control-flow point.
@@ -846,6 +856,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         goals: GoalTable::default(),
         derivations: DerivationLedger::default(),
         obligations: Vec::new(),
+        judged_range_conflicts: vec![false; function.range_conflicts.len()],
         product_intervals: HashMap::new(),
         product_operands: HashSet::new(),
         product_atoms: HashMap::new(),
@@ -918,6 +929,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         analyzer.initialize_postcondition_proofs();
     }
     analyzer.walk_block(&function.body, &mut state);
+    analyzer.reject_unvisited_range_conflicts();
     analyzer.scopes.pop();
     analyzer.finalize_postcondition_aggregates();
     assert_eq!(
@@ -1085,6 +1097,7 @@ struct Analyzer<'check, 'unit> {
     goals: GoalTable,
     derivations: DerivationLedger,
     obligations: Vec<ObligationOutcome>,
+    judged_range_conflicts: Vec<bool>,
     /// The interval [ENT-6]'s interval-product rule proved at each admitted
     /// non-constant multiplication, keyed by that operation's own node. The
     /// domain is judged while the initializer is walked and [ENT-3.S14]
@@ -2882,15 +2895,15 @@ impl Analyzer<'_, '_> {
         expression: &CheckedExpression,
         receiver: &ResolvedPlace,
     ) -> bool {
-        if self
-            .read_place_path(expression)
-            .is_some_and(|place| self.resolve_projected(&place).overlaps(receiver))
-        {
+        if self.read_place_path(expression).is_some_and(|place| {
+            self.places
+                .overlaps(&self.resolve_projected(&place), receiver)
+        }) {
             return true;
         }
         if self
             .argument_referent(expression)
-            .is_some_and(|(place, _)| place.overlaps(receiver))
+            .is_some_and(|(place, _)| self.places.overlaps(&place, receiver))
         {
             return true;
         }
@@ -3323,10 +3336,12 @@ impl Analyzer<'_, '_> {
         })
     }
 
-    fn kill_writes_place(event: &KillEvent, place: &ResolvedPlace) -> bool {
+    fn kill_writes_place(&self, event: &KillEvent, place: &ResolvedPlace) -> bool {
         match event {
             KillEvent::Write { place: written, .. }
-            | KillEvent::EntryImageHolderWrite { place: written, .. } => written.overlaps(place),
+            | KillEvent::EntryImageHolderWrite { place: written, .. } => {
+                self.places.overlaps(written, place)
+            }
             KillEvent::Consume { .. } | KillEvent::EntryImageHolderConsume { .. } => false,
         }
     }
@@ -3340,7 +3355,7 @@ impl Analyzer<'_, '_> {
         self.collect_expression_kills(expression, &mut events);
         events
             .iter()
-            .any(|event| Self::kill_writes_place(event, place))
+            .any(|event| self.kill_writes_place(event, place))
     }
 
     fn set_target_writes_place(&self, target: &CheckedSetTarget, place: &ResolvedPlace) -> bool {
@@ -3361,7 +3376,9 @@ impl Analyzer<'_, '_> {
                 fields: target.root.fields.clone(),
             },
             CheckedSetTarget::Storage(target) => {
-                return self.container_root_place(target).overlaps(place);
+                return self
+                    .places
+                    .overlaps(&self.container_root_place(target), place);
             }
             // A view element store writes the origin's storage and not the
             // descriptor's [PROV-3], and the origin is not this place term's
@@ -3372,7 +3389,7 @@ impl Analyzer<'_, '_> {
                 fields: Vec::new(),
             },
         };
-        self.resolve(&target).overlaps(place)
+        self.places.overlaps(&self.resolve(&target), place)
     }
 
     /// Whether a structurally reachable statement in this block writes the
@@ -3811,16 +3828,16 @@ impl Analyzer<'_, '_> {
             TermKind::Place(place, _) => match event {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    self.resolve(&place).overlaps(written)
+                    self.places.overlaps(&self.resolve(&place), written)
                 }
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
                 KillEvent::EntryImageHolderConsume { .. } => false,
             },
             TermKind::ProjectedPlace(place, _) => match event {
                 KillEvent::Write { place: written, .. }
-                | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    self.resolve_projected(&place).overlaps(written)
-                }
+                | KillEvent::EntryImageHolderWrite { place: written, .. } => self
+                    .places
+                    .overlaps(&self.resolve_projected(&place), written),
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
                 KillEvent::EntryImageHolderConsume { .. } => false,
             },
@@ -3981,7 +3998,7 @@ impl Analyzer<'_, '_> {
                 }
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    place.overlaps(written)
+                    self.places.overlaps(&place, written)
                 }
                 KillEvent::Consume { binding, .. } => {
                     holders.contains(binding) || place.root == PlaceRoot::Binding(*binding)
@@ -6121,7 +6138,7 @@ impl Analyzer<'_, '_> {
         expression: &CheckedExpression,
         states: &mut ProofFlowState,
     ) -> ExpressionJudgment {
-        match expression {
+        let mut judgment = match expression {
             CheckedExpression::UserCall {
                 function,
                 call,
@@ -6432,6 +6449,7 @@ impl Analyzer<'_, '_> {
             // and `room` cells are both the constant zero [MSR-1].
             CheckedExpression::SliceOf {
                 carrier,
+                loan,
                 source,
                 range,
                 strength,
@@ -6466,6 +6484,26 @@ impl Analyzer<'_, '_> {
                 if reached && let Some(range) = range {
                     let length = Self::slice_source_length(source);
                     self.judge_view_range(carrier, &range.start, &range.end, &length, states);
+                }
+                if reached && self.obligations_since_discharged(obligation_start) {
+                    let images = if let Some(range) = range {
+                        self.affine_expression_form(&range.start, &mut states.affine)
+                            .zip(self.affine_expression_form(&range.end, &mut states.affine))
+                    } else {
+                        let length = Self::slice_source_length(source);
+                        self.measure_operand(&length)
+                            .map(|term| (AffineForm::constant(0), self.measure_atom(term)))
+                    };
+                    if let Some((start, end)) = images {
+                        states.affine.ranges.insert(
+                            *loan,
+                            CapturedRange {
+                                source: carrier.clone(),
+                                start,
+                                end,
+                            },
+                        );
+                    }
                 }
                 ExpressionJudgment {
                     prepared_call: None,
@@ -6567,7 +6605,11 @@ impl Analyzer<'_, '_> {
                     reached,
                 }
             }
+        };
+        if let Some(carrier) = expression.carrier() {
+            judgment.reached &= self.judge_range_conflicts(carrier, states);
         }
+        judgment
     }
 
     /// [BLK-0, MSR-4] one declared requirement of a kernel-domain row,
@@ -6645,6 +6687,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             kernel_row: Some(operation),
+            formed_range_separation: None,
         });
         discharged.then_some(derivation).flatten()
     }
@@ -8076,6 +8119,7 @@ impl Analyzer<'_, '_> {
                 Vec::new()
             },
             kernel_row: None,
+            formed_range_separation: None,
         });
     }
 
@@ -8359,7 +8403,155 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation,
             affine_index_maps: Vec::new(),
             kernel_row: None,
+            formed_range_separation: None,
         });
+    }
+
+    fn judge_range_conflicts(&mut self, site: &crate::NodePath, state: &ProofFlowState) -> bool {
+        let pending: Vec<_> = self
+            .function
+            .range_conflicts
+            .iter()
+            .enumerate()
+            .filter(|(ordinal, conflict)| {
+                !self.judged_range_conflicts[*ordinal]
+                    && conflict.site.components().starts_with(site.components())
+            })
+            .map(|(ordinal, conflict)| (ordinal, conflict.clone()))
+            .collect();
+        let mut all_discharged = true;
+        for (ordinal, conflict) in pending {
+            self.judged_range_conflicts[ordinal] = true;
+            let ranges = state
+                .affine
+                .ranges
+                .get(&conflict.left)
+                .zip(state.affine.ranges.get(&conflict.right));
+            let at_formation = ranges.is_some_and(|(left, right)| {
+                [left, right].iter().any(|range| {
+                    conflict
+                        .site
+                        .components()
+                        .starts_with(range.source.components())
+                })
+            });
+            let mut canonical = None;
+            let mut proofs = Vec::new();
+            if let Some((left, right)) = ranges {
+                let endpoint = |range: &CapturedRange, ordinal| {
+                    GoalExpression::Datum(GoalDatum::EvaluatedValue {
+                        function: self.function.id,
+                        occurrence: EvaluatedValueOccurrence::ObligationOperand {
+                            site: range.source.clone(),
+                            operand: ordinal,
+                        },
+                        captured_type: CheckedType::Integer(IntegerType::U64),
+                        projections: Vec::new(),
+                        ty: CheckedType::Integer(IntegerType::U64),
+                    })
+                };
+                let mut alternatives = Vec::new();
+                for (a, a_index, b, b_index) in [
+                    (left, 2, right, 1),
+                    (right, 2, left, 1),
+                    (left, 2, left, 1),
+                    (right, 2, right, 1),
+                ] {
+                    alternatives.push(GoalExpression::Operation {
+                        row: GoalOperation::Integer {
+                            operation: CheckedIntegerOperation::LessEqual,
+                            operand_type: CheckedType::Integer(IntegerType::U64),
+                        },
+                        type_arguments: Vec::new(),
+                        const_arguments: Vec::new(),
+                        result: CheckedType::Bool,
+                        arguments: vec![endpoint(a, a_index), endpoint(b, b_index)],
+                    });
+                }
+                canonical =
+                    alternatives
+                        .into_iter()
+                        .reduce(|left, right| GoalExpression::Operation {
+                            row: GoalOperation::Boolean(CheckedBooleanOperation::Or),
+                            type_arguments: Vec::new(),
+                            const_arguments: Vec::new(),
+                            result: CheckedType::Bool,
+                            arguments: vec![left, right],
+                        });
+                // The complete fixed family is two endpoint orders and the
+                // two empty-range cases. Each reads the captured images at
+                // this access's ProofContext; later assignments cannot move
+                // an existing loan's endpoints.
+                for (end, start) in [
+                    (&left.end, &right.start),
+                    (&right.end, &left.start),
+                    (&left.end, &left.start),
+                    (&right.end, &right.start),
+                ] {
+                    if let Ok(inequality) =
+                        AffineInequality::from_forms(end, start, &mut AffineCheckState::new())
+                    {
+                        proofs.push(self.prove(
+                            ProofContext::new(&state.facts, &state.affine),
+                            ProofGoal::Affine {
+                                inequality: &inequality,
+                            },
+                        ));
+                    }
+                }
+            }
+            let proof = proofs
+                .into_iter()
+                .find(|proof| proof.disposition == ProofDisposition::Proved);
+            all_discharged &= proof.is_some();
+            self.record_range_conflict(&conflict, canonical, proof, at_formation);
+        }
+        all_discharged
+    }
+
+    fn record_range_conflict(
+        &mut self,
+        conflict: &super::super::model::CheckedRangeConflict,
+        canonical_goal: Option<GoalExpression>,
+        proof: Option<ProofResult>,
+        at_formation: bool,
+    ) {
+        let derivation = proof.as_ref().and_then(|proof| proof.derivation);
+        let ordinal =
+            u32::try_from(self.obligations.len()).expect("ENT obligation ordinal exceeds u32");
+        if let Some(root) = derivation {
+            self.derivations
+                .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+        }
+        let discharged = proof.is_some();
+        let formed_range_separation =
+            (discharged && at_formation).then_some((conflict.left, conflict.right));
+        if let Some((left, right)) = formed_range_separation {
+            self.places.record_range_separation(left, right);
+        }
+        self.obligations.push(ObligationOutcome {
+            node_path: conflict.site.clone(), family: ObligationFamily::RangeSeparation, conjunct: 0,
+            canonical_goal, components: Vec::new(), discharged, refuted: false,
+            contradictory: proof.is_some_and(|proof| proof.route == Some(ProofRoute::Contradiction)),
+            residual: (!discharged).then(|| "the captured view ranges are disjoint (one ends before the other starts, or one is empty)".to_owned()),
+            derivation, allocation_length_upper_bound: None, allocation_length_upper_bound_derivation: None,
+            affine_index_maps: Vec::new(), kernel_row: None,
+            formed_range_separation,
+        });
+    }
+
+    fn reject_unvisited_range_conflicts(&mut self) {
+        let missing: Vec<_> = self
+            .function
+            .range_conflicts
+            .iter()
+            .enumerate()
+            .filter(|(ordinal, _)| !self.judged_range_conflicts[*ordinal])
+            .map(|(_, conflict)| conflict.clone())
+            .collect();
+        for conflict in missing {
+            self.record_range_conflict(&conflict, None, None, false);
+        }
     }
 
     fn slice_source_length(source: &CheckedSliceSource) -> CheckedExpression {
@@ -8671,6 +8863,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             kernel_row: None,
+            formed_range_separation: None,
         });
     }
 
@@ -8801,6 +8994,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             kernel_row: None,
+            formed_range_separation: None,
         });
     }
 
@@ -10187,6 +10381,18 @@ impl Analyzer<'_, '_> {
         AffineFlowState {
             values,
             opaque_values,
+            ranges: first
+                .affine
+                .ranges
+                .iter()
+                .filter(|(id, range)| {
+                    states
+                        .iter()
+                        .skip(1)
+                        .all(|state| state.affine.ranges.get(id) == Some(*range))
+                })
+                .map(|(id, range)| (*id, range.clone()))
+                .collect(),
             facts: self.join_affine_facts(states),
             published_invariants: first
                 .affine
@@ -12584,7 +12790,8 @@ impl Analyzer<'_, '_> {
             CheckedCommitValues::ResultList { .. } => ordinal_calls.first().cloned().flatten(),
             CheckedCommitValues::Written(_) => None,
         };
-        let commit_reached = target_reached && value_reached;
+        let ranges_reached = self.judge_range_conflicts(node_path, state);
+        let commit_reached = target_reached && value_reached && ranges_reached;
         for target in targets {
             invalidate_goal_origin_for_set(&mut state.facts, target);
         }
@@ -12698,7 +12905,8 @@ impl Analyzer<'_, '_> {
             prepared_call: prepared,
             reached: value_reached,
         } = self.expression_effects(value, state);
-        let commit_reached = target_reached && value_reached;
+        let ranges_reached = self.judge_range_conflicts(node_path, state);
+        let commit_reached = target_reached && value_reached && ranges_reached;
         let receiver_route = commit_reached
             .then(|| {
                 prepared

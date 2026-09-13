@@ -10,6 +10,19 @@ fn runtime_stencil_ranges_reach_their_backing_buffers() {
 }
 
 #[test]
+fn recursive_child_ranges_restore_parent_access() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/range_split.wf");
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    let parallel = emit_with_overlap(source);
+    assert!(parallel.contains("call void @wf__par_publish("));
+    let output = compile_and_run(&parallel);
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
 fn range_endpoints_are_captured_and_empty_ranges_are_admitted() {
     let source = br#"const values: FixedVector<u64, 8> =[1_u64, 2_u64, 3_u64, 4_u64, 5_u64, 6_u64, 7_u64, 8_u64];
 

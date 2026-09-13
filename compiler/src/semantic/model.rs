@@ -1558,7 +1558,28 @@ pub(crate) enum CheckedSliceOrigin {
     FormalSlice {
         parameter: DeclarationId,
         region: DeclarationId,
+        path: Vec<super::places::PlaceStep>,
     },
+}
+
+impl CheckedSliceOrigin {
+    pub(crate) fn within_ceiling(&self, ceiling: &Self) -> bool {
+        match (self, ceiling) {
+            (
+                Self::FormalSlice {
+                    parameter,
+                    region,
+                    path,
+                },
+                Self::FormalSlice {
+                    parameter: other,
+                    region: other_region,
+                    path: prefix,
+                },
+            ) => parameter == other && region == other_region && path.starts_with(prefix),
+            _ => self == ceiling,
+        }
+    }
 }
 
 /// The finite set of caller-formal state paths a checked value may carry.
@@ -1741,6 +1762,13 @@ pub(crate) enum CheckedSliceSource {
 pub(crate) struct CheckedSliceRange {
     pub(crate) start: Box<CheckedExpression>,
     pub(crate) end: Box<CheckedExpression>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedRangeConflict {
+    pub(crate) site: NodePath,
+    pub(crate) left: super::places::RangeId,
+    pub(crate) right: super::places::RangeId,
 }
 
 /// Source category retained only for integer-operation operands whose exact
@@ -1989,6 +2017,7 @@ pub(crate) enum CheckedExpression {
     },
     SliceOf {
         carrier: NodePath,
+        loan: super::places::RangeId,
         source: CheckedSliceSource,
         range: Option<CheckedSliceRange>,
         region: DeclarationId,
@@ -2565,6 +2594,9 @@ pub(crate) struct CheckedFunction {
     /// Closed-world state origin of this function's result.
     pub(crate) result_state_origin: CheckedResultStateOrigin,
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
+    /// Structural ownership conflicts whose range relation must be proved
+    /// by the ordinary flow before this function can be accepted.
+    pub(crate) range_conflicts: Vec<CheckedRangeConflict>,
     /// Whether this function's own body reaches an ambient-heap allocation
     /// [STOR-1]. The ambient heap has no provider value, so [EFF-1] gives it
     /// no written entry and this is derived rather than declared [S23].

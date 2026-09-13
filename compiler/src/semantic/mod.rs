@@ -914,6 +914,11 @@ pub enum SemanticIssueKind {
         residual: String,
         mechanical_fix: &'static str,
     },
+    /// Incompatible live range loans have no source proof of separation.
+    UndischargedRangeSeparation {
+        residual: String,
+        mechanical_fix: &'static str,
+    },
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),

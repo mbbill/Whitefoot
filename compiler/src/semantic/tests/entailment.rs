@@ -1712,6 +1712,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::RangeSeparation => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::SystemRange | ObligationFamily::ViewRange => {
                         assert!(outcome.conjunct <= 1)
                     }

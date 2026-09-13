@@ -187,6 +187,7 @@ fn derive_slice_return_ceiling(
             ceiling.push(CheckedSliceOrigin::FormalSlice {
                 parameter: parameter.declaration,
                 region,
+                path: Vec::new(),
             });
         }
     }
@@ -724,6 +725,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// or non-escaping control header ends [OWN-6]. Nested checking retains
     /// loans created before its own evaluation boundary.
     statement_loans: RefCell<Vec<borrows::TemporaryLoan>>,
+    range_conflicts: RefCell<Vec<super::model::CheckedRangeConflict>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     system_nominals: HashMap<u8, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
@@ -1066,21 +1068,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(slice) = slice else {
             return;
         };
-        let mut wanted: HashMap<DeclarationId, Vec<ResolvedPlace>> = HashMap::new();
-        for origin in &slice.origins {
-            if let crate::semantic::model::CheckedSliceOrigin::SourcePlace { root, path, .. } =
-                origin
-            {
-                wanted.entry(*root).or_default().push(ResolvedPlace {
-                    root: *root,
-                    path: path.clone(),
-                });
-            }
-        }
-        for (root, places) in wanted {
-            if let Some(local) = bindings.get_mut(&root) {
-                local.hold_slice_loans(holder, &places);
-            }
+        let places = slice.effect_places();
+        for local in bindings.values_mut() {
+            local.hold_slice_loans(holder, &places);
         }
     }
 
@@ -1238,6 +1228,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             statement_loans: RefCell::new(Vec::new()),
+            range_conflicts: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -1859,6 +1850,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
+        self.range_conflicts.borrow_mut().clear();
         let mut bindings = HashMap::new();
         let mut parameters = Vec::with_capacity(signature.parameters.len());
         let mut next_binding = 0_u32;
@@ -2094,6 +2086,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .cloned()
                 .unwrap_or(CheckedResultStateOrigin::Unknown),
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
+            range_conflicts: {
+                let mut conflicts = std::mem::take(&mut *self.range_conflicts.borrow_mut());
+                conflicts.sort_by_key(|conflict| {
+                    (
+                        conflict.site.components().to_vec(),
+                        conflict.left,
+                        conflict.right,
+                    )
+                });
+                conflicts
+            },
             reaches_ambient_heap: checked.effects.allocates_heap,
             declared_state_writes: signature.declared_effects.writes.clone(),
             target_action: crate::TargetAction::INLINE,
@@ -3420,6 +3423,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::SystemRange => SemanticRule::Sys8,
                         super::entailment::ObligationFamily::ViewRange => SemanticRule::View2,
+                        super::entailment::ObligationFamily::RangeSeparation => SemanticRule::Own5,
                         super::entailment::ObligationFamily::KernelRequirement => {
                             SemanticRule::Blk0
                         }
@@ -3732,6 +3736,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             kind: SemanticIssueKind::UndischargedAllocationFitObligation {
                                 residual,
                                 mechanical_fix: "when the allocation must fit, establish `buffer_fits::<T>(n)` with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when allocation shortage is intended program behavior; otherwise restructure the allocation",
+                            },
+                        },
+                        super::entailment::ObligationFamily::RangeSeparation => SemanticIssue {
+                            rule: SemanticRule::Own5,
+                            location,
+                            kind: SemanticIssueKind::UndischargedRangeSeparation {
+                                residual,
+                                mechanical_fix: "prove the captured ranges disjoint, or end the conflicting child loan before this access",
                             },
                         },
                         super::entailment::ObligationFamily::ViewRange => SemanticIssue {

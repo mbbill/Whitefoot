@@ -291,6 +291,8 @@ pub(crate) enum ObligationFamily {
     SystemRange,
     /// One independent half-open view formation goal [VIEW-2].
     ViewRange,
+    /// Two incompatible live range loans must be disjoint [OWN-5, OWN-7].
+    RangeSeparation,
     /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
     /// a call to that row and judged under [MSR-4] exactly as every other
     /// consumer's obligation is.
@@ -364,6 +366,10 @@ pub(crate) struct ObligationOutcome {
     /// so the row's own identity is what the diagnostic names. Every other
     /// family retains `None`.
     pub(crate) kernel_row: Option<u8>,
+    /// Separation proved when one of these ranges was formed. Unlike a
+    /// later guarded access proof, this holds whenever both formations'
+    /// values coexist and may be reused by ordinary overlap consumers.
+    pub(crate) formed_range_separation: Option<(super::places::RangeId, super::places::RangeId)>,
 }
 
 /// Exact normalized identity of one obligation query in the function-local
