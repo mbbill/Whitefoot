@@ -1712,7 +1712,9 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
-                    ObligationFamily::SystemRange => assert!(outcome.conjunct <= 1),
+                    ObligationFamily::SystemRange | ObligationFamily::ViewRange => {
+                        assert!(outcome.conjunct <= 1)
+                    }
                     // [BLK-0]: one root per declared requirement of the row,
                     // whose conjunct is that requirement's position in the
                     // row's own list.
@@ -1768,7 +1770,9 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             sign: GoalSign::Positive,
                         } if matches!(
                             outcome.family,
-                            ObligationFamily::AllocationFit | ObligationFamily::SystemRange
+                            ObligationFamily::AllocationFit
+                                | ObligationFamily::SystemRange
+                                | ObligationFamily::ViewRange
                         ) =>
                         {
                             assert!(summary.inventory.goals.get(goal.0 as usize).is_some());

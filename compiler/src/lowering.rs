@@ -1260,6 +1260,12 @@ pub enum IrOperation {
     SliceFromRun {
         run: IrValueId,
     },
+    /// A statically proved relative subrange of an existing descriptor.
+    SliceRange {
+        slice: IrValueId,
+        start: IrValueId,
+        end: IrValueId,
+    },
     SliceMeasure {
         slice: IrValueId,
     },

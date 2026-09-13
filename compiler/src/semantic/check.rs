@@ -3419,6 +3419,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::SystemRange => SemanticRule::Sys8,
+                        super::entailment::ObligationFamily::ViewRange => SemanticRule::View2,
                         super::entailment::ObligationFamily::KernelRequirement => {
                             SemanticRule::Blk0
                         }
@@ -3731,6 +3732,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             kind: SemanticIssueKind::UndischargedAllocationFitObligation {
                                 residual,
                                 mechanical_fix: "when the allocation must fit, establish `buffer_fits::<T>(n)` with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when allocation shortage is intended program behavior; otherwise restructure the allocation",
+                            },
+                        },
+                        super::entailment::ObligationFamily::ViewRange => SemanticIssue {
+                            rule: SemanticRule::View2,
+                            location,
+                            kind: SemanticIssueKind::UndischargedViewRangeObligation {
+                                residual,
+                                mechanical_fix: "establish start <= end <= len_of(source) with a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the view range",
                             },
                         },
                         super::entailment::ObligationFamily::SystemRange => SemanticIssue {

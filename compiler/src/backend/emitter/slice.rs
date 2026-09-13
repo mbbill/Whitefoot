@@ -66,6 +66,43 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    pub(super) fn emit_slice_range(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        slice: IrValueId,
+        start: IrValueId,
+        end: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        let IrType::Slice { element } = ty else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let index_type = Some(IrType::Integer {
+            width: 64,
+            signed: false,
+        });
+        if self.value_type(slice) != Some(ty)
+            || self.value_type(start) != index_type
+            || self.value_type(end) != index_type
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let descriptor_type = llvm_type(self.program, ty)?;
+        let element_type = llvm_type(self.program, element.ty())?;
+        let pointer = self.next_temporary()?;
+        let adjusted = self.next_temporary()?;
+        let length = self.next_temporary()?;
+        let partial = self.next_temporary()?;
+        // VIEW-2 discharged both domain conjuncts. Empty ranges, including
+        // one at the end of an allocation, form descriptors without a load.
+        writeln!(
+            self.output,
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{adjusted} = getelementptr {element_type}, ptr %{pointer}, i64 {}\n  %{length} = sub nuw i64 {}, {}\n  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr %{adjusted}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 %{length}, 1",
+            self.value_name(slice), self.value_name(start), self.value_name(end),
+            self.value_name(start), self.value_name(result),
+        ).map_err(|_| BackendFailure::TextEmission)
+    }
+
     pub(super) fn emit_slice_length(
         &mut self,
         result: IrValueId,

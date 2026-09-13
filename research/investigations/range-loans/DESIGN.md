@@ -12,7 +12,7 @@ stored loans, cancellation, and I/O scheduling remain outside this change.
 
 ## Requirements and evidence
 
-The current specification [OWN-7] distinguishes complete resolved paths and
+The outgoing v0.54 specification [OWN-7] distinguishes complete resolved paths and
 unequal literal subscripts. [VIEW-2] forms whole contiguous views. [PAR-2]
 admits one constant-coefficient element map per written root, and denies
 an iteration's exclusive loan of enclosing storage. Consequently a helper
@@ -171,3 +171,23 @@ No executable or performance result for either program exists at this point.
 The source files remain in their final benchmark home while implementation
 and gate integration proceed. `make design-lint` passes with three pending
 amendments and no live-tree changes.
+
+## Range formation implementation, 2026-09-13
+
+The v0.55 amendment adds the optional endpoint pair to both existing view
+formers. The compiler submits both VIEW-2 conjuncts to the existing
+ProofContext and installs the successful formation's length as the captured
+affine difference. Lowering adjusts one descriptor's pointer and length; it
+does not introduce a runtime range test or allocate storage.
+
+The complete stencil now passes semantic checking and its native smoke test
+observes the expected two-step interior and boundary values. A second native
+test sums a runtime subrange of distinct values, changes an endpoint binding
+after formation, and exercises an empty range at the source end. Three
+negative formations cover reversed endpoints and an end outside the source,
+including an empty range outside it.
+
+This establishes range formation and sequential execution. Precise concurrent
+loan obligations, recursive subview formation, PAR-2 range permission, the
+independent dimension-matrix oracle, conformance integration, and performance
+measurements are still in progress. No parallel performance result is claimed.

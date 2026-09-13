@@ -6432,13 +6432,26 @@ impl Analyzer<'_, '_> {
             // and `room` cells are both the constant zero [MSR-1].
             CheckedExpression::SliceOf {
                 carrier,
-                source: CheckedSliceSource::Run(root),
+                source,
+                range,
                 strength,
                 ..
             } => {
                 let obligation_start = self.obligations.len();
-                let reached = self.judge_place_subscripts(root, states);
-                if reached && let Some(goal) = self.non_wrapped_window_goal(root) {
+                let mut reached = match source {
+                    CheckedSliceSource::Run(root) => self.judge_place_subscripts(root, states),
+                    _ => true,
+                };
+                if let Some(range) = range {
+                    reached &= self.judge_children_reach_parent(
+                        [range.start.as_ref(), range.end.as_ref()],
+                        states,
+                    );
+                }
+                if reached
+                    && let CheckedSliceSource::Run(root) = source
+                    && let Some(goal) = self.non_wrapped_window_goal(root)
+                {
                     self.judge_kernel_requirement(
                         crate::semantic::kernel::kernel_ordinal(match strength {
                             LoanStrength::Shared => crate::KernelRow::SliceOf,
@@ -6449,6 +6462,10 @@ impl Analyzer<'_, '_> {
                         goal,
                         ProofContext::new(&states.facts, &states.affine),
                     );
+                }
+                if reached && let Some(range) = range {
+                    let length = Self::slice_source_length(source);
+                    self.judge_view_range(carrier, &range.start, &range.end, &length, states);
                 }
                 ExpressionJudgment {
                     prepared_call: None,
@@ -8343,6 +8360,91 @@ impl Analyzer<'_, '_> {
             affine_index_maps: Vec::new(),
             kernel_row: None,
         });
+    }
+
+    fn slice_source_length(source: &CheckedSliceSource) -> CheckedExpression {
+        let measure = CheckedMeasure::Length;
+        match source {
+            CheckedSliceSource::Array { root, length } => CheckedExpression::ArrayMeasure {
+                measure,
+                root: root.clone(),
+                length: *length,
+            },
+            CheckedSliceSource::Buffer(root) => CheckedExpression::BufferMeasure {
+                measure,
+                root: root.clone(),
+            },
+            CheckedSliceSource::Run(root) => CheckedExpression::ContainerMeasure {
+                measure,
+                root: root.clone(),
+            },
+            CheckedSliceSource::ViewHolder { binding, element } => {
+                CheckedExpression::SliceMeasure {
+                    measure,
+                    root: super::super::model::CheckedSliceRoot {
+                        binding: *binding,
+                        element: *element,
+                        strength: LoanStrength::Shared,
+                    },
+                }
+            }
+            CheckedSliceSource::ArenaContent {
+                binding,
+                fields,
+                length,
+            } => CheckedExpression::ArrayMeasure {
+                measure,
+                root: CheckedArrayRoot::Binding {
+                    binding: *binding,
+                    fields: fields.clone(),
+                },
+                length: *length,
+            },
+        }
+    }
+
+    fn judge_view_range(
+        &mut self,
+        node_path: &crate::NodePath,
+        start: &CheckedExpression,
+        end: &CheckedExpression,
+        length: &CheckedExpression,
+        states: &ProofFlowState,
+    ) {
+        for (conjunct, (left, right)) in [(start, end), (end, length)].into_iter().enumerate() {
+            let left_goal =
+                self.obligation_goal_operand(node_path, conjunct + 1, left, &states.facts);
+            let right_goal =
+                self.obligation_goal_operand(node_path, conjunct + 2, right, &states.facts);
+            let left_term = self.read_operand(left);
+            let right_term = self
+                .read_operand(right)
+                .or_else(|| self.measure_operand(right));
+            let goal = GoalExpression::Operation {
+                row: GoalOperation::Integer {
+                    operation: CheckedIntegerOperation::LessEqual,
+                    operand_type: CheckedType::Integer(IntegerType::U64),
+                },
+                type_arguments: Vec::new(),
+                const_arguments: Vec::new(),
+                result: CheckedType::Bool,
+                arguments: vec![left_goal, right_goal],
+            };
+            self.judge_exact_relation_obligation(
+                ObligationFamily::ViewRange,
+                conjunct as u8,
+                node_path.clone(),
+                goal,
+                left_term,
+                right_term,
+                format!(
+                    "{} <= {}",
+                    self.render_expression(left),
+                    self.render_expression(right)
+                ),
+                states,
+            );
+        }
     }
 
     fn judge_system_ranges(
@@ -12766,6 +12868,18 @@ impl Analyzer<'_, '_> {
                 value,
             } => {
                 let affine_value = self.affine_expression_form(value, &mut state.affine);
+                let range_length = if let CheckedExpression::SliceOf {
+                    range: Some(range), ..
+                } = value
+                {
+                    self.affine_expression_form(&range.start, &mut state.affine)
+                        .zip(self.affine_expression_form(&range.end, &mut state.affine))
+                        .and_then(|(start, end)| {
+                            end.subtract(&start, &mut AffineCheckState::new()).ok()
+                        })
+                } else {
+                    None
+                };
                 // [MSR-3] the rebind placement is minted before the
                 // initializer's own kills, because the datum it forms is the
                 // value the transferred place had immediately before them.
@@ -12837,6 +12951,16 @@ impl Analyzer<'_, '_> {
                 }
                 if judgment.reached {
                     self.record_product_atom(*binding, value, &mut state.affine);
+                    if let Some(length) = range_length {
+                        let place = self.bound_place(*binding);
+                        let term = self.place_measure_term(
+                            CheckedMeasure::Length,
+                            projected_place(place),
+                            MeasuredKind::Slice,
+                            None,
+                        );
+                        self.measure_atoms.insert(term, length);
+                    }
                 }
                 true
             }
@@ -14706,6 +14830,25 @@ impl Analyzer<'_, '_> {
                 ..
             } => format!("{}_{}", integer_value(*ty, *bits), integer_type_name(*ty)),
             CheckedExpression::Binding { binding, .. } => self.binding_name(*binding),
+            CheckedExpression::BufferMeasure { measure, root } => format!(
+                "{}({})",
+                measure.spelling(),
+                self.render_place(&PlaceTerm {
+                    root: PlaceRoot::Binding(root.binding),
+                    deref: self.is_holder(root.binding),
+                    fields: root.fields.clone(),
+                }),
+            ),
+            CheckedExpression::SliceMeasure { measure, root } => format!(
+                "{}({})",
+                measure.spelling(),
+                self.binding_name(root.binding),
+            ),
+            CheckedExpression::ArrayMeasure { measure, root, .. } => format!(
+                "{}({})",
+                measure.spelling(),
+                self.render_place(&self.array_root_place(root)),
+            ),
             CheckedExpression::Project {
                 binding, fields, ..
             } => self.render_place(&PlaceTerm {

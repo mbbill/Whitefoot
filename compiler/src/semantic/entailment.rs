@@ -289,6 +289,8 @@ pub(crate) enum ObligationFamily {
     AllocationFit,
     /// One independent half-open system range goal [SYS-8].
     SystemRange,
+    /// One independent half-open view formation goal [VIEW-2].
+    ViewRange,
     /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
     /// a call to that row and judged under [MSR-4] exactly as every other
     /// consumer's obligation is.

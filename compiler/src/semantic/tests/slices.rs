@@ -6,6 +6,21 @@ use super::super::model::{
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 #[test]
+fn bounded_view_formation_proves_both_domain_conjuncts() {
+    for endpoints in ["3_u64, 2_u64", "0_u64, 5_u64", "5_u64, 5_u64"] {
+        let source = format!(
+            "command fn main() -> status: own ExitStatus pure {{\n  let values = buffer_new(4_u64, 0_u64);\n  region {{\n    let view = mut_slice_of(&uniq values, {endpoints});\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::View2, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::UndischargedViewRangeObligation { .. }
+            )
+        });
+    }
+}
+
+#[test]
 fn slices_retain_type_source_and_access_operations() {
     let source = br#"const bytes: FixedVector<u8, 2> =[4_u8, 9_u8];
 

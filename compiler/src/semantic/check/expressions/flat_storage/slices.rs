@@ -7,8 +7,8 @@ use crate::{
 };
 
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedSliceOrigin, CheckedSliceSource, CheckedType,
-    LoanStrength, MeasuredKind,
+    CheckedExpression, CheckedMode, CheckedSliceOrigin, CheckedSliceRange, CheckedSliceSource,
+    CheckedType, IntegerType, LoanStrength, MeasuredKind,
 };
 use super::super::super::borrows::{AccessKind, ResolvedPlace, SliceInfo, SliceLoan};
 use super::super::super::{
@@ -58,7 +58,87 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
-        let atoms = self.operation_atoms(node, 1)?;
+        let count = match self.tree.first_child_with(node, Production::AtomList)? {
+            Some(list) => self.tree.children_with(list, Production::Atom)?.len(),
+            None => 0,
+        };
+        let row = match strength {
+            LoanStrength::Shared => crate::KernelRow::SliceOf,
+            LoanStrength::Exclusive => crate::KernelRow::MutSliceOf,
+        };
+        let signature = crate::semantic::kernel::kernel_signature(row);
+        let contract = signature
+            .range
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let range_arity = signature.parameters.len() + contract.endpoint_parameters.len();
+        let atoms =
+            self.operation_atoms(node, if count == range_arity { range_arity } else { 1 })?;
+        let mut range_effects = EffectSet::NONE;
+        let mut range_accesses = Vec::new();
+        let range = if count == range_arity {
+            let mut endpoints = Vec::new();
+            for atom in [atoms[contract.start], atoms[contract.end]] {
+                let value = self.check_atom(function, atom, bindings, loop_depth)?;
+                if value.mode != CheckedMode::Own
+                    || value.expression.ty() != CheckedType::Integer(IntegerType::U64)
+                {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        atom,
+                        SemanticIssueKind::type_mismatch(
+                            "an own u64 range endpoint",
+                            "a value of another mode or type",
+                        ),
+                    );
+                }
+                endpoints.push(value.expression);
+                range_effects = range_effects.union(value.effects);
+                range_accesses.extend(value.accesses);
+            }
+            let end = endpoints
+                .pop()
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let start = endpoints
+                .pop()
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            Some(CheckedSliceRange {
+                start: Box::new(start),
+                end: Box::new(end),
+            })
+        } else {
+            None
+        };
+        let mut formed = self.check_slice_source(
+            node,
+            strength,
+            function,
+            bindings,
+            loop_depth,
+            atoms[contract.source],
+        )?;
+        let CheckedExpression::SliceOf {
+            range: destination, ..
+        } = &mut formed.expression
+        else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        *destination = range;
+        formed.effects = formed.effects.union(range_effects);
+        formed.accesses.extend(range_accesses);
+        Ok(formed)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_slice_source(
+        &self,
+        node: NodeId,
+        strength: LoanStrength,
+        function: &FunctionSignature,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        operand: NodeId,
+    ) -> Result<TypedExpression, CheckStop> {
+        let atoms = [operand];
         let borrow = self
             .tree
             .first_child_with(atoms[0], Production::BorrowExpr)?
@@ -294,6 +374,7 @@ inside the `region` block whose region it takes",
             expression: CheckedExpression::SliceOf {
                 carrier: self.tree.path(node)?.clone(),
                 source,
+                range: None,
                 region,
                 element,
                 strength,
@@ -466,6 +547,7 @@ region outlives; name that region, or one it outlives, on this borrow"
                     binding: local.binding,
                     element,
                 },
+                range: None,
                 region,
                 element,
                 strength: LoanStrength::Shared,
@@ -636,6 +718,7 @@ take the view in a region it outlives"
                     fields: Vec::new(),
                     length,
                 },
+                range: None,
                 region,
                 element,
                 strength,

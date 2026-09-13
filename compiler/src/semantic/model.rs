@@ -1735,6 +1735,14 @@ pub(crate) enum CheckedSliceSource {
     Run(CheckedContainerRoot),
 }
 
+/// The once-evaluated relative endpoints of a view formation [VIEW-2].
+/// Their domain is a mandatory source obligation before lowering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedSliceRange {
+    pub(crate) start: Box<CheckedExpression>,
+    pub(crate) end: Box<CheckedExpression>,
+}
+
 /// Source category retained only for integer-operation operands whose exact
 /// written constant class affects an ENT-3 source. This is checked metadata,
 /// not a second expression tree.
@@ -1982,6 +1990,7 @@ pub(crate) enum CheckedExpression {
     SliceOf {
         carrier: NodePath,
         source: CheckedSliceSource,
+        range: Option<CheckedSliceRange>,
         region: DeclarationId,
         element: CheckedFlatElement,
         /// [VIEW-2] which of the two formation rows this is: `slice_of`
@@ -2783,12 +2792,17 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::Project { .. } => Vec::new(),
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ContainerMeasure { root, .. }
-        | CheckedExpression::ReadStorage { root, .. }
-        | CheckedExpression::SliceOf {
-            source: CheckedSliceSource::Run(root),
-            ..
-        } => root.offsets().collect(),
-        CheckedExpression::SliceOf { .. } => Vec::new(),
+        | CheckedExpression::ReadStorage { root, .. } => root.offsets().collect(),
+        CheckedExpression::SliceOf { source, range, .. } => {
+            let mut children: Vec<_> = match source {
+                CheckedSliceSource::Run(root) => root.offsets().collect(),
+                _ => Vec::new(),
+            };
+            if let Some(range) = range {
+                children.extend([range.start.as_ref(), range.end.as_ref()]);
+            }
+            children
+        }
         CheckedExpression::UserCall { arguments, .. }
         | CheckedExpression::SystemCall { arguments, .. }
         | CheckedExpression::KernelCall { arguments, .. }

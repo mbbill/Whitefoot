@@ -1,6 +1,6 @@
-# Kernel Specification v0.55
+# Kernel Specification v0.54
 
-Status: ACTIVE v0.55
+Status: ACTIVE v0.54
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -1158,12 +1158,6 @@ Neither view is ever stored in a nominal field, an enum payload, or a run slot [
 [VIEW-2] Formation, and the loan the formed value holds.
 Exactly two operations form a view, each written as one [OP-1] table row over one borrowed place and each declared as one [BLK-0] record, as the last paragraph of this rule states:
 `slice_of` takes `&'r place` and produces `own Slice<'r, T>`; `mut_slice_of` takes `&uniq 'r place` and produces `own MutSlice<'r, T>`.
-Each row accepts either that single positional operand or exactly three positional operands: `slice_of(&'r place, start, end)` and `mut_slice_of(&uniq 'r place, start, end)`.
-The additional operands are `own u64` atoms evaluated once in source order, and form the half-open range `[start, end)` relative to the source's current viewed extent.
-The three-operand form submits two independent goals, `start <= end` and `end <= len_of(place)`, under [ENT-6]; failure to prove either is a hard error citing VIEW-2 at the complete `call`, with the residual conjunct and the restructuring `establish start <= end <= len_of(source) with a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the view range`.
-The result denotes the source's storage beginning at the captured start and has length `end - start`; the one-operand form denotes `[0, len_of(place))`.
-An empty range is admitted, including at the source's end, and reaches no elements, but retains the obligation to keep its backing storage and descriptor valid for its own lifetime.
-These are source proof obligations, with no runtime bounds test, overlap test, copying, or allocation.
 The written borrow decides the row: a `&uniq` operand to `slice_of` and a shared operand to `mut_slice_of` are each a hard error citing TYPE-5 at that operand's `atom`, naming the borrow the written row takes.
 `'r` is the region the operand's borrow takes, written or elided exactly as [FORM-8] states, and `T` is the viewed place's element type; neither is a written type argument, and a written argument list on either row is a hard error citing OP-1 at the `call`.
 **The formed value, not the argument borrow, holds the loan**: the argument borrow is an ordinary call-scoped temporary [OWN-6], and the loan the formation establishes on the origin place lives for the region `'r` [OWN-5].
@@ -1177,8 +1171,7 @@ The child carries the parent's complete origin set and its range; its loan regio
 Each row is one [BLK-0] declaration record whose operand is spelled `vector` and whose mode is the borrow its own strength names, so the record's requirement and relation lists are what the formation submits and publishes.
 Its one declared requirement is the **non-wrap premise** `head_of(vector) <= room_of(vector)`, which is `head_of(vector) + len_of(vector) <= cap_of(vector)` under [MSR-2]'s standing identity `len_of + room_of = cap_of` and is therefore an ordinary difference bound between two terms [ENT-4]; it is submitted at the formation and discharged under [MSR-4] exactly as every other row requirement is, and a formation whose operand does not discharge it is the ordinary [BLK-0] rejection naming the row.
 A view is one contiguous range and a wrapped window is two, which is what that premise buys: an empty run discharges it from the standing `head_of <= cap_of` alone, so a drained ring is viewable, and `array<T, N>` and `buffer<T>` discharge it from their own measure-table row, whose `head_of` and `room_of` cells are both exactly zero [MSR-1].
-Its four declared relations are the formed view's own measures: `len_of(result)` and `cap_of(result)` equal `len_of(vector)` in the one-operand form and `end - start` in the three-operand form, and `room_of(result)` and `head_of(result)` exactly zero, which is [MSR-1]'s view row instantiated at the selected extent.
-The optional endpoint pair and its two domain goals belong to these same two declaration records; supplying only one endpoint or additional operands is the ordinary [OP-1] arity error.
+Its four declared relations are the formed view's own measures: `len_of(result) == len_of(vector)`, `cap_of(result) == len_of(vector)`, and `room_of(result)` and `head_of(result)` exactly zero, which is [MSR-1]'s view row instantiated at the operand.
 Both rows keep their [OP-1] table spelling while that transitional domain contains `array<T, N>` and `buffer<T>`, because two declaration domains may not claim one spelling [TYPE-6]; moving both spellings into the kernel IDENT domain is DEFERRED with recorded delta [META-5]: numbered rules +0, grammar productions +0, writer operation spellings -2, kernel declaration records +0, and it lands with [S34]'s retirement of those two types.
 
 [VIEW-4] A commit may not displace a live loan.
@@ -1325,8 +1318,8 @@ The table below is the normative inventory (columns: op, type domain, signature,
 | `cvt` | value-preserving pairs [OP-6] | `(Src) -> own Dst` | pure |
 | `cvt` | all other distinct numeric pairs [OP-6] | `(Src) -> own Result<Dst, NarrowError>` | pure |
 | `len_of` `cap_of` `room_of` `head_of` | `Slice<'r, T>`, `MutSlice<'r, T>`, `array<T, N>`, `buffer<T>`, `FixedVector<T, n>`, `Vector<'s, T>`, `Arena<'s, bytes, align>` | `-> own u64` | pure |
-| `slice_of` | viewable [VIEW-2] | `(&'r place [, own u64 start, own u64 end]) -> own Slice<'r, T>` | pure |
-| `mut_slice_of` | viewable [VIEW-2] | `(&uniq 'r place [, own u64 start, own u64 end]) -> own MutSlice<'r, T>` | pure |
+| `slice_of` | `array<T, N>`, `buffer<T>` | `&'r place -> own Slice<'r, T>` (a borrow of the whole array/buffer place) | pure |
+| `mut_slice_of` | `array<T, N>`, `buffer<T>` | `&uniq 'r place -> own MutSlice<'r, T>` (a unique borrow of the whole array/buffer place) | pure |
 | `box_new` | any T | `(own T) -> own box<T>` | allocates(heap) |
 | `arena_new` | any T | `(own T) -> own arena<'r, T>` | allocates(arena 'r) |
 | `array_new` | `T` copy (v0: primitive), `N` a constant-expression [CONST-1] | `(T) -> own array<T, N>` (fills all N elements with the argument) | pure |
@@ -3705,8 +3698,6 @@ An array- or buffer-index target and a non-fragment target receive no commit val
 `let b = buffer_new(n, v);` and `let b = buffer_vacant::<T>(n);` each establish len_of(b) = n on the normal continuation [OP-9], n read as term or constant.
 `let m = len_of(P);` for a tracked P establishes m = len_of(P).
 `let s = slice_of…(&P);` for a tracked P establishes len_of(s) = len_of(P).
-Either three-operand view former establishes `len_of(s) = end - start` after both [VIEW-2] domain goals discharge, over the exact current-value images captured where the endpoints are evaluated.
-This is a mathematical difference of captured values, not a new executed subtraction or a relation that is retargeted when an endpoint binding is later assigned.
 [ENT-3.S7]
 - S7 (constant-offset arithmetic).
 For `let s = p +wrap k;` with p a term of type T and k a constant in either operand position, when the closed state at that point derives `min(T) <= p + k` and `p + k <= max(T)` (as bounds on p through Z), s = p + k is established; `p -wrap k` with constant k establishes s = p - k under the dual range condition.
@@ -3946,7 +3937,6 @@ An own integer parameter and any integer result whose listed form below is unava
 A typed integer literal or named integer const has its mathematical constant image; reading or ordinarily copying a live own integer binding reads its current image; and a total value-preserving integer `cvt` keeps the operand image.
 After its ordinary IntegerDomain obligation has succeeded, an exact integer addition or subtraction has the sum or difference of its operand images, and an exact integer multiplication has the scaled image when either complete operand image is a mathematical constant; every other integer-producing operation receives a fresh atom.
 An expression that may write or consume a place before producing its result receives a fresh result atom rather than an image reconstructed across that effect.
-A view's length image from the three-operand formation [ENT-3.S6] is the difference of the captured end and start images; its `cap_of` cell denotes that same image [MSR-1].
 
 An ordinary `let` installs the initializer image at its new binding after the initializer's effects.
 A whole-binding `set` first forms the right-hand-side image from the entering values, performs the ordinary target kill, then makes the target denote that image; a projected or indexed set does not replace the root binding's scalar image.
