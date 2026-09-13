@@ -142,6 +142,21 @@ jobs:
             "$RUNNER_TEMP/sched-deque-probe$suffix.exe"
           done
 
+      # The machine fact the idle window's admission test reads, through the
+      # Windows leaf that answers it: the CPU sets this process may run on and
+      # how many efficiency classes they carry. The probe asserts the rule's two
+      # directions rather than a topology, so a uniform runner and a hybrid one
+      # both pass; what running it here proves is that the leaf's own path --
+      # the run-time symbol lookup, the sized report, the group and affinity
+      # filter -- answers on a real Windows host rather than only compiling.
+      - name: Read this host's CPU performance levels through the Windows leaf
+        run: |
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            compiler/src/backend/sched/cpu_levels_probe.c compiler/src/backend/sched/entry.c \
+            compiler/src/backend/sched/prim_windows.c -o "$RUNNER_TEMP/sched-cpu-levels.exe"
+          WF_WORKERS=2 "$RUNNER_TEMP/sched-cpu-levels.exe"
+          WF_WORKERS=8 "$RUNNER_TEMP/sched-cpu-levels.exe"
+
       - name: Exercise compute startup failures and frame lifetime
         run: |
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -DWF_SCHED_TEST \

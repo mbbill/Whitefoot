@@ -5,10 +5,9 @@
 #define _GNU_SOURCE
 #endif
 
-/* The io_uring reference of the TCP echo workload: the fastest shape the
- * kernel offers for exactly this protocol, written against the io_uring ABI
- * directly rather than liburing so it builds anywhere the rest of this bundle
- * does.
+/* A native io_uring reference for the TCP echo workload, written against the
+ * kernel ABI directly rather than liburing. Its configuration is a measured
+ * candidate, not evidence that no faster implementation exists.
  *
  *   uring_echo PORT CONNECTIONS [--threads N] [--sqpoll]
  *
@@ -28,14 +27,15 @@
  *   a provided buffer ring  IORING_REGISTER_PBUF_RING; the kernel picks the
  *                           destination out of a ring this process refills, so
  *                           the receive path has neither a per-connection
- *                           buffer nor a copy: the echo is sent straight out of
- *                           the buffer the kernel filled
+ *                           buffer nor an extra userspace copy: the echo is
+ *                           sent straight out of the buffer the kernel filled
  *   one ring per core       each thread has its own ring, its own buffer ring,
  *                           and its own listening socket under SO_REUSEPORT, so
  *                           a connection is accepted, received and echoed on
  *                           one thread with no shared state on the path
  *
- * Everything is sized from CONNECTIONS before the first accept. The connection
+ * Everything is sized before the first accept, from CONNECTIONS by default.
+ * Explicit experiments can choose the provided-buffer count independently. The connection
  * table is indexed by descriptor, and each connection's echo queue holds the
  * buffers the kernel has filled but the socket has not yet taken. Nothing is
  * allocated per operation.
@@ -67,20 +67,39 @@
 #define OPERATION_SEND 3u
 #define OPERATION_WAKE 4u
 
-/* One buffer holds one arrival. Larger than the small message the round-trip
- * lines send and small enough that the large-payload line still spreads one
- * message over several arrivals, which is the case the echo queue exists for. */
-#define BUFFER_BYTES 8192u
+/* Keep the previous 8 KiB reference and compare 64 KiB at the same total
+ * provided-byte budget. TCP may fragment either size into arbitrarily short
+ * receives; a payload size does not bound the number of completions. */
+#ifndef WF_BENCH_URING_BUFFER_BYTES
+#define WF_BENCH_URING_BUFFER_BYTES 8192u
+#endif
+#define BUFFER_BYTES WF_BENCH_URING_BUFFER_BYTES
+_Static_assert(BUFFER_BYTES == 8192u || BUFFER_BYTES == 65536u,
+               "the paired buffer experiment uses 8 KiB or 64 KiB buffers");
+#ifndef WF_BENCH_URING_INLINE_SEND
+#define WF_BENCH_URING_INLINE_SEND 0
+#endif
+_Static_assert(WF_BENCH_URING_INLINE_SEND == 0 || WF_BENCH_URING_INLINE_SEND == 1,
+               "inline send is an explicit paired configuration");
+#ifndef WF_BENCH_URING_BUFFER_COUNT
+#define WF_BENCH_URING_BUFFER_COUNT 0u
+#endif
+/* Zero retains the connection-derived byte budget. Explicit experiments size
+ * each worker's provided ring independently; registration requires a power
+ * of two, with at most 32768 entries. This does not size a private peer buffer. */
+_Static_assert(WF_BENCH_URING_BUFFER_COUNT == 0u ||
+                   (WF_BENCH_URING_BUFFER_COUNT <= 32768u &&
+                    (WF_BENCH_URING_BUFFER_COUNT & (WF_BENCH_URING_BUFFER_COUNT - 1u)) == 0u),
+               "provided buffer count must be zero or a power of two up to 32768");
 
-/* The deepest echo queue one connection may hold. The workload's contract is
- * one outstanding message per connection of at most 64 KiB, which is eight
- * buffers; the ceiling is far above that, and a server that reached it would
- * be holding more unsent bytes than the protocol can produce. */
-#define PENDING_MAX 64u
+/* One send gathers at most this many buffers. The pending queue itself uses
+ * one node per provided buffer, so its capacity follows actual buffer loans
+ * rather than an assumption about TCP fragmentation or message size. */
+#define SEND_VECTOR_MAX 64u
+#define NO_BUFFER UINT16_MAX
 
-/* Submission entries per ring. Deep enough that a re-armed receive, a send and
- * an accept for every connection one thread holds are never queued behind a
- * full ring. */
+/* Submission entries per ring in the current screen. Submission debt is
+ * retained if an enter consumes only part of the prepared entries. */
 #define RING_ENTRIES 4096u
 
 struct ring {
@@ -113,16 +132,24 @@ struct connection {
     int closing;
     int sending;
     int starved;
-    unsigned head;
+    uint64_t receive_return_generation;
+    uint16_t head;
+    uint16_t tail;
     unsigned count;
-    uint16_t queue_buffer[PENDING_MAX];
-    uint32_t queue_offset[PENDING_MAX];
-    uint32_t queue_length[PENDING_MAX];
-    /* The whole queue leaves in one operation. The vector is rebuilt only
-     * when a send is armed, so a receive that lands while one is in flight
-     * appends to the queue and waits for the next. */
+    /* Up to SEND_VECTOR_MAX queue entries leave in one operation. The vector
+     * is rebuilt only when a send is armed, so a receive that lands while one
+     * is in flight appends to the queue and waits for the next. */
     struct msghdr message;
-    struct iovec vector[PENDING_MAX];
+    struct iovec vector[SEND_VECTOR_MAX];
+};
+
+struct buffer_loan {
+    uint16_t next;
+    uint32_t offset;
+    uint32_t length;
+#if defined(WF_BENCH_URING_OBSERVE)
+    unsigned held;
+#endif
 };
 
 struct worker {
@@ -135,12 +162,54 @@ struct worker {
     struct io_uring_buf_ring *buffers;
     size_t buffer_ring_bytes;
     unsigned char *buffer_memory;
+    struct buffer_loan *loans;
     unsigned buffer_count;
     unsigned buffer_mask;
     uint16_t buffer_tail;
+    uint64_t buffer_return_generation;
     int *starved_list;
     unsigned starved_count;
+#if defined(WF_BENCH_URING_OBSERVE)
+    uint64_t receives;
+    uint64_t sends;
+    uint64_t receive_bytes;
+    uint64_t send_bytes;
+    uint64_t exhausted;
+    uint64_t inline_attempts;
+    uint64_t inline_bytes;
+    uint64_t inline_succeeded;
+    uint64_t inline_short;
+    uint64_t inline_eagain;
+    uint64_t inline_requested_bytes;
+    uint64_t inline_requested_vectors;
+    uint64_t ring_requests;
+    uint64_t ring_requested_bytes;
+    uint64_t ring_requested_vectors;
+    unsigned deepest_queue;
+    uint64_t buffer_acquires;
+    uint64_t buffer_returns;
+    uint64_t buffer_terminal;
+    uint64_t receive_arms;
+    uint64_t starved_parks;
+    uint64_t starved_rearms;
+    uint64_t starved_closed;
+    uint64_t late_exhaustion_retries;
+    unsigned loaned_buffers;
+    unsigned peak_loaned_buffers;
+    unsigned peak_starved;
+#endif
 };
+
+#if defined(WF_BENCH_URING_TEST)
+/* The deterministic CQE fixture replaces only kernel transport/setup and the
+ * synchronous send result. Queue, receive-arm and CQE handling stay real. */
+static int uring_test_ring_setup(struct ring *ring, unsigned entries, int poll_thread);
+static int uring_test_buffers_setup(struct worker *worker);
+static int uring_test_ring_enter(struct ring *ring, unsigned wait_for);
+#if WF_BENCH_URING_INLINE_SEND
+static ssize_t uring_test_sendmsg(int descriptor, const struct msghdr *message, int flags);
+#endif
+#endif
 
 static uint64_t option_connections;
 static uint16_t option_port;
@@ -195,6 +264,9 @@ static void raise_descriptor_limit(uint64_t wanted) {
 /* --- the ring ---------------------------------------------------------- */
 
 static int ring_setup(struct ring *ring, unsigned entries, int poll_thread) {
+#if defined(WF_BENCH_URING_TEST)
+    return uring_test_ring_setup(ring, entries, poll_thread);
+#else
     struct io_uring_params parameters;
     memset(&parameters, 0, sizeof parameters);
     if (poll_thread) {
@@ -205,9 +277,8 @@ static int ring_setup(struct ring *ring, unsigned entries, int poll_thread) {
          * only one that waits. Saying so lets the kernel defer the completion
          * work to the moment this thread asks for it instead of interrupting
          * it, which both removes the interrupt and lets several arrivals for
-         * one connection be reaped together. The pair is worth about a
-         * quarter of the small-message rate here. SQPOLL cannot be combined
-         * with it, because there the submitting task is the kernel's own. */
+         * one connection be reaped together. SQPOLL uses a separate polling
+         * task and is a different resource-budget configuration. */
         parameters.flags |= IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN;
     }
     long created = syscall(__NR_io_uring_setup, entries, &parameters);
@@ -271,6 +342,7 @@ static int ring_setup(struct ring *ring, unsigned entries, int poll_thread) {
         ring->submission_array[at] = at;
     }
     return 0;
+#endif
 }
 
 static void ring_teardown(struct ring *ring) {
@@ -302,6 +374,9 @@ static struct io_uring_sqe *ring_next(struct ring *ring) {
 }
 
 static int ring_enter(struct ring *ring, unsigned wait_for) {
+#if defined(WF_BENCH_URING_TEST)
+    return uring_test_ring_enter(ring, wait_for);
+#else
     unsigned flags = 0;
     unsigned to_submit = ring->unsubmitted;
     if (to_submit > 0) {
@@ -309,6 +384,10 @@ static int ring_enter(struct ring *ring, unsigned wait_for) {
                               memory_order_release);
     }
     if (ring->poll_thread) {
+        /* Match liburing's SQPOLL wake protocol: the published tail must be
+         * visible before reading NEED_WAKEUP. A release store followed by an
+         * acquire load alone does not provide this store-to-load barrier. */
+        atomic_thread_fence(memory_order_seq_cst);
         unsigned state = atomic_load_explicit((_Atomic unsigned *)ring->submission_flags,
                                               memory_order_acquire);
         /* The poll thread reads the tail itself, so the count is ignored; the
@@ -334,13 +413,27 @@ static int ring_enter(struct ring *ring, unsigned wait_for) {
         report("io_uring_enter", errno);
         return 1;
     }
-    ring->unsubmitted = 0;
+    /* EINTR/EBUSY and a short submission do not consume every prepared SQE.
+     * Keep the remainder visible to the next enter instead of waiting forever
+     * for an operation the kernel has not accepted. SQPOLL consumes the
+     * published tail independently and ignores the submission count. */
+    if (ring->poll_thread) {
+        ring->unsubmitted = 0;
+    } else {
+        unsigned head = atomic_load_explicit((_Atomic unsigned *)ring->submission_head,
+                                             memory_order_acquire);
+        ring->unsubmitted = ring->local_tail - head;
+    }
     return 0;
+#endif
 }
 
 /* --- the provided buffer ring ------------------------------------------- */
 
 static int buffers_setup(struct worker *worker) {
+#if defined(WF_BENCH_URING_TEST)
+    return uring_test_buffers_setup(worker);
+#else
     worker->buffer_ring_bytes = (size_t)worker->buffer_count * sizeof(struct io_uring_buf);
     void *map = mmap(NULL, worker->buffer_ring_bytes, PROT_READ | PROT_WRITE,
                      MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
@@ -363,7 +456,8 @@ static int buffers_setup(struct worker *worker) {
         return 1;
     }
     worker->buffer_memory = malloc((size_t)worker->buffer_count * BUFFER_BYTES);
-    if (worker->buffer_memory == NULL) {
+    worker->loans = calloc(worker->buffer_count, sizeof *worker->loans);
+    if (worker->buffer_memory == NULL || worker->loans == NULL) {
         fprintf(stderr, "uring_echo: out of memory for the buffers\n");
         return 1;
     }
@@ -377,6 +471,7 @@ static int buffers_setup(struct worker *worker) {
     atomic_store_explicit((_Atomic uint16_t *)&worker->buffers->tail, worker->buffer_tail,
                           memory_order_release);
     return 0;
+#endif
 }
 
 static void arm_receive(struct worker *worker, int descriptor);
@@ -385,6 +480,17 @@ static void arm_receive(struct worker *worker, int descriptor);
  * waiting for one. Only the owning thread publishes into its own ring, so the
  * tail needs no lock. */
 static void buffer_return(struct worker *worker, uint16_t identifier) {
+#if defined(WF_BENCH_URING_OBSERVE)
+    if (identifier >= worker->buffer_count || !worker->loans[identifier].held ||
+        worker->loaned_buffers == 0) {
+        fprintf(stderr, "uring_echo: returning an unowned provided buffer\n");
+        mark_failed();
+        return;
+    }
+    worker->loans[identifier].held = 0;
+    worker->loaned_buffers--;
+    worker->buffer_returns++;
+#endif
     struct io_uring_buf *slot = &worker->buffers->bufs[worker->buffer_tail & worker->buffer_mask];
     slot->addr =
         (unsigned long long)(uintptr_t)(worker->buffer_memory + (size_t)identifier * BUFFER_BYTES);
@@ -393,11 +499,19 @@ static void buffer_return(struct worker *worker, uint16_t identifier) {
     worker->buffer_tail++;
     atomic_store_explicit((_Atomic uint16_t *)&worker->buffers->tail, worker->buffer_tail,
                           memory_order_release);
+    worker->buffer_return_generation++;
     while (worker->starved_count > 0) {
         int descriptor = worker->starved_list[--worker->starved_count];
         table[descriptor].starved = 0;
         if (table[descriptor].active && !table[descriptor].closing) {
+#if defined(WF_BENCH_URING_OBSERVE)
+            worker->starved_rearms++;
+#endif
             arm_receive(worker, descriptor);
+#if defined(WF_BENCH_URING_OBSERVE)
+        } else {
+            worker->starved_closed++;
+#endif
         }
     }
 }
@@ -432,6 +546,10 @@ static void arm_receive(struct worker *worker, int descriptor) {
     entry->flags = IOSQE_BUFFER_SELECT;
     entry->buf_group = (unsigned short)worker->index;
     entry->user_data = tag(OPERATION_RECEIVE, descriptor);
+    table[descriptor].receive_return_generation = worker->buffer_return_generation;
+#if defined(WF_BENCH_URING_OBSERVE)
+    worker->receive_arms++;
+#endif
 }
 
 static void arm_wake(struct worker *worker) {
@@ -447,29 +565,111 @@ static void arm_wake(struct worker *worker) {
     entry->user_data = tag(OPERATION_WAKE, worker->wake);
 }
 
-/* The echo queue, sent straight out of the buffers the kernel filled: no copy
- * on either side of the exchange. Exactly one send is in flight per
- * connection, so the bytes leave in the order they arrived, and everything the
- * connection is holding leaves in that one send rather than one operation per
- * arrival -- which is what keeps a large message from costing a completion
- * round trip per buffer. */
+/* A completed send, whether a syscall or a CQE, retires exactly its queue
+ * prefix. Appended receive buffers are outside that prefix and stay loaned. */
+static void retire_send_bytes(struct worker *worker, struct connection *link, uint32_t left) {
+    while (left > 0 && link->count > 0) {
+        uint16_t identifier = link->head;
+        struct buffer_loan *loan = &worker->loans[identifier];
+        uint32_t remaining = loan->length - loan->offset;
+        if (left < remaining) {
+            loan->offset += left;
+            break;
+        }
+        left -= remaining;
+        link->head = loan->next;
+        link->count--;
+        buffer_return(worker, identifier);
+    }
+}
+
+static void prepare_send_message(struct worker *worker, struct connection *link) {
+    unsigned vectors = link->count < SEND_VECTOR_MAX ? link->count : SEND_VECTOR_MAX;
+    uint16_t identifier = link->head;
+    for (unsigned at = 0; at < vectors; at++) {
+        const struct buffer_loan *loan = &worker->loans[identifier];
+        link->vector[at].iov_base = worker->buffer_memory +
+                                    (size_t)identifier * BUFFER_BYTES + loan->offset;
+        link->vector[at].iov_len = loan->length - loan->offset;
+        identifier = loan->next;
+    }
+    memset(&link->message, 0, sizeof link->message);
+    link->message.msg_iov = link->vector;
+    link->message.msg_iovlen = vectors;
+}
+
+#if defined(WF_BENCH_URING_OBSERVE)
+/* Requested aggregation is distinct from bytes actually moved: a short send
+ * may submit the same suffix again. This observer never enters normal code. */
+static uint64_t send_message_bytes(const struct msghdr *message) {
+    uint64_t bytes = 0;
+    for (size_t at = 0; at < (size_t)message->msg_iovlen; at++) {
+        bytes += message->msg_iov[at].iov_len;
+    }
+    return bytes;
+}
+#endif
+
+static void close_connection(struct worker *worker, int descriptor);
+static void check_finished(void);
+
+/* The echo queue, sent straight out of the buffers the kernel filled: no
+ * extra userspace copy. Exactly one send is in flight per connection, and its
+ * vector stays unchanged until completion. A send gathers up to
+ * SEND_VECTOR_MAX arrivals rather than one operation per buffer. */
 static void arm_send(struct worker *worker, int descriptor) {
     struct connection *link = &table[descriptor];
+    prepare_send_message(worker, link);
+#if WF_BENCH_URING_INLINE_SEND
+    /* One nonblocking attempt per arm. Success releases only the bytes the
+     * syscall copied; short-send debt and EAGAIN enter the existing ring path.
+     * A submitted send still owns its vector and buffers until its CQE. */
+#if defined(WF_BENCH_URING_OBSERVE)
+    uint64_t requested = send_message_bytes(&link->message);
+    worker->inline_attempts++;
+    worker->inline_requested_bytes += requested;
+    worker->inline_requested_vectors += link->message.msg_iovlen;
+#endif
+#if defined(WF_BENCH_URING_TEST)
+    ssize_t moved = uring_test_sendmsg(descriptor, &link->message, MSG_DONTWAIT | MSG_NOSIGNAL);
+#else
+    ssize_t moved = sendmsg(descriptor, &link->message, MSG_DONTWAIT | MSG_NOSIGNAL);
+#endif
+    if (moved > 0) {
+#if defined(WF_BENCH_URING_OBSERVE)
+        worker->inline_bytes += (uint64_t)moved;
+        worker->send_bytes += (uint64_t)moved;
+        worker->inline_succeeded++;
+        if ((uint64_t)moved < requested) worker->inline_short++;
+#endif
+        retire_send_bytes(worker, link, (uint32_t)moved);
+        if (link->count == 0) {
+            if (link->closing) {
+                close_connection(worker, descriptor);
+                check_finished();
+            }
+            return;
+        }
+        prepare_send_message(worker, link);
+    } else if (moved < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+        report("inline send", errno);
+        mark_failed();
+        return;
+    }
+#if defined(WF_BENCH_URING_OBSERVE)
+    if (moved < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) worker->inline_eagain++;
+#endif
+#endif
     struct io_uring_sqe *entry = ring_next(&worker->ring);
     if (entry == NULL) {
         mark_failed();
         return;
     }
-    for (unsigned at = 0; at < link->count; at++) {
-        unsigned slot = (link->head + at) % PENDING_MAX;
-        link->vector[at].iov_base = worker->buffer_memory +
-                                    (size_t)link->queue_buffer[slot] * BUFFER_BYTES +
-                                    link->queue_offset[slot];
-        link->vector[at].iov_len = link->queue_length[slot] - link->queue_offset[slot];
-    }
-    memset(&link->message, 0, sizeof link->message);
-    link->message.msg_iov = link->vector;
-    link->message.msg_iovlen = link->count;
+#if defined(WF_BENCH_URING_OBSERVE)
+    worker->ring_requests++;
+    worker->ring_requested_bytes += send_message_bytes(&link->message);
+    worker->ring_requested_vectors += link->message.msg_iovlen;
+#endif
     entry->opcode = IORING_OP_SENDMSG;
     entry->fd = descriptor;
     entry->addr = (unsigned long long)(uintptr_t)&link->message;
@@ -489,15 +689,19 @@ static void close_connection(struct worker *worker, int descriptor) {
         for (unsigned at = 0; at < worker->starved_count; at++) {
             if (worker->starved_list[at] == descriptor) {
                 worker->starved_list[at] = worker->starved_list[--worker->starved_count];
+#if defined(WF_BENCH_URING_OBSERVE)
+                worker->starved_closed++;
+#endif
                 break;
             }
         }
         link->starved = 0;
     }
     while (link->count > 0) {
-        buffer_return(worker, link->queue_buffer[link->head]);
-        link->head = (link->head + 1) % PENDING_MAX;
+        uint16_t identifier = link->head;
+        link->head = worker->loans[identifier].next;
         link->count--;
+        buffer_return(worker, identifier);
     }
     link->active = 0;
     link->sending = 0;
@@ -574,6 +778,22 @@ static void *worker_main(void *raw) {
                                   memory_order_release);
             if (operation == OPERATION_ACCEPT) {
                 if (result >= 0) {
+#if defined(WF_BENCH_TCP_VERIFY)
+                    int enabled = 0;
+                    socklen_t option_bytes = sizeof(enabled);
+#if defined(WF_BENCH_NAGLE)
+                    const int expected = 0;
+#else
+                    const int expected = 1;
+#endif
+                    if (getsockopt(result, IPPROTO_TCP, TCP_NODELAY, &enabled, &option_bytes) != 0 ||
+                        (enabled != 0) != expected) {
+                        fprintf(stderr, "uring_echo: accepted TCP_NODELAY does not match the requested policy\n");
+                        close(result);
+                        mark_failed();
+                        break;
+                    }
+#endif
                     if ((unsigned)result >= descriptor_capacity) {
                         fprintf(stderr, "uring_echo: descriptor %d is past the table\n", result);
                         mark_failed();
@@ -582,6 +802,16 @@ static void *worker_main(void *raw) {
                     struct connection *link = &table[result];
                     memset(link, 0, sizeof *link);
                     link->active = 1;
+                    link->head = NO_BUFFER;
+                    link->tail = NO_BUFFER;
+#if defined(WF_BENCH_SNDBUF)
+                    int send_bytes = WF_BENCH_SNDBUF;
+                    if (setsockopt(result, SOL_SOCKET, SO_SNDBUF, &send_bytes, sizeof send_bytes) != 0) {
+                        report("accepted SO_SNDBUF", errno);
+                        mark_failed();
+                        break;
+                    }
+#endif
                     atomic_fetch_add_explicit(&accepted_total, 1, memory_order_relaxed);
                     arm_receive(worker, result);
                 } else if (result != -ECANCELED) {
@@ -599,24 +829,60 @@ static void *worker_main(void *raw) {
                 if (!link->active) {
                     continue;
                 }
+                uint16_t identifier = (uint16_t)(flags >> IORING_CQE_BUFFER_SHIFT);
+                if ((flags & IORING_CQE_F_BUFFER) != 0 && identifier >= worker->buffer_count) {
+                    fprintf(stderr, "uring_echo: completion names an invalid buffer\n");
+                    mark_failed();
+                    break;
+                }
+#if defined(WF_BENCH_URING_OBSERVE)
+                /* This counts userspace-visible ownership from the receive
+                 * CQE to final return, including terminal zero-payload loans.
+                 * Buffers already selected by the kernel but whose CQEs have
+                 * not been consumed are outside this live-loan count. */
+                if ((flags & IORING_CQE_F_BUFFER) != 0) {
+                    if (worker->loans[identifier].held) {
+                        fprintf(stderr, "uring_echo: received an already owned provided buffer\n");
+                        mark_failed();
+                        break;
+                    }
+                    worker->loans[identifier].held = 1;
+                    worker->buffer_acquires++;
+                    worker->loaned_buffers++;
+                    if (worker->loaned_buffers > worker->peak_loaned_buffers)
+                        worker->peak_loaned_buffers = worker->loaned_buffers;
+                    if (result <= 0) worker->buffer_terminal++;
+                }
+#endif
+                /* Ownership is carried by F_BUFFER, including a terminal CQE
+                 * with no payload. Such a buffer does not enter the send queue. */
+                if (result <= 0 && (flags & IORING_CQE_F_BUFFER) != 0) {
+                    buffer_return(worker, identifier);
+                }
                 if (result > 0) {
                     if ((flags & IORING_CQE_F_BUFFER) == 0) {
                         fprintf(stderr, "uring_echo: a receive completed with no buffer\n");
                         mark_failed();
                         break;
                     }
-                    uint16_t identifier = (uint16_t)(flags >> IORING_CQE_BUFFER_SHIFT);
-                    if (link->count == PENDING_MAX) {
-                        fprintf(stderr, "uring_echo: connection %d holds %u unsent buffers\n",
-                                descriptor, PENDING_MAX);
+                    if ((unsigned)result > BUFFER_BYTES) {
+                        fprintf(stderr, "uring_echo: receive exceeds the provided buffer\n");
                         mark_failed();
                         break;
                     }
-                    unsigned slot = (link->head + link->count) % PENDING_MAX;
-                    link->queue_buffer[slot] = identifier;
-                    link->queue_offset[slot] = 0;
-                    link->queue_length[slot] = (uint32_t)result;
+                    struct buffer_loan *loan = &worker->loans[identifier];
+                    loan->next = NO_BUFFER;
+                    loan->offset = 0;
+                    loan->length = (uint32_t)result;
+                    if (link->count == 0) link->head = identifier;
+                    else worker->loans[link->tail].next = identifier;
+                    link->tail = identifier;
                     link->count++;
+#if defined(WF_BENCH_URING_OBSERVE)
+                    worker->receives++;
+                    worker->receive_bytes += (uint32_t)result;
+                    if (link->count > worker->deepest_queue) worker->deepest_queue = link->count;
+#endif
                     if (!link->sending) {
                         arm_send(worker, descriptor);
                     }
@@ -630,11 +896,31 @@ static void *worker_main(void *raw) {
                         continue;
                     }
                 } else if (result == -ENOBUFS) {
+#if defined(WF_BENCH_URING_OBSERVE)
+                    worker->exhausted++;
+#endif
+                    /* This CQE may predate buffers returned while earlier
+                     * CQEs were consumed. Retry once for those publications;
+                     * the new arm captures this generation. If another peer
+                     * consumes the buffers, a second exhaustion without a new
+                     * return parks instead of spinning. */
+                    if (link->receive_return_generation != worker->buffer_return_generation) {
+#if defined(WF_BENCH_URING_OBSERVE)
+                        worker->late_exhaustion_retries++;
+#endif
+                        arm_receive(worker, descriptor);
+                        continue;
+                    }
                     /* The buffer ring ran dry. The connection waits for a
                      * buffer to come back rather than spinning on a re-arm. */
                     if (!link->starved) {
                         link->starved = 1;
                         worker->starved_list[worker->starved_count++] = descriptor;
+#if defined(WF_BENCH_URING_OBSERVE)
+                        worker->starved_parks++;
+                        if (worker->starved_count > worker->peak_starved)
+                            worker->peak_starved = worker->starved_count;
+#endif
                     }
                     continue;
                 } else if (result != -ECANCELED) {
@@ -656,23 +942,14 @@ static void *worker_main(void *raw) {
                 }
                 link->sending = 0;
                 if (result > 0) {
+#if defined(WF_BENCH_URING_OBSERVE)
+                    worker->sends++;
+                    worker->send_bytes += (uint32_t)result;
+#endif
                     /* A short send leaves the rest of the queue where it is,
                      * with the partly sent buffer's offset advanced; the next
                      * send re-issues from there. */
-                    uint32_t left = (uint32_t)result;
-                    while (left > 0 && link->count > 0) {
-                        unsigned slot = link->head;
-                        uint32_t remaining = link->queue_length[slot] - link->queue_offset[slot];
-                        if (left < remaining) {
-                            link->queue_offset[slot] += left;
-                            break;
-                        }
-                        left -= remaining;
-                        uint16_t identifier = link->queue_buffer[slot];
-                        link->head = (link->head + 1) % PENDING_MAX;
-                        link->count--;
-                        buffer_return(worker, identifier);
-                    }
+                    retire_send_bytes(worker, link, (uint32_t)result);
                     if (link->count > 0) {
                         arm_send(worker, descriptor);
                         continue;
@@ -686,8 +963,11 @@ static void *worker_main(void *raw) {
                 if (result != -ECANCELED) {
                     report("send", result < 0 ? -result : 0);
                 }
-                close_connection(worker, descriptor);
-                check_finished();
+                /* A receive may still own this descriptor. Abort the run and
+                 * cancel the ring before releasing its buffers; do not reuse
+                 * the descriptor while a stale multishot CQE can name it. */
+                mark_failed();
+                break;
             } else if (operation == OPERATION_WAKE) {
                 if (!atomic_load_explicit(&finished, memory_order_relaxed)) {
                     arm_wake(worker);
@@ -718,7 +998,9 @@ static int listener_for(uint16_t port) {
     /* Set on the listener, where an accepted connection inherits it, rather
      * than once per accepted descriptor: the connect rate is one of the
      * measures, and a per-connection setsockopt would be charged to it. */
+#if !defined(WF_BENCH_NAGLE)
     setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+#endif
     struct sockaddr_in address;
     memset(&address, 0, sizeof address);
     address.sin_family = AF_INET;
@@ -772,9 +1054,11 @@ int main(int argc, char **argv) {
         fprintf(stderr, "uring_echo: out of memory\n");
         return 1;
     }
-    /* Every buffer ring, every echo queue and the connection table are sized
-     * here, from CONNECTIONS, and nothing is sized again once a connection
-     * arrives. */
+    /* Size the provided pool before accepting. Zero preserves the original
+     * connection-derived budget; an explicit count is per worker. */
+#if WF_BENCH_URING_BUFFER_COUNT
+    unsigned buffers = round_up_power_of_two(WF_BENCH_URING_BUFFER_COUNT);
+#else
     unsigned wanted = (unsigned)(option_connections * 4 / option_threads);
     if (wanted < 256) {
         wanted = 256;
@@ -783,6 +1067,8 @@ int main(int argc, char **argv) {
         wanted = 2048;
     }
     unsigned buffers = round_up_power_of_two(wanted);
+    buffers /= BUFFER_BYTES / 8192u;
+#endif
 
     /* Every listener is bound before any thread runs, so a client that finds
      * the port listening finds all of them listening. */
@@ -816,29 +1102,77 @@ int main(int argc, char **argv) {
     for (unsigned at = 0; at < option_threads; at++) {
         pthread_join(workers[at].thread, NULL);
     }
-    for (unsigned at = 0; at < option_threads; at++) {
-        struct worker *worker = &workers[at];
-        free(worker->starved_list);
-        free(worker->buffer_memory);
-        if (worker->buffers != NULL) {
-            munmap(worker->buffers, worker->buffer_ring_bytes);
-        }
-        if (worker->ring.shared != NULL) {
-            ring_teardown(&worker->ring);
-        }
-        close(worker->wake);
-        close(worker->listener);
-    }
     int broken = atomic_load_explicit(&failed, memory_order_relaxed);
     uint64_t accepted = atomic_load_explicit(&accepted_total, memory_order_relaxed);
     uint64_t closed = atomic_load_explicit(&closed_total, memory_order_relaxed);
-    free(workers);
-    free(table);
     if (broken || accepted < option_connections || closed < option_connections) {
+        /* A failed run may still have kernel operations holding these loans.
+         * Ring close alone is not our cancel/drain proof. Keep the allocations
+         * and descriptors alive until process exit rather than reusing them. */
         fprintf(stderr, "uring_echo: accepted %llu and closed %llu of %llu connections\n",
                 (unsigned long long)accepted, (unsigned long long)closed,
                 (unsigned long long)option_connections);
         return 1;
     }
+    for (unsigned at = 0; at < option_threads; at++) {
+        struct worker *worker = &workers[at];
+        if (worker->ring.shared != NULL) {
+            ring_teardown(&worker->ring);
+        }
+#if defined(WF_BENCH_URING_OBSERVE)
+        if (worker->loaned_buffers != 0 || worker->buffer_acquires != worker->buffer_returns ||
+            worker->starved_count != 0 ||
+            worker->starved_parks != worker->starved_rearms + worker->starved_closed) {
+            fprintf(stderr, "uring_echo: final buffer ownership or starvation accounting mismatch\n");
+            return 1;
+        }
+        fprintf(stderr, "uring: worker=%u buffer_bytes=%u buffers=%u provided_bytes=%zu "
+                "ring_entries=%u receives=%llu sends=%llu receive_bytes=%llu send_bytes=%llu "
+                "exhausted=%llu deepest_queue=%u inline_send=%u inline_attempts=%llu inline_bytes=%llu "
+                "inline_succeeded=%llu inline_short=%llu inline_eagain=%llu "
+                "inline_requested_bytes=%llu inline_requested_vectors=%llu "
+                "ring_requests=%llu ring_requested_bytes=%llu ring_requested_vectors=%llu "
+                "buffer_acquires=%llu buffer_returns=%llu buffer_terminal=%llu "
+                "loaned_buffers=%u peak_loaned_buffers=%u receive_arms=%llu "
+                "starved_parks=%llu starved_rearms=%llu starved_closed=%llu peak_starved=%u "
+                "late_exhaustion_retries=%llu\n",
+                at, BUFFER_BYTES, worker->buffer_count,
+                (size_t)worker->buffer_count * BUFFER_BYTES, RING_ENTRIES,
+                (unsigned long long)worker->receives, (unsigned long long)worker->sends,
+                (unsigned long long)worker->receive_bytes, (unsigned long long)worker->send_bytes,
+                (unsigned long long)worker->exhausted, worker->deepest_queue,
+                (unsigned)WF_BENCH_URING_INLINE_SEND,
+                (unsigned long long)worker->inline_attempts, (unsigned long long)worker->inline_bytes,
+                (unsigned long long)worker->inline_succeeded, (unsigned long long)worker->inline_short,
+                (unsigned long long)worker->inline_eagain,
+                (unsigned long long)worker->inline_requested_bytes,
+                (unsigned long long)worker->inline_requested_vectors,
+                (unsigned long long)worker->ring_requests,
+                (unsigned long long)worker->ring_requested_bytes,
+                (unsigned long long)worker->ring_requested_vectors,
+                (unsigned long long)worker->buffer_acquires,
+                (unsigned long long)worker->buffer_returns,
+                (unsigned long long)worker->buffer_terminal,
+                worker->loaned_buffers, worker->peak_loaned_buffers,
+                (unsigned long long)worker->receive_arms,
+                (unsigned long long)worker->starved_parks,
+                (unsigned long long)worker->starved_rearms,
+                (unsigned long long)worker->starved_closed, worker->peak_starved,
+                (unsigned long long)worker->late_exhaustion_retries);
+#endif
+        free(worker->starved_list);
+        free(worker->loans);
+        free(worker->buffer_memory);
+        if (worker->buffers != NULL) {
+            munmap(worker->buffers, worker->buffer_ring_bytes);
+        }
+        close(worker->wake);
+        close(worker->listener);
+    }
+    /* A worker may observe finished before consuming its wake-read CQE.
+     * Ring close is not an explicit drain proof for that kernel write into
+     * wake_storage. This one-run process retains the worker records until
+     * exit; the network loans released above have already completed. */
+    free(table);
     return 0;
 }

@@ -248,7 +248,7 @@ the ratio is against:
   ring of buffers and lets it choose the destination when the bytes arrive,
   rather than committing a buffer per connection before there is anything to
   put in it. The echo is then sent straight out of the buffer the kernel
-  filled, so the data is not copied on either side of the exchange. Exhaustion
+  filled, so there is no extra userspace copy on either side. Exhaustion
   is real and is handled rather than avoided: a receive that finds no buffer
   answers `-ENOBUFS`, and that connection waits for a buffer to come back
   instead of spinning on a re-arm.
@@ -268,11 +268,21 @@ there, since a kernel that refuses the flag refuses it at `io_uring_setup` and
 the server reports that and exits. The protocol does not run it, because a
 poll thread per ring costs a core each and on a four-core host it loses to the
 default by a third. It cannot be combined with the deferred task work above,
-since there the submitting task is the kernel's own.
+since there the submitting task is the kernel's own. The path publishes the
+submission tail and then reads the poll thread's wake-needed flag with a
+sequentially consistent fence between them, as liburing does: a release store
+followed by an acquire load does not order a store against a later load, and
+without the fence a published entry can sit unread behind a sleeping poll
+thread. The path stays off by default and no measurement here enables it.
 
-Everything each server needs is sized from `CONNECTIONS` before the first
-accept: the connection tables are indexed by descriptor, the buffer rings and
-echo queues are fixed arrays, and no server allocates per operation.
+Everything each server needs is sized before the first accept, from
+`CONNECTIONS` by default: the connection tables are indexed by descriptor, the
+buffer rings are fixed arrays, and no server allocates per operation. The
+io_uring reference's echo queue is a list threaded through the worker's own
+provided-buffer records rather than a fixed per-connection array, so its depth
+follows the buffers actually loaned to a connection instead of an assumption
+about how TCP fragments a message; `WF_BENCH_URING_BUFFER_BYTES` and
+`WF_BENCH_URING_BUFFER_COUNT` size that pool for an explicit experiment.
 
 `netload` is the one generator all three are measured with:
 
@@ -329,12 +339,23 @@ the lines it holds.
     make -C research/experiments/io-completion-bench linux-read   # Linux tables
 
     make -C research/experiments/io-completion-bench net-tools    # the C tools
+    make -C research/experiments/io-completion-bench uring-check  # the reference's own traces
     make -C research/experiments/io-completion-bench net-verify   # bytes only
     make -C research/experiments/io-completion-bench linux-net    # the TCP table
 
 The TCP targets are Linux-only, as `linux` and `linux-read` are: `epoll_echo`
 and `uring_echo` are written against Linux interfaces, and the workload's
 point is the fastest shape that kernel offers.
+
+`uring-check` is the one target here that measures nothing. It builds
+`uring_echo_check.c`, which includes `uring_echo.c` and replaces only kernel
+setup, `io_uring_enter` and the synchronous send result with a deterministic
+fixture: the buffer-loan queue, the receive re-arm after exhaustion and the
+completion handling those traces drive are the ones the measured binary runs.
+It therefore decides a verdict about the reference without a kernel that
+supports io_uring and without a network, and it is built for both send
+policies, because an inline send and a ring send retire a queue prefix along
+different paths.
 
 On native Windows, `windows-bench.ps1` owns a separate production
 qualification:
