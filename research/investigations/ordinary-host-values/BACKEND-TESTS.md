@@ -99,6 +99,20 @@ assertion and adds a well-formed one-result signature that leaves the displaced
 linear owner unconsumed. That separate source must reject PROV-6; an earlier
 arity error is not evidence that the consumption obligation was reached.
 
+`crossed_ordinary_tcp_halves_keep_the_other_directions_live` executes the
+construction in WF: two connections are destructured, their direction owners
+crossed into two new ordinary structs, and both structs returned from a helper.
+After closing the first struct, the second must still receive `B` from the
+second peer and send `A` to the first. Both crossed pairs' closes must return
+success; the structs close in opposite orders. A third connection holds the
+program at a byte exchange after those closes while the peers observe both
+send directions' ends, separating explicit cleanup from process teardown.
+The program runs in all three lowering modes with both route configurations
+(default and native ring disabled); Darwin uses the same adapter for both.
+This covers source construction, owned transfer, direction validity and
+sequential cleanup; exact credit counts remain the native probe's observation.
+It does not exercise simultaneous closes on distinct workers.
+
 The 34 host cases with an old reserve failure branch retain that real branch
 under direct open's `ResourceExhausted` with origin zero. Native open failures
 retain their old open-failure branch. The distinction is implemented by an

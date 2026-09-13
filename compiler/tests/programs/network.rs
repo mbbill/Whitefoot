@@ -10,6 +10,8 @@ use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::process::Child;
 use std::time::{Duration, Instant};
 
+use whitefoot::{CompilerLimits, OverlapLowering, SourceInput};
+
 use super::support::{
     CompiledProgram, build_program, compile_and_run, compile_program, compile_program_with_overlap,
     compile_program_without_overlap, emitted_function, program_permission_ledger,
@@ -341,5 +343,253 @@ fn the_fanout_loop_keeps_denied_calls_on_the_current_stack() {
             !sequential.contains(entry),
             "the --no-overlap module must name no lane entry, found {entry}"
         );
+    }
+}
+
+// Reconstruct two ordinary structs from unrelated halves, then close each
+// in a different order. The surviving cross must still exchange its bytes.
+const CROSSED_CONNECTIONS: &str = r#"fn cross(first: own TcpConnection, second: own TcpConnection) -> (a: own TcpConnection, b: own TcpConnection) pure {
+  let TcpConnection(receive: first_receive, send: first_send) = move first;
+  let TcpConnection(receive: second_receive, send: second_send) = move second;
+  let a = TcpConnection(receive: move first_receive, send: move second_send);
+  let b = TcpConnection(receive: move second_receive, send: move first_send);
+  return move a, move b;
+}
+
+fn close_pair(factory: &uniq HandleFactory, connection: own TcpConnection, receive_first: own Bool) -> result: own u8 reads(factory), writes(factory) {
+  let TcpConnection(receive: receive, send: send) = move connection;
+  let failed = 0_u8;
+  region {
+    if receive_first {
+      match close_receive(factory: &uniq deref(factory), receive: move receive) {
+        Ok(value: done) => {
+        }
+        Err(error: problem) => {
+          set failed = 1_u8;
+        }
+      }
+      match close_send(factory: &uniq deref(factory), send: move send) {
+        Ok(value: done) => {
+        }
+        Err(error: problem) => {
+          set failed = 2_u8;
+        }
+      }
+    } else {
+      match close_send(factory: &uniq deref(factory), send: move send) {
+        Ok(value: done) => {
+        }
+        Err(error: problem) => {
+          set failed = 3_u8;
+        }
+      }
+      match close_receive(factory: &uniq deref(factory), receive: move receive) {
+        Ok(value: done) => {
+        }
+        Err(error: problem) => {
+          set failed = 4_u8;
+        }
+      }
+    }
+  }
+  return failed;
+}
+
+fn remaining(connection: &uniq TcpConnection) -> result: own u8 reads(connection.receive, connection.send), writes(connection.receive, connection.send) {
+  let bytes = fixed_vector::<u8, 1>();
+  region {
+    place_back(vector: &uniq bytes, value: 0_u8);
+  }
+  region {
+    let destination = mut_slice_of(&uniq bytes);
+    region {
+      match receive_next(receive: &uniq deref(connection).receive, destination: &uniq destination, start: 0_u64, end: 1_u64) {
+        Ok(value: next) => {
+          if next != 1_u64 {
+            return 11_u8;
+          }
+        }
+        Err(error: problem) => {
+          return 12_u8;
+        }
+      }
+    }
+  }
+  if bytes[0_u64] != 66_u8 {
+    return 13_u8;
+  }
+  set bytes[0_u64] = 65_u8;
+  region {
+    let source = slice_of(&bytes);
+    region {
+      match send_once(send: &uniq deref(connection).send, source: &source, start: 0_u64, end: 1_u64) {
+        Ok(value: next) => {
+          if next != 1_u64 {
+            return 14_u8;
+          }
+        }
+        Err(error: problem) => {
+          return 15_u8;
+        }
+      }
+    }
+  }
+  return 0_u8;
+}
+
+fn exercise(factory: &uniq HandleFactory, address: &SocketAddress) -> result: own u8 reads(factory, address), writes(factory) {
+  let receive_first = True();
+  let send_first = False();
+  region {
+    match tcp_connect(factory: &uniq deref(factory), address: address) {
+      Connected(connection: first) => {
+        match tcp_connect(factory: &uniq deref(factory), address: address) {
+          Connected(connection: second) => {
+            let (a, b) = cross(first: move first, second: move second);
+            let first_status = close_pair(factory: &uniq deref(factory), connection: move a, receive_first: receive_first);
+            let exchange_status = 0_u8;
+            region {
+              set exchange_status = remaining(connection: &uniq b);
+            }
+            let second_status = close_pair(factory: &uniq deref(factory), connection: move b, receive_first: send_first);
+            if first_status != 0_u8 {
+              return 21_u8;
+            }
+            if second_status != 0_u8 {
+              return 22_u8;
+            }
+            if exchange_status != 0_u8 {
+              return exchange_status;
+            }
+            match tcp_connect(factory: &uniq deref(factory), address: address) {
+              Connected(connection: checkpoint) => {
+                let checkpoint_status = 0_u8;
+                region {
+                  set checkpoint_status = remaining(connection: &uniq checkpoint);
+                }
+                let closed = close_pair(factory: &uniq deref(factory), connection: move checkpoint, receive_first: receive_first);
+                if closed != 0_u8 {
+                  return 25_u8;
+                }
+                return checkpoint_status;
+              }
+              ConnectFailed(error: problem) => {
+                return 26_u8;
+              }
+            }
+          }
+          ConnectFailed(error: problem) => {
+            close_pair(factory: &uniq deref(factory), connection: move first, receive_first: receive_first);
+            return 23_u8;
+          }
+        }
+      }
+      ConnectFailed(error: problem) => {
+        return 24_u8;
+      }
+    }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: handles, stdin: input) = move inputs;
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 49151_u16);
+  region {
+    close_directory(factory: &uniq handles, directory: move cwd);
+    let outcome = exercise(factory: &uniq handles, address: &address);
+    return exit_status(code: outcome);
+  }
+}
+"#;
+
+#[test]
+fn crossed_ordinary_tcp_halves_keep_the_other_directions_live() {
+    for overlap in [None, Some(OverlapLowering::Off), Some(OverlapLowering::On)] {
+        let listener =
+            TcpListener::bind("127.0.0.1:0").expect("listen for both ordinary connections");
+        listener
+            .set_nonblocking(true)
+            .expect("bound the wait for both connections");
+        let port = listener.local_addr().expect("the listener address").port();
+        let source = CROSSED_CONNECTIONS.replace("49151_u16", &format!("{port}_u16"));
+        let inputs = [SourceInput::new("crossed.wf", source.as_bytes())];
+        let llvm = match overlap {
+            None => whitefoot::compile(&inputs, CompilerLimits::default()),
+            Some(overlap) => {
+                whitefoot::compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
+            }
+        }
+        .expect("ordinary construction and cleanup of crossed halves must compile");
+        let program = build_program(&llvm);
+        for native_ring in [true, false] {
+            let mut child = program.spawn_on_route(native_ring, &[]);
+            let mut accept = || {
+                let deadline = Instant::now() + Duration::from_secs(20);
+                loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            stream
+                                .set_nonblocking(false)
+                                .expect("read accepted sockets in blocking mode");
+                            stream
+                                .set_read_timeout(Some(Duration::from_secs(20)))
+                                .expect("bound peer reads");
+                            stream
+                                .set_write_timeout(Some(Duration::from_secs(20)))
+                                .expect("bound peer writes");
+                            break stream;
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "connection did not arrive");
+                            assert!(
+                                child.try_wait().expect("check the child").is_none(),
+                                "the program exited before connecting"
+                            );
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error) => panic!("accept an ordinary connection: {error}"),
+                    }
+                }
+            };
+            let mut first = accept();
+            let mut second = accept();
+            // The first crossed struct is gone before WF reads this byte from
+            // the second connection and sends 'A' on the first. Closing a
+            // crossed struct as one original socket would break this exchange.
+            second
+                .write_all(b"B")
+                .expect("send to the surviving receive half");
+            // WF opens this checkpoint only after both crossed pairs close.
+            // It must wait here for another B before it can exit, so teardown
+            // cannot stand in for the two EOF observations below.
+            let mut checkpoint = accept();
+            let mut first_bytes = Vec::new();
+            first
+                .read_to_end(&mut first_bytes)
+                .expect("read the surviving send half through its close");
+            let mut second_bytes = Vec::new();
+            second
+                .read_to_end(&mut second_bytes)
+                .expect("observe the other send half's close");
+            assert_eq!(first_bytes, b"A", "{overlap:?}, native ring {native_ring}");
+            assert!(second_bytes.is_empty());
+            checkpoint
+                .write_all(b"B")
+                .expect("release the post-close checkpoint");
+            let mut checkpoint_bytes = Vec::new();
+            checkpoint
+                .read_to_end(&mut checkpoint_bytes)
+                .expect("read the checkpoint exchange");
+            assert_eq!(checkpoint_bytes, b"A");
+            let output = child
+                .wait_with_output()
+                .expect("wait for the crossed-half program");
+            assert!(
+                output.status.success(),
+                "{overlap:?}, {native_ring}: {output:?}"
+            );
+            assert!(output.stdout.is_empty());
+            assert!(output.stderr.is_empty());
+        }
     }
 }
