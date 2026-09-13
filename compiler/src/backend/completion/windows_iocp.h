@@ -18,7 +18,8 @@
  * `wf__sched_host_epoch` / `_park` / `_wake` seam on Windows (§7, platform item
  * 2): the completion port itself, with a wake delivered as a
  * `PostQueuedCompletionStatus` packet, so a ready stack and an I/O completion
- * arrive on one queue and there is no second wake path to keep consistent.
+ * arrive on one queue. New park calls use the same epoch's condition variable
+ * until an older notified cohort has finished consuming its port packets.
  */
 
 #include "contract.h"
@@ -58,6 +59,10 @@ typedef struct wf_windows_iocp_adapter {
     HANDLE port;
     ULONG_PTR wake_key;
     ULONG_PTR file_key;
+    /* Under runtime->wait: native sleepers and the subset already notified.
+     * Each node belongs to one active park call, not to a writer frame. */
+    struct wf_windows_iocp_waiter *waiters;
+    unsigned notified_waiters;
     _Atomic size_t in_flight;
     _Atomic int progress_error;
     unsigned initialized;
@@ -121,24 +126,24 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
 );
 
 /* Dequeues at most `budget` ready packets without waiting and publishes the
- * terminal completions among them.  A wake packet found here belongs to a
- * sleeper: it is put back when one is announced and dropped when none is,
- * because the epoch and not the packet is the durable wake fact. */
+ * terminal completions among them. Wake packets are put back while a notified
+ * native cohort remains and dropped after that cohort drains. */
 int wf_windows_iocp_progress(
     wf_windows_iocp_adapter *adapter,
     size_t budget,
     size_t *published
 );
 
-/* Announces any completion-core epoch change to the port.  This is the
- * callback installed with `wf_completion_set_wake_callback`; it posts one
- * packet per announced sleeper and never runs a continuation. */
+/* Announces any completion-core epoch change to the port under runtime->wait.
+ * Each native sleeper keeps one outstanding notification until it leaves the
+ * kernel wait. Repeated notifications do not multiply its wake packets. */
 void wf_windows_iocp_notify(void *context);
 
 /* Parks one thread on the port.  `observed_epoch` is rechecked under the
  * runtime's own wait lock before the kernel wait, closing
- * completion-before-park without a polling timeout.  UINT32_MAX means no
- * deadline. */
+ * completion-before-park without a polling timeout. New sleepers wait on the
+ * runtime condition while an older notified cohort drains, so they cannot
+ * consume that cohort's packets. UINT32_MAX means no deadline. */
 int wf_windows_iocp_park(
     wf_windows_iocp_adapter *adapter,
     uint64_t observed_epoch,
