@@ -237,9 +237,9 @@ Rulings (owner, 2026-09-03):
    invariant changes proof structure (a factor-2 block becomes
    AUTO-redundant and must be dropped), which makes it a semantic change,
    not a spelling one.
-5. Everything else stays named. Bool logic: `&&` and `||` short-circuit in
-   every source language and Whitefoot's `band`/`bor` are eager, the LEX-1
-   divergence `docs/bargain.md` records as a live W1 pitfall, and `&` is the
+5. Everything else stays named. Bool logic: `&&` and `||` suggest short-circuit
+   evaluation, while Whitefoot's `band`/`bor` are eager: a Boolean
+   operand cannot guard a partial operation in the other operand. `&` is the
    borrow sigil. The bit family: `<<`/`>>` collide with a nested `>>` and
    GRAM-1 forbids a grammar-consulting lexer; shifts carry modes and
    obligations. Float and enum comparison keep their domain prefix. Every

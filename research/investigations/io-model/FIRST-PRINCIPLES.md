@@ -11,8 +11,8 @@ logical-root registry, family relation, authority fragment, or `Ordered`
 relation.
 
 This file is an implementation plan, not the active language specification.
-The active specification remains the one named by `docs/roadmap.md`. Work on a
-branch may follow this plan, but merging any revision into `main` still
+The [active specification](../../../spec/kernel-spec.md) defines the language.
+Work on a branch may follow this plan, but merging any revision into `main` still
 requires the exact owner approval and `make check` result required by the
 repository rules.
 

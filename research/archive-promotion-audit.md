@@ -1,16 +1,15 @@
 # Archive promotion audit
 
-Status: **live, non-authoritative inventory**. Audited 2026-08-01.
+Status: **non-authoritative inventory**. Audit observations date from 2026-08-01;
+current reading pointers follow the repository's live owners.
 
 This document preserves the useful conclusions of the archive audit outside
 `archive/`. It is not a work queue and it grants no implementation or language
-authority. Current direction status lives in the
-[`Direction Outline`](../docs/roadmap.md), while the status line in
-[`docs/roadmap.md`](../docs/roadmap.md) distinguishes a proposal from
-approved execution sequencing. Neither this evidence nor the outline alone
-authorizes implementation. The active numbered specification defines the
-language and [`docs/constitution.md`](../docs/constitution.md) defines project
-law.
+authority. Open questions and evidence links live in [ideas](../docs/ideas.md),
+and known compiler defects and implementation costs in [todo](../docs/todo.md).
+The [active specification](../spec/kernel-spec.md) defines the language,
+the [constitution](../docs/constitution.md) defines project objectives and
+principles, and [AGENTS.md](../AGENTS.md) owns the workflow.
 
 The archived originals remain in place as provenance. Promotion means moving a
 still-valid conclusion, question, or measured result into a live owner, not
@@ -20,7 +19,7 @@ either placed in its proper live authority or explicitly retired.
 
 ## Scope and result
 
-The audit inventoried the complete archive tree as it exists in this worktree
+The audit inventoried the complete archive tree in its 2026-08-01 worktree
 (4,294 files, 336 MB), reviewed its directory manifests and result indexes,
 traced the D0-D27 directive history, sampled the high-value design and
 measurement records, and checked their live successors. Of that filesystem
@@ -34,13 +33,13 @@ that reads the archive; current references are documentary or historical.
 The result is deliberately small:
 
 1. No archive subtree should be moved wholesale into the live repository.
-2. The one clear authority-placement gap is now closed: the Constitution
-   records D17's selected long-term representation-invariant proof lane, while
-   the Direction Outline separates it from D16's deferred sealed-catalog
-   mechanism and denies it current implementation authority.
-3. The M1 loan/freeze candidate remains parked. Direction Outline items PAR-4
-   and STORE-2 retain dynamic fan-out as a construct witness and the
-   operation-level storage checklist as reopening input.
+2. The audit recorded D17's representation-invariant proof lane separately
+   from D16's sealed-catalog mechanism. The retained current question is in
+   [storage transitions and representation privileges](../docs/ideas.md#storage-transitions-and-representation-privileges);
+   that entry selects no particular mechanism.
+3. The M1 loan/freeze candidate remains parked. The
+   [parallel](../docs/ideas.md#wider-parallel-proof-domains) and storage
+   questions retain dynamic fan-out and the operation-level storage checklist.
 4. Five historical measurements remain useful enough to register here, with
    their limitations. Their harnesses and raw evidence stay archived.
 5. Retired compilers, gates, reference models, schemas, old work queues, and
@@ -53,31 +52,35 @@ The result is deliberately small:
 |---|---|
 | **Absorbed** | A current live authority or successor already carries the conclusion. Keep only provenance in the archive. |
 | **Live evidence** | The durable finding is summarized here; the exact protocol and raw evidence remain archived. It is not a current compiler-capability claim. |
-| **Owner decision** | The idea may still be durable, but promotion would change project law, Direction Outline status, writer doctrine, or future language direction. This audit does not make that decision. |
+| **Owner decision** | The idea may still be durable, but promotion would change project law, writer doctrine, or future language direction. This audit does not make that decision. |
 | **Archive only** | The material is superseded, rejected, raw, or implementation-specific. Consult it historically; do not revive it. |
 
 ## Authority crosswalk
 
-| Archived material | Current disposition | Live successor or reason |
+The dispositions below record the audit's comparison, including its then-current
+language baseline. Consult the linked live owners for current rules; this
+crosswalk does not make the old language or approval vocabulary current.
+
+| Archived material | Audited disposition | Successor or reason |
 |---|---|---|
 | D0-D3 and D2a founding constraints | **Absorbed** | The priority structure, AI-writer premise, safety floor, compact/regular specification, and no writer trust are in the [Constitution](../docs/constitution.md) and active specification. |
 | D4 rewrite-first, FFI-narrow policy | **Owner decision** | The active specification has a gated boundary skeleton, but no live authority currently commits to the old rule that source-available foreign code must normally be rewritten or that rich/inbound interop stays out. |
 | D6 closed, taught pattern doctrine | **Seeded; not ratified** | [`docs/patterns.md`](../docs/patterns.md) is the live writer-form owner and states the current status. This audit corrects explanatory overclaims; promotion to normative doctrine would require owner ratification. |
-| D7-family artifact and `secret` directions | **Absorbed as deferred** | Direction Outline items VERIFY-4 and TARGET-4 retain reproducibility and constant-time questions without reviving the old artifact ladder or `secret` protocol. Their old targets and protocols remain historical. |
+| D7-family artifact and `secret` directions | **Absorbed as deferred** | [Reproducibility](../docs/ideas.md#reproducible-compiler-outputs) and [constant-time](../docs/ideas.md#constant-time-preservation) questions remain open without reviving the old artifact ladder or `secret` protocol. Their old targets and protocols remain historical. |
 | D9a fixed-model/model-score gate | **Archive only** | The Constitution now says model runs generate realistic mistakes but model scores never gate W1. Measured results may survive independently of that protocol. |
 | D10 English-only repository content | **Absorbed** | The live repository instructions carry the rule. |
 | D11-D15 capability-floor and B-Strata programs | **Archive only**, with selected questions retained below | D15 explicitly restarted the derivation; the successor systems-performance pass superseded the earlier candidate machinery without establishing a production winner. |
-| D16 sealed-catalog mechanism and acceptance ledger | **Deferred** | Direction Outline item STORE-2 retains the underlying storage questions. The old ten-member catalog and its exact admission machinery are not current design authority. |
-| D17 proof-gated privileged admission | **Absorbed as deferred** | The [Constitution](../docs/constitution.md) records the selected long-term representation-invariant proof lane. Direction Outline item PROOF-6 grants no current feature or implementation authority and leaves the proof mechanism, concrete operations and semantics, any additional privilege class, and schedule unselected. See below. |
+| D16 sealed-catalog mechanism and acceptance ledger | **Deferred** | The [storage questions](../docs/ideas.md#storage-transitions-and-representation-privileges) retain the underlying problem. The old ten-member catalog and its exact admission machinery are not current design authority. |
+| D17 proof-gated privileged admission | **Absorbed as deferred** | The audit recorded a long-term representation-invariant proof direction. The current [storage questions](../docs/ideas.md#storage-transitions-and-representation-privileges) leave the proof mechanism, concrete privileges, and schedule unselected. See below. |
 | D18-D19 pool and concurrency choices | **Mixed** | Process-abort trap semantics are absorbed. Generational pools, CONC-0, fixed spawn plus `par.for_chunks`, endpoint clone modes, and the old runtime shape remain research choices that any selected parallel design must reconsider rather than inherit. |
-| D20-D27 execution plans, compiler architecture, and v0.9-v0.11 transitions | **Absorbed or archive only** | [`WORKFLOW.md`](../docs/WORKFLOW.md), the Direction Outline, Current Plan, active specification, and safe-Rust compiler replace their operational roles. Same-kernel replay, product resource profiles, the retired toolchains, and old proposal machinery must not return. |
+| D20-D27 execution plans, compiler architecture, and v0.9-v0.11 transitions | **Absorbed or archive only** | [AGENTS.md](../AGENTS.md), the [active specification](../spec/kernel-spec.md), and the safe-Rust compiler replace their operational roles. Same-kernel replay, product resource profiles, the retired toolchains, and old proposal machinery must not return. |
 
 The original rulings remain available in
 [`archive/governance/directives.md`](../archive/governance/directives.md), and
 their chronology in the
 [`archived decision history`](../archive/governance/decision-log.md). Those
 files explain provenance; they do not settle any **Owner decision** row or
-override D17's current placement above.
+override current language and design owners.
 
 ## Useful results already promoted
 
@@ -88,16 +91,17 @@ measurement and the current compiler milestone.
 
 | Channel | Live evidence | Current boundary |
 |---|---|---|
-| Effect rows to LLVM attributes | [`effect-attrs-channel/RESULTS.md`](experiments/effect-attrs-channel/RESULTS.md) | The measurement used democ and showed the value of exact interprocedural effects. Direction Outline item PROOF-2 requires a fresh sound mapping and explicitly records that `willreturn` needs separate totality evidence. |
-| Borrow-derived alias metadata | [`scoped-alias-channel/RESULTS.md`](experiments/scoped-alias-channel/RESULTS.md) | Short trips improved and long trips approached Rust parity, with a large code-size difference. Current backend use remains a separately verified PROOF-3 fact family, not an inherited capability. |
-| Checked-law reassociation | [`checked-law-channel/RESULTS.md`](experiments/checked-law-channel/RESULTS.md) | The historical transform measured 3.3x over the serial fold and rejected a false signed-saturating law. v0.17 law discharge is source-acceptance evidence only; an optimizer consumer needs separate approved authority. |
-| Entry contracts and bounds proof | [`port-study/base64/RESULTS.md`](experiments/port-study/base64/RESULTS.md) | The historical proof build discharged its recorded sites with facts-off safety retained. FN-8 semantics are current, but PROOF-1 still lacks a production proof consumer and check-elision channel. |
+| Effect rows to LLVM attributes | [`effect-attrs-channel/RESULTS.md`](experiments/effect-attrs-channel/RESULTS.md) | The measurement used democ and showed the value of exact interprocedural effects. A current [optimizer consumer](../docs/ideas.md#proof-derived-optimizer-facts) needs a sound mapping under the active ABI; `willreturn` also needs separate totality evidence. |
+| Borrow-derived alias metadata | [`scoped-alias-channel/RESULTS.md`](experiments/scoped-alias-channel/RESULTS.md) | Short trips improved and long trips approached Rust parity, with a large code-size difference. Current backend use needs its own mapping and evidence; it is not an inherited capability. |
+| Checked-law reassociation | [`checked-law-channel/RESULTS.md`](experiments/checked-law-channel/RESULTS.md) | The historical transform measured 3.3x over the serial fold and rejected a false signed-saturating law. Checking a source law does not establish an arbitrary optimizer rewrite; its operation domain, effects, and intermediate arithmetic still matter. |
+| Entry contracts and bounds proof | [`port-study/base64/RESULTS.md`](experiments/port-study/base64/RESULTS.md) | The historical proof build discharged its recorded sites with facts-off safety retained. Its retired acceptance rules and measured code shape are not current compiler results. |
 
 ## Promotion results and retained candidates
 
 ### 1. D17 placement completed
 
-D17 selected a specific, long-term representation-invariant proof lane:
+The historical D17 ruling selected a specific, long-term
+representation-invariant proof lane:
 
 - a project kernel whose implementation is machine-proved leaves the trusted
   list and retains the privileged representation rights its proof justifies;
@@ -112,12 +116,12 @@ D17 selected a specific, long-term representation-invariant proof lane:
 This is narrower and more concrete than the possible future generalization
 “proof may grant any narrowly scoped capability.” The audit does not make that
 generalization. D16/D17 also described a ten-kernel sealed catalog and a
-particular admission endgame. Those mechanisms are neither current v0.17
-language nor authorized implementation work. In particular,
-[STOR-1](../spec/kernel-spec-v0.17.md) defines no temporary uninitialized hole,
-and Direction Outline item STORE-2 leaves the storage decision unselected.
+particular admission endgame. Those mechanisms were not part of the audit's
+v0.17 language baseline. In particular,
+[STOR-1](../spec/kernel-spec-v0.17.md) defined no temporary uninitialized hole.
+That historical gap is not a claim about the active language.
 
-The current live material is split:
+The audit's v0.17 comparison was:
 
 - The Constitution already says checks are removed only by proof and ordinary
   writers cannot emit trust.
@@ -129,20 +133,17 @@ The current live material is split:
   GATE-1 and LEDGER-1 govern human-approved trusted boundaries; they are not
   proof-admission channels.
 - None of those rules defines a general representation-invariant proof system.
-- [`docs/why-whitefoot.md`](../docs/why-whitefoot.md) and
-  [`docs/bargain.md`](../docs/bargain.md) explain the full D17 direction while
-  also admitting that its feasibility is unproved.
-- Direction Outline item STORE-2 retains the unresolved storage dimensions;
-  only a selected project or owner decision can place one in the Current Plan.
+- [`docs/why-whitefoot.md`](../docs/why-whitefoot.md) explains the full D17
+  direction while also admitting that its feasibility is unproved.
+- The then-current direction map retained unresolved storage dimensions.
 
-**Placement completed 2026-08-01:** the Constitution records the
-representation-invariant proof lane as the selected long-term rule. The
-Direction Outline grants no current language or implementation authority and
-leaves the proof language, privileged operations, sealed catalog, schedule, and
-production claims until a measured blocker or explicit owner reorder reopens
-them through the normal workflow. Concurrent lock-free proofs retain D17's
-explicit higher-difficulty status rather than becoming current work. The full
-provenance is D17 in the
+**Placement recorded 2026-08-01:** the audit placed the representation-invariant
+proof direction in the then-current Constitution and kept concrete mechanisms
+deferred. Current [storage research questions](../docs/ideas.md#storage-transitions-and-representation-privileges)
+require a concrete representation problem and independent grounds for any
+additional privilege; they select neither the old catalog nor a general
+privileged proof system. Concurrent lock-free proofs were explicitly the
+harder historical case. The full provenance is D17 in the
 [`original directive record`](../archive/governance/directives.md) and the
 [`systems-performance design dossier`](../archive/research/systems-performance-coverage/DESIGN-DOSSIER.md).
 
@@ -152,7 +153,7 @@ The archived systems-performance pass produced a reviewed loan/freeze state
 machine and a small reference checker. Its evidence reports a 97-program corpus,
 a mutation harness that caught 9/9 planted checker mutants, and a single-pass
 checker without a fixed point. That is stronger than an abandoned sketch, but
-it predates the current v0.17 ownership surface and includes old concurrency
+it predates the audit's v0.17 ownership baseline and includes old concurrency
 assumptions.
 
 Its durable value is a reopening boundary: if persistent captured loans,
@@ -160,28 +161,27 @@ interior views, or a selected parallel construct cannot be expressed by the
 current borrow rules, compare the concrete blocker against the parked state
 machine.
 Do not import its rules or checker. Re-derive the smallest current rule against
-v0.17 and the real program first. Sources:
+the active specification and the real program first. Sources:
 [`RULES-RATIFIED.md`](../archive/research/systems-performance-coverage/m1-loan-judgment/RULES-RATIFIED.md)
 and
 [`M1-PAPER-RESULT.md`](../archive/research/systems-performance-coverage/m1-loan-judgment/M1-PAPER-RESULT.md).
 
 ### 3. Dynamic fan-out retained as a parallel-design witness
 
-Active OWN-11 forbids a borrow inside a loop from naming an outer region. The
-old concurrency design therefore could not express a runtime-count spawn loop
+The historical OWN-11 rule forbade a borrow inside a loop from naming an outer
+region. The old concurrency design therefore could not express a runtime-count spawn loop
 whose workers all read shared outer state; its answer was fixed straight-line
 spawn plus a sealed `par.for_chunks`, with a later carve-out explicitly marked
 “must not be lost.”
 
-The problem is still relevant, but the old answer is not. Direction Outline
-item PAR-4 retains this case as a construct-design witness: any selected form
-must either cover it soundly or record a deliberate rejection. Complete source
-semantics, runtime TCB, and implementation remain unselected. Any OWN-11
-carve-out requires its own hostile soundness review.
+The [wider parallel proof questions](../docs/ideas.md#wider-parallel-proof-domains)
+retain dynamic fan-out as a witness to evaluate against current rules, including
+ownership and resource accounting for tasks, results, and cancellation. The
+old spawn form and OWN-11 carve-out are not inherited solutions.
 Source:
 [`systems-performance follow-ups`](../archive/research/systems-performance-coverage-FOLLOW-UPS-2026-07-17.md).
 
-### 4. Storage checklist retained as Direction Outline reopening input
+### 4. Storage checklist retained for representation research
 
 The capability-floor work correctly exposed that “add a vector” or “add a hash
 map” is too coarse a storage decision. A real proposal must separately account
@@ -195,10 +195,10 @@ for at least:
 - multi-place access, iteration, and relocation under active loans.
 
 This preserves problem dimensions, not the old report's v0.6 gap verdicts. The
-Direction Outline item STORE-2 names this checklist as required reopening
-input. Every item must still be re-audited against the active specification and
-current compiler when a measured port triggers the
-take/replace-versus-sealed-kernel decision. The old G0-Core, Family Lock,
+[storage questions](../docs/ideas.md#storage-transitions-and-representation-privileges)
+retain these dimensions for a concrete program. Every item must be re-audited
+against the active specification and current compiler before proposing a
+missing transition or additional privilege. The old G0-Core, Family Lock,
 B-Strata, and candidate validators must not be restored; they selected no
 current winner and are much larger than the next concrete compiler experiment.
 Source:
@@ -220,7 +220,7 @@ The archived regions-and-effects study already has a concise live successor,
 [`research/notes/regions-effects-vs-safe-rust-2026-07-08.md`](notes/regions-effects-vs-safe-rust-2026-07-08.md),
 so its raw archive needs no second promotion. The older phase-2 findings,
 debates, matrices, and source snapshots remain citation provenance for
-`docs/why-whitefoot.md` and `docs/bargain.md`; they are not a parallel live
+`docs/why-whitefoot.md`; they are not a parallel live
 research program.
 
 ## Material that stays archived
@@ -253,9 +253,10 @@ v0.17 pool example instead of a nonexistent archived `.wf` file. The live
 experiment index now distinguishes current self-contained bundles from
 historical result bundles whose runners still name the retired democ toolchain.
 
-The live entry points are this audit, [`research/README.md`](README.md), the
-Direction Outline, Current Plan, active specification, Constitution, and
-workflow.
+The live entry points are [`research/README.md`](README.md),
+[ideas](../docs/ideas.md), [todo](../docs/todo.md), the
+[active specification](../spec/kernel-spec.md), the
+[constitution](../docs/constitution.md), and [AGENTS.md](../AGENTS.md).
 If a future audit finds another valuable archived conclusion, add the smallest
 status-bearing summary to its actual live owner and update this file; do not
 grow a second archive index or restore an old subtree.

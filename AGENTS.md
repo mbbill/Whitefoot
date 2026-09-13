@@ -48,11 +48,9 @@ probably not the next work.
   `research/investigations/<name>/` for its design, measurements, and rejected
   alternatives, and the decision that survives it is written to the design
   tree under `design/`.
-- `docs/roadmap.md` is a reference map of long-range directions and candidate
-  projects. It is not part of this loop: nothing waits on it, no step updates
-  it, and it grants or withholds nothing. Read it for orientation; do not treat
-  a line in it as a statement of what the compiler currently does, which is the
-  specification's and the conformance results' to say.
+- `docs/ideas.md` collects candidate mechanisms, research questions, and links
+  to their evidence. It is not a work queue or an implementation-status page;
+  a listed idea grants or withholds nothing.
 - The active specification at `spec/kernel-spec.md` defines the language.
   The conformance results state what the compiler implements, `docs/todo.md`
   lists its known defects, and `design/compiler` records its decisions.
@@ -193,9 +191,9 @@ do not authorize branch work or add a repository workflow step.
 ## Repository structure and hygiene
 
 The repository root and every established directory are a curated, closed set.
-The layout exists so the important things are found first — `docs/roadmap.md`, the
-active `spec/`, and the `compiler/` — and so supporting material stays where a
-reader expects it. Keeping that legible is a standing obligation, not a
+The layout exists so the important things are found first — the active `spec/`,
+the `compiler/`, and the guidance in `docs/` — and supporting material stays
+where a reader expects it. Keeping that legible is a standing obligation, not a
 one-time cleanup.
 
 - A new top-level entry — a directory or file at the repository root — is a

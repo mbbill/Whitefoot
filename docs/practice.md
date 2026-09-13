@@ -107,9 +107,9 @@ of the prose or suitability for its reader.
 
 Historical essays and experimental records keep their original conditions;
 do not append a second implementation inventory to keep an old essay
-apparently current. The roadmap remains outside the working loop. A retained
-investigation need not be moved when implementation lands: its design and
-measurements remain useful evidence, while the compiler design tree changes.
+apparently current. A retained investigation need not be moved when
+implementation lands: its design and measurements remain useful evidence,
+while the compiler design tree changes.
 
 ## Feedback and implementation boundaries
 
