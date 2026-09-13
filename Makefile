@@ -57,7 +57,7 @@ static: repository-invariants spec-append-only spec-prose-integrity design-lint
 
 # Structural lint for the design tree; form only, see design/skill/lint.py.
 design-lint:
-	@$(PY) design/skill/lint.py --base origin/main
+	@$(PY) design/skill/lint.py --trees language compiler --base origin/main
 
 repository-invariants:
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
