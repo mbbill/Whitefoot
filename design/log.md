@@ -3,6 +3,12 @@
 Newest first. One entry per approved tree change: a dated title, `Nodes:`
 naming every changed node, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-13 Give the rules-not-shapes decision its test
+
+Nodes: compiler
+
+Summary: The owner asked what the compiler root's second decision prevents and whether a future agent could recognize the case. The case is real: on 2026-07-11 the proof tier's first elision mechanism was a recognizer for the base64 loop's 3:4 capacity relation and induction, correct on all 27 sites and replaced the same day by obligations derived from the body. The decision now states the test an agent can apply instead of a prohibition: a mechanism's domain is defined by a rule, never by a program; every acceptance or discharge names its rule and, on failure, the first missing fact or failed premise; a mechanism that can only answer matched or not matched is a recognizer whatever it matches; and lowering may select a faster form by shape as long as every shape has a correct lowering and acceptance is untouched. The recognizer is recorded as a rejected alternative for future comparison, and the candidate-era clause about conformance cases, staging plans, and profiles is dropped.
+
 ## 2026-09-13 Record the audits' rulings and amend the specification to v0.54
 
 Nodes: compiler, compiler/completion-runtime, compiler/target-qualification, compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime, compiler/resource-exhaustion-floor, language/data-model, language/parallelism/permission-judgment, language/system-interface

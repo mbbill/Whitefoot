@@ -3,6 +3,13 @@
 按最新优先排列。每一次被批准的树变更对应一条条目：一个带日期的标题、一行 `Nodes:`
 列出每一个发生变更的节点，以及一段 `Summary:`；格式由 `skill/SKILL.md` 规定。
 
+## 2026-09-13 给"按规则不按形状"这条决策写出判据
+
+Nodes: compiler
+
+Summary: 所有者问编译器根的第二条决策到底防的是什么、未来的 agent 能否识别出那种情况。情况是真实的：2026-07-11 证明层第一个消除检查的机制是一个匹配 base64 循环 3:4 容量关系和归纳的识别器，在 27 个位置上全部正确，当天被换成从函数体推导义务。这条决策现在写的是 agent 能操作的判据而不是禁令：机制的域由规则界定、绝不由程序界定；每一次接受或消除都指出它的规则，失败时报出第一条缺失的事实或不成立的前提；只能回答匹配与否的机制就是识别器，不管它匹配什么；下沉可以按形状选更快的形式，只要每种形状都有正确的下沉且接受不受影响。识别器记为否决项供以后对照，候选规范时代关于一致性用例、分期计划和配置档的那句删去。
+> 通俗解释：这条规则以前只说"不许认程序"，agent 看不出自己写的东西算不算。现在写清了怎么判断：能报出规则号和缺什么的是规则，只会说"匹配/不匹配"的是识别器；并把当年 base64 那个识别器留作反例。
+
 ## 2026-09-13 记录各项审计的裁定并将规范修订到 v0.54
 
 Nodes: compiler, compiler/completion-runtime, compiler/target-qualification, compiler/parallel-lowering, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering/parallel-runtime, compiler/resource-exhaustion-floor, language/data-model, language/parallelism/permission-judgment, language/system-interface
