@@ -1,0 +1,10 @@
+command fn main() -> status: own ExitStatus pure {
+  let values = buffer_new(8_u64, 0_u64);
+  let cut = 4_u64;
+  region {
+    let left = mut_slice_of(&uniq values, 0_u64, cut);
+    set cut = 0_u64;
+    let right = mut_slice_of(&uniq values, cut, 8_u64);
+  }
+  return exit_status(code: 0_u8);
+}

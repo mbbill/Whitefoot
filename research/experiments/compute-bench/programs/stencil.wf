@@ -1,0 +1,121 @@
+fn stencil_row(top: own Slice<f64>, middle: own Slice<f64>, bottom: own Slice<f64>, output: own MutSlice<f64>) -> result: own u64 reads(top, middle, bottom, output), writes(output) contract {
+  define width = len_of(output);
+  requires 3_u64 <= width;
+  requires width <= len_of(top);
+  requires width <= len_of(middle);
+  requires width <= len_of(bottom);
+} {
+  let width = len_of(output);
+  let end = width - 1_u64;
+  for (x in 1_u64..end) {
+    let left = x - 1_u64;
+    let right = x + 1_u64;
+    let vertical = fadd.strict(top[x], bottom[x]);
+    let horizontal = fadd.strict(middle[left], middle[right]);
+    let total = fadd.strict(vertical, horizontal);
+    set output[x] = fmul.strict(total, 0.25_f64);
+  }
+  return width;
+}
+
+fn stencil(width: own u64, height: own u64, steps: own u64) -> result: own buffer<f64> pure contract {
+  requires 3_u64 <= width;
+  requires width <= 4096_u64;
+  requires 3_u64 <= height;
+  requires height <= 4096_u64;
+  requires steps <= 1024_u64;
+} {
+  doc "Runs a five-point Jacobi update from distinct positive finite bit patterns derived from squared positions, preserving the initial boundary values. Runtime dimensions determine the contiguous grids; alternating source and destination views retain source order for each strict floating-point operation.";
+  let cells = width * height;
+  let current = buffer_new(cells, 0.0_f64);
+  let next = buffer_new(cells, 0.0_f64);
+  for (cell in 0_u64..cells) {
+    let position = cell + 1_u64;
+    let square = position * position;
+    let fraction = square * 256_u64;
+    let encoded = 4607182418800017408_u64 + fraction;
+    let value = reinterpret::<u64, f64>(encoded);
+    set current[cell] = value;
+    set next[cell] = value;
+  }
+  let last_row = height - 1_u64;
+  for (t in 0_u64..steps) {
+    let parity = t % 2_u64;
+    if parity == 0_u64 {
+      for (y in 1_u64..last_row) {
+        let first = y * width;
+        invariant before_row: width <= first {
+          use width times (1_u64 <= y);
+        }
+        let before = first - width;
+        let end = first + width;
+        let after = end + width;
+        invariant after_row: after <= cells {
+          use width times (y + 2_u64 <= height);
+        }
+        region {
+          let top = slice_of(&current, before, first);
+          let middle = slice_of(&current, first, end);
+          let bottom = slice_of(&current, end, after);
+          let row = mut_slice_of(&uniq next, first, end);
+          let written = stencil_row(top: top, middle: middle, bottom: bottom, output: move row);
+        }
+      }
+    } else {
+      for (y in 1_u64..last_row) {
+        let first = y * width;
+        invariant before_row: width <= first {
+          use width times (1_u64 <= y);
+        }
+        let before = first - width;
+        let end = first + width;
+        let after = end + width;
+        invariant after_row: after <= cells {
+          use width times (y + 2_u64 <= height);
+        }
+        region {
+          let top = slice_of(&next, before, first);
+          let middle = slice_of(&next, first, end);
+          let bottom = slice_of(&next, end, after);
+          let row = mut_slice_of(&uniq current, first, end);
+          let written = stencil_row(top: top, middle: middle, bottom: bottom, output: move row);
+        }
+      }
+    }
+  }
+  let parity = steps % 2_u64;
+  if parity == 0_u64 {
+    return move current;
+  } else {
+    return move next;
+  }
+}
+
+fn release_stencil(output: own buffer<f64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let output = stencil(width: 5_u64, height: 5_u64, steps: 2_u64);
+  let count = len_of(output);
+  if count != 25_u64 {
+    return exit_status(code: 1_u8);
+  }
+  let first = reinterpret::<f64, u64>(output[6_u64]);
+  if first != 4607182418800034944_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let center = reinterpret::<f64, u64>(output[12_u64]);
+  if center != 4607182418800067328_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let edge = reinterpret::<f64, u64>(output[8_u64]);
+  if edge != 4607182418800043136_u64 {
+    return exit_status(code: 4_u8);
+  }
+  let boundary = reinterpret::<f64, u64>(output[0_u64]);
+  if boundary != 4607182418800017664_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}

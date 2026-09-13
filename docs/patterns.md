@@ -1656,13 +1656,39 @@ diagnostic names the shared view — the fix is to form the view with the other
 row, not to borrow the descriptor uniquely, which grants nothing over the
 viewed storage.
 
-**Only one exclusive view of a place may be live.** The formation itself takes
-the borrow its strength names, so a second `mut_slice_of` over one place meets
-the first view's loan and is refused at the second formation as an ordinary
-[OWN-5] conflict; two `slice_of` views of one place are admitted without limit
-and read the same elements. The refusal is reported where the second view is
-formed, so a program that wants two writable windows wants one view and two
-offsets, not two views.
+**Exclusive views may coexist when their ranges are proved disjoint.** The
+whole-view form still conflicts with another live exclusive view of the same
+storage. Give both endpoints to select a relative half-open interval:
+
+```whitefoot
+let count = len_of(output);
+let middle = count / 2_u64;
+let left = mut_slice_of(&uniq output, 0_u64, middle);
+let right = mut_slice_of(&uniq output, middle, count);
+let a = fill(output: move left);
+let b = fill(output: move right);
+```
+
+The formation proves `start <= end <= len_of(source)` and captures both
+endpoint values. Changing an endpoint binding later cannot retarget the view.
+An empty interval is valid, including at the source end. It still keeps its
+backing storage alive. Two `slice_of` views may overlap freely.
+
+An exclusive view can itself be subdivided this way. Each child keeps the
+parent's storage origin and selects a range relative to the parent. The parent
+cannot perform a conflicting access while children live; it becomes usable
+again after they are consumed, including inside the same region. Consumption
+ends the loan after the complete statement, so a parent cannot be another
+argument of the call that consumes its child.
+
+For parallel counted work, give iteration `i` a range
+`[stride*i + base, stride*i + base + stride)`, with proved nonnegative stride
+and base fixed throughout the loop. Runtime values are allowed. Ordinary
+helper effects remain inside the actual view they receive. The complete
+[stencil](../research/experiments/compute-bench/programs/stencil.wf) shows the
+runtime-width row form and explicit endpoint proofs; the
+[recursive subdivision](../research/experiments/compute-bench/programs/range_split.wf)
+shows uneven children and restored parent access.
 
 A named const is a legal `slice_of` source and never a `mut_slice_of` source:
 its storage is permanently read-only [CONST-2], and the rejection is at the

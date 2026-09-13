@@ -1,0 +1,13 @@
+fn release(values: own buffer<u64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let values = buffer_new(8_u64, 0_u64);
+  region {
+    let empty = mut_slice_of(&uniq values, 8_u64, 8_u64);
+    let gone = release(values: move values);
+    let length = len_of(empty);
+  }
+  return exit_status(code: 0_u8);
+}

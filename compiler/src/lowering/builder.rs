@@ -2042,8 +2042,11 @@ impl<'program> IrBuilder<'program> {
                 ..
             } => self.lower_buffer_index(root, offset, *target_domain),
             CheckedExpression::SliceOf {
-                source, element, ..
-            } => self.lower_slice_of(source, *element),
+                source,
+                range,
+                element,
+                ..
+            } => self.lower_slice_of(source, range.as_ref(), *element),
             CheckedExpression::SliceMeasure { measure, root } => {
                 match fixed_measure(*measure, MeasuredKind::Slice) {
                     Some(constant) => self.lower_fixed_measure(constant),

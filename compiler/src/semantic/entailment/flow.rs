@@ -35,7 +35,9 @@ use super::super::model::{
     CheckedValue, FloatType, IntegerType, LoanStrength, MeasureCell, MeasuredKind,
     ValueInitializerKind,
 };
-use super::super::places::{BindingSummary, PlaceMap, PlaceOffset, PlaceStep, ResolvedPlace};
+use super::super::places::{
+    BindingSummary, PlaceMap, PlaceOffset, PlaceStep, RangeId, ResolvedPlace,
+};
 use super::super::postcondition::{
     CheckedPostcondition, NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum,
     PostconditionReturnPlace, PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate,
@@ -135,6 +137,10 @@ struct LoopFrame {
     /// The compiler-owned counted binder while this is a `for` frame. An
     /// ordinary `loop` has no binder and contributes no affine index image.
     counted_binder: Option<BindingId>,
+    /// Immutable numeric values available after the preheader's continuing
+    /// kills. Atoms first read or produced in the body are not invariant
+    /// merely because their source binding has one spelling.
+    invariant_atoms: HashSet<AffineTermId>,
     /// Present only for a counted range. A break through this frame leaves
     /// the private endpoint-capture scope as well as source binding scopes.
     capture_path: Option<Vec<u32>>,
@@ -210,6 +216,7 @@ struct ProofFlowState {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AffineFlowState {
     values: HashMap<BindingId, AffineForm>,
+    ranges: HashMap<RangeId, CapturedRange>,
     /// One atom standing for the whole value of a binding whose image is not
     /// already a single atom, minted on first demand.
     ///
@@ -231,6 +238,21 @@ struct AffineFlowState {
     /// declaration. Resolution owns visibility; this map carries only the
     /// canonical proposition proved at that declaration's execution point.
     published_invariants: HashMap<crate::DeclarationId, AffineInequality>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CapturedRange {
+    source: crate::NodePath,
+    start: AffineForm,
+    end: AffineForm,
+}
+
+/// Exact `stride * i + base` decomposition for one counted binder. Both
+/// components are invariant affine values; no general polynomial search is
+/// involved in recognizing this deliberately finite PAR-2 family.
+struct CountedValueImage {
+    stride: AffineForm,
+    base: AffineForm,
 }
 
 /// The numeric/logical proof state at one exact control-flow point.
@@ -846,6 +868,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         goals: GoalTable::default(),
         derivations: DerivationLedger::default(),
         obligations: Vec::new(),
+        judged_range_conflicts: vec![false; function.range_conflicts.len()],
         product_intervals: HashMap::new(),
         product_operands: HashSet::new(),
         product_atoms: HashMap::new(),
@@ -918,6 +941,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         analyzer.initialize_postcondition_proofs();
     }
     analyzer.walk_block(&function.body, &mut state);
+    analyzer.reject_unvisited_range_conflicts();
     analyzer.scopes.pop();
     analyzer.finalize_postcondition_aggregates();
     assert_eq!(
@@ -974,6 +998,19 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
         outcome.allocation_length_upper_bound_derivation = outcome
             .allocation_length_upper_bound_derivation
             .and_then(|id| remap.nodes.get(id.0 as usize).copied().flatten());
+        for partition in &mut outcome.range_partitions {
+            for parent in [
+                &mut partition.stride_nonnegative,
+                &mut partition.base_nonnegative,
+            ] {
+                *parent = remap
+                    .nodes
+                    .get(parent.0 as usize)
+                    .copied()
+                    .flatten()
+                    .expect("required range partition proof retained by finish");
+            }
+        }
     }
     for outcome in &mut entailment.call_goals {
         outcome.derivation = outcome
@@ -1085,6 +1122,7 @@ struct Analyzer<'check, 'unit> {
     goals: GoalTable,
     derivations: DerivationLedger,
     obligations: Vec<ObligationOutcome>,
+    judged_range_conflicts: Vec<bool>,
     /// The interval [ENT-6]'s interval-product rule proved at each admitted
     /// non-constant multiplication, keyed by that operation's own node. The
     /// domain is judged while the initializer is walked and [ENT-3.S14]
@@ -2882,15 +2920,15 @@ impl Analyzer<'_, '_> {
         expression: &CheckedExpression,
         receiver: &ResolvedPlace,
     ) -> bool {
-        if self
-            .read_place_path(expression)
-            .is_some_and(|place| self.resolve_projected(&place).overlaps(receiver))
-        {
+        if self.read_place_path(expression).is_some_and(|place| {
+            self.places
+                .overlaps(&self.resolve_projected(&place), receiver)
+        }) {
             return true;
         }
         if self
             .argument_referent(expression)
-            .is_some_and(|(place, _)| place.overlaps(receiver))
+            .is_some_and(|(place, _)| self.places.overlaps(&place, receiver))
         {
             return true;
         }
@@ -3323,10 +3361,12 @@ impl Analyzer<'_, '_> {
         })
     }
 
-    fn kill_writes_place(event: &KillEvent, place: &ResolvedPlace) -> bool {
+    fn kill_writes_place(&self, event: &KillEvent, place: &ResolvedPlace) -> bool {
         match event {
             KillEvent::Write { place: written, .. }
-            | KillEvent::EntryImageHolderWrite { place: written, .. } => written.overlaps(place),
+            | KillEvent::EntryImageHolderWrite { place: written, .. } => {
+                self.places.overlaps(written, place)
+            }
             KillEvent::Consume { .. } | KillEvent::EntryImageHolderConsume { .. } => false,
         }
     }
@@ -3340,7 +3380,7 @@ impl Analyzer<'_, '_> {
         self.collect_expression_kills(expression, &mut events);
         events
             .iter()
-            .any(|event| Self::kill_writes_place(event, place))
+            .any(|event| self.kill_writes_place(event, place))
     }
 
     fn set_target_writes_place(&self, target: &CheckedSetTarget, place: &ResolvedPlace) -> bool {
@@ -3361,7 +3401,9 @@ impl Analyzer<'_, '_> {
                 fields: target.root.fields.clone(),
             },
             CheckedSetTarget::Storage(target) => {
-                return self.container_root_place(target).overlaps(place);
+                return self
+                    .places
+                    .overlaps(&self.container_root_place(target), place);
             }
             // A view element store writes the origin's storage and not the
             // descriptor's [PROV-3], and the origin is not this place term's
@@ -3372,7 +3414,7 @@ impl Analyzer<'_, '_> {
                 fields: Vec::new(),
             },
         };
-        self.resolve(&target).overlaps(place)
+        self.places.overlaps(&self.resolve(&target), place)
     }
 
     /// Whether a structurally reachable statement in this block writes the
@@ -3811,16 +3853,16 @@ impl Analyzer<'_, '_> {
             TermKind::Place(place, _) => match event {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    self.resolve(&place).overlaps(written)
+                    self.places.overlaps(&self.resolve(&place), written)
                 }
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
                 KillEvent::EntryImageHolderConsume { .. } => false,
             },
             TermKind::ProjectedPlace(place, _) => match event {
                 KillEvent::Write { place: written, .. }
-                | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    self.resolve_projected(&place).overlaps(written)
-                }
+                | KillEvent::EntryImageHolderWrite { place: written, .. } => self
+                    .places
+                    .overlaps(&self.resolve_projected(&place), written),
                 KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
                 KillEvent::EntryImageHolderConsume { .. } => false,
             },
@@ -3981,7 +4023,7 @@ impl Analyzer<'_, '_> {
                 }
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    place.overlaps(written)
+                    self.places.overlaps(&place, written)
                 }
                 KillEvent::Consume { binding, .. } => {
                     holders.contains(binding) || place.root == PlaceRoot::Binding(*binding)
@@ -6121,7 +6163,7 @@ impl Analyzer<'_, '_> {
         expression: &CheckedExpression,
         states: &mut ProofFlowState,
     ) -> ExpressionJudgment {
-        match expression {
+        let mut judgment = match expression {
             CheckedExpression::UserCall {
                 function,
                 call,
@@ -6432,13 +6474,27 @@ impl Analyzer<'_, '_> {
             // and `room` cells are both the constant zero [MSR-1].
             CheckedExpression::SliceOf {
                 carrier,
-                source: CheckedSliceSource::Run(root),
+                loan,
+                source,
+                range,
                 strength,
                 ..
             } => {
                 let obligation_start = self.obligations.len();
-                let reached = self.judge_place_subscripts(root, states);
-                if reached && let Some(goal) = self.non_wrapped_window_goal(root) {
+                let mut reached = match source {
+                    CheckedSliceSource::Run(root) => self.judge_place_subscripts(root, states),
+                    _ => true,
+                };
+                if let Some(range) = range {
+                    reached &= self.judge_children_reach_parent(
+                        [range.start.as_ref(), range.end.as_ref()],
+                        states,
+                    );
+                }
+                if reached
+                    && let CheckedSliceSource::Run(root) = source
+                    && let Some(goal) = self.non_wrapped_window_goal(root)
+                {
                     self.judge_kernel_requirement(
                         crate::semantic::kernel::kernel_ordinal(match strength {
                             LoanStrength::Shared => crate::KernelRow::SliceOf,
@@ -6449,6 +6505,61 @@ impl Analyzer<'_, '_> {
                         goal,
                         ProofContext::new(&states.facts, &states.affine),
                     );
+                }
+                if reached && let Some(range) = range {
+                    let length = Self::slice_source_length(source);
+                    self.judge_view_range(carrier, &range.start, &range.end, &length, states);
+                }
+                if reached && self.obligations_since_discharged(obligation_start) {
+                    let images = if let Some(range) = range {
+                        self.affine_expression_form(&range.start, &mut states.affine)
+                            .zip(self.affine_expression_form(&range.end, &mut states.affine))
+                    } else {
+                        let length = Self::slice_source_length(source);
+                        self.measure_operand(&length)
+                            .map(|term| (AffineForm::constant(0), self.measure_atom(term)))
+                    };
+                    if let Some((start, end)) = images {
+                        if range.is_some() {
+                            let partitions =
+                                self.proved_range_partitions(*loan, &start, &end, states);
+                            if let Some(index) = self.obligations[obligation_start..]
+                                .iter()
+                                .position(|outcome| {
+                                    outcome.family == ObligationFamily::ViewRange
+                                        && outcome.conjunct == 1
+                                })
+                            {
+                                let obligation = obligation_start + index;
+                                for (index, partition) in partitions.iter().enumerate() {
+                                    for (base, parent) in [
+                                        (false, partition.stride_nonnegative),
+                                        (true, partition.base_nonnegative),
+                                    ] {
+                                        self.derivations.add_root(
+                                            DerivationRootKind::RangePartition {
+                                                obligation: u32::try_from(obligation)
+                                                    .expect("obligation identity fits u32"),
+                                                partition: u32::try_from(index)
+                                                    .expect("partition identity fits u32"),
+                                                base,
+                                            },
+                                            parent,
+                                        );
+                                    }
+                                }
+                                self.obligations[obligation].range_partitions = partitions;
+                            }
+                        }
+                        states.affine.ranges.insert(
+                            *loan,
+                            CapturedRange {
+                                source: carrier.clone(),
+                                start,
+                                end,
+                            },
+                        );
+                    }
                 }
                 ExpressionJudgment {
                     prepared_call: None,
@@ -6550,7 +6661,11 @@ impl Analyzer<'_, '_> {
                     reached,
                 }
             }
+        };
+        if let Some(carrier) = expression.carrier() {
+            judgment.reached &= self.judge_range_conflicts(carrier, states);
         }
+        judgment
     }
 
     /// [BLK-0, MSR-4] one declared requirement of a kernel-domain row,
@@ -6628,6 +6743,8 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             kernel_row: Some(operation),
+            formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
         discharged.then_some(derivation).flatten()
     }
@@ -8059,6 +8176,8 @@ impl Analyzer<'_, '_> {
                 Vec::new()
             },
             kernel_row: None,
+            formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
     }
 
@@ -8089,6 +8208,185 @@ impl Analyzer<'_, '_> {
                 })
             })
             .collect()
+    }
+
+    /// Retains PAR-2's adjacent-range family after both VIEW-2 domain goals
+    /// succeeded. Each active counted loop is considered once, and both sign
+    /// goals run to completion for every matching exact image.
+    fn proved_range_partitions(
+        &mut self,
+        range: RangeId,
+        start: &AffineForm,
+        end: &AffineForm,
+        states: &ProofFlowState,
+    ) -> Vec<super::ProvedRangePartition> {
+        let candidates = self
+            .loops
+            .iter()
+            .filter_map(|frame| {
+                let binder = states
+                    .affine
+                    .values
+                    .get(&frame.counted_binder?)?
+                    .unit_term()?;
+                let mut visiting = HashSet::new();
+                let start =
+                    self.counted_value_image(start, binder, &frame.invariant_atoms, &mut visiting)?;
+                let end =
+                    self.counted_value_image(end, binder, &frame.invariant_atoms, &mut visiting)?;
+                let after = start
+                    .base
+                    .add(&start.stride, &mut AffineCheckState::new())
+                    .ok()?;
+                (start.stride == end.stride && after == end.base).then_some((frame.id, start))
+            })
+            .collect::<Vec<_>>();
+        let mut partitions = Vec::new();
+        for (loop_id, image) in candidates {
+            let Some(stride_target) =
+                Self::affine_less_equal(&AffineForm::constant(0), &image.stride)
+            else {
+                continue;
+            };
+            let Some(base_target) = Self::affine_less_equal(&AffineForm::constant(0), &image.base)
+            else {
+                continue;
+            };
+            let stride = self.prove(
+                ProofContext::new(&states.facts, &states.affine),
+                ProofGoal::Affine {
+                    inequality: &stride_target,
+                },
+            );
+            let base = self.prove(
+                ProofContext::new(&states.facts, &states.affine),
+                ProofGoal::Affine {
+                    inequality: &base_target,
+                },
+            );
+            if stride.disposition == ProofDisposition::Proved
+                && base.disposition == ProofDisposition::Proved
+            {
+                partitions.push(super::ProvedRangePartition {
+                    loop_id,
+                    range,
+                    stride: image.stride,
+                    base: image.base,
+                    stride_nonnegative: stride
+                        .derivation
+                        .expect("a proved stride has a derivation"),
+                    base_nonnegative: base.derivation.expect("a proved base has a derivation"),
+                });
+            }
+        }
+        partitions
+    }
+
+    /// Decomposes a finite checked value graph, expanding handles and exact
+    /// product records only. Multiplication allows one binder-dependent
+    /// operand and one invariant operand; its two resulting components must
+    /// stay affine. Unknown body values and nonlinear binder uses fail closed.
+    fn counted_value_image(
+        &self,
+        form: &AffineForm,
+        binder: AffineTermId,
+        invariant: &HashSet<AffineTermId>,
+        visiting: &mut HashSet<AffineTermId>,
+    ) -> Option<CountedValueImage> {
+        let mut image = CountedValueImage {
+            stride: AffineForm::constant(0),
+            base: AffineForm::constant(form.constant_value()),
+        };
+        let mut check = AffineCheckState::new();
+        for coefficient in form.terms() {
+            let term = coefficient.term();
+            if !visiting.insert(term) {
+                return None;
+            }
+            let term_image = self.counted_atom_image(term, binder, invariant, visiting)?;
+            visiting.remove(&term);
+            image.stride = image
+                .stride
+                .add(
+                    &term_image
+                        .stride
+                        .scale(coefficient.coefficient(), &mut check)
+                        .ok()?,
+                    &mut check,
+                )
+                .ok()?;
+            image.base = image
+                .base
+                .add(
+                    &term_image
+                        .base
+                        .scale(coefficient.coefficient(), &mut check)
+                        .ok()?,
+                    &mut check,
+                )
+                .ok()?;
+        }
+        Some(image)
+    }
+
+    fn counted_atom_image(
+        &self,
+        term: AffineTermId,
+        binder: AffineTermId,
+        invariant: &HashSet<AffineTermId>,
+        visiting: &mut HashSet<AffineTermId>,
+    ) -> Option<CountedValueImage> {
+        if term == binder {
+            return Some(CountedValueImage {
+                stride: AffineForm::constant(1),
+                base: AffineForm::constant(0),
+            });
+        }
+        if invariant.contains(&term) {
+            return Some(CountedValueImage {
+                stride: AffineForm::constant(0),
+                base: AffineForm::term(term),
+            });
+        }
+        if let Some(image) = self.handle_images.get(&term) {
+            return self.counted_value_image(image, binder, invariant, visiting);
+        }
+        let (left, right) = *self.product_atoms.get(&term)?;
+        let left =
+            self.counted_value_image(&AffineForm::term(left), binder, invariant, visiting)?;
+        let right =
+            self.counted_value_image(&AffineForm::term(right), binder, invariant, visiting)?;
+        let zero = AffineForm::constant(0);
+        let (varying, fixed) = if left.stride == zero && right.stride == zero {
+            // A pure exact product of fixed values is itself fixed, even
+            // when the source computes it in the body. Keep its exact atom.
+            return Some(CountedValueImage {
+                stride: zero,
+                base: AffineForm::term(term),
+            });
+        } else if right.stride == zero {
+            (left, right.base)
+        } else if left.stride == zero {
+            (right, left.base)
+        } else {
+            return None;
+        };
+        let multiply = |left: &AffineForm, right: &AffineForm| {
+            if left.terms().is_empty() {
+                right
+                    .scale(left.constant_value(), &mut AffineCheckState::new())
+                    .ok()
+            } else if right.terms().is_empty() {
+                left.scale(right.constant_value(), &mut AffineCheckState::new())
+                    .ok()
+            } else {
+                None
+            }
+        };
+        Some(CountedValueImage {
+            stride: multiply(&varying.stride, &fixed)?,
+            base: multiply(&varying.base, &fixed)?,
+        })
     }
 
     /// Forms the exact `offset <= N - 1` target for a fixed-size array.
@@ -8342,7 +8640,242 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation,
             affine_index_maps: Vec::new(),
             kernel_row: None,
+            formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
+    }
+
+    fn judge_range_conflicts(&mut self, site: &crate::NodePath, state: &ProofFlowState) -> bool {
+        let pending: Vec<_> = self
+            .function
+            .range_conflicts
+            .iter()
+            .enumerate()
+            .filter(|(ordinal, conflict)| {
+                !self.judged_range_conflicts[*ordinal]
+                    && conflict.site.components().starts_with(site.components())
+            })
+            .map(|(ordinal, conflict)| (ordinal, conflict.clone()))
+            .collect();
+        let mut all_discharged = true;
+        for (ordinal, conflict) in pending {
+            self.judged_range_conflicts[ordinal] = true;
+            let ranges = state
+                .affine
+                .ranges
+                .get(&conflict.left)
+                .zip(state.affine.ranges.get(&conflict.right));
+            let at_formation = ranges.is_some_and(|(left, right)| {
+                [left, right].iter().any(|range| {
+                    conflict
+                        .site
+                        .components()
+                        .starts_with(range.source.components())
+                })
+            });
+            let mut canonical = None;
+            let mut proofs = Vec::new();
+            if let Some((left, right)) = ranges {
+                let endpoint = |range: &CapturedRange, ordinal| {
+                    GoalExpression::Datum(GoalDatum::EvaluatedValue {
+                        function: self.function.id,
+                        occurrence: EvaluatedValueOccurrence::ObligationOperand {
+                            site: range.source.clone(),
+                            operand: ordinal,
+                        },
+                        captured_type: CheckedType::Integer(IntegerType::U64),
+                        projections: Vec::new(),
+                        ty: CheckedType::Integer(IntegerType::U64),
+                    })
+                };
+                let mut alternatives = Vec::new();
+                for (a, a_index, b, b_index) in [
+                    (left, 2, right, 1),
+                    (right, 2, left, 1),
+                    (left, 2, left, 1),
+                    (right, 2, right, 1),
+                ] {
+                    alternatives.push(GoalExpression::Operation {
+                        row: GoalOperation::Integer {
+                            operation: CheckedIntegerOperation::LessEqual,
+                            operand_type: CheckedType::Integer(IntegerType::U64),
+                        },
+                        type_arguments: Vec::new(),
+                        const_arguments: Vec::new(),
+                        result: CheckedType::Bool,
+                        arguments: vec![endpoint(a, a_index), endpoint(b, b_index)],
+                    });
+                }
+                canonical =
+                    alternatives
+                        .into_iter()
+                        .reduce(|left, right| GoalExpression::Operation {
+                            row: GoalOperation::Boolean(CheckedBooleanOperation::Or),
+                            type_arguments: Vec::new(),
+                            const_arguments: Vec::new(),
+                            result: CheckedType::Bool,
+                            arguments: vec![left, right],
+                        });
+                // The complete fixed family is two endpoint orders and the
+                // two empty-range cases. Each reads the captured images at
+                // this access's ProofContext; later assignments cannot move
+                // an existing loan's endpoints.
+                for (end, start) in [
+                    (&left.end, &right.start),
+                    (&right.end, &left.start),
+                    (&left.end, &left.start),
+                    (&right.end, &right.start),
+                ] {
+                    if let Ok(inequality) =
+                        AffineInequality::from_forms(end, start, &mut AffineCheckState::new())
+                    {
+                        proofs.push(self.prove(
+                            ProofContext::new(&state.facts, &state.affine),
+                            ProofGoal::Affine {
+                                inequality: &inequality,
+                            },
+                        ));
+                    }
+                }
+            }
+            let proof = proofs
+                .into_iter()
+                .find(|proof| proof.disposition == ProofDisposition::Proved);
+            all_discharged &= proof.is_some();
+            self.record_range_conflict(&conflict, canonical, proof, at_formation);
+        }
+        all_discharged
+    }
+
+    fn record_range_conflict(
+        &mut self,
+        conflict: &super::super::model::CheckedRangeConflict,
+        canonical_goal: Option<GoalExpression>,
+        proof: Option<ProofResult>,
+        at_formation: bool,
+    ) {
+        let derivation = proof.as_ref().and_then(|proof| proof.derivation);
+        let ordinal =
+            u32::try_from(self.obligations.len()).expect("ENT obligation ordinal exceeds u32");
+        if let Some(root) = derivation {
+            self.derivations
+                .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+        }
+        let discharged = proof.is_some();
+        let formed_range_separation =
+            (discharged && at_formation).then_some((conflict.left, conflict.right));
+        if let Some((left, right)) = formed_range_separation {
+            self.places.record_range_separation(left, right);
+        }
+        self.obligations.push(ObligationOutcome {
+            node_path: conflict.site.clone(), family: ObligationFamily::RangeSeparation, conjunct: 0,
+            canonical_goal, components: Vec::new(), discharged, refuted: false,
+            contradictory: proof.is_some_and(|proof| proof.route == Some(ProofRoute::Contradiction)),
+            residual: (!discharged).then(|| "the captured view ranges are disjoint (one ends before the other starts, or one is empty)".to_owned()),
+            derivation, allocation_length_upper_bound: None, allocation_length_upper_bound_derivation: None,
+            affine_index_maps: Vec::new(), kernel_row: None,
+            formed_range_separation,
+            range_partitions: Vec::new(),
+        });
+    }
+
+    fn reject_unvisited_range_conflicts(&mut self) {
+        let missing: Vec<_> = self
+            .function
+            .range_conflicts
+            .iter()
+            .enumerate()
+            .filter(|(ordinal, _)| !self.judged_range_conflicts[*ordinal])
+            .map(|(_, conflict)| conflict.clone())
+            .collect();
+        for conflict in missing {
+            self.record_range_conflict(&conflict, None, None, false);
+        }
+    }
+
+    fn slice_source_length(source: &CheckedSliceSource) -> CheckedExpression {
+        let measure = CheckedMeasure::Length;
+        match source {
+            CheckedSliceSource::Array { root, length } => CheckedExpression::ArrayMeasure {
+                measure,
+                root: root.clone(),
+                length: *length,
+            },
+            CheckedSliceSource::Buffer(root) => CheckedExpression::BufferMeasure {
+                measure,
+                root: root.clone(),
+            },
+            CheckedSliceSource::Run(root) => CheckedExpression::ContainerMeasure {
+                measure,
+                root: root.clone(),
+            },
+            CheckedSliceSource::ViewHolder { binding, element } => {
+                CheckedExpression::SliceMeasure {
+                    measure,
+                    root: super::super::model::CheckedSliceRoot {
+                        binding: *binding,
+                        element: *element,
+                        strength: LoanStrength::Shared,
+                    },
+                }
+            }
+            CheckedSliceSource::ArenaContent {
+                binding,
+                fields,
+                length,
+            } => CheckedExpression::ArrayMeasure {
+                measure,
+                root: CheckedArrayRoot::Binding {
+                    binding: *binding,
+                    fields: fields.clone(),
+                },
+                length: *length,
+            },
+        }
+    }
+
+    fn judge_view_range(
+        &mut self,
+        node_path: &crate::NodePath,
+        start: &CheckedExpression,
+        end: &CheckedExpression,
+        length: &CheckedExpression,
+        states: &ProofFlowState,
+    ) {
+        for (conjunct, (left, right)) in [(start, end), (end, length)].into_iter().enumerate() {
+            let left_goal =
+                self.obligation_goal_operand(node_path, conjunct + 1, left, &states.facts);
+            let right_goal =
+                self.obligation_goal_operand(node_path, conjunct + 2, right, &states.facts);
+            let left_term = self.read_operand(left);
+            let right_term = self
+                .read_operand(right)
+                .or_else(|| self.measure_operand(right));
+            let goal = GoalExpression::Operation {
+                row: GoalOperation::Integer {
+                    operation: CheckedIntegerOperation::LessEqual,
+                    operand_type: CheckedType::Integer(IntegerType::U64),
+                },
+                type_arguments: Vec::new(),
+                const_arguments: Vec::new(),
+                result: CheckedType::Bool,
+                arguments: vec![left_goal, right_goal],
+            };
+            self.judge_exact_relation_obligation(
+                ObligationFamily::ViewRange,
+                conjunct as u8,
+                node_path.clone(),
+                goal,
+                left_term,
+                right_term,
+                format!(
+                    "{} <= {}",
+                    self.render_expression(left),
+                    self.render_expression(right)
+                ),
+                states,
+            );
+        }
     }
 
     fn judge_system_ranges(
@@ -8569,6 +9102,8 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             kernel_row: None,
+            formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
     }
 
@@ -8699,6 +9234,8 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             kernel_row: None,
+            formed_range_separation: None,
+            range_partitions: Vec::new(),
         });
     }
 
@@ -10085,6 +10622,18 @@ impl Analyzer<'_, '_> {
         AffineFlowState {
             values,
             opaque_values,
+            ranges: first
+                .affine
+                .ranges
+                .iter()
+                .filter(|(id, range)| {
+                    states
+                        .iter()
+                        .skip(1)
+                        .all(|state| state.affine.ranges.get(id) == Some(*range))
+                })
+                .map(|(id, range)| (*id, range.clone()))
+                .collect(),
             facts: self.join_affine_facts(states),
             published_invariants: first
                 .affine
@@ -12482,7 +13031,8 @@ impl Analyzer<'_, '_> {
             CheckedCommitValues::ResultList { .. } => ordinal_calls.first().cloned().flatten(),
             CheckedCommitValues::Written(_) => None,
         };
-        let commit_reached = target_reached && value_reached;
+        let ranges_reached = self.judge_range_conflicts(node_path, state);
+        let commit_reached = target_reached && value_reached && ranges_reached;
         for target in targets {
             invalidate_goal_origin_for_set(&mut state.facts, target);
         }
@@ -12596,7 +13146,8 @@ impl Analyzer<'_, '_> {
             prepared_call: prepared,
             reached: value_reached,
         } = self.expression_effects(value, state);
-        let commit_reached = target_reached && value_reached;
+        let ranges_reached = self.judge_range_conflicts(node_path, state);
+        let commit_reached = target_reached && value_reached && ranges_reached;
         let receiver_route = commit_reached
             .then(|| {
                 prepared
@@ -12766,6 +13317,18 @@ impl Analyzer<'_, '_> {
                 value,
             } => {
                 let affine_value = self.affine_expression_form(value, &mut state.affine);
+                let range_length = if let CheckedExpression::SliceOf {
+                    range: Some(range), ..
+                } = value
+                {
+                    self.affine_expression_form(&range.start, &mut state.affine)
+                        .zip(self.affine_expression_form(&range.end, &mut state.affine))
+                        .and_then(|(start, end)| {
+                            end.subtract(&start, &mut AffineCheckState::new()).ok()
+                        })
+                } else {
+                    None
+                };
                 // [MSR-3] the rebind placement is minted before the
                 // initializer's own kills, because the datum it forms is the
                 // value the transferred place had immediately before them.
@@ -12837,6 +13400,16 @@ impl Analyzer<'_, '_> {
                 }
                 if judgment.reached {
                     self.record_product_atom(*binding, value, &mut state.affine);
+                    if let Some(length) = range_length {
+                        let place = self.bound_place(*binding);
+                        let term = self.place_measure_term(
+                            CheckedMeasure::Length,
+                            projected_place(place),
+                            MeasuredKind::Slice,
+                            None,
+                        );
+                        self.measure_atoms.insert(term, length);
+                    }
                 }
                 true
             }
@@ -13412,6 +13985,7 @@ impl Analyzer<'_, '_> {
                     invariant_declarations: invariant_declarations.clone().into_boxed_slice(),
                     scope_depth: self.scopes.len(),
                     counted_binder: None,
+                    invariant_atoms: HashSet::new(),
                     capture_path: None,
                     breaks: Vec::new(),
                 });
@@ -13558,6 +14132,15 @@ impl Analyzer<'_, '_> {
                 }
                 self.apply_loop_kills(state, &kills, Some(snapshot));
 
+                let invariant_atoms = state
+                    .affine
+                    .values
+                    .values()
+                    .chain(state.affine.opaque_values.values())
+                    .chain(self.measure_atoms.values())
+                    .flat_map(|form| form.terms().iter().map(|coefficient| coefficient.term()))
+                    .collect();
+
                 // Values killed by a possible continuing iteration now read
                 // as fresh header atoms.  The written expressions themselves
                 // are unchanged; only their program-point value images differ
@@ -13578,6 +14161,7 @@ impl Analyzer<'_, '_> {
                     invariant_declarations: invariant_declarations.clone().into_boxed_slice(),
                     scope_depth: outer_scope_depth,
                     counted_binder: Some(*binder),
+                    invariant_atoms,
                     capture_path: Some(range_path.clone()),
                     breaks: Vec::new(),
                 });
@@ -14706,6 +15290,25 @@ impl Analyzer<'_, '_> {
                 ..
             } => format!("{}_{}", integer_value(*ty, *bits), integer_type_name(*ty)),
             CheckedExpression::Binding { binding, .. } => self.binding_name(*binding),
+            CheckedExpression::BufferMeasure { measure, root } => format!(
+                "{}({})",
+                measure.spelling(),
+                self.render_place(&PlaceTerm {
+                    root: PlaceRoot::Binding(root.binding),
+                    deref: self.is_holder(root.binding),
+                    fields: root.fields.clone(),
+                }),
+            ),
+            CheckedExpression::SliceMeasure { measure, root } => format!(
+                "{}({})",
+                measure.spelling(),
+                self.binding_name(root.binding),
+            ),
+            CheckedExpression::ArrayMeasure { measure, root, .. } => format!(
+                "{}({})",
+                measure.spelling(),
+                self.render_place(&self.array_root_place(root)),
+            ),
             CheckedExpression::Project {
                 binding, fields, ..
             } => self.render_place(&PlaceTerm {

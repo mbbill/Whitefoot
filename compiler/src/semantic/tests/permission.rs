@@ -1554,26 +1554,25 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(*form, "a statement that forms a borrow");
 }
 
-/// A borrow-moded actual whose place the judgment cannot resolve: a borrow of
-/// a view *parameter* anchors nowhere `argument_place` reaches, and the loans
-/// half fails closed on it even though both rows are `pure` and project
-/// nothing.
+/// A returned view remains unresolved by the structural permission prepass.
+/// Its loan must fail closed even when both callees are pure. Formal views
+/// now have incoming origins so recursive children retain their source; using
+/// a returned view preserves this test's unknown-origin rejection boundary.
 #[test]
 fn an_unresolvable_loan_actual_denies_rather_than_dropping_the_loan() {
-    // [BLK-4] refuses the `&uniq Slice<u8>` parameter this fixture first
-    // took, so the loan actual is a shared borrow of a view binding. The view
-    // is the *parameter* rather than a local formed over named storage: a
-    // view is a claim on the storage it was formed over [VIEW-1], and the
-    // judgment now reads a local formation through to that origin, so a view
-    // this function received is the shape whose place stays unresolvable.
-    let source = br#"fn touch_slice(v: &Slice<u8>) -> result: own u64 pure {
+    let source = br#"fn relay['r](input: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
+  return input;
+}
+
+fn touch_slice(v: &Slice<u8>) -> result: own u64 pure {
   return 3_u64;
 }
 
 fn a_pure_uniqslice(handed: own Slice<u8>) -> result: own u64 pure {
+  let returned = relay(input: handed);
   region {
-    let a = touch_slice(v: &handed);
-    let b = touch_slice(v: &handed);
+    let a = touch_slice(v: &returned);
+    let b = touch_slice(v: &returned);
     let s = a +wrap b;
     return s;
   }
@@ -1596,6 +1595,47 @@ command fn main() -> status: own ExitStatus pure {
     let Denial::UnresolvedFootprint { .. } = denial(pair, 2) else {
         panic!("expected an unresolved denial, got {:?}", pair.verdict);
     };
+}
+
+#[test]
+fn formal_view_origins_keep_both_shared_and_exclusive_call_loans() {
+    let source = br#"fn read_only(view: &Slice<u8>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+fn exclusive(view: &uniq MutSlice<u8>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+fn shared_formal(handed: own Slice<u8>) -> result: own u64 pure {
+  region {
+    let a = read_only(view: &handed);
+    let b = read_only(view: &handed);
+    return a +wrap b;
+  }
+}
+
+fn exclusive_formal(handed: own MutSlice<u8>) -> result: own u64 pure {
+  region {
+    let a = exclusive(view: &uniq handed);
+    let b = exclusive(view: &uniq handed);
+    return a +wrap b;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    assert_eq!(
+        only_pair(&table, "shared_formal").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+    assert!(matches!(
+        denial(only_pair(&table, "exclusive_formal"), 2),
+        Denial::Loan { .. }
+    ));
 }
 
 /// Direct system operations are candidates under the same ordinary call

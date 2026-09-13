@@ -269,11 +269,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .slice
                         .as_ref()
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if !origins
-                        .origins
-                        .iter()
-                        .all(|origin| function.slice_return_ceiling.contains(origin))
-                    {
+                    if !origins.origins.iter().all(|origin| {
+                        function
+                            .slice_return_ceiling
+                            .iter()
+                            .any(|ceiling| origin.within_ceiling(ceiling))
+                    }) {
                         return Err(CheckStop::source_issue(SemanticIssue {
                             rule: SemanticRule::Fn1,
                             location: SemanticLocation::SourceNode(

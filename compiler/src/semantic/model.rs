@@ -1558,7 +1558,28 @@ pub(crate) enum CheckedSliceOrigin {
     FormalSlice {
         parameter: DeclarationId,
         region: DeclarationId,
+        path: Vec<super::places::PlaceStep>,
     },
+}
+
+impl CheckedSliceOrigin {
+    pub(crate) fn within_ceiling(&self, ceiling: &Self) -> bool {
+        match (self, ceiling) {
+            (
+                Self::FormalSlice {
+                    parameter,
+                    region,
+                    path,
+                },
+                Self::FormalSlice {
+                    parameter: other,
+                    region: other_region,
+                    path: prefix,
+                },
+            ) => parameter == other && region == other_region && path.starts_with(prefix),
+            _ => self == ceiling,
+        }
+    }
 }
 
 /// The finite set of caller-formal state paths a checked value may carry.
@@ -1733,6 +1754,21 @@ pub(crate) enum CheckedSliceSource {
     /// <= room_of(vector)` [VIEW-2], so the view is the slots from `head_of`
     /// onward and never wraps.
     Run(CheckedContainerRoot),
+}
+
+/// The once-evaluated relative endpoints of a view formation [VIEW-2].
+/// Their domain is a mandatory source obligation before lowering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedSliceRange {
+    pub(crate) start: Box<CheckedExpression>,
+    pub(crate) end: Box<CheckedExpression>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedRangeConflict {
+    pub(crate) site: NodePath,
+    pub(crate) left: super::places::RangeId,
+    pub(crate) right: super::places::RangeId,
 }
 
 /// Source category retained only for integer-operation operands whose exact
@@ -1981,7 +2017,9 @@ pub(crate) enum CheckedExpression {
     },
     SliceOf {
         carrier: NodePath,
+        loan: super::places::RangeId,
         source: CheckedSliceSource,
+        range: Option<CheckedSliceRange>,
         region: DeclarationId,
         element: CheckedFlatElement,
         /// [VIEW-2] which of the two formation rows this is: `slice_of`
@@ -2556,6 +2594,9 @@ pub(crate) struct CheckedFunction {
     /// Closed-world state origin of this function's result.
     pub(crate) result_state_origin: CheckedResultStateOrigin,
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
+    /// Structural ownership conflicts whose range relation must be proved
+    /// by the ordinary flow before this function can be accepted.
+    pub(crate) range_conflicts: Vec<CheckedRangeConflict>,
     /// Whether this function's own body reaches an ambient-heap allocation
     /// [STOR-1]. The ambient heap has no provider value, so [EFF-1] gives it
     /// no written entry and this is derived rather than declared [S23].
@@ -2783,12 +2824,17 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::Project { .. } => Vec::new(),
         CheckedExpression::BorrowAddressed { root, .. }
         | CheckedExpression::ContainerMeasure { root, .. }
-        | CheckedExpression::ReadStorage { root, .. }
-        | CheckedExpression::SliceOf {
-            source: CheckedSliceSource::Run(root),
-            ..
-        } => root.offsets().collect(),
-        CheckedExpression::SliceOf { .. } => Vec::new(),
+        | CheckedExpression::ReadStorage { root, .. } => root.offsets().collect(),
+        CheckedExpression::SliceOf { source, range, .. } => {
+            let mut children: Vec<_> = match source {
+                CheckedSliceSource::Run(root) => root.offsets().collect(),
+                _ => Vec::new(),
+            };
+            if let Some(range) = range {
+                children.extend([range.start.as_ref(), range.end.as_ref()]);
+            }
+            children
+        }
         CheckedExpression::UserCall { arguments, .. }
         | CheckedExpression::SystemCall { arguments, .. }
         | CheckedExpression::KernelCall { arguments, .. }

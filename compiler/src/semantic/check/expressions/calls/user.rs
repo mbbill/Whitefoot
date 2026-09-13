@@ -498,12 +498,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             projections.push(GoalProjection::Deref);
         }
-        projections.extend(place.path.iter().map(|step| match step {
-            crate::semantic::places::PlaceStep::Field(field) => GoalProjection::Field(*field),
-            crate::semantic::places::PlaceStep::Subscript(index) => {
-                GoalProjection::Subscript(*index)
-            }
-        }));
+        let path = place
+            .path
+            .iter()
+            .map(|step| match step {
+                crate::semantic::places::PlaceStep::Field(field) => {
+                    Ok(GoalProjection::Field(*field))
+                }
+                crate::semantic::places::PlaceStep::Subscript(index) => {
+                    Ok(GoalProjection::Subscript(*index))
+                }
+                crate::semantic::places::PlaceStep::Range(_) => {
+                    Err(SemanticCompilerFailure::InvalidResolution)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        projections.extend(path);
         let datum = if self.constants.contains_key(&place.root) {
             GoalDatum::NamedConst {
                 declaration: place.root,

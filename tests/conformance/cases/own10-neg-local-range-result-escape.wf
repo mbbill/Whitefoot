@@ -1,0 +1,8 @@
+fn escape['r]() -> result: own Slice<'r, u64> pure {
+  let values = buffer_new(4_u64, 0_u64);
+  return slice_of(&'r values, 0_u64, 2_u64);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

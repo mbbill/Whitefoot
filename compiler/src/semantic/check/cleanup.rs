@@ -342,6 +342,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferFits { length, .. } => {
                 self.collect_expression_release_sites(length, sites)?;
             }
+            CheckedExpression::SliceOf { .. } => {
+                for child in super::super::model::expression_children(expression) {
+                    self.collect_expression_release_sites(child, sites)?;
+                }
+            }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
@@ -349,7 +354,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
-            | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }

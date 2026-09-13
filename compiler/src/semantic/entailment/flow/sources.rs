@@ -792,6 +792,12 @@ impl Analyzer<'_, '_> {
                 );
                 true
             }
+            CheckedExpression::SliceOf { range: Some(_), .. } => {
+                // The relative extent end - start has three terms and is
+                // installed as an exact affine value image by the parent
+                // walk, after both formation obligations have discharged.
+                true
+            }
             CheckedExpression::SliceOf { source, .. } => {
                 let ValueImage::Binding(binding) = destination else {
                     return true;

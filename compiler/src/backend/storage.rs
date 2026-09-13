@@ -573,6 +573,7 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             std::iter::once(*run).chain(value.iter().copied()).collect()
         }
         IrOperation::RunTaken { run, .. } | IrOperation::SliceFromRun { run } => vec![*run],
+        IrOperation::SliceRange { slice, start, end } => vec![*slice, *start, *end],
         IrOperation::BufferIndex { buffer, offset, .. } => vec![*buffer, *offset],
         IrOperation::BufferProbeSkip {
             buffer,

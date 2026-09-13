@@ -1,6 +1,99 @@
 use super::*;
 
 #[test]
+fn runtime_stencil_ranges_reach_their_backing_buffers() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    let parallel = emit_with_overlap(source);
+    assert!(parallel.contains("call void @wf__par_publish("));
+    let output = compile_and_run(&parallel);
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
+fn stencil_matches_an_independent_dimension_and_step_matrix() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
+    let adapter = include_str!("../../../../research/experiments/compute-bench/stencil_host.ll");
+    let oracle = format!(
+        "#define WFB_STENCIL_ORACLE\n{}",
+        include_str!("../../../../research/experiments/compute-bench/stencil_bench.c")
+    );
+    for emitted in [compile(source), emit_with_overlap(source)] {
+        let llvm = format!(
+            "{}\n{adapter}",
+            emitted.replace("@main(", "@wf_stencil_smoke_main(")
+        );
+        let directory = test_directory();
+        let executable = build_linked_executable(&llvm, Some(&oracle), &[], &directory);
+        for workers in [1, 2, 4] {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers.to_string())
+                .env_remove("WF_SPLIT_WORK")
+                .output()
+                .expect("run independent stencil oracle");
+            assert!(output.status.success(), "workers={workers}: {output:?}");
+            assert!(String::from_utf8_lossy(&output.stdout).contains("stencil oracle PASS:"));
+        }
+        std::fs::remove_dir_all(directory).expect("remove native stencil test files");
+    }
+}
+
+#[test]
+fn recursive_child_ranges_restore_parent_access() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/range_split.wf");
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    let parallel = emit_with_overlap(source);
+    assert!(parallel.contains("call void @wf__par_publish("));
+    let output = compile_and_run(&parallel);
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
+fn range_endpoints_are_captured_and_empty_ranges_are_admitted() {
+    let source = br#"const values: FixedVector<u64, 8> =[1_u64, 2_u64, 3_u64, 4_u64, 5_u64, 6_u64, 7_u64, 8_u64];
+
+fn window_sum(start: own u64, end: own u64) -> result: own u64 pure contract {
+  requires start <= end;
+  requires end <= 8_u64;
+} {
+  region {
+    let view = slice_of(&values, start, end);
+    set start = end;
+    let count = len_of(view);
+    let total = 0_u64;
+    for (i in 0_u64..count) {
+      let value = view[i];
+      set total = total +wrap value;
+    }
+    return total;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let middle = window_sum(start: 2_u64, end: 5_u64);
+  let empty = window_sum(start: 8_u64, end: 8_u64);
+  if middle != 12_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if empty != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
 fn const_local_and_store_run_slices_share_one_read_only_descriptor_path() {
     // The three view origins are now the three run storages [STOR-1]: the
     // const run's read-only static rodata, a frame-resident `FixedVector`,

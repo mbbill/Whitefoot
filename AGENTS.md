@@ -115,6 +115,11 @@ locations, and affected-set procedure. Routine fixes under unchanged design
 need no new decision record. Record reasons when choices settle, not by
 reconstructing them at task completion.
 
+Before stopping work, explain the task's specification revisions in the
+conversation: which rules changed, their before/after behavior, and why those
+changes were selected. A version number or PR link does not replace this
+explanation.
+
 Use a PR as the owner's ongoing review surface, including before implementation
 begins. On an existing PR, commit and push coherent progress to the same branch
 and keep its description and actual validation results current. Opening a PR

@@ -1,0 +1,10 @@
+command fn main() -> status: own ExitStatus pure {
+  let values = buffer_new(8_u64, 0_u64);
+  region {
+    let parent = mut_slice_of(&uniq values, 0_u64, 8_u64);
+    let child = mut_slice_of(&uniq parent, 0_u64, 4_u64);
+    let forbidden = parent[0_u64];
+    let length = len_of(child);
+  }
+  return exit_status(code: 0_u8);
+}
