@@ -5,7 +5,14 @@
 # file.
 
 PY := python3 -B
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+# Everything built or measured outside the checkout is written under this
+# root, and no path any developer's machine happens to have is encoded in it:
+# the default is the system temporary directory, which every supported host
+# already defines. macOS exports TMPDIR with a trailing slash, so the trailing
+# slash is stripped and the shell spellings elsewhere (`${TMPDIR:-/tmp}`) at
+# worst produce a harmless doubled separator. Set the variable to keep the
+# work somewhere durable: a temporary directory may be cleared on reboot.
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 RESEARCH_TEST_TMP := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-tmp
 RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-target
 
@@ -15,7 +22,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # `approval-history-integrity` and `spec-archive-integrity` were retired with
 # the approval ledger they both read.
 CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	conformance compiler research-tests conformance-run snapshot-run
+	design-lint conformance compiler research-tests bench-programs conformance-run snapshot-run
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -46,7 +53,11 @@ check:
 # program. CI's `static` job runs this instead of restating their names: a
 # second copy of the list is a copy that goes stale, and did — retiring two
 # stages left the workflow naming targets that no longer exist.
-static: repository-invariants spec-append-only spec-prose-integrity
+static: repository-invariants spec-append-only spec-prose-integrity design-lint
+
+# Structural lint for the design tree; form only, see design/skill/lint.py.
+design-lint:
+	@$(PY) design/skill/lint.py --base origin/main
 
 repository-invariants:
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
@@ -59,6 +70,22 @@ repository-invariants:
 	name_matches="$$(git ls-files | grep -F -e "$$mac_home" -e "$$linux_home" -e "$$encoded_home" -e "$$windows_home" || { status=$$?; test "$$status" -eq 1 || exit "$$status"; })" || exit 1; \
 	if test -n "$$matches$$name_matches"; then \
 		echo "repository invariants: tracked content or filenames contain a personal home path:" >&2; \
+		test -z "$$matches" || echo "$$matches" >&2; \
+		test -z "$$name_matches" || echo "$$name_matches" >&2; \
+		exit 1; \
+	fi
+# A personal home path is not the only way a developer's own machine leaks
+# into the tree: a bare directory name does it too, and reads as a convention
+# every reader is expected to have. The one that got in was a local
+# antivirus skip folder used as the default scratch root; the scratch root is
+# now the system temporary directory, which every host defines for itself.
+# The name is spelled here as a concatenation so this rule does not match
+# itself. `archive/` is frozen and keeps its historical text.
+	@local_dir="$$(printf '%s_%s_%s' do not scan)"; \
+	matches="$$(git grep -a -l -F -e "$$local_dir" -- . ':(exclude)archive' || { status=$$?; test "$$status" -eq 1 || exit "$$status"; })" || exit 1; \
+	name_matches="$$(git ls-files -- . ':(exclude)archive' | grep -F -e "$$local_dir" || { status=$$?; test "$$status" -eq 1 || exit "$$status"; })" || exit 1; \
+	if test -n "$$matches$$name_matches"; then \
+		echo "repository invariants: tracked content or filenames encode a local machine directory name; no directory of any developer's own machine belongs in the repository:" >&2; \
 		test -z "$$matches" || echo "$$matches" >&2; \
 		test -z "$$name_matches" || echo "$$name_matches" >&2; \
 		exit 1; \
@@ -85,24 +112,18 @@ spec-append-only-staged:
 	fi
 	@echo "spec append-only: no released kernel specification was modified or removed"
 
-# The specification's own bytes are its identity, and the generated
-# build.rs derives them on every build that touches those bytes. Live prose quotes neither: a quoted digest or an "active vN" sentence
-# went stale at every activation and forced a six-file edit to keep in step
-# (found landed: the derivation ledger still described v0.28 as the installed
-# authority after the v0.29 activation; retired 2026-09-04 in favour of this
-# negative check). Frozen history — archive/done/, research records, archived
-# specifications, the approval record, and the derivation ledger's per-version
-# amendment bindings — legitimately quotes superseded identities; only the
-# ledger's "active authority" sentence is live prose, so the ledger is held to
-# the phrase check alone.
+# The specification's own bytes are its identity, and build.rs derives them
+# on every build that touches those bytes. Live prose quotes neither a digest
+# nor an "active vN" sentence: both went stale at every activation, so this
+# negative check keeps them out of the guidance files.
 spec-prose-integrity:
 	@failed=0; \
-	for file in README.md AGENTS.md CLAUDE.md compiler/README.md docs/*.md; do \
+	for file in README.md AGENTS.md CLAUDE.md docs/*.md; do \
 		if grep -nE '(^|[^0-9a-f])[0-9a-f]{64}([^0-9a-f]|$$)' "$$file"; then \
 			echo "spec prose integrity: $$file quotes a specification digest; the identity is derived from the specification's own bytes" >&2; failed=1; \
 		fi; \
 	done; \
-	for file in README.md AGENTS.md CLAUDE.md compiler/README.md docs/*.md spec/derivation/derivation-ledger.md; do \
+	for file in README.md AGENTS.md CLAUDE.md docs/*.md; do \
 		if grep -nE 'Kernel specification v[0-9]+\.[0-9]+ is the active|[Aa]ctive language authority(:| is) v[0-9]+\.[0-9]+|active v[0-9]+\.[0-9]+ (guidance|authority)|the exact v[0-9]+\.[0-9]+ bytes' "$$file"; then \
 			echo "spec prose integrity: $$file names a version as the active authority; say 'the active specification at spec/kernel-spec.md' instead" >&2; failed=1; \
 		fi; \
@@ -131,6 +152,21 @@ research-tests:
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/harness/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
+# The compute regression rule, over crafted table fragments. The check it
+# decides -- `.github/workflows/compute-regression.yml`, which times two
+# builds against each other -- is deliberately not a stage of this gate. This
+# target measures nothing, links nothing and needs no compiler, so the rule
+# that fails a required pull-request check is itself checked on every run of
+# `make check`.
+	TMPDIR="$(RESEARCH_TEST_TMP)" $(MAKE) -C research/experiments/compute-bench verdict-test
+
+# The programs of the I/O measurement bundle compile with the current
+# compiler. The bundle's protocols are measurements and stay out of the gate;
+# this only compiles, so a language change that leaves a bench program behind
+# fails here instead of emptying a table on the bench runner.
+bench-programs:
+	$(MAKE) -C research/experiments/io-completion-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
+	$(MAKE) -C research/experiments/compute-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 
 # Enumerate every declared case through the native adapter. Every non-pending
 # case reaches an actual compiler verdict; run cases are linked and
@@ -161,4 +197,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests conformance-run snapshot-run install-hooks
+.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler research-tests bench-programs conformance-run snapshot-run install-hooks

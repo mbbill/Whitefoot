@@ -1,0 +1,5 @@
+Decision: A compiler-derived drop of a type whose release graph closes on itself is one release action per node type that calls itself where the graph closes, so the walk's depth is the value's rather than the type's, and the stack ledger reports that self-call as a cycle row, because such a cycle can arise only where a heap is allowed, and a heap-allowed program's resource behavior is a runtime quantity already, while the explicit worklist that walked it off the machine stack had to allocate on the release path, a runtime trap the writer never wrote, instead of an explicit worklist decided by strongly connected components over the cleanup graph.
+
+Rejected:
+- An explicit worklist bounded by the structure being dismantled, decided by strongly connected components over the cleanup graph: rejected because the worklist allocated, and an allocation on the release path is a runtime trap the writer never wrote.
+- Refusing types whose release graph has a cycle: rejected because a cycle can arise only where a heap is allowed, and a heap-allowed program's resource behavior is a runtime quantity already.

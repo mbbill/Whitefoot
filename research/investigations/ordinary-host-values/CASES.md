@@ -29,7 +29,10 @@ was removed, while actual acquisition refusal remains an observed outcome.
 The native engine gives no permission to overlap source calls; common factory
 state on read_at/read_next/write_once accounts for stream and file aliasing.
 
-The structure gate has passed: 25 runner tests and 130/130 active rules covered.
+The pre-merge C2 structure gate reported 25 runner tests and 130/130 active
+rules covered. The combined v0.55 publication also retires META-6 under main's
+approved deletion of the derivation ledger; that coverage record is removed
+with its rule. These older counts do not report the merged revision's gate.
 The canonical adapter and native host CI report execution against their exact
 revision. This register records rule grounds, not a substitute gate result.
 
@@ -1355,7 +1358,7 @@ coverage without the special domain references.
 | [META-3:174](https://github.com/mbbill/Whitefoot/blob/20043721f68eff0c3bdda72762d8b5221473e600/tests/conformance/manifest.jsonl#L174) | specification-inspection | Retain ordinary policy/structural coverage; update only any removed cross-reference. |
 | [META-4:175](https://github.com/mbbill/Whitefoot/blob/20043721f68eff0c3bdda72762d8b5221473e600/tests/conformance/manifest.jsonl#L175) | whitefoot-spec | Retain ordinary policy/structural coverage; update only any removed cross-reference. |
 | [META-5:176](https://github.com/mbbill/Whitefoot/blob/20043721f68eff0c3bdda72762d8b5221473e600/tests/conformance/manifest.jsonl#L176) | whitefoot-spec | Retain ordinary policy/structural coverage; update only any removed cross-reference. |
-| [META-6:177](https://github.com/mbbill/Whitefoot/blob/20043721f68eff0c3bdda72762d8b5221473e600/tests/conformance/manifest.jsonl#L177) | whitefoot-spec | Retain ordinary policy/structural coverage; update only any removed cross-reference. |
+| [META-6:177](https://github.com/mbbill/Whitefoot/blob/20043721f68eff0c3bdda72762d8b5221473e600/tests/conformance/manifest.jsonl#L177) | whitefoot-spec | Retire with main's approved deletion of META-6 and the derivation ledger. Unique rule IDs, cross-references and specification identity remain checked. |
 | [DIAG-1:193](https://github.com/mbbill/Whitefoot/blob/20043721f68eff0c3bdda72762d8b5221473e600/tests/conformance/manifest.jsonl#L193) | compiler-diagnostics | Re-derive coverage against the rewritten ordinary rule, dropping system/qualification/milestone explanations. |
 | [DIAG-2:194](https://github.com/mbbill/Whitefoot/blob/20043721f68eff0c3bdda72762d8b5221473e600/tests/conformance/manifest.jsonl#L194) | compiler-checked-program | Re-derive coverage against the rewritten ordinary rule, dropping system/qualification/milestone explanations. |
 | [EFF-4:195](https://github.com/mbbill/Whitefoot/blob/20043721f68eff0c3bdda72762d8b5221473e600/tests/conformance/manifest.jsonl#L195) | compiler-source-proof-erasure | Re-derive coverage against the rewritten ordinary rule, dropping system/qualification/milestone explanations. |

@@ -1,262 +1,33 @@
-/* The host's primitives for the scheduler core (`prim.h`, items 2 to 7,
- * thread identity, and the platform layer's own three; item 1 is inline in
- * the header).
- *
- * POSIX only, and `prim_windows.c` is its twin. The switch is the hand-written
- * one
- * `research/experiments/park-on-miss-switch-cost/` measured; the park is an
- * epoch on one mutex and condition variable, which is the shape the completion
- * runtime's own park has and will be the one primitive the bridge supplies
- * once the core replaces the writer schedulers (design §7, platform item 2);
- * target progress is a weak hook the bridge defines, so a core linked without
- * a completion runtime makes no progress and drains nothing. */
-
+/* POSIX thread creation and per-lane waiting; no stack switching. */
+/* Feature selection, and it has to precede every include. The monotonic clock
+ * is POSIX and the CPU affinity mask is a glibc extension, and `-std=c11`
+ * -- which the gate, the emitted link and this file's probes all compile with
+ * -- hides both unless one of these is named first. macOS selects the Darwin
+ * set for `sysctlbyname`, the same choice `wake_probe.c` makes. Each is
+ * guarded so naming it again on a command line is not a redefinition. */
+#if defined(__linux__)
+#if !defined(_GNU_SOURCE)
+#define _GNU_SOURCE 1
+#endif
+#elif defined(__APPLE__)
+#if !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE 1
-
+#endif
+#elif !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "prim.h"
-#include "core.h"
-
-#include <pthread.h>
+#include <fcntl.h>
 #include <sched.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #endif
 
-void wf_prim_fail(const char *reason) {
-    (void)fprintf(stderr, "whitefoot scheduler: %s\n", reason);
-    abort();
-}
-
-/* ---------------------------------------------------------- thread index */
-
-static _Thread_local unsigned wf_prim_thread_ordinal;
-
-unsigned wf_prim_thread_index(void) {
-    return wf_prim_thread_ordinal;
-}
-
-void wf_prim_set_thread_index(unsigned index) {
-    wf_prim_thread_ordinal = index;
-}
-
-/* ------------------------------------------------------------ 2. switch */
-
-#include "switch.h"
-
-void wf_prim_switch(void **save, void *load) {
-    wf_switch_raw(save, load);
-}
-
-void *wf_prim_prepare_stack(
-    void *top,
-    size_t bytes,
-    void (*entry)(void *),
-    void *argument
-) {
-    /* The slot *is* the stack here, so the frame goes at its top and the size
-     * is the reservation's business rather than the switch's. Windows needs
-     * the size because a fiber owns a stack of its own (`prim_windows.c`). */
-    (void)bytes;
-    return wf_switch_prepare(top, entry, argument);
-}
-
-/* The floor's two halves. The floor exports both once the core is linked into
- * programs (design §5); until then the weak answers do nothing, so a core
- * linked without the floor still switches and `entry.c` still starts its
- * threads. This leaf is the one unit of a link that names the floor's attach,
- * and `wf_prim_floor_attach` is how `entry.c` reaches it: the Windows leaf
- * has to arm every pool fiber itself, one link admits one weak default per
- * symbol (MSVC, LNK1227), and a PE weak default satisfies only references from
- * its own unit (GNU ld), so each platform leaf carries the pair and every
- * caller above goes through it. */
-__attribute__((weak)) void wf__floor_attach_thread(void) {}
-
-__attribute__((weak)) void wf__floor_set_stack_bounds(unsigned char *low, unsigned char *high) {
-    (void)low;
-    (void)high;
-}
-
-void wf_prim_floor_attach(void) {
-    wf__floor_attach_thread();
-}
-
-void wf_prim_set_bounds(unsigned char *low, unsigned char *high) {
-    wf__floor_set_stack_bounds(low, high);
-}
-
-/* -------------------------------------------------------------- 3. park */
-
-static pthread_mutex_t wf_prim_wake_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t wf_prim_wake_signal = PTHREAD_COND_INITIALIZER;
-static uint64_t wf_prim_wake_epoch;
-static unsigned wf_prim_sleepers;
-
-/* Platform item 2 of design §7: one wait and wake primitive.
- *
- * The core sleeps and wakes on whatever the link's owner of the host wait set
- * supplies.  A completion link has one -- the bridge, whose park is the
- * io_uring epoll wait where a ring exists and the runtime's condition-variable
- * park elsewhere, and whose wake raises the same epoch the ring's own park
- * announces itself against -- so the bridge defines these three strongly and
- * the mapping is written down at that definition.  A core linked without a
- * completion runtime, such as the smoke build and the enumerator, gets the
- * weak answers below and keeps the epoch on this file's own mutex and
- * condition variable.  Each returns nonzero when it handled the call. */
-__attribute__((weak)) int wf__sched_host_epoch(uint64_t *epoch) {
-    (void)epoch;
-    return 0;
-}
-
-__attribute__((weak)) int wf__sched_host_park(uint64_t observed) {
-    (void)observed;
-    return 0;
-}
-
-__attribute__((weak)) int wf__sched_host_wake(void) {
-    return 0;
-}
-
-uint64_t wf_prim_epoch(void) {
-    uint64_t supplied = 0;
-    if (wf__sched_host_epoch(&supplied)) {
-        return supplied;
-    }
-    return __atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST);
-}
-
-void wf_prim_park(uint64_t observed) {
-    if (wf__sched_host_park(observed)) {
-        return;
-    }
-    pthread_mutex_lock(&wf_prim_wake_lock);
-    wf_prim_sleepers += 1u;
-    while (__atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST) == observed) {
-        pthread_cond_wait(&wf_prim_wake_signal, &wf_prim_wake_lock);
-    }
-    wf_prim_sleepers -= 1u;
-    pthread_mutex_unlock(&wf_prim_wake_lock);
-}
-
-void wf_prim_wake(void) {
-    if (wf__sched_host_wake()) {
-        return;
-    }
-    pthread_mutex_lock(&wf_prim_wake_lock);
-    __atomic_add_fetch(&wf_prim_wake_epoch, 1u, __ATOMIC_SEQ_CST);
-    if (wf_prim_sleepers != 0u) {
-        pthread_cond_broadcast(&wf_prim_wake_signal);
-    }
-    pthread_mutex_unlock(&wf_prim_wake_lock);
-}
-
-/* ------------------------------------------------------- 4. reservation */
-
-static size_t wf_prim_page(void) {
-    long page = sysconf(_SC_PAGESIZE);
-    return page > 0 ? (size_t)page : 4096u;
-}
-
-size_t wf_prim_stack_stride(size_t bytes) {
-    size_t page = wf_prim_page();
-    size_t rounded = (bytes + page - 1u) / page * page;
-    return page + rounded;
-}
-
-/* One mapping, carved into `count` slots of `bytes` each with a guard page
- * below every one of them.
- *
- * `MAP_NORESERVE` is what makes it a reservation rather than a commitment, and
- * it is not optional at the sizes the runtime asks for: a pool stack is the
- * floor's own 1 GiB, so a machine's worth of threads plus the spare stacks is
- * tens of gigabytes of address space, and Linux's heuristic overcommit refuses
- * a single mapping larger than memory plus swap unless it is told the mapping
- * is a reservation. The pages are committed on touch either way, so a run that
- * never descends pays for none of them. A host without the flag (it is a Linux
- * spelling) keeps today's behaviour exactly. */
-unsigned char *wf_prim_reserve(unsigned count, size_t bytes) {
-    size_t page = wf_prim_page();
-    size_t stride = wf_prim_stack_stride(bytes);
-    size_t total = stride * (size_t)count;
-    unsigned char *base;
-    unsigned index;
-#if defined(MAP_NORESERVE)
-    int flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE;
-#else
-    int flags = MAP_PRIVATE | MAP_ANONYMOUS;
-#endif
-    base = mmap(NULL, total, PROT_READ | PROT_WRITE, flags, -1, 0);
-    if (base == MAP_FAILED) {
-        return NULL;
-    }
-    for (index = 0; index < count; index += 1u) {
-        if (mprotect(base + (size_t)index * stride, page, PROT_NONE) != 0) {
-            (void)munmap(base, total);
-            return NULL;
-        }
-    }
-    return base;
-}
-
-/* -------------------------------------------------------------- 5. lock */
-
-static pthread_mutex_t wf_prim_core_lock = PTHREAD_MUTEX_INITIALIZER;
-
-void wf_prim_lock(enum wf_prim_section section) {
-    (void)section;
-    pthread_mutex_lock(&wf_prim_core_lock);
-}
-
-void wf_prim_unlock(void) {
-    pthread_mutex_unlock(&wf_prim_core_lock);
-}
-
-/* ------------------------------------------------------ 6. yield, pause */
-
-void wf_prim_yield(void) {
-    (void)sched_yield();
-}
-
-void wf_prim_pause(void) {
-#if defined(__x86_64__) || defined(__i386__)
-    __builtin_ia32_pause();
-#elif defined(__aarch64__)
-    /* `isb` is what the ARM optimisation guides give a spin that has nothing
-     * to wait on but the next look; `yield` there is a hint the cores this
-     * runs on treat as a no-op. */
-    __asm__ __volatile__("isb" ::: "memory");
-#else
-    /* Nothing to hint with: the loop is still a bounded number of looks. */
-    __atomic_signal_fence(__ATOMIC_SEQ_CST);
-#endif
-}
-
-/* ---------------------------------------------------------- 7. progress */
-
-__attribute__((weak)) int wf__sched_target_progress(struct wf_sched_core *core) {
-    (void)core;
-    return 0;
-}
-
-int wf_prim_progress(struct wf_sched_core *core) {
-    return wf__sched_target_progress(core);
-}
-
-/* ------------------------------------- the platform layer's own three */
-
-/* P1. One detached thread on a host stack this call reserves.
- *
- * A refused reservation is reported rather than silently downgraded to the
- * pthread default: no lane at all is better than a lane whose stack is a
- * fraction of the one the program's depth was sized against.
- *
- * The entry pair is the caller's record and nothing is allocated here; see
- * `prim.h` for why the runtime cannot take that pair from anywhere else. */
 static void *wf_prim_thread_main(void *opaque) {
     wf_prim_thread *thread = opaque;
     thread->entry(thread->argument);
@@ -291,20 +62,23 @@ int wf_prim_thread_start(
     return error != 0 ? 1 : 0;
 }
 
-/* P2. The host's switch needs no conversion of the thread's own stack, so
- * both halves are nothing here. Windows converts to a fiber and back. */
-void wf_prim_thread_attach(void) {}
-
-void wf_prim_thread_detach(void) {}
-
-/* P3. The CPUs this process may be scheduled on right now.
- *
- * `hw.logicalcpu` is the Darwin spelling and reports exactly that; the
- * portable `_SC_NPROCESSORS_ONLN` answers on a host that has no such name.
- * Zero means the platform would not say, and the caller's own policy decides
- * what to do with that. */
+/* How many CPUs this process may actually run on. The affinity mask is the
+ * honest answer where it is cheap to read, because a process confined to two
+ * of a machine's four CPUs is oversubscribed at four lanes however many CPUs
+ * are online; sysconf answers the rest. Zero means the count is unknown, and
+ * a caller must then choose the behaviour that assumes nothing about it. */
 unsigned wf_prim_online_cpus(void) {
     long online;
+#if defined(__linux__)
+    cpu_set_t affinity;
+    CPU_ZERO(&affinity);
+    if (sched_getaffinity(0, sizeof affinity, &affinity) == 0) {
+        int permitted = CPU_COUNT(&affinity);
+        if (permitted > 0) {
+            return (unsigned)permitted;
+        }
+    }
+#endif
 #if defined(__APPLE__)
     int logical = 0;
     size_t width = sizeof(logical);
@@ -316,6 +90,147 @@ unsigned wf_prim_online_cpus(void) {
     online = sysconf(_SC_NPROCESSORS_ONLN);
     return online > 0 ? (unsigned)online : 0u;
 }
+
+/* The most distinct performance levels this probe will name before it stops
+ * distinguishing them. Four is already more than any shipping part has, and a
+ * machine that exceeds it is asymmetric several times over, so the ceiling is
+ * a bound on the work and never on the conclusion. */
+#define WF_PRIM_CPU_LEVEL_CEILING 4u
+
+#if defined(__linux__)
+/* One CPU's scheduler capacity, normalized by the kernel so the fastest CPU
+ * on the machine reads 1024. Zero return means the file was not there or did
+ * not parse, which is not the same as a capacity of zero. Fixed buffers, one
+ * open and one read: this runs once per process, at pool start. */
+static int wf_prim_cpu_capacity(unsigned cpu, unsigned long *capacity) {
+    char path[64];
+    char text[32];
+    int file;
+    ssize_t got;
+    char *end = NULL;
+    unsigned long value;
+    int written = snprintf(
+        path, sizeof path, "/sys/devices/system/cpu/cpu%u/cpu_capacity", cpu);
+    if (written < 0 || (size_t)written >= sizeof path) {
+        return 0;
+    }
+    file = open(path, O_RDONLY | O_CLOEXEC);
+    if (file < 0) {
+        return 0;
+    }
+    got = read(file, text, sizeof text - 1u);
+    (void)close(file);
+    if (got <= 0) {
+        return 0;
+    }
+    text[got] = '\0';
+    value = strtoul(text, &end, 10);
+    if (end == text || value == 0ul) {
+        return 0;
+    }
+    *capacity = value;
+    return 1;
+}
+#endif
+
+/* How many distinct performance levels the CPUs this process may run on are
+ * drawn from. One is both "they are alike" and "this host does not say", and
+ * the caller must treat those the same: it is the answer that assumes nothing.
+ *
+ * Darwin answers the question directly. `hw.nperflevels` is the number of
+ * levels the kernel groups this machine's cores into -- two on every Apple
+ * Silicon part that has efficiency cores, one on a part that does not -- and
+ * the name simply does not exist on Intel Macs or on macOS before 12, where
+ * the sysctl fails and one is the answer.
+ *
+ * Linux has no single name for it, and what it does have is per CPU: the
+ * scheduler's capacity of each CPU in `cpu_capacity`, normalized so the
+ * fastest CPU on the machine reads 1024. Counting the distinct values over
+ * the affinity mask -- the same set of CPUs wf_prim_online_cpus counts, read
+ * the same way -- answers the question wherever that file exists, which on
+ * the arm64 hosts that carry big.LITTLE is everywhere. A CPU in the mask
+ * whose capacity cannot be read makes the whole answer unknown rather than a
+ * count over the CPUs that did answer, because a count over a subset can
+ * report one level for a machine that has two.
+ *
+ * THE GAP, stated rather than guessed around: x86 Linux publishes no
+ * `cpu_capacity` at all -- capacity-aware scheduling is not wired to that
+ * topology -- so an Intel hybrid part with performance and efficiency cores
+ * reads no file here and this probe answers one for it. What would detect it
+ * is the per-CPU maximum frequency the `intel_pstate` driver publishes,
+ * `cpufreq/cpuinfo_max_freq` under each CPU, whose performance and efficiency
+ * values differ on a hybrid part; using it means first telling a hybrid part
+ * from a machine whose CPUs merely carry different boost ceilings, and that
+ * has not been measured on such a host. Until it is, x86 Linux counts as
+ * uniform and the caller keeps the behaviour it had before this probe
+ * existed. */
+unsigned wf_prim_cpu_levels(void) {
+#if defined(__APPLE__)
+    int levels = 0;
+    size_t width = sizeof levels;
+    if (sysctlbyname("hw.nperflevels", &levels, &width, NULL, 0) == 0
+        && levels > 0) {
+        return (unsigned)levels;
+    }
+    return 1u;
+#elif defined(__linux__)
+    cpu_set_t affinity;
+    unsigned long seen[WF_PRIM_CPU_LEVEL_CEILING];
+    unsigned levels = 0;
+    unsigned cpu;
+    CPU_ZERO(&affinity);
+    if (sched_getaffinity(0, sizeof affinity, &affinity) != 0) {
+        return 1u;
+    }
+    for (cpu = 0; cpu < (unsigned)CPU_SETSIZE; cpu += 1u) {
+        unsigned long capacity = 0ul;
+        unsigned index;
+        if (!CPU_ISSET((int)cpu, &affinity)) {
+            continue;
+        }
+        if (!wf_prim_cpu_capacity(cpu, &capacity)) {
+            return 1u;
+        }
+        for (index = 0; index < levels; index += 1u) {
+            if (seen[index] == capacity) {
+                break;
+            }
+        }
+        if (index < levels) {
+            continue;
+        }
+        if (levels == WF_PRIM_CPU_LEVEL_CEILING) {
+            return WF_PRIM_CPU_LEVEL_CEILING;
+        }
+        seen[levels] = capacity;
+        levels += 1u;
+    }
+    return levels > 0u ? levels : 1u;
+#else
+    return 1u;
+#endif
+}
+
+uint64_t wf_prim_monotonic_us(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0;
+    }
+    return (uint64_t)now.tv_sec * UINT64_C(1000000)
+        + (uint64_t)now.tv_nsec / UINT64_C(1000);
+}
+
+#if defined(WF_PAR_TRACE)
+/* The lane trace's clock; see prim.h. Behind the instrument's guard, so an
+ * ordinary build of this file has the same bytes it had before it existed. */
+uint64_t wf_prim_monotonic_ns(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0;
+    }
+    return (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
+}
+#endif
 
 int wf_prim_setting_text(const char *name, char *buffer, size_t capacity) {
     const char *text;
@@ -335,3 +250,21 @@ int wf_prim_setting_text(const char *name, char *buffer, size_t capacity) {
     memcpy(buffer, text, length + 1);
     return 1;
 }
+
+__attribute__((weak)) void wf__floor_attach_thread(void) {}
+void wf_prim_floor_attach(void) { wf__floor_attach_thread(); }
+void wf_prim_yield(void) { sched_yield(); }
+int wf_prim_wait_init(wf_prim_wait *wait) {
+    if (pthread_mutex_init(&wait->lock, NULL) != 0) return 1;
+    if (pthread_cond_init(&wait->signal, NULL) == 0) return 0;
+    pthread_mutex_destroy(&wait->lock);
+    return 1;
+}
+void wf_prim_wait_destroy(wf_prim_wait *wait) {
+    pthread_cond_destroy(&wait->signal);
+    pthread_mutex_destroy(&wait->lock);
+}
+void wf_prim_wait_lock(wf_prim_wait *wait) { pthread_mutex_lock(&wait->lock); }
+void wf_prim_wait_unlock(wf_prim_wait *wait) { pthread_mutex_unlock(&wait->lock); }
+void wf_prim_wait_sleep(wf_prim_wait *wait) { pthread_cond_wait(&wait->signal, &wait->lock); }
+void wf_prim_wait_signal(wf_prim_wait *wait) { pthread_cond_signal(&wait->signal); }

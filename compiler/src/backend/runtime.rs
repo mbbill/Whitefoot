@@ -43,10 +43,8 @@ pub const COMPLETION_WINDOWS_IOCP_SOURCE: &str = include_str!("completion/window
 
 /// The scheduler core's contract embedded in the compiler.
 ///
-/// The completion record begins with a `wf_sched_record` and every publication
-/// goes through `wf_sched_complete`, so a link that carries the completion
-/// runtime carries the core beside it
-/// (`research/investigations/io-model/PARK-ON-MISS.md` §5, §7).
+/// The ordinary linked library and worker thunks share the native runtime's
+/// scheduler entry points; the current-stack core carries no managed stacks.
 pub const SCHED_CORE_HEADER: &str = include_str!("sched/core.h");
 /// The scheduler core embedded in the compiler.
 pub const SCHED_CORE_SOURCE: &str = include_str!("sched/core.c");
@@ -56,8 +54,6 @@ pub const SCHED_PRIM_HEADER: &str = include_str!("sched/prim.h");
 pub const SCHED_PRIM_HOST_SOURCE: &str = include_str!("sched/prim_host.c");
 /// Windows's implementation of the same set, the twin of the above.
 pub const SCHED_PRIM_WINDOWS_SOURCE: &str = include_str!("sched/prim_windows.c");
-/// The one stack switch, shared by the host primitives and the enumerator.
-pub const SCHED_SWITCH_HEADER: &str = include_str!("sched/switch.h");
 /// The platform layer over the core: its one instance, the startup policy and
 /// the emitted module's `wf__par_*` ABI (design §7's platform layer).
 pub const SCHED_ENTRY_HEADER: &str = include_str!("sched/entry.h");

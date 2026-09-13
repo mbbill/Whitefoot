@@ -151,21 +151,26 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 ));
             }
         }
+        // A call that stays inside a budgeted component carries the caller's
+        // remaining levels as the callee variant's trailing parameter, the way
+        // a split carries its allowance into the splitter.
+        let (callee, budget) = self.callee_target(function, target.name());
+        if let Some(budget) = budget {
+            rendered.push(format!("i64 {budget}"));
+        }
         if stored_result {
             return writeln!(
                 self.output,
-                "  call void @{}({})",
-                self.callee_symbol(function, target.name()),
+                "  call void @{callee}({})",
                 rendered.join(", ")
             )
             .map_err(|_| BackendFailure::TextEmission);
         }
         writeln!(
             self.output,
-            "  {} = call {} @{}({})",
+            "  {} = call {} @{callee}({})",
             self.value_name(result),
             llvm_type(self.program, ty)?,
-            self.callee_symbol(function, target.name()),
             rendered.join(", ")
         )
         .map_err(|_| BackendFailure::TextEmission)

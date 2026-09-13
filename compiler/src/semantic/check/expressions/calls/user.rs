@@ -100,9 +100,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// ambiguous boundary at its `rtype`, so only the const-storage
     /// disposition still reaches this call site.
     fn result_borrow_candidate(&self, signature: &FunctionSignature) -> Option<usize> {
-        if !self.reborrow_extension {
-            return None;
-        }
         match borrow_result_provenance(
             &signature.parameters,
             signature.result_mode,

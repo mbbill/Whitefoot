@@ -5,6 +5,7 @@ mod loops;
 mod probe;
 mod results;
 mod runs;
+mod scalar_grain;
 mod slices;
 mod split;
 mod storage;
@@ -29,6 +30,42 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+    let sequential_compute_refusal = matches!(
+        overlap,
+        OverlapLowering::OnWithSequentialRefusal { .. }
+            | OverlapLowering::OnWithRecursionBudget {
+                sequential_refusal: true,
+                ..
+            }
+    );
+    // A lowering that actualizes compute at all carries a recursion budget;
+    // the control form is the only one that says something other than the
+    // default. A lowering that actualizes no compute carries none, so a
+    // default or `--no-overlap` build names the budget nowhere.
+    let recursion_budget = match overlap {
+        OverlapLowering::Off => None,
+        OverlapLowering::OnWithRecursionBudget { budget, .. } => Some(budget),
+        OverlapLowering::On
+        | OverlapLowering::OnWithSequentialRefusal { .. }
+        | OverlapLowering::OnWithoutSmallScalarLeaves { .. } => Some(RecursionBudget::default()),
+    };
+    let scalar_leaf_limit = match overlap {
+        OverlapLowering::OnWithoutSmallScalarLeaves { maximum_operations } => {
+            Some(maximum_operations)
+        }
+        OverlapLowering::OnWithSequentialRefusal {
+            maximum_scalar_leaf_operations,
+        }
+        | OverlapLowering::OnWithRecursionBudget {
+            maximum_scalar_leaf_operations,
+            ..
+        } => maximum_scalar_leaf_operations,
+        _ => None,
+    };
+    let overlap = match overlap {
+        OverlapLowering::Off => OverlapLowering::Off,
+        _ => OverlapLowering::On,
+    };
     // [S20, PROV-1] the region erasure: where a nominal instance's region
     // arguments leave the program. Two instances of one declaration that
     // differ only in them are two checked types and one IR nominal.
@@ -90,7 +127,10 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     // compilation asked for overlap lowering, so the default emits the same
     // module a compiler with no such lowering emits.
     let permission = match overlap {
-        OverlapLowering::On => Some(&checked.data.permission),
+        OverlapLowering::On
+        | OverlapLowering::OnWithoutSmallScalarLeaves { .. }
+        | OverlapLowering::OnWithSequentialRefusal { .. }
+        | OverlapLowering::OnWithRecursionBudget { .. } => Some(&checked.data.permission),
         OverlapLowering::Off => None,
     };
     // Where a synthesized function's ordinal starts. A [PAR-2] split appends
@@ -147,9 +187,12 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let (synthesized, actualization) = synthesis.into_inner().finish()?;
+    let (synthesized, mut actualization) = synthesis.into_inner().finish()?;
     functions.extend(synthesized);
     split::assign_weights(&mut functions);
+    if let Some(limit) = scalar_leaf_limit {
+        scalar_grain::prune(&mut functions, limit, &mut actualization);
+    }
     Ok(IrProgram {
         _checked: checked,
         nominals,
@@ -157,6 +200,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         constants,
         functions,
         actualization,
+        sequential_compute_refusal,
+        recursion_budget,
     })
 }
 

@@ -14,13 +14,14 @@
 //! two folds compile to and that granting lanes moves none of its bytes.
 //!
 //! Actualization is compile-time opt-in, so the cases that ask about hand-outs
-//! compile through [`compile_program_with_overlap`] — `whitefootc --par`. The
+//! compile through [`compile_program_with_overlap`], the unfiltered
+//! `whitefootc --par --par-scalar-leaf-limit off` form. The
 //! default compilation of the same program is the subject of its own case
 //! below and hands nothing out at all.
 
 use super::support::{
-    build_program, compile_program, compile_program_with_overlap, compile_programs,
-    corpus_program_files, program_permission_ledger, run_counting_grants,
+    build_program, compile_program, compile_program_with_overlap, compile_program_without_overlap,
+    compile_programs, corpus_program_files, program_permission_ledger, run_counting_grants,
     try_compile_programs_with_overlap,
 };
 use whitefoot::module_requires_parallel_runtime;
@@ -31,6 +32,10 @@ use whitefoot::module_requires_parallel_runtime;
 /// an outlined thunk, a lane offer, and a join. `@wf_measure_band` is the
 /// negative control for erasure: its source-only boundary reasoning emits
 /// neither a runtime proof-failure path nor a parallel-runtime call.
+///
+/// Each fold is recursive, so `--par` gives its component a budget-carrying
+/// family and the body is emitted under the variant's symbol. The entry keeps
+/// the writer's own signature and obtains the budget the family descends with.
 #[test]
 fn both_folds_are_handed_out() {
     let llvm = compile_program_with_overlap("par_layout.wf");
@@ -39,8 +44,20 @@ fn both_folds_are_handed_out() {
         "a module with an eligible site must ask for the runtime"
     );
 
-    for symbol in ["@wf_layout", "@wf_layout_banded"] {
+    for name in ["layout", "layout_banded"] {
+        let entry = function_body(&llvm, &format!("@wf_{name}"));
+        assert!(
+            entry.contains("= call i64 @wf__par_recursion_budget()")
+                && entry.contains(&format!("call double @wf__par_budget_{name}(")),
+            "wf_{name} must obtain a budget and enter its family:\n{entry}"
+        );
+        let symbol = format!("@wf__par_budget_{name}");
+        let symbol = symbol.as_str();
         let fold = function_body(&llvm, symbol);
+        assert!(
+            fold.contains(&format!("@wf__par_seq_{name}(")),
+            "{symbol} must enter its sequential clone with its budget spent:\n{fold}"
+        );
         assert!(
             fold.contains("= call ptr @wf__par_acquire_lane(i64 "),
             "{symbol} must acquire a lane for its first child call:\n{fold}"
@@ -234,6 +251,91 @@ fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
     }
 }
 
+/// The recursive corpus program publishes one byte sequence whatever the
+/// recursion budget cuts, and whatever width it was cut for.
+///
+/// `adaptive_quadrature.wf` is the corpus's one ordinary recursive component:
+/// `adaptive` subdivides until its tolerance is met and hands one half of each
+/// subdivision out. Under `--par` that component gets a budget-carrying
+/// family, so the tree it evaluates is cut into sequential subtrees at a depth
+/// the runtime takes from the pool width — a different depth at one lane than
+/// at four — and `--par-recursive-frontier off` is the same program with the
+/// family withheld, offering at every node. [PAR-1] fixes every value to the
+/// source-order result, so none of that may move a bit, and the reference here
+/// is the `--no-overlap` build, the lowering that actualizes nothing at all.
+#[test]
+fn the_quadrature_program_publishes_one_byte_sequence_at_every_recursion_budget() {
+    use whitefoot::{
+        CompilerLimits, OverlapLowering, RecursionBudget, SourceInput, compile_with_overlap,
+    };
+
+    let source = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../tests/programs/adaptive_quadrature.wf"
+    ))
+    .expect("the corpus holds the quadrature program");
+    let sequential = compile_program_without_overlap("adaptive_quadrature.wf");
+    assert!(
+        !module_requires_parallel_runtime(&sequential),
+        "the `--no-overlap` reference must name no part of the runtime"
+    );
+    let reference = build_program(&sequential).run_with_workers(None);
+    assert!(
+        reference.status.success(),
+        "the sequential reference must succeed: {}",
+        String::from_utf8_lossy(&reference.stderr)
+    );
+    assert_eq!(reference.stdout.len(), 64);
+
+    // The command line's own `--par`, scalar-leaf limit and all, and the same
+    // build with the family withheld by the control.
+    for budget in [None, Some(RecursionBudget::Off)] {
+        let overlap = match budget {
+            None => OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16,
+            },
+            Some(budget) => OverlapLowering::OnWithRecursionBudget {
+                budget,
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: false,
+            },
+        };
+        let overlapped = compile_with_overlap(
+            &[SourceInput::new("adaptive_quadrature.wf", &source)],
+            CompilerLimits::default(),
+            overlap,
+        )
+        .expect("the quadrature program compiles under `--par`");
+        assert_eq!(
+            overlapped.lines().any(|line| {
+                line.starts_with("define ") && line.contains(" double @wf__par_budget_adaptive(")
+            }),
+            budget.is_none(),
+            "the default emits a budget-carrying family and `off` withholds it"
+        );
+        assert_eq!(
+            overlapped.contains("call i64 @wf__par_recursion_budget()"),
+            budget.is_none(),
+            "only a budget-carrying family asks the runtime for its entry budget"
+        );
+
+        let program = build_program(&overlapped);
+        for workers in ["1", "2", "4"] {
+            let output = program.run_with_workers(Some(workers));
+            assert!(
+                output.status.success(),
+                "WF_WORKERS={workers} must succeed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                output.stdout, reference.stdout,
+                "WF_WORKERS={workers} moved a byte of the integral"
+            );
+            assert!(output.stderr.is_empty(), "WF_WORKERS={workers}");
+        }
+    }
+}
+
 /// Every program the corpus holds, as the source list it compiles from.
 ///
 /// A program written across several files compiles from all of them at once,
@@ -242,6 +344,7 @@ fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
 /// [`the_corpus_units_cover_every_program_file`], which is what keeps it from
 /// silently falling behind the corpus it is intended to cover.
 const CORPUS_UNITS: &[&[&str]] = &[
+    &["adaptive_quadrature.wf"],
     &["arena_workspace.wf"],
     &["block_pool.wf"],
     &["byte_string.wf"],

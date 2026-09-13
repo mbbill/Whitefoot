@@ -268,8 +268,21 @@ int wf_file_request_is_peer_bound(const wf_file_request *request);
  * hands out the lowest free descriptor, so a connection's descriptor is
  * always below this bound.  A descriptor outside it is half-closed and never
  * closed here, because closing a descriptor whose pair this runtime cannot
- * count could reach an object the program still owns. */
+ * count could reach an object the program still owns.
+ *
+ * Not read from a header shared with `wf_floor.c`: that unit must build
+ * standalone, with no dependency on this directory, for a program that needs
+ * neither I/O nor parallelism (`tests/programs/support.rs`,
+ * `stage_runtime_units`, which stages `completion/` only when the module
+ * asks for it, while `wf_floor.c` is always staged and always compiled
+ * alone).  The pinned assertion below is what a shared constant cannot be
+ * here: changing this number without changing the other fails one of the
+ * two builds immediately. */
 #define WF_FILE_CONNECTION_DESCRIPTORS (1u << 20)
+_Static_assert(
+    WF_FILE_CONNECTION_DESCRIPTORS == (1u << 20),
+    "must change together with backend/wf_floor.c's WF_FILE_CAPACITY_CEILING"
+);
 
 int wf_file_connection_release(int descriptor);
 

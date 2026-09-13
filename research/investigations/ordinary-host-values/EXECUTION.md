@@ -1,14 +1,15 @@
 # Removal sequence and verification
 
-This is the execution proposal for C1, not implementation work. The work
-remains on PR #30's existing line. The paused D8 library, gate and regression
-drafts are excluded; no change to the active specification or compiler was
-made for C1. The [inventory](INVENTORY.md) pins the baseline and sizes;
+This retains C1's execution plan and baseline size estimates, consumed by C2
+on PR #30's existing line. The paused D8 library, gate and regression drafts
+remain excluded. The [inventory](INVENTORY.md) pins the research baseline;
 [CASES.md](CASES.md) gives each conformance migration and its rule change.
+Main's documentation migration supersedes the original README, ledger and
+memory destinations below; the combined publication is v0.55 over v0.54.
 
 ## First settle the ordinary interfaces
 
-The owner selects the alternatives in [DECISIONS.md](DECISIONS.md), especially
+The owner selected the recommendations in [DECISIONS.md](DECISIONS.md), including
 linearity, factory vs reservation, input aggregation, TCP half cleanup and
 loss of the current PAR-3 permission. The fixed absolute rule is not reopened.
 The proposed source boundary must have no dependence on whether a function's
@@ -53,7 +54,7 @@ amendment; the final revision must pass canonical `make check`.
 | Generic call runtime | Delete target_action.rs (225), qualification.rs (1,897) as the external contract table, and staged_permission.rs (1,860). Rewrite PAR-1/2; delete this PAR-3. Remove dedicated SystemCall emission/completion adaptation (4,321 + 1,391 LOC); migrate ordinary storage/ABI/call/parallel consumers. | 3,982 LOC of dedicated summary/qualification/staged modules; 5,712 LOC of native emitter code must leave compiler operation dispatch, with useful bodies reimplemented as ordinary library functions. Native engine/scheduler LOC is retained implementation, not claimed deletion. Verify ordinary direct-call ABI and loan duration. |
 | Native bodies and API fixtures | All current 29 operations and selected replacement closes/results; host-string/path/error routines; bootstrap and completion adapters; native Linux/macOS/Windows harnesses. | Roughly 4–7 KLOC of moved/adapted implementation, highly dependent on factory/TCP/runtime selections. This is a cost estimate, not newly invented language support. Preserve no-allocation/short-transfer/encoding/refusal behavior where the selected API promises it; measure changed behavior explicitly. |
 | Conformance and generated source | Every row in CASES.md; compiler fixtures; maintained corpus/program generators and their launcher assumptions. | 779 cases inspected; 754 contain an exact command main header. Most are scaffold-only; 91 have additional migration codes in this register. Compiler fixture modules are counted separately in INVENTORY. Expect several thousand mechanical source-line edits, with semantic re-derivation concentrated in the classified cases. |
-| Documentation and ledger | Active rule index/grounds in `spec/derivation/derivation-ledger.md`; compiler README, docs/patterns, constitution and affected live guidance in INVENTORY. Historical research and decision alternatives are preserved with supersession pointers as appropriate. | About 0.5–1.5 KLOC of active prose/index changes. No new memory node for an unsettled option. `docs/roadmap.md` remains a reference map, not a work item or capability authority. |
+| Documentation and decisions | Keep main's retirement of the compiler README and derivation ledger. The specification owns rules, conformance reports implementation results, writer forms belong in docs/patterns, defects and open costs in docs/todo, and design records selected reasons. Keep mcts_mem frozen at main; preserve baseline evidence here and in git. | The original 0.5–1.5 KLOC prose estimate predates this migration. Tree changes follow design/skill; agent-selected implementation choices remain amendments until ruled. `docs/roadmap.md` remains a reference map, not a work item or capability authority. |
 
 The specification itself has approximately 630 lines in the complete SYS/HOST/
 PATH/QUAL block plus entry, routing, release, diagnostic, gated-boundary and

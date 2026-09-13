@@ -178,28 +178,26 @@ For example, formal `reads(env,key)` remains so when its actual reads only
 `env.salt,key`; no dummy reads or runtime adapter are emitted. Check generic
 row attribution at the symbolic template, retaining formal state paths even
 when a later copy instantiation would frame them out. Instance rechecks preserve that public row, rejecting additional effects;
-ordinary call projection frames fresh state out. Heap `push` names read/write
-support of the installed incoming `value`.
+ordinary call projection uses the resolved actual storage. Under C2, an owning
+input moved into a local does not leave a value-history effect root; mutation
+through an exclusive parameter still projects onto the caller's place.
 If “exact” instead requires re-derived concrete-body equality, the baseline's
 subset binding cannot meet it; require equality instead, losing narrower
 implementations.
 
-**Rows alone are insufficient.** Identity and fresh construction can match the
-same ordinary owned signature, but only identity carries an input owner's state
-into the result. The owner selected a fresh-result rule for function formals:
-every non-copy owned result ordinal, including contained owned leaves, must
-route only fresh state. An input route or unresolved route refuses the binding.
-Ordinary direct functions keep their existing ownership routing; conversions
-and ownership-returning operations remain writable through those interfaces.
-Copy results are fresh observations; shared/view results retain FN-1's existing
-loan-origin bounds. Written exclusive exits use the selected actual's ordinary
-routing and the containing instance must still exhibit its fixed declared row.
-The earlier proposal's finite routing ceiling is dropped, not implemented.
-This trades the ability to parameterize an owned identity operation for one
-fixed callable boundary without adding a second ownership-summary calculus.
+**The D7 freshness restriction is historical.** D7 initially required every
+non-copy owned formal result to carry fresh state and refused an owned identity
+actual. C2 [selected decision 6](../ordinary-host-values/DECISIONS.md#6-owned-effects-and-function-formals)
+removes that restriction together with owned-result and exclusive-referent
+routing. An ownership-returning actual now uses the same ordinary signature,
+formal-row coverage and structural contract checks as every other function.
+Shared and view results keep ordinary signature-derived loan provenance.
+Neither an owned input nor an opaque result receives a hidden history root.
+The earlier finite-routing-ceiling proposal remains rejected; C2 introduces
+no replacement summary mechanism.
 
-Keep FN-2/FN-9 instance checks for ownership/proofs, actual FN-1 target summaries
-and recursive-summary withholding; use only formal proof contracts. FN-8 proves
+Keep FN-2/FN-9 instance checks for ownership/proofs and recursive proof-summary
+withholding; use only formal proof contracts, with no FN-1 target summary. FN-8 proves
 requires, FN-9 verifies actual ensures, CALL-6 kills overlapping fixed-row support
 before publication. `&uniq` bare/`entry(p)` measures denote exit/entry, including
 fields and multiple results. Shared/view outputs keep FN-1 loan-origin bounds;
@@ -234,6 +232,15 @@ Acyclic compile cost is recorded as an open engineering question; the owner
 explicitly did not make a new cost-admission mechanism part of D7. Timing cannot
 prove an asymptotic bound, and no fuel or timeout selects source acceptance.
 
+**Open correspondence finding after the main merge.** The new
+[language design root](../../../design/language.md) rules out compilation work
+exponential in written source size. D7's unchanged cycle restriction proves
+finiteness, not that stronger bound: a finite acyclic graph can duplicate
+specializations at each level. The owner deferred that cost question in D7.
+The combined v0.55 work has not reconciled these decisions and does not claim
+the stronger bound is implemented. This remains an owner decision; no timing
+gate, instance fuel or silent restriction resolves it.
+
 **Grammar inventory** (new production counts, not net counts; reused names count
 as modifications): new binder forms are function-kind (all) and pack (A/B).
 All options add `function_arg`, modify `gparam`, `targ`
@@ -257,14 +264,14 @@ Remove `contract_decl`, `conform_decl`, `law`, `law_arg`; C also removes unused
 `fn_bind`. Keep `contract` for proof blocks; Int/Float become built-in bounds.
 Rules: GRAM-1 permits abbreviation expansion with retained source nodes;
 GRAM-2/3/5 and TYPE-5/6 cover syntax/kinds/resolution;
-FN-1 retains ordinary function routing; FN-2–6 cover binding/checking/termination
+FN-1 retains ordinary signatures and borrow provenance; FN-2–6 cover binding/checking/termination
 and retire source laws;
 EFF-1/2 fix formal attribution; FN-8/9, CALL-6, MSR-3 and FORM-8 reuse the above
 contract/region judgments; PRE-1/section 15 retain numeric bounds.
 Strong-LL(2) selector generation remains a required implementation check.
 
-**Selected: A**, with authoritative formal rows and the fresh-result restriction
-at function-formal bindings. It removes synchronized signatures without
+**Selected: A**, with authoritative formal rows; C2 subsequently removes the
+initial fresh-result restriction at function-formal bindings. It removes synchronized signatures without
 type-owned functions; compile cost remains an open engineering question;
 B saves one declaration kind at a lasting conceptual cost, C saves syntax by
 moving that cost to every library layer. Initially keep groups flat, with no
@@ -291,11 +298,14 @@ Primary sources checked 2026-09-11; no cross-language timings.
 
 ## D7 source migration and retirement
 
-These dispositions follow the owner's selected semantics, before gate results.
-An old expected verdict is not changed to accommodate a compiler failure.
+These dispositions record the original D7 amendment on the pre-merge branch.
+C2's later [case register](../ordinary-host-values/CASES.md) supersedes their
+owned-history and native-release assumptions. An old expected verdict is not
+changed to accommodate a compiler failure.
 The five retired law sources are preserved verbatim in the compiler's
 `retired_closed_law_table_has_no_remaining_acceptance_path` grammar regression;
-their former law-acceptance obligations no longer exist in v0.57.
+their former law-acceptance obligations were removed by D7 and remain absent
+from the combined v0.55 publication.
 
 | Previous source ID | Current source ID or disposition | Rule and reason |
 | --- | --- | --- |

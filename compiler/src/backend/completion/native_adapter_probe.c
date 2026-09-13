@@ -3,16 +3,15 @@
  *
  * Linux links this file with `runtime.c` and `linux_io_uring.c`; Windows with
  * `runtime.c`, `wait_windows.c` and `windows_iocp.c`.  Both arms link the
- * scheduler core and no bridge, so what they prove is the ring alone: a real
- * positioned transfer, found by the record's own address, published through
- * `wf_sched_complete`, and waited for on the ring's own park.
+ * native wait support and no bridge. They prove a real positioned transfer,
+ * found by the record's address, release-published and consumed after waiting
+ * on the ring's own native wake primitive.
  */
 #if defined(__linux__)
 
 #define _GNU_SOURCE
 
 #include "linux_io_uring.h"
-#include "../sched/core.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -39,44 +38,12 @@
         }                                                                     \
     } while (0)
 
-/* The bridge's three parts of the runtime, supplied here because this probe
- * links no bridge on purpose.
- *
- * `wf_completion_record_complete` is the one publication, and the three
- * `wf__sched_host_*` hooks are design §7's platform item 2 -- one wait and
- * wake primitive -- bound to this probe's own runtime and ring exactly as the
- * bridge binds them to its own, so a waiter that registers itself in place on
- * a record is woken through the same eventfd the ring's park waits on. */
-static wf_sched_core probe_core;
+/* The probe owns completion publication and the permanent ring wake. */
 static wf_completion_runtime *probe_runtime;
-static wf_linux_io_uring_adapter *probe_adapter;
 
 void wf_completion_record_complete(wf_completion_record *record) {
-    wf_sched_complete(&probe_core, &record->sched);
-}
-
-int wf__sched_host_epoch(uint64_t *epoch) {
-    if (probe_runtime == NULL) {
-        return 0;
-    }
-    *epoch = wf_completion_wake_epoch(probe_runtime);
-    return 1;
-}
-
-int wf__sched_host_park(uint64_t observed) {
-    if (probe_runtime == NULL || probe_adapter == NULL) {
-        return 0;
-    }
-    (void)wf_linux_io_uring_park(probe_adapter, observed, UINT32_MAX);
-    return 1;
-}
-
-int wf__sched_host_wake(void) {
-    if (probe_runtime == NULL) {
-        return 0;
-    }
-    wf_completion_notify_target(probe_runtime);
-    return 1;
+    wf_completion_record_publish(record);
+    if (probe_runtime) wf_completion_notify_target(probe_runtime);
 }
 
 static void probe_record_init(
@@ -84,15 +51,15 @@ static void probe_record_init(
     enum wf_file_operation_kind kind
 ) {
     memset(record, 0, sizeof(*record));
-    wf_sched_record_init(&record->sched);
+    wf_completion_record_init(record);
     record->request.kind = kind;
     record->opened_descriptor = -1;
     record->open_outcome = WF_FILE_OPEN_SUCCEEDED;
 }
 
 static int probe_record_done(const wf_completion_record *record) {
-    return __atomic_load_n(&record->sched.state, __ATOMIC_ACQUIRE)
-        == WF_SCHED_DONE;
+    return atomic_load_explicit(&record->state, memory_order_acquire)
+        == WF_COMPLETION_DONE;
 }
 
 typedef struct probe_park_context {
@@ -203,8 +170,7 @@ static void *probe_wait_for_own_record(void *opaque) {
     probe_record_wait_context *context = opaque;
     for (;;) {
         uint64_t epoch;
-        void *expected = NULL;
-        void *marker = WF_SCHED_WAITER_IN_PLACE;
+
         if (probe_record_done(&context->record)) {
             context->result = context->record.result.value == context->expected
                     && context->record.result.error_code == 0
@@ -212,14 +178,7 @@ static void *probe_wait_for_own_record(void *opaque) {
                 : 2;
             return NULL;
         }
-        (void)__atomic_compare_exchange_n(
-            (uintptr_t *)&context->record.sched.waiter,
-            (uintptr_t *)&expected,
-            (uintptr_t)WF_SCHED_WAITER_IN_PLACE,
-            0,
-            __ATOMIC_SEQ_CST,
-            __ATOMIC_SEQ_CST
-        );
+
         epoch = wf_completion_wake_epoch(context->runtime);
         if (!probe_record_done(&context->record)) {
             context->result = wf_linux_io_uring_park(
@@ -231,14 +190,7 @@ static void *probe_wait_for_own_record(void *opaque) {
                 return NULL;
             }
         }
-        (void)__atomic_compare_exchange_n(
-            (uintptr_t *)&context->record.sched.waiter,
-            (uintptr_t *)&marker,
-            (uintptr_t)NULL,
-            0,
-            __ATOMIC_SEQ_CST,
-            __ATOMIC_SEQ_CST
-        );
+
     }
 }
 
@@ -673,7 +625,6 @@ int main(int argc, char **argv) {
     int error;
 
     PROBE_CHECK(argc == 2);
-    PROBE_CHECK(wf_sched_init(&probe_core, 1u, 2u, 256u * 1024u) == 0);
     PROBE_CHECK(wf_completion_runtime_init(&runtime) == 0);
     /* The ring is deliberately shallower than the number of operations this
      * probe puts in flight, so that the submitting call's own kick is what
@@ -689,7 +640,6 @@ int main(int argc, char **argv) {
         return 77;
     }
     probe_runtime = &runtime;
-    probe_adapter = &adapter;
     PROBE_CHECK(
         wf_completion_set_wake_callback(
             &runtime,
@@ -939,7 +889,6 @@ int main(int argc, char **argv) {
 
 #include "native_contract.h"
 #include "windows_iocp.h"
-#include "../sched/core.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -960,45 +909,16 @@ int main(int argc, char **argv) {
         }                                                                     \
     } while (0)
 
-/* The bridge's three parts of the runtime, supplied here because this probe
- * links no bridge on purpose, exactly as the Linux arm above supplies them:
- * `wf_completion_record_complete` is the one publication, and the three
- * `wf__sched_host_*` hooks are design section 7's platform item 2 -- one wait
- * and wake primitive -- bound to this probe's own runtime and port. */
-static wf_sched_core probe_core;
+/* The probe owns completion publication and the permanent port wake. */
 static wf_completion_runtime *probe_runtime;
-static wf_windows_iocp_adapter *probe_adapter;
 
 void wf_completion_record_complete(wf_completion_record *record) {
-    wf_sched_complete(&probe_core, &record->sched);
-}
-
-int wf__sched_host_epoch(uint64_t *epoch) {
-    if (probe_runtime == NULL) {
-        return 0;
-    }
-    *epoch = wf_completion_wake_epoch(probe_runtime);
-    return 1;
-}
-
-int wf__sched_host_park(uint64_t observed) {
-    if (probe_runtime == NULL || probe_adapter == NULL) {
-        return 0;
-    }
-    (void)wf_windows_iocp_park(probe_adapter, observed, UINT32_MAX);
-    return 1;
-}
-
-int wf__sched_host_wake(void) {
-    if (probe_runtime == NULL) {
-        return 0;
-    }
-    wf_completion_notify_target(probe_runtime);
-    return 1;
+    wf_completion_record_publish(record);
+    if (probe_runtime) wf_completion_notify_target(probe_runtime);
 }
 
 static unsigned probe_state(const wf_completion_record *record) {
-    return __atomic_load_n(&record->sched.state, __ATOMIC_ACQUIRE);
+    return atomic_load_explicit(&record->state, memory_order_acquire);
 }
 
 int main(int argc, char **argv) {
@@ -1032,7 +952,6 @@ int main(int argc, char **argv) {
     PROBE_CHECK(wf_completion_runtime_init(&runtime) == 0);
     probe_runtime = &runtime;
     PROBE_CHECK(wf_windows_iocp_init(&adapter, &runtime, 0) == 0);
-    probe_adapter = &adapter;
     PROBE_CHECK(
         wf_completion_set_wake_callback(
             &runtime,
@@ -1077,7 +996,7 @@ int main(int argc, char **argv) {
 
     memset(&record, 0, sizeof(record));
     memset(read_back, 0, sizeof(read_back));
-    wf_sched_record_init(&record.sched);
+    wf_completion_record_init(&record);
     record.request.kind = WF_FILE_PREAD;
     record.request.operation.pread.descriptor = 0;
     record.request.operation.pread.buffer = read_back;
@@ -1096,12 +1015,12 @@ int main(int argc, char **argv) {
     for (;;) {
         uint64_t epoch;
         size_t published = 0;
-        if (probe_state(&record) == WF_SCHED_DONE) {
+        if (probe_state(&record) == WF_COMPLETION_DONE) {
             break;
         }
         epoch = wf_completion_wake_epoch(&runtime);
         PROBE_CHECK(wf_windows_iocp_progress(&adapter, 4u, &published) == 0);
-        if (published != 0 || probe_state(&record) == WF_SCHED_DONE) {
+        if (published != 0 || probe_state(&record) == WF_COMPLETION_DONE) {
             continue;
         }
         PROBE_CHECK(wf_windows_iocp_park(&adapter, epoch, UINT32_MAX) == 0);
@@ -1114,7 +1033,6 @@ int main(int argc, char **argv) {
     PROBE_CHECK(wf_windows_iocp_in_flight(&adapter) == 0);
     PROBE_CHECK(wf_windows_iocp_progress_error(&adapter) == 0);
     PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == 0);
-    probe_adapter = NULL;
     PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     probe_runtime = NULL;
     PROBE_CHECK(CloseHandle(handle) != FALSE);

@@ -10,9 +10,9 @@ use whitefoot::{
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
     COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
     ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, OverlapLowering,
-    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    compile_with_overlap, compile_with_permission_ledger, stack_ledger,
+    RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile_with_overlap,
+    compile_with_permission_ledger, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -31,7 +31,7 @@ use whitefoot::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
-const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
+const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
@@ -109,7 +109,6 @@ const FLOOR_COMPILE_UNITS: &[&str] = &["wf_floor_windows.c", "windows_runtime.c"
 const CORE_SHARED_UNITS: &[RuntimeUnit] = &[
     unit("sched/core.h", SCHED_CORE_HEADER),
     unit("sched/prim.h", SCHED_PRIM_HEADER),
-    unit("sched/switch.h", SCHED_SWITCH_HEADER),
     unit("sched/entry.h", SCHED_ENTRY_HEADER),
     unit("sched/core.c", SCHED_CORE_SOURCE),
     unit("sched/entry.c", SCHED_ENTRY_SOURCE),
@@ -365,12 +364,10 @@ fn runtime_units() -> (Vec<RuntimeUnit>, Vec<&'static str>) {
 ///
 /// One staging for every platform, and the lists above are the only thing that
 /// differs. The floor joins unconditionally, because every program can exhaust
-/// its stack. The scheduler core joins on the union of the two predicates
-/// (`research/investigations/io-model/PARK-ON-MISS.md` section 7, "Where the
-/// core is linked"): it is one scheduler for compute hand-outs and I/O
-/// completions, so a module that hands work out needs it and so does a module
-/// that submits an operation, and a completion-only program parks its stack at
-/// every join. The completion units join on the second predicate alone.
+/// its stack. The compute core and process settings join when either compute
+/// tasks or I/O completions are used. Compute joins help on the current stack;
+/// completion joins wait through their native backend. The completion units
+/// join on the second predicate alone.
 ///
 /// Every one of those bytes travels inside this executable, so no installed
 /// path, no build directory, and no environment decides which runtime a
@@ -527,15 +524,23 @@ struct Options {
     /// the batch 0075 skew investigation attributed and could not name; it is
     /// not a cost of the second copy, and it moves in both directions.
     ///
-    /// The permission is never an obligation, so the default compilation takes
-    /// none of it and emits exactly the module it emitted before this path
-    /// existed, with one world in it. `WF_WORKERS` remains the runtime knob. On
-    /// the optional POSIX path, `0`, `1`, or an unparsable value keeps the
-    /// sequential world. A Windows module that actually hands work out has a
-    /// stricter production contract: its native runtime must initialize usable
-    /// worker lanes or terminate when the pool is first required; it cannot
-    /// silently select the sequential world.
+    /// Compute permission is never an obligation: without `--par`, compute
+    /// outlining stays off while completion keeps its own lowering. On every
+    /// maintained native target, `WF_WORKERS=0` or `1` selects the sequential
+    /// compute world, and invalid settings fail before the program body.
+    /// Partial worker startup keeps the available workers; complete startup
+    /// refusal uses the parallel body's ordinary-call fallback. Windows
+    /// compute offers require the native runtime at link time.
     par: bool,
+    /// Resolved scalar-leaf offer limit: 16 under --par unless overridden.
+    /// Explicit `off` keeps every otherwise eligible offer; zero still filters
+    /// leaves containing no nonconstant operations.
+    scalar_leaf_limit: Option<u32>,
+    /// Opt-in ordinary-ABI sequential calls on refused compute offers.
+    sequential_refusal: bool,
+    /// Control over the recursion budget: `None` leaves the `--par` default,
+    /// which asks the runtime at each component entry.
+    recursive_frontier: Option<RecursionBudget>,
     /// Emit the module a compiler with no overlap lowering at all emits.
     ///
     /// This is the sequential reference build, and it exists for one reason:
@@ -570,6 +575,9 @@ impl Options {
     fn parse(arguments: &[String]) -> Result<Self, String> {
         let mut emit_llvm = false;
         let mut par = false;
+        let mut scalar_leaf_limit = None;
+        let mut sequential_refusal = false;
+        let mut recursive_frontier = None;
         let mut no_overlap = false;
         let mut par_ledger = false;
         let mut stack_ledger = false;
@@ -580,6 +588,52 @@ impl Options {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
                 "--par" => par = true,
+                "--par-scalar-leaf-limit" => {
+                    cursor += 1;
+                    let invalid =
+                        || "--par-scalar-leaf-limit requires a nonnegative u32 or off".to_owned();
+                    let value = arguments.get(cursor).ok_or_else(invalid)?;
+                    let limit = if value == "off" {
+                        None
+                    } else {
+                        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                            return Err(invalid());
+                        }
+                        Some(value.parse::<u32>().map_err(|_| invalid())?)
+                    };
+                    if scalar_leaf_limit.replace(limit).is_some() {
+                        return Err("--par-scalar-leaf-limit may be written only once".to_owned());
+                    }
+                }
+                "--par-recursive-frontier" => {
+                    cursor += 1;
+                    let written = arguments.get(cursor).map(String::as_str);
+                    let budget = match written {
+                        Some("off") => RecursionBudget::Off,
+                        Some("auto") => RecursionBudget::RuntimeDerived,
+                        _ => written
+                            .filter(|value| {
+                                !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+                            })
+                            .and_then(|value| value.parse::<u8>().ok())
+                            .filter(|value| *value <= 32)
+                            .and_then(std::num::NonZeroU8::new)
+                            .map(RecursionBudget::Pinned)
+                            .ok_or_else(|| {
+                                "--par-recursive-frontier requires auto, an integer in 1..32, or off"
+                                    .to_owned()
+                            })?,
+                    };
+                    if recursive_frontier.replace(budget).is_some() {
+                        return Err("--par-recursive-frontier may be written only once".to_owned());
+                    }
+                }
+                "--par-sequential-refusal" => {
+                    if sequential_refusal {
+                        return Err("--par-sequential-refusal may be written only once".to_owned());
+                    }
+                    sequential_refusal = true;
+                }
                 "--no-overlap" => no_overlap = true,
                 "--par-ledger" => par_ledger = true,
                 "--stack-ledger" => stack_ledger = true,
@@ -626,9 +680,25 @@ impl Options {
         if par && no_overlap {
             return Err("--no-overlap and --par select opposite lowerings: write one".to_owned());
         }
+        if scalar_leaf_limit.is_some() && !par {
+            return Err("--par-scalar-leaf-limit requires --par".to_owned());
+        }
+        if sequential_refusal && !par {
+            return Err("--par-sequential-refusal requires --par".to_owned());
+        }
+        if recursive_frontier.is_some() && !par {
+            return Err("--par-recursive-frontier requires --par".to_owned());
+        }
         Ok(Self {
             emit_llvm,
             par,
+            scalar_leaf_limit: if par {
+                scalar_leaf_limit.unwrap_or(Some(16))
+            } else {
+                None
+            },
+            sequential_refusal,
+            recursive_frontier,
             no_overlap,
             par_ledger,
             stack_ledger,
@@ -637,16 +707,29 @@ impl Options {
         })
     }
 
-    /// The lowering this invocation compiles: the shipped completion build
-    /// unless one of the two switches named another.
+    /// The lowering this invocation compiles: ordinary calls by default,
+    /// with explicit compute-overlap controls selecting actualization.
     ///
     /// The judgment is pure, so this selects an emitted lowering and nothing
     /// about what the compiler decided.
     fn overlap(&self) -> OverlapLowering {
         if self.no_overlap {
             OverlapLowering::Off
+        } else if let Some(budget) = self.recursive_frontier {
+            OverlapLowering::OnWithRecursionBudget {
+                budget,
+                maximum_scalar_leaf_operations: self.scalar_leaf_limit,
+                sequential_refusal: self.sequential_refusal,
+            }
+        } else if self.par && self.sequential_refusal {
+            OverlapLowering::OnWithSequentialRefusal {
+                maximum_scalar_leaf_operations: self.scalar_leaf_limit,
+            }
         } else if self.par {
-            OverlapLowering::On
+            self.scalar_leaf_limit
+                .map_or(OverlapLowering::On, |maximum_operations| {
+                    OverlapLowering::OnWithoutSmallScalarLeaves { maximum_operations }
+                })
         } else {
             OverlapLowering::Off
         }
@@ -658,7 +741,7 @@ mod tests {
     use std::collections::HashSet;
     use std::path::{Component, Path, PathBuf};
 
-    use super::{Options, runtime_units, source_names};
+    use super::{Options, OverlapLowering, RecursionBudget, runtime_units, source_names};
 
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();
@@ -871,6 +954,234 @@ mod tests {
         assert!(options.par);
         assert!(!options.par_ledger, "lanes are not a ledger request");
         assert_eq!(options.sources.len(), 1);
+    }
+
+    #[test]
+    fn compute_leaf_default_and_explicit_overrides_select_the_expected_lowering() {
+        assert_eq!(
+            parse(&["value.wf"]).unwrap().overlap(),
+            OverlapLowering::Off
+        );
+        assert_eq!(
+            parse(&["--par", "value.wf"]).unwrap().overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16
+            }
+        );
+        assert_eq!(
+            parse(&["--par", "--par-scalar-leaf-limit", "off", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::On
+        );
+        assert_eq!(
+            parse(&["--par", "--par-scalar-leaf-limit", "0", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 0
+            }
+        );
+        for (arguments, expected) in [
+            (
+                vec!["--par", "--par-sequential-refusal", "value.wf"],
+                Some(16),
+            ),
+            (
+                vec![
+                    "--par",
+                    "--par-sequential-refusal",
+                    "--par-scalar-leaf-limit",
+                    "off",
+                    "value.wf",
+                ],
+                None,
+            ),
+        ] {
+            assert_eq!(
+                parse(&arguments).unwrap().overlap(),
+                OverlapLowering::OnWithSequentialRefusal {
+                    maximum_scalar_leaf_operations: expected
+                }
+            );
+        }
+        assert_eq!(
+            parse(&[
+                "--par",
+                "--par-recursive-frontier",
+                "8",
+                "--par-scalar-leaf-limit",
+                "off",
+                "value.wf"
+            ])
+            .unwrap()
+            .overlap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Pinned(std::num::NonZeroU8::new(8).unwrap()),
+                maximum_scalar_leaf_operations: None,
+                sequential_refusal: false,
+            }
+        );
+        assert!(parse(&["--par-scalar-leaf-limit", "off", "value.wf"]).is_err());
+        assert!(
+            parse(&[
+                "--par",
+                "--par-scalar-leaf-limit",
+                "off",
+                "--par-scalar-leaf-limit",
+                "16",
+                "value.wf"
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn scalar_leaf_control_requires_an_explicit_compute_invocation() {
+        let options = parse(&["--par", "--par-scalar-leaf-limit", "16", "value.wf"])
+            .expect("the scalar control is available for compute experiments");
+        assert_eq!(
+            options.overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16
+            }
+        );
+        for arguments in [
+            vec!["--par-scalar-leaf-limit", "16", "value.wf"],
+            vec!["--par", "--par-scalar-leaf-limit"],
+            vec!["--par", "--par-scalar-leaf-limit", "-1", "value.wf"],
+            vec!["--par", "--par-scalar-leaf-limit", "4294967296", "value.wf"],
+            vec![
+                "--par",
+                "--par-scalar-leaf-limit",
+                "1",
+                "--par-scalar-leaf-limit",
+                "2",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&arguments).is_err(), "{arguments:?}");
+        }
+    }
+
+    #[test]
+    fn recursive_frontier_requires_compute_and_composes_with_other_controls() {
+        let options = parse(&[
+            "--par",
+            "--par-recursive-frontier",
+            "8",
+            "--par-sequential-refusal",
+            "--par-scalar-leaf-limit",
+            "16",
+            "value.wf",
+        ])
+        .unwrap();
+        assert_eq!(
+            options.overlap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Pinned(std::num::NonZeroU8::new(8).unwrap()),
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: true,
+            }
+        );
+        // Writing nothing is the default, and the default is the runtime's
+        // answer: one mechanism with a pinned or derived starting value.
+        assert_eq!(
+            parse(&["--par", "value.wf"]).unwrap().overlap(),
+            OverlapLowering::OnWithoutSmallScalarLeaves {
+                maximum_operations: 16
+            }
+        );
+        assert_eq!(
+            parse(&["--par", "--par-recursive-frontier", "off", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Off,
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: false,
+            }
+        );
+        for value in ["1", "32", "off", "auto"] {
+            assert!(parse(&["--par", "--par-recursive-frontier", value, "value.wf"]).is_ok());
+        }
+        assert_eq!(
+            parse(&["--par", "--par-recursive-frontier", "auto", "value.wf"])
+                .unwrap()
+                .overlap(),
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::RuntimeDerived,
+                maximum_scalar_leaf_operations: Some(16),
+                sequential_refusal: false,
+            }
+        );
+        for value in [
+            "0", "33", "256", "-1", "+1", "", "1.5", "Off", "none", "Auto",
+        ] {
+            let error = parse(&["--par", "--par-recursive-frontier", value, "value.wf"])
+                .err()
+                .unwrap();
+            assert!(error.contains("--par-recursive-frontier"), "{error}");
+        }
+        for args in [
+            vec!["--par-recursive-frontier", "8", "value.wf"],
+            vec!["--par", "--par-recursive-frontier"],
+            vec![
+                "--par",
+                "--par-recursive-frontier",
+                "8",
+                "--no-overlap",
+                "value.wf",
+            ],
+            vec![
+                "--par",
+                "--par-recursive-frontier",
+                "8",
+                "--par-recursive-frontier",
+                "8",
+                "value.wf",
+            ],
+            vec!["--par-recursive-frontier", "off", "value.wf"],
+            vec![
+                "--par",
+                "--par-recursive-frontier",
+                "off",
+                "--par-recursive-frontier",
+                "8",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&args).is_err(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn sequential_refusal_requires_compute_and_composes_with_leaf_control() {
+        let options = parse(&[
+            "--par",
+            "--par-sequential-refusal",
+            "--par-scalar-leaf-limit",
+            "16",
+            "value.wf",
+        ])
+        .unwrap();
+        assert_eq!(
+            options.overlap(),
+            OverlapLowering::OnWithSequentialRefusal {
+                maximum_scalar_leaf_operations: Some(16)
+            }
+        );
+        for args in [
+            vec!["--par-sequential-refusal", "value.wf"],
+            vec![
+                "--par",
+                "--par-sequential-refusal",
+                "--par-sequential-refusal",
+                "value.wf",
+            ],
+        ] {
+            assert!(parse(&args).is_err());
+        }
     }
 
     /// The sequential reference build is its own switch, off unless asked

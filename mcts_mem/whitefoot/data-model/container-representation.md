@@ -8,45 +8,17 @@
   independently of parameter and result representation. Compiler-synthesized
   functions carry no invented source signature. These modes alone supply no loan
   origin, lifetime, or input/result aliasing permission.
-- Mutable run boundaries use [[exclusive-run-contracts]]; owning value transfer
-  remains available for construction, conversion and actual ownership delivery.
-- Select executable storage-release variants after semantic acceptance. Keep
-  declaration obligations, proof summaries and parallel permissions canonical;
-  specialize the complete owning type graph by the actual stores' finite release
-  classes, including brands captured in type arguments. Equal pointer layout
-  alone grants no shared reclamation behavior.
 - User-call arguments retain their checked occurrence uses independently of
   their actual value identities. A direct borrow result retains its candidate
   actual argument; this relation may cover a wider place than the returned
-  suffix and supplies neither exact value identity, exact disjointness, nor a
-  complete loan lifetime.
+  suffix and supplies neither exact disjointness nor a complete loan lifetime.
   Absence of a candidate record does not imply that an owned view has no borrowed
   backing.
-- Use [[ordinary-storage-effects]] for caller-visible mutation. Owned results
-  carry ordinary types, ownership and written result facts; exclusive writes
-  remain at resolved actual storage. No owned-value ancestry summary contributes
-  effect roots or supplies missing loan provenance.
-- An exclusive returned borrow can retain an already exact actual through a
-  declaration-only whole-location judgment: one candidate, the same complete
-  type, and no same-typed proper subplace. This adds no body-derived location
-  summary and narrows no loan ceiling. Shared results and unresolved or
-  recursive containment do not establish that judgment.
-- Reinitializing a complete binding already dead at statement entry contributes
-  no write of its moved-out owner's state. Same-statement read-out retains the
-  read and commit write. Preserve the RHS effects, commit kill, term identity,
-  ownership and loan judgments under either form.
 - Distinguish full fixed arrays, initialized prefixes, and circular windows.
   Persistent fixed extent and full initialization belong to the relevant type or
   state; variable length and head are not universal array metadata. Placement and
   stable identity are separate axes, with no mandatory handle/store indirection
   on dense values. Current specification bytes still define source behavior.
-- Keep invariant type brands distinct from loan lifetimes at helper boundaries.
-  A named generic brand is meaningful even at one input position; store-brand
-  elision has PROV-1's already-determined meaning. Match every explicit type-name
-  position, including nested and multiple brands, without expanding nominal
-  fields or an opaque type parameter. Fixed input brands cannot be shortened by
-  loans; complete parameter types still agree after the final substitution.
-  Constructor fields use the same positional relation with exact field types.
 - Keep initial public storage transitions compiler-checked. Make finite ranges,
   loans, storage identity, and initialized responsibility explicit internally, but
   do not mistake a concrete checker model for a verified symbolic library or a
@@ -103,14 +75,6 @@
   binding directly in an acyclic activation or a selected pipeline's retired
   per-slot storage. Other cases retain separate storage; source consume modes
   grant no input/result aliasing permission.
-- Synchronous consumed-input reuse covers complete results and selected fields
-  within complete struct results under [[consumed-result-destinations]]. Checked
-  source modes, input snapshots, full CFG interference and exposed-address
-  exclusions remain independent placement obligations.
-- One eligible owned entry group may share the caller's result destination after
-  every other indirect input reaches private storage. Its entry transfer remains
-  valid for equal or different input/result addresses. Exposed groups and deferred
-  uses retain independent backing.
 - Capture mutation targets before the RHS and revalidate their writability under
   the complete post-RHS loan state. Read the displaced old owner at the admitted
   replace commit. An address's storage must survive RHS effects;
@@ -134,16 +98,6 @@
   release responsibility does not create another aggregate owner.
 
 ## Facts
-
-- 2026-09-09 selection: a single-input `SmallBytes<'s>` reader exposed a conflict
-  between FORM-8's former multiplicity-only naming and TYPE-2's required nominal
-  brand arguments. The selected repair retains named invariant brands and derives
-  all argument positions from the declared type structure. An unused provider
-  argument, tying the reader's loan to its backing lifetime, and expanding
-  concrete opaque type arguments were rejected as unnecessary coupling or
-  instantiation-dependent spelling. Generic hash/equality invocation, empty variant
-  brand supply, projected Result measures and compact enum layout remain separate
-  questions. [Selection and boundaries](../../../research/investigations/containers-and-resources/FOUNDATION.md#generic-brand-parameters). (sourced)
 
 - 2026-09-06 owner correction: Whitefoot has no substantial real-application
   corpus yet. This selection's small executable programs establish particular
@@ -355,135 +309,6 @@
   [Selected boundary and alternatives](../../../research/investigations/containers-and-resources/REASSESSMENT.md#selected-control-header-temporary-loan-boundary),
   [ownership decision](../ownership/no-reborrow/control-header-temporary-loans.md). (sourced)
 
-- 2026-09-08 pitfall: a full fixed-array type preserves the successful owner's
-  extent and initialization, but does not describe empty backing returned after
-  partial construction fails. Current boundary-element measure transport loses
-  the empty length and dynamic capacity of a nested run. A fixed-capacity field
-  solves only the capacity part; result-field projection alone cannot recover
-  facts which were not retained by the stored value's type.
-  [Pool capacity and initialization controls](../../../research/experiments/container-representation/lifecycle/RESULTS.md#fixed-capacity-already-has-a-type-level-route),
-  [Empty backing contract](../../../research/investigations/containers-and-resources/FOUNDATION.md#empty-backing-across-library-and-pool-boundaries). (sourced)
-
-- 2026-09-08 rationale: the next wide-block experiment selects finite nominal
-  invariants over already-valid fields, closed at whole construction and opened
-  only by consuming the owner, before a dedicated empty-slot nominal. This
-  proposal addresses reusable contract transport without granting raw payload
-  authority. It preserves the four-word run descriptor; a proposed one-word
-  specialized slot remains a meaningful rival for small blocks. Neither checked
-  invariant formation nor its representation optimization is implemented by the
-  finite construction model.
-  [Selected boundary, mutation restrictions, and descriptor comparison](../../../research/investigations/containers-and-resources/FOUNDATION.md#specialized-slot-versus-a-checked-source-wrapper). (sourced)
-
-- 2026-09-08 rationale: fresh fallible construction can route complete field
-  results into separate success/error destinations without exposing an invalid
-  source value. Returning an existing owner and observing a whole result are
-  distinct materialization cases; an all-path placement qualification must also
-  account for consumed inputs and failure cleanup. The experiment selects a
-  general internal result tree, not a public initialization permission or a
-  demonstrated production ABI. Safe Rust's vector-to-boxed-array path is a
-  required comparator, not an unsafe-only capability.
-  [Construction boundary and limits](../../../research/investigations/containers-and-resources/FOUNDATION.md#construction-without-a-public-hole-in-t),
-  [Executable controls](../../../research/experiments/container-representation/foundation/RESULTS.md). (sourced)
-
-- 2026-09-08 scope correction: the preceding pool-driven nominal-invariant
-  proposal did not establish the next container-wide foundation. Its fixed
-  backing, failure cleanup and full-owner conversion contract was a controlled
-  selection workload. Common maps, ordered structures, compact byte layouts and
-  system lifetime contracts require separate expression and cost evidence.
-  [Reopened comparison](../../../research/investigations/containers-and-resources/FOUNDATION.md). (sourced)
-- 2026-09-08 owner clarification: performance has priority over breadth, while
-  common containers and important kernel/database/cache-server structures test
-  the useful representation ceiling. A lower-level API has no independent
-  preference. Intended runtime validation can be acceptable, particularly off
-  the critical path; compare its actual work instead of requiring static
-  elimination of every check. [Selection ground](../../../research/investigations/containers-and-resources/FOUNDATION.md#ground-and-evidence). (sourced)
-- 2026-09-08 source evidence: the sampled Redis dictionary lookup can migrate
-  topology, so a semantically read-only query need not have a read-only internal
-  effect contract. [Pinned lookup and rehash](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#redis-dictionary-migration-changes-the-lookup-contract). (sourced)
-- 2026-09-08 source evidence: the sampled packed byte pages need codecs and
-  movement without treating their variable-sized logical records as arbitrary
-  typed holes. [Pinned page representation](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#sqlite-packed-pages-validation-and-localized-movement). (sourced)
-- 2026-09-08 source evidence: RCU deletion preserves prior readers' access after
-  logical unlink, so removal of membership alone does not authorize reclamation.
-  [Pinned deletion protocol](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#linux-independent-membership-and-delayed-reclamation). (sourced)
-
-- 2026-09-08 measurement: the same-algorithm dense heap retains whole-run
-  transfers across ordinary owning helper calls, and byte growth retains scalar
-  copying with circular-index arithmetic. These controls distinguish lowering
-  costs from a need for writer-visible storage permissions; the existing owning
-  box and nested-region reproducers separately identify implementation defects.
-  [Operations, generated code, measurements and limits](../../../research/experiments/container-representation/families/RESULTS.md). (code)
-- 2026-09-08 rationale: the bounded next storage experiment is projected layout
-  of ordinary valid slot values. Its compact physical target does not establish
-  WF admission; a general resource-permission alternative must clear a required
-  operation/layout/lifetime boundary and supply deterministic symbolic checking
-  and erasure, not merely generate identical native code. This does not replace
-  the implemented ownership basis or select a public initialization API.
-  [Decision and falsifiers](../../../research/investigations/containers-and-resources/FOUNDATION.md#independent-ceilings-and-dispositions). (sourced)
-- 2026-09-08 source evidence: branded cell access and raw/typed permissions
-  illuminate different obligations. The inspected GhostCell example separates
-  access authority from arena/reference-counted lifetime; the pinned Verus
-  primitive separates uninitialized typed permission from deallocation authority.
-  Neither provides WF's acceptance, allocation-refusal and linear-cleanup rules.
-  [Sources and limitations](../../../research/investigations/containers-and-resources/EXTERNAL-WORKLOADS.md#permission-mechanisms-as-design-counterchecks). (sourced)
-
-- 2026-09-08 implementation evidence: the bounded synchronous-call reuse removes
-  the heap push caller's 144-byte transfer, while multi-result pop and callee
-  snapshots retain copies. Both 320-input sorting-oracle controls pass. Another
-  56 same-harness samples still put the 16-round Whitefoot trace about 2.8 times
-  the matched C medians; host drift and an outlier prevent attributing a small
-  difference from the earlier samples to this change alone.
-  [Conditions, optimized code and retained measurements](../../../research/experiments/container-representation/families/RESULTS.md#consumed-input-and-result-destination-reuse). (code)
-
-- 2026-09-09 rationale: one admitted unbounded Box helper can receive either a
-  general-store cell or an extent cell. Explicit destructuring must reclaim the
-  former and leave the latter to its arena. Post-acceptance physical function
-  and nominal instances preserve that distinction without a runtime class
-  branch or caller-dependent source admission. Native tests retain helper calls,
-  check mixed two-region transfers and exact releases, and exercise actual
-  staged Arena retirement on allocation refusal.
-  [Physical lowering](../../../compiler/src/lowering/physical_types.rs),
-  [call closure](../../../compiler/src/lowering/specialize.rs),
-  [execution evidence and scope](../../../research/experiments/container-representation/families/RESULTS.md). (code)
-
-- 2026-09-09 measurement: an eligible retained append helper needs one 144-byte
-  entry transfer and no private aggregate slot, versus two transfers and 144
-  bytes of explicit native stack on `9e731905`. A result can alias a different
-  consumed input: preserving that input privately before initializing result
-  storage passes the two-input counterexample. Input/result equality is not an
-  ABI premise, and addressed priority-queue helpers retain their prior copies.
-  [Conditions, comparison and limits](../../../research/experiments/container-representation/foundation/RESULTS.md#alternative-return-destinations). (code)
-
-- 2026-09-09 evidence: complete owning arrays use the same checked element,
-  place, generic-store and release paths as other owned aggregates. Native
-  witnesses retain helper calls, preserve wrapped order, replace an owning
-  element, and fail each step of a three-element construction with exact prefix
-  cleanup. A heap-owned array separately returns both original element owners
-  when its outer allocation refuses. Dense layout avoids universal window
-  metadata but does not solve partial initialization or promise stable addresses
-  for inline elements.
-  [Selection and alternatives](../../../research/investigations/containers-and-resources/FOUNDATION.md#selected-full-array-experiment),
-  [Executable witnesses](../../../compiler/src/backend/tests/arrays.rs). (code)
-
-- 2026-09-09 measurement: for three 136-byte owning records on arm64 macOS with
-  Apple Clang 21 at `-O2`, a retained indexed array reader matches the C reader's
-  instructions. Array-to-run conversion retains one 408-byte transfer in
-  both implementations; run-to-array conversion retains an extra 424-byte input
-  snapshot in Whitefoot. All three possible input heads preserve payload order
-  and owner identities in an independent native observer. This is code-shape and
-  behavior evidence, not elapsed-time parity or zero-copy construction.
-  [Matched source, assembly and limits](../../../research/experiments/container-representation/foundation/RESULTS.md#dense-full-array-operations). (sourced)
-
-- 2026-09-09 (0e98bd79) pitfall: a shared borrowed result may point at immutable
-  storage instead of its candidate input. Reusing the input's value facts when
-  forwarding that result falsely admitted an array access: the input was zero,
-  but the returned constant was nine. Result holders now keep their own proof
-  identity; candidate paths remain loan ceilings. Negative helper, copied-holder,
-  reborrow and projected-field cases reject before lowering, while an intended
-  branch on the delivered value admits the valid access or returns normally.
-  [Proof counterexamples](../../../compiler/src/semantic/tests/requires.rs),
-  [Guarded native execution](../../../compiler/src/backend/tests/requires.rs). (code)
-
 - 2026-09-06 (d998dd0a) historical rationale: Selected general place/result-destination support as the first implementation,
   including the semantic field/index/cell/borrow support needed to turn the frozen
   wide-record and inline-view probes into executed positives. Require element-sized
@@ -508,59 +333,22 @@
   the first slice into a universal storage proof framework. Reopen the owning
   layer if the checked ordinary form breaks the frozen contract, rather than
   hiding the gap with a guard, hard cap, extra scan, or extra allocation. (sourced)
-- 2026-09-09 selection: ordinary Box direct/helper comparisons expose a lost
-  incoming-state read after exclusive replacement, independently of any I/O
-  API. The selected normal-exit summary carries both returned owners and
-  exclusive referent outputs from one entry image. Whole-owner/static-product
-  routing and exact actual locations are the implemented slice; nested content
-  remains unresolved. The former infinite-recursion `Unknown` assertion was
-  replaced with ordinary behavior controls because absence of normal returns
-  does not determine that internal encoding. A nested displaced-Box read now
-  has an explicit routing-capability diagnostic rather than an internal error;
-  this is not implementation of the missing transfer. LIV-2 separately exempts
-  entry-dead complete-binding initialization from an old-owner write while
-  preserving same-statement read-out effects.
-  [Grounds and scope](../../../research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls). (sourced)
-- 2026-09-09 challenge: broader native tests reject the static-path prototype
-  at heap-array displacement, enum-child displacement and a returned-borrow
-  writeback. Their prior executable expectations remain unchanged. An unknown
-  summary cannot be recovered merely from currently empty actual-origin lists:
-  inserting an incoming owner into fresh unrepresented Box contents can leave
-  such a list falsely empty. That recovery was rejected before implementation;
-  a sound complete-content bound is still required.
-  [Counterexample and retained regressions](../../../research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls). (sourced)
-- 2026-09-09 rationale: the unchanged returned-borrow writeback witness needs
-  exact location information, but not a body-derived location summary. A sole
-  exclusive candidate of the same complete type, with no same-typed proper
-  subplace, identifies the whole actual under FN-1 and OWN-10. Shared constants,
-  inexact actuals, and recursive containment prevent this inference; a write
-  still invalidates prior value facts. A nested-dereference return is excluded
-  by OWN-14 and cannot serve as a routing counterexample. The type predicate
-  supplies precision independently of the unchanged owner-routing summary and
-  loan ceiling; general selected subplaces remain an open separate question.
-  [Argument and discriminating controls](../../../research/investigations/containers-and-resources/FOUNDATION.md#owner-identity-across-replacement-and-calls). (sourced)
-- 2026-09-10 (ad624ab7) measurement: a same-function full-array to fixed-run to
-  full-array round trip already optimizes to its direct-return control. For
-  three 136-byte owning records both retain only a 408-byte tail transfer and
-  no private frame; three-byte and zero-extent pairs likewise have equal native
-  code. The forward conversion's known zero head is essential to this comparison;
-  arbitrary-head split copies and separately retained conversions remain
-  different costs. Added destination machinery for this case has no demonstrated
-  native work to remove.
-  [Checked helper source and ABI observations](../../../research/experiments/container-representation/foundation/RESULTS.md#dense-full-array-operations). (code)
-- 2026-09-10 (a7e98bd5) measurement: a fixed scalar heap expressed through
-  borrowed complete-array storage and scalar count contracts has no whole-heap
-  transfers in its optimized ordinary or retained-helper trace. With both
-  implementations' mutation helpers retained, the measured 16-round medians
-  are 4.35 microseconds for Whitefoot and 4.38 for the matched C algorithm.
-  This is a concrete efficient ordinary-value competitor, not generic payload
-  construction, comparison behavior, or a remedy for every owning-run cost.
-  [Source, samples and limits](../../../research/experiments/container-representation/families/RESULTS.md#borrowed-full-array-heap). (code)
-- 2026-09-10 (a7e98bd5) evidence: ordinary complete arrays of enum slots admit
-  runtime-probed insertion, replacement, lookup, deletion, tombstone reuse and
-  full-table input return with modern owning boxes. A full scan after deletion
-  reuses the returned owner without allocation. The independent native observer
-  checks one success and all 192 allocation-refusal positions, conserving every
-  supplied owner across 193 executions. Capacity growth, returned migration
-  progress and projected sparse layout are not established by this trace.
-  [Operation and refusal contract](../../../research/experiments/container-representation/families/RESULTS.md#operation-contracts-and-recorded-runs). (code)
+
+- 2026-09-11 measurement: a received chunk can stay owned across a nested send's
+  waits. In the elided C++ coroutine echo engine, a move-only lease over an
+  owner-local pool node was carried into the nested send, so a blocked send
+  suspends with the lease live, no unsent suffix is copied, and an unused node
+  is returned before a receive wait. Against per-connection private storage the
+  lease wins all five large-message pairs — rate 1.1431 (1.1001..1.1904),
+  CPU/trip 0.8730, peak-RSS ratio 0.5150, the CPU difference almost entirely
+  system time (0.63 against 0.55 seconds) — while against shared scratch reuse
+  it only ties in rate (0.9991 against shared C++, 0.9959 against manual epoll)
+  and loses every large p99 pair, one pass reaching 3,753 against 1,171
+  microseconds. The representation is not free: root frame 184 bytes against
+  168, pool node 65,552 bytes for 65,536 of capacity, linked text 9,923 bytes
+  against 9,532 shared and 8,413 manual. This is an input to a possible
+  ownership contract for received chunks; it selects no container or source
+  API, does not prove suspension can borrow one exclusive pool, and does not
+  qualify retiring a completion-backend destination before its terminal
+  completion. `research/investigations/io-model/SCHEDULER-FINDINGS.md`,
+  experiment 67, from codex/io-chunk-lease@878b6ae7. (sourced)

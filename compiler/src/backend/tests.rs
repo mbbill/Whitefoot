@@ -57,9 +57,9 @@ use crate::{
     HOST_OPTIMIZATION_ARGUMENTS, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
     ORDINARY_VALUES_SOURCE, OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome,
     SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SemanticOutcome, SourceBundle,
-    SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, WINDOWS_RUNTIME_HEADER,
-    audit_canonical, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SemanticOutcome, SourceBundle, SourceInput,
+    SourceLimits, TerminalLimits, TerminalOutcome, WINDOWS_RUNTIME_HEADER, audit_canonical,
+    check_semantics_arithmetic_obligations, check_semantics_division_obligations,
     classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
     module_requires_parallel_runtime, parse, resolve,
 };
@@ -123,13 +123,13 @@ fn emit(source: &[u8]) -> String {
 }
 
 /// [`emit`] with the [PAR-1 candidate] overlap lowering switched on, which is
-/// what `whitefootc --par` compiles.
+/// what `whitefootc --par --par-scalar-leaf-limit off` compiles.
 fn emit_with_overlap(source: &[u8]) -> String {
     emit_lowered(source, OverlapLowering::On)
 }
 
 /// The developer-channel permission ledger of one source, compiled the way
-/// `whitefootc --par --par-ledger` compiles it.
+/// `whitefootc --par --par-scalar-leaf-limit off --par-ledger` compiles it.
 ///
 /// It carries the judgment's own lines, which are the same with or without
 /// `--par`, and after them the lines this lowering added about what it
@@ -291,7 +291,7 @@ fn emit_reborrow_extension(source: &[u8]) -> String {
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("backend test source must resolve");
     };
-    let checked = match crate::semantic::check_semantics_reborrow_extension(resolved) {
+    let checked = match crate::semantic::check_semantics(resolved) {
         SemanticOutcome::Complete(checked) => checked,
         outcome => {
             panic!("backend test source must check under the reborrow extension: {outcome:?}")
@@ -371,7 +371,6 @@ fn append_runtime_units_with_library_defines(
         ("ordinary_values.ll", ORDINARY_VALUES_LLVM),
         ("sched/core.h", SCHED_CORE_HEADER),
         ("sched/prim.h", SCHED_PRIM_HEADER),
-        ("sched/switch.h", SCHED_SWITCH_HEADER),
         ("sched/entry.h", SCHED_ENTRY_HEADER),
         ("sched/core.c", SCHED_CORE_SOURCE),
         ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),

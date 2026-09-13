@@ -1,6 +1,6 @@
-# Kernel Specification v0.58
+# Kernel Specification v0.55
 
-Status: ACTIVE v0.58
+Status: ACTIVE v0.55
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -2391,7 +2391,7 @@ This version defines no thread construct. A later thread construct must derive t
 
 [PAR-1] An implementation may execute two statements of one block with overlapping execution only when the permission this rule defines holds for that ordered pair.
 Permission holds for the ordered pair (s1, s2), where s1 precedes s2 in one block, exactly when all of the following hold.
-Each of s1 and s2 is a `let_stmt` whose selected `ordinary_let_rhs` is one call of a declared function [FN-1]; a recursive or mutually recursive user callee is admitted on the same terms as any other.
+Each of s1 and s2 is one call of a declared function [FN-1], written either as a `let_stmt` whose selected `ordinary_let_rhs` is that call or as the scrutinee of a `match_stmt` or of a `let_stmt` selecting `value_match` or `value_if`; a scrutinee member is judged exactly as a `let`-bound member is and is the last member of any chain it belongs to, because its arm blocks are not statements of the enclosing block; a recursive or mutually recursive user callee is admitted on the same terms as any other.
 No argument of s2 reads a binding s1 defines.
 The two calls have disjoint footprints under [OWN-7]: one call's written footprint is the places its callee row's `writes` paths reach through its actual arguments under the [EFF-2] call-boundary projection, together with the places its consumed `own` arguments name and the caller region each `allocates(arena 'r)` entry names after region substitution, and its read footprint is the places that row's `reads` paths reach under the same projection; the written footprint of s1 overlaps neither footprint of s2, and the written footprint of s2 overlaps neither footprint of s1.
 Evaluating a statement's own argument expressions is part of that statement and therefore part of the overlap, so each call's written footprint also overlaps no place the other statement's argument expressions read; taking the address of a place is not reading it, and both directions are required because which statement's argument evaluation an overlap moves is the implementation's choice.
@@ -3580,7 +3580,7 @@ fn main() -> status: own ExitStatus pure {
 ## 17. Spec meta-rules (CI-checked)
 
 [META-1] Spec-CI enforces the regularity invariants defined elsewhere: one spelling per construct [FORM-1] and a 1:1 production-to-core-tree-node mapping [GRAM-1].
-Its unique machine-checked content is that no rule ID is defined twice and every cross-reference resolves [META-4, META-6].
+Its unique machine-checked content is that no rule ID is defined twice and every cross-reference resolves [META-4].
 [META-2] No context-dependent spellings or rule variants: no rule's meaning depends on surrounding context; defaulting rules do not exist.
 [META-3] No rule carries an exception clause; conditional structure is expressed as total positive rules or table data.
 [META-4] Every normative fact is stated once; other mentions are rule-ID cross-references.
@@ -3588,7 +3588,3 @@ Its unique machine-checked content is that no rule ID is defined twice and every
 This document states the language and carries no commentary about its own versions: no delta declaration, no description of what a version changed, and no selection ground appear in these bytes, and a version's own such text is not retained here after it activates.
 `CLAUDE.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
 DEFERRED markers are tracked specification-delta obligations and do not create another approval point.
-[META-6] Every active rule has exactly one entry in the current index at `spec/derivation/derivation-ledger.md`, linking to its selection grounds.
-Grounds distinguish conditional deductions, empirical support, and provisional choices; unassessed legacy grounds and reasons requiring reconsideration are explicitly marked.
-The native `whitefoot-spec` gate checks unique active-rule coverage, recognized basis and review fields, and the presence of source references in that current index.
-Index classifications describe design evidence; they do not define writer acceptance or prove the cited arguments.

@@ -189,7 +189,7 @@ caller: its only calls were the boundary assertions in
 The old compiler's staged loop lowering had been its consumer; ordinary linked
 functions and the native engines do not query it.
 
-Deleting PAR-3 in v0.58 removes the lowering contract those assertions tested.
+Deleting PAR-3 in the combined v0.55 publication removes the lowering contract those assertions tested.
 This revision therefore deletes the hook, its two private window constants,
 the test's two mirrored constants, that single test function and its runner
 invocation. It does not change the native submit/join protocol, progress,
@@ -287,3 +287,39 @@ object files are removed before execution so directory fixtures cannot see
 them. Backend tests with facility-substitution defines keep their existing
 uncached path. No acceptance, runtime, assertion, case collection or verdict
 changes accompany this build repair.
+
+## Combined publication over the current-stack runtime
+
+The v0.55 integration adopts main's persistent native worker stacks and
+64-slot deques, asymmetric-core idle-window rule, recursive offer budgets,
+scalar-leaf and sequential-refusal controls, and native IOCP/io_uring repairs.
+Earlier C2 measurements remain measurements of their named pre-merge
+revisions. They do not validate performance of this combined runtime; its
+maintained controls require fresh samples.
+
+C2 removes the semantic suspension exclusion from recursive offer selection.
+An ordinary cycle uses the same eligibility rules whether a member calls a WF
+body or an ordinary linked body. The former
+`a_suspending_cycle_with_compute_offers_gets_no_budget_family` assertion and
+the staged-only half of the recursive-controls test are retired for that
+specific removed classification. The pure recursive and scalar-leaf checks
+remain, as does execution of a published ordinary call reaching linked I/O.
+No runtime budget selects source acceptance or required proof work.
+
+Managed-stack and staged-pipeline assertions describe deleted runtime paths.
+Main's smoke, native deque, wake and boundary probes exercise the adopted
+runtime; they do not claim the exhaustive schedule coverage of the retired
+managed-stack enumerator. Removing the old enumerator follows removal of the
+state machine it modeled, rather than a narrower sample of that state machine.
+The retained Windows native-control and worker comparisons report samples and
+ratios; performance/stability enforcement and retry-to-select-a-pass are not
+part of C2's correctness gate.
+
+The added adaptive-quadrature regression initially required the budget-family
+definition to use LLVM `internal` linkage. C2 emits that same family as an
+ordinary strong definition, so the assertion now checks the family definition
+and the budget call separately. The targeted test still executes the original
+numerical/output equality oracle at one, two and four workers. This is a
+linkage-assertion migration; no source verdict, numerical result or worker
+configuration was removed. Its focused pass during the uncommitted main
+integration does not establish a complete gate or cross-version speedup.

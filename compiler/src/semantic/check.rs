@@ -647,23 +647,11 @@ enum PreludeType {
     NarrowError,
 }
 
-/// v0.31-candidate reborrow-extension switch. The candidate at
-/// `spec/kernel-spec.md` admits the previously deferred forms — a reborrow
-/// argument to a borrow-returning call, a bound call-result borrow holder,
-/// and the grandchild chains they compose [OWN-5, OWN-6, OWN-12, OWN-14] —
-/// so this is `true` and the branch implements its own candidate. The
-/// test-only `check_semantics_reborrow_extension` entry now selects the same
-/// judgment as the shipped path.
-pub(crate) const REBORROW_EXTENSION_ACTIVE: bool = true;
-
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     /// Whether an undischarged obligation rejects. Always true outside the
     /// test-only observability hooks.
     reject_entailment: bool,
-    /// Whether the v0.31-candidate reborrow extension is admitted; see
-    /// [`REBORROW_EXTENSION_ACTIVE`].
-    reborrow_extension: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
     elements: RefCell<Vec<CheckedType>>,
@@ -761,7 +749,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
 pub fn check_semantics<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true, REBORROW_EXTENSION_ACTIVE)
+    check_semantics_with(resolved, true)
 }
 
 /// [`check_semantics`] with entailment rejection disabled, so unit tests can
@@ -774,7 +762,7 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, false, REBORROW_EXTENSION_ACTIVE)
+    check_semantics_with(resolved, false)
 }
 
 /// Legacy test helper selecting the one shipped semantic judgment. It remains
@@ -784,20 +772,7 @@ pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true, REBORROW_EXTENSION_ACTIVE)
-}
-
-/// [`check_semantics`] with the v0.31-candidate reborrow extension admitted.
-/// [`REBORROW_EXTENSION_ACTIVE`] is now `true`, so this entry selects the
-/// same judgment as the shipped path and the callers naming it record which
-/// judgment they mean. Test-only: the shipped acceptance behavior has exactly
-/// one path.
-#[cfg(test)]
-#[must_use]
-pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
-    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
-) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true, true)
+    check_semantics_with(resolved, true)
 }
 
 /// Legacy test helper selecting the one shipped semantic judgment. It remains
@@ -807,25 +782,23 @@ pub(crate) fn check_semantics_reborrow_extension<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_division_obligations<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true, REBORROW_EXTENSION_ACTIVE)
+    check_semantics_with(resolved, true)
 }
 
 fn check_semantics_with<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     reject_entailment: bool,
-    reborrow_extension: bool,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
     } else {
-        Checker::new(&resolved, reject_entailment, reborrow_extension).and_then(|mut checker| {
+        Checker::new(&resolved, reject_entailment).and_then(|mut checker| {
             let items = checker.item_declarations()?;
             checker.preflight_postcondition_selectors(&items)
         })
     };
     let result = preflight.and_then(|()| {
-        Checker::new(&resolved, reject_entailment, reborrow_extension)
-            .and_then(|mut checker| checker.check_program())
+        Checker::new(&resolved, reject_entailment).and_then(|mut checker| checker.check_program())
     });
     match result {
         Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram {
@@ -1164,7 +1137,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn new(
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
         reject_entailment: bool,
-        reborrow_extension: bool,
     ) -> Result<Self, CheckStop> {
         // A semantic unit includes the fixed PRE-1 declarations before resolution.
         // A source-only parse is useful to tools but is not a complete compiler input.
@@ -1181,7 +1153,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Self {
             resolved,
             reject_entailment,
-            reborrow_extension,
             tree: TreeView::new(resolved)?,
             nominals: Vec::new(),
             elements: RefCell::new(Vec::new()),
@@ -1465,9 +1436,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn constant_declaration_is_deferred(&self, node: NodeId) -> Result<bool, CheckStop> {
-        if !super::V031_CANDIDATE_SEMANTICS {
-            return Ok(false);
-        }
         let ty = self
             .tree
             .first_child_with(node, Production::Type)?

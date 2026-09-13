@@ -1,9 +1,12 @@
-# Selections for the owner
+# Selected ordinary interfaces
 
-These are API and deletion choices, not permission to implement them. All
-references use baseline `20043721`; [DESIGN.md](DESIGN.md) fixes the common
-ordinary-value boundary. No option below reinstates an external declaration
-class, semantic ID, finalizer, suspension contract or trusted proof source.
+The owner selected all seven recommendations for C2, with PAR-3 deleted
+outright and no suspension classification retained. The alternatives below
+preserve the reasons for those selections. Baseline source coordinates use
+`20043721`; [DESIGN.md](DESIGN.md) fixes the common ordinary-value boundary.
+The combined publication is v0.55 over main's v0.54. No option below reinstates
+an external declaration class, semantic ID, finalizer, suspension contract or
+trusted proof source.
 
 ## 1. Which objects must be consumed?
 

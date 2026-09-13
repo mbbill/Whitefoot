@@ -94,6 +94,8 @@ fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
     );
 }
 
+/// A held enumeration handle is an ordinary linear value: using its moved
+/// place is rejected by OWN-1, without a traversal-specific rule.
 #[test]
 fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
     let source = br#"fn moved(list: own DirectorySource, destination: &uniq MutSlice<u8>) -> result: own unit reads(list, destination), writes(list, destination) {

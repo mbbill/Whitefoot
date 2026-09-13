@@ -308,9 +308,10 @@ pub fn compile_with_overlap(
 /// permission judgment allows overlapping the two statements and whether a
 /// permitted overlap is actualizable. It is developer output on the caller's
 /// own channel: it participates in no mandatory record, changes no accepted
-/// program, and selects no lowering — the same lines are reported whether or
-/// not this compilation actualizes any of them. `whitefootc --par-ledger` is
-/// its one caller outside tests.
+/// program, and selects no lowering. Permission verdicts are independent of
+/// the actualization policy; additional actualization lines describe that
+/// policy's choices, including omitted scalar-leaf offers. The compiler's
+/// `--par-ledger` switch is its caller outside tests.
 pub fn compile_with_permission_ledger(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
@@ -603,6 +604,10 @@ fn compile_selected(
     ledger.extend_from_slice(ir.actualization_ledger());
     emit_llvm(&ir)
         .and_then(|module| {
+            // Emission decides which recursive components carry a runtime
+            // budget after their clone families are known.
+            let mut ledger = ledger;
+            ledger.extend_from_slice(module.actualization_ledger());
             let launch = if launcher_contract_ready {
                 launcher::render(&ir, selected)?
             } else {
@@ -638,7 +643,7 @@ mod tests {
         CompilationFailureKind, CompilationStage, CompilerLimits, compile,
         compile_with_permission_ledger,
     };
-    use crate::{OverlapLowering, SourceInput};
+    use crate::{OverlapLowering, RecursionBudget, SourceInput};
 
     #[test]
     fn the_executable_caller_proves_the_selected_functions_contract() {
@@ -1145,11 +1150,13 @@ fn main() -> status: own ExitStatus pure {
             ]
         );
 
-        // Condition 4: the first statement's `propagate` Err edge leaves the
-        // function, so the second statement's write must not run under an
-        // overlap the sequential execution skips.
-        let propagating = b"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
-  return cvt::<u32, u8>(v);
+        // Condition 4: a `propagate` is never a window member itself [PAR-1],
+        // so the one shape that still reaches condition 4 in the ledger is an
+        // interposed `propagate` whose Err edge leaves the function, standing
+        // between two ordinary calls the sequential execution would not
+        // otherwise let skip past it.
+        let propagating = b"fn peek(slot: &u8) -> result: own u64 reads(slot) {
+  return cvt::<u8, u64>(deref(slot));
 }
 
 fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
@@ -1157,9 +1164,10 @@ fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
   return 1_u64;
 }
 
-fn probe(v: own u32, slot: &uniq u8) -> result: own Result<unit, NarrowError> writes(slot) {
-  let narrowed = propagate narrow(v: v);
-  let stamped = stamp(slot: move slot);
+fn probe['o](outcome: own Result<u8, NarrowError>, a: &uniq 'o u8, b: &'o u8) -> result: own Result<unit, NarrowError> reads(b), writes(a) {
+  let seen = peek(slot: b);
+  let narrowed = propagate outcome;
+  let stamped = stamp(slot: move a);
   return Ok<unit, NarrowError>(value: unit);
 }
 
@@ -1170,7 +1178,7 @@ fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("propagate.wf", propagating),
             vec![
-                "PAR denied      propagate.wf:11  pair(narrow, stamp)  condition 4: the Err edge of s1 skips s2"
+                "PAR denied      propagate.wf:11  pair(peek, stamp)  condition 4: the Err edge of interposed statement 1 skips s2"
                     .to_owned()
             ]
         );
@@ -1529,12 +1537,160 @@ fn main() -> status: own ExitStatus pure {
     }
 
     /// Actualization is compile-time opt-in, and the judgment is not: the
-    /// ledger of a program full of eligible pairs is the same with the option
-    /// on and off, while only the `--par` module names the runtime.
+    /// judgment lines of a program full of eligible pairs are the same with
+    /// the option on and off, while only the `--par` module names the runtime.
+    ///
+    /// What `--par` adds to the report is what it actualized — which offers it
+    /// kept, and what it did with each recursive component it found — and
+    /// those lines say so in their own first word. A compilation that
+    /// actualizes nothing has none of them.
     ///
     /// This is what makes the ledger usable on a shipped build. A developer
     /// reading what the compiler decided about a program is reading a property
     /// of the source, not of the compilation they happened to ask for.
+    /// Every cyclic component a `--par` build finds is named in the ledger,
+    /// with what was done to it or the member that stopped it.
+    ///
+    /// Plain `--par` is the first case below, because the budget it reports is
+    /// the shipped default: the runtime's own answer. The three cases after it
+    /// are the control writing that default out, pinning a starting value
+    /// instead, and withholding the family altogether.
+    ///
+    /// The recursion budget is an actualization choice, so a reader has to be
+    /// able to see which recursions got a family and which kept the ordinary
+    /// path — an unspecialized recursion that said nothing would be
+    /// indistinguishable from one the compiler never noticed. The exclusions
+    /// are load-bearing in the same way: a splitter is cyclic, and it is the
+    /// reason the three map kernels of the compute scoreboard cannot be
+    /// touched by this at all.
+    #[test]
+    fn the_ledger_names_every_cyclic_component_and_what_the_budget_did_with_it() {
+        let recursive = format!(
+            "{TREE_PRELUDE}fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
+  match deref(deref(node)) {{
+    Leaf(w: leaf_w) => {{
+      return deref(leaf_w);
+    }}
+    Branch(left: l, right: r, w: slot) => {{
+      let a = fold(node: move l);
+      let b = fold(node: move r);
+      let total = imax(a, b);
+      set deref(slot) = total;
+      return total;
+    }}
+  }}
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  let leaf0 = boxed_leaf(w: 3_u64);
+  let leaf1 = boxed_leaf(w: 4_u64);
+  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
+  region {{
+    let total = fold(node: &uniq branch0);
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        let budgeted = |budget| OverlapLowering::OnWithRecursionBudget {
+            budget,
+            maximum_scalar_leaf_operations: None,
+            sequential_refusal: false,
+        };
+        let lines = |name: &str, source: &[u8], overlap| {
+            compile_with_permission_ledger(
+                &[SourceInput::new(name, source)],
+                CompilerLimits::default(),
+                overlap,
+            )
+            .expect("the fixture must compile")
+            .1
+            .into_iter()
+            .filter(|line| line.starts_with("PAR frontier"))
+            .collect::<Vec<_>>()
+        };
+        for (overlap, summary, component) in [
+            // Plain `--par` first: what the shipped default reports. The three
+            // controls after it are the same mechanism written out.
+            (
+                OverlapLowering::On,
+                "recursion budget runtime-derived  family emitted for 1 of 1 cyclic components",
+                "component(fold)  budget-carrying clone family, entered with recursion budget \
+                 runtime-derived",
+            ),
+            (
+                budgeted(RecursionBudget::RuntimeDerived),
+                "recursion budget runtime-derived  family emitted for 1 of 1 cyclic components",
+                "component(fold)  budget-carrying clone family, entered with recursion budget \
+                 runtime-derived",
+            ),
+            (
+                budgeted(RecursionBudget::Pinned(
+                    std::num::NonZeroU8::new(8).unwrap(),
+                )),
+                "recursion budget pinned 8  family emitted for 1 of 1 cyclic components",
+                "component(fold)  budget-carrying clone family, entered with recursion budget \
+                 pinned 8",
+            ),
+            (
+                budgeted(RecursionBudget::Off),
+                "recursion budget off  family emitted for 0 of 1 cyclic components",
+                "component(fold)  no family: recursion budget off",
+            ),
+        ] {
+            assert_eq!(
+                lines("fold.wf", recursive.as_bytes(), overlap),
+                vec![
+                    format!("PAR frontier    {summary}"),
+                    format!("PAR frontier    {component}"),
+                ]
+            );
+        }
+        // A build that actualizes no compute at all reports none of this.
+        assert!(
+            lines("fold.wf", recursive.as_bytes(), OverlapLowering::Off).is_empty(),
+            "a default build has no actualization to report"
+        );
+
+        // A splitter calls itself to halve its range, so it is a cyclic
+        // component of its own — and a synthesized one, which is why a kernel
+        // that reaches the runtime through a split cannot get a family.
+        let counted = b"fn interesting(index: own u64) -> result: own Bool pure {
+  let low = iand(index, 7_u64);
+  return low == 3_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let hits = 0_u64;
+  for @scan (i in 0_u64..4096_u64) {
+    let escaped = interesting(index: i);
+    if escaped {
+      set hits = hits +wrap 1_u64;
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+";
+        let split = lines(
+            "counted.wf",
+            counted,
+            budgeted(RecursionBudget::RuntimeDerived),
+        );
+        assert_eq!(
+            split.len(),
+            2,
+            "the split fixture must have exactly one cyclic component: {split:?}"
+        );
+        assert!(
+            split[0].contains("family emitted for 0 of 1 cyclic components"),
+            "{split:?}"
+        );
+        assert!(
+            split[1].contains("is a synthesized loop function"),
+            "{split:?}"
+        );
+    }
+
     #[test]
     fn the_permission_ledger_does_not_depend_on_whether_the_lowering_is_taken() {
         let source = format!(
@@ -1575,7 +1731,21 @@ fn main() -> status: own ExitStatus pure {{
             compile_with_permission_ledger(&inputs, CompilerLimits::default(), OverlapLowering::On)
                 .expect("the fixture must compile");
 
-        assert_eq!(quiet_ledger, loud_ledger);
+        let (judgment, actualization) = loud_ledger.split_at(quiet_ledger.len());
+        assert_eq!(quiet_ledger, judgment);
+        assert!(
+            actualization
+                .iter()
+                .all(|line| line.starts_with("PAR actualization")
+                    || line.starts_with("PAR frontier")),
+            "only actualization lines may differ between the two lowerings: {actualization:?}"
+        );
+        assert!(
+            actualization
+                .iter()
+                .any(|line| line.contains("component(fold)")),
+            "the fixture's recursive fold must be named with what it got: {actualization:?}"
+        );
         assert!(
             quiet_ledger.iter().any(|line| line.contains("eligible")),
             "the fixture must report an eligible pair: {quiet_ledger:?}"

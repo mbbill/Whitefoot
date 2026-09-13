@@ -6,6 +6,13 @@ lines in module sizes. They do not refer to the paused, uncommitted D8 drafts.
 The [design](DESIGN.md), [owner selections](DECISIONS.md),
 [execution plan](EXECUTION.md), and [case register](CASES.md) use this inventory.
 
+The register records the C1 baseline, including its then-live documentation.
+For the combined v0.55 publication, main's later retirement of the compiler
+README and derivation ledger takes precedence over their original update
+dispositions. Its frozen mcts_mem bytes remain historical; current decisions
+and proposed amendments belong in design. The linked baseline files and line
+counts below remain unchanged as evidence of the inventory actually taken.
+
 This is a dependency inventory, not a deletion count. A mixed module is not
 external-only merely because it contains a system-call arm. Conversely,
 ordinary Box/run tests now depend on owned-state routing even though their

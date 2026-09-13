@@ -373,7 +373,9 @@ fn use_rule(role: LexicalUseRole) -> ResolutionRule {
         LexicalUseRole::Const => ResolutionRule::Const1,
         LexicalUseRole::ConstValue => ResolutionRule::Const2,
         LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee => ResolutionRule::Op1,
-        LexicalUseRole::FunctionBinding => ResolutionRule::Fn4,
+        // FN-3 selects the function named by an actual group's binding;
+        // FN-4 checks its compatibility after resolution.
+        LexicalUseRole::FunctionBinding => ResolutionRule::Fn3,
         LexicalUseRole::GenericNumericSuffix => ResolutionRule::Form5,
         LexicalUseRole::InvariantValue => ResolutionRule::Inv1,
         LexicalUseRole::ProofValue => ResolutionRule::Prf1,

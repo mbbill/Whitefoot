@@ -667,8 +667,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // reaches here is the const-storage disposition, whose validity needs a
         // const-rooted holder the checker does not represent: an explicit
         // capability stop, never an invalid-source verdict [OWN-6, OWN-8].
-        if self.reborrow_extension
-            && mode != CheckedMode::Own
+        if mode != CheckedMode::Own
             && value.borrow.is_none()
             && matches!(value.expression, CheckedExpression::UserCall { .. })
         {

@@ -4,6 +4,12 @@
 For spec/conformance changes, include what changed and its selection ground
 under AGENTS.md rule 4. -->
 
+## Design tree
+
+<!-- List the log entries this branch adds, every open amendment under
+design/amendments/, and the correspondence report's findings, or "none"
+when the change touches no decision. -->
+
 ## Agent review
 
 <!-- Use docs/review-checklist.md. Summarize results; do not copy the checklist

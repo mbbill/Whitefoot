@@ -1370,13 +1370,6 @@ extent's region is one the caller must choose, so it is written at every positio
         node: NodeId,
         expected: CheckedType,
     ) -> Result<CheckedValue, CheckStop> {
-        if !crate::semantic::V031_CANDIDATE_SEMANTICS {
-            return self.issue_node(
-                SemanticRule::Const2,
-                node,
-                SemanticIssueKind::InvalidConstValue,
-            );
-        }
         // Written generic construction arguments in const position are not
         // implemented yet: valid under the candidate's eligibility relation
         // only through concrete instances, which this version does not intern
@@ -1518,12 +1511,7 @@ extent's region is one the caller must choose, so it is written at every positio
     fn reject_ineligible_const_storage(&self, root: NodeId) -> Result<(), CheckStop> {
         let mut current = Some(root);
         while let Some(node) = current {
-            let directly_ineligible = (!crate::semantic::V031_CANDIDATE_SEMANTICS
-                && self
-                    .tree
-                    .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-                    .is_some())
-                || self.written_loan_strength(node)?.is_some()
+            let directly_ineligible = self.written_loan_strength(node)?.is_some()
                 || self.has_fixed(node, FixedTerminal::Box)?
                 || self.has_fixed(node, FixedTerminal::Arena)?
                 || self.has_fixed(node, FixedTerminal::Buffer)?;
@@ -1609,7 +1597,7 @@ extent's region is one the caller must choose, so it is written at every positio
                     }
                     pending.push(element);
                 }
-                CheckedType::Nominal(id) if crate::semantic::V031_CANDIDATE_SEMANTICS => {
+                CheckedType::Nominal(id) => {
                     let CheckedNominalKind::Struct { fields } = &self.nominal(id)?.kind else {
                         return Ok(false);
                     };
@@ -1623,7 +1611,6 @@ extent's region is one the caller must choose, so it is written at every positio
                 | CheckedType::Generic(_)
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
-                | CheckedType::Nominal(_)
                 | CheckedType::Slice { .. }
                 | CheckedType::Buffer { .. }
                 | CheckedType::Vector { .. }

@@ -1,6 +1,4 @@
-fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(name), writes(name) contract {
-  ensures len_of(deref(name)) == len_of(deref(entry(name)));
-} {
+fn name_at(name: &uniq MutSlice<u8>, index: own u64) -> result: own unit reads(name), writes(name) {
   doc "Renders the fixed ten-byte generated file name for one index as f00000.dat.";
   let room = len_of(deref(name));
   let sized = room >= 10_u64;
@@ -40,9 +38,7 @@ fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(nam
   return unit;
 }
 
-fn render_u64(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) contract {
-  ensures len_of(deref(destination)) == len_of(deref(entry(destination)));
-} {
+fn render_u64(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Renders one twenty-digit zero-padded decimal number and reports the position after it.";
   let room = len_of(deref(destination));
   let remaining = value;
@@ -112,7 +108,10 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
       break @scan;
     }
     region {
-      let rendered = name_at(name: &uniq name, index: index);
+      let name_window = mut_slice_of(&uniq name);
+      region {
+        let rendered = name_at(name: &uniq name_window, index: index);
+      }
     }
     region {
       let native_window_68 = slice_of(&name);
@@ -160,7 +159,10 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
   let room = len_of(line);
   let cursor = 0_u64;
   region {
-    set cursor = render_u64(destination: &uniq line, at: cursor, value: sum);
+    let line_window = mut_slice_of(&uniq line);
+    region {
+      set cursor = render_u64(destination: &uniq line_window, at: cursor, value: sum);
+    }
   }
   let space_fits = cursor < room;
   if space_fits {
@@ -168,7 +170,10 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
     set cursor = cursor +wrap 1_u64;
   }
   region {
-    set cursor = render_u64(destination: &uniq line, at: cursor, value: bytes);
+    let line_window = mut_slice_of(&uniq line);
+    region {
+      set cursor = render_u64(destination: &uniq line_window, at: cursor, value: bytes);
+    }
   }
   let end_fits = cursor < room;
   if end_fits {

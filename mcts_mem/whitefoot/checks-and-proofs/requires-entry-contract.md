@@ -1,11 +1,11 @@
-- Every ordinary function may carry one optional erased `contract` block containing shared `define` bindings followed by plural independent `requires` and `ensures` clauses. A present block must contain at least one proof clause.
+- Every non-entry function may carry one optional erased `contract` block containing shared `define` bindings followed by plural independent `requires` and `ensures` clauses. A present block must contain at least one proof clause.
 - A definition is pure, total, non-consuming proof syntax and is recursively alpha-expanded into each clause. It creates no runtime evaluation, storage, snapshot, ordering edge, or fact; it cannot refer to the symbolic result.
 - Each requirement forms its own finite typed GoalTemplate. All requirements are judged independently in the same caller pre-transfer state, none serves as a premise for another, and all successful goals enter the callee body through S4.
 - Every function result is explicitly named in its signature. The name is an FN-9 symbolic whole-result datum, not a storage slot; an `Ok(value: binder)` route selects the success payload when a Result postcondition needs it.
 - Each postcondition forms its own RelationTemplate and is proved at every selected return in the current ProofContext. Same-component summaries are unavailable while checking an SCC, and successful summaries publish atomically afterward. The old unasserted, S4-blinded, provenance, and strict views below are retired.
 - Exact goal identity preserves selected operation semantics, concrete written type and const arguments, operand order, formal parameter ordinals and projections, named-constant identity, typed literals, and recursively expanded definitions while ignoring local spelling and sharing.
-- A contradictory S4 entry state is legal and denotes an uninhabited concrete function instance. The compiler still performs structural, ownership, effect, and return-shape checks, retains the source graph for audit, lowers an ABI-shaped `unreachable` stub instead of the body, and publishes no postcondition summary.
-- [[ordinary-call-proof]] governs source and linked calls without an entry-specific exception.
+- A contradictory S4 entry state is legal and denotes an uninhabited concrete function instance. The compiler still performs structural, ownership, effect, route, and return-shape checks, retains the source graph for audit, lowers an ABI-shaped `unreachable` stub instead of the body, and publishes no postcondition summary.
+- [[requirement-enforcement]] governs the only execution boundary: internal ordinary calls.
 
 ## Facts
 

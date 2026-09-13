@@ -4,13 +4,11 @@
 
 - Inside a function, an origin is one resolved source place, `immutable-const`, or a formal-slice term naming one direct slice parameter. Formation creates a singleton; binding, movement, borrowing the descriptor, passing, and returning preserve the complete set.
 
-- An owning direct-view result's signature ceiling contains immutable constant storage and own direct-view parameters with the same formal data region, element type and strength. A shared result also admits borrowed direct-view parameters at the same data region and element type, at either parent strength. Each body return must be a subset of that ceiling.
+- An `own slice<'r, T>` signature ceiling contains `immutable-const` and exactly the own direct-slice parameters with the same formal result region and element type. Each body return must be a subset of that ceiling.
 
 - Calls compute result-origin sets by signature-only simultaneous supplier substitution and deduplicated union.
 
-- Continuing loan identity is carried separately from possible storage origins, as selected in [[view-loan-identity]].
-
-- The selected view boundary is direct-only: borrow-mode direct-view results, returned raw-storage suppliers, stored view leaves, and view-valued control-flow joins are excluded. Region-branded owned generic values have their separate storage judgments.
+- The selected boundary is direct-only: region-bearing generic arguments and stored content reject under FN-2/STOR-5. Borrow-mode direct-slice results, returned arena/raw-storage suppliers, stored slice leaves, and slice-valued control-flow joins require separate designs.
 
 ## Facts
 
@@ -20,4 +18,3 @@
 - 2026-07-23 rejected alternative: per-leaf metadata inside generic or stored values would retain more programs, but imports unresolved retained-state, cleanup, and stored-borrow obligations. v0.17 rejects those hiding positions rather than approximating them. (sourced)
 - 2026-07-23 rejected alternative: a fresh call or arena token cannot soundly authorize returned arena storage until the backing allocation and cleanup obligation are proved to survive the callee. Callee-created arena suppliers remain deferred rather than represented by an invented origin. (sourced)
 - 2026-07-23 implementation evidence: one safe-Rust semantic path now carries the same origin data through checked expressions and signatures, checks every returned set against its ceiling, substitutes actual sets at calls, and applies all origins to alias and effect judgments. A concrete source claim is attached to its source owner rather than a descriptor binding, unions across continuing control paths, and is removed only when its named data region ends; focused nested-scope and branch regressions prevent descriptor cleanup from shortening the claim. Host execution confirms pass-through, same-region choice, immutable-const returns, and borrowed descriptor reads without changing the runtime descriptor ABI. (code)
-- 2026-09-10 correction: Current VIEW-1/2 end a shared view's claim at the last use of every continuing descriptor, within its data-region ceiling; the older region-end-only implementation description is historical. VIEW-6 also admits the shared child of a borrowed direct-view parameter. FN-2 and the invariant-brand work admit region-branded owned generic values without admitting stored view leaves. (sourced)

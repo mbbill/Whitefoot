@@ -206,6 +206,13 @@ uint64_t wf__completion_native_ring_submissions(void);
  * request inside the call that issues it answers zero. */
 uint64_t wf__completion_native_ring_submission_enters(void);
 
+/* Observational counters for the shared host wait. Announcements can be
+ * cancelled by an epoch change before sleeping; signals count host wake
+ * requests, not threads awakened. Reads do not initialize the wait runtime
+ * and are individually atomic, not a simultaneous snapshot. */
+uint64_t wf__completion_wait_announcements(void);
+uint64_t wf__completion_wait_signals(void);
+
 #if defined(__cplusplus)
 }
 #endif

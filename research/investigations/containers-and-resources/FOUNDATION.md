@@ -20,8 +20,10 @@ The [generic brand boundary](#generic-brand-parameters) now preserves explicit
 type brands through ordinary helpers. The selected [exclusive two-state interface](#exclusive-two-state-run-contracts)
 removes run mutation's owned round trip. The D2 enum-slot measurements do not
 yet justify a compiler-known projected sparse layout; ordinary owning slots
-remain the measured baseline. Remaining owner-routing limits below are separate;
-a general library resource-permission system remains its bounded challenger,
+remain the measured baseline. C2 later removes owned-state routing altogether
+under the [ordinary-value boundary](../ordinary-host-values/DESIGN.md); the
+routing investigations below retain their original revision and scope as
+historical evidence. A general library resource-permission system remains a bounded challenger,
 not the public foundation. Neither choice claims coverage of every system
 container.
 
@@ -32,14 +34,18 @@ distribution. Common-family coverage and independent lifetime/layout ceilings
 remain explicit below.
 
 The [active specification](../../../spec/kernel-spec.md) defines accepted
-programs. The [compiler guide](../../../compiler/README.md) owns implemented
-capability. [REASSESSMENT.md](REASSESSMENT.md) records the merged owned-place work.
+programs. The conformance report records implementation results; the root
+[verification guide](../../../README.md#verification) explains how to run it.
+[REASSESSMENT.md](REASSESSMENT.md) records the merged owned-place work.
 The [external study](EXTERNAL-WORKLOADS.md) owns pinned source observations, and
 [representation experiments](../../experiments/container-representation/README.md)
 own executable evidence. The completed implementation experiments below include
 general compiler repairs and bounded storage-reuse optimizations; the earlier work had no new
 source interface. The selected full-array experiment is a language amendment
 with two kernel rows; its design is not evidence that implementation is complete.
+Version labels attached to earlier experiments below identify their measured
+branch revisions. The combined publication over main is v0.55; it does not
+retroactively change the versions or runtime used for those measurements.
 
 ## Ground and evidence
 
@@ -1465,25 +1471,25 @@ The available evidence supports different next actions for different families:
 | Stable slots, sparse sets and multiple memberships | The two-index native control distinguishes weak/retained memberships and logical access; bounds alone supply neither | Priced lookup/metadata, authoritative store identity and a checked source admission/backing-lifetime design |
 | Shared/concurrent containers | Sequential storage selection grants no reclamation protocol | A separately specified publish/read/retire contract with the actual memory model and scheduling behavior |
 
-Generic hash/equality/comparison invocation is independently unavailable under
-FN-2/3/5: numeric and linearity bounds do not let a library call a supplied
-behavior. A concrete key type is sufficient for the representation experiment,
-but cannot certify a reusable generic library. Stored member provenance is
+The later [D7 behavior witnesses](BEHAVIOR.md) supply generic
+hash/equality/comparison invocation through explicit formal/actual groups and
+retained direct calls. The earlier concrete-key representation experiments
+alone did not establish that reusable interface. Stored member provenance is
 separately restricted by STOR-5. Allocation/resize and variable-tail layout need
 their own provider and layout contracts. A slot permission alone supplies none
 of these, and the architecture must not claim those system needs solved.
 
 Ordinary valid values remain the baseline, with the selected full-array
-experiment extending its completed-value domain. Projected layout is selected
-for a bounded sparse prototype because compact sparse storage has a
-concrete physical advantage without yet requiring a new writer resource logic.
+experiment extending its completed-value domain. The earlier projected-layout
+prototype proposal is superseded by D2's ordinary owning-map measurements:
+the observed gap does not justify selecting compiler-known sparse authority.
 General resource permissions become the preferred candidate only if a required
 operation, layout or lifetime cannot be retained through ordinary/projected
 values and the alternative supplies a credible deterministic checking and
 erasure path. Equal native code cannot choose between proof authorities.
 
 Research can therefore hand off to those implementation experiments without
-claiming a universal container substrate. Generic behavior, complete ordered
+claiming a universal container substrate. Complete ordered
 mutation, two-span consumers, inline spill, general array views and construction
 destinations, stored lifetime, variable tails and concurrent retirement remain
 named capability questions.

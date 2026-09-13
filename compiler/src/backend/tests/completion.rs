@@ -11,10 +11,9 @@ use std::process::Command;
 #[test]
 fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     let directory = test_directory();
-    // The staged tree keeps the repository's own two directories, because the
-    // completion header reaches the scheduler core by the relative path it
-    // uses in the tree: the completion record begins with a `wf_sched_record`.
-    let units: [(&str, &str); 20] = [
+    // Keep the repository's directory layout so relative includes resolve as
+    // they do when the compiler stages these native units for linking.
+    let units = [
         ("completion/contract.h", crate::COMPLETION_CONTRACT_HEADER),
         (
             "completion/file_adapter.h",
@@ -35,7 +34,6 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
         ),
         ("sched/core.h", crate::SCHED_CORE_HEADER),
         ("sched/prim.h", crate::SCHED_PRIM_HEADER),
-        ("sched/switch.h", crate::SCHED_SWITCH_HEADER),
         ("sched/entry.h", crate::SCHED_ENTRY_HEADER),
         ("completion/runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
         ("completion/wait_host.c", crate::COMPLETION_WAIT_HOST_SOURCE),
@@ -198,114 +196,20 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
 }
 
 #[test]
-fn a_join_waits_in_place_and_sleeps_on_the_one_primitive() {
+fn typed_io_joins_do_not_reenter_the_compute_scheduler() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
-    let arm = bridge
-        .split_once("static void wf_bridge_wait_in_place(wf_completion_record *record) {")
-        .expect("the I/O arm of the fourth line is one named function")
-        .1
-        .split_once("\n}\n")
-        .expect("the arm ends with the function")
-        .0;
-    assert!(
-        arm.contains("wf_prim_yield()"),
-        "COMPLETING is DONE a few instructions away and is yielded through: {arm}"
-    );
-    assert!(
-        arm.contains("wf_bridge_progress()"),
-        "the arm makes one bounded progress pass before it sleeps: {arm}"
-    );
-    assert!(
-        arm.contains("WF_SCHED_WAITER_IN_PLACE"),
-        "the arm registers itself as the record's in-place waiter: {arm}"
-    );
-    assert!(
-        arm.contains("wf_bridge_park(epoch)"),
-        "the arm sleeps on the one primitive: {arm}"
-    );
-    assert!(
-        arm.find("WF_SCHED_WAITER_IN_PLACE") < arm.find("wf_completion_wake_epoch"),
-        "the registration goes up before the epoch is captured: {arm}"
-    );
-    assert!(
-        arm.find("wf_completion_wake_epoch") < arm.find("wf_bridge_park(epoch)"),
-        "the epoch is captured before the park: {arm}"
-    );
-    // The deleted guard, and the drain it protected, are gone from every site.
-    for gone in [
-        "wf_bridge_target_work_needs_this_thread",
-        "wf_bridge_drain",
-        "wf_completion_ready_event_count",
-        "wf__par_help_once",
+    assert_eq!(bridge.matches("wf_bridge_join(held)").count(), 4);
+    for forbidden in [
+        "wf_sched_join(",
+        "wf__sched_current_stack(",
+        "wf__par_help_once(",
+        "wf__sched_host_park(",
     ] {
         assert!(
-            !bridge.contains(gone),
-            "the bridge still names the deleted drain machinery: {gone}"
+            !bridge.contains(forbidden),
+            "I/O wait reentered compute: {forbidden}"
         );
     }
-    // Every join runs the one dispatch, and the dispatch runs the arm above
-    // for a thread with no stack to park (design §2's third line takes the
-    // rest). A thread on a pool stack parks instead, which is the whole of
-    // this design; the arm stays because the harness and the probes call these
-    // joins from plain threads.
-    // The four are the file join, the open join, the status join, and the
-    // accept join that returns a TCP peer address; a join added
-    // for a new operation raises this number and must still enter here.
-    assert_eq!(
-        bridge.matches("wf_bridge_join(held)").count(),
-        bridge.matches("_join(\n    const void *record,").count(),
-        "every join enters the rule the same way"
-    );
-    assert_eq!(
-        bridge.matches("wf_bridge_join(held)").count(),
-        4,
-        "each of the four joins enters the rule the same way"
-    );
-    let dispatch = bridge
-        .split_once("static void wf_bridge_join(wf_completion_record *record) {")
-        .expect("the joins share one dispatch")
-        .1
-        .split_once("\n}\n")
-        .expect("the dispatch ends with the function")
-        .0;
-    assert!(
-        dispatch.contains("wf__sched_current_stack() != NULL"),
-        "a stack to park is what selects the third line: {dispatch}"
-    );
-    assert!(
-        dispatch.contains("wf_sched_join(&wf__sched_core, &record->sched, 1)"),
-        "a thread on a pool stack runs the core's rule: {dispatch}"
-    );
-    assert!(
-        dispatch.contains("wf_bridge_wait_in_place(record)"),
-        "a thread with no pool stack waits in place: {dispatch}"
-    );
-    // Running one's own still-queued submission here is licensed by having
-    // nothing else to do until it is DONE, which is true of the in-place arm
-    // and false of a pool stack: the join below parks that stack and the
-    // thread goes on to other work, so a host call made here holds a worker.
-    // For a peer-bound wait, which another program ends whenever it likes,
-    // that is a worker held for as long as the far side stays quiet, so a pool
-    // stack leaves such a record to the helper pool -- once there is one.
-    let own = bridge
-        .split_once("static int wf_bridge_own_runs_on_this_thread(")
-        .expect("one rule decides whether the claim happens here")
-        .1
-        .split_once("\n}\n")
-        .expect("the rule ends with the function")
-        .0;
-    assert!(
-        own.contains("on_pool_stack == 0"),
-        "a thread with nothing else to run always claims its own: {own}"
-    );
-    assert!(
-        own.contains("!wf_file_request_is_peer_bound(&record->request)"),
-        "only a peer-bound record is withheld from a pool stack: {own}"
-    );
-    assert!(
-        own.contains("wf_file_adapter_helper_count(&wf_bridge_adapter) == 0"),
-        "with no helper the claim happens anyway, or nothing would run it: {own}"
-    );
 }
 
 #[test]

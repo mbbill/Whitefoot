@@ -19,7 +19,11 @@ container's headline ratio does not reproduce, the batch-0086 one for absolute
 values on the many-files workload, and the batch-0084 one for the findings it
 established; everything before that date was a C-level measurement of the
 completion core alone and is retained below, labelled, because it still
-describes what it measured.
+describes what it measured. The sixty-eight scheduler experiments that followed
+the batch-0108 section, their numbers and which of them survived the runtime
+they measured, are digested in
+[`SCHEDULER-FINDINGS.md`](SCHEDULER-FINDINGS.md); its first entry retracts a
+prediction this file made and marks it superseded in place below.
 
 The program-level sections are the ones that answer the design's own question.
 Reproduce them with:
@@ -2579,3 +2583,232 @@ to decide for files, where every operation of a program went through one
 thread's submissions; they are the next performance work on this line, in a
 new PR by the owner's decision.
 
+That sentence is retracted here, together with the identically worded
+prediction that closes the `perf` paragraph above it. The design they name was
+built and measured, and it did not pay. The first experiment of the scheduler
+series linked the same emitted program against three runtimes — one global
+ready queue, one queue per worker preferring the worker that parked the stack,
+and one preferring the worker that enqueues it — holding the shared mutex, the
+wake epoch, the ring and the stack representation fixed. At four connections
+the two preferences give paired throughput ratios of 0.851 and 0.809 against
+the global queue; at 64 and 1024 they give 0.991/0.995 and 1.000/1.000. The
+mechanism did move: cross-worker resumes at 64 connections fall from 55.3
+percent under the global queue to 38.1 under parking-worker preference.
+Locality moved and throughput did not follow. The same measurement corrects
+the inference above that placing work on the reaping worker's queue keeps the
+connection on that worker: a different worker can reap the next completion and
+another can steal the ready stack immediately. Server CPU at four connections
+rose from 20.375 to 25.750 and 24.375 microseconds a trip. The profile is not
+wrong about where the time goes; the repair it suggested is refuted. That
+measurement, the sixty-seven experiments that followed it, and the reason each
+one is or is not still worth acting on are recorded in
+[`SCHEDULER-FINDINGS.md`](SCHEDULER-FINDINGS.md); the runtime all of them
+measured was itself retired on 2026-09-10.
+
+## Windows hosted-worker comparison criterion, 2026-09-11
+
+The current question is measurement stability, without changing runtime code,
+any numerical qualification threshold, the five cohorts, or the number of
+rounds and allowed retries. Run 34549854655 has compute-parallel wall-time
+spreads of 16.73% and 20.51%, against process-CPU spreads of 2.40% and 4.08%.
+Its CPU is an EPYC 7763 with four visible logical processors. Run 34546727283
+instead reports a Xeon 8573C: compute qualifies there, but mixed-total does
+not. CPU model and visible processor count alone do not establish physical
+host topology or prove that unrelated host work caused either failure.
+
+Before selecting a policy, compare the full visible worker count with one
+fewer worker, using the same compiler, executables, affinity mask, normal
+process priority, warm tree, and Windows VM. The default trial is W=3 on a
+four-logical-processor runner; it reserves no exclusive physical core. The
+optional `CompareWorkers` mode uses fifteen rounds with a shared serial
+reference and one candidate at each worker count. Every three rounds balance
+position; every six also balance precedence and distance from the reference.
+Thus each policy
+has fifteen paired ratios, using fewer child runs than the existing maximum
+of two complete attempts. Warmup remains two rounds, and there is no retry in
+comparison mode. The two IO-only cohorts repeat their unchanged candidate.
+Record both raw distributions, guest topology, wall time, and process CPU.
+
+W=3 is selected only if every cohort meets the existing absolute MAD <=5%
+and (p90-p10)/median <=10% limits, every existing performance ratio ceiling
+and exact-output check passes, and the normal qualification job remains
+within its roughly eight-minute envelope including the build. A W=4 failure
+that clears at W=3 while CPU work stays comparable supports sensitivity to
+CPU availability; it does not establish the identity of competing work.
+If the comparison identifies a different cause, stop for owner review.
+Native relative controls and ABOVE_NORMAL priority remain unselected trials;
+an observed failure does not authorize changing the thresholds.
+
+### Worker-count result and selection
+
+The ordinary W=3 qualification at `268f3705`, run
+[34556567464](https://github.com/mbbill/Whitefoot/actions/runs/34556567464),
+passed all five cohorts on their first attempt. Its Windows job took 6m14s
+including the build, on an Intel Xeon 6973P-C guest reporting two cores and
+four logical processors. Its paired spreads were 5.09%, 6.85%, 1.49%, 2.05%,
+and 3.56%, in the standing cohort order. The Windows job completed and its
+artifact was retained before the remaining Linux/macOS jobs in that older
+workflow were cancelled to release the branch's comparison slot.
+
+The same-head, same-VM comparison at `dcfb85c9`, run
+[34557079832](https://github.com/mbbill/Whitefoot/actions/runs/34557079832),
+used an EPYC 7763 guest reporting two cores and four logical processors, mask
+0xf, normal child priority, Windows Server 2025 build 26100, image
+20260907.229.1, clang 20.1.8, and Rust 1.98.1. Both policies' recorded ratios
+and spreads meet all five cohorts' bounds; enforcement selects W=3. The job
+took 6m31s including the build. All recorded children
+passed the unchanged exact stdout, empty stderr and exit-status checks. The
+required-IOCP check passed on every line that enables it, and the untimed
+observed link reported `grants=1024`.
+
+These are the unadjusted paired-ratio statistics. Spread is
+`(p90-p10)/median`, with the script's existing nearest-index quantiles; MAD
+is also divided by the median. Neither is a standard deviation.
+
+| Cohort | W=4 MAD | W=4 spread | W=3 MAD | W=3 spread |
+|---|---:|---:|---:|---:|
+| compute | 0.51% | 7.43% | 0.26% | 3.07% |
+| io-warm | 1.15% | 5.01% | 0.75% | 4.84% |
+| mixed-iocp | 0.35% | 1.26% | 0.16% | 1.07% |
+| mixed-full | 0.47% | 5.86% | 0.33% | 1.59% |
+| mixed-total | 1.28% | 5.04% | 0.52% | 1.40% |
+
+For clarity, the candidate's raw wall-time distribution, before dividing by
+its serial reference, is separately reported below. The IO-only rows repeat
+the same candidate configuration: changing the policy limit does not add
+compute workers to those programs.
+
+| Cohort | W=4 wall MAD | W=4 wall spread | W=3 wall MAD | W=3 wall spread |
+|---|---:|---:|---:|---:|
+| compute | 0.27% | 7.13% | 0.29% | 5.98% |
+| io-warm | 0.97% | 3.72% | 0.61% | 3.58% |
+| mixed-iocp | 0.18% | 0.61% | 0.12% | 0.41% |
+| mixed-full | 0.31% | 6.03% | 0.35% | 1.19% |
+| mixed-total | 1.07% | 4.97% | 0.37% | 1.37% |
+
+The compute median increases from 1685.936 to 1992.699 ms, an 18.2% cost for
+using three workers; its paired ratio to sequential is still 0.4177 against
+the unchanged 0.90 ceiling. Its process-CPU median decreases from 6515.625 to
+5906.250 ms. Mixed-full medians decrease from 162.346 to 158.928 ms, and
+mixed-total from 163.569 to 158.983 ms. Every speed and stability threshold
+remains numerically and definitionally unchanged.
+
+Provisionally select W=3 for the four-logical-processor qualification: it satisfies the
+existing bounds on both measured CPU families, keeps the job below eight
+minutes, and narrows the three parallel cohorts' spreads in the matched
+comparison. This is a qualification resource choice, not a runtime speedup.
+The W=4 comparison also passed, so this run does not reproduce the old failed
+cohorts or identify their cause. The proposed host-contention explanation
+remains unconfirmed; there is no contrary cause identified by this trial.
+No relative native-noise adjustment or priority change is needed to obtain
+these results. Reopen this policy if W=3 still fails the unchanged bounds on
+a later runner; retain raw wall and paired-ratio distributions before
+attributing that failure to the host or runtime.
+
+The affected implementation and standing guidance are the Windows benchmark
+script, its workflow entry, this bundle's README, and the parallelism memory.
+This selection changes no compiler, runtime, language rule, conformance case,
+or ordinary program's default worker count.
+
+### Reopened after a same-head failure
+
+The next same-head comparison,
+[34558846333](https://github.com/mbbill/Whitefoot/actions/runs/34558846333),
+at `6e95208a` on a Xeon 8573C guest reporting two cores / four logical
+processors, failed compute stability at W=3. Its paired MAD/spread was
+0.33%/12.19%, against 2.22%/48.24% at W=4. The W=3 raw wall spread was
+13.55%, while its process-CPU spread was 3.06%; the W=4 values were 49.07%
+and 6.95%. Slow parallel samples cluster in rounds 2--5 under both worker
+counts. This reopens the sufficiency of the worker-count-only policy. The
+ordinary W=3 qualification at the same head passed on an EPYC guest, so
+neither that success nor the preceding successes establish stable behavior
+on all hosted allocations. No compiler/runtime defect is isolated by this
+observation; the CPU-availability explanation remains a hypothesis.
+
+Before choosing a relative criterion, add a W=3 native scheduling control to
+every cohort using the existing scalar Rust/Rayon layout twin. Its long
+control repeats the known full-width layout result three times inside one
+pool; its short control uses the known half-width result once. The control
+is a CPU-availability witness, not an I/O throughput reference. It must use
+the same affinity, normal priority, runner, exact-output checks and reference
+sample, with vectorization disabled. Keep fifteen Whitefoot pairs, two
+warmups, at most one retry, every cohort, and every performance ceiling.
+
+The proposed stability calculation compares the paired Whitefoot/reference
+and native/reference distributions: Whitefoot's relative MAD may exceed the
+native control's by at most 0.05, and its relative p90--p10 spread by at most
+0.10. These retain the numerical limits as percentage-point margins, but
+change the criterion from absolute to relative as the owner proposed; raw
+wall and paired spreads must both remain visible. This is not a claim that
+the original absolute bound passed. Missing control samples, wrong output,
+nonfinite values, or a Whitefoot excess beyond either margin must fail.
+
+Select this protocol only if the native control provides usable concurrent
+CPU work, all five cohorts meet these predeclared margins and unchanged speed
+bounds, and the qualification job remains within roughly eight minutes
+including build. The control may not excuse unrelated I/O-specific variation.
+Inspect round-by-round wall and process-CPU times, native CPU/wall concurrency,
+and control duration before attributing excess wall variation to host CPU
+availability. Subtracting two distribution spreads does not itself establish
+that their slowdowns occurred together. If the independent control stays
+quiet while Whitefoot alone remains noisy, do not call the cause generic host
+contention. Priority changes remain a
+separate, unselected option. Record the control's own distribution, not just
+the residual that passes a bound.
+
+### Native control qualification, 2026-09-11
+
+[Run 34560763765, Windows job 103142831746](https://github.com/mbbill/Whitefoot/actions/runs/34560763765/job/103142831746)
+at `a93e4c1c` passes all five cohorts on attempt 1 in **6m18s including
+build**. The EPYC 7763 guest reports two cores and four logical processors;
+W=3, normal priority and mask `0xf` apply. Each cohort contains fifteen
+Whitefoot pairs and fifteen native samples. Exact outputs, IOCP assertions
+and the untimed positive-grant check pass. Other platforms' unrelated
+measurement jobs are not part of this Windows qualification result.
+
+All entries below are percentages. The paired columns use the shared
+reference; excess is the positive difference, in percentage points.
+
+| Cohort | WF paired MAD / spread | Native paired MAD / spread | Excess MAD / spread | WF raw wall MAD / spread | Native raw wall MAD / spread |
+|---|---:|---:|---:|---:|---:|
+| compute | 0.31 / 1.11 | 0.31 / 1.11 | 0.00 / 0.00 | 0.35 / 0.78 | 0.29 / 0.96 |
+| io-warm | 2.98 / 9.59 | 0.76 / 5.56 | 2.22 / 4.04 | 1.09 / 6.58 | 0.46 / 1.72 |
+| mixed-iocp | 0.27 / 1.38 | 0.43 / 1.45 | 0.00 / 0.00 | 0.16 / 0.66 | 0.55 / 1.41 |
+| mixed-full | 0.32 / 1.63 | 0.11 / 1.25 | 0.21 / 0.38 | 0.56 / 1.55 | 0.25 / 0.95 |
+| mixed-total | 0.97 / 13.54 | 0.51 / 10.02 | 0.46 / 3.52 | 0.92 / 17.41 | 0.54 / 5.84 |
+
+The four speed ratios are 0.4192 / 1.0180 / 0.5812 / 0.5828, below their
+unchanged 0.90 / 1.10 / 0.95 / 0.95 ceilings. Native median CPU/wall ratios
+are 2.72--2.79. Its compute median is 956.879 ms against Whitefoot's
+1996.911 ms; short-control medians are 171.733--172.717 ms against
+159.097--274.122 ms. It provides substantial concurrent CPU work on the
+same duration scale, with no I/O, compiler or Whitefoot runtime involved.
+
+Mixed-total is the discriminating cohort: the old absolute paired-spread
+bound would fail, while the new paired excess is 3.52 points. In round 7,
+the native child slows to 208.810 ms (484.375 ms CPU), Whitefoot full to
+187.073 ms (375.000 ms CPU), and the sequential reference to 285.851 ms
+(250.000 ms CPU). Their usual medians are approximately 173 / 161 / 275 ms.
+In round 3, the native child runs first and stays near its median, followed
+by Whitefoot full at 329.969 ms and its reference at 394.954 ms, both with
+less process CPU than their medians. These short disturbances and the
+independent native slowdown are consistent with changing CPU availability.
+They do not identify the host process or prove that every slow sample has
+the same cause. Raw widths and paired widths are distinct: the raw
+Whitefoot/native spread difference here is 11.58 points, not the 3.52-point
+paired excess that the specified protocol judges.
+
+Select the native-relative protocol with W=3 on these measured grounds,
+subject to the same-head worker comparison before publication. Keep the
+five/ten-point margins, all speed bounds and the duration constraint. This
+changes the stability question rather than claiming the old absolute bound
+became stable. Reopen if the native control lacks concurrent work or if
+Whitefoot-only variation defeats the stated margins. Priority elevation
+remains unselected. No production compiler/runtime setting changes.
+
+The raw artifact and its component distributions support this table. That
+run's rendered excess columns incorrectly show zero because PowerShell chose
+the integer overload of `Math.Max(0, value)`. Qualification used direct
+floating-point subtraction and was unaffected. The display now uses `0.0`;
+an isolated check of the actual summary code requires nonzero 2.22% / 3.52%
+cells, and rejects the previous rendering.

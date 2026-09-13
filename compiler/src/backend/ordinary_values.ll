@@ -102,4 +102,3 @@ entry:
   call void @wf__body_send_once(ptr %result, ptr %send, ptr %view, i64 %start, i64 %end)
   ret void
 }
-

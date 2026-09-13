@@ -1,0 +1,218 @@
+# Serves research/experiments/compute-bench: the compute scoreboard on hosted
+# runners. One question per leg -- for each kernel, at each width, is the
+# Whitefoot program built with plain `--par` the fastest thing in the row? --
+# answered on a real Linux host and on an ordinary Apple M1.
+#
+# It runs on demand, and automatically only when what it measures changes: the
+# scheduler runtime, the floor, the emitter and the lowering that decide what
+# `--par` actualizes, the compiler driver, or the bundle itself.
+#
+# FAILURE POLICY. The job fails on a `deps`, `build` or `verify` failure and on
+# nothing else. The `compare` step's exit status is the reducer's, and the
+# reducer fails only on a missing or malformed row. No ratio, no spread, no
+# ordering and no elapsed time selects a pass anywhere in this workflow. If a
+# later change wants a performance gate it belongs in a separate target the
+# repository gate does not run: selecting acceptance on measured time is
+# exactly what an earlier bundle's band-gating jobs did, and exactly why they
+# are not reused here. `timeout-minutes` below bounds a stuck runner; it
+# decides no result.
+#
+# Every table a batch relies on is copied by hand into
+# `research/investigations/compute-runtime/RESULTS.md` with its run id,
+# because job logs and artifacts expire.
+name: compute-bench
+
+on:
+  workflow_dispatch:
+    # An A/B twin on a quiet runner: a non-empty control value builds the second
+    # image and adds the wf-b rows (README, "The A/B twin"); such a table is
+    # never a recorded plain table. `gap_us` is not a control and builds
+    # nothing, but marks its table the same way. Pushes always run plain, back
+    # to back, with no twin.
+    inputs:
+      par_control_flags:
+        description: WF_PAR_CONTROL_FLAGS for the B image (emission)
+        default: ""
+        type: string
+      runtime_control_flags:
+        description: WF_RUNTIME_CONTROL_FLAGS for the B image (runtime objects)
+        default: ""
+        type: string
+      module_control_flags:
+        description: WF_MODULE_CONTROL_FLAGS for the B image (module and runtime compile)
+        default: ""
+        type: string
+      # The call cadence, and the one input here that is not an A/B control: it
+      # builds nothing, reaches every form alike, and is waited between
+      # consecutive timed calls outside every measured interval (README, "The
+      # gap between calls"). Empty is the back-to-back cadence a recorded table
+      # is taken at; a non-zero value marks its own table `gap_us=` and is
+      # never recorded as a plain one.
+      gap_us:
+        description: WFB_GAP_US, microseconds waited between consecutive timed calls (every form)
+        default: ""
+        type: string
+  push:
+    paths:
+      - 'research/experiments/compute-bench/**'
+      - 'compiler/src/backend/sched/**'
+      - 'compiler/src/backend/wf_floor.c'
+      - 'compiler/src/backend/emitter/**'
+      - 'compiler/src/lowering/**'
+      - 'compiler/src/driver.rs'
+      - 'compiler/src/bin/whitefootc.rs'
+      - '.github/workflows/compute-bench.yml'
+
+# Every shell step runs under `bash -eo pipefail`, so a step that fails behind
+# a pipe fails the step. io-bench.yml carries the same default and records the
+# bug it fixes: a compiler rejection printed into the log while the step
+# stayed green, because the exit status of a pipeline is tee's unless pipefail
+# is set.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: compute-bench-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  bench:
+    name: bench (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Against a stated 15-minute target for a cold leg. It bounds a stuck
+    # runner and nothing else.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    steps:
+      # No historical compiler is built here, so a shallow checkout is enough.
+      # The manifest records the revision from it.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # The scratch root goes through GITHUB_ENV because the `runner` context
+      # is not available to a job-level `env`; a workflow that uses it there
+      # fails validation before any job starts.
+      - name: Record the Rust toolchain and set the scratch root
+        run: |
+          rustup default stable
+          rustc -vV
+          cargo --version
+          echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/scratch" >> "$GITHUB_ENV"
+          # The three A/B controls and the call cadence travel as environment
+          # variables, which the bundle Makefile's `?=` defaults yield to; they
+          # are empty on a push and on a dispatch that set none, so such a run
+          # builds no twin and times its calls back to back.
+          {
+            echo "WF_PAR_CONTROL_FLAGS=${{ inputs.par_control_flags }}"
+            echo "WF_RUNTIME_CONTROL_FLAGS=${{ inputs.runtime_control_flags }}"
+            echo "WF_MODULE_CONTROL_FLAGS=${{ inputs.module_control_flags }}"
+            echo "WFB_GAP_US=${{ inputs.gap_us }}"
+          } >> "$GITHUB_ENV"
+
+      # The OS prefix is load-bearing. Keyed on the three hashes alone, both
+      # legs compute the same key, so whichever leg saved first would hand the
+      # other its `compiler/target` and its foreign oneTBB build -- a Linux
+      # libtbb.so restored into a macOS leg, or the reverse -- and the failure
+      # is a link error in a job that never touched the library, or worse, a
+      # silently stale binary. `runner.os` and `matrix.os` are both prefixed
+      # because the matrix may one day carry two images of the same OS.
+      #
+      # The restore-keys prefix is load-bearing too: with an exact key that
+      # changes only when a lockfile changes, the cache is written once and
+      # never refreshed, so an unchanged-lockfile run that added new
+      # dependencies would rebuild everything. The prefix restores the most
+      # recent same-OS entry and the run saves an updated one.
+      #
+      # The cache is not optional: a miss pays the compiler build and the
+      # oneTBB build together, and that is most of a cold leg.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            compiler/target
+            ${{ runner.temp }}/scratch/whitefoot-compute-deps
+          key: ${{ runner.os }}-${{ matrix.os }}-computebench-${{ hashFiles('compiler/Cargo.lock', 'research/experiments/compute-bench/rayon/Cargo.lock', 'research/experiments/compute-bench/deps.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.os }}-computebench-
+
+      # Pinned to the image's own sources. A preinstalled browser repository
+      # once returned a hash-sum mismatch and failed a run for a reason that
+      # had nothing to do with what was being measured.
+      - name: Install the host toolchain (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
+                       -o Dir::Etc::sourceparts=- update
+          sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
+                       -o Dir::Etc::sourceparts=- install -y --no-install-recommends clang cmake
+          test -x /usr/bin/clang
+          test -x /usr/bin/clang++
+          /usr/bin/clang --version
+          cmake --version
+
+      - name: Record the host toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          test -x /usr/bin/clang
+          test -x /usr/bin/clang++
+          /usr/bin/clang --version
+          /usr/bin/clang++ --version
+          command -v cmake
+          cmake --version
+
+      # So the bundle's `cargo build --locked --offline` works.
+      - name: Fetch the recorded crate dependencies
+        run: cargo fetch --locked --manifest-path compiler/Cargo.toml
+
+      # The only network step in the bundle. Everything after it is offline.
+      - name: Build the pinned schedulers
+        run: make -C research/experiments/compute-bench deps
+
+      - name: Build the kernel images
+        run: make -C research/experiments/compute-bench build
+
+      - name: Verify every form at every emitted width
+        run: make -C research/experiments/compute-bench verify
+
+      # The reducer's exit status is this step's. It fails only on a missing
+      # or malformed row, never on a measurement.
+      - name: Run the timed passes and print the table
+        run: |
+          make -C research/experiments/compute-bench compare \
+            PASSES=5 RESULTS="$RUNNER_TEMP/results"
+
+      - name: Publish the table
+        if: always()
+        run: |
+          {
+            echo "## compute-bench (${{ matrix.os }})"
+            echo
+            echo '```text'
+            cat "$RUNNER_TEMP/results/manifest.txt" 2>/dev/null \
+              || echo "the manifest was not written"
+            echo
+            cat "$RUNNER_TEMP/results/table.txt" 2>/dev/null \
+              || echo "the table was not written"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compute-bench-${{ matrix.os }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/results/manifest.txt
+            ${{ runner.temp }}/results/raw.tsv
+            ${{ runner.temp }}/results/table.txt
+            ${{ runner.temp }}/results/logs/

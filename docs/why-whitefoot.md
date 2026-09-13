@@ -8,7 +8,7 @@ mechanisms. Its historical performance, architecture, and status claims are
 not a description of the current compiler or a promise of global optimality.
 
 For current objectives and tradeoffs, read the [constitution](constitution.md).
-The [compiler README](../compiler/README.md) owns implementation status and the
+The conformance report owns implementation status and the
 [active specification](../spec/kernel-spec.md) owns language semantics. The
 [roadmap](roadmap.md) is reference material outside the working loop. Original
 measurements below retain their conditions; this essay adds no approval or

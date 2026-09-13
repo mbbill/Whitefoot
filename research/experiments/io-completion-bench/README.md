@@ -2,7 +2,7 @@
 
 Program-level measurement of ordinary linked I/O functions against native
 controls and the same Whitefoot source under different lowering options.
-The [C2 measurements](C2-RESULTS.md) and their raw samples describe v0.58;
+The [C2 measurements](C2-RESULTS.md) and their raw samples describe the pre-merge C2 revision (then numbered v0.58);
 the earlier completion-model tables remain historical evidence.
 
 ## What it serves
@@ -38,8 +38,7 @@ cannot report a time.
 ### The many-files workload
 
 `programs/many_files_wide.wf` opens and reads four generated files per round;
-`programs/many_files_wide8.wf` widens the same source shape to eight. Under
-v0.58, each open and read uses the same exclusive `HandleFactory`, so distinct
+`programs/many_files_wide8.wf` widens the same source shape to eight. Under the ordinary-host-values amendment, each open and read uses the same exclusive `HandleFactory`, so distinct
 files and destination buffers do not make those calls independent. The
 programs retain their source width but execute the calls sequentially.
 `programs/many_files_narrow.wf` is the same work written as the natural
@@ -78,7 +77,7 @@ keep the two tables comparable and roughly equal in wall time.
 `read_heavy_narrow.wf` is the natural loop: one read per iteration into one
 destination buffer, eight such loops so that each stays on one file.
 `read_heavy_wide8.wf` states eight reads consecutively per round into eight
-buffers, which is the shape the lowering can overlap. Read *k* of a run takes
+buffers. Their shared exclusive factory keeps the ordinary calls sequential. Read *k* of a run takes
 its file and its window-aligned offset from *k* alone, so the narrow program,
 the eight-wide one, and every native baseline traverse exactly the same list
 and fold exactly the same value.
@@ -86,7 +85,7 @@ and fold exactly the same value.
 The 4 KiB eight-wide source is also the Windows measurement workload. Its
 eight fixed file names arrive as command arguments and are copied through
 `host_copy_bytes` before `open_file`: ten bytes on a one-byte target and twenty
-UTF-16LE bytes on Windows. The direct and completion builds therefore receive
+UTF-16LE bytes on Windows. The no-overlap and default builds therefore receive
 the same target-native component ranges without either a source fallback or a
 runtime transcode.
 
@@ -101,37 +100,24 @@ and publishes the full transferred byte count beside the checksum. The reason
 is in `workload.h`: the digest is a serial multiply-add chain running at about
 800 MB/s, so folding a whole 64 KiB window costs about 80 us of CPU against a
 134 us uncached read and a 7 us warm one. Folding everything would make the
-warm table pure compute, and would add to the uncached table CPU that the
-eight-wide program can spread across helpers and the sequential one cannot.
+warm table mostly compute. The retained prefix fold keeps both configurations
+focused on I/O costs; widening the source no longer grants parallel reads.
 
 ### The four-stage chain
 
-`chain.c` is not a Whitefoot program and is not one of the three lines above.
-It is the C program design §12's fourth item asks for: the
-`read -> parse -> request -> write` chain of `PARK-ON-MISS.md` §0, on raw
-io_uring, in the four shapes that item names — nested helping, thread
-compensation, the stack switch, and the staged pipeline as it is lowered today
-(one lane, K slots, the loop blocking on the oldest slot's join). It reports
-the dependent stage's in-flight depth beside the wall time, because the claim
-§0 makes is about depth and not about speed.
+`chain.c` is a historical C comparison of the read/parse/request/write chain
+in four forms: nested helping, thread compensation, managed stack switching,
+and the former staged pipeline. It shares this bundle's ring plumbing and
+file fixtures; its measurements remain in
+`research/experiments/park-on-miss-measurements/`.
 
-It lives here rather than in a home of its own because the ring plumbing,
-the generated tree and the file-name format are this bundle's
-(`uring_baseline.h`, `gen.c`, `workload.h`), and a second copy of them would be
-a second thing to keep true. The shape it compares is driven from
-`research/experiments/park-on-miss-measurements/run.sh`, which is where its
-numbers are recorded.
-
-    make -C research/experiments/io-completion-bench chain
-
-One thing is deliberately the same in all four shapes: the ring is driven by
-one reaper thread, so what the four numbers compare is what a worker does when
-it joins an operation that has not completed, and nothing else. The stack
-switch shape links `compiler/src/backend/sched/core.c` and drives it, so that
-shape is the shipped scheduler rather than a model of it — with the one
-difference its own numbers have to be read against, that the park it sleeps on
-is `prim_host.c`'s fallback epoch condition variable and not the bridge's ring
-park, because the bridge is not linked here.
+Its switch control depends on the deleted `wf_sched_core` and managed-record
+interfaces. The retained `chain` target and historical runner therefore do
+not build against the current-stack runtime. They are not canonical test
+targets and must not be used to describe current lowering or current timings.
+Re-measuring this comparison requires a separately identified historical
+runtime checkout or a new, explicitly designed control; this amendment does
+not recreate a managed stack implementation.
 
 Every file is opened once, before the timed region, for the reason the
 read-heavy workload opens once: an `openat` of a cold inode costs more here
@@ -247,7 +233,7 @@ the ratio is against:
   ring of buffers and lets it choose the destination when the bytes arrive,
   rather than committing a buffer per connection before there is anything to
   put in it. The echo is then sent straight out of the buffer the kernel
-  filled, so the data is not copied on either side of the exchange. Exhaustion
+  filled, so there is no extra userspace copy on either side. Exhaustion
   is real and is handled rather than avoided: a receive that finds no buffer
   answers `-ENOBUFS`, and that connection waits for a buffer to come back
   instead of spinning on a re-arm.
@@ -267,11 +253,21 @@ there, since a kernel that refuses the flag refuses it at `io_uring_setup` and
 the server reports that and exits. The protocol does not run it, because a
 poll thread per ring costs a core each and on a four-core host it loses to the
 default by a third. It cannot be combined with the deferred task work above,
-since there the submitting task is the kernel's own.
+since there the submitting task is the kernel's own. The path publishes the
+submission tail and then reads the poll thread's wake-needed flag with a
+sequentially consistent fence between them, as liburing does: a release store
+followed by an acquire load does not order a store against a later load, and
+without the fence a published entry can sit unread behind a sleeping poll
+thread. The path stays off by default and no measurement here enables it.
 
-Everything each server needs is sized from `CONNECTIONS` before the first
-accept: the connection tables are indexed by descriptor, the buffer rings and
-echo queues are fixed arrays, and no server allocates per operation.
+Everything each server needs is sized before the first accept, from
+`CONNECTIONS` by default: the connection tables are indexed by descriptor, the
+buffer rings are fixed arrays, and no server allocates per operation. The
+io_uring reference's echo queue is a list threaded through the worker's own
+provided-buffer records rather than a fixed per-connection array, so its depth
+follows the buffers actually loaned to a connection instead of an assumption
+about how TCP fragments a message; `WF_BENCH_URING_BUFFER_BYTES` and
+`WF_BENCH_URING_BUFFER_COUNT` size that pool for an explicit experiment.
 
 `netload` is the one generator all three are measured with:
 
@@ -316,6 +312,8 @@ the lines it holds.
 
 ## Reproducing
 
+    make -C research/experiments/io-completion-bench programs-check  # compile every program; the gate's `bench-programs` stage
+
     make -C research/experiments/io-completion-bench verify       # bytes only
     make -C research/experiments/io-completion-bench bench        # macOS table
     make -C research/experiments/io-completion-bench bench-pipe
@@ -326,12 +324,23 @@ the lines it holds.
     make -C research/experiments/io-completion-bench linux-read   # Linux tables
 
     make -C research/experiments/io-completion-bench net-tools    # the C tools
+    make -C research/experiments/io-completion-bench uring-check  # the reference's own traces
     make -C research/experiments/io-completion-bench net-verify   # bytes only
     make -C research/experiments/io-completion-bench linux-net    # the TCP table
 
 The TCP targets are Linux-only, as `linux` and `linux-read` are: `epoll_echo`
 and `uring_echo` are written against Linux interfaces, and the workload's
 point is the fastest shape that kernel offers.
+
+`uring-check` is the one target here that measures nothing. It builds
+`uring_echo_check.c`, which includes `uring_echo.c` and replaces only kernel
+setup, `io_uring_enter` and the synchronous send result with a deterministic
+fixture: the buffer-loan queue, the receive re-arm after exhaustion and the
+completion handling those traces drive are the ones the measured binary runs.
+It therefore decides a verdict about the reference without a kernel that
+supports io_uring and without a network, and it is built for both send
+policies, because an inline send and a ring send retire a queue prefix along
+different paths.
 
 On native Windows, `windows-bench.ps1` records matched runtime measurements:
 
@@ -385,13 +394,7 @@ name, and therefore runs four identical batches in one process. Every batch
 resets both fold seeds, so the exact 34-byte oracle is unchanged. Ordinary
 argument-free corpus runs still execute one batch.
 
-Each cohort records fifteen candidate/reference ratios, alternating order in
-each pair, after two unrecorded warm-up pairs. Every sample remains in
-`raw.tsv`. The summary reports wall-time medians, paired ratios, ratio MAD,
-p10/p90 and relative width. The historical 5% MAD and 10% width bands label
-stability only: a wide spread is reported without retrying to select a better
-cohort or failing CI. Speed ratios do not select success. Correct output,
-ordinary scheduler activity and the observed IOCP path remain required.
+Each cohort records fifteen candidate/reference and native/reference ratios after two unrecorded warm-up rounds. The order balances positions and precedence; optional worker-count comparisons share each serial reference and native control. All raw samples remain in `raw.tsv`. The summary reports medians, paired ratios, MAD and percentile spread, including spread relative to the native control. The 5 percentage-point MAD and 10 percentage-point width margins describe stability only: a wide spread is reported without retrying to select a better cohort or failing CI. Speed ratios do not select success. Correct output, ordinary scheduler activity and the observed IOCP path remain required.
 
 Earlier Windows results were collected under a different protocol: PAR-3 kept
 a read outstanding across compute and the following read, and `-Enforce`
@@ -406,6 +409,49 @@ to implement the old rule.
 The host, Windows build, CPU, processor mask, memory, power scheme, toolchain,
 revision and every raw sample ship with the table. A hosted VM is not treated
 as a persistent cross-revision hardware baseline.
+
+The hosted measurement uses one fewer compute worker than the affinity
+mask's logical-processor count, with a minimum of two: W=3 on the four-logical
+runner. The full mask remains available to every child. This leaves scheduler
+capacity for other VM work; it does not reserve an exclusive core or establish
+the physical host's SMT topology. The summary records both the visible count
+and the guest's reported cores/logical processors. Process priority is normal.
+All five cohorts, fifteen Whitefoot pairs and two warmups are retained.
+There is no stability retry and no numerical performance gate.
+
+The native control reuses the existing safe Rust/Rayon layout twin in
+`research/investigations/proof-derived-parallelism/bench/rust/`, built with
+loop and SLP vectorization disabled. It runs the same reduced worker count,
+normal priority, full mask and QPC runner, and must publish the known exact
+layout fold oracle before its time counts. Compute uses three reset-seed
+full-width batches in one pool; the four shorter cohorts use one half-width
+batch. It witnesses concurrent CPU availability during each cohort; it is
+not an I/O throughput baseline or an excuse for variation specific to I/O.
+The summary keeps raw wall and paired distributions visible beside the
+relative margins. The additional control samples add no Whitefoot pair or
+retry, and the job duration remains observable on the hosted runner.
+
+For same-head before/after evidence, dispatch `io-bench` with
+`compare_windows_workers=true`, or pass `-CompareWorkers` to
+`windows-bench.ps1`. That diagnostic runs only the Windows job. Each of the
+fifteen rounds shares one sequential reference and one reduced-count native
+control between full-count and reduced-count candidates. A four-treatment
+Williams order balances positions and immediate precedence every four
+rounds; fifteen rounds differ by one row. It
+uses the existing allowance of two candidate cohorts, with fewer reference
+children and no retries. The IO-only candidates repeat their unchanged
+configuration because they do not use `WF_WORKERS`. The table prints both
+policies' raw paired MAD/median and (p90-p10)/median; the full-count rows are
+diagnostic; the reduced-count rows report the same native-relative stability
+margins. Neither row is filtered by speed or stability. `raw.tsv` records the policy's `worker_limit`, including
+on the shared reference; it is not a count of threads actually running.
+The [selection criterion](../../investigations/io-model/RESULTS.md#windows-hosted-worker-comparison-criterion-2026-09-11)
+records the measured worker-count tradeoff, its later failure, and the
+criterion and measured grounds for the native-relative protocol. On the
+recorded four-logical-processor guest, the earlier protocol passed every
+cohort in 6m18s including build; mixed-total still exceeds the old absolute
+spread bound. Neither a passing relative margin nor these finite samples
+guarantee the absence of host noise or identify every slow sample's cause.
 
 `linux` builds `linux.Dockerfile` and runs the whole pipeline inside one
 container, because the generated tree must sit on a container-local

@@ -31,6 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # `completion-test` writes its harness under this root, and the step below
+      # runs that harness by path. Naming the root here keeps the two agreed; it
+      # is set from a step because the `runner` context is not available to a
+      # job-level `env:` block.
+      - name: Set the scratch root
+        run: echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/whitefoot" >> "$GITHUB_ENV"
+
       - name: Install the host toolchain
         run: |
           sudo apt-get update
@@ -83,26 +90,28 @@ jobs:
       # actually selects between.
       - name: Completion harness with io_uring required
         run: |
-          harness="$HOME/do_not_scan/whitefoot-completion-test/harness"
+          harness="$WHITEFOOT_SCRATCH_ROOT/whitefoot-completion-test/harness"
           for helpers in 0 1 4; do
             echo "== WF_REQUIRE_LINUX_IO_URING=1 WF_IO_HELPERS=$helpers =="
             WF_REQUIRE_LINUX_IO_URING=1 WF_IO_HELPERS="$helpers" \
-              "$harness" "$HOME/do_not_scan/whitefoot-completion-test"
+              "$harness" "$WHITEFOOT_SCRATCH_ROOT/whitefoot-completion-test"
           done
 
       - name: Address and undefined sanitizers
         run: make -C compiler completion-sanitize CC=/usr/bin/clang
 
-      # Two thread-sanitizer runs, because they cover disjoint code. The
+      # Separate thread-sanitizer runs cover distinct code. The
       # core/read probe links neither the bridge nor the writer scheduler by
       # construction, so the helper pool, the queue wake and the join spin --
       # every thread the delivered runtime actually starts -- are outside it.
       # The default-route probe runs those, on the helper policy a delivered
-      # program gets.
+      # program gets. The deque probe stresses native ring reuse and live
+      # counter reads without switching away from host thread stacks.
       - name: Thread sanitizer
         run: |
           make -C compiler completion-core-read-tsan CC=/usr/bin/clang
           make -C compiler completion-default-route-tsan CC=/usr/bin/clang
+          make -C compiler sched-deque-tsan CC=/usr/bin/clang
 
       - name: Thread sanitizer over the bridge and the ring
         run: make -C compiler completion-tsan CC=/usr/bin/clang
@@ -121,6 +130,42 @@ jobs:
         run: |
           clang --version
           systeminfo | grep -E '^(OS Name|OS Version|System Type|Total Physical Memory)' || true
+
+      - name: Exercise native deque reuse and live counters
+        run: |
+          for stats in 1 0; do
+            suffix=; if test "$stats" = 0; then suffix=-no-stats; fi
+            clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+              -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS="$stats" \
+              compiler/src/backend/sched/deque_probe.c compiler/src/backend/sched/entry.c compiler/src/backend/sched/prim_windows.c \
+              -o "$RUNNER_TEMP/sched-deque-probe$suffix.exe"
+            "$RUNNER_TEMP/sched-deque-probe$suffix.exe"
+          done
+
+      # The machine fact the idle window's admission test reads, through the
+      # Windows leaf that answers it: the CPU sets this process may run on and
+      # how many efficiency classes they carry. The probe asserts the rule's two
+      # directions rather than a topology, so a uniform runner and a hybrid one
+      # both pass; what running it here proves is that the leaf's own path --
+      # the run-time symbol lookup, the sized report, the group and affinity
+      # filter -- answers on a real Windows host rather than only compiling.
+      - name: Read this host's CPU performance levels through the Windows leaf
+        run: |
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            compiler/src/backend/sched/cpu_levels_probe.c compiler/src/backend/sched/entry.c \
+            compiler/src/backend/sched/prim_windows.c -o "$RUNNER_TEMP/sched-cpu-levels.exe"
+          WF_WORKERS=2 "$RUNNER_TEMP/sched-cpu-levels.exe"
+          WF_WORKERS=8 "$RUNNER_TEMP/sched-cpu-levels.exe"
+
+      - name: Exercise compute startup failures and frame lifetime
+        run: |
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -DWF_SCHED_TEST \
+            compiler/src/backend/sched/smoke.c compiler/src/backend/sched/entry.c \
+            compiler/src/backend/sched/prim_windows.c -o "$RUNNER_TEMP/sched-smoke.exe"
+          for mode in normal owner-fail worker-fail partial partial-three startup-delayed startup-partial; do
+            WF_WORKERS=4 "$RUNNER_TEMP/sched-smoke.exe" "$mode"
+          done
+          WF_WORKERS=1 "$RUNNER_TEMP/sched-smoke.exe"
 
       # The runtime the driver stages on this target, in the three groups it
       # stages: the scheduler core with its Windows leaf, the completion
@@ -202,7 +247,7 @@ jobs:
           tr -d $'\r' < "$record-adapter.txt" | grep -F 'route=posix-adapter' > /dev/null
 
       # The ring alone, with no bridge at all: a real positioned transfer found
-      # by the record's own address, published through the scheduler core, and
+      # by the record's own address, release-published by the adapter probe, and
       # waited for on the ring's own park.
       #
       # `windows_runtime.c` is in this link and is not the bridge: the ring's
@@ -217,6 +262,7 @@ jobs:
             -I compiler/src/backend/completion \
             compiler/src/backend/sched/core.c \
             compiler/src/backend/sched/prim_windows.c \
+            compiler/src/backend/sched/entry.c \
             compiler/src/backend/completion/runtime.c \
             compiler/src/backend/completion/wait_windows.c \
             compiler/src/backend/completion/native_contract.c \
@@ -290,12 +336,7 @@ jobs:
               "$RUNNER_TEMP/completion/windows-ordinary-values-probe.exe" "$probe_dir"
           done
 
-      # The whole linked runtime plus the floor, under the warning set the
-      # repository gate uses. There is deliberately no second pass under
-      # `-DWF_SCHED_ENUMERATE`: the enumerator (`sched/enumerate.c`) is a POSIX
-      # test harness that reserves its own coroutine stacks with `mmap`, it is
-      # not staged into any link on this target, and it is not meant to compile
-      # here.
+      # Strict-check the same native units the ordinary compiler links.
       - name: Strict-check the complete Windows runtime
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -fsyntax-only \
@@ -924,37 +965,14 @@ jobs:
             "$par_dir/observed.normalized" > /dev/null || \
             fail_par "no non-owner worker executed source work"
 
-      # The floor, on a pool stack that is a fiber.
-      #
-      # Every other step here would pass with the floor off: this is the one
-      # that says an overflow *on a stack the scheduler core made* is still the
-      # one classified abnormal end a correct program can reach. It matters
-      # more on this platform than on the other, because the two halves it
-      # exercises are both Windows's own -- a fiber's stack is the kernel's and
-      # not a mapping of ours, and the classification is by exception code with
-      # `SetThreadStackGuarantee`'s emergency stack under it, where POSIX
-      # classifies by address against bounds the switch writes.
-      #
-      # Two configurations, because they reach the guard on different stacks:
-      # at the shipped default the recursion is carried by whichever thread
-      # the pool gives it, and at `WF_WORKERS=4` the deep half is handed out,
-      # so the descent runs on a worker's pool fiber rather than the entry's.
-      #
-      # Several rounds of each, because the one defect this step has found so
-      # far was intermittent: a guarantee belongs to the calling thread or
-      # fiber, the floor had set it on the threads' host stacks only, and a
-      # pool fiber overflowed with nothing under the handler but what was left
-      # of the page the guard had been. How much that was depended on where in
-      # the page the descent stopped, which the steals decide, so the same
-      # bytes passed on one push and segfaulted on the next
-      # (`sched/prim_windows.c`, `wf_prim_fiber_main`). One draw is not
-      # evidence against that class of defect; a handful on each stack is.
-      - name: Require the floor to classify an overflow on a pool fiber
+      # Ordinary command and compute-worker threads each install the floor.
+      # Repeat the deep parallel recursion to cover whichever thread steals it.
+      - name: Require the floor to classify an overflow on an ordinary compute thread
         run: |
           fail_floor() {
             local stage="$1"
             local status="${2:-1}"
-            echo "::error title=Windows floor on a pool fiber::${stage}"
+            echo "::error title=Windows floor on a compute thread::${stage}"
             exit "$status"
           }
           floor_dir="$RUNNER_TEMP/whitefoot-e2e/windows-floor"

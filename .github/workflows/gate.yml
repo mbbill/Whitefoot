@@ -44,7 +44,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-14]
-        stage: [static, unit, sampling, corpus, conformance, research]
+        stage: [static, unit, sampling, corpus, conformance, research, bench-programs]
         include:
           # Everything that reads the tree without running a compiled program.
           - stage: static
@@ -66,10 +66,23 @@ jobs:
           # The maintained executable tests under `research/`.
           - stage: research
             run: make research-tests
+          # The I/O measurement bundle's programs, compiled with the current
+          # compiler and not run: the bench workflow runs them, and this is
+          # what keeps a language change from emptying its tables.
+          - stage: bench-programs
+            run: make bench-programs
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Everything the gate writes outside the checkout goes under one scratch
+      # root. Naming it here rather than leaving the Makefile default makes the
+      # cached research target directory below and the directory `make` writes
+      # the same path on both runner images. It is set from a step because the
+      # `runner` context is not available to a job-level `env:` block.
+      - name: Set the scratch root
+        run: echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/whitefoot" >> "$GITHUB_ENV"
 
       # `spec-append-only` reads `main` as a local ref: no released
       # specification archive may differ from main's. A CI checkout
@@ -122,7 +135,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/do_not_scan/whitefoot-research-tests-target
+            ${{ runner.temp }}/whitefoot/whitefoot-research-tests-target
           key: gate-${{ matrix.os }}-deps-${{ hashFiles('compiler/Cargo.lock', 'research/**/Cargo.lock') }}
           restore-keys: |
             gate-${{ matrix.os }}-deps-

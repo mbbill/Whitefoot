@@ -100,9 +100,7 @@ fn discard_open_result(factory: &uniq HandleFactory, outcome: own FileOpenOutcom
   return unit;
 }
 
-fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(name), writes(name) contract {
-  ensures len_of(deref(name)) == len_of(deref(entry(name)));
-} {
+fn name_at(name: &uniq MutSlice<u8>, index: own u64) -> result: own unit reads(name), writes(name) {
   doc "Renders the fixed ten-byte generated file name for one index as f00000.dat.";
   let room = len_of(deref(name));
   let sized = room >= 10_u64;
@@ -142,9 +140,7 @@ fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(nam
   return unit;
 }
 
-fn render_u64(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) contract {
-  ensures len_of(deref(destination)) == len_of(deref(entry(destination)));
-} {
+fn render_u64(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Renders one twenty-digit zero-padded decimal number and reports the position after it.";
   let room = len_of(deref(destination));
   let remaining = value;
@@ -249,28 +245,52 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
     let seventh = index +wrap 6_u64;
     let eighth = index +wrap 7_u64;
     region {
-      let rendered_a = name_at(name: &uniq name_a, index: index);
+      let name_a_window = mut_slice_of(&uniq name_a);
+      region {
+        let rendered_a = name_at(name: &uniq name_a_window, index: index);
+      }
     }
     region {
-      let rendered_b = name_at(name: &uniq name_b, index: second);
+      let name_b_window = mut_slice_of(&uniq name_b);
+      region {
+        let rendered_b = name_at(name: &uniq name_b_window, index: second);
+      }
     }
     region {
-      let rendered_c = name_at(name: &uniq name_c, index: third);
+      let name_c_window = mut_slice_of(&uniq name_c);
+      region {
+        let rendered_c = name_at(name: &uniq name_c_window, index: third);
+      }
     }
     region {
-      let rendered_d = name_at(name: &uniq name_d, index: fourth);
+      let name_d_window = mut_slice_of(&uniq name_d);
+      region {
+        let rendered_d = name_at(name: &uniq name_d_window, index: fourth);
+      }
     }
     region {
-      let rendered_e = name_at(name: &uniq name_e, index: fifth);
+      let name_e_window = mut_slice_of(&uniq name_e);
+      region {
+        let rendered_e = name_at(name: &uniq name_e_window, index: fifth);
+      }
     }
     region {
-      let rendered_f = name_at(name: &uniq name_f, index: sixth);
+      let name_f_window = mut_slice_of(&uniq name_f);
+      region {
+        let rendered_f = name_at(name: &uniq name_f_window, index: sixth);
+      }
     }
     region {
-      let rendered_g = name_at(name: &uniq name_g, index: seventh);
+      let name_g_window = mut_slice_of(&uniq name_g);
+      region {
+        let rendered_g = name_at(name: &uniq name_g_window, index: seventh);
+      }
     }
     region {
-      let rendered_h = name_at(name: &uniq name_h, index: eighth);
+      let name_h_window = mut_slice_of(&uniq name_h);
+      region {
+        let rendered_h = name_at(name: &uniq name_h_window, index: eighth);
+      }
     }
     region {
       let native_window_103 = slice_of(&name_a);
@@ -721,7 +741,10 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
   let room = len_of(line);
   let cursor = 0_u64;
   region {
-    set cursor = render_u64(destination: &uniq line, at: cursor, value: sum);
+    let line_window = mut_slice_of(&uniq line);
+    region {
+      set cursor = render_u64(destination: &uniq line_window, at: cursor, value: sum);
+    }
   }
   let space_fits = cursor < room;
   if space_fits {
@@ -729,7 +752,10 @@ fn exercise(cwd: &DirectoryRead, out: &uniq OutputStream, files: &uniq HandleFac
     set cursor = cursor +wrap 1_u64;
   }
   region {
-    set cursor = render_u64(destination: &uniq line, at: cursor, value: bytes);
+    let line_window = mut_slice_of(&uniq line);
+    region {
+      set cursor = render_u64(destination: &uniq line_window, at: cursor, value: bytes);
+    }
   }
   let end_fits = cursor < room;
   if end_fits {

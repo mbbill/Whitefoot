@@ -182,7 +182,7 @@ int wf_completion_test_poll(
  *   - `test_drain_wakes_the_registered_token_owner`: the consume-wait
  *     registration.  Its property -- a completion elsewhere wakes the thread
  *     that registered for it -- survives as the in-place waiter, and is tested
- *     by `test_a_completion_claims_an_in_place_registration` and
+ *     by `test_a_completion_publishes_results` and
  *     `test_a_helper_completion_wakes_a_waiting_join`.
  *   - `test_bridge_capacity_falls_back_per_operation` and
  *     `test_open_capacity_refuses_and_resubmits`: the per-operation capacity
@@ -214,6 +214,15 @@ typedef struct park_context {
     uint64_t epoch;
     enum wf_completion_park_result result;
 } park_context;
+
+static _Atomic(wf_completion_wait *) watched_wait;
+static _Atomic unsigned watched_returns;
+
+void wf_completion_test_wait_return(wf_completion_wait *wait) {
+    if (atomic_load_explicit(&watched_wait, memory_order_acquire) == wait) {
+        atomic_fetch_add_explicit(&watched_returns, 1u, memory_order_release);
+    }
+}
 
 static void *park_thread(void *opaque) {
     park_context *context = opaque;
@@ -256,15 +265,15 @@ static void harness_record_init(
     enum wf_file_operation_kind kind
 ) {
     memset(record, 0, sizeof(*record));
-    wf_sched_record_init(&record->sched);
+    wf_completion_record_init(record);
     record->request.kind = kind;
     record->opened_descriptor = -1;
     record->open_outcome = WF_FILE_OPEN_SUCCEEDED;
 }
 
 static int harness_record_done(const wf_completion_record *record) {
-    return __atomic_load_n(&record->sched.state, __ATOMIC_ACQUIRE)
-        == WF_SCHED_DONE;
+    return atomic_load_explicit(&record->state, memory_order_acquire)
+        == WF_COMPLETION_DONE;
 }
 
 /* Submits one record to the bounded adapter and runs it on this thread. */
@@ -393,26 +402,18 @@ static int test_exactly_one_completion_per_submission_under_race(
     return 0;
 }
 
-/* A publisher claims an in-place registration before it stores DONE.
- *
- * This is the I/O half of §6's handshake with no stack to park: a thread that
- * waits in place registers `WF_SCHED_WAITER_IN_PLACE` on its own record, and
- * the one publisher takes that registration back with a compare-exchange
- * before storing DONE, so exactly one of the two owns the wake.  Checked
- * without a park so the answer is a fact rather than a sample: after the
- * publication the registration is gone and the state is DONE. */
-static int test_a_completion_claims_an_in_place_registration(void) {
+/* Publication makes a record's result available through DONE, including
+ * when no caller has registered a wait. This checks record publication;
+ * the concurrent wake protocol is exercised separately. */
+static int test_a_completion_publishes_results(void) {
     wf_completion_record record;
 
     harness_record_init(&record, WF_FILE_PREAD);
-    CHECK(record.sched.state == WF_SCHED_PENDING);
-    CHECK(record.sched.waiter == NULL);
-    record.sched.waiter = WF_SCHED_WAITER_IN_PLACE;
+    CHECK(record.state == WF_COMPLETION_PENDING);
     record.result.kind = WF_FILE_PREAD;
     record.result.value = 7;
     wf_completion_record_complete(&record);
     CHECK(harness_record_done(&record));
-    CHECK(record.sched.waiter == NULL);
     CHECK(record.result.value == 7);
 
     /* A record no one waits on is published just the same, and the publisher
@@ -421,7 +422,6 @@ static int test_a_completion_claims_an_in_place_registration(void) {
     record.result.kind = WF_FILE_CLOSE;
     wf_completion_record_complete(&record);
     CHECK(harness_record_done(&record));
-    CHECK(record.sched.waiter == NULL);
     return 0;
 }
 
@@ -468,6 +468,10 @@ static int test_unified_wake_epoch(void) {
     parked.result = WF_COMPLETION_PARK_FAILED;
     CHECK(pthread_create(&thread, NULL, park_thread, &parked) == 0);
     CHECK(wait_until_parked(&runtime) == 0);
+    /* Pass the final epoch recheck before notifying: observing the count
+     * alone also permits a not-yet-sleeping thread to cancel its park. */
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_wait_unlock(&runtime.wait);
     before = wf_completion_statistics_snapshot(&runtime);
     wf_completion_notify_compute(&runtime);
     CHECK(pthread_join(thread, NULL) == 0);
@@ -477,6 +481,55 @@ static int test_unified_wake_epoch(void) {
     CHECK(after.compute_notifications == before.compute_notifications + 1);
     CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1);
 
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
+/* A delayed notifier's final locked reset/broadcast can reach a newer
+ * waiter that already captured its epoch. Deliver that exact tail, observe
+ * the real condition wait returning, then require a later notification to
+ * wake the re-sleeping waiter. No sleep duration selects the interleaving. */
+static int test_equal_epoch_notification_rearms_before_resleep(void) {
+    wf_completion_runtime runtime;
+    park_context parked;
+    pthread_t thread;
+    unsigned attempts;
+    unsigned rearmed;
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 1000000};
+
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    wf_completion_notify_compute(&runtime);
+    parked.runtime = &runtime;
+    parked.epoch = wf_completion_wake_epoch(&runtime);
+    parked.result = WF_COMPLETION_PARK_FAILED;
+    atomic_store_explicit(&watched_returns, 0u, memory_order_relaxed);
+    atomic_store_explicit(&watched_wait, &runtime.wait, memory_order_release);
+    CHECK(pthread_create(&thread, NULL, park_thread, &parked) == 0);
+    CHECK(wait_until_parked(&runtime) == 0);
+    wf_completion_wait_lock(&runtime.wait);
+    atomic_store_explicit(&watched_returns, 0u, memory_order_relaxed);
+    atomic_store_explicit(&runtime.wake_needed, 0u, memory_order_seq_cst);
+    wf_completion_wait_wake(&runtime.wait, 1);
+    wf_completion_wait_unlock(&runtime.wait);
+    for (attempts = 0; attempts < 5000; ++attempts) {
+        if (atomic_load_explicit(&watched_returns, memory_order_acquire) != 0u) {
+            break;
+        }
+        (void)nanosleep(&delay, NULL);
+    }
+    CHECK(attempts != 5000);
+    /* The return hook runs with this mutex held. Taking it after observing
+     * the hook passes the waiter's next loop iteration and actual re-sleep. */
+    wf_completion_wait_lock(&runtime.wait);
+    rearmed = atomic_load_explicit(&runtime.wake_needed, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_compute(&runtime);
+    CHECK(pthread_join(thread, NULL) == 0);
+    atomic_store_explicit(&watched_wait, NULL, memory_order_release);
+    CHECK(rearmed == 1u);
+    CHECK(parked.result == WF_COMPLETION_PARK_WOKEN);
+    CHECK(wf_completion_parked_scheduler_count(&runtime) == 0u);
+    CHECK(wf_completion_statistics_snapshot(&runtime).parks == 1u);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
@@ -515,6 +568,8 @@ static int test_one_epoch_wakes_every_announced_thread(void) {
         );
     }
     CHECK(wait_until_parked_count(&runtime, 2u) == 0);
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_wait_unlock(&runtime.wait);
     before = wf_completion_statistics_snapshot(&runtime);
     wf_completion_notify_compute(&runtime);
     for (index = 0; index < 2; ++index) {
@@ -525,6 +580,83 @@ static int test_one_epoch_wakes_every_announced_thread(void) {
     CHECK(after.compute_notifications == before.compute_notifications + 1);
     CHECK(after.wake_signals == before.wake_signals + 1);
     CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1);
+    CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    return 0;
+}
+
+static int test_condition_notifications_coalesce_without_suppressing_external_wakes(void) {
+    wf_completion_runtime runtime;
+    _Atomic unsigned host_wakes;
+    uint64_t epoch;
+    unsigned index;
+
+    atomic_init(&host_wakes, 0);
+    CHECK(wf_completion_runtime_init(&runtime) == 0);
+    epoch = wf_completion_wake_epoch(&runtime);
+
+    /* Model a condition waiter whose notified consumer has not resumed to
+     * withdraw its announcement. No actual host sleep is needed for this
+     * interval; the real-thread test above checks delivery to every sleeper. */
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    wf_completion_wait_unlock(&runtime.wait);
+    for (index = 0; index < 1024u; index += 1u) {
+        wf_completion_notify_target(&runtime);
+    }
+    CHECK(wf_completion_wake_epoch(&runtime) == epoch + 1024u);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 1u);
+
+    /* A new announcement must rearm notification even while the old waiter
+     * remains announced. Its newer epoch cannot inherit the earlier signal. */
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    wf_completion_wait_unlock(&runtime.wait);
+    for (index = 0; index < 1024u; index += 1u) {
+        wf_completion_notify_compute(&runtime);
+    }
+    CHECK(wf_completion_wake_epoch(&runtime) == epoch + 2048u);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 2u);
+    CHECK(wf_completion_parked_scheduler_count(&runtime) == 2u);
+
+    wf_completion_wait_lock(&runtime.wait);
+    atomic_fetch_sub_explicit(&runtime.parked_schedulers, 2u, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_target(&runtime);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 2u);
+
+    /* A cancelled announcement leaves no sleeper. A notification clears its
+     * pending flag, and a later real announcement still rearms the endpoint. */
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    atomic_fetch_sub_explicit(&runtime.parked_schedulers, 1u, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_target(&runtime);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 2u);
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_target(&runtime);
+    CHECK(wf_completion_statistics_snapshot(&runtime).wake_signals == 3u);
+    wf_completion_wait_lock(&runtime.wait);
+    atomic_fetch_sub_explicit(&runtime.parked_schedulers, 1u, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+
+    /* External callbacks retain the original per-publication behavior: a
+     * consumable port token does not imply every old waiter has been woken. */
+    CHECK(wf_completion_set_wake_callback(&runtime, record_host_wake, &host_wakes) == 0);
+    wf_completion_wait_lock(&runtime.wait);
+    wf_completion_announce_park_locked(&runtime);
+    wf_completion_wait_unlock(&runtime.wait);
+    for (index = 0; index < 1024u; index += 1u) {
+        wf_completion_notify_target(&runtime);
+    }
+    CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1024u);
+    wf_completion_wait_lock(&runtime.wait);
+    atomic_fetch_sub_explicit(&runtime.parked_schedulers, 1u, memory_order_relaxed);
+    wf_completion_wait_unlock(&runtime.wait);
+    wf_completion_notify_target(&runtime);
+    CHECK(atomic_load_explicit(&host_wakes, memory_order_relaxed) == 1024u);
+
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
@@ -2254,13 +2386,9 @@ static void *write_after_a_delay(void *opaque) {
 
 /* A completion elsewhere ends a join that is waiting in place.
  *
- * This is the property `test_drain_wakes_the_registered_token_owner` held over
- * the deleted consume-wait registration, in the form the design gives it: the
- * join registers `WF_SCHED_WAITER_IN_PLACE` on its own record, sleeps on the
- * one primitive, and the thread that finishes the operation -- a helper where
- * the pool has one, this thread's own progress pass where it has none -- calls
- * `wf_sched_complete`, which claims the registration and wakes it (design §2's
- * fourth line, §6).
+ * The join announces a wait on the record's current-state predicate. The
+ * thread that finishes the operation publishes its result through
+ * `wf_completion_record_complete` and wakes an announced native waiter.
  *
  * The operation is a read of an empty pipe, so it genuinely cannot finish
  * until another thread writes: a join that did not wait, or a completion that
@@ -2304,53 +2432,12 @@ static int test_a_helper_completion_wakes_a_waiting_join(void) {
     return 0;
 }
 
-/* An I/O join made on a pool stack parks that stack, and the completion
- * resumes it.
- *
- * This is design §11 item 1 in its real-thread form, and the case above in the
- * shape a linked program actually runs: there the join is made from a plain
- * harness thread with no stack to park, so it takes §2's fourth line and waits
- * in place; here the thread enters the core the way `sched/smoke.c` does, the
- * join has a stack, and §2's third line parks it.
- *
- * The operation is completed by a thread of this case's own rather than by an
- * engine, and that is what makes the park unconditional. A record the bounded
- * adapter still holds is run by the joining thread itself, which is the engine
- * doing its job and not a park; a record in the ring is reaped by whichever
- * thread makes the next progress pass. Which of those a real read takes
- * depends on the helper policy and on whether this host has io_uring, so a
- * case that submitted one would assert a park on some gate hosts and not
- * others. A record only another thread can publish takes §2's third line on
- * every host and every helper setting, and it is the same record, the same
- * join entry point and the same publication call
- * (`wf_completion_record_complete`) an operation of any kind ends in.
- *
- * What the counters say is the whole property. `parks` above zero says the
- * stack really parked rather than spinning to DONE; `resumes` equal to `parks`
- * says every parked stack came back; and the join returned the record's own
- * result, so the stack that was resumed is the stack that joined. The
- * publisher sleeps first, so a join that did not park would have to spin on a
- * record nothing had completed: a park that was never resumed is a hang the
- * watchdog reports by name.
- *
- * Three stacks and one thread: the entry takes one, so a park has one to
- * switch to and the exhausted arm is not what is being tested. The core is the
- * process's own `wf__sched_core`, which nothing has started here -- a harness
- * link carries no floor, so no entry started it -- and it stays initialised for
- * the cases after this one, whose joins run on plain threads and wait in place
- * exactly as before.
- *
- * A compute hand-out joined newest-first on the core from a linked program is
- * not duplicated here: `compiler/tests/programs/parallel.rs` runs whole
- * compiled programs whose overlap groups do exactly that, at several worker
- * counts, and reads the core's own grant count back. */
-typedef struct pool_stack_join_context {
-    int failed;
+/* A delayed publisher must wake the ordinary thread waiting in I/O join. */
+typedef struct current_stack_join_context {
     wf_harness_record record;
     int64_t value;
     int error_code;
-    uint64_t publications_before;
-} pool_stack_join_context;
+} current_stack_join_context;
 
 static void *complete_after_a_delay(void *opaque) {
     wf_completion_record *record = opaque;
@@ -2363,50 +2450,22 @@ static void *complete_after_a_delay(void *opaque) {
     return NULL;
 }
 
-static void run_pool_stack_join(void *argument) {
-    pool_stack_join_context *context = argument;
-    wf_completion_record *record = (wf_completion_record *)context->record.bytes;
+/* Generic suspended-stack resumption is retired. The same delayed
+ * publication must wake a native thread blocked in the delivered I/O join. */
+static int test_an_io_join_waits_on_the_current_stack(void) {
+    current_stack_join_context context;
     pthread_t publisher;
-
-    context->failed = 1;
-    if (wf__sched_current_stack() == NULL) {
-        wf_sched_post_status(&wf__sched_core, 0);
-        return;
-    }
-    context->publications_before = wf__completion_publications();
-    harness_record_init(record, WF_FILE_READ);
-    if (pthread_create(&publisher, NULL, complete_after_a_delay, record) != 0) {
-        wf_sched_post_status(&wf__sched_core, 0);
-        return;
-    }
-    wf__completion_file_join(
-        context->record.bytes,
-        &context->value,
-        &context->error_code
-    );
-    if (pthread_join(publisher, NULL) != 0) {
-        wf_sched_post_status(&wf__sched_core, 0);
-        return;
-    }
-    context->failed = 0;
-    wf_sched_post_status(&wf__sched_core, 0);
-}
-
-static int test_an_io_join_on_a_pool_stack_parks_and_is_resumed(void) {
-    pool_stack_join_context context;
-    wf_sched_statistics counts;
-
     memset(&context, 0, sizeof(context));
-    context.value = -1;
-    context.error_code = -1;
-    CHECK(wf_sched_init(&wf__sched_core, 1u, 3u, 256u * 1024u) == 0);
-    CHECK(wf__sched_enter(0u, run_pool_stack_join, &context) == 0);
-    wf_sched_statistics_sum(&wf__sched_core, &counts);
-    CHECK(context.failed == 0);
+    wf_completion_record *record = (wf_completion_record *)context.record.bytes;
+    harness_record_init(record, WF_FILE_READ);
+    uint64_t before = wf__completion_publications();
+    uint64_t parks = wf__completion_wait_announcements();
+    CHECK(pthread_create(&publisher, NULL, complete_after_a_delay, record) == 0);
+    wf__completion_file_join(context.record.bytes, &context.value, &context.error_code);
+    CHECK(pthread_join(publisher, NULL) == 0);
     CHECK(context.value == 11 && context.error_code == 0);
-    CHECK(wf__completion_publications() == context.publications_before + 1u);
-    CHECK(counts.parks >= 1u);
-    CHECK(counts.resumes == counts.parks);
+    CHECK(wf__completion_publications() == before + 1);
+    CHECK(wf__completion_wait_announcements() > parks);
     return 0;
 }
 
@@ -3025,7 +3084,7 @@ static uint64_t monotonic_nanoseconds(void) {
  * costs nothing.
  *
  * It is the record protocol and nothing else: initialise the record, store a
- * result head, publish through `wf_sched_complete`, read DONE.  The claim,
+ * result head, publish through `wf_completion_record_complete`, read DONE.  The claim,
  * the drain and the consume it used to include are deleted with the pool. */
 static int benchmark_record_roundtrip(uint64_t *nanoseconds_per_operation) {
     enum { ITERATIONS = 100000 };
@@ -3120,9 +3179,11 @@ int main(int argc, char **argv) {
         (void)setenv("WF_IO_HELPERS", "1", 0);
     }
     RUN_TEST(test_exactly_one_completion_per_submission_under_race(argv[1]));
-    RUN_TEST(test_a_completion_claims_an_in_place_registration());
+    RUN_TEST(test_a_completion_publishes_results());
     RUN_TEST(test_unified_wake_epoch());
+    RUN_TEST(test_equal_epoch_notification_rearms_before_resleep());
     RUN_TEST(test_one_epoch_wakes_every_announced_thread());
+    RUN_TEST(test_condition_notifications_coalesce_without_suppressing_external_wakes());
     RUN_TEST(test_linux_independent_operations_use_available_target(argv[1]));
     RUN_TEST(test_single_thread_file_progress(argv[1]));
     RUN_TEST(test_bridge_independent_positioned_reads(argv[1]));
@@ -3143,7 +3204,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_helper_count_above_its_bound_is_refused());
     RUN_TEST(test_shutdown_refuses_every_later_entry());
     RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
-    RUN_TEST(test_an_io_join_on_a_pool_stack_parks_and_is_resumed());
+    RUN_TEST(test_an_io_join_waits_on_the_current_stack());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
     RUN_TEST(test_socket_lifecycle_and_the_pair_two_count());

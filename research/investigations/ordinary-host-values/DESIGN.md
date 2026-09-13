@@ -1,9 +1,13 @@
 # Ordinary host values
 
-This is a replacement proposal against `20043721f68eff0c3bdda72762d8b5221473e600`
-(v0.57). The inventory and migration estimates are in [INVENTORY.md](INVENTORY.md)
-and [EXECUTION.md](EXECUTION.md); the unresolved selections are in
-[DECISIONS.md](DECISIONS.md). No proposed rule is implemented by this note.
+This records the ordinary-value design selected for C2, researched against
+`20043721f68eff0c3bdda72762d8b5221473e600` (the branch's former v0.57).
+The combined publication is v0.55 over main's v0.54; the former branch version
+names identify historical research, not released archives. The inventory and
+migration estimates remain in [INVENTORY.md](INVENTORY.md) and
+[EXECUTION.md](EXECUTION.md); the selected alternatives are in
+[DECISIONS.md](DECISIONS.md). The active specification defines the language;
+this note records its selection grounds, not an independent acceptance rule.
 
 ## Boundary
 
@@ -14,10 +18,10 @@ suspension classification, diagnostic origin, or lowering operation. The
 ordinary signature, ownership rules, effect row, and written contracts are the
 entire source boundary. Native definitions are supplied by the build and link.
 
-The existing conditional principle in
+The unconditional principle in
 [the constitution](../../../docs/constitution.md#external-interaction-through-ordinary-objects)
-must eventually lose its exception clause. This investigation does not change
-that document or the active specification.
+states the selected boundary. C2 removes the earlier departure clause rather
+than making a host-specific distinction an available fallback.
 
 ## Declarations and representation
 

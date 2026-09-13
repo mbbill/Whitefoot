@@ -779,6 +779,9 @@ pub enum ReservedDeclarationRole {
     Parameter,
     /// Lexical let binding.
     Let,
+    /// Contract-block definition binder, the `define` of a requires and
+    /// ensures block, which FORM-3 lists as its own carrier role.
+    ContractDefinition,
     /// Header or body-local invariant declaration.
     Invariant,
     /// Counted-range binder.

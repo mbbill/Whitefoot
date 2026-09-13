@@ -1,10 +1,7 @@
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::super::model::{CheckedExpression, CheckedMode, CheckedSetTarget, CheckedStatement};
-use super::{
-    assert_rule, assert_rule_extension, assert_rule_kind, assert_unsupported, with_semantics,
-    with_semantics_extension,
-};
+use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 pub(super) const BORROWED_COLUMNS: &[u8] = br#"struct Columns {
   left: buffer<u64>;
@@ -1282,10 +1279,10 @@ fn same_node_return_rejections_cite_the_first_defined_rule() {
 // ---------------------------------------------------------------------------
 // The reborrow extension: bound call-result borrow holders with unambiguous
 // signature provenance, the non-statement-scoped candidate-position child
-// reborrow, and the grandchild chains they compose. The shipped switch is on,
-// so the extension entry these tests name selects the same judgment as the
-// default one; the default-checker tests below pin that the shipped path
-// admits the shapes v0.30 rejected.
+// reborrow, and the grandchild chains they compose. The extension is the one
+// shipped judgment, checked here through the ordinary `check_semantics`
+// entry; the default-checker tests below pin that the shipped path admits
+// the shapes v0.30 rejected.
 // ---------------------------------------------------------------------------
 
 const PASSTHRU: &[u8] = b"fn passthru['r0](x: &uniq 'r0 i32) -> result: &uniq 'r0 i32 pure {\n  return &uniq 'r0 deref(x);\n}\n\n";
@@ -1302,7 +1299,7 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
     chain.extend_from_slice(
         b"fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &uniq v;\n    let r = passthru(x: &uniq deref(h));\n    set deref(r) = 9_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
-    with_semantics_extension(&chain, |outcome| {
+    with_semantics(&chain, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
             panic!("a bound call-result borrow with one candidate must check: {outcome:?}");
         };
@@ -1313,13 +1310,13 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
     grandchild.extend_from_slice(
         b"fn bump(n: &uniq i32) -> result: own unit writes(n) {\n  set deref(n) = 42_i32;\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &uniq v;\n    let r = passthru(x: &uniq deref(h));\n    region {\n      bump(n: &uniq deref(r));\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
-    with_semantics_extension(&grandchild, |outcome| {
+    with_semantics(&grandchild, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
             panic!("a grandchild chain through a bound result must check: {outcome:?}");
         };
     });
     // A shared bare-holder actual sources a shared result the same way.
-    with_semantics_extension(
+    with_semantics(
         b"fn source['r](x: &'r i32) -> result: &'r i32 pure {\n  return x;\n}\n\nfn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &v;\n    let r = source(x: h);\n    let w = deref(r);\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
@@ -1334,7 +1331,7 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
     recursive.extend_from_slice(
         b"fn twice['q0](x: &uniq 'q0 i32) -> result: &uniq 'q0 i32 pure {\n  let r = passthru(x: &uniq 'q0 deref(x));\n  return &uniq 'q0 deref(r);\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
-    with_semantics_extension(&recursive, |outcome| {
+    with_semantics(&recursive, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
             panic!("a caller-supplied-region chain must check: {outcome:?}");
         };
@@ -1351,7 +1348,7 @@ fn extension_chains_suspend_the_candidate_parent_permanently() {
     later_use.extend_from_slice(
         b"fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &uniq v;\n    let r = passthru(x: &uniq deref(h));\n    let w = deref(h);\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
-    assert_rule_extension(
+    assert_rule(
         &later_use,
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
@@ -1360,7 +1357,7 @@ fn extension_chains_suspend_the_candidate_parent_permanently() {
     second_chain.extend_from_slice(
         b"fn main() -> status: own ExitStatus pure {\n  let v = 5_i32;\n  region {\n    let h = &uniq v;\n    let r = passthru(x: &uniq deref(h));\n    let s = passthru(x: &uniq deref(h));\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
-    assert_rule_extension(
+    assert_rule(
         &second_chain,
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
@@ -1373,7 +1370,7 @@ fn extension_chains_suspend_the_candidate_parent_permanently() {
 /// result it would have to infer an ownership fact for.
 #[test]
 fn extension_rejects_ambiguous_result_provenance() {
-    assert_rule_extension(
+    assert_rule(
         b"fn pick['r](a: &uniq 'r i32, b: &uniq 'r i32) -> result: &uniq 'r i32 pure {\n  return &uniq 'r deref(a);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region {\n    let r = pick(a: &uniq x, b: &uniq y);\n  }\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn1,
         SemanticIssueKind::AmbiguousResultProvenance {
@@ -1387,7 +1384,7 @@ fn extension_rejects_ambiguous_result_provenance() {
 /// OWN-6's own/unit-result rejection.
 #[test]
 fn extension_keeps_non_candidate_children_rejected() {
-    assert_rule_extension(
+    assert_rule(
         b"fn mix['q2](p: &uniq i32, q: &'q2 i32) -> result: &'q2 i32 pure {\n  return &'q2 deref(q);\n}\n\nfn main() -> status: own ExitStatus pure {\n  let x = 1_i32;\n  let y = 2_i32;\n  region 'a {\n    let hx = &uniq x;\n    region {\n      let r = mix(p: &uniq 'a deref(hx), q: &y);\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own6,
         SemanticIssueKind::InvalidChildReborrow {
@@ -1396,10 +1393,9 @@ fn extension_keeps_non_candidate_children_rejected() {
     );
 }
 
-/// The shipped switch is on, so the default checker and the extension entry
-/// are one judgment: the candidate child argument and the bare-holder-sourced
-/// binding that v0.30 rejected at OWN-6 and TYPE-5 are admitted through the
-/// ordinary `check_semantics` path, not only the test-only entry.
+/// The candidate child argument and the bare-holder-sourced binding that
+/// v0.30 rejected at OWN-6 and TYPE-5 are admitted through the ordinary
+/// `check_semantics` path — now the only checked judgment there is.
 #[test]
 fn the_shipped_checker_admits_the_extension_shapes() {
     let mut chain = PASSTHRU.to_vec();
@@ -1434,7 +1430,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
     killed.extend_from_slice(
         b"fn main() -> status: own ExitStatus pure {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n    set deref(r) = 9_u64;\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
     );
-    with_semantics_extension(&killed, |outcome| {
+    with_semantics(&killed, |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
             panic!("the killed bound must not discharge the subscript: {outcome:?}");
         };
@@ -1448,7 +1444,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
     control.extend_from_slice(
         b"fn main() -> status: own ExitStatus pure {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
     );
-    with_semantics_extension(&control, |outcome| {
+    with_semantics(&control, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {
             panic!("without the write the fact must survive and discharge: {outcome:?}");
         };

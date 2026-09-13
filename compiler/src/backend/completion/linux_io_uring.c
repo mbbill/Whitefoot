@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -697,6 +698,17 @@ static int wf_linux_make_room_locked(wf_linux_io_uring_adapter *adapter) {
     }
 }
 
+/* TCP_NODELAY on every socket this ring creates or accepts, right after the
+ * host hands it over.  Nagle's coalescing measured an 11.78x-14.98x
+ * throughput loss and a p99 tail of 41 ms against 2.4 ms without it
+ * (research/investigations/io-model/SCHEDULER-FINDINGS.md, experiment 17).
+ * A refusal leaves an ordinary, working socket -- just one that may coalesce
+ * small writes -- so it is never folded into the operation's own outcome. */
+static void wf_linux_socket_disable_nagle(int descriptor) {
+    int one = 1;
+    (void)setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+}
+
 enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     wf_linux_io_uring_adapter *adapter,
     wf_completion_record *record
@@ -728,6 +740,7 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
         if (descriptor < 0) {
             return WF_LINUX_IO_URING_SUBMIT_INVALID;
         }
+        wf_linux_socket_disable_nagle(descriptor);
         /* The portable value is read out of the union before the native
          * record is written back over it, because the two share the arm. */
         record->request.operation.endpoint.address_length =
@@ -914,6 +927,7 @@ static void wf_linux_complete_record(
             /* The kernel wrote the peer's own record and its length into the
              * request; the same rewrite the adapter's leaf performs puts it
              * in the form the accept join publishes. */
+            wf_linux_socket_disable_nagle(completion_result);
             wf_socket_publish_peer(&record->request);
             result.value = completion_result;
         }
@@ -1194,19 +1208,10 @@ int wf_linux_io_uring_park(
         return 0;
     }
     /* Sequentially consistent, and paired with the sequentially consistent
-     * epoch load below: a core publisher raises the epoch and then reads this
-     * count without taking the wait's lock, so this announcement and that read are
-     * what keeps an eventfd wake from being lost. */
-    atomic_fetch_add_explicit(
-        &adapter->runtime->parked_schedulers,
-        1,
-        memory_order_seq_cst
-    );
-    atomic_fetch_add_explicit(
-        &adapter->runtime->stat_parks,
-        1,
-        memory_order_relaxed
-    );
+     * epoch load below: a core publisher raises the epoch and then reads the
+     * wake-needed flag without taking the wait's lock. That flag/recheck pair
+     * keeps an eventfd wake from being lost. */
+    wf_completion_announce_park_locked(adapter->runtime);
     announced = 1;
     if (atomic_load_explicit(
             &adapter->runtime->wake_epoch,

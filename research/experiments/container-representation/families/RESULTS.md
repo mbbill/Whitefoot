@@ -1117,7 +1117,7 @@ behavior, not a proof that ordinary-value semantics requires those instructions.
 
 The following are the source fragments rejected in the D2 `owning-growth.wf`
 at `d45ad27c`, with unchanged surrounding types. The then-active
-[v0.55 specification](../../../../spec/kernel-spec-v0.55.md) owns these historical
+[v0.55 specification](https://github.com/mbbill/Whitefoot/blob/d45ad27c9220c8c12be214135306834c3a33795d/spec/kernel-spec.md) owns these historical
 judgments. D5 supersedes the mutable-helper refusal and equality gap below.
 Only the first item prevents the initially desired mutable helper interface.
 None requires a new sparse storage authority to execute this concrete contract.

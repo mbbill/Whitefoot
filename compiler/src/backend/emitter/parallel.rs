@@ -8,20 +8,21 @@
 //! immediately after it — before the group's values are read and before any
 //! exit edge.
 //!
-//! Both edges of the hand-out call the same monomorphized function on the same
-//! arguments, so there is still exactly one lowering of the source call: the
-//! thunk and the fallback are the same code reached two ways, and a lane that
-//! is never granted computes the sequential result on the sequential schedule.
+//! By default both edges call the same monomorphized function on the same
+//! arguments. The opt-in sequential-refusal experiment instead calls its
+//! existing sequential clone at the join, when one exists.
+//! The clone has the same ordinary ABI and operations, and merely
+//! declines descendant compute permissions. The successful task is unchanged.
 //! Nothing here consults a fact, a source proof statement, or a row; it
 //! consumes the group the checker already judged.
 //!
 //! **Lane acquisition comes before the frame.** The frame belongs to the lane, not to
 //! the calling function, and nothing about it is built until a lane has been
 //! granted. An activation that is refused a lane executes a null test and its
-//! own call: no stack slot, no argument spills, nothing the sequential
-//! lowering did not already do. That is what keeps the recursion depth of a
-//! `--par` build the recursion depth of the sequential build, whether the pool
-//! is off or merely busy. The earlier shape — a frame in the calling
+//! own call without reserving a task frame on the caller's stack. This removes
+//! that additional frame from each recursive activation; it does not guarantee
+//! identical spills or recursion depth in parallel and sequential machine code.
+//! The earlier shape — a frame in the calling
 //! function's entry block — put a slot and its stores in *every* activation of
 //! an eligible recursive function, which cost about four times the stack per
 //! frame on a small one and turned a recursion that ran into a bare SIGSEGV.
@@ -39,9 +40,10 @@
 //! that actualizes nothing — the sequential lowering, byte for byte, so that
 //! every transform the default build gets fires on it. The bootstrap asks the
 //! runtime once whether this run was asked for a pool, and enters one world or
-//! the other; neither ever calls into the other, so nothing below that branch
-//! tests anything again. [`sequential_clone_set`] carries why the second copy has to
-//! exist, why once-per-process is the only selection that is safe here, and
+//! the other. In the default policy neither calls into the other, so nothing
+//! below that branch tests anything again. The experimental refusal policy
+//! also permits the already-required null branch to enter a sequential clone.
+//! [`sequential_clone_set`] explains the second copy, the default selection, and
 //! why the set is exactly that closure.
 //!
 //! **Symbol reservation.** A source function is emitted as `wf_` followed by
@@ -56,7 +58,7 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
-use super::{BackendFailure, FunctionEmitter, llvm_type, source_symbol, value_name};
+use super::{BackendFailure, FunctionEmitter, llvm_type, value_name};
 use crate::backend::abi::{FunctionAbi, ResultAbi};
 use crate::{IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId};
 
@@ -83,10 +85,10 @@ pub(super) struct LoopSplitSite<'ir> {
 /// COFF modules do not carry the sequential weak definitions below.  A
 /// Windows module that hands out work therefore cannot link unless the
 /// runtime supplies the strong protocol; this is the compile-time half of the
-/// fail-closed backend contract.  That runtime is now the same
-/// `sched/entry.c` every other target links -- Windows is done as shared code
-/// (design section 7) -- so what this fail-closed choice selects is a staging
-/// predicate rather than a second implementation.
+/// fail-closed backend contract. All maintained targets use the protocol in
+/// `sched/core.c`, configuration in `sched/entry.c`, and platform primitives.
+/// Windows requires those external definitions at link time; pool resource
+/// exhaustion still uses the ordinary-call fallback.
 pub(crate) const PARALLEL_RUNTIME_DECLARATIONS: &str = "declare ptr @wf__par_acquire_lane(i64)\ndeclare void @wf__par_publish(ptr, ptr)\ndeclare void @wf__par_join(ptr)\ndeclare void @wf__par_release(ptr)\n";
 
 /// The fail-closed Windows declaration of the once-per-process backend query.
@@ -95,6 +97,10 @@ pub(crate) const PARALLEL_POOL_QUERY_DECLARATION: &str = "declare i32 @wf__par_p
 /// The fail-closed Windows declaration of the loop split budget query.
 pub(crate) const PARALLEL_SPLIT_BUDGET_DECLARATION: &str =
     "declare i64 @wf__par_split_budget(i64, i64)\n";
+
+/// The fail-closed Windows declaration of the recursion budget query.
+pub(crate) const PARALLEL_RECURSION_BUDGET_DECLARATION: &str =
+    "declare i64 @wf__par_recursion_budget()\n";
 
 /// A non-Windows module's own definition of the lane protocol: acquire no lane,
 /// ever.
@@ -164,6 +170,17 @@ pub(crate) const PARALLEL_POOL_QUERY_FALLBACK: &str =
 pub(crate) const PARALLEL_SPLIT_BUDGET_FALLBACK: &str =
     "define weak i64 @wf__par_split_budget(i64 %span, i64 %weight) {\nentry:\n  ret i64 0\n}\n\n";
 
+/// The runtime's answer to "how many levels of this recursive component may
+/// still hand work out", and a non-Windows module's own weak answer of "none".
+///
+/// Carried by the optional-runtime path for the same reason as the allowance
+/// above: with no runtime linked there are no lanes, so the honest answer is
+/// zero and the component's ordinary entry descends straight into its
+/// sequential clone — the world a pool-less run wants anyway. Windows leaves
+/// the external query unresolved until native link.
+pub(crate) const PARALLEL_RECURSION_BUDGET_FALLBACK: &str =
+    "define weak i64 @wf__par_recursion_budget() {\nentry:\n  ret i64 0\n}\n\n";
+
 /// The symbol one function's sequential clone is emitted under.
 ///
 /// It lives in the same reserved `wf__par_` namespace as the runtime's own
@@ -187,20 +204,24 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// both: the phi is what actualization *is*, and the transform requires its
 /// absence. So the module carries both lowerings and selects between them.
 ///
-/// **Why the selection is safe.** It is made once per process, from whether the
-/// run asked for a pool, and never again. Without one every acquisition is refused for
+/// **Why the selection is safe.** The default policy selects once per process,
+/// from whether the run asked for a pool. Without one every acquisition is refused for
 /// the whole process, so the two worlds compute on exactly the same schedule and
-/// the choice between them is a choice of machine code, not of semantics. On
-/// the optional-runtime path, a run that asks for a pool and cannot start one
-/// has every acquisition refused; Windows instead terminates when the native pool is
-/// first required. A *per-task* demand signal would be a different thing
+/// the choice between them is a choice of machine code, not of semantics.
+/// On every maintained target, partial startup retains the available workers;
+/// complete startup refusal makes every acquisition return null. The query
+/// still reflects the requested pool, so startup refusal does not reselect
+/// the process-level clone: the parallel body's ordinary-call fallback runs.
+/// A *per-task* demand signal would be a different thing
 /// entirely, and was measured killing the scheduler it was meant to help: the
 /// shared word it needs costs two contended read-modify-writes per task, which
 /// took the fine-grain oracle cell from 0.4905 s to 0.9254 s. Nothing here reads
-/// a per-task signal, and the two worlds never call each other. The optional
-/// runtime path may answer that no pool started; a Windows parallel binary is
-/// instead required to initialize its linked native pool or terminate at its
-/// first pool operation.
+/// a per-task signal. A recursive component's budget-carrying variant enters
+/// its clone when the count it was handed reaches zero, and the opt-in refusal
+/// policy reuses an existing null branch. The budget is one process-level
+/// query at a component entry, not a signal read per task. Declining descendant compute permissions
+/// preserves [PAR-1] operations, arguments and the same-ABI result; the call
+/// still executes at the original join.
 ///
 /// **Why this set and not another.** A function outside it has the same body
 /// in both worlds — no hand-out is reachable from it, so nothing about its
@@ -313,6 +334,9 @@ pub(crate) struct ParallelThunks {
     /// Whether any emitted function asked the runtime for a split allowance, so
     /// a module that splits no loop names that symbol nowhere.
     queries_split_budget: bool,
+    /// The same for the recursion budget: a module with no budgeted component
+    /// names that symbol nowhere either.
+    pub(super) queries_recursion_budget: bool,
 }
 
 impl ParallelThunks {
@@ -328,6 +352,10 @@ impl ParallelThunks {
 
     pub(crate) const fn queries_split_budget(&self) -> bool {
         self.queries_split_budget
+    }
+
+    pub(crate) const fn queries_recursion_budget(&self) -> bool {
+        self.queries_recursion_budget
     }
 
     /// Records one thunk body and returns the symbol that names it.
@@ -356,8 +384,8 @@ pub(crate) struct ComputeHandedOut {
     frame: String,
     /// The frame field the result occupies: the argument count.
     result_field: usize,
-    /// The call the refused edge makes: the same symbol on the same operands
-    /// the thunk calls, rendered once so the two edges cannot drift apart.
+    /// The call the refused edge makes with the original operands. Normally
+    /// the thunk's symbol; the opt-in policy may select its same-ABI clone.
     callee: String,
     arguments: String,
 }
@@ -409,19 +437,33 @@ impl FunctionEmitter<'_, '_> {
         let result_type = llvm_type(self.program, ty)?;
         let result_field = field_types.len();
         field_types.push(result_type.clone());
-        let frame_type = format!("{{ {} }}", field_types.join(", "));
         let frame_layout = self
             .ordinary_lane_frames
             .get(&result)
             .copied()
             .ok_or(BackendFailure::InvalidIr)?;
 
-        let callee = source_symbol(target.name());
+        // A callback that lands inside a budgeted component enters the
+        // callee's variant, so the budget its caller had left travels with the
+        // arguments: one more frame field, stored at the offer and read by the
+        // thunk. The field follows the result, which leaves every existing
+        // field at the offset it had.
+        let (callee, budget) = self.callee_target(function, target.name());
+        let budget = budget.map(str::to_owned);
+        let budget_field = budget.as_ref().map(|_| {
+            field_types.push("i64".to_owned());
+            field_types.len() - 1
+        });
+        let frame_type = format!("{{ {} }}", field_types.join(", "));
         let thunk = self.parallel.register(|symbol| {
             thunk_definition(
                 symbol,
-                &frame_type,
-                &field_types,
+                &ThunkFrame {
+                    ty: &frame_type,
+                    field_types: &field_types,
+                    result: result_field,
+                    budget: budget_field,
+                },
                 &abi,
                 &callee,
                 &result_type,
@@ -449,23 +491,45 @@ impl FunctionEmitter<'_, '_> {
             )
             .map_err(|_| BackendFailure::TextEmission)?;
         }
+        if let (Some(field), Some(budget)) = (budget_field, budget.as_ref()) {
+            let slot = format!("%{}", self.next_temporary()?);
+            writeln!(
+                self.output,
+                "  {slot} = getelementptr inbounds {frame_type}, ptr {frame}, i32 0, i32 {field}\n  store i64 {budget}, ptr {slot}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
         writeln!(
             self.output,
             "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  br label %{offered}\n{offered}:"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
+        // The refused edge runs the same call on this thread. The opt-in
+        // refusal control may send it to the clone instead, which is the
+        // source ABI and carries no budget.
+        let refused_to_clone = self.refusal_clones.contains(&function);
+        if let (false, Some(budget)) = (refused_to_clone, budget.as_ref()) {
+            call_arguments.push(format!("i64 {budget}"));
+        }
         self.handed_out.push(ComputeHandedOut {
             result,
             result_abi: abi.result(),
             frame_type,
             frame,
             result_field,
-            callee,
+            callee: if refused_to_clone {
+                sequential_clone_symbol(target.name())
+            } else {
+                callee
+            },
             arguments: call_arguments.join(", "),
         });
         Ok(())
     }
 
+    /// Renders one permitted counted loop [PAR-2 candidate] into the world
+    /// being emitted.
+    ///
     /// The sequential world calls the chunk — the loop itself, seeded with the
     /// accumulator's incoming value — and is therefore the code the loop always
     /// had, behind one call its only caller inlines back. The overlapped world
@@ -597,8 +661,7 @@ impl FunctionEmitter<'_, '_> {
     /// A granted lane is waited for, read, and given back; a refused one runs
     /// the same call on this thread. Either way the group's values exist from
     /// here on, and no exit edge of the block is reachable before this point.
-    /// The order the queue is completed in is [`compute_join_order`]'s and
-    /// nothing here decides it.
+    /// Hand-outs are joined in reverse publication order.
     pub(super) fn emit_overlap_joins(
         &mut self,
         join_site: IrValueId,
@@ -663,15 +726,32 @@ impl FunctionEmitter<'_, '_> {
     }
 }
 
+/// The lane frame one hand-out fills, as its thunk reads it back: the LLVM
+/// struct type, its field types in order, and which fields are not arguments.
+struct ThunkFrame<'site> {
+    ty: &'site str,
+    field_types: &'site [String],
+    /// The field the result is left in: the argument count.
+    result: usize,
+    /// The field carrying the callee variant's budget, where the callback
+    /// lands inside a budgeted component.
+    budget: Option<usize>,
+}
+
 /// One outlined call over its frame.
 fn thunk_definition(
     symbol: &str,
-    frame_type: &str,
-    field_types: &[String],
+    frame: &ThunkFrame<'_>,
     abi: &FunctionAbi,
     callee: &str,
     result_type: &str,
 ) -> String {
+    let ThunkFrame {
+        ty: frame_type,
+        field_types,
+        result: result_field,
+        budget: budget_field,
+    } = *frame;
     let mut body = format!("define internal void {symbol}(ptr %frame) {{\nentry:\n");
     let mut rendered = Vec::with_capacity(field_types.len() - 1);
     for (index, (field_type, parameter)) in field_types.iter().zip(abi.parameters()).enumerate() {
@@ -688,7 +768,17 @@ fn thunk_definition(
             rendered.push(format!("{field_type} %a{index}"));
         }
     }
-    let field = field_types.len() - 1;
+    // The budget the offering activation had left, where this callback lands
+    // in a budget-carrying variant: an ordinary trailing argument, read out of
+    // the frame like every other one.
+    if let Some(index) = budget_field {
+        let _ = writeln!(
+            body,
+            "  %pb = getelementptr inbounds {frame_type}, ptr %frame, i32 0, i32 {index}\n  %ab = load i64, ptr %pb"
+        );
+        rendered.push("i64 %ab".to_owned());
+    }
+    let field = result_field;
     if abi.result().uses_destination() {
         // Construct into the same result field the existing join path reads.
         // No pointer to worker-local or released storage becomes the result.
@@ -736,5 +826,5 @@ pub(super) fn par_done_label(value: IrValueId) -> String {
 }
 
 // The former mixed completion/worker join-order assertions are retired by
-// v0.58's deletion of PAR-3 and direct completion handouts. Every ordinary
+// v0.55's deletion of PAR-3 and direct completion handouts. Every ordinary
 // worker group now joins in reverse publication order in emit_overlap_joins.

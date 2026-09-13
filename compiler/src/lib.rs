@@ -37,14 +37,13 @@ pub use backend::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
     ORDINARY_VALUES_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
     SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_PRIM_WINDOWS_SOURCE,
-    SCHED_SWITCH_HEADER, WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE,
-    module_requires_parallel_runtime, stack_ledger,
+    WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, module_requires_parallel_runtime, stack_ledger,
 };
 pub use driver::*;
 pub use lexer::*;
 /// The compile-time choice of whether the backend actualizes the permission
 /// judgment's overlap groups.
-pub use lowering::OverlapLowering;
+pub use lowering::{OverlapLowering, RecursionBudget};
 pub use resolution::*;
 pub use source::*;
 pub use spec::*;

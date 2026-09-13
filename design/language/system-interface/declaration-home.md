@@ -1,0 +1,6 @@
+Decision: System types and operations resolve from a distinct compiler-owned declaration domain, neither the prelude nor the foreign-boundary family, visible in every compilation unit, with actual authority entering only through the labelled parameters a program requests, because every alternative either reserved ordinary spellings in programs that do no system access, merged system operations with foreign frames, or keyed visibility on a program kind that no longer partitions programs, instead of a prelude extension, the foreign boundary, or kind-conditional visibility.
+
+Rejected:
+- System operations entering through the gated foreign-boundary family: rejected because that family has one shared per-fact obligation record, so housing system operations there merges them with foreign frames against the required system and foreign separation.
+- Extending the prelude with system types and signatures: rejected because it reserves ordinary spellings unconditionally in every program whether or not it performs I/O and would put function signatures in the prelude for the first time.
+- Visibility conditional on a program-kind declaration: rejected because once every legal unit has the sole command entry form, the condition partitions no accepted program and only preserves a dead declaration path.

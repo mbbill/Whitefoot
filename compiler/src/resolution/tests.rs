@@ -495,7 +495,7 @@ fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
             issue.kind(),
             ResolutionIssueKind::ReservedName {
                 spelling,
-                declaration_role: ReservedDeclarationRole::Let,
+                declaration_role: ReservedDeclarationRole::ContractDefinition,
                 ..
             } if spelling == "cvt"
         ));

@@ -29,7 +29,8 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use super::emitter::overlapped_clone_symbol;
+use super::emitter::{is_recursion_budget_symbol, overlapped_clone_symbol};
+use super::graph::components;
 
 /// One machine function's frame, as the host compiler reported it.
 struct Frame {
@@ -238,6 +239,9 @@ fn assign_worlds(frames: &mut [Frame]) {
     let mut overlapped: Vec<usize> = Vec::new();
     let mut sequential: Vec<usize> = Vec::new();
     for position in 0..frames.len() {
+        if is_recursion_budget_symbol(&frames[position].name) {
+            overlapped.push(position);
+        }
         let Some(original) = overlapped_clone_symbol(&frames[position].name) else {
             continue;
         };
@@ -360,66 +364,6 @@ fn resolve(symbol: &str, index: &HashMap<&str, usize>) -> Option<usize> {
         }
     }
     None
-}
-
-/// Tarjan's strongly connected components, iteratively.
-///
-/// Iterative because this is the analysis that finds unbounded recursion, and
-/// a recursive implementation of it would descend exactly the graph it is
-/// looking for.
-fn components(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
-    let count = edges.len();
-    let mut order = vec![usize::MAX; count];
-    let mut low = vec![0_usize; count];
-    let mut on_stack = vec![false; count];
-    let mut stack: Vec<usize> = Vec::new();
-    let mut frames: Vec<(usize, usize)> = Vec::new();
-    let mut next_order = 0_usize;
-    let mut found: Vec<Vec<usize>> = Vec::new();
-    for root in 0..count {
-        if order[root] != usize::MAX {
-            continue;
-        }
-        order[root] = next_order;
-        low[root] = next_order;
-        next_order += 1;
-        stack.push(root);
-        on_stack[root] = true;
-        frames.push((root, 0));
-        while let Some((node, cursor)) = frames.last_mut() {
-            let node = *node;
-            if let Some(target) = edges[node].get(*cursor).copied() {
-                *cursor += 1;
-                if order[target] == usize::MAX {
-                    order[target] = next_order;
-                    low[target] = next_order;
-                    next_order += 1;
-                    stack.push(target);
-                    on_stack[target] = true;
-                    frames.push((target, 0));
-                } else if on_stack[target] {
-                    low[node] = low[node].min(order[target]);
-                }
-                continue;
-            }
-            frames.pop();
-            if let Some((parent, _)) = frames.last() {
-                low[*parent] = low[*parent].min(low[node]);
-            }
-            if low[node] == order[node] {
-                let mut component = Vec::new();
-                while let Some(member) = stack.pop() {
-                    on_stack[member] = false;
-                    component.push(member);
-                    if member == node {
-                        break;
-                    }
-                }
-                found.push(component);
-            }
-        }
-    }
-    found
 }
 
 /// The worst acyclic chain from each root, with every cycle's own per-level
@@ -564,6 +508,27 @@ _main:                                  ; @main
         assert!(sequential.contains("16 B/level"), "{sequential}");
         assert!(sequential.contains("67108864 levels"), "{sequential}");
         assert!(sequential.contains("sequential clone"), "{sequential}");
+    }
+
+    /// A budget-carrying variant is the overlapped world's recursive frame
+    /// wherever the recursion control emitted one, and the ledger reports it
+    /// as such: it reaches itself above the cut, and the clone it drops into
+    /// below the cut reaches itself too. Both cycles are real, and the
+    /// writer's per-level cost above the cut is the variant's.
+    #[test]
+    fn budget_variants_are_parallel_frames_with_their_own_cycle() {
+        let lines = stack_ledger(
+            "m.ll:wf__par_budget_spine\t48\tstatic\nm.ll:wf__par_seq_spine\t16\tstatic\n",
+            "_wf__par_budget_spine:\n\tbl\t_wf__par_budget_spine\n\tbl\t_wf__par_seq_spine\n\tret\n_wf__par_seq_spine:\n\tbl\t_wf__par_seq_spine\n\tret\n",
+            1024,
+            Architecture::Arm64,
+        );
+        let frame = line(&lines, "STACK frame     wf__par_budget_spine");
+        assert!(frame.contains("overlapped clone"), "{frame}");
+        let overlapped = line(&lines, "STACK cycle     wf__par_budget_spine");
+        assert!(overlapped.contains("48 B/level"), "{overlapped}");
+        assert!(overlapped.contains("overlapped clone"), "{overlapped}");
+        assert!(line(&lines, "STACK cycle     wf__par_seq_spine").contains("16 B/level"));
     }
 
     /// Only a function that can reach itself gets a cycle row. A ledger that

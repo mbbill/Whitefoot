@@ -1,0 +1,72 @@
+fn density(x: own f64, center: own f64, width: own f64) -> result: own f64 pure {
+  let offset = fsub.strict(x, center);
+  let scaled = fdiv.strict(offset, width);
+  let square = fmul.strict(scaled, scaled);
+  let denominator = fadd.strict(1.0_f64, square);
+  return fdiv.strict(1.0_f64, denominator);
+}
+
+fn simpson(a: own f64, b: own f64, fa: own f64, fm: own f64, fb: own f64) -> result: own f64 pure {
+  let weighted = fmul.strict(4.0_f64, fm);
+  let partial = fadd.strict(fa, weighted);
+  let sum = fadd.strict(partial, fb);
+  let span = fsub.strict(b, a);
+  let scale = fdiv.strict(span, 6.0_f64);
+  return fmul.strict(scale, sum);
+}
+
+fn adaptive(a: own f64, b: own f64, center: own f64, width: own f64, fa: own f64, fm: own f64, fb: own f64, whole: own f64, tolerance: own f64, depth: own u64) -> result: own f64 pure contract {
+  requires depth <= 24_u64;
+} {
+  doc "Adaptive Simpson integration of a Lorentz profile. Accepts the corrected estimate when the local estimator meets tolerance or the caller's subdivision depth reaches zero; the depth cap does not promise accuracy. Independent child calls merge in left-plus-right order.";
+  let endpoints = fadd.strict(a, b);
+  let middle = fmul.strict(endpoints, 0.5_f64);
+  let left_sum = fadd.strict(a, middle);
+  let left_middle = fmul.strict(left_sum, 0.5_f64);
+  let right_sum = fadd.strict(middle, b);
+  let right_middle = fmul.strict(right_sum, 0.5_f64);
+  let fl = density(x: left_middle, center: center, width: width);
+  let fr = density(x: right_middle, center: center, width: width);
+  let left = simpson(a: a, b: middle, fa: fa, fm: fl, fb: fm);
+  let right = simpson(a: middle, b: b, fa: fm, fm: fr, fb: fb);
+  let combined = fadd.strict(left, right);
+  let delta = fsub.strict(combined, whole);
+  if depth == 0_u64 {
+    let correction = fdiv.strict(delta, 15.0_f64);
+    return fadd.strict(combined, correction);
+  }
+  let error = fabs(delta);
+  let threshold = fmul.strict(15.0_f64, tolerance);
+  if fle(error, threshold) {
+    let correction = fdiv.strict(delta, 15.0_f64);
+    return fadd.strict(combined, correction);
+  }
+  let next = depth - 1_u64;
+  let half_tolerance = fmul.strict(tolerance, 0.5_f64);
+  let l = adaptive(a: a, b: middle, center: center, width: width, fa: fa, fm: fl, fb: fm, whole: left, tolerance: half_tolerance, depth: next);
+  let r = adaptive(a: middle, b: b, center: center, width: width, fa: fm, fm: fr, fb: fb, whole: right, tolerance: half_tolerance, depth: next);
+  return fadd.strict(l, r);
+}
+
+fn integrate(a: own f64, b: own f64, center: own f64, width: own f64, tolerance: own f64, depth: own u64) -> result: own f64 pure contract {
+  requires depth <= 24_u64;
+} {
+  let endpoints = fadd.strict(a, b);
+  let middle = fmul.strict(endpoints, 0.5_f64);
+  let fa = density(x: a, center: center, width: width);
+  let fm = density(x: middle, center: center, width: width);
+  let fb = density(x: b, center: center, width: width);
+  let whole = simpson(a: a, b: b, fa: fa, fm: fm, fb: fb);
+  return adaptive(a: a, b: b, center: center, width: width, fa: fa, fm: fm, fb: fb, whole: whole, tolerance: tolerance, depth: depth);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let tolerance = fdiv.strict(1.0_f64, 1073741824.0_f64);
+  let value = integrate(a: 0.0_f64, b: 1.0_f64, center: 0.5_f64, width: 0.25_f64, tolerance: tolerance, depth: 24_u64);
+  if fgt(value, 0.5_f64) {
+    if flt(value, 0.625_f64) {
+      return exit_status(code: 0_u8);
+    }
+  }
+  return exit_status(code: 1_u8);
+}

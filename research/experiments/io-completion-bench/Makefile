@@ -9,9 +9,13 @@
 # ordinary shared-factory calls serialize, and PAR-3 staging is deleted; the
 # measured many-files modules are identical in both modes. See C2-RESULTS.md.
 #
-# This is a measurement bundle, not a gate. It is deliberately not reachable
-# from the repository's `make check`: it generates a large tree, runs for
-# minutes, and reports timings that no build should depend on.
+# This is a measurement bundle, not a gate. Its protocols are deliberately not
+# reachable from the repository's `make check`: they generate a large tree,
+# run for minutes, and report timings that no build should depend on. The one
+# source target the gate runs is `programs-check`, which compiles every program
+# here with the current compiler, so a language change cannot leave one behind.
+# The gate also runs `uring-check`, a deterministic correctness fixture for the
+# native reference; neither target measures performance.
 #
 #   make -C research/experiments/io-completion-bench verify   correctness only
 #   make -C research/experiments/io-completion-bench bench     the macOS table
@@ -23,7 +27,7 @@
 # research/investigations/io-model/RESULTS.md (historical completion results).
 
 ROOT := $(abspath ../../..)
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
 BUILD := $(WORK)/build
 TREE := $(WORK)/tree
@@ -100,9 +104,9 @@ READ_SETTLE_ATTEMPTS ?= 24
 READ_SETTLE_SECONDS ?= 15
 DOCKER_IMAGE ?= wf-io-bench:linux
 
-.PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean chain \
+.PHONY: programs-check build prepare compiler gen verify bench bench-pipe linux linux-image expected clean chain \
 	read-build read-gen read-uncache read-settle read-warm read-verify expected-read bench-read \
-	linux-read net-tools net-verify linux-net
+	linux-read net-tools uring-check net-verify linux-net
 
 build: prepare compiler $(BUILD)/gen $(BUILD)/baseline $(BUILD)/runner \
 	$(BUILD)/pipe_producer $(BUILD)/pipe_harness \
@@ -139,6 +143,19 @@ $(BUILD)/pipe_producer: pipe_producer.c | prepare
 
 $(BUILD)/pipe_harness: pipe_harness.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+# Every program the bundle carries, compiled and nothing more. The gate runs
+# this; the protocols below run the programs. The compilations are independent,
+# so they run as many at a time as the host has processors.
+PROGRAMS := $(wildcard programs/*.wf)
+CHECKED := $(PROGRAMS:programs/%.wf=$(BUILD)/checked_%)
+JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+programs-check: compiler | prepare
+	$(MAKE) -j$(JOBS) $(CHECKED)
+
+$(BUILD)/checked_%: programs/%.wf | prepare
+	$(WFC) -o $@ $<
 
 # The C and S labels retain the same source under two lowering configurations.
 # An identical emitted module makes this pair a measurement-noise control.
@@ -475,7 +492,8 @@ linux-read: linux-image
 		$(DOCKER_IMAGE) \
 		sh /work/research/experiments/io-completion-bench/read-bench.sh
 
-# The four-stage chain of design section 12's fourth item, in its four shapes.
+# Historical four-stage chain: its managed wf_sched_core API has been retired.
+# This optional evidence target does not build against the current core.
 # Not one of the three lines: it is a C program on raw io_uring, it links the
 # scheduler core for the stack-switch shape, and what it reports is the
 # dependent stage's in-flight depth beside the wall time.
@@ -506,6 +524,7 @@ chain: $(BUILD)/chain $(BUILD)/gen
 # and the runner all execute the same bytes.
 #
 #   make net-tools    build the three C tools
+#   make uring-check  the io_uring reference's own deterministic traces
 #   make net-verify   every server against netload at 4 connections
 #   make linux-net    the protocol, here
 NET_OUT := $(WORK)/net
@@ -517,6 +536,26 @@ net-tools: $(BUILD)/uring_echo $(BUILD)/epoll_echo $(BUILD)/netload
 
 $(BUILD)/uring_echo: uring_echo.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
+
+# The reference's own correctness, separate from any measurement. The check
+# program includes `uring_echo.c` and replaces only kernel setup, enter and the
+# synchronous send result, so the buffer-loan queue, the receive re-arm and the
+# CQE handling under check are the ones the measured binary runs. It therefore
+# needs no io_uring on the host and no network, and it decides a verdict rather
+# than reporting a rate. The inline-send pair is built twice because the two
+# configurations retire a send along different paths.
+URING_CHECK_INLINE := 0 1
+URING_CHECK_BINARIES := \
+	$(URING_CHECK_INLINE:%=$(BUILD)/uring_echo_check_inline%)
+
+$(BUILD)/uring_echo_check_inline%: uring_echo_check.c uring_echo.c | prepare
+	$(CLANG) $(CFLAGS) -Wpedantic -g -pthread \
+		-DWF_BENCH_URING_INLINE_SEND=$* uring_echo_check.c -o $@
+
+uring-check: $(URING_CHECK_BINARIES)
+	@for binary in $(URING_CHECK_BINARIES); do \
+		"$$binary" || exit 1; \
+	done
 
 $(BUILD)/epoll_echo: epoll_echo.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@

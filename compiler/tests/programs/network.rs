@@ -11,8 +11,8 @@ use std::process::Child;
 use std::time::{Duration, Instant};
 
 use super::support::{
-    CompiledProgram, build_program, compile_and_run, compile_program, emitted_function,
-    program_permission_ledger,
+    CompiledProgram, build_program, compile_and_run, compile_program, compile_program_with_overlap,
+    compile_program_without_overlap, emitted_function, program_permission_ledger,
 };
 
 /// One port the host is not using, released before the program binds it.
@@ -279,5 +279,67 @@ fn a_refused_connect_restores_factory_capacity_on_both_routes() {
         // Both attempts must report ConnectionRefused; failed construction
         // leaves the same factory available for the second ordinary call.
         assert_eq!(status, 0, "native ring: {native_ring}");
+    }
+}
+
+/// Four accepted connections must
+/// still be served correctly under --par on native and helper routes, with
+/// peers speaking in acceptance order. The earlier reverse-order test was
+/// specifically a managed-stack concurrency requirement; this does not claim
+/// the same head-of-line-blocking behavior or throughput.
+#[test]
+fn four_peers_are_served_in_order_under_par_on_both_routes() {
+    let llvm = compile_program_with_overlap("tcp_fanout.wf");
+    let program = build_program(&llvm);
+    for native_ring in [true, false] {
+        let port = free_port();
+        let text = port.to_string();
+        let child = program.spawn_on_route_with_workers(native_ring, Some("3"), &[text.as_bytes()]);
+        let mut streams = (0..4_u8)
+            .map(|_| connect_when_ready(port))
+            .collect::<Vec<_>>();
+        for peer in 0..4_u8 {
+            let stream = &mut streams[usize::from(peer)];
+            stream
+                .set_read_timeout(Some(Duration::from_secs(20)))
+                .expect("bound the wait for this peer's answer");
+            let sent = [peer, peer + 1, peer + 2];
+            stream.write_all(&sent).expect("send this peer's bytes");
+            let mut returned = Vec::new();
+            stream.read_to_end(&mut returned).unwrap_or_else(|error| {
+                panic!(
+                    "peer {peer} was not answered in acceptance order \
+                     (native ring: {native_ring}): {error}"
+                )
+            });
+            assert_eq!(returned, sent, "peer {peer} (native ring: {native_ring})");
+        }
+        drop(streams);
+        let (status, _) = finished(child);
+        assert_eq!(status, 0, "native ring: {native_ring}");
+    }
+}
+
+/// Ordinary PAR-2 body-shape rules leave this fanout loop sequential; no
+/// suspension classification decides which calls may be handed out.
+#[test]
+fn the_fanout_loop_keeps_denied_calls_on_the_current_stack() {
+    let overlapped = compile_program_with_overlap("tcp_fanout.wf");
+    let main = emitted_function(&overlapped, "main");
+    assert!(main.contains("@wf_serve_one("));
+    assert!(!main.contains("@wf__par_publish("));
+    assert!(!main.contains("par.staged."));
+
+    let sequential = compile_program_without_overlap("tcp_fanout.wf");
+    for entry in [
+        "@wf__par_acquire_lane",
+        "@wf__par_publish",
+        "@wf__par_join",
+        "@wf__par_release",
+    ] {
+        assert!(
+            !sequential.contains(entry),
+            "the --no-overlap module must name no lane entry, found {entry}"
+        );
     }
 }

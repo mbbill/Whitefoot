@@ -671,8 +671,8 @@ rules or general checked-library representations have passed a compiler.
 
 [Project instructions](../../../AGENTS.md), the
 [constitution](../../../docs/constitution.md), the
-[active specification](../../../spec/kernel-spec.md), and the corrected
-[development decisions](../../../mcts_mem/whitefoot/development-workflow.md) supply
+[active specification](../../../spec/kernel-spec.md), and current
+[decision practice](../../../docs/practice.md#decision-work) supply
 the ground. Historical design selections and compiler convenience do not define a
 new architecture's requirements. Current language behavior remains the active
 specification's, including its proof rules; historical claim/trap language does not

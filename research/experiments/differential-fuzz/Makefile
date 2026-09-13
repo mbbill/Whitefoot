@@ -20,7 +20,7 @@
 # the oracle, the recorded probe programs, and the campaign report are tracked.
 
 ROOT := $(abspath ../../..)
-WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
+WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 WORK ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-differential-fuzz
 CARGO_TARGET_DIR ?= $(WORK)/cargo-target
 CARGO := cargo

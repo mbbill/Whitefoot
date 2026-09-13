@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -107,6 +108,17 @@ static int wf_socket_endpoint(
         native
     );
     return wf_socket_open(&request->operation.endpoint.address.portable);
+}
+
+/* TCP_NODELAY on every socket this leaf creates or accepts, right after the
+ * host hands it over.  Nagle's coalescing measured an 11.78x-14.98x
+ * throughput loss and a p99 tail of 41 ms against 2.4 ms without it
+ * (research/investigations/io-model/SCHEDULER-FINDINGS.md, experiment 17).
+ * A refusal leaves an ordinary, working socket -- just one that may coalesce
+ * small writes -- so it is never folded into the operation's own outcome. */
+static void wf_socket_disable_nagle(int descriptor) {
+    int one = 1;
+    (void)setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
 }
 
 static wf_file_result wf_file_execute_once(wf_file_request *request) {
@@ -308,6 +320,7 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
         if (endpoint < 0) {
             break;
         }
+        wf_socket_disable_nagle(endpoint);
         if (bind(endpoint, (const struct sockaddr *)native.bytes,
                  (socklen_t)length)
                 == 0
@@ -342,6 +355,7 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
         }
 #endif
         if (result.head.value >= 0) {
+            wf_socket_disable_nagle((int)result.head.value);
             request->operation.accept.peer_length = (unsigned)length;
             wf_socket_publish_peer(request);
         }
@@ -355,6 +369,7 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
         if (endpoint < 0) {
             break;
         }
+        wf_socket_disable_nagle(endpoint);
         if (connect(endpoint, (const struct sockaddr *)native.bytes,
                     (socklen_t)length)
             == 0) {
