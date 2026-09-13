@@ -305,6 +305,14 @@ pub(crate) struct PostconditionCallSubstitution {
 /// Parent IDs always precede their child in the arena.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum DerivationNode {
+    /// The fixed S7 quotient-product consequence. Both operations have
+    /// already discharged their domains; the product source identifies the
+    /// checked operand images matched against the retained division.
+    UnsignedDivisionProduct {
+        product: NodePath,
+        division: DerivationId,
+        domain: DerivationId,
+    },
     SourceBound {
         relation: Relation,
         left: TermId,
@@ -614,6 +622,12 @@ pub(crate) struct PostconditionDeliveryJoinDetail {
 impl DerivationNode {
     fn for_each_parent(&self, mut visit: impl FnMut(DerivationId)) {
         match self {
+            Self::UnsignedDivisionProduct {
+                division, domain, ..
+            } => {
+                visit(*division);
+                visit(*domain);
+            }
             Self::TransitiveBound { first, second, .. } => {
                 visit(*first);
                 visit(*second);
@@ -699,7 +713,8 @@ impl DerivationNode {
 
     fn parent_count(&self) -> usize {
         match self {
-            Self::TransitiveBound { .. }
+            Self::UnsignedDivisionProduct { .. }
+            | Self::TransitiveBound { .. }
             | Self::StrengthenedBound { .. }
             | Self::Equality { .. }
             | Self::GoalContradiction { .. } => 2,
@@ -749,6 +764,7 @@ impl DerivationNode {
 
     fn rank(&self) -> u8 {
         match self {
+            Self::UnsignedDivisionProduct { .. } => 35,
             Self::SourceBound { .. } => 0,
             Self::SourceDistinct { .. } => 1,
             Self::SourceGoal { .. } => 2,
@@ -822,6 +838,7 @@ pub(crate) enum DerivationRootKind {
     BitAndBound(u32),
     ShiftOneNonzero(u32),
     UnsignedDivisionBound(u32),
+    UnsignedDivisionProduct(u32),
     UnsignedRemainderBound(u32),
     SignedRemainderBound(u32),
     CountedS11 {
@@ -1464,6 +1481,17 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
             ImplicitBoundKind::StandingMeasure => 4,
             ImplicitBoundKind::MeasureOrdering => 5,
         }),
+        DerivationNode::UnsignedDivisionProduct {
+            product,
+            division,
+            domain,
+        } => {
+            if index < 2 {
+                [division.0, domain.0].get(index).copied()
+            } else {
+                product.components().get(index - 2).copied()
+            }
+        }
         DerivationNode::TransitiveBound { first, second, .. } => {
             [first.0, second.0].get(index).copied()
         }
@@ -1745,6 +1773,12 @@ fn remap_id(id: &mut DerivationId, remap: &[Option<DerivationId>]) {
 
 fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
     match node {
+        DerivationNode::UnsignedDivisionProduct {
+            division, domain, ..
+        } => {
+            remap_id(division, remap);
+            remap_id(domain, remap);
+        }
         DerivationNode::TransitiveBound { first, second, .. } => {
             remap_id(first, remap);
             remap_id(second, remap);

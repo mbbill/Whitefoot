@@ -55,12 +55,31 @@ WF uses the compiler's default decomposition. Several nested loops and
 initialization have different spans, so the stencil reports no single chunk
 count, while actual scheduler grants are still measured.
 
-The default comparison retains the four existing kernels, which do not require
-range-loan syntax. This does not supply the pre-C2 entry and native-library
-adapters that the cross-version twin still needs, as described below.
-Stencil additionally requires the range-loan amendment. Its native comparison
-and evidence are recorded in
+Stencil is included in the default timed comparison now that the baseline
+compiler admits range loans. Cross-version twins still use the entry and
+native-library adapters described below where their interfaces differ.
+Stencil's original native comparison and evidence are recorded in
 [`range-loans/DESIGN.md`](../../investigations/range-loans/DESIGN.md).
+
+Select `KERNELS='prefix histogram'` for the blocked scan and privatized
+histogram comparisons. Their runtime input, block size, and bucket count also
+run through independent one-pass C oracles in the compiler's native tests,
+including empty inputs, partial blocks, wraparound scan values, repeated keys,
+and skew. The ordinary `programs-check` target compiles both consumers.
+They require the runtime division images investigated in
+[`compute-model/DESIGN.md`](../../investigations/compute-model/DESIGN.md), so
+they are not yet selected by the default baseline twin.
+
+The default blocked fixture has 4,194,321 input words and blocks of 4,096 words;
+histogram uses 256 buckets. `WFB_BLOCKED_GRID=small|fine|coarse|skew` selects
+the 17-word tail fixture, 256-word blocks, 65,536-word blocks, or a mostly
+single-key distribution respectively. Every process prints the actual input
+dimensions and distribution. Inputs and independent expected results are
+prepared outside timing. WF and the parallel references allocate and release
+their temporary block storage and allocate their result inside timing; result
+checking and release happen outside. The native `serial` reference uses the
+direct one-pass algorithm, while parallel references use complete blocks plus
+a tail. Worker counts never appear as an unrolled source decomposition.
 
 The `wf` row is the module `whitefootc` emits from the kernel's `.wf` source
 under **plain `--par --emit-llvm` and no other flag**, linked with

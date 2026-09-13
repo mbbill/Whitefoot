@@ -236,6 +236,38 @@ fn runtime_stencil_rows_retain_adjacent_range_permission() {
     assert!(matches!(rows[1].verdict, LoopVerdict::Denied(_)));
 }
 
+#[test]
+fn blocked_compute_helpers_retain_partition_permission_around_local_recurrences() {
+    let prefix = permission_of(include_bytes!(
+        "../../../../research/experiments/compute-bench/programs/prefix.wf"
+    ));
+    let stages = loops(&prefix, "prefix");
+    assert_eq!(stages.len(), 3);
+    for stage in [&stages[0], &stages[2]] {
+        assert_eq!(stage.verdict, LoopVerdict::PermittedEligible, "{stage:?}");
+        assert_eq!(stage.actualization, Some(LoopActualization::IndependentMap));
+    }
+    assert!(matches!(stages[1].verdict, LoopVerdict::Denied(_)));
+    assert!(matches!(
+        loops(&prefix, "scan_block")[0].verdict,
+        LoopVerdict::Denied(_)
+    ));
+
+    let histogram = permission_of(include_bytes!(
+        "../../../../research/experiments/compute-bench/programs/histogram.wf"
+    ));
+    let stages = loops(&histogram, "histogram");
+    assert_eq!(stages.len(), 2);
+    for stage in stages {
+        assert_eq!(stage.verdict, LoopVerdict::PermittedEligible, "{stage:?}");
+        assert_eq!(stage.actualization, Some(LoopActualization::IndependentMap));
+    }
+    assert!(matches!(
+        loops(&histogram, "count_block")[0].verdict,
+        LoopVerdict::Denied(_)
+    ));
+}
+
 /// The reduction: a counted loop over a pure callee, folding one accumulator
 /// under `+wrap`. This is the shape the whole rule exists for — the escape
 /// count of the grid family, written as the loop a writer reaches for first.

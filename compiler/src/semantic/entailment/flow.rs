@@ -406,6 +406,16 @@ struct ActiveAffineFact {
     active_loops: Vec<CheckedLoopId>,
 }
 
+/// Captured values of one admitted unsigned division. These identities are
+/// immutable, like product atoms: a replacement binding gets a fresh image.
+#[derive(Clone, Debug)]
+struct CapturedUnsignedDivision {
+    quotient: AffineForm,
+    dividend: AffineForm,
+    divisor: AffineForm,
+    parent: DerivationId,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AffineFactEvidence {
     Source(SourceAffineFactRef),
@@ -874,8 +884,9 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         obligations: Vec::new(),
         judged_range_conflicts: vec![false; function.range_conflicts.len()],
         product_intervals: HashMap::new(),
-        product_operands: HashSet::new(),
+        product_operands: HashMap::new(),
         product_atoms: HashMap::new(),
+        unsigned_divisions: Vec::new(),
         handle_images: HashMap::new(),
         call_goals: Vec::new(),
         counted_derivations: Vec::new(),
@@ -1139,7 +1150,7 @@ struct Analyzer<'check, 'unit> {
     /// binding the walk then reaches, exactly as the interval above is. It
     /// records only that the domain held: which values the fold names is a
     /// separate question the binding answers.
-    product_operands: HashSet<crate::NodePath>,
+    product_operands: HashMap<crate::NodePath, (DerivationId, u32)>,
     /// What every admitted exact product equals, as value identities: the atom
     /// the multiplication bound, and the two operand atoms it is the product
     /// of.
@@ -1150,6 +1161,9 @@ struct Analyzer<'check, 'unit> {
     /// values and the recorded equality stays true. [PRF-1] reads it to fold a
     /// term-scaled premise's nonlinear monomials back to affine.
     product_atoms: HashMap<AffineTermId, (AffineTermId, AffineTermId)>,
+    /// Source-establishment order is the specified tie-break for matching
+    /// a product against more than one captured division.
+    unsigned_divisions: Vec<CapturedUnsignedDivision>,
     /// What each minted opaque handle stands for. An `AffineTermId` is one
     /// immutable value identity, so this needs no kill and no join, exactly as
     /// `product_atoms` does.
@@ -9148,15 +9162,16 @@ impl Analyzer<'_, '_> {
         // term-scaled premise against. Recorded only when the domain
         // discharged through an affine route, which is what committed
         // `prepared_affine` and so fixed the images the judgment read.
+        let ordinal = u32::try_from(self.obligations.len())
+            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
         if discharged
             && outcome.route == Some(ProofRoute::Affine)
             && operation == CheckedIntegerOperation::MultiplyExact
-            && affine_product.is_some()
+            && let Some(parent) = outcome.derivation
         {
-            self.product_operands.insert(node_path.clone());
+            self.product_operands
+                .insert(node_path.clone(), (parent, ordinal));
         }
-        let ordinal = u32::try_from(self.obligations.len())
-            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
         if let Some(root) = outcome.derivation {
             self.derivations
                 .add_root(DerivationRootKind::IntegerDomainObligation(ordinal), root);
@@ -11073,22 +11088,24 @@ impl Analyzer<'_, '_> {
         self.affine_pure_expression_form(expression, state)
     }
 
-    /// The dividend's affine value image of one admitted S7 unsigned
-    /// division, read where the division was evaluated. A `set` commit must
-    /// read it before its own target kill, since a dividend naming the target
-    /// place has a different image afterwards.
-    fn unsigned_division_dividend_form(
+    /// The operand value images of one admitted S7 unsigned division, read
+    /// where it was evaluated. A `set` commit reads both before its target
+    /// kill, since an operand naming that place has a new image afterwards.
+    fn unsigned_division_operand_forms(
         &mut self,
         value: &CheckedExpression,
         state: &mut AffineFlowState,
-    ) -> Option<AffineForm> {
+    ) -> Option<(AffineForm, AffineForm)> {
         let CheckedExpression::IntegerOperation { arguments, .. } = value else {
             return None;
         };
-        let [dividend, _divisor] = arguments.as_slice() else {
+        let [dividend, divisor] = arguments.as_slice() else {
             return None;
         };
-        self.affine_pre_domain_form(dividend, state)
+        Some((
+            self.affine_pre_domain_form(dividend, state)?,
+            self.affine_pre_domain_form(divisor, state)?,
+        ))
     }
 
     /// Records what one admitted exact multiplication's bound value equals.
@@ -11111,7 +11128,7 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        if !self.product_operands.contains(carrier) {
+        if !self.product_operands.contains_key(carrier) {
             return;
         }
         let [left, right] = arguments.as_slice() else {
@@ -11157,19 +11174,27 @@ impl Analyzer<'_, '_> {
         self.affine_opaque_handle(*binding, state)?.unit_term()
     }
 
-    /// Retains the second fixed consequence of one S7 unsigned division:
-    /// for `q = a / k` with a positive written literal `k`, `k*q <= a`.
-    /// Both sides are the exact affine value images computed at this program
-    /// point, so later writes receive different atoms and cannot inherit it.
+    /// Captures one unsigned division for the fixed product consequence and
+    /// publishes the existing literal-divisor scaled image. Later writes get
+    /// new atoms and cannot retarget either consequence.
     fn establish_unsigned_division_image(
         &mut self,
         quotient: &AffineForm,
         dividend: &AffineForm,
+        divisor: &AffineForm,
         established: sources::EstablishedUnsignedDivision,
         state: &mut AffineFlowState,
     ) {
-        let Ok(scaled_quotient) = quotient.scale(established.divisor, &mut AffineCheckState::new())
-        else {
+        self.unsigned_divisions.push(CapturedUnsignedDivision {
+            quotient: quotient.clone(),
+            dividend: dividend.clone(),
+            divisor: divisor.clone(),
+            parent: established.parent,
+        });
+        let Some(scale) = established.literal_divisor else {
+            return;
+        };
+        let Ok(scaled_quotient) = quotient.scale(scale, &mut AffineCheckState::new()) else {
             return;
         };
         let Some(inequality) = Self::affine_less_equal(&scaled_quotient, dividend) else {
@@ -11178,6 +11203,59 @@ impl Analyzer<'_, '_> {
         state.facts.push(ActiveAffineFact {
             inequality,
             evidence: AffineFactEvidence::Derivation(established.parent),
+            active_loops: Vec::new(),
+        });
+    }
+
+    /// [ENT-3.S7] A checked product of a captured unsigned quotient and
+    /// divisor is no greater than the captured dividend. Matching reads
+    /// immutable value images, so a source binding's later assignment cannot
+    /// retarget the relation. Its own domain was proved before this transfer.
+    fn establish_unsigned_division_product(
+        &mut self,
+        product: &AffineForm,
+        value: &CheckedExpression,
+        state: &mut AffineFlowState,
+    ) {
+        let CheckedExpression::IntegerOperation {
+            carrier, arguments, ..
+        } = value
+        else {
+            return;
+        };
+        let Some(&(domain, ordinal)) = self.product_operands.get(carrier) else {
+            return;
+        };
+        let [left, right] = arguments.as_slice() else {
+            return;
+        };
+        let (Some(left), Some(right)) = (
+            self.affine_pre_domain_form(left, state),
+            self.affine_pre_domain_form(right, state),
+        ) else {
+            return;
+        };
+        let Some(division) = self.unsigned_divisions.iter().find(|division| {
+            (division.quotient == left && division.divisor == right)
+                || (division.quotient == right && division.divisor == left)
+        }) else {
+            return;
+        };
+        let Some(inequality) = Self::affine_less_equal(product, &division.dividend) else {
+            return;
+        };
+        let parent = self
+            .derivations
+            .intern(DerivationNode::UnsignedDivisionProduct {
+                product: carrier.clone(),
+                division: division.parent,
+                domain,
+            });
+        self.derivations
+            .add_root(DerivationRootKind::UnsignedDivisionProduct(ordinal), parent);
+        state.facts.push(ActiveAffineFact {
+            inequality,
+            evidence: AffineFactEvidence::Derivation(parent),
             active_loops: Vec::new(),
         });
     }
@@ -13213,9 +13291,12 @@ impl Analyzer<'_, '_> {
                 )
             })
             .flatten();
-        let commit_dividend = commit_division
+        let commit_operands = commit_division
             .as_ref()
-            .and_then(|_| self.unsigned_division_dividend_form(value, &mut state.affine));
+            .and_then(|_| self.unsigned_division_operand_forms(value, &mut state.affine));
+        if commit_reached && let Some(product) = &affine_value {
+            self.establish_unsigned_division_product(product, value, &mut state.affine);
+        }
         let mut target_kills = Vec::new();
         self.collect_target_kill(node_path, target, state, &mut target_kills);
         let receivers =
@@ -13318,12 +13399,13 @@ impl Analyzer<'_, '_> {
             }
             // The scaled quotient image binds the committed value to the
             // dividend image read before the kill [ENT-3.S7].
-            if let (Some(established), Some(dividend), Some(quotient)) =
-                (commit_division, commit_dividend, committed_affine)
+            if let (Some(established), Some((dividend, divisor)), Some(quotient)) =
+                (commit_division, commit_operands, committed_affine)
             {
                 self.establish_unsigned_division_image(
                     &quotient,
                     &dividend,
+                    &divisor,
                     established,
                     &mut state.affine,
                 );
@@ -13418,18 +13500,26 @@ impl Analyzer<'_, '_> {
                 }
                 if let Some(established) = unsigned_division
                     && let Some(quotient) = state.affine.values.get(binding).cloned()
-                    && let Some(dividend) =
-                        self.unsigned_division_dividend_form(value, &mut state.affine)
+                    && let Some((dividend, divisor)) =
+                        self.unsigned_division_operand_forms(value, &mut state.affine)
                 {
                     self.establish_unsigned_division_image(
                         &quotient,
                         &dividend,
+                        &divisor,
                         established,
                         &mut state.affine,
                     );
                 }
                 if judgment.reached {
                     self.record_product_atom(*binding, value, &mut state.affine);
+                    if let Some(product) = state.affine.values.get(binding).cloned() {
+                        self.establish_unsigned_division_product(
+                            &product,
+                            value,
+                            &mut state.affine,
+                        );
+                    }
                     if let Some(length) = range_length {
                         let place = self.bound_place(*binding);
                         let term = self.place_measure_term(

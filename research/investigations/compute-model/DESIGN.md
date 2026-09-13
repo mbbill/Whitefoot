@@ -68,3 +68,92 @@ The source and native comparisons belong in the existing compute-bench
 bundle, with its maintained correctness targets. This investigation owns the
 interpretation and rejected alternatives; merge or remove replaceable prose
 when superseded, retaining useful dated measurements at their evidence source.
+
+## Runtime division images
+
+The initial prefix consumer on `bf660d89` stops at `blocks * block_size`
+with OP-2 after computing `blocks = count / block_size`. The specification's
+S7 quotient facts require a written literal divisor. Runtime division therefore
+provides neither the bound needed to establish the product's ordinary domain
+from the consumer's bounded inputs nor the relation between the covered blocks
+and the input extent. This is a language proof-domain gap, before permission
+or scheduling is considered.
+
+The selected extension is a fixed value-image family. A discharged unsigned
+exact division of admitted terms or constants publishes `quotient <= dividend`
+for runtime divisors as well as literals. Its captured immutable value images
+may also justify `product <= dividend` when a later independently admitted
+exact multiplication uses that quotient and the same divisor values, in either
+operand order. Literal-divisor scaled affine images retain their existing
+behavior. The product's domain must still discharge normally before its value
+gets this consequence; this extension is not a complete integer arithmetic
+solver and does not add a new product-domain route.
+
+The reason is the division identity `dividend = quotient * divisor + remainder`
+with a positive unsigned divisor and a nonnegative remainder. The checker
+matches the exact captured images, not current binding spellings. Copies may
+retain a value, but replacing an operand cannot retarget the old theorem.
+The retained product consequence cites both the division and the checked
+multiplication. No nonlinear proposition is published or searched.
+
+The alternatives are keeping a literal block size, requiring callers to
+provide a precomputed partition with additional contracts, changing the scan
+algorithm to avoid division, or adding runtime tests for true arithmetic
+relations. They do not address the general runtime partition calculation;
+the last also conflicts with the source-proof boundary. A wider theorem or
+general nonlinear certificate language has no necessity established here.
+The proposed automatic-facts amendment records this choice pending owner
+ruling. Premise-removal cases will cover changed quotient, divisor and
+dividend values, signed operations, unproved division domains, and branch joins.
+
+The specification amendment changes ENT-3.S7 and DIAG-2, with no new numbered
+rule, token, production, operation spelling, or exception. It archives the
+outgoing v0.55 bytes and declares v0.56. The target-mapping review carries its
+rows forward because these facts erase and change no ABI, runtime operation,
+release action, or target-domain obligation. Six new conformance cases cover
+direct and committed products, surviving aliases, three invalid retargetings,
+and the requirement that a product discharge its own domain first; no old
+normative expectation is weakened.
+
+## Initial blocked consumers
+
+The prefix program uses two independent maps separated by a sequential scan of
+the block totals. Each output helper computes the ordinary sequential
+recurrence within its assigned range. The histogram's outer map hands one
+counter range to each input block; data-dependent writes remain sequential
+inside that helper, and the enclosing block loop is independently permitted.
+Both use runtime dimensions and process a final partial block.
+
+The histogram records the complete blocks' counter extent and then adds the
+tail row's width. Reusing that actual product also makes its workspace-bound
+certificate fold through the existing product identities. No new range or
+certificate rule is needed for either consumer. The scan helper requires the
+input view to fit in its output view; every call supplies equally sized views,
+and the returned allocation has exactly the input length.
+
+Independent C oracles use one direct pass, without the block decomposition.
+The native test covers 48 prefix configurations and 192 histogram
+configurations in both compiler modes at one, two, and four workers, checking
+every output element, the result length, and unchanged input. These checks
+passed before timing. Semantic tests separately establish that the intended
+outer loops are eligible and the inner recurrences are denied; an unrelated
+parallel initialization loop is not used as evidence for an algorithm stage.
+
+## Pool-off measurement path
+
+Inspection before the new timing runs found that the compute-bench adapters
+call `wf_<kernel>` directly in a parallel module. The emitted command entry
+instead calls the sequential clone when `wf__par_pool_active()` is false.
+Thus a one-worker table row currently measures a different entry path from
+an ordinary compiled command. The loop splitter returns a zero budget there,
+but the adapter still enters the outlined parallel lowering.
+
+The discriminating control is the same compiled module, runtime, input, and
+comparison process, with the adapter calling the already-emitted sequential
+clone at one worker. Compare both paths with `--no-overlap`; inspect the
+optimized bodies as well as elapsed time. A difference removed by selecting
+the command's world is a measurement-path cost. Any remaining difference
+requires separate lowering attribution. Neither conclusion is established by
+the source inspection alone. Before adopting a correction, check that the
+adapter selects the same world as command entry at multiple workers and that
+every existing kernel still computes its independently fixed result.

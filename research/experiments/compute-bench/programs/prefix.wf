@@ -1,0 +1,94 @@
+fn sum_block(input: own Slice<u64>) -> result: own u64 reads(input) {
+  let count = len_of(input);
+  let total = 0_u64;
+  for (i in 0_u64..count) {
+    set total = total +wrap input[i];
+  }
+  return total;
+}
+
+fn scan_block(input: own Slice<u64>, output: own MutSlice<u64>, base: own u64) -> result: own u64 reads(input), writes(output) contract {
+  requires len_of(input) <= len_of(output);
+} {
+  let count = len_of(input);
+  let total = base;
+  for (i in 0_u64..count) {
+    set output[i] = total;
+    set total = total +wrap input[i];
+  }
+  return total;
+}
+
+fn prefix(input: own Slice<u64>, block_size: own u64) -> result: own buffer<u64> reads(input) contract {
+  requires len_of(input) <= 16777216_u64;
+  requires 1_u64 <= block_size;
+  requires block_size <= 65536_u64;
+} {
+  doc "Exclusive scan modulo 2^64. Complete blocks use ordinary range helpers; the final partial block follows the same scan with the preceding blocks' total.";
+  let count = len_of(input);
+  let blocks = count / block_size;
+  let covered = blocks * block_size;
+  invariant covered_input: covered <= count;
+  let sums = buffer_new(blocks, 0_u64);
+  let output = buffer_new(count, 0_u64);
+  for (block in 0_u64..blocks) {
+    let first = block * block_size;
+    let end = first + block_size;
+    invariant block_end: end <= covered {
+      use block_size times (block + 1_u64 <= blocks);
+    }
+    region {
+      let part = slice_of(&input, first, end);
+      set sums[block] = sum_block(input: part);
+    }
+  }
+  let total = 0_u64;
+  for (block in 0_u64..blocks) {
+    let value = sums[block];
+    set sums[block] = total;
+    set total = total +wrap value;
+  }
+  for (block in 0_u64..blocks) {
+    let first = block * block_size;
+    let end = first + block_size;
+    invariant block_end: end <= covered {
+      use block_size times (block + 1_u64 <= blocks);
+    }
+    region {
+      let part = slice_of(&input, first, end);
+      let destination = mut_slice_of(&uniq output, first, end);
+      let base = sums[block];
+      let scanned = scan_block(input: part, output: move destination, base: base);
+    }
+  }
+  region {
+    let part = slice_of(&input, covered, count);
+    let destination = mut_slice_of(&uniq output, covered, count);
+    let scanned = scan_block(input: part, output: move destination, base: total);
+  }
+  return move output;
+}
+
+fn release_prefix(output: own buffer<u64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let input = buffer_new(17_u64, 0_u64);
+  for (i in 0_u64..17_u64) {
+    set input[i] = i + 1_u64;
+  }
+  region {
+    let view = slice_of(&input);
+    let output = prefix(input: view, block_size: 4_u64);
+    let length = len_of(output);
+    if length != 17_u64 {
+      return exit_status(code: 1_u8);
+    }
+    let last = output[16_u64];
+    if last != 136_u64 {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

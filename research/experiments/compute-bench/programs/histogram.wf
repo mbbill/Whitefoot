@@ -1,0 +1,113 @@
+fn count_block(input: own Slice<u64>, counters: own MutSlice<u64>) -> result: own u64 reads(input, counters), writes(counters) contract {
+  requires 1_u64 <= len_of(counters);
+} {
+  let count = len_of(input);
+  let buckets = len_of(counters);
+  for (i in 0_u64..count) {
+    let key = input[i];
+    let bucket = key % buckets;
+    let previous = counters[bucket];
+    set counters[bucket] = previous +wrap 1_u64;
+  }
+  return count;
+}
+
+fn merge_bucket(counters: own Slice<u64>, bucket: own u64, buckets: own u64) -> result: own u64 reads(counters) contract {
+  requires 1_u64 <= buckets;
+  requires buckets <= 256_u64;
+  requires len_of(counters) <= 4294967552_u64;
+  requires bucket < buckets;
+} {
+  let count = len_of(counters);
+  let rows = count / buckets;
+  let covered = rows * buckets;
+  invariant covered_counters: covered <= count;
+  let total = 0_u64;
+  for (row in 0_u64..rows) {
+    let start = row * buckets;
+    let end = start + buckets;
+    invariant row_end: end <= covered {
+      use buckets times (row + 1_u64 <= rows);
+    }
+    let at = start + bucket;
+    set total = total +wrap counters[at];
+  }
+  return total;
+}
+
+fn histogram(input: own Slice<u64>, block_size: own u64, buckets: own u64) -> result: own buffer<u64> reads(input) contract {
+  requires len_of(input) <= 16777216_u64;
+  requires 1_u64 <= block_size;
+  requires block_size <= 65536_u64;
+  requires 1_u64 <= buckets;
+  requires buckets <= 256_u64;
+} {
+  doc "Counts keys modulo the runtime bucket count. Each input block scatters into its own counter range, and a separate phase merges the private counters.";
+  let count = len_of(input);
+  let blocks = count / block_size;
+  let covered = blocks * block_size;
+  invariant covered_input: covered <= count;
+  let full_cells = blocks * buckets;
+  let cells = full_cells + buckets;
+  let counters = buffer_new(cells, 0_u64);
+  let output = buffer_new(buckets, 0_u64);
+  for (block in 0_u64..blocks) {
+    let first = block * block_size;
+    let end = first + block_size;
+    invariant input_end: end <= covered {
+      use block_size times (block + 1_u64 <= blocks);
+    }
+    let row_start = block * buckets;
+    let row_end = row_start + buckets;
+    invariant workspace_end: row_end <= cells {
+      use buckets times (block <= blocks);
+    }
+    region {
+      let part = slice_of(&input, first, end);
+      let workspace = mut_slice_of(&uniq counters, row_start, row_end);
+      let counted = count_block(input: part, counters: move workspace);
+    }
+  }
+  region {
+    let part = slice_of(&input, covered, count);
+    let workspace = mut_slice_of(&uniq counters, full_cells, cells);
+    let counted = count_block(input: part, counters: move workspace);
+  }
+  for (bucket in 0_u64..buckets) {
+    let all = slice_of(&counters);
+    set output[bucket] = merge_bucket(counters: all, bucket: bucket, buckets: buckets);
+  }
+  return move output;
+}
+
+fn release_histogram(output: own buffer<u64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let input = buffer_new(17_u64, 0_u64);
+  for (i in 0_u64..17_u64) {
+    set input[i] = i;
+  }
+  region {
+    let view = slice_of(&input);
+    let output = histogram(input: view, block_size: 4_u64, buckets: 3_u64);
+    let length = len_of(output);
+    if length != 3_u64 {
+      return exit_status(code: 1_u8);
+    }
+    let first = output[0_u64];
+    let second = output[1_u64];
+    let third = output[2_u64];
+    if first != 6_u64 {
+      return exit_status(code: 2_u8);
+    }
+    if second != 6_u64 {
+      return exit_status(code: 3_u8);
+    }
+    if third != 5_u64 {
+      return exit_status(code: 4_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

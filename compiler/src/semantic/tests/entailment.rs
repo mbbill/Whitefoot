@@ -191,6 +191,7 @@ enum DerivationConclusion {
     Goal { goal: GoalId, sign: GoalSign },
     IntegerDomain(Option<GoalId>),
     AffineConsequence,
+    UnsignedDivisionProduct,
     Contradiction,
     PostconditionAggregate,
 }
@@ -1148,6 +1149,22 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 );
                 DerivationConclusion::Contradiction
             }
+            DerivationNode::UnsignedDivisionProduct {
+                product,
+                division,
+                domain,
+            } => {
+                assert!(!product.components().is_empty());
+                assert!(summary.s7_derivations.iter().any(|source| {
+                    source.parent == *division
+                        && matches!(source.kind, S7DerivationKind::UnsignedDivisionBound { .. })
+                }));
+                assert!(matches!(
+                    retained_conclusion(&conclusions, *domain),
+                    DerivationConclusion::IntegerDomain(_)
+                ));
+                DerivationConclusion::UnsignedDivisionProduct
+            }
             DerivationNode::IntegerDomain { goal, parents } => {
                 if let Some(goal) = goal {
                     assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
@@ -1163,7 +1180,9 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 for parent in parents {
                     assert!(matches!(
                         retained_conclusion(&conclusions, *parent),
-                        DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction
+                        DerivationConclusion::Relation(_)
+                            | DerivationConclusion::Contradiction
+                            | DerivationConclusion::UnsignedDivisionProduct
                     ));
                 }
                 for premise in premises {
@@ -1637,6 +1656,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         DerivationConclusion::Goal { .. }
                         | DerivationConclusion::IntegerDomain(_)
                         | DerivationConclusion::AffineConsequence
+                        | DerivationConclusion::UnsignedDivisionProduct
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("delivery join parent must be a relation or contradiction")
                         }
@@ -1802,6 +1822,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         DerivationConclusion::Goal { .. }
                         | DerivationConclusion::IntegerDomain(_)
                         | DerivationConclusion::AffineConsequence
+                        | DerivationConclusion::UnsignedDivisionProduct
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("this obligation root cannot conclude that goal")
                         }
@@ -1905,6 +1926,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     }
                     DerivationConclusion::IntegerDomain(_)
                     | DerivationConclusion::AffineConsequence
+                    | DerivationConclusion::UnsignedDivisionProduct
                     | DerivationConclusion::PostconditionAggregate => {
                         panic!("a discharged call root cannot be a postcondition aggregate")
                     }
@@ -1928,6 +1950,19 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     .find_map(|(candidate, atomic)| (candidate == atom).then_some(atomic.parent))
                     .expect("the fixed counted atom must exist");
                 assert_eq!(root.node, expected);
+            }
+            DerivationRootKind::UnsignedDivisionProduct(ordinal) => {
+                let obligation = &summary.obligations[ordinal as usize];
+                assert!(obligation.discharged);
+                let DerivationNode::UnsignedDivisionProduct {
+                    product, domain, ..
+                } = &summary.derivations.nodes[root.node.0 as usize]
+                else {
+                    panic!("product root must name its constructor");
+                };
+                assert_eq!(product, &obligation.node_path);
+                assert_eq!(Some(*domain), obligation.derivation);
+                assert_eq!(conclusion, &DerivationConclusion::UnsignedDivisionProduct);
             }
             DerivationRootKind::BitAndBound(occurrence)
             | DerivationRootKind::ShiftOneNonzero(occurrence)
@@ -1992,7 +2027,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ) => {
                         assert_eq!(right, dividend);
                         assert_eq!(*bound, 0);
-                        assert!(*divisor > 0);
+                        retained_term(summary, *divisor);
                         assert!(!source.row.signed());
                         assert!(s7_result_names_subject(summary, *left, source));
                     }

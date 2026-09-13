@@ -86,6 +86,54 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn blocked_compute_matches_independent_oracles_at_runtime_dimensions() {
+    let kernels: [(&str, &[u8], &str, &str); 2] = [
+        (
+            "prefix",
+            include_bytes!("../../../../research/experiments/compute-bench/programs/prefix.wf"),
+            include_str!("../../../../research/experiments/compute-bench/prefix_host.ll"),
+            "WFB_PREFIX",
+        ),
+        (
+            "histogram",
+            include_bytes!("../../../../research/experiments/compute-bench/programs/histogram.wf"),
+            include_str!("../../../../research/experiments/compute-bench/histogram_host.ll"),
+            "WFB_HISTOGRAM",
+        ),
+    ];
+    for (name, source, adapter, selection) in kernels {
+        let oracle = format!(
+            "#define WFB_BLOCKED_ORACLE\n#define {selection}\n{}",
+            include_str!("../../../../research/experiments/compute-bench/blocked_bench.c")
+        );
+        for emitted in [compile(source), emit_with_overlap(source)] {
+            let llvm = format!(
+                "{}\n{adapter}",
+                emitted.replace("@main(", "@wf_blocked_smoke_main(")
+            );
+            let directory = test_directory();
+            let executable = build_linked_executable(&llvm, Some(&oracle), &[], &directory);
+            for workers in [1, 2, 4] {
+                let output = Command::new(&executable)
+                    .env("WF_WORKERS", workers.to_string())
+                    .env_remove("WF_SPLIT_WORK")
+                    .output()
+                    .expect("run independent blocked-compute oracle");
+                assert!(
+                    output.status.success(),
+                    "{name} workers={workers}: {output:?}"
+                );
+                assert!(
+                    String::from_utf8_lossy(&output.stdout)
+                        .contains(&format!("{name} oracle PASS:"))
+                );
+            }
+            std::fs::remove_dir_all(directory).expect("remove blocked-compute test files");
+        }
+    }
+}
+
+#[test]
 fn runtime_stencil_ranges_reach_their_backing_buffers() {
     let source =
         include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");

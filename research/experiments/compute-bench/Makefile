@@ -354,7 +354,7 @@ baseline-check:
 WF_AB ?=
 AB := $(if $(strip $(WF_PAR_CONTROL_FLAGS)$(WF_RUNTIME_CONTROL_FLAGS)$(WF_MODULE_CONTROL_FLAGS)$(WF_AB)$(BASELINE)),1,)
 
-KERNELS ?= mandelbrot quadrature records fir
+KERNELS ?= mandelbrot quadrature records fir stencil
 PASSES ?= 5
 CALLS  ?= 5
 
@@ -396,10 +396,10 @@ WFB_GAP_US ?=
 GAP_ENV := $(if $(strip $(WFB_GAP_US)),WFB_GAP_US=$(strip $(WFB_GAP_US)),)
 
 CHECK   := $(WORK)/check
-# New-language consumers also run in the untimed gate. Select KERNELS=stencil
-# for its full reference comparison. The default four need no range-loan
-# syntax; their pre-C2 entry/library adapter preserves the current algorithms.
-CHECKED := $(addprefix $(CHECK)/checked_,$(sort $(KERNELS) stencil range_split))
+# Every compute consumer runs in the untimed gate. Prefix and histogram
+# also have opt-in timed references; their runtime division images require
+# this branch's language, so the baseline twin does not select them by default.
+CHECKED := $(addprefix $(CHECK)/checked_,$(sort $(KERNELS) stencil range_split prefix histogram))
 JOBS    ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
 # The ParlayLib probe in `deps` decides whether this object exists at all.
@@ -613,6 +613,18 @@ $(BUILD)/%_bench.o: %_bench.c harness.h backend.h $(BUILD)/%_split.h
 	$(CC) $(CFLAGS) -I$(BUILD) -c $< -o $@
 $(BUILD)/%_bench-b.o: %_bench.c harness.h backend.h $(BUILD)/b/%_split.h
 	$(CC) $(CFLAGS) -I$(BUILD)/b -I$(BUILD) -c $< -o $@
+
+# Both blocked kernels share input generation and the one-pass oracles.
+# Selection chooses the consumer, identically for the plain and twin objects.
+define blocked-kernel
+$$(BUILD)/$(1)_bench.o: blocked_bench.c harness.h backend.h $$(BUILD)/$(1)_split.h
+	$$(CC) $$(CFLAGS) -DWFB_$(2) -I$$(BUILD) -c $$< -o $$@
+$$(BUILD)/$(1)_bench-b.o: blocked_bench.c harness.h backend.h $$(BUILD)/b/$(1)_split.h
+	$$(CC) $$(CFLAGS) -DWFB_$(2) -I$$(BUILD)/b -I$$(BUILD) -c $$< -o $$@
+endef
+$(eval $(call blocked-kernel,prefix,PREFIX))
+$(eval $(call blocked-kernel,histogram,HISTOGRAM))
+
 $(BUILD)/harness.o: harness.c harness.h backend.h
 	$(CC) $(CFLAGS) -I$(BUILD) -c $< -o $@
 $(BUILD)/backend_serial.o: backend_serial.c backend.h harness.h
