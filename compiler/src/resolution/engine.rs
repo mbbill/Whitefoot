@@ -180,20 +180,7 @@ impl From<ResolutionCompilerFailure> for BuildStop {
 pub fn resolve<'classified, 'lexed, 'source>(
     syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> ResolutionOutcome<'classified, 'lexed, 'source> {
-    resolve_with_inventory(syntax, crate::Inventory::ACTIVE)
-}
-
-/// [`resolve`] against one named [SYS-2] inventory state.
-///
-/// `inventory` selects which prefix of the [SYS-2] tables this unit resolves
-/// against; [`crate::Inventory::ACTIVE`] is the active specification's and is
-/// what [`resolve`] passes outside a candidate path.
-#[must_use]
-pub fn resolve_with_inventory<'classified, 'lexed, 'source>(
-    syntax: CanonicalSyntaxUnit<'classified, 'lexed, 'source>,
-    inventory: crate::Inventory,
-) -> ResolutionOutcome<'classified, 'lexed, 'source> {
-    match build_tables(&syntax, inventory) {
+    match build_tables(&syntax) {
         Ok(tables) => ResolutionOutcome::Complete(ResolvedSyntaxUnit {
             syntax,
             scopes: tables.scopes,
@@ -204,7 +191,6 @@ pub fn resolve_with_inventory<'classified, 'lexed, 'source>(
             lexical_uses: tables.lexical_uses,
             deferred_uses: tables.deferred_uses,
             postconditions: tables.postconditions,
-            inventory,
         }),
         Err(BuildStop::Issue(issue)) => ResolutionOutcome::SourceIssue {
             syntax,
@@ -214,10 +200,7 @@ pub fn resolve_with_inventory<'classified, 'lexed, 'source>(
     }
 }
 
-fn build_tables(
-    syntax: &CanonicalSyntaxUnit<'_, '_, '_>,
-    inventory: crate::Inventory,
-) -> Result<Tables, BuildStop> {
+fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, BuildStop> {
     let topology = &syntax.finalized.topology;
     let scopes = ScopeBuild::build(topology)?;
     // [DIAG-1] fixes this order: complete unit-wide FN-8 admission precedes
@@ -229,7 +212,7 @@ fn build_tables(
     // [SYS-3] admits the complete [SYS-2] inventory into every compilation
     // unit as the third declaration source [SYS-1]. Entry-form validation is
     // deliberately later and cannot change which system names exist.
-    let system = system_declarations(inventory);
+    let system = system_declarations();
     let mut roles = classify_roles(syntax, &scopes)?;
     // [LIV-2] a `set` target identifier that resolves to no binding declares
     // one exactly as a `let` does. Which targets those are is not a syntactic

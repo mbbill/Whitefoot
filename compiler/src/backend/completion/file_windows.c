@@ -345,6 +345,23 @@ static int wf_file_windows_socket_error(void) {
     return wf__windows_error_from_socket(WSAGetLastError());
 }
 
+/* TCP_NODELAY on every socket this leaf creates or accepts, right after the
+ * host hands it over.  Nagle's coalescing measured an 11.78x-14.98x
+ * throughput loss and a p99 tail of 41 ms against 2.4 ms without it
+ * (research/investigations/io-model/SCHEDULER-FINDINGS.md, experiment 17).
+ * A refusal leaves an ordinary, working socket -- just one that may coalesce
+ * small writes -- so it is never folded into the operation's own outcome. */
+static void wf_file_windows_disable_nagle(SOCKET native_socket) {
+    int one = 1;
+    (void)setsockopt(
+        native_socket,
+        IPPROTO_TCP,
+        TCP_NODELAY,
+        (const char *)&one,
+        sizeof one
+    );
+}
+
 /* One endpoint operation's two preparations: the host's own address record,
  * and one socket of that address's family.
  *
@@ -390,6 +407,7 @@ static wf_file_result wf_file_windows_socket_listen(
         /* Every call below names the Winsock object; `endpoint` is the
          * descriptor number the program's own accounting is written in. */
         SOCKET native_socket = wf_file_windows_socket(endpoint);
+        wf_file_windows_disable_nagle(native_socket);
         if (bind(
                 native_socket,
                 (const struct sockaddr *)native.bytes,
@@ -424,13 +442,17 @@ static wf_file_result wf_file_windows_socket_connect(
         result.head.error_code = *wf__windows_error_location();
         return result;
     }
-    if (connect(
-            wf_file_windows_socket(endpoint),
-            (const struct sockaddr *)native.bytes,
-            (int)length
-        ) == 0) {
-        result.head.value = endpoint;
-        return result;
+    {
+        SOCKET native_socket = wf_file_windows_socket(endpoint);
+        wf_file_windows_disable_nagle(native_socket);
+        if (connect(
+                native_socket,
+                (const struct sockaddr *)native.bytes,
+                (int)length
+            ) == 0) {
+            result.head.value = endpoint;
+            return result;
+        }
     }
     refusal = wf_file_windows_socket_error();
     (void)wf__windows_socket_close(endpoint);
@@ -466,6 +488,7 @@ static wf_file_result wf_file_windows_socket_accept(wf_file_request *request) {
         result.head.error_code = wf_file_windows_socket_error();
         return result;
     }
+    wf_file_windows_disable_nagle(taken);
     /* A connection inherits its listener's properties, so it is already
      * overlapped and already not inherited; what it does not have is a
      * descriptor number and a row in this runtime's own table. */

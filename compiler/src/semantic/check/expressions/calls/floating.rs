@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
-use crate::{DeclarationId, SemanticIssueKind, SemanticRule};
+use crate::{DeclarationId, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
 use super::super::super::super::model::{
     CheckedExpression, CheckedFloatOperation, CheckedMode, CheckedType,
@@ -53,8 +53,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        let operation = float_operation(spelling)
-            .expect("caller dispatches only closed floating-point operation names");
+        let operation =
+            float_operation(spelling).ok_or(SemanticCompilerFailure::InvalidResolution)?;
         self.reject_named_operation_arguments(node, spelling)?;
         let operand_count = operation.operand_count();
         if operand_count > 0 {

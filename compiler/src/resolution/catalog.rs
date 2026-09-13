@@ -468,149 +468,8 @@ const LISTEN_OUTCOME: u8 = 27;
 const ACCEPT_OUTCOME: u8 = 28;
 const CONNECT_OUTCOME: u8 = 29;
 
-/// The traversal surface switch [SYS-2, SYS-14], activated as v0.32.
-///
-/// `false` admits exactly the v0.31 inventory: the traversal rows below are
-/// unreachable, every declaration ordinal keeps its v0.31 value, and the
-/// resolver, checker, and backend see the same one hundred sixty-seven
-/// records they saw before. `true` admits the directory-enumeration
-/// surface — `DirectorySource`, `ListOutcome`, `open_directory`,
-/// `open_directory_source`, and `directory_next` — as the last row of each
-/// [SYS-2] table. It is now `true`,
-/// because v0.32 activated that surface; `false` stays reachable as the exact
-/// differential against the v0.31 base tables.
-pub const TRAVERSAL_SURFACE: bool = true;
-
-/// The active v0.33 file-open-by-name switch [SYS-2, SYS-11].
-///
-/// `false` admits exactly the superseded v0.32 inventory: the `open_file` row
-/// below is unreachable, every declaration ordinal keeps its v0.32 value, and
-/// the resolver, checker, and backend see the same one hundred ninety-two
-/// records in that archive. `true` admits the active operation — the
-/// `open_read` sibling that takes a caller-owned single path component
-/// instead of a `RelativePath` — as the last row of the [SYS-2] operation
-/// table. The compiler selects `true` so the complete v0.33 surface follows
-/// the ordinary path; `false` remains the exact superseded-v0.32 differential.
-pub const OPEN_BY_NAME: bool = true;
-
-/// The active v0.50 streams-and-TCP switch [SYS-2, SYS-15, SYS-16, SYS-17,
-/// SYS-18].
-///
-/// `false` admits exactly the superseded v0.49 inventory: the stream, address,
-/// listener and connection rows below are unreachable, every declaration
-/// ordinal keeps its v0.49 value, and the resolver, checker, and backend see
-/// the same two hundred twenty-seven records that archive declares. `true`
-/// admits the active surface — `InputStream`, `SocketAddress`, `TcpListener`,
-/// `TcpReceive`, `TcpSend`, the system-declared struct `TcpConnection`, the
-/// three connection outcome enums, and the ten operations of §4 — as the last
-/// rows of each [SYS-2] table. The compiler selects `true`; `false` remains
-/// the exact superseded-v0.49 differential.
-pub const STREAMS_AND_TCP: bool = true;
-
-/// One selected [SYS-2] inventory state.
-///
-/// The three states are strictly nested prefixes of the tables below, taken
-/// in normative order, so a state is a length rather than a set of
-/// independent features: every declaration ordinal an earlier state assigns
-/// keeps exactly that value in a later one. That is what lets one differential
-/// test show that switching a candidate off leaves every earlier program's
-/// emitted module byte-identical.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Inventory {
-    /// The v0.31 inventory: the tables with no candidate row at all.
-    Base,
-    /// The superseded v0.32 inventory: [`Inventory::Base`] plus the [SYS-14]
-    /// traversal surface.
-    Traversal,
-    /// The active v0.33 inventory: [`Inventory::Traversal`] plus the
-    /// [SYS-11] `open_file` operation.
-    OpenByName,
-    /// The superseded v0.49 unified-state file-open surface:
-    /// [`Inventory::OpenByName`] plus the explicit handle factory, one-shot
-    /// permit, and reservation row.
-    FilePermits,
-    /// The active v0.50 surface: [`Inventory::FilePermits`] plus the readable
-    /// stream, the socket address, the listener, the connection struct with
-    /// its two direction resources, the three connection outcome enums, and
-    /// their ten operations.
-    StreamsAndTcp,
-}
-
-impl Inventory {
-    /// The inventory the shipped compilation path selects, fixed by the two
-    /// switches above and read once, by `compile` and `resolve`.
-    pub const ACTIVE: Self = if STREAMS_AND_TCP {
-        Self::StreamsAndTcp
-    } else if OPEN_BY_NAME {
-        Self::FilePermits
-    } else if TRAVERSAL_SURFACE {
-        Self::Traversal
-    } else {
-        Self::Base
-    };
-
-    /// How many [`SYSTEM_NOMINALS`] rows this state admits.
-    const fn nominals(self) -> usize {
-        match self {
-            Self::Base => BASE_NOMINALS,
-            Self::Traversal | Self::OpenByName => OPEN_BY_NAME_NOMINALS,
-            Self::FilePermits => FILE_PERMIT_NOMINALS,
-            Self::StreamsAndTcp => SYSTEM_NOMINALS.len(),
-        }
-    }
-
-    /// How many [`SYSTEM_CONSTRUCTORS`] rows this state admits.
-    const fn constructors(self) -> usize {
-        match self {
-            Self::Base => BASE_CONSTRUCTORS,
-            Self::Traversal | Self::OpenByName => OPEN_BY_NAME_CONSTRUCTORS,
-            Self::FilePermits => FILE_PERMIT_CONSTRUCTORS,
-            Self::StreamsAndTcp => SYSTEM_CONSTRUCTORS.len(),
-        }
-    }
-
-    /// How many [`SYSTEM_OPERATIONS`] rows this state admits.
-    const fn operations(self) -> usize {
-        match self {
-            Self::Base => BASE_OPERATIONS,
-            Self::Traversal => TRAVERSAL_OPERATIONS,
-            Self::OpenByName => OPEN_BY_NAME_OPERATIONS,
-            Self::FilePermits => FILE_PERMIT_OPERATIONS,
-            Self::StreamsAndTcp => SYSTEM_OPERATIONS.len(),
-        }
-    }
-}
-
-/// The v0.31 nominal-type count: the prefix of [`SYSTEM_NOMINALS`] the v0.31
-/// specification declared.
-const BASE_NOMINALS: usize = 14;
-/// The v0.31 constructor count: the prefix of [`SYSTEM_CONSTRUCTORS`] the
-/// v0.31 specification declared.
-const BASE_CONSTRUCTORS: usize = 37;
-/// The v0.31 operation count: the prefix of [`SYSTEM_OPERATIONS`] the v0.31
-/// specification declared.
-const BASE_OPERATIONS: usize = 11;
-/// The v0.32 operation count: the prefix of [`SYSTEM_OPERATIONS`] that
-/// specification declared.
-const TRAVERSAL_OPERATIONS: usize = 14;
-/// The v0.33-v0.36 operation count before explicit file-open authority.
-const OPEN_BY_NAME_OPERATIONS: usize = 15;
-/// The v0.33-v0.36 nominal count before explicit file-open authority.
-const OPEN_BY_NAME_NOMINALS: usize = 16;
-/// The v0.32-v0.41 constructor count before the open outcome enums.
-const OPEN_BY_NAME_CONSTRUCTORS: usize = 40;
-/// The v0.49 nominal count before the streams-and-TCP surface.
-const FILE_PERMIT_NOMINALS: usize = 21;
-/// The v0.49 constructor count before the streams-and-TCP surface.
-const FILE_PERMIT_CONSTRUCTORS: usize = 46;
-/// The v0.49 operation count before the streams-and-TCP surface.
-const FILE_PERMIT_OPERATIONS: usize = 19;
-
-/// The [SYS-2] nominal types in normative table order.
-///
-/// The first fourteen are v0.31's; the last two are v0.32's traversal-surface
-/// additions and are admitted only under
-/// [`TRAVERSAL_SURFACE`].
+/// The [SYS-2] nominal types in normative table order: the active
+/// specification's complete inventory.
 pub const SYSTEM_NOMINALS: [SystemNominal; 30] = [
     opaque("Args"),
     opaque("HostString"),
@@ -653,22 +512,22 @@ const CONNECTION_DIRECTIONS: [SystemField; 2] = [
     field("send", SystemTypeRef::Nominal(TCP_SEND)),
 ];
 
-/// The [SYS-2] nominal types one inventory state admits.
+/// The [SYS-2] nominal types.
 #[must_use]
-pub fn system_nominals(inventory: Inventory) -> &'static [SystemNominal] {
-    &SYSTEM_NOMINALS[..inventory.nominals()]
+pub fn system_nominals() -> &'static [SystemNominal] {
+    &SYSTEM_NOMINALS
 }
 
-/// The [SYS-2] enum-variant constructors one inventory state admits.
+/// The [SYS-2] enum-variant constructors.
 #[must_use]
-pub fn system_constructors(inventory: Inventory) -> &'static [SystemConstructor] {
-    &SYSTEM_CONSTRUCTORS[..inventory.constructors()]
+pub fn system_constructors() -> &'static [SystemConstructor] {
+    &SYSTEM_CONSTRUCTORS
 }
 
-/// The [SYS-2] operations one inventory state admits.
+/// The [SYS-2] operations.
 #[must_use]
-pub fn system_operations(inventory: Inventory) -> &'static [SystemOperation] {
-    &SYSTEM_OPERATIONS[..inventory.operations()]
+pub fn system_operations() -> &'static [SystemOperation] {
+    &SYSTEM_OPERATIONS
 }
 
 const fn opaque(spelling: &'static str) -> SystemNominal {
@@ -758,10 +617,6 @@ const fn constructor(
 
 /// The [SYS-2] enum-variant constructors in normative table order: each enum
 /// in table order, and within one enum each variant in declared order.
-///
-/// The first thirty-nine are the active specification's; the last three are
-/// the traversal-surface candidate's `ListOutcome` variants, admitted only
-/// under [`TRAVERSAL_SURFACE`].
 pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 52] = [
     constructor("InvalidIndex", ARG_ERROR, &[]),
     constructor("Utf8Invalid", UTF8_ERROR, &[]),
@@ -844,10 +699,6 @@ const fn ok_u64(err: u8) -> SystemTypeRef {
 }
 
 /// The [SYS-2] operation signatures in normative table order.
-///
-/// The first eleven are v0.31's; the next three are the [SYS-14] traversal
-/// surface's, admitted under [`TRAVERSAL_SURFACE`]; the last is the
-/// active v0.33 file-open-by-name addition, admitted under [`OPEN_BY_NAME`].
 ///
 /// Each row registers its region and value parameters, result type, unified
 /// state subjects and target action. System
@@ -1075,7 +926,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
         target_action: TargetAction::INLINE,
         result_state_origin: SystemResultStateOrigin::None,
     },
-    // The three traversal-surface candidate rows [SYS-14].
+    // The three directory-traversal rows [SYS-14].
     SystemOperation {
         spelling: "open_directory",
         regions: &["'c", "'n"],
@@ -1743,13 +1594,13 @@ pub fn system_release_row(nominal: u8) -> SystemReleaseRow {
     }
 }
 
-/// How many declaration records one inventory's nominal-type block occupies.
+/// How many declaration records the nominal-type block occupies.
 ///
 /// A nominal-type row occupies one record, and a struct nominal's own field
 /// records follow it immediately [SYS-2], so this is no longer the count of
 /// nominal types.
-fn nominal_record_count(inventory: Inventory) -> usize {
-    system_nominals(inventory)
+fn nominal_record_count() -> usize {
+    system_nominals()
         .iter()
         .map(|nominal| 1 + nominal.fields.len())
         .sum()
@@ -1760,9 +1611,9 @@ fn nominal_record_count(inventory: Inventory) -> usize {
 /// Returns `None` for a struct nominal's owner-local field ordinal, which
 /// never enters source lookup.
 #[must_use]
-pub fn system_nominal_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
+pub fn system_nominal_index(id: SystemDeclarationId) -> Option<u8> {
     let mut ordinal = usize::from(id.ordinal());
-    for (index, nominal) in system_nominals(inventory).iter().enumerate() {
+    for (index, nominal) in system_nominals().iter().enumerate() {
         if ordinal == 0 {
             return u8::try_from(index).ok();
         }
@@ -1777,14 +1628,14 @@ pub fn system_nominal_index(id: SystemDeclarationId, inventory: Inventory) -> Op
 
 /// Maps one lookup-class [SYS-2] declaration to its constructor-table index.
 #[must_use]
-pub fn system_constructor_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
+pub fn system_constructor_index(id: SystemDeclarationId) -> Option<u8> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = nominal_record_count(inventory);
+    let nominals = nominal_record_count();
     if ordinal < nominals {
         return None;
     }
     ordinal -= nominals;
-    for (index, constructor) in system_constructors(inventory).iter().enumerate() {
+    for (index, constructor) in system_constructors().iter().enumerate() {
         if ordinal == 0 {
             return u8::try_from(index).ok();
         }
@@ -1799,12 +1650,9 @@ pub fn system_constructor_index(id: SystemDeclarationId, inventory: Inventory) -
 
 /// Maps one constructor-table index to its [SYS-2] declaration identity.
 #[must_use]
-pub fn system_constructor_declaration(
-    index: u8,
-    inventory: Inventory,
-) -> Option<SystemDeclarationId> {
-    let mut ordinal = nominal_record_count(inventory);
-    for (constructor_index, constructor) in system_constructors(inventory).iter().enumerate() {
+pub fn system_constructor_declaration(index: u8) -> Option<SystemDeclarationId> {
+    let mut ordinal = nominal_record_count();
+    for (constructor_index, constructor) in system_constructors().iter().enumerate() {
         if constructor_index == usize::from(index) {
             return u16::try_from(ordinal).ok().map(SystemDeclarationId::new);
         }
@@ -1815,17 +1663,17 @@ pub fn system_constructor_declaration(
 
 /// Maps one lookup-class [SYS-2] declaration to its operation-table index.
 #[must_use]
-pub fn system_operation_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
+pub fn system_operation_index(id: SystemDeclarationId) -> Option<u8> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = nominal_record_count(inventory);
+    let nominals = nominal_record_count();
     if ordinal < nominals {
         return None;
     }
     ordinal -= nominals;
-    for constructor in system_constructors(inventory) {
+    for constructor in system_constructors() {
         ordinal = ordinal.checked_sub(1 + constructor.fields.len())?;
     }
-    for (index, operation) in system_operations(inventory).iter().enumerate() {
+    for (index, operation) in system_operations().iter().enumerate() {
         if ordinal == 0 {
             return u8::try_from(index).ok();
         }
@@ -1847,8 +1695,8 @@ pub fn system_operation_index(id: SystemDeclarationId, inventory: Inventory) -> 
 /// records with none.
 ///
 /// The active specification's complete inventory is three hundred and seven
-/// records; the retained prefix states are smaller exact table prefixes.
-pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclarationRecord> {
+/// records.
+pub(crate) fn system_declarations() -> Vec<SystemDeclarationRecord> {
     let mut records = Vec::with_capacity(307);
     let push = |spelling: &'static str, class: Option<DeclarationClass>, records: &mut Vec<_>| {
         let Ok(ordinal) = u16::try_from(records.len()) else {
@@ -1860,7 +1708,7 @@ pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclaration
             class,
         });
     };
-    for nominal in system_nominals(inventory) {
+    for nominal in system_nominals() {
         push(
             nominal.spelling,
             Some(DeclarationClass::NominalType),
@@ -1874,7 +1722,7 @@ pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclaration
             push(field.name, None, &mut records);
         }
     }
-    for constructor in system_constructors(inventory) {
+    for constructor in system_constructors() {
         push(
             constructor.spelling,
             Some(DeclarationClass::EnumVariant),
@@ -1884,7 +1732,7 @@ pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclaration
             push(field.name, None, &mut records);
         }
     }
-    for operation in system_operations(inventory) {
+    for operation in system_operations() {
         push(
             operation.spelling,
             Some(DeclarationClass::Function),
@@ -1904,9 +1752,9 @@ pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclaration
 ///
 /// Returns `None` for an owner-local field, region-parameter, or
 /// value-parameter ordinal, which never enters source lookup.
-pub fn system_entity(id: SystemDeclarationId, inventory: Inventory) -> Option<SystemEntity> {
+pub fn system_entity(id: SystemDeclarationId) -> Option<SystemEntity> {
     let mut ordinal = usize::from(id.ordinal());
-    for nominal in system_nominals(inventory) {
+    for nominal in system_nominals() {
         if ordinal == 0 {
             return Some(SystemEntity::Nominal(nominal));
         }
@@ -1916,7 +1764,7 @@ pub fn system_entity(id: SystemDeclarationId, inventory: Inventory) -> Option<Sy
         }
         ordinal -= nominal.fields.len();
     }
-    for constructor in system_constructors(inventory) {
+    for constructor in system_constructors() {
         if ordinal == 0 {
             return Some(SystemEntity::Constructor(constructor));
         }
@@ -1926,7 +1774,7 @@ pub fn system_entity(id: SystemDeclarationId, inventory: Inventory) -> Option<Sy
         }
         ordinal -= constructor.fields.len();
     }
-    for operation in system_operations(inventory) {
+    for operation in system_operations() {
         if ordinal == 0 {
             return Some(SystemEntity::Operation(operation));
         }
@@ -1962,103 +1810,12 @@ mod tests {
     use std::collections::HashSet;
 
     use super::{
-        DeclarationClass, Inventory, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS,
-        ReservedNameClass, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
-        SystemDeclarationId, SystemEntity, SystemNominalCategory, SystemParameterMode,
-        SystemResultPayload, SystemTypeRef, operation_state_effects, reserved_name,
-        system_constructors, system_declarations, system_entity, system_nominals,
-        system_operations,
+        DeclarationClass, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS, ReservedNameClass,
+        SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemDeclarationId, SystemEntity,
+        SystemNominalCategory, SystemParameterMode, SystemResultPayload, SystemTypeRef,
+        operation_state_effects, reserved_name, system_constructors, system_declarations,
+        system_entity, system_nominals, system_operations,
     };
-
-    #[test]
-    fn system_inventory_matches_the_sys2_counted_totals() {
-        // [SYS-2]: fourteen nominal types, thirty-nine enum-variant
-        // constructors, sixty variant fields, eleven operations, fourteen
-        // operation region parameters, and twenty-six operation value
-        // parameters — the active open signature adds its one permit record
-        // while this legacy membership probe keeps the earlier operation set.
-        let nominals = system_nominals(Inventory::Base);
-        let constructors = system_constructors(Inventory::Base);
-        let operations = system_operations(Inventory::Base);
-        assert_eq!(nominals.len(), 14);
-        assert_eq!(nominals.iter().filter(|n| n.is_opaque()).count(), 7);
-        assert_eq!(constructors.len(), 37);
-        assert_eq!(
-            constructors
-                .iter()
-                .map(|constructor| constructor.fields.len())
-                .sum::<usize>(),
-            60
-        );
-        assert_eq!(operations.len(), 11);
-        assert_eq!(
-            operations
-                .iter()
-                .map(|operation| operation.regions.len())
-                .sum::<usize>(),
-            14
-        );
-        assert_eq!(
-            operations
-                .iter()
-                .map(|operation| operation.parameters.len())
-                .sum::<usize>(),
-            27
-        );
-
-        let records = system_declarations(Inventory::Base);
-        assert_eq!(records.len(), 163);
-        assert!(
-            records
-                .iter()
-                .enumerate()
-                .all(|(index, record)| usize::from(record.id().ordinal()) == index)
-        );
-        assert_eq!(
-            records
-                .iter()
-                .filter(|record| record.lookup_class() == Some(DeclarationClass::NominalType))
-                .count(),
-            14
-        );
-        assert_eq!(
-            records
-                .iter()
-                .filter(|record| record.lookup_class() == Some(DeclarationClass::EnumVariant))
-                .count(),
-            37
-        );
-        assert_eq!(
-            records
-                .iter()
-                .filter(|record| record.lookup_class() == Some(DeclarationClass::Function))
-                .count(),
-            11
-        );
-        assert_eq!(
-            records
-                .iter()
-                .filter(|record| record.lookup_class().is_none())
-                .count(),
-            101
-        );
-
-        // Deterministic preorder spot checks used by diagnostic origins.
-        for (ordinal, spelling) in [
-            (0, "Args"),
-            (6, "ExitStatus"),
-            (7, "ArgError"),
-            (13, "IoError"),
-            (14, "InvalidIndex"),
-            (27, "NotFound"),
-            (108, "Other"),
-            (111, "args_count"),
-            (140, "open_read"),
-            (161, "exit_status"),
-        ] {
-            assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
-        }
-    }
 
     #[test]
     fn system_inventory_satisfies_the_sys2_data_properties() {
@@ -2138,11 +1895,8 @@ mod tests {
         let mut constructors = 0;
         let mut operations = 0;
         let mut owner_local = 0;
-        for record in system_declarations(Inventory::Base) {
-            match (
-                record.lookup_class(),
-                system_entity(record.id(), Inventory::Base),
-            ) {
+        for record in system_declarations() {
+            match (record.lookup_class(), system_entity(record.id())) {
                 (Some(DeclarationClass::NominalType), Some(SystemEntity::Nominal(nominal))) => {
                     assert_eq!(nominal.spelling, record.spelling());
                     nominals += 1;
@@ -2166,209 +1920,10 @@ mod tests {
         }
         assert_eq!(
             (nominals, constructors, operations, owner_local),
-            (14, 37, 11, 101)
+            (30, 52, 29, 196)
         );
-        assert!(system_entity(SystemDeclarationId::new(163), Inventory::Base).is_none());
-        assert!(system_entity(SystemDeclarationId::new(u16::MAX), Inventory::Base).is_none());
-    }
-
-    /// The v0.32 traversal inventory is the v0.31 inventory plus exactly the
-    /// traversal rows, and every preorder ordinal below the first new nominal
-    /// keeps its meaning only where the specification's own preorder keeps it:
-    /// the two new nominal types shift every constructor and operation
-    /// ordinal by two, which is why the switch selects one whole inventory
-    /// rather than patching the other.
-    #[test]
-    fn traversal_inventory_matches_its_counted_totals() {
-        let nominals = system_nominals(Inventory::Traversal);
-        let constructors = system_constructors(Inventory::Traversal);
-        let operations = system_operations(Inventory::Traversal);
-        assert_eq!(nominals.len(), 16);
-        assert_eq!(nominals.iter().filter(|n| n.is_opaque()).count(), 8);
-        assert_eq!(constructors.len(), 40);
-        assert_eq!(
-            constructors
-                .iter()
-                .map(|constructor| constructor.fields.len())
-                .sum::<usize>(),
-            63
-        );
-        assert_eq!(operations.len(), 14);
-        assert_eq!(
-            operations
-                .iter()
-                .map(|operation| operation.regions.len())
-                .sum::<usize>(),
-            19
-        );
-        assert_eq!(
-            operations
-                .iter()
-                .map(|operation| operation.parameters.len())
-                .sum::<usize>(),
-            38
-        );
-
-        let records = system_declarations(Inventory::Traversal);
-        assert_eq!(records.len(), 190);
-        assert!(
-            records
-                .iter()
-                .enumerate()
-                .all(|(index, record)| usize::from(record.id().ordinal()) == index)
-        );
-        for (ordinal, spelling) in [
-            (14, "DirectorySource"),
-            (15, "ListOutcome"),
-            (16, "InvalidIndex"),
-            (110, "Other"),
-            (113, "ListBytes"),
-            (116, "ListEnd"),
-            (117, "ListFailed"),
-            (119, "args_count"),
-            (169, "exit_status"),
-            (171, "open_directory"),
-            (179, "open_directory_source"),
-            (183, "directory_next"),
-        ] {
-            assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
-        }
-        let mut nominals = 0;
-        let mut constructors = 0;
-        let mut operations = 0;
-        let mut owner_local = 0;
-        for record in system_declarations(Inventory::Traversal) {
-            match (
-                record.lookup_class(),
-                system_entity(record.id(), Inventory::Traversal),
-            ) {
-                (Some(DeclarationClass::NominalType), Some(SystemEntity::Nominal(nominal))) => {
-                    assert_eq!(nominal.spelling, record.spelling());
-                    nominals += 1;
-                }
-                (
-                    Some(DeclarationClass::EnumVariant),
-                    Some(SystemEntity::Constructor(constructor)),
-                ) => {
-                    assert_eq!(constructor.spelling, record.spelling());
-                    constructors += 1;
-                }
-                (Some(DeclarationClass::Function), Some(SystemEntity::Operation(operation))) => {
-                    assert_eq!(operation.spelling, record.spelling());
-                    operations += 1;
-                }
-                (None, None) => owner_local += 1,
-                (class, entity) => {
-                    panic!("inconsistent record {record:?}: {class:?} vs {entity:?}")
-                }
-            }
-        }
-        assert_eq!(
-            (nominals, constructors, operations, owner_local),
-            (16, 40, 14, 120)
-        );
-        assert!(system_entity(SystemDeclarationId::new(190), Inventory::Traversal).is_none());
-    }
-
-    /// The active [SYS-11] file-open-by-name row's own counted totals.
-    ///
-    /// This retained membership probe stops before the active factory and
-    /// permit rows. Its open operations nevertheless use the active signature,
-    /// so their one permit parameter is included in these counted totals.
-    #[test]
-    fn open_by_name_candidate_inventory_matches_its_counted_totals() {
-        let nominals = system_nominals(Inventory::OpenByName);
-        let constructors = system_constructors(Inventory::OpenByName);
-        let operations = system_operations(Inventory::OpenByName);
-        assert_eq!(nominals.len(), 16);
-        assert_eq!(constructors.len(), 40);
-        assert_eq!(operations.len(), 15);
-        assert_eq!(
-            operations
-                .iter()
-                .map(|operation| operation.regions.len())
-                .sum::<usize>(),
-            21
-        );
-        assert_eq!(
-            operations
-                .iter()
-                .map(|operation| operation.parameters.len())
-                .sum::<usize>(),
-            43
-        );
-
-        let records = system_declarations(Inventory::OpenByName);
-        assert_eq!(records.len(), 198);
-        // Every active-inventory record keeps its exact ordinal and spelling.
-        for (ordinal, record) in system_declarations(Inventory::Traversal).iter().enumerate() {
-            assert_eq!(records[ordinal].spelling(), record.spelling());
-        }
-        for (ordinal, spelling) in [
-            (190, "open_file"),
-            (191, "'c"),
-            (192, "'n"),
-            (193, "permit"),
-            (194, "root"),
-            (195, "name"),
-            (196, "start"),
-            (197, "end"),
-        ] {
-            assert_eq!(records[ordinal].spelling(), spelling, "ordinal {ordinal}");
-        }
-        let open_file = SystemDeclarationId::new(190);
-        let Some(SystemEntity::Operation(operation)) =
-            system_entity(open_file, Inventory::OpenByName)
-        else {
-            panic!("the active ordinal must name the active operation");
-        };
-        assert_eq!(operation.spelling, "open_file");
-        assert_eq!(operation.target_action, super::TargetAction::MAY_SUSPEND);
-        // Off, the same ordinal is past the inventory and names nothing.
-        assert!(system_entity(open_file, Inventory::Traversal).is_none());
-        assert!(system_entity(SystemDeclarationId::new(198), Inventory::OpenByName).is_none());
-    }
-
-    #[test]
-    fn file_permit_inventory_matches_the_active_counted_totals() {
-        let nominals = system_nominals(Inventory::FilePermits);
-        let constructors = system_constructors(Inventory::FilePermits);
-        let operations = system_operations(Inventory::FilePermits);
-        assert_eq!(nominals.len(), 21);
-        assert_eq!(
-            nominals
-                .iter()
-                .filter(|nominal| nominal.is_opaque())
-                .count(),
-            10
-        );
-        assert_eq!(constructors.len(), 46);
-        assert_eq!(operations.len(), 19);
-        assert_eq!(
-            operations
-                .iter()
-                .map(|operation| operation.regions.len())
-                .sum::<usize>(),
-            22
-        );
-        assert_eq!(
-            operations
-                .iter()
-                .map(|operation| operation.parameters.len())
-                .sum::<usize>(),
-            47
-        );
-        let records = system_declarations(Inventory::FilePermits);
-        assert_eq!(records.len(), 227);
-        let reserve = SystemDeclarationId::new(218);
-        let Some(SystemEntity::Operation(operation)) =
-            system_entity(reserve, Inventory::FilePermits)
-        else {
-            panic!("the final active ordinal must name reserve_handle");
-        };
-        assert_eq!(operation.spelling, "reserve_handle");
-        assert_eq!(operation.target_action, super::TargetAction::INLINE);
-        assert!(system_entity(SystemDeclarationId::new(209), Inventory::FilePermits).is_none());
+        assert!(system_entity(SystemDeclarationId::new(307)).is_none());
+        assert!(system_entity(SystemDeclarationId::new(u16::MAX)).is_none());
     }
 
     #[test]
@@ -2390,7 +1945,7 @@ mod tests {
             .collect();
         assert_eq!(
             opaque,
-            system_nominals(Inventory::ACTIVE)
+            system_nominals()
                 .iter()
                 .filter(|nominal| nominal.is_opaque())
                 .map(|nominal| nominal.spelling)
@@ -2426,28 +1981,27 @@ mod tests {
                     .push((name.to_owned(), ty.to_owned()));
             }
         }
-        let catalog_structs: Vec<(String, Vec<(String, String)>)> =
-            system_nominals(Inventory::ACTIVE)
-                .iter()
-                .filter(|nominal| nominal.is_struct())
-                .map(|nominal| {
-                    let fields = nominal
-                        .fields
-                        .iter()
-                        .map(|field| (field.name.to_owned(), render_type(field.ty)))
-                        .collect();
-                    (nominal.spelling.to_owned(), fields)
-                })
-                .collect();
+        let catalog_structs: Vec<(String, Vec<(String, String)>)> = system_nominals()
+            .iter()
+            .filter(|nominal| nominal.is_struct())
+            .map(|nominal| {
+                let fields = nominal
+                    .fields
+                    .iter()
+                    .map(|field| (field.name.to_owned(), render_type(field.ty)))
+                    .collect();
+                (nominal.spelling.to_owned(), fields)
+            })
+            .collect();
         assert_eq!(extracted_structs, catalog_structs);
         // A struct nominal contributes no constructor entry, so no source
         // expression constructs one [SYS-2, SYS-18].
-        for (index, nominal) in system_nominals(Inventory::ACTIVE).iter().enumerate() {
+        for (index, nominal) in system_nominals().iter().enumerate() {
             if !nominal.is_struct() {
                 continue;
             }
             assert!(
-                system_constructors(Inventory::ACTIVE)
+                system_constructors()
                     .iter()
                     .all(|constructor| usize::from(constructor.owner) != index),
                 "{} contributes a constructor entry",
@@ -2491,12 +2045,12 @@ mod tests {
                     .push((variant.to_owned(), fields));
             }
         }
-        let catalog_enums: Vec<ExtractedEnum> = system_nominals(Inventory::ACTIVE)
+        let catalog_enums: Vec<ExtractedEnum> = system_nominals()
             .iter()
             .enumerate()
             .filter(|(_, nominal)| matches!(nominal.category, SystemNominalCategory::Enum))
             .map(|(owner, nominal)| {
-                let variants = system_constructors(Inventory::ACTIVE)
+                let variants = system_constructors()
                     .iter()
                     .filter(|constructor| usize::from(constructor.owner) == owner)
                     .map(|constructor| {
@@ -2527,10 +2081,7 @@ mod tests {
             .map(|line| line.strip_prefix("fn ").expect("SYS-2 operation line"))
             .map(str::to_owned)
             .collect();
-        let catalog_operations: Vec<_> = system_operations(Inventory::ACTIVE)
-            .iter()
-            .map(render_operation)
-            .collect();
+        let catalog_operations: Vec<_> = system_operations().iter().map(render_operation).collect();
         assert_eq!(extracted_operations, catalog_operations);
     }
 

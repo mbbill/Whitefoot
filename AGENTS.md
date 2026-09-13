@@ -46,41 +46,44 @@ probably not the next work.
 
 - Work is not planned in a document up front. A selected direction goes to
   `research/investigations/<name>/` for its design, measurements, and rejected
-  alternatives, and the reasoning that survives it is written to `mcts_mem/`.
+  alternatives, and the decision that survives it is written to the design
+  tree under `design/`.
 - `docs/roadmap.md` is a reference map of long-range directions and candidate
   projects. It is not part of this loop: nothing waits on it, no step updates
   it, and it grants or withholds nothing. Read it for orientation; do not treat
   a line in it as a statement of what the compiler currently does, which is the
-  specification's and `compiler/README.md`'s to say.
+  specification's and the conformance results' to say.
 - The active specification at `spec/kernel-spec.md` defines the language.
-  `compiler/README.md` owns the current implementation map and known gaps.
+  The conformance results state what the compiler implements, `docs/todo.md`
+  lists its known defects, and `design/compiler` records its decisions.
   Compiler behavior, tests, archived code, and design prose do not define the
   language.
 - `docs/constitution.md` owns purpose, chosen objectives, tradeoffs, and
-  conditional language-design principles. The current index in
-  `spec/derivation/derivation-ledger.md` connects active rules to selection
-  grounds; its historical derivations are evidence, not current authority.
-  Concrete choices need their own grounds, not just a constitutional ancestor.
+  conditional language-design principles; the design trees hold the concrete
+  decisions with their reasons. Concrete choices need their own grounds, not
+  just a constitutional ancestor.
   `docs/patterns.md` teaches writer forms without adding acceptance rules;
   `docs/practice.md` explains engineering and evidence techniques without
   adding approval or merge requirements. README is navigation, not a second
   specification or implementation inventory.
-- `mcts_mem/` is where decisions are recorded: what was tried, what was
-  concluded, why a form was chosen, and which implementations it replaced.
-  Write there when a question is settled, not when a batch ends. Maintain it
-  with the current `mcts-mem-use` skill and follow its verification instructions
-  after tree edits. The skill owns checker setup and invocation; do not duplicate
-  those instructions or pin its tool version in repository guidance or CI.
-  The skill owns node structure, provenance, replacement pairs, and append-only
-  history; lint checks integrity, not the truth of the recorded evidence.
+- `design/` holds the live design trees: `design/language` for language
+  decisions and `design/compiler` for compiler decisions, each decision with
+  its reason and its refused alternatives, and `design/log.md` with one entry
+  per approved tree change. `design/skill/SKILL.md` owns the procedure: a
+  line enters a tree only through the owner's ruling, a decision an agent
+  makes on its own is an amendment beside the tree until the owner rules on
+  it, and a pull request is checked for correspondence between the tree, its
+  amendments, and the code or specification diff. `mcts_mem/` is a frozen historical record
+  that is not written to; its content is being moved into the trees and it
+  is deleted when that is complete.
 - Architecture dossiers, `archive/done/`, and
   `archive/governance/decision-log.md` preserve historical evidence and
   rationale. `archive/done/` is the retired per-batch record: frozen, not
   written to again, and not cited. A finished task is not evidence — a claim
   that needs support cites the specification, a conformance case, a measured
   result under `research/experiments/`, a design under
-  `research/investigations/`, or decision rationale where the completion
-  checklist's citation boundaries permit memory references. None of these
+  `research/investigations/`, or a design-tree decision where the completion
+  checklist's citation boundaries permit it. None of these
   defines live approval or workflow requirements. Any imperative process
   wording retained in those evidence artifacts is historical and superseded by
   the four rules below.
@@ -99,7 +102,7 @@ Follow the four occasions in [decision practice](docs/practice.md#decision-work)
 2. **Choose:** state why a material choice fits its requirements and evidence;
    record a discriminating experiment's criterion before using it to choose.
 3. **Update:** when a conclusion or its grounds change, update current guidance,
-   memory, affected rule-index entries, and material dependents in the same work.
+   the design tree, and material dependents in the same work.
 4. **Finish:** run applicable checks and another agent's
    [completion review](docs/review-checklist.md), fix findings, and publish the
    result. This is the single review checkpoint; no separate review record or
@@ -207,8 +210,7 @@ one-time cleanup.
   the old in the same change. Do not accumulate parallel versions, stale
   dossiers, or abandoned experiments beside their replacements. This applies
   to current guidance and replaceable implementation artifacts; frozen
-  archives, useful dated evidence, and skill-managed decision memory retain
-  history under their own rules.
+  archives and useful dated evidence retain history under their own rules.
 - Keep important folders as clean as the root. The same discipline applies
   inside `spec/`, `compiler/`, `tools/`, `conformance/`, and the research
   directories. An important folder turning into a junk drawer is the same
@@ -219,6 +221,9 @@ one-time cleanup.
   spec and test guard, reached by oracle scripts, or wired into a gate;
   moving them creates more breakage and rot than it removes. Prefer
   legibility — a clear map, a good name, a stated purpose — over relocation.
+- No active source, build, test, or tool may depend on `archive/`.
+- New and modified repository artifacts, identifiers, comments, diagnostics,
+  fixtures, test names, and file names use English.
 
 Follow this by judgment and keep moving; it is a standing rule, not a reason to
 pause on every file. Canonical `make check` enforces append-only versioned
@@ -252,38 +257,11 @@ only reports the same class of mistake earlier.
 
 ## Compiler rules
 
-- Use safe Rust; do not introduce `unsafe`.
-- Implement language capabilities by grammar and semantic rule, never by
-  function name, signature, source shape, project, corpus, or test identity.
-- Keep one normal semantic and lowering path. A temporary unsupported
-  capability must be explicit rather than misreported as invalid source.
-- Never replace or weaken required static proof with executable fallback
-  control flow. Required static proof is the only authority for admitting a
-  partial operation.
-- State relations that are intended to hold on every conforming execution as
-  proof-only source evidence: `requires`/`ensures` across functions,
-  header `invariant` relations across loop edges, and local `invariant`
-  statements for program-point facts. A local invariant may carry explicit
-  `use` steps; those steps read one entering snapshot, publish nothing
-  themselves, and only the checked outer invariant becomes a later fact. A
-  source branch may guard a partial operation only when its false edge is
-  intended program behavior. An impossible-case return or other observable
-  branch added only to satisfy the checker is a compiler or source defect;
-  improve the proof or the checker instead.
-- Do not add timeouts, fuel, a proof-work budget, heuristic early failure, or
-  hash-order dependence to any acceptance path. Fixed structural source
-  ceilings are language rules; within them the specified checker runs to
-  completion. Stopping at the first success in a fixed order is valid because
-  a later candidate cannot revoke a proof.
-- Keep facts-off compilation correct. An optimizer fact may improve an accepted
-  program but may not change source acceptance or program semantics.
-- Prefer simple implementations and normal collections. Fix measured
-  performance or resource problems instead of designing for imagined scale.
-- Keep files cohesive and reviewable. Split by invariant-bearing
-  responsibility, not arbitrary line counts or forwarding-only layers.
-- No active source, build, test, or tool may depend on `archive/`.
-- New and modified repository artifacts, identifiers, comments, diagnostics,
-  fixtures, test names, and file names use English.
+The compiler's implementation rules are its design decisions and live in
+`design/compiler`, each with its reason. Before changing the compiler, read
+the subtree you are changing and its ancestors; a decision the tree does not
+cover is an amendment, never an edit to the tree, as `design/skill/SKILL.md`
+prescribes.
 
 ## Data safety
 

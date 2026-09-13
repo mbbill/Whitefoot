@@ -2699,15 +2699,6 @@ pub(crate) struct CheckedEntryForm {
 
 #[derive(Debug)]
 pub(crate) struct CheckedProgramData {
-    /// Which [SYS-2] inventory this unit was resolved and checked against.
-    ///
-    /// Carried here because a `CheckedConstructor::System` holds a declaration
-    /// ordinal, and an ordinal is only meaningful against the inventory that
-    /// assigned it: lowering decodes those ordinals and must use this one
-    /// rather than the shipped active state. Reading the active state here was
-    /// a latent defect that only showed once an inventory state changed the
-    /// size of the nominal-record block ahead of the constructor block.
-    pub(crate) inventory: crate::Inventory,
     pub(crate) nominals: Vec<CheckedNominal>,
     /// Which interned nominals are [SYS-2] system-declared structs, by catalog
     /// index, in catalog order.

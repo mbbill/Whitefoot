@@ -22,7 +22,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # `approval-history-integrity` and `spec-archive-integrity` were retired with
 # the approval ledger they both read.
 CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	conformance compiler research-tests bench-programs conformance-run snapshot-run
+	design-lint conformance compiler research-tests bench-programs conformance-run snapshot-run
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -53,7 +53,11 @@ check:
 # program. CI's `static` job runs this instead of restating their names: a
 # second copy of the list is a copy that goes stale, and did — retiring two
 # stages left the workflow naming targets that no longer exist.
-static: repository-invariants spec-append-only spec-prose-integrity
+static: repository-invariants spec-append-only spec-prose-integrity design-lint
+
+# Structural lint for the design tree; form only, see design/skill/lint.py.
+design-lint:
+	@$(PY) design/skill/lint.py --base origin/main
 
 repository-invariants:
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
@@ -108,24 +112,18 @@ spec-append-only-staged:
 	fi
 	@echo "spec append-only: no released kernel specification was modified or removed"
 
-# The specification's own bytes are its identity, and the generated
-# build.rs derives them on every build that touches those bytes. Live prose quotes neither: a quoted digest or an "active vN" sentence
-# went stale at every activation and forced a six-file edit to keep in step
-# (found landed: the derivation ledger still described v0.28 as the installed
-# authority after the v0.29 activation; retired 2026-09-04 in favour of this
-# negative check). Frozen history — archive/done/, research records, archived
-# specifications, the approval record, and the derivation ledger's per-version
-# amendment bindings — legitimately quotes superseded identities; only the
-# ledger's "active authority" sentence is live prose, so the ledger is held to
-# the phrase check alone.
+# The specification's own bytes are its identity, and build.rs derives them
+# on every build that touches those bytes. Live prose quotes neither a digest
+# nor an "active vN" sentence: both went stale at every activation, so this
+# negative check keeps them out of the guidance files.
 spec-prose-integrity:
 	@failed=0; \
-	for file in README.md AGENTS.md CLAUDE.md compiler/README.md docs/*.md; do \
+	for file in README.md AGENTS.md CLAUDE.md docs/*.md; do \
 		if grep -nE '(^|[^0-9a-f])[0-9a-f]{64}([^0-9a-f]|$$)' "$$file"; then \
 			echo "spec prose integrity: $$file quotes a specification digest; the identity is derived from the specification's own bytes" >&2; failed=1; \
 		fi; \
 	done; \
-	for file in README.md AGENTS.md CLAUDE.md compiler/README.md docs/*.md spec/derivation/derivation-ledger.md; do \
+	for file in README.md AGENTS.md CLAUDE.md docs/*.md; do \
 		if grep -nE 'Kernel specification v[0-9]+\.[0-9]+ is the active|[Aa]ctive language authority(:| is) v[0-9]+\.[0-9]+|active v[0-9]+\.[0-9]+ (guidance|authority)|the exact v[0-9]+\.[0-9]+ bytes' "$$file"; then \
 			echo "spec prose integrity: $$file names a version as the active authority; say 'the active specification at spec/kernel-spec.md' instead" >&2; failed=1; \
 		fi; \
@@ -199,4 +197,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity conformance compiler research-tests bench-programs conformance-run snapshot-run install-hooks
+.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler research-tests bench-programs conformance-run snapshot-run install-hooks

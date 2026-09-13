@@ -2,7 +2,7 @@
 
 This is non-normative writer guidance. The active
 [specification](../spec/kernel-spec.md) defines accepted source, the
-[compiler README](../compiler/README.md) owns implementation status, and the
+conformance report owns implementation status, and the
 [constitution](constitution.md) defines performance and authoring objectives.
 
 Patterns teach usable paths through the language's restrictions. The catalog
@@ -1710,8 +1710,8 @@ field or element projection; an element write updates that storage. `buffer`
 and `Vector` views reach their backing allocation. The nonwrapping-window and
 loan rules above still apply. The [inline-view program](../research/experiments/container-representation/dense/inline-view.wf)
 shows the complete `FixedVector` form. Exclusive views over legacy `array`
-storage remain an explicit compiler capability limit; see the
-[compiler guide](../compiler/README.md#implemented-language-surface).
+storage remain an explicit compiler capability limit reported as an
+unsupported capability.
 
 Replaces: taking a run or a buffer by value in order to write it, passing a
 `&uniq buffer<T>` where the callee only needs a window, and the `Option<T>`

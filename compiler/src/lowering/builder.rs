@@ -298,12 +298,9 @@ fn lower_nominals(
                             owner = None;
                             break;
                         };
-                        let constructor =
-                            crate::system_constructor_index(declaration, data.inventory)
-                                .and_then(|index| {
-                                    crate::SYSTEM_CONSTRUCTORS.get(usize::from(index))
-                                })
-                                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                        let constructor = crate::system_constructor_index(declaration)
+                            .and_then(|index| crate::SYSTEM_CONSTRUCTORS.get(usize::from(index)))
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
                         match owner {
                             Some(existing) if existing != constructor.owner => {
                                 return Err(LoweringFailure::InvalidCheckedProgram);

@@ -299,7 +299,7 @@ fn emit_reborrow_extension(source: &[u8]) -> String {
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("backend test source must resolve");
     };
-    let checked = match crate::semantic::check_semantics_reborrow_extension(resolved) {
+    let checked = match crate::semantic::check_semantics(resolved) {
         SemanticOutcome::Complete(checked) => checked,
         outcome => {
             panic!("backend test source must check under the reborrow extension: {outcome:?}")

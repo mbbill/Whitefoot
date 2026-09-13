@@ -1,0 +1,4 @@
+Decision: The lowering recognizes a byte-walk loop on the checked statements alone and gives it a header fast path built on one probe operation that reports how many upcoming iterations are provably effect-free, with recognition failure or any representation mismatch falling back to the ordinary lowering with zero change and acceptance never consulted, because the rival route of restructuring the legal scalar shape so the vectorizer widens it was closed by a preregistered witness showing that a same-compiler C control gets no early-exit vectorization and guarded per-byte loads never fuse into wide loads, instead of relying on the backend vectorizer.
+
+Rejected:
+- Restructuring the scalar loop so the backend's own vectorizer widens it: rejected because a preregistered C control on the same compiler showed no early-exit vectorization and guarded per-byte loads never fusing into wide loads.

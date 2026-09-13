@@ -441,7 +441,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Ok(())
             }
             ResolvedTarget::System(id) => {
-                if let Some(index) = crate::system_nominal_index(id, self.inventory()) {
+                if let Some(index) = crate::system_nominal_index(id) {
                     self.intern_system_nominal(index)?;
                 }
                 Ok(())
@@ -457,7 +457,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         if let ResolvedTarget::System(id) = usage.target() {
-            if let Some(index) = crate::system_constructor_index(id, self.inventory()) {
+            if let Some(index) = crate::system_constructor_index(id) {
                 let owner = crate::SYSTEM_CONSTRUCTORS
                     .get(usize::from(index))
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?
@@ -556,9 +556,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         )
                 })
                 .and_then(|usage| match usage.target() {
-                    ResolvedTarget::System(id) => {
-                        crate::system_operation_index(id, self.inventory())
-                    }
+                    ResolvedTarget::System(id) => crate::system_operation_index(id),
                     _ => None,
                 });
             if let Some(index) = system_operation {

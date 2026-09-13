@@ -378,12 +378,17 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // [FN-7] ordinal 6, `command.heap`, which supplies the proof-only provider
 // value and opens no handle. The v0.50 mapping therefore carries forward
 // complete.
-// v0.52 qualification review: the specification header, META-6's evidence
-// index contract, and selection-rationale prose change. System operations,
-// representations, release rows, entry forms, and host mappings retain their
-// outgoing v0.51 semantics. The qualified table therefore carries forward
+// v0.53 qualification review: the specification retires META-6 and the
+// derivation ledger. System operations, representations, release rows,
+// entry forms, and host mappings retain their outgoing v0.52 semantics. The
+// qualified table therefore carries forward unchanged; the version tripwire
+// remains in force.
+// v0.54 qualification review: the specification admits a scrutinee call as a
+// [PAR-1] window member and names the whole [SYS-8] range-bearing family in
+// [ENT-3.S10]. Neither touches a system row, representation, release action,
+// entry form, or host mapping, so the qualified table carries forward
 // unchanged; the version tripwire remains in force.
-const REVIEWED_FOR: &str = "v0.52";
+const REVIEWED_FOR: &str = "v0.54";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

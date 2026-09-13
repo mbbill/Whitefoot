@@ -6,7 +6,7 @@ on this file, no step in `CLAUDE.md` updates it, and it grants or withholds
 nothing.
 Revision: 71 (taken out of the working loop; a direction's `Current` line is
 orientation, and what the compiler does today is the specification's and
-`compiler/README.md`'s to say)
+the conformance results' to say)
 
 The language is defined by the specification at
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), whose own bytes are its
@@ -33,16 +33,16 @@ orientation and nothing more.
 
 It is deliberately outside the working loop. A selected direction is worked in
 `research/investigations/<name>/`, where its design, measurements and rejected
-alternatives live, and what is settled by it is written to `mcts_mem/`. Neither
+alternatives live, and what is settled by it is written to the design tree
+under `design/`. Neither
 this file nor those records grants or withholds permission to work on a branch
 or adds a merge condition beyond the four rules in `CLAUDE.md`. A project can
 expose a missing capability, but cannot by itself change the language or
 justify a project-shaped compiler special case.
 
 A `Current` line here is orientation, not a status report. What the compiler
-does today is stated by the specification, by `compiler/README.md`, and by the
-tests; a line here that disagrees with them is this file being stale, which it
-is allowed to be.
+does today is stated by the specification and by the tests; a line here that
+disagrees with them is this file being stale, which it is allowed to be.
 
 Each item has one canonical home. Other directions link to its ID instead of
 copying its status. Tags are scanning aids. The linked specification,
@@ -87,8 +87,8 @@ unsupported rather than invalid source.
 
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
-not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md). The system interface is
+not the entire active language. The implemented surface is what the
+conformance report states and known defects are in `docs/todo.md`. The system interface is
 built around formal state paths, ordinary ownership, and completion-only
 lowering, with no separate world region, capability class, blocking-call
 family, or `Ordered` relation.
@@ -178,7 +178,7 @@ creating writer trust or weakening the checked safety envelope.
   and a de-pairing ruling; its trigger is a real
   program whose discharge needs a composed Boolean goal, and it re-enters only
   through the specification workflow.
-- **Facts:** [compiler `requires` boundary](../compiler/README.md) ·
+- **Facts:** [compiler `requires` boundary](../design/compiler.md) ·
   [historical base64 result](../research/experiments/port-study/base64/RESULTS.md).
 
 ### outline:PROOF-2 — Effect-derived optimizer facts
@@ -196,7 +196,7 @@ creating writer trust or weakening the checked safety envelope.
   real opaque-boundary workload. `pure` is not totality, and nontermination or
   typed failure must remain observable.
 - **Facts:** [historical effect result](../research/experiments/effect-attrs-channel/RESULTS.md) ·
-  [current design memory](../mcts_mem/whitefoot/effects.md).
+  [effects design decisions](../design/language/effects.md).
 
 ### outline:PROOF-3 — Borrow-derived alias facts
 
@@ -226,7 +226,7 @@ creating writer trust or weakening the checked safety envelope.
   optimizer proposition and consequence; acceptance evidence does not
   automatically become optimization evidence.
 - **Facts:** [historical checked-law result](../research/experiments/checked-law-channel/RESULTS.md) ·
-  [current contract implementation](../compiler/README.md).
+  [current contract implementation](../design/compiler.md).
 
 ### outline:PROOF-5 — Derived totality
 
@@ -239,7 +239,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Missing / next:** reopen only for a selected effect optimization, embedded
   bound, or other concrete consumer; define the smallest fragment and its
   rejection boundary before implementation.
-- **Facts:** v0.17 `EFF-3` · [totality design decision](../mcts_mem/whitefoot/effects/derived-totality.md).
+- **Facts:** v0.17 `EFF-3`.
 
 ### outline:PROOF-6 — Proof-gated representation authority (historically D17)
 
@@ -596,7 +596,7 @@ creating writer trust or weakening the checked safety envelope.
   affine fragment that AUTO and written `use` steps share. The writer uses a
   literal stride or a flat scan today, and widening the fragment waits for a
   selected real program that needs the general form
-  ([compiler README](../compiler/README.md)).
+  ([compiler README](../design/compiler.md)).
 - **Known gap — pre-kill closure:** the [ENT-5] kill path currently
   materializes the complete L0 closure before every kill event and skips that
   work only when the state is already closed. Projecting only through the dying
@@ -639,7 +639,7 @@ writer.
 - **Missing / next:** validate malformed input and language-level failures
   separately from target or allocator resource failure, then exercise partial
   results, transfer, and teardown in the first selected medium project.
-- **Facts:** [Constitution](constitution.md) · [compiler README](../compiler/README.md).
+- **Facts:** [Constitution](constitution.md) · [compiler README](../design/compiler.md).
 
 ### outline:VERIFY-2 — Execute the conformance corpus against the compiler
 
@@ -673,7 +673,7 @@ writer.
   differential generation, premise mutation, output identity, and attribution
   before timing.
 - **Facts:** [experiment index](../research/experiments/README.md) ·
-  [fact-channel design memory](../mcts_mem/whitefoot/fact-channels.md).
+  [optimizer-fact design decisions](../design/compiler.md).
 
 ### outline:VERIFY-4 — Deterministic and reproducible compiler outputs
 
@@ -686,7 +686,7 @@ writer.
   reproducibility result exists.
 - **Missing / next:** name a concrete build, distribution, audit, or
   multi-backend consumer before extending the reproducibility boundary.
-- **Facts:** [compiler tests and boundary](../compiler/README.md).
+- **Facts:** [compiler tests and boundary](../design/compiler.md).
 
 ## Performance floor and writer shape
 
@@ -718,7 +718,7 @@ requirements.
   slice. The
   full paired suite is reserved for a later public-result candidate rather than
   the edit loop.
-- **Facts:** [compiler backend boundary](../compiler/README.md) ·
+- **Facts:** [compiler backend boundary](../design/compiler.md) ·
   [historical DEFLATE result](../research/experiments/zlib-core-kernels/RESULTS.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md).
 
@@ -747,7 +747,7 @@ requirements.
 - **Missing / next:** validate individual patterns in candidate projects;
   promote a new card or rejection proposal only after observing a recurring
   slower-but-accepted or currently inexpressible shape.
-- **Facts:** [pattern catalog](patterns.md) · [pattern design memory](../mcts_mem/whitefoot/pattern-doctrine.md).
+- **Facts:** [pattern catalog](patterns.md) · [pattern design decisions](../design/language/pattern-doctrine.md).
 
 ### outline:FLOOR-3 — Project floor audit
 
@@ -802,7 +802,7 @@ requirements.
   names are free identifiers, the corpus, snapshot index, conformance
   manifest, and live documentation are respelled, and the writer trial that
   would select [FORM-8]'s position partition against its alternatives is
-  registered in `spec/derivation/derivation-ledger.md`.
+  was registered in the derivation ledger, since retired.
 - **Facts:** [sweep and rulings](../research/investigations/spelling-relief/SWEEP.md) ·
   [activation record](../governance/spec-evolution/comparison-symbols-v041-candidate.md).
 
@@ -834,7 +834,7 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   authority or a ready implementation package; it vacated the v0.18 candidate
   slot for the outline:BOUND-1 system-interface batch on 2026-08-05 (predates the
   wfgrep goal framing and would need re-derivation from a real blocker).
-- **Facts:** [compiler borrow boundary](../compiler/README.md) ·
+- **Facts:** [compiler borrow boundary](../design/compiler.md) ·
   [parked loan/freeze candidate](../governance/spec-evolution/parked-loan-freeze-candidate.md) ·
   [M1 placement](../research/archive-promotion-audit.md#2-keep-the-m1-loanfreeze-work-as-a-parked-candidate-not-a-rule-set).
 
@@ -1259,7 +1259,7 @@ the goal or an additional approval step.
   worked in an investigation directory of its own.
 - **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
-  [current executable programs](../compiler/README.md).
+  [current executable programs](../tests/programs/).
 
 ### outline:CAND-8 — Ripgrep-compatible command-line search
 
@@ -1333,7 +1333,7 @@ selected probes. They are not phases or prerequisites in front of ripgrep.
 - Product-scale distribution, capability overlays, whole-compiler resource
   profiles, and stable protocol machinery are not prerequisites for the
   research compiler. Reopen only for a real consumer. See
-  [toolchain design memory](../mcts_mem/whitefoot/toolchain.md).
+  [compiler design decisions](../design/compiler.md).
 - Source-, function-, corpus-, project-, or test-shaped semantic dispatch is
   prohibited. Every selected project capability must use the normal general
   compiler path.

@@ -15,7 +15,7 @@ mod tests;
 
 use crate::{CanonicalSyntaxUnit, NodePath, SyntaxCoordinate};
 
-pub use engine::{resolve, resolve_with_inventory};
+pub use engine::resolve;
 
 pub use kernel::{
     CONTAINER_NOMINAL_CLASS, CONTAINER_NOMINAL_CLASSES, CONTAINER_NOMINALS, ContainerNominal,
@@ -24,15 +24,15 @@ pub use kernel::{
 };
 
 pub use catalog::{
-    Inventory, OPEN_BY_NAME, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
-    SystemConstructor, SystemEntity, SystemField, SystemIntegerResultBound, SystemNominal,
-    SystemOperation, SystemParameter, SystemParameterMode, SystemRelease, SystemReleaseAction,
-    SystemReleaseRow, SystemResourceBacking, SystemResourceContract, SystemResourceType,
-    SystemResultPayload, SystemResultStateOrigin, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction,
-    TargetCompletion, TargetDispatch, TargetMilestones, operation_state_effects,
-    system_constructor_declaration, system_constructor_index, system_constructors, system_entity,
-    system_nominal_index, system_nominals, system_operation_index, system_operations,
-    system_release_row, system_resource_contract,
+    SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS, SystemConstructor, SystemEntity,
+    SystemField, SystemIntegerResultBound, SystemNominal, SystemOperation, SystemParameter,
+    SystemParameterMode, SystemRelease, SystemReleaseAction, SystemReleaseRow,
+    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultPayload,
+    SystemResultStateOrigin, SystemTypeRef, TargetAction, TargetCompletion, TargetDispatch,
+    TargetMilestones, operation_state_effects, system_constructor_declaration,
+    system_constructor_index, system_constructors, system_entity, system_nominal_index,
+    system_nominals, system_operation_index, system_operations, system_release_row,
+    system_resource_contract,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
@@ -791,6 +791,9 @@ pub enum ReservedDeclarationRole {
     Parameter,
     /// Lexical let binding.
     Let,
+    /// Contract-block definition binder, the `define` of a requires and
+    /// ensures block, which FORM-3 lists as its own carrier role.
+    ContractDefinition,
     /// Header or body-local invariant declaration.
     Invariant,
     /// Counted-range binder.
@@ -985,7 +988,6 @@ pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     lexical_uses: Vec<LexicalUseRecord>,
     deferred_uses: Vec<DeferredUseRecord>,
     postconditions: Vec<PostconditionResolutionRecord>,
-    inventory: Inventory,
 }
 
 impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
@@ -1029,17 +1031,6 @@ impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'sour
     #[must_use]
     pub fn system_declaration(&self, id: SystemDeclarationId) -> Option<&SystemDeclarationRecord> {
         self.system.get(usize::from(id.ordinal()))
-    }
-
-    /// Which [SYS-2] inventory this unit's system records came from.
-    ///
-    /// Every later stage that turns a [SYS-2] declaration ordinal back into a
-    /// nominal, constructor, or operation index must read the same inventory
-    /// state the records were built from, because a candidate's extra nominal
-    /// types shift every constructor and operation ordinal.
-    #[must_use]
-    pub const fn inventory(&self) -> Inventory {
-        self.inventory
     }
 
     /// Returns all source declaration events D01 through D15.

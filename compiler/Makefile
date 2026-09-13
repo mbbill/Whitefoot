@@ -540,12 +540,13 @@ completion-windows-cross:
 	@# the floor group leaves undefined, minus what it answers itself, may not
 	@# include anything the other two groups define.
 	@#
-	@# "Answers itself" includes its weak defaults. `wf__sched_entry_stack` is
-	@# the core's own seam (design section 5): the floor declares it weakly in
-	@# its own translation unit, a link that carries the core overrides it, and
-	@# a link that does not takes the default beside the reference. A COFF weak
-	@# external is reported undefined (`w`) as well as defined, so the `w` and
-	@# `V` classes join the defined set or the seam would read as a crossing.
+	@# "Answers itself" includes its weak defaults. `wf__floor_stack_bytes` is
+	@# the core's own seam (design section 5): `sched/entry.c` declares it
+	@# weakly in its own translation unit, a link that carries the floor
+	@# overrides it, and a link that does not takes the default beside the
+	@# reference. A COFF weak external is reported undefined (`w`) as well as
+	@# defined, so the `w` and `V` classes join the defined set or the seam
+	@# would read as a crossing.
 	@$(WINDOWS_NM) -u \
 		"$(COMPLETION_TMP)/wf-floor-windows.o" \
 		"$(COMPLETION_TMP)/windows-runtime.o" \

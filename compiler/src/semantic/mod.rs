@@ -29,8 +29,6 @@ pub use check::check_semantics;
 pub(crate) use check::check_semantics_arithmetic_obligations;
 #[cfg(test)]
 pub(crate) use check::check_semantics_division_obligations;
-#[cfg(test)]
-pub(crate) use check::check_semantics_reborrow_extension;
 
 /// The permission table the overlap lowering reads. It is the same table the
 /// ledger renders; nothing derives a second judgment from it.
@@ -53,16 +51,6 @@ pub(crate) use model::{
     CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
     CheckedWritablePlace, MeasureCell, MeasuredKind, NominalId, PropagationContext,
 };
-
-/// Master switch for the v0.31 candidate's gated semantic surface:
-/// struct-typed named consts [CONST-2 candidate] and the clause-conditional
-/// OWN-1 bare-affine repair [#35].
-///
-/// `true` selects the candidate semantics, matched in the same change by the
-/// v0.31 candidate specification bytes and the grammar tables regenerated
-/// from them — the const-arithmetic and construction-cvalue grammar shapes
-/// are additionally gated by those tables and need no switch of their own.
-pub(crate) const V031_CANDIDATE_SEMANTICS: bool = true;
 
 /// Numbered rule owning one post-resolution semantic rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

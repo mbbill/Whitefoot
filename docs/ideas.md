@@ -5,10 +5,10 @@ Status: NON-AUTHORITATIVE DETAIL.
 The [reference roadmap](roadmap.md) groups long-range directions and candidate
 projects; it is outside the working loop and may be stale. This file preserves
 mechanism sketches and possible experiments. A selected question belongs in
-`research/investigations/`, and settled choices in `mcts_mem/`, under the
+`research/investigations/`, and settled choices in `design/`, under the
 reading and workflow rules in [AGENTS.md](../AGENTS.md). Current capabilities
-are described in the [compiler README](../compiler/README.md). An idea here
-does not change the language or select implementation work.
+are what the conformance report states. An idea here does not change the
+language or select implementation work.
 
 Whitefoot keeps facts in source that other languages discard. LLVM optimization
 is one consumer of those facts. The ideas below ask whether the same checked

@@ -3,7 +3,7 @@
 Status: DATED, NON-AUTHORITATIVE SYNTHESIS. Current objectives are in the
 [constitution](constitution.md), language rules in the
 [specification](../spec/kernel-spec.md), and implementation status in the
-[compiler README](../compiler/README.md). The [roadmap](roadmap.md) is reference
+conformance report. The [roadmap](roadmap.md) is reference
 material outside the working loop. Status words and
 phase references below describe the ledger when compiled and must not be used
 as current instructions. Compiled 2026-07-28 from the founding directives,
@@ -19,7 +19,7 @@ it is no longer a work queue or periodic re-ranking owner. D0, 2026-07-01,
 gives away human ergonomics entirely and designs for an AI writer with a human
 approver. Every entry below answers one question: **what does that trade buy
 here, what does it cost, and what was its evidential status?** Promote a live
-decision to its owning `mcts_mem/` node and leave measurements and designs in
+decision to its owning `design/` node and leave measurements and designs in
 their evidence owners. The W1 and claim/trap descriptions below record earlier
 positions; the constitution and specification supersede them. None of the
 historical approval or phase language below controls branch work.
@@ -898,7 +898,7 @@ records under `archive/research/`. Capability era:
 `archive/research/systems-performance-coverage/`, the parked
 minimal-systems-capability line. Live: `docs/constitution.md`,
 `docs/why-whitefoot.md`, `docs/patterns.md`, `docs/ideas.md`,
-`docs/roadmap.md` (Phases 10–11), `mcts_mem/`. Idea banks:
+`docs/roadmap.md` (Phases 10–11), `design/`. Idea banks:
 `research/notes/headline-artifact-brainstorm.md` (= the 39-idea JSON),
 `research/notes/missing-research-backlog.jsonl`. Section 7 is original to this
 file, 2026-07-28. Section 8 rests on an eight-cluster external web-research

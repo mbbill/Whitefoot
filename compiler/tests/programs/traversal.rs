@@ -7,11 +7,7 @@
 //! host's own facilities, exactly as a shipped command would.
 
 use super::support::compile_rejection;
-use super::support::{
-    build_program, close_path, compile_program, compile_program_rejection_with, fixture_directory,
-    reopen_path,
-};
-use whitefoot::Inventory;
+use super::support::{build_program, close_path, compile_program, fixture_directory, reopen_path};
 
 /// The traversal program itself: a recursive walk of the invocation
 /// directory that collects every entry's kind and relative path into the
@@ -102,27 +98,6 @@ fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
         "1 a.txt\n2 closed\n"
     );
 }
-
-/// The current traversal source requires the complete file-permit inventory,
-/// not just the older traversal rows. This is an honest source dependency:
-/// its entry receives HandleFactory and every open calls reserve_handle.
-#[test]
-fn the_traversal_source_requires_the_complete_file_permit_inventory() {
-    let _ = compile_program("dir_walk.wf");
-    let failure = compile_program_rejection_with("dir_walk.wf", Inventory::OpenByName);
-    assert!(
-        failure.contains("UnresolvedUse")
-            && (failure.contains("HandleFactory") || failure.contains("reserve_handle")),
-        "the pre-permit inventory must reject the explicit authority surface: {failure}"
-    );
-}
-
-// The former byte-identical comparison between the traversal and open-by-name
-// inventories was retired with the file-permit amendment. The amendment adds
-// two nominal types and changes every open signature, so byte identity across
-// those superseded inventories is no longer a valid invariant. Catalog tests
-// retain their exact counted membership; current programs compile only against
-// the complete active inventory.
 
 /// A held enumeration handle is affine like every other system resource: a
 /// source that uses one after moving it is rejected, and the rejection comes

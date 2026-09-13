@@ -76,7 +76,7 @@ fn check_inventory(
         if !include(role) {
             continue;
         }
-        if let Some((reserved_role, checked_spelling)) = reserved_role(role)
+        if let Some((reserved_role, checked_spelling)) = reserved_role(topology, role)
             && let Some((class, inventory_ordinal)) = reserved_name(checked_spelling)
         {
             return Ok(Some(ResolutionIssue {
@@ -139,14 +139,28 @@ fn check_inventory(
     Ok(None)
 }
 
-fn reserved_role(role: &ClassifiedRole) -> Option<(ReservedDeclarationRole, &str)> {
+fn reserved_role<'role>(
+    topology: &FinalizedTopology,
+    role: &'role ClassifiedRole,
+) -> Option<(ReservedDeclarationRole, &'role str)> {
     let mapped = match role.kind {
         RawRoleKind::Declaration(DeclarationRole::Function) => ReservedDeclarationRole::Function,
         RawRoleKind::Declaration(DeclarationRole::NamedConst) => {
             ReservedDeclarationRole::NamedConst
         }
         RawRoleKind::Declaration(DeclarationRole::Parameter) => ReservedDeclarationRole::Parameter,
-        RawRoleKind::Declaration(DeclarationRole::Let) => ReservedDeclarationRole::Let,
+        // A contract-block `define` binder is classified as an ordinary
+        // `let` declaration for lookup, but FORM-3 names its carrier role
+        // separately, so the reservation report tells the two apart.
+        RawRoleKind::Declaration(DeclarationRole::Let) => {
+            if topology.node(role.owner).map(|record| record.production)
+                == Some(Production::ContractDefine)
+            {
+                ReservedDeclarationRole::ContractDefinition
+            } else {
+                ReservedDeclarationRole::Let
+            }
+        }
         RawRoleKind::Declaration(DeclarationRole::Invariant) => ReservedDeclarationRole::Invariant,
         RawRoleKind::Declaration(DeclarationRole::CountedBinder) => {
             ReservedDeclarationRole::ForBinder

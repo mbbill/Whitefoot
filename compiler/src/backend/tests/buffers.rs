@@ -88,7 +88,7 @@ fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
 /// The target stage never reports a runtime-sized allocation failure for a
 /// store take the semantic stage accepted.
 ///
-/// This is the half of `compiler/README.md`'s known defect that the store
+/// This is the half of `docs/todo.md`'s known defect that the store
 /// surface answers. `buffer_new(n, 0_u8)` at an unproved runtime `n` passes
 /// semantic checking and stops four stages later with
 /// `Unrepresentable(RuntimeSizedAllocation)` and no rule; the same count at

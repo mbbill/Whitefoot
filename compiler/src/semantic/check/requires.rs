@@ -268,11 +268,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// inside a contract block, so that instruction would send the writer
     /// from one hard error to another. A definition or clause instead carries
     /// the contract-specific repair.
-    /// Inert while `V031_CANDIDATE_SEMANTICS` is false.
     fn clause_conditional_repair(stop: CheckStop) -> CheckStop {
-        if !crate::semantic::V031_CANDIDATE_SEMANTICS {
-            return stop;
-        }
         let CheckStop::Issue(mut issue) = stop else {
             return stop;
         };
