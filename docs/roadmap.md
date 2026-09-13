@@ -1191,7 +1191,7 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 - **Missing / next:** compare a bounded embedded exemplar with the compiler and
   runtime prerequisites it would force; start with target/runtime feasibility,
   not “general embedded support.”
-- **Facts:** [embedded direction synthesis](bargain.md#9-the-embedded-direction-owner-intent-stated-2026-07-31-researched-same-day).
+- **Facts:** [embedded systems and resource evidence](ideas.md#embedded-systems-and-resource-evidence).
 
 ### outline:TARGET-4 — Constant-time secret-dependent behavior
 
@@ -1206,7 +1206,7 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
 - **Missing / next:** a selected cryptographic or embedded component must name
   the externally observable behavior, admitted operation set, target, optimizer
   contract, and independent leakage test before language design.
-- **Facts:** [dated direction synthesis](bargain.md#5-shipping-what-the-artifacts-can-be).
+- **Facts:** [constant-time preservation](ideas.md#constant-time-preservation).
 
 ### outline:APP-1 — ML systems components
 
@@ -1218,7 +1218,7 @@ authority; see the [C-to-Whitefoot assumption extractor](ideas.md#a-c-to-whitefo
   runtime. Existing research identifies FFI and GPU integration as hard walls.
 - **Missing / next:** select a component with a strong oracle and independent
   value; do not choose “rewrite an ML stack” or assume integration work away.
-- **Facts:** [ML direction synthesis](bargain.md#8-the-ml-direction-owner-intent-stated-2026-07-27-researched-2026-07-31).
+- **Facts:** [ML systems components](ideas.md#ml-systems-components).
 
 ## Candidate validation projects
 
