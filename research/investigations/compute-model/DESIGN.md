@@ -468,5 +468,76 @@ compiler constants. No estimate can justify a source operation or omit its
 work. The native probes check actual prefix output while varying block sizes,
 empty and inverted ranges, and an unexecuted inner range with maximal endpoints;
 the latter still prices safely. The nine maintained consumers and baseline
-twin pass their independent native comparisons at W1/2/4/8/16. Timing selection
-is pending; the work branch carries the corresponding provisional amendment.
+twin pass their independent native comparisons at W1/2/4/8/16. These correctness
+checks pass, but the completed timing trial below rejects this implementation
+under its protected-case criterion. The work branch retains the provisional
+amendment, and the broader grain choice remains open.
+
+### Runtime extent trial result
+
+The first trial is **not selected**. Candidate `f851c65c` and compiler baseline
+`0d571cac` use identical program and runtime sources, including the 150,000
+work unit and 16-chunks-per-lane cap. The
+[retained stream](../../experiments/compute-bench/runtime-extent-2026-09-13.tsv)
+contains twelve fixture groups with manifests, original raw numerical rows
+and rendered tables; its SHA-256 is
+`a1b289fbda35ebbe5ba9c78ae40df4557643627c89a9852f533b94bf5cedc5a8`.
+The host and scalar toolchain are the same eight-CPU Apple M1 Pro described
+above. All groups use five rotated passes and one first plus five warm calls
+per process. `wf` is the candidate and `wf-b` the old compiler. Ratios below
+are medians of paired process medians; displayed times are separate medians.
+
+| Main fixture, W8 | Old compiler | Candidate | Candidate / old wall | Candidate / old CPU | Candidate faster |
+|---|---:|---:|---:|---:|---:|
+| Prefix, 4,096-word blocks | 3.619 ms | 1.173 ms | 0.324 | 0.572 | 5/5 |
+| Histogram, 4,096-word blocks | 4.174 ms | 1.149 ms | 0.275 | 1.420 | 5/5 |
+| Stencil, 1,024 by 4,096 | 15.700 ms | 12.085 ms | 0.754 | 1.078 | 5/5 |
+
+All three clear the primary wall criterion. Their W8 median steals are 54,
+28 and 419 respectively, against 0, 0 and 75 for the baseline. The extra
+offers compute independently checked results, rather than only appearing in
+emitted IR. Dynamic estimates have no literal weight for the harness's static
+`chunks` extraction, so that field honestly reads `na`; the grant observation
+is still actual runtime data.
+
+The stencil sweep also removes the old boundary cliffs. At heights
+1,017/1,030/1,043 the candidate W8 medians are 2.112/2.070/2.135 ms, against
+5.848/3.597/3.627 ms. At 2,057/2,058/2,071 they are 4.263/4.280/4.393 ms,
+against 7.206/5.635/6.194 ms. Every paired comparison favors the candidate,
+but this is not a free gain: at height 1,043 the paired process CPU ratio is
+about 2.075, and at 2,057 it is 1.678. The larger input's work is spread more
+widely; wall improvement alone does not satisfy the protected-cost criterion.
+
+The decisive protected failure is chain pull at W2: candidate/old wall is
+1.511, with all five pairs slower. The generated call's constant price falls
+from 168 to 60. For 4,097 vertices, the unchanged runtime then computes
+`affordable = 4097 / ceil(150000 / 60) = 1`, instead of four affordable
+chunks under the old price. The candidate observes zero steals. This is a
+loss of useful splitting, even though process CPU falls to about 0.776 of
+the baseline. W4 is 8.6 percent slower with much less CPU; W8 is faster.
+The useful sparse algorithm remains much cheaper than this pull control;
+that does not excuse a failed protected scheduling case.
+
+Coarse prefix improves at W4/W8 with paired wall ratios 0.496/0.424 and no
+CPU increase. Small prefix and histogram remain within one microsecond of
+their baselines. Narrow stencil has W4 wall/CPU ratios 1.047/1.136; its
+oversubscribed W16 CPU ratio is about 1.211. Coarse histogram also trades
+large wall gains for more CPU, about 1.647 at W8. These cells are retained,
+not removed from the comparison. The other main kernels have no stable
+material wall regression in this run.
+
+The main histogram's W1 result was inconclusive, so the isolated group
+repeats the same input and unchanged images. It reads 2.942 ms candidate,
+2.946 ms baseline and 2.952 ms sequential, with paired candidate/old wall
+1.011. It does not reproduce a material one-worker regression. The W8 CPU
+increase does reproduce, at about 1.422, alongside a 0.296 wall ratio.
+
+The result supports captured extents as useful information but rejects
+replacing the calibrated static price unconditionally. A next comparison
+should preserve the old price as a lower bound before asking whether the
+larger estimate is sufficient; the same protected wall and CPU criteria still
+apply, and the current rows remain the rejected first trial. This is a
+proposed follow-up, not a selected correction. Independent correspondence
+review also reports incomplete continuation accounting; the PR records that
+finding and the required owner direction before changes. The grain part of
+the goal remains incomplete.

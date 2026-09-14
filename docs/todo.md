@@ -3,17 +3,15 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
-- **Static loop weights underprice runtime helper work.** Prefix and histogram
-  with 4,096-word blocks emit no grants at their default four-million-word
-  fixture because the outer weight prices an inner loop with a fixed factor.
-  At 2,046 interior stencil rows, the estimate affords only two chunks even
-  with four workers.
-  Lowering the global work unit from 150,000 to 10,000 speeds those fixtures
-  but makes the width-17 stencil 36 percent slower at four workers. The
-  [compute-model controls](../research/investigations/compute-model/DESIGN.md#measurements-and-assessment-2026-09-13)
-  retain the runtime dimensions, threshold sweep, process CPU and grants.
-  A replacement estimate must distinguish actual helper extents and preserve
-  the adverse cases; no dynamic estimator has been selected or implemented.
+- **Runtime loop work pricing remains an unselected trial.** The implemented
+  captured-extent estimate opens useful prefix/histogram work and removes the
+  wide stencil's old grain cliffs, but lowers chain-pull's price from 168 to
+  60 and removes its useful two-worker split. That protected cell becomes
+  51 percent slower; some larger parallel gains also cost substantially more
+  process CPU. The [same-source control](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
+  retains those failures and the premeasurement acceptance criterion. A next
+  estimate must preserve the protected cases; neither this trial nor the
+  earlier globally lowered work floor selects a new default.
 
 - **Unguarded affine expression nesting depth.** A proof-domain affine
   expression nesting parentheses about 1400 deep aborts the driver with a

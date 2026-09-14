@@ -120,6 +120,17 @@ The `initial-pooloff-*` groups instead record the earlier adapter-only control
 and are explicitly inconclusive. This dated evidence is retained while its
 measurement-method and grain decisions cite it; new runs do not overwrite it.
 
+[`runtime-extent-2026-09-13.tsv`](runtime-extent-2026-09-13.tsv) uses the same
+record format for the subsequent compiler-estimate trial: candidate `f851c65c`
+against compiler `0d571cac`, with the runtime constants unchanged. It retains
+the main run, protected adverse fixtures, threshold sweep and isolated
+histogram repeat, including the failed chain-pull control. The
+[interpretation](../../investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
+states why this trial is not selected. Runtime-valued estimates are reported
+as `chunks=na` by the harness's static header extraction; `steals` remains the
+actual runtime observation. Retain these rows while the estimate investigation
+or a design decision cites them; subsequent trials do not replace them.
+
 The `wf` row is the module `whitefootc` emits from the kernel's `.wf` source
 under **plain `--par --emit-llvm` and no other flag**, linked with
 the complete ordinary native library under `compiler/src/backend/`

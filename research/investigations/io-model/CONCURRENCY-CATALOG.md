@@ -1706,12 +1706,17 @@ command entry would select its sequential clone. The adapter now selects the
 same execution world; the initial control was too noisy to attribute a fixed
 remaining one-worker tax.
 
-The row weight also does not multiply by runtime width. Two similarly priced
-outer loops can do very different work per iteration. Original, large, small,
-and narrow-row fixtures, plus a threshold sweep, distinguish that estimate
-from the price of a join itself. The former less-than-one-percent barrier and
-5--10-percent native-parity estimates are withdrawn for this consumer; the
-actual measurements and their limitations belong to the investigation.
+The original static row weight did not multiply by runtime width, although
+two similarly priced outer loops can do very different work per iteration.
+Original, large, small, and narrow-row fixtures, plus a threshold sweep,
+distinguish that estimate from the price of a join itself. The subsequent
+[runtime-extent trial](../compute-model/DESIGN.md#runtime-extent-trial-result)
+uses captured dimensions and removes the measured stencil boundary cliffs,
+but fails the protected chain-pull case and adds CPU cost in several cells;
+no replacement pricing policy is selected. The former less-than-one-percent
+barrier and 5--10-percent native-parity estimates are withdrawn for this
+consumer; the actual measurements and their limitations belong to the
+investigation.
 
 The time loop remains source ordered and every parallel step joins. These
 semantics permit reuse of buffers without an explicit publication protocol.
