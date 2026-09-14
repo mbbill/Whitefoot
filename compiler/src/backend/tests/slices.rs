@@ -141,19 +141,38 @@ fn blocked_compute_matches_independent_oracles_at_runtime_dimensions() {
             };
             let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
             for workers in [1, 2, 4] {
-                let output = Command::new(&executable)
-                    .env("WF_WORKERS", workers.to_string())
-                    .env_remove("WF_SPLIT_WORK")
-                    .output()
-                    .expect("run independent blocked-compute oracle");
-                assert!(
-                    output.status.success(),
-                    "{name} workers={workers}: {output:?}"
-                );
-                assert!(
-                    String::from_utf8_lossy(&output.stdout)
-                        .contains(&format!("{name} oracle PASS:"))
-                );
+                // As in the counted-program tests, observing a steal is
+                // existential across schedules. Every attempt checks the
+                // entire result matrix; only its distinct no-steal outcome
+                // may be resampled, never a result or pool-startup failure.
+                let runs = if !defines.is_empty() && workers > 1 {
+                    super::parallel::GRANT_OBSERVATION_RUNS
+                } else {
+                    1
+                };
+                for run in 0..runs {
+                    let output = Command::new(&executable)
+                        .env("WF_WORKERS", workers.to_string())
+                        .env_remove("WF_SPLIT_WORK")
+                        .output()
+                        .expect("run independent blocked-compute oracle");
+                    if output.status.code() == Some(2)
+                        && output.stderr
+                            == format!("{name}: oracle observed no steals\n").as_bytes()
+                        && run + 1 < runs
+                    {
+                        continue;
+                    }
+                    assert!(
+                        output.status.success(),
+                        "{name} workers={workers} run={run}: {output:?}"
+                    );
+                    assert!(
+                        String::from_utf8_lossy(&output.stdout)
+                            .contains(&format!("{name} oracle PASS:"))
+                    );
+                    break;
+                }
             }
             std::fs::remove_dir_all(directory).expect("remove blocked-compute test files");
         }

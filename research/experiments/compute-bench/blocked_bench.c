@@ -152,11 +152,16 @@ int wf__main_body(int argc, char **argv) {
     const char *workers = getenv("WF_WORKERS");
     int pool_active = wf__par_pool_active();
     unsigned long grants = wf__par_grants();
-    if (workers && atoi(workers) > 1 &&
-        (!pool_active || grants == 0)) {
+    if (workers && atoi(workers) > 1 && !pool_active) {
         (void)fprintf(stderr, "%s: workers=%s pool_active=%d grants=%lu\n",
                       KERNEL_NAME, workers, pool_active, grants);
         fail("oracle did not exercise a worker pool");
+    }
+    if (workers && atoi(workers) > 1 && grants == 0) {
+        /* Results passed, but this schedule supplied no parallel observation.
+         * The compiler test resamples only this distinct outcome. */
+        (void)fprintf(stderr, "%s: oracle observed no steals\n", KERNEL_NAME);
+        return 2;
     }
     if (workers && atoi(workers) == 1 && grants != 0) fail("pool-off oracle handed out work");
 #endif

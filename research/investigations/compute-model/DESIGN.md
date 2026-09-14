@@ -138,7 +138,14 @@ every output element, the result length, and unchanged input. The
 1,048,593-word, 64-word-block case supplies both enough blocks to split and
 enough work per block for a worker to take work on a busy host; the earlier
 eligible one-word blocks could finish before another lane woke. The pool and
-actual-steal assertions remain. The measured source checked 52/208
+actual-steal assertions remain. A complete checked run can still finish with
+an active pool and no steal on a saturated host. Following the existing
+counted-program test's `GRANT_OBSERVATION_RUNS` boundary, the native test
+samples at most 32 schedules and requires one with an actual steal at each
+multiworker width. Only a distinct no-steal outcome is resampled; a wrong
+result, missing output or inactive pool fails immediately, and 32 no-steal
+runs also fail. This observes executable overlap, not a per-run scheduling
+guarantee. The measured source checked 52/208
 configurations before timing, without that additional case. Semantic tests
 separately establish that the intended
 outer loops are eligible and the inner recurrences are denied; an unrelated
