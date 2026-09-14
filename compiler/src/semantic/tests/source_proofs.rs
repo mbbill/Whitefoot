@@ -989,6 +989,30 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
 }
 
 #[test]
+fn deeply_grouped_invariant_preserves_the_affine_node_count() {
+    let expression = format!("{}0_u64{}", "(".repeat(1400), ")".repeat(1400));
+    let source = format!(
+        "fn check() -> result: own unit pure {{\n  invariant zero:{expression} <= 0_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+    );
+    with_semantics(source.as_bytes(), |outcome| {
+        assert!(matches!(outcome, SemanticOutcome::Complete(_)));
+    });
+}
+
+#[test]
+fn deeply_grouped_use_reaches_its_ordinary_redundancy_diagnostic() {
+    let expression = format!("{}0_u64{}", "(".repeat(1400), ")".repeat(1400));
+    let source = format!(
+        "fn check() -> result: own unit pure {{\n  invariant upper_bound: 0_u64 <= 0_u64 {{\n    use ({expression} <= 0_u64);\n  }}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+    );
+    assert_prf1_issue(
+        source.as_bytes(),
+        SourceProofObligation::RedundantUseBlock,
+        ExpectedProofIssueNode::Invariant,
+    );
+}
+
+#[test]
 fn use_capacity_cites_the_first_entry_beyond_the_admitted_prefix() {
     let written_use = "    use (value <= limit);\n";
     let uses = written_use.repeat(MAX_CERTIFICATE_PREMISES + 1);
