@@ -122,8 +122,8 @@ each atom's closed/type interval and diagnostic endpoint within one affine
 candidate traversal. New term or goal information invalidates a reused L0
 view. No cache crosses a source statement or fact-state change, no premise is
 published, and candidate order, arithmetic and selected proof parents stay
-unchanged. This is proposed under `compiler/proof-query-context`; the live
-tree is not edited without a ruling.
+unchanged. The [query-preparation decision](../../../design/compiler/proof-query-context.md)
+records this scope and its refused alternatives.
 
 The alternative of materializing a live fact snapshot is not selected: it
 adds snapshot events and independent fact support when only an ephemeral
@@ -190,9 +190,8 @@ alternating pairs per fixture. Together with the stage attribution, these
 comparisons distinguish the two sources of repeated preparation without
 assuming their effects are independent.
 
-The candidate is selected as an implementation improvement, with the proposed
-tree decision still awaiting the owner's ruling. It does not justify a new
-language boundary. The residual growing-context cost is still substantial:
+The candidate is selected as an implementation improvement, not a new language
+boundary. The residual growing-context cost is still substantial:
 128 independent pairs take about 1.15 s even after reuse, and three uses in
 that context take about 0.55 s. Larger growing-context cells were not started;
 no verdict or practicality claim is inferred for them. The real-program

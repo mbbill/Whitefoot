@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-14 Reuse proof-query preparation within one entering context
+
+Nodes: compiler/proof-query-context
+
+Owner-approved: The owner reviewed the proof-query-context amendment presented in the PR #62 conversation and explicitly accepted it after confirming the distinction between amendments and live-tree edits.
+
+Summary: Apply the approved amendment unchanged: reuse the entering L0 closure across certificate premise queries and atom endpoints within one affine candidate traversal, invalidate a reused closure when term or goal information changes, and preserve candidate and diagnostic-parent order. The [source-certificate cost study](../research/investigations/proof-certificate-architecture/CHECKING-COST.md) attributes the repeated preparation and isolates the benefit of reuse. Repeated preparation, live-fact materialization and cross-flow caching remain the refused alternatives. The accepted amendment is removed; this ruling changes neither the language rules nor authorization to merge into main.
+
 ## 2026-09-13 Retain compute facts and provisional extent pricing
 
 Nodes: language/checks-and-proofs/automatic-facts, compiler/parallel-lowering, compiler/parallel-lowering/parallel-runtime

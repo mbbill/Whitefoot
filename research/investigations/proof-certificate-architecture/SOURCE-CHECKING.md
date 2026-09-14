@@ -98,7 +98,7 @@ forms: none of the open alternatives is a new writing permission.
 
 The checking-cost follow-up changes the implementation cost evidence for
 ENT-6/PRF-1, not these conditional safety arguments or the selected language
-rules. It updates the compiler's known-cost guidance and proposes query-local
+rules. It updates the compiler's known-cost guidance and implements query-local
 reuse under `compiler/proof-query-context`. It supplies no comparison of
 automatic-family or redundancy policies; those language choices still stand
 on the limited grounds stated above, with their open questions intact.
