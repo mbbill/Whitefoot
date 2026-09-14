@@ -162,6 +162,11 @@ Supply the project's paths, live concept names, and review base; amendments
 may propose new concepts. When the live tree differs from the base, the
 newest log entry must itself be new, name every changed node, and contain a
 nonempty `Owner-approved:` field; pending amendments need no log entry.
+The field records an assertion; lint cannot authenticate the owner's approval.
+An explicit `--base` must resolve to a commit or lint fails. Omitting it checks
+form only, without checking tree changes against a prior revision. A CI caller
+must choose a base that exposes the changes under review; for a main push,
+comparing the updated main ref with itself checks no changes.
 
     python3 -B <skill-directory>/lint.py --root <design-directory> --trees <concept-name> --base <review-base>
 

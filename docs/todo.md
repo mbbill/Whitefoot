@@ -43,13 +43,15 @@ of them is a decision. Remove an item when its fix and test land.
   an `Option` and [OP-9] refuses at the source with a rule and a line). The
   item is removed with `buffer_new` and `buffer_vacant`, not repaired
   separately.
-- **A large `proof_use` block is impractical well below its ceiling.** [PRF-1]
-  admits 4096 entries; a 2026-09-05 record reports 389 ms at 64 entries, 3.0 s
-  at 128, and 26.8 s at 256, about eight times per doubling, without a pinned
-  reproduction bundle or stage attribution. Profile the stages before changing
-  the implementation or the accepted proof rules; the
-  [selection-ground assessment](../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
-  separates the unresolved costs from the safety obligations.
+- **Large entering proof contexts still have substantial checking cost.**
+  In the [pinned source-certificate experiment](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#paired-selection-2026-09-14),
+  128 independent inequality pairs with 128 uses take a median 1.15 s;
+  the same context with only three uses takes 0.55 s. This is not a cost of
+  certificate length alone: a fixed three-pair context admits all 4096 uses
+  in 286 ms. Reusing repeated closure and interval preparation reduced the
+  128-use case from 21.48 s, but larger contexts remain unmeasured and the
+  remaining closure/index/candidate work is not yet separately attributed.
+  Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
 - **Pre-kill L0 closure has an unresolved compilation cost.** Before an
   [ENT-5] invalidation batch, `materialize_before_event_kill` in
   [`semantic/entailment/flow.rs`](../compiler/src/semantic/entailment/flow.rs)

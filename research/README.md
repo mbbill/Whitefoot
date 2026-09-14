@@ -32,6 +32,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Compute expression and cost](investigations/compute-model/DESIGN.md):
   blocked and irregular algorithm consumers, independent correctness criteria,
   and the runtime costs that test the compute model after range loans.
+- [Source certificate checking cost](investigations/proof-certificate-architecture/CHECKING-COST.md):
+  separate written-proof length from entering-context size and attribute the
+  large `proof_use` cost without changing its accepted rules.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).

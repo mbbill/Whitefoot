@@ -68,22 +68,24 @@ retains dated comparisons of declaration identity against expanded operand
 images. That evidence is specific to folding; it does not validate every
 aspect of PRF-1.
 
-The 2026-09-05 cost record, retained in the
-[compiler guide](../../../compiler/README.md#known-cost-a-large-proof_use-block-is-impractical-well-below-its-ceiling),
-reports 389 ms, 3.0 s and 26.8 s for 64, 128 and 256 entries. It does not pin a
-reproducible source/toolchain bundle or isolate the stages. Treat these as
-historical reported costs, not a current benchmark or a measured 4096-entry
-result. Absence of a large certificate in the existing corpus does not justify
-its cost, demonstrate general expressiveness, or make it a constitutional
-tradeoff already accepted by the owner.
+The historical 2026-09-05 report of 389 ms, 3.0 s and 26.8 s for 64, 128 and
+256 entries did not pin a reproducible source/toolchain bundle or isolate the
+stages. The [checking-cost experiment](CHECKING-COST.md) supersedes it as the
+current cost evidence, separating certificate length from entering-context
+size and attributing repeated L0 closure and interval preparation. It is not
+a reconstruction of those old inputs. Absence of a large certificate in the
+existing corpus does not justify its cost, demonstrate general expressiveness,
+or make it a constitutional tradeoff already accepted by the owner.
 
 The current implementation makes the distinction visible:
 [source proof checking](../../../compiler/src/semantic/entailment/flow.rs)
 queries the target for redundancy, checks relation-form premises against the
 entering context, checks named-premise availability, accumulates the written
 sum and checks its residual. Thus the old argument that explicit steps alone
-make total checking proportional to their count is unsupported. Attribution
-and any implementation repair belong to subsequent compiler work.
+make total checking proportional to their count is unsupported. Reusing
+unchanged query preparation removes measured repetition without removing any
+of these checks; it establishes neither linear total cost nor that the
+selected proof-authoring contract is optimal.
 
 ## Affected set and reopening conditions
 
@@ -93,6 +95,13 @@ shares the AUTO boundary; its complete routing and FN-8/FN-9's contract choices
 are now assessed in the linked full-rule assessment. This narrower study does
 not certify those mechanisms. Writer patterns continue to teach the specified
 forms: none of the open alternatives is a new writing permission.
+
+The checking-cost follow-up changes the implementation cost evidence for
+ENT-6/PRF-1, not these conditional safety arguments or the selected language
+rules. It updates the compiler's known-cost guidance and implements query-local
+reuse under `compiler/proof-query-context`. It supplies no comparison of
+automatic-family or redundancy policies; those language choices still stand
+on the limited grounds stated above, with their open questions intact.
 
 The v0.52 note in
 [host qualification](../../../compiler/src/backend/qualification.rs) describes
