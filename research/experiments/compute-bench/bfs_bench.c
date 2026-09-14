@@ -103,8 +103,11 @@ int wf__main_body(int argc, char **argv) {
     size_t checked = matrix(wf_bench_bfs, wf_bench_bfs_release);
 #ifdef WFB_ORACLE_PARALLEL
     const char *workers = getenv("WF_WORKERS");
-    if (workers && atoi(workers) > 1 &&
-        (!wf__par_pool_active() || wf__par_grants() == 0)) fail("oracle did not exercise a worker pool");
+    if (workers && atoi(workers) > 1 && !wf__par_pool_active()) fail("oracle did not exercise a worker pool");
+    if (workers && atoi(workers) > 1 && wf__par_grants() == 0) {
+        (void)fprintf(stderr, "bfs: oracle observed no steals\n");
+        return 2;
+    }
     if (workers && atoi(workers) == 1 && wf__par_grants() != 0) fail("pool-off oracle handed out work");
 #endif
     (void)printf("bfs oracle PASS: 86 configurations, %zu values\n", checked);

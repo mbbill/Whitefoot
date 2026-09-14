@@ -23,6 +23,92 @@ fn bind_compute_host_adapter(module: &str, adapter: &str) -> String {
     String::from_utf8(output.stdout).expect("adapter LLVM text")
 }
 
+fn run_compute_oracle(executable: &Path, name: &str, parallel: bool) {
+    for workers in [1, 2, 4] {
+        // As in the counted-program tests, observing a steal is existential
+        // across schedules. Every attempt checks the entire result matrix;
+        // only its distinct no-steal outcome may be resampled, never a result
+        // or inactive-pool failure.
+        let runs = if parallel && workers > 1 {
+            super::parallel::GRANT_OBSERVATION_RUNS
+        } else {
+            1
+        };
+        for run in 0..runs {
+            let output = Command::new(executable)
+                .env("WF_WORKERS", workers.to_string())
+                .env_remove("WF_SPLIT_WORK")
+                .output()
+                .expect("run independent compute oracle");
+            if output.status.code() == Some(2)
+                && output.stderr == format!("{name}: oracle observed no steals\n").as_bytes()
+                && run + 1 < runs
+            {
+                continue;
+            }
+            assert!(
+                output.status.success(),
+                "{name} workers={workers} run={run}: {output:?}"
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains(&format!("{name} oracle PASS:"))
+            );
+            break;
+        }
+    }
+}
+
+#[test]
+fn compute_oracle_sampling_rejects_wrong_values_and_missing_observations() {
+    let source = include_str!("../../../../research/experiments/compute-bench/programs/prefix.wf");
+    let adapter = include_str!("../../../../research/experiments/compute-bench/prefix_host.ll");
+    let oracle = format!(
+        "#define WFB_BLOCKED_ORACLE\n#define WFB_PREFIX\n{}",
+        include_str!("../../../../research/experiments/compute-bench/blocked_bench.c")
+    );
+    for corrupt in [true, false] {
+        let program = if corrupt {
+            let changed = source.replacen("total +wrap input[i]", "total -wrap input[i]", 1);
+            assert_ne!(
+                changed, source,
+                "the block-sum mutant must change the algorithm"
+            );
+            changed
+        } else {
+            source.to_owned()
+        };
+        let module = emit_with_overlap(program.as_bytes());
+        let llvm = bind_compute_host_adapter(&module, adapter)
+            .replace("@main(", "@wf_oracle_negative_main(")
+            .replace("@wf__main_body(", "@wf_oracle_negative_body(");
+        let directory = test_directory();
+        let mut defines = vec!["WFB_ORACLE_PARALLEL=1".to_owned()];
+        if !corrupt {
+            // The real algorithm still runs, but no attempt can observe a
+            // steal through the intentionally disabled counter.
+            defines.push("WF_SCHED_STATS=0".to_owned());
+        }
+        let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+        let failure = std::panic::catch_unwind(|| run_compute_oracle(&executable, "prefix", true))
+            .expect_err("a wrong result or absent observation must fail the oracle test");
+        let message = failure
+            .downcast_ref::<String>()
+            .expect("oracle assertion message");
+        if corrupt {
+            assert!(message.contains("workers=1 run=0"), "{message}");
+            assert!(message.contains("wrong result"), "{message}");
+        } else {
+            let final_run = super::parallel::GRANT_OBSERVATION_RUNS - 1;
+            assert!(
+                message.contains(&format!("workers=2 run={final_run}")),
+                "{message}"
+            );
+            assert!(message.contains("oracle observed no steals"), "{message}");
+        }
+        std::fs::remove_dir_all(directory).expect("remove oracle negative-test files");
+    }
+}
+
 #[test]
 fn borrowed_storage_subranges_write_the_original_array_and_run() {
     let source = r#"struct Packet {
@@ -140,40 +226,7 @@ fn blocked_compute_matches_independent_oracles_at_runtime_dimensions() {
                 Vec::new()
             };
             let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
-            for workers in [1, 2, 4] {
-                // As in the counted-program tests, observing a steal is
-                // existential across schedules. Every attempt checks the
-                // entire result matrix; only its distinct no-steal outcome
-                // may be resampled, never a result or pool-startup failure.
-                let runs = if !defines.is_empty() && workers > 1 {
-                    super::parallel::GRANT_OBSERVATION_RUNS
-                } else {
-                    1
-                };
-                for run in 0..runs {
-                    let output = Command::new(&executable)
-                        .env("WF_WORKERS", workers.to_string())
-                        .env_remove("WF_SPLIT_WORK")
-                        .output()
-                        .expect("run independent blocked-compute oracle");
-                    if output.status.code() == Some(2)
-                        && output.stderr
-                            == format!("{name}: oracle observed no steals\n").as_bytes()
-                        && run + 1 < runs
-                    {
-                        continue;
-                    }
-                    assert!(
-                        output.status.success(),
-                        "{name} workers={workers} run={run}: {output:?}"
-                    );
-                    assert!(
-                        String::from_utf8_lossy(&output.stdout)
-                            .contains(&format!("{name} oracle PASS:"))
-                    );
-                    break;
-                }
-            }
+            run_compute_oracle(&executable, name, !defines.is_empty());
             std::fs::remove_dir_all(directory).expect("remove blocked-compute test files");
         }
     }
@@ -212,15 +265,7 @@ fn stencil_matches_an_independent_dimension_and_step_matrix() {
             Vec::new()
         };
         let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
-        for workers in [1, 2, 4] {
-            let output = Command::new(&executable)
-                .env("WF_WORKERS", workers.to_string())
-                .env_remove("WF_SPLIT_WORK")
-                .output()
-                .expect("run independent stencil oracle");
-            assert!(output.status.success(), "workers={workers}: {output:?}");
-            assert!(String::from_utf8_lossy(&output.stdout).contains("stencil oracle PASS:"));
-        }
+        run_compute_oracle(&executable, "stencil", !defines.is_empty());
         std::fs::remove_dir_all(directory).expect("remove native stencil test files");
     }
 }
@@ -988,21 +1033,7 @@ fn irregular_compute_matches_independent_sort_and_graph_oracles() {
                 Vec::new()
             };
             let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
-            for workers in [1, 2, 4] {
-                let output = Command::new(&executable)
-                    .env("WF_WORKERS", workers.to_string())
-                    .env_remove("WF_SPLIT_WORK")
-                    .output()
-                    .expect("run independent irregular-compute oracle");
-                assert!(
-                    output.status.success(),
-                    "{name} workers={workers}: {output:?}"
-                );
-                assert!(
-                    String::from_utf8_lossy(&output.stdout)
-                        .contains(&format!("{name} oracle PASS:"))
-                );
-            }
+            run_compute_oracle(&executable, name, !defines.is_empty());
             std::fs::remove_dir_all(directory).expect("remove irregular-compute test files");
         }
     }
