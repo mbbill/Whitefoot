@@ -25,10 +25,10 @@ and development-feasibility objectives.
 ## Assessed grounds and unresolved choices
 
 The table records the scope of this focused assessment. The later
-[full-rule assessment](../decision-workflow/RULE-GROUNDS.md#proof-state-and-transport)
-examines the remaining facets below and preserves concrete cost and expression
-questions as `revisit`; it supplies arguments, not new comparative experiments
-or a formal soundness proof.
+[historical full-rule assessment](../decision-workflow/RULE-GROUNDS.md#proof-state-and-transport)
+examined the remaining facets below and recorded cost and expression questions
+as `revisit`. Those labels describe that assessment, not current selections;
+it supplies neither new comparative experiments nor a formal soundness proof.
 
 | Rule and assessed aspect | Grounds that hold | What remains open |
 |---|---|---|

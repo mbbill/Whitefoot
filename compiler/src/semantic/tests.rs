@@ -830,10 +830,9 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
         b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: own ExitStatus pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::DuplicateMatchArm,
     );
-    // This identity helper returns the same owner on every iteration. It used
-    // to stop at OwnershipJoin because preliminary checking compared unresolved
-    // call images before deriving summaries. Keep the program as a success
-    // control now that final checking uses its resolved, unchanged origin.
+    // Each iteration consumes the local run and installs the returned run in
+    // that binding. Ordinary ownership checks the complete replacement without
+    // recovering the returned owner's ancestry from the helper body.
     with_semantics(
         br#"fn consume(cell: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
   return move cell;

@@ -44,7 +44,7 @@ general compiler repairs and bounded storage-reuse optimizations; the earlier wo
 source interface. The selected full-array experiment is a language amendment
 with two kernel rows; its design is not evidence that implementation is complete.
 Version labels attached to earlier experiments below identify their measured
-branch revisions. The combined publication over main is v0.55; it does not
+branch revisions. The combined publication over main is v0.56; it does not
 retroactively change the versions or runtime used for those measurements.
 
 ## Ground and evidence
@@ -1680,6 +1680,10 @@ remain negative controls. [Counted push/pop](../../../tests/conformance/cases/ru
 and [multiple results](../../../tests/conformance/cases/run-exclusive-take-multiple-results.wf)
 exercise the positive boundary. The no-ensures controls distinguish a lost fact
 from an intentional runtime reread; the live-view control retains OWN-5.
+The owning-map success witness exits nonzero on allocation refusal so that
+success requires the whole insertion/replacement chain. Its backend observer
+also refuses each of its four allocation positions and checks the exact
+release sequence of the owners acquired before refusal.
 
 The amendment is v0.56, archiving the exact outgoing v0.55 bytes. META-5 delta:
 rule IDs +0/-0; fixed terminals +1 (`entry`)/-0; grammar productions +0/-0;

@@ -387,7 +387,7 @@ fn render(tally: &Tally, elapsed: Duration, options: &Options) -> String {
         "  PAR-2 loops      {:>6} permitted, {:>6} denied\n",
         tally.loop_permitted, tally.loop_denied
     ));
-    text.push_str("  PAR-3 stage permission is retired by v0.58; file-loop workloads remain.\n");
+    text.push_str("  PAR-3 stage permission is retired by v0.56; file-loop workloads remain.\n");
     text.push_str(&format!(
         "  programs holding at least one permitted PAR-1 pair:  {} ({:.1}% of accepted)\n",
         tally.programs_with_permitted_pair,

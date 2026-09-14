@@ -2336,9 +2336,9 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
     // Retain this complete Heap source, including both allocation failures.
     for overlap in [crate::OverlapLowering::Off, crate::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
-        let main = function_body(&module, "@wf_main");
-        assert!(!main.contains("par.staged.offered."));
-        assert!(!main.contains("call ptr @wf__par_acquire_lane("));
+        let exercise = function_body(&module, "@wf_exercise");
+        assert!(!exercise.contains("par.staged.offered."));
+        assert!(!exercise.contains("call ptr @wf__par_acquire_lane("));
         let observed = module
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");

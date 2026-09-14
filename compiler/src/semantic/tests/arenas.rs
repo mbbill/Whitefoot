@@ -421,13 +421,9 @@ fn main() -> status: own ExitStatus pure {
 /// [PROV-6, STOR-1, STOR-3] a store-backed run's release class is decided from
 /// its store region's declaration alone and travels in its type.
 ///
-/// No heap value exists in this version, so nothing releases through a free
-/// yet and no program can observe the difference at run time. The
-/// classification is what a heap-backed run's lowering will select between, so
-/// it is pinned here rather than left to the version that first spends it: an
-/// `affine`-bounded region parameter and a `region_stmt` region are bump
-/// extents whose reclamation is the region's own reset, and the entry heap, an
-/// unbounded region parameter and a `linear`-bounded one are general stores.
+/// This checks the classification before lowering: an `affine`-bounded region
+/// parameter denotes a bump extent whose reclamation is the region's reset;
+/// an unbounded or `linear`-bounded region parameter denotes a general store.
 #[test]
 fn a_runs_release_class_is_read_off_its_store_regions_declaration() {
     let source = br#"fn from_extent['s: affine](run: own Vector<'s, u64>) -> back: own Vector<'s, u64> pure {
@@ -446,12 +442,12 @@ fn from_unconstrained['s](run: own Vector<'s, u64>) -> back: own Vector<'s, u64>
 }
 
 fn from_general_store['heap](run: own Vector<'heap, u64>) -> back: own Vector<'heap, u64> pure {
-  doc "An elided store brand at a parameter position is the entry heap's store region.";
+  doc "The explicitly named heap brand is an unbounded general-store region.";
   return move run;
 }
 
 fn main() -> status: own ExitStatus pure {
-  doc "The four declarations are checked; none is called, because no program can produce a general store's run yet.";
+  doc "The four declarations are checked without needing a runtime allocation.";
   return exit_status(code: 0_u8);
 }
 "#;

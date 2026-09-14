@@ -337,7 +337,6 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                     spelling: role.spelling.clone(),
                     origin: role.origin.clone(),
                 }),
-                // Table-checked carriers await the FN-7 kind-table capability, and
                 RawRoleKind::Selector(_) => {}
             }
         }

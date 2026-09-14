@@ -1,3 +1,4 @@
+use super::owned_places::retain_calls;
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
 #[test]
@@ -112,12 +113,19 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 }
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
-        // External visibility plus noinline preserves an ordinary pointer
+        // Ordinary visibility plus noinline preserves the pointer
         // ABI, including the helper-to-helper call, under host optimization.
-        let module = retain_nested_run_calls(&super::emit_lowered(source, overlap))
-            .replace("define internal ", "define ")
+        let module = retain_calls(&super::emit_lowered(source, overlap))
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
+        for helper in [" @wf_read$", " @wf_checksum$"] {
+            let headers: Vec<_> = module
+                .lines()
+                .filter(|line| line.starts_with("define ") && line.contains(helper))
+                .collect();
+            assert!(!headers.is_empty(), "missing instantiated helper {helper}");
+            assert!(headers.iter().all(|line| line.contains(" noinline ")));
+        }
         let observer = super::owned_places::allocation_observer(1, 0);
         let output = super::compile_link_and_run(&module, Some(&observer), &[]);
         assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
@@ -220,8 +228,16 @@ __attribute__((constructor)) static void check_shared_abi(void) {
         // Keep an externally callable pointer ABI as well as call boundaries:
         // noinline alone still lets IPSCCP specialize an internal helper to
         // this caller's one constant global and remove its pointer argument.
-        let module = retain_nested_run_calls(&super::emit_lowered(source, overlap))
-            .replace("define internal ", "define ");
+        let module = retain_calls(&super::emit_lowered(source, overlap));
+        for helper in ["retain", "read", "read_row", "read_entry"] {
+            assert!(
+                emitted_function(&module, helper)
+                    .lines()
+                    .next()
+                    .expect("helper definition")
+                    .contains(" noinline ")
+            );
+        }
         let output = super::compile_link_and_run(&module, Some(observer), &[]);
         assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
         assert!(output.stdout.is_empty(), "{output:?}");
@@ -370,7 +386,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
-        let observed = retain_nested_run_calls(&module)
+        let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
         let host = super::owned_places::allocation_observer(4, 0);
@@ -475,7 +491,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
-        let observed = retain_nested_run_calls(&module)
+        let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
         // Every next allocation uses the same exclusive provider after the
@@ -675,7 +691,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
-        let observed = retain_nested_run_calls(&module)
+        let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
         for (refused, status, ledger) in [(0, 0, b"A1;F1;".as_slice()), (1, 70, b"X1;".as_slice())]
@@ -740,7 +756,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
-        let module = retain_nested_run_calls(&super::emit_lowered(source, overlap));
+        let module = retain_calls(&super::emit_lowered(source, overlap));
         let output = compile_and_run(&module);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         assert!(output.stdout.is_empty(), "{output:?}");
@@ -1168,7 +1184,7 @@ fn main() -> status: own ExitStatus pure {
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
-        let observed = retain_nested_run_calls(&module)
+        let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
         let host = super::owned_places::allocation_observer(2, 0);
@@ -1240,7 +1256,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
-        let observed = retain_nested_run_calls(&module)
+        let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
         let host = super::owned_places::allocation_observer(1, 0);
@@ -1309,7 +1325,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
-        let observed = retain_nested_run_calls(&module)
+        let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
         for (refused, status, expected) in
@@ -1423,7 +1439,7 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = super::emit_lowered(source, overlap);
-        let observed = retain_nested_run_calls(&module)
+        let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
         // The second record depends on the first, and the outer allocation
@@ -1444,19 +1460,4 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
             assert!(output.stderr.is_empty(), "{overlap:?}: {output:?}");
         }
     }
-}
-
-fn retain_nested_run_calls(module: &str) -> String {
-    module
-        .lines()
-        .map(|line| {
-            if line.starts_with("define internal ")
-                && let Some(header) = line.strip_suffix(" {")
-            {
-                format!("{header} noinline {{\n")
-            } else {
-                format!("{line}\n")
-            }
-        })
-        .collect()
 }

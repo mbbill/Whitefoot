@@ -1109,8 +1109,6 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by EFF-2.
         mechanical_fix: &'static str,
     },
-    /// The written effect row omits a category contributed only by a
-    /// compiler-derived release, which has no source occurrence [EFF-2].
     /// A generic type parameter named a source contract as its bound.
     SourceContractGenericBound,
 }

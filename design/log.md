@@ -4,6 +4,12 @@ Newest first. One entry per ruling on the tree, an approved change or a
 refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-13 Reconcile brand spelling and retire the gated source family
+
+Nodes: language/ownership/region-elision, language/gated-family
+
+Summary: The owner accepted these full-PR correspondence findings and directed their correction. Region spelling now records the selected FORM-8 distinction between invariant type brands and loan regions: omitting a generic brand may select a concrete store, and a short loan must not change type identity. The gated-family node is retired because the ordinary-host-values amendment removes its source declaration family, qualification boundary and per-fact ledger; ordinary prelude declarations and the linked-definition trusted computing base now own that boundary. Retaining the former family as a live decision would preserve a rejected second source model. These corrections add no source acceptance rule. The helper-pool finding remains under historical review rather than being resolved by this ruling.
+
 ## 2026-09-13 Preserve continuing view loans and reuse consumed result storage
 
 Nodes: compiler/view-loans, compiler/storage-placement

@@ -42,4 +42,3 @@ for bad in '%' 'ordinary command' '' 'ordinary '; do
   grep -q 'WF_B_INTERFACE must be' "$work/error"
 done
 echo 'baseline entry and incomplete-library checks passed'
-

@@ -1,17 +1,22 @@
-# Current language-rule grounds
+# Historical language-rule assessments
 
-This assessment reads the [active specification](../../../spec/kernel-spec.md)
-against the [constitution](../../../docs/constitution.md). It supports the
-[current rule index](../../../spec/derivation/derivation-ledger.md#current-index);
-it changes neither source acceptance nor compiler behavior. The index owns the
-inventory. This document owns the arguments and remaining questions, and must
-be updated or retired when those arguments are superseded.
+This record preserves assessments from the retired rule-index workflow and
+the container branch before the ordinary-host-values amendment. Its rule
+inventory and recommendations are historical, including owner-routing,
+release, function-result freshness, command-entry, suspension, qualification
+and gated-family mechanisms. The selected
+[ordinary-host-values design](../ordinary-host-values/DESIGN.md) supersedes
+those recommendations; they do not describe the current language. The
+[active specification](../../../spec/kernel-spec.md) defines acceptance, and
+the [design trees](../../../design/) carry current decisions and their grounds.
+There is no replacement rule index to keep in sync here.
 
-These are present-day assessments, not recovered claims about an original
-author's intent. Alternatives below are comparisons considered here unless a
-historical source is explicitly identified. A plausible alternative is not a
-selected replacement. No corpus count, familiarity claim, or cost of migrating
-the existing tests justifies retaining a language restriction.
+The arguments below record the assessments made during those revisions, not
+recovered claims about an original author's intent. Their `current` and
+`revisit` labels refer to those assessments, not to a present selection or
+work queue. Alternatives are historical comparisons unless explicitly
+identified otherwise. No corpus count, familiarity claim, or migration cost
+establishes that a retained historical restriction should be restored.
 
 ## Reading the judgments
 
@@ -32,9 +37,8 @@ cannot establish that the rule is the best design.
 `current` means the selection argument has been assessed and has no specific
 unresolved objection identified here. `revisit` means the argument has been
 assessed but a concrete question remains open; it does not mean the row was
-skipped. Reopening triggers are attached to groups below. The workflow remains
-[decision practice](../../../docs/practice.md#decision-work), with one completion
-review, not a new approval process.
+skipped. The reopening triggers below belong to that historical assessment;
+current work follows [decision practice](../../../docs/practice.md#decision-work).
 
 ## Scope and surface
 

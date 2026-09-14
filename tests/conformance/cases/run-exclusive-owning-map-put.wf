@@ -249,7 +249,7 @@ fn exercise['s](store: &uniq Heap<'s>) -> status: own ExitStatus reads(store), w
   region {
     match heap_vector::<Slot<'s>>(store: &uniq deref(store), count: 2_u64) {
       None() => {
-        return exit_status(code: 0_u8);
+        return exit_status(code: 70_u8);
       }
       Some(value: slots) => {
         region {
@@ -257,7 +257,7 @@ fn exercise['s](store: &uniq Heap<'s>) -> status: own ExitStatus reads(store), w
           let outcome0 = allocate_put(store: &uniq deref(store), slots: &uniq slots, key: 1_u64, id: 11_u64);
           let checked0 = check_put(store: &uniq deref(store), outcome: move outcome0, kind: 1_u64, expected: 0_u64);
           if checked0 == 70_u8 {
-            return exit_status(code: 0_u8);
+            return exit_status(code: 70_u8);
           }
           if checked0 != 0_u8 {
             return exit_status(code: 1_u8);
@@ -267,7 +267,7 @@ fn exercise['s](store: &uniq Heap<'s>) -> status: own ExitStatus reads(store), w
           let outcome1 = allocate_put(store: &uniq deref(store), slots: &uniq slots, key: 3_u64, id: 22_u64);
           let checked1 = check_put(store: &uniq deref(store), outcome: move outcome1, kind: 1_u64, expected: 0_u64);
           if checked1 == 70_u8 {
-            return exit_status(code: 0_u8);
+            return exit_status(code: 70_u8);
           }
           if checked1 != 0_u8 {
             return exit_status(code: 2_u8);
@@ -277,7 +277,7 @@ fn exercise['s](store: &uniq Heap<'s>) -> status: own ExitStatus reads(store), w
           let outcome2 = allocate_put(store: &uniq deref(store), slots: &uniq slots, key: 1_u64, id: 33_u64);
           let checked2 = check_put(store: &uniq deref(store), outcome: move outcome2, kind: 2_u64, expected: 11_u64);
           if checked2 == 70_u8 {
-            return exit_status(code: 0_u8);
+            return exit_status(code: 70_u8);
           }
           if checked2 != 0_u8 {
             return exit_status(code: 3_u8);

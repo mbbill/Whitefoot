@@ -45,7 +45,7 @@ its diagnostic cites, so generator bias stays visible instead of silent.
 
 ## Ordinary host-value migration
 
-Under v0.58 the entry takes ordinary `Inputs`, acquired handles close explicitly
+Under v0.56 the entry takes ordinary `Inputs`, acquired handles close explicitly
 on every exit, and direct factory calls replace permits. Ordinary WF helpers
 construct the required views and preserve buffer-length facts in two-state
 contracts. The generator emits current comparison, call, loop and view forms;

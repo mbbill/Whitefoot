@@ -1,5 +1,5 @@
 fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  doc "Relays a fixed byte volume onto two independent outputs, one chunk to each per round, so a consumer that makes one output wait cannot stop the other.";
+  doc "Relays a fixed byte volume onto two outputs, one chunk to each per round. The shared factory orders the writes; a blocked first write delays the second.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: err, handles: entry_factory, stdin: unused_stdin) = move inputs;
   region {
     close_directory(factory: &uniq entry_factory, directory: move unused_cwd);

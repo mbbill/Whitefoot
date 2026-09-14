@@ -1986,6 +1986,37 @@ fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitSta
 }
 
 #[test]
+fn owning_map_success_and_each_allocation_refusal_have_distinct_outcomes() {
+    let source =
+        include_bytes!("../../../../tests/conformance/cases/run-exclusive-owning-map-put.wf");
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
+        let module = retain_calls(&super::emit_lowered(source, overlap))
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        // Keys 1 and 3 collide: their payloads occupy slots 1 and 0.
+        // Replacement consumes the old payload before the two remaining
+        // slots and their backing are released in storage order.
+        for (refused, status, ledger) in [
+            (0, 0, "A1;A2;A3;A4;F2;F3;F4;F1;"),
+            (1, 70, "X1;"),
+            (2, 70, "A1;X2;F1;"),
+            (3, 70, "A1;A2;X3;F2;F1;"),
+            (4, 70, "A1;A2;A3;X4;F3;F2;F1;"),
+        ] {
+            let observer = allocation_observer(4, refused);
+            let output = compile_link_and_run(&module, Some(&observer), &[]);
+            assert_eq!(
+                output.status.code(),
+                Some(status),
+                "{overlap:?}: {output:?}"
+            );
+            assert_eq!(output.stdout, ledger.as_bytes(), "{overlap:?}: {output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}
+
+#[test]
 fn statement_children_keep_displaced_owners_and_provider_results_alive() {
     let source = include_bytes!(
         "../../../../tests/conformance/cases/own6-pos-statement-children-use-a-longer-local-region.wf"

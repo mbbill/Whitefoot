@@ -412,7 +412,8 @@ These dispositions record the original D7 amendment on the pre-merge branch.
 C2's later [case register](../ordinary-host-values/CASES.md) supersedes their
 owned-history and native-release assumptions. An old expected verdict is not
 changed to accommodate a compiler failure.
-The five retired law sources are preserved verbatim in the compiler's
+The five retired law sources are preserved, with only `command fn main`
+normalized to ordinary `fn main`, in the compiler's
 `retired_closed_law_table_has_no_remaining_acceptance_path` grammar regression;
 their former law-acceptance obligations were removed by D7 and remain absent
 from the combined v0.56 publication.
@@ -420,25 +421,25 @@ from the combined v0.56 publication.
 | Previous source ID | Current source ID or disposition | Rule and reason |
 | --- | --- | --- |
 | `fn3-neg-source-contract-bound` | `fn3-neg-source-contract-bound` | Only Int and Float occupy the numeric-bound TYPEID position. A named formal group occupies its own generic-list position and is refused as a numeric bound under FN-3. |
-| `fn4-neg-bad-lawname` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
+| `fn4-neg-bad-lawname` | Retired | FN-4 removed law/law_arg; source remains in the compiler grammar-retirement regression with the entry-syntax normalization stated above. |
 | `fn3-pos-empty-marker-conformance` | `fn3-pos-empty-marker-conformance` | A zero-member formal admits a matching empty named actual; expansion creates no runtime function or group object. |
 | `fn3-pos-normalized-region-effects` | `fn3-pos-normalized-region-effects` | Formal and actual loan regions alpha-match by parameter position and effect paths normalize by parameter ordinal; reversed read-set order preserves the boundary. |
 | `fn3-neg-generic-contract` | `fn3-pos-generic-formal` | D7 admits flat type/const parameters on a formal header; this replaces the retired source-contract-template refusal. |
 | `fn3-neg-out-of-order-binding` | `fn3-neg-out-of-order-binding` | A complete set of actual bindings in a different order from the formal member declarations rejects under FN-3. |
 | `fn3-neg-two-conformances` | `fn3-pos-two-explicit-actuals` | D7 removes implicit type/conformance uniqueness. Two differently named actual groups may bind the same formal application; selection is explicit. |
 | `reject-syseff-pure-member-binds-release` | `fn4-neg-pure-member-binds-release` | An actual's ordinary derived release writes its incoming owner. D7 FN-4 refuses that effect at a pure formal boundary; resources use ordinary objects and effects. |
-| `fn4-pos-law-discharged` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
-| `fn4-neg-law-undischarged` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
+| `fn4-pos-law-discharged` | Retired | FN-4 removed law/law_arg; source remains in the compiler grammar-retirement regression with the entry-syntax normalization stated above. |
+| `fn4-neg-law-undischarged` | Retired | FN-4 removed law/law_arg; source remains in the compiler grammar-retirement regression with the entry-syntax normalization stated above. |
 | `fn3-neg-missing-binding` | `fn3-neg-missing-binding` | An actual must bind every formal member exactly once in source order. FN-3 refuses the complete incomplete actual declaration before publishing a group. |
 | `fn3-neg-signature-effect-mismatch` | `fn4-neg-formal-row-coverage` | D7 FN-4 requires every actual effect path to be covered in the same category by the formal row. An allocating actual exceeds a reads-only formal. |
 | `fn3-neg-requires-member` | `fn4-neg-requires-mismatch` | D7 FN-4 requires ordered structural contract equality. A requires-bearing actual cannot bind a formal with no requirement. |
 | `fn1-pos-result-provenance-zero-candidate` | `fn1-pos-result-provenance-zero-candidate` | A formal member with a borrowed result and no candidate input obeys FN-1's zero-candidate rule; only named const storage can supply it. |
-| `fn4-pos-law-in-contract` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
+| `fn4-pos-law-in-contract` | Retired | FN-4 removed law/law_arg; source remains in the compiler grammar-retirement regression with the entry-syntax normalization stated above. |
 | `fn3-neg-contract-arguments` | `fn3-neg-contract-arguments` | An actual applies a zero-header-parameter formal to one type argument; FN-3 refuses the arity mismatch. |
 | `fn3-pos-contract-conform` | `fn3-pos-contract-conform` | A formal declares function-kind signatures and a named actual supplies the complete ordered function argument group (D7 FN-3); no implementation is attached to a type. |
 | `fn3-neg-extra-binding` | `fn3-neg-extra-binding` | An actual has an extra binding beyond its formal's complete member table; FN-3 refuses the extra member. |
 | `fn1-neg-contract-borrowed-slice-result` | `fn1-neg-contract-borrowed-slice-result` | The ordinary borrow-mode direct-slice result refusal applies to a formal member's signature formation before any actual can bind it. |
-| `fn4-neg-law-refuted-signedness` | Retired | FN-4 removed law/law_arg; original bytes remain in the compiler grammar-retirement regression. |
+| `fn4-neg-law-refuted-signedness` | Retired | FN-4 removed law/law_arg; source remains in the compiler grammar-retirement regression with the entry-syntax normalization stated above. |
 | `checked-law-channel/kernel.wf`, `kernel_lib.wf` | Historical experiment, retired from active language claims | D7 removes law declarations and any implicit law authority. Retained measurements describe their historical toolchain only; neither file is a current check target. |
 
 The unchanged `x-eff-pure-combined-with-allocation` source still rejects. Its

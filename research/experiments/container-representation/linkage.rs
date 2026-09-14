@@ -1,6 +1,6 @@
 //! Linkage adaptation for the closed C measurement harnesses.
 //!
-//! Ordinary WF definitions are linkable in v0.58. The retained controls expose
+//! Ordinary WF definitions are linkable in v0.56. The retained controls expose
 //! only the measured bridge, as they did before the amendment; their helper
 //! bodies stay local so the comparison has the same interprocedural scope.
 //! No call, data layout, contract or instruction changes here.

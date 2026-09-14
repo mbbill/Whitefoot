@@ -798,9 +798,10 @@ computations can use the ordinary parallel permissions without a stream- or
 suspension-specific judgment.
 
 The v0.57 staged-loop ledger examples are retired with [PAR-3]. Existing
-traversal and staged workloads remain measurement inputs for C2, with the lost
-overlap attributed separately from factory serialization and ordinary call
-cost. They do not establish a current staging capability.
+traversal and staged workloads remain measurement inputs for C2. Those
+measurements do not isolate lost overlap, factory serialization and ordinary
+call overhead as separate costs, and do not establish a current staging
+capability.
 
 ## P19. Advance a tracked binding the same way on every arm
 

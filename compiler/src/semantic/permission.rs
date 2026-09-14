@@ -724,7 +724,7 @@ impl<'check> Program<'check> {
         }
     }
 
-    /// The four conditions in their numbered order, then eligibility, over the
+    /// The three conditions in their numbered order, then eligibility, over the
     /// window (s1, T1…Tk, s2).
     ///
     /// An interposed statement is classified before any condition is
@@ -879,7 +879,7 @@ impl<'check> Program<'check> {
         // interposed between s1 and s2, already denied during classification
         // above.
 
-        // All four conditions hold. Source proof statements were checked
+        // All three conditions hold. Source proof statements were checked
         // before this analysis and have no runtime exit or footprint.
         PermissionVerdict::PermittedEligible
     }
@@ -1525,7 +1525,7 @@ pub(super) fn collect_consumed_places(
 /// The enumeration is over written call positions, not over statement kinds
 /// that happen to be convenient: a `match` scrutinee is the same call as a
 /// `let` right-hand side, gets the same [EFF-2] projection, and is judged by
-/// the same four conditions. What the position changes is one recorded fact —
+/// the same three conditions. What the position changes is one recorded fact —
 /// whether the statement itself reads the result — and `judge` derives the
 /// window from that fact rather than from the statement's spelling.
 fn candidate_of(index: usize, statement: &CheckedStatement) -> Option<Candidate<'_>> {

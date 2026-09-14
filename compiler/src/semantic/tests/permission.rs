@@ -1537,9 +1537,9 @@ fn main() -> status: own ExitStatus pure {
     ));
 }
 
-/// Direct system operations are candidates under the same ordinary call
-/// permission judgment. An inline, authority-free operation therefore forms
-/// the two adjacent eligible pairs rather than becoming opaque interposition.
+/// Prelude calls use the ordinary call permission judgment. This pure call
+/// forms the two adjacent eligible pairs rather than becoming opaque
+/// interposition.
 #[test]
 fn an_inline_prelude_call_forms_ordinary_adjacent_windows() {
     let source = br#"fn quiet(cell: &uniq u64) -> result: own u64 pure {

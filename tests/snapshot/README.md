@@ -134,7 +134,7 @@ was written to record. The last two allocate at a runtime count in an entry
 with no store, and their successor's entry row carries `command.heap`, which is
 a different program. Their sources are deleted with their rows.
 
-## The v0.58 ordinary-value migration
+## The v0.56 ordinary-value migration
 
 All 484 source files replace `command fn` with ordinary `fn`; input labels
 become ordinary parameters, and the one `Heap` argument writes its region
@@ -145,7 +145,7 @@ text change from the retired SYS-8 to FN-8; verdict cells do not change.
 
 `indexing__writer-r1__reverse_inplace` and `indexing__writer-r1__ring_slot`
 move the input run into a local before accessing it. Their rows become
-`pure`: v0.58 EFF-2 attributes the accesses to that local storage rather than
+`pure`: v0.56 EFF-2 attributes the accesses to that local storage rather than
 following the incoming owner's value history. The executable statements,
 proofs and recorded accept verdicts remain intact. No case is retired by this
 migration.
