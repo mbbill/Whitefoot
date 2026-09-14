@@ -198,6 +198,36 @@ no verdict or practicality claim is inferred for them. The real-program
 controls establish no regression on these two programs, not a general
 compiler or runtime speedup.
 
+## Entering-context follow-up
+
+The next comparison starts at merged main `277a1844`, after query-preparation
+reuse. It asks what accounts for the remaining growing-context cost, not
+whether another compiler limit should replace the selected proof rules.
+Reuse the same three source families at 16, 64, 128 and 256 pairs/uses;
+larger cells are optional measurements, not required acceptance samples.
+Keep fixed-context 4096 uses and the ordinary prefix and histogram programs
+as protected controls. The new scatter source is an additional real-program
+control, not a different proof-checking path.
+
+First reproduce the curve with the ordinary gate-profile compiler, then
+separate complete L0 closure, affine-index construction, candidate traversal,
+and certificate premise queries with native samples and temporary stage
+instrumentation. In particular, compare growing-N with the N-pair/three-use
+control. Pre-kill materialization is a separate known cost: do not infer that
+this experiment measures or repairs it without observing that path.
+
+A candidate must remove attributed implementation work while preserving
+complete ENT-4 closure and ENT-6/PRF-1 derivation, entering-state independence,
+checked arithmetic, and deterministic candidate/witness selection. Record
+the proposed mechanism, alternatives and predicted affected cells before
+timing the candidate. Retain the earlier selection rule: five alternating
+pairs, at least a 2x median improvement at a reproduced costly cell, and no
+protected-control regression greater than both 10 percent and 1 ms. Any
+changed witness construction also needs direct equivalence or focused
+positive/negative cases; timing alone cannot validate it. No source-language
+amendment, skipped family, budget, or cross-flow cache is selected by this
+follow-up.
+
 ## Reproduction and correctness boundary
 
 The native driver is
