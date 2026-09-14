@@ -132,10 +132,15 @@ input view to fit in its output view; every call supplies equally sized views,
 and the returned allocation has exactly the input length.
 
 Independent C oracles use one direct pass, without the block decomposition.
-The native test covers 52 prefix configurations and 208 histogram
+The native test covers 56 prefix configurations and 224 histogram
 configurations in both compiler modes at one, two, and four workers, checking
-every output element, the result length, and unchanged input. These checks
-passed before timing. Semantic tests separately establish that the intended
+every output element, the result length, and unchanged input. The
+1,048,593-word, 64-word-block case supplies both enough blocks to split and
+enough work per block for a worker to take work on a busy host; the earlier
+eligible one-word blocks could finish before another lane woke. The pool and
+actual-steal assertions remain. The measured source checked 52/208
+configurations before timing, without that additional case. Semantic tests
+separately establish that the intended
 outer loops are eligible and the inner recurrences are denied; an unrelated
 parallel initialization loop is not used as evidence for an algorithm stage.
 

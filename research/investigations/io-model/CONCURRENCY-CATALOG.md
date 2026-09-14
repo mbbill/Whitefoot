@@ -1665,7 +1665,7 @@ each block. Its local data-dependent counter updates are sequential, while the
 enclosing block map is independently permitted. A separate bucket map merges
 the private counters. No worker count is written into the source.
 
-Independent one-pass oracles cover 208 runtime-size configurations, including
+Independent one-pass oracles cover 224 runtime-size configurations, including
 empty input, tails, repeated keys, and skew. Storage is proportional to the
 number of input blocks times the bucket count, not necessarily the number of
 workers. The native parallel comparison uses the same privatization, while
@@ -1729,7 +1729,7 @@ an exclusive modular unsigned scan with the ordinary three phases: parallel
 block sums, a sequential exclusive scan of the block totals, and parallel
 writeback into exclusive output blocks. The input size and block size are
 runtime values; an uneven tail is processed explicitly. The independent
-one-pass oracle covers 52 configurations in both compiler modes with real
+one-pass oracle covers 56 configurations in both compiler modes with real
 worker pools. No lane count is expanded in source.
 
 Runtime division images remove an actual proof gap at
