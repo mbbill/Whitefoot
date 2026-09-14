@@ -88,6 +88,23 @@ of them is a decision. Remove an item when its fix and test land.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
+- **Local region introduction and explicit region blocks.** Revisit whether
+  an ordinary function body should introduce a local region, and which
+  borrows need a writer-spelled `region` block. In the
+  [weighted-sum example](../tests/snapshot/cases/accumulators/accumulators__adversary-r1__p12_per_byte_widened_checked_sum.wf),
+  the four `place_back(vector: &uniq weights, ...)` calls can share one region
+  after the `weights` binding, but removing that region rejects under FORM-8.
+  The temporary loans already end at their statement boundaries under OWN-6;
+  their region's formation and storage-validity extent is a different matter
+  under OWN-3 and OWN-10. Compare explicit blocks, function-body regions and
+  implicit regions for non-escaping temporaries without conflating those two
+  boundaries. Cover locals declared partway through a body, bound holders,
+  surviving views, returned borrows, loops and control headers; preserve
+  storage validity and exclusivity with deterministic checking. The owner
+  requested this investigation during PR #30 review; no alternative is selected.
+  Defer bulk cleanup of the repeated per-call region wrappers in migrated
+  tests until this question is settled, preserving each case's intended
+  behavior or rejection reason when the selected spelling is applied.
 - **A view-valued match or if.** [OWN-5] rejects a `match` or `if` expression
   whose value is a view, rather than joining the arms' origin sets, which the
   origin machinery could represent. If the join can be admitted it should be;
