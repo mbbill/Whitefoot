@@ -100,6 +100,18 @@ jobs:
           fi
           git log --oneline -1 main
 
+      # A main push must compare with its previous tip, not origin/main after
+      # checkout. Work branches use their fork point; manual main runs use
+      # the first parent. Missing bases fail instead of skipping the check.
+      - name: Select the design review base
+        if: matrix.stage == 'static'
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          design_review_base=$(sh .github/design-review-base.sh "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$PUSH_BEFORE")
+          echo "DESIGN_REVIEW_BASE=$design_review_base" >> "$GITHUB_ENV"
+          git log --oneline -1 "$design_review_base"
+
       - name: Install the host toolchain
         run: |
           if [ "$RUNNER_OS" = Linux ]; then

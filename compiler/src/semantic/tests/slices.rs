@@ -1,9 +1,80 @@
-use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
+use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
 use super::super::model::{
     CheckedExpression, CheckedSliceOrigin, CheckedSliceSource, CheckedStatement, CheckedType,
 };
-use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
+use super::{assert_rule, assert_rule_kind, with_semantics};
+
+#[test]
+fn affine_views_preserve_element_ownership_and_loan_strength() {
+    let read = r#"struct Item {
+  value: box<u64>;
+}
+
+fn duplicate(values: own Slice<Item>) -> result: own Item reads(values) contract {
+  requires 1_u64 <= len_of(values);
+} {
+  return values[0_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(read.as_bytes(), SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::BareAffineUse { .. })
+    });
+    let moved = read.replace("return values[0_u64];", "return move values[0_u64];");
+    assert_rule_kind(moved.as_bytes(), SemanticRule::Type2, |kind| {
+        matches!(kind, SemanticIssueKind::AffineElementMove { .. })
+    });
+    let shared = br#"fn exchange(values: own Slice<Option<box<u64>>>) -> result: own unit reads(values), writes(values) contract {
+  requires 1_u64 <= len_of(values);
+} {
+  let previous = replace values[0_u64] = None<box<u64>>();
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(shared, SemanticRule::Set1, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidSetTarget { .. })
+    });
+    let suspended = br#"fn exchange(values: own MutSlice<Option<box<u64>>>) -> result: own unit reads(values), writes(values) contract {
+  requires 1_u64 <= len_of(values);
+} {
+  region {
+    let child = slice_of(&values, 0_u64, 1_u64);
+    let previous = replace values[0_u64] = None<box<u64>>();
+    let still_live = len_of(child);
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(suspended, SemanticRule::Own5, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::BorrowConflict
+                | SemanticIssueKind::UndischargedRangeSeparation { .. }
+        )
+    });
+}
+
+#[test]
+fn a_scalar_count_bound_does_not_authorize_data_dependent_scatter() {
+    let source =
+        include_bytes!("../../../../research/investigations/compute-model/direct-scatter.wf");
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { residual, .. }
+            if residual == "high < len_of(output)")
+    });
+}
 
 #[test]
 fn distinct_relative_indices_do_not_separate_unknown_range_frames() {
@@ -1413,7 +1484,9 @@ fn main() -> status: own ExitStatus pure {
         SemanticRule::Own10,
         |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
-    assert_unsupported(
+    // VIEW-1 imposes no copy bound on the element. The existing nominal
+    // representation now reaches direct views as well as buffers.
+    with_semantics(
         br#"struct Item {
   value: u8;
 }
@@ -1426,7 +1499,12 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
-        UnsupportedSemanticFeature::CompositeValues,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
     );
     let borrowed_run = br#"fn invalid(values: &FixedVector<u8, 2>) -> result: own unit pure {
   region {

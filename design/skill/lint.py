@@ -198,7 +198,8 @@ class Lint:
         return entries
 
     def base_exists(self, base):
-        probe = subprocess.run(["git", "rev-parse", "--verify", "--quiet", base],
+        probe = subprocess.run(["git", "rev-parse", "--verify", "--quiet",
+                                "--end-of-options", f"{base}^{{commit}}"],
                                cwd=self.root, capture_output=True, text=True)
         return probe.returncode == 0
 
@@ -299,12 +300,12 @@ def main():
     lint.check_nodes()
     lint.check_amendments()
     entries = lint.check_log()
-    if args.base:
+    if args.base is not None:
         if lint.base_exists(args.base):
             lint.check_diff(args.base, entries)
             lint.base_metrics = lint.measure_base(args.base)
         else:
-            print(f"notice: base {args.base!r} not found; skipping the log-per-change check")
+            lint.err("review base", f"{args.base!r} does not resolve to a commit; cannot check tree changes")
     if lint.errors:
         for error in lint.errors:
             print("error: " + error, file=sys.stderr)

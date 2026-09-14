@@ -28,6 +28,23 @@ of them is a decision. Remove an item when its fix and test land.
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
 
+- **Stable scatter has low parallel utilization and unresolved costs.** The
+  [W8 mixed-input trial](../research/investigations/compute-model/DESIGN.md#stable-scatter-result-2026-09-14)
+  gives roughly 1.78 average occupied CPUs for Whitefoot and 4.04 for oneTBB,
+  from process-CPU/wall-time medians; this includes runtime work and does not
+  identify the cause. First attribute wall time, CPU time, runnable work and
+  worker activity to block partitioning, count tally, packing and final copy.
+  Hold the algorithm and representation fixed for scheduling controls, and
+  distinguish insufficient parallel work or a long serial critical path from
+  available work not reaching workers. Both implementations have a packing
+  chain and final two-way copy. Padded storage, owned take/restore and copying
+  remain separate costs; use the attribution to choose between task expansion,
+  scheduling, critical-path reduction and a balanced destination representation.
+  Preserve stable order and machine-checked bounds. This local investigation
+  precedes the separate general grain/profile/PGO study. Remove this item when
+  the cause is established and the trial's work, space and measured-cost
+  criteria are met, or its remaining tradeoffs are accepted.
+
 - **A runtime-sized `buffer_new` fails with no rule and no location.** At an
   unproved runtime capacity the driver stops four stages after semantic
   checking with `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` and no
@@ -36,13 +53,15 @@ of them is a decision. Remove an item when its fix and test land.
   an `Option` and [OP-9] refuses at the source with a rule and a line). The
   item is removed with `buffer_new` and `buffer_vacant`, not repaired
   separately.
-- **A large `proof_use` block is impractical well below its ceiling.** [PRF-1]
-  admits 4096 entries; a 2026-09-05 record reports 389 ms at 64 entries, 3.0 s
-  at 128, and 26.8 s at 256, about eight times per doubling, without a pinned
-  reproduction bundle or stage attribution. Profile the stages before changing
-  the implementation or the accepted proof rules; the
-  [selection-ground assessment](../research/investigations/proof-certificate-architecture/SOURCE-CHECKING.md)
-  separates the unresolved costs from the safety obligations.
+- **Large entering proof contexts still have substantial checking cost.**
+  In the [pinned source-certificate experiment](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#paired-selection-2026-09-14),
+  128 independent inequality pairs with 128 uses take a median 1.15 s;
+  the same context with only three uses takes 0.55 s. This is not a cost of
+  certificate length alone: a fixed three-pair context admits all 4096 uses
+  in 286 ms. Reusing repeated closure and interval preparation reduced the
+  128-use case from 21.48 s, but larger contexts remain unmeasured and the
+  remaining closure/index/candidate work is not yet separately attributed.
+  Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
 - **Pre-kill L0 closure has an unresolved compilation cost.** Before an
   [ENT-5] invalidation batch, `materialize_before_event_kill` in
   [`semantic/entailment/flow.rs`](../compiler/src/semantic/entailment/flow.rs)

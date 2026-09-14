@@ -181,6 +181,7 @@ pub(crate) struct TermTable {
     terms: Vec<TermKind>,
     ids: HashMap<TermKind, TermId>,
     measure_bounds: HashMap<TermId, MeasureBound>,
+    revision: usize,
 }
 
 impl TermTable {
@@ -189,6 +190,7 @@ impl TermTable {
             terms: Vec::new(),
             ids: HashMap::new(),
             measure_bounds: HashMap::new(),
+            revision: 0,
         };
         let zero = table.intern(TermKind::Zero);
         debug_assert_eq!(zero, ZERO);
@@ -196,7 +198,17 @@ impl TermTable {
     }
 
     pub(crate) fn set_measure_bound(&mut self, term: TermId, bound: MeasureBound) {
-        self.measure_bounds.insert(term, bound);
+        if self.measure_bounds.insert(term, bound) != Some(bound) {
+            self.revision = self
+                .revision
+                .checked_add(1)
+                .expect("term revision fits usize");
+        }
+    }
+
+    /// Changes whenever registered terms or their standing measure facts change.
+    pub(crate) fn revision(&self) -> usize {
+        self.revision
     }
 
     pub(crate) fn measure_bound(&self, term: TermId) -> Option<MeasureBound> {
@@ -243,6 +255,10 @@ impl TermTable {
         );
         self.terms.push(kind.clone());
         self.ids.insert(kind, id);
+        self.revision = self
+            .revision
+            .checked_add(1)
+            .expect("term revision fits usize");
         id
     }
 

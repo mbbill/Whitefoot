@@ -18,6 +18,7 @@ mod sources;
 
 use super::super::postcondition::PostconditionPlace;
 use sources::{MeasureCarry, ValueImage};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -264,11 +265,56 @@ struct CountedValueImage {
 struct ProofContext<'a> {
     facts: &'a FactState,
     affine: &'a AffineFlowState,
+    closed: Option<&'a ProofClosure>,
 }
 
 impl<'a> ProofContext<'a> {
     fn new(facts: &'a FactState, affine: &'a AffineFlowState) -> Self {
-        Self { facts, affine }
+        Self {
+            facts,
+            affine,
+            closed: None,
+        }
+    }
+
+    fn close(
+        self,
+        terms: &TermTable,
+        goals: &GoalTable,
+        ledger: &mut DerivationLedger,
+    ) -> Cow<'a, ClosedState> {
+        if let Some(closed) = self.closed.filter(|closed| closed.matches(terms, goals)) {
+            Cow::Borrowed(&closed.state)
+        } else {
+            Cow::Owned(close(self.facts, terms, goals, ledger))
+        }
+    }
+}
+
+/// A query-only view of one immutable entering fact state. It never becomes
+/// live facts or escapes the premise loop that owns that state borrow.
+struct ProofClosure {
+    term_revision: usize,
+    goal_revision: usize,
+    state: ClosedState,
+}
+
+impl ProofClosure {
+    fn new(
+        facts: &FactState,
+        terms: &TermTable,
+        goals: &GoalTable,
+        ledger: &mut DerivationLedger,
+    ) -> Self {
+        Self {
+            term_revision: terms.revision(),
+            goal_revision: goals.revision(),
+            state: close(facts, terms, goals, ledger),
+        }
+    }
+
+    fn matches(&self, terms: &TermTable, goals: &GoalTable) -> bool {
+        self.term_revision == terms.revision() && self.goal_revision == goals.revision()
     }
 }
 
@@ -481,6 +527,38 @@ struct AffineL0Index {
 impl AffineL0Index {
     fn entry(&self, terms: &[AffineCoefficient]) -> Option<&AffineL0Entry> {
         self.by_terms.get(terms).map(|index| &self.entries[*index])
+    }
+}
+
+/// Immutable endpoint information for one atom in a single DIRECT/AUTO
+/// traversal. The endpoint's original L0 witness is retained for diagnostics.
+struct AffineAtomInterval {
+    minimum: i128,
+    maximum: i128,
+    minimum_parent: Option<(TermId, TermId, i128)>,
+    maximum_parent: Option<(TermId, TermId, i128)>,
+}
+
+/// Preparation shared by one fixed candidate traversal, never by different
+/// program points. Only requested atom endpoints are memoized; every residual
+/// still executes the same checked arithmetic and ordered proof rules.
+struct AffineDirectQuery<'a> {
+    l0: &'a AffineL0Index,
+    values: &'a AffineFlowState,
+    closed: &'a ClosedState,
+    intervals: HashMap<AffineTermId, AffineAtomInterval>,
+    measures: Option<HashMap<AffineTermId, Vec<TermId>>>,
+}
+
+impl<'a> AffineDirectQuery<'a> {
+    fn new(l0: &'a AffineL0Index, values: &'a AffineFlowState, closed: &'a ClosedState) -> Self {
+        Self {
+            l0,
+            values,
+            closed,
+            intervals: HashMap::new(),
+            measures: None,
+        }
     }
 }
 
@@ -7175,12 +7253,7 @@ impl Analyzer<'_, '_> {
         context: ProofContext<'_>,
         inequality: &AffineInequality,
     ) -> ProofResult {
-        let closed = close(
-            context.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
-        );
+        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory() {
             return ProofResult {
                 disposition: ProofDisposition::Proved,
@@ -7191,9 +7264,7 @@ impl Analyzer<'_, '_> {
             };
         }
         let facts = Self::affine_facts(context.affine);
-        let Some(proof) =
-            self.affine_target_proof(inequality, &facts, context.affine, context.facts)
-        else {
+        let Some(proof) = self.affine_target_proof(inequality, &facts, context) else {
             return ProofResult {
                 disposition: ProofDisposition::Unknown,
                 route: None,
@@ -7305,9 +7376,7 @@ impl Analyzer<'_, '_> {
         if let Some(target) = affine_target {
             let projection = self.goals.projection(goal).cloned();
             let assumptions = Self::affine_facts(context.affine);
-            if let Some(proof) =
-                self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-            {
+            if let Some(proof) = self.affine_target_proof(target, &assumptions, context) {
                 let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
                     relation: projection.clone().map(Box::new),
                     premises: proof.premises.into_boxed_slice(),
@@ -7368,8 +7437,7 @@ impl Analyzer<'_, '_> {
             relation = relation.negated();
         }
         let assumptions = Self::affine_facts(context.affine);
-        let proof =
-            self.affine_target_proof(&target, &assumptions, context.affine, context.facts)?;
+        let proof = self.affine_target_proof(&target, &assumptions, context)?;
         let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
             relation: Some(Box::new(relation.clone())),
             premises: proof.premises.into_boxed_slice(),
@@ -7482,12 +7550,7 @@ impl Analyzer<'_, '_> {
         relation: &Relation,
         affine_target: Option<&[AffineInequality]>,
     ) -> ProofResult {
-        let closed = close(
-            context.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
-        );
+        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory() {
             return ProofResult {
                 disposition: ProofDisposition::Proved,
@@ -7533,9 +7596,7 @@ impl Analyzer<'_, '_> {
         let mut premises = Vec::new();
         let mut parents = Vec::new();
         for target in targets {
-            let Some(proof) =
-                self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-            else {
+            let Some(proof) = self.affine_target_proof(target, &assumptions, context) else {
                 return ProofResult {
                     disposition: ProofDisposition::Unknown,
                     route: None,
@@ -7633,9 +7694,7 @@ impl Analyzer<'_, '_> {
 
         if let Some(target) = goal.direct_affine {
             let assumptions = Self::affine_facts(context.affine);
-            if let Some(proof) =
-                self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-            {
+            if let Some(proof) = self.affine_target_proof(target, &assumptions, context) {
                 let parent = self.derivations.intern(DerivationNode::AffineConsequence {
                     relation: relation.clone().map(Box::new),
                     premises: proof.premises.into_boxed_slice(),
@@ -7837,9 +7896,7 @@ impl Analyzer<'_, '_> {
             };
         };
         let assumptions = Self::affine_facts(context.affine);
-        let Some(proof) =
-            self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-        else {
+        let Some(proof) = self.affine_target_proof(target, &assumptions, *context) else {
             return ProofResult {
                 disposition: ProofDisposition::Unknown,
                 route: None,
@@ -8705,7 +8762,8 @@ impl Analyzer<'_, '_> {
         facts: &FactState,
     ) -> Option<DerivationId> {
         let assumptions = Self::affine_facts(affine);
-        let proof = self.affine_target_proof(target, &assumptions, affine, facts)?;
+        let proof =
+            self.affine_target_proof(target, &assumptions, ProofContext::new(facts, affine))?;
         Some(self.derivations.intern(DerivationNode::AffineConsequence {
             relation: relation.map(Box::new),
             premises: proof.premises.into_boxed_slice(),
@@ -9868,8 +9926,11 @@ impl Analyzer<'_, '_> {
             let mut consequences = Vec::with_capacity(clause.len());
             let mut proved = true;
             for target in clause {
-                let Some(proof) = self.affine_target_proof(target, &assumptions, affine, facts)
-                else {
+                let Some(proof) = self.affine_target_proof(
+                    target,
+                    &assumptions,
+                    ProofContext::new(facts, affine),
+                ) else {
                     proved = false;
                     break;
                 };
@@ -10069,10 +10130,16 @@ impl Analyzer<'_, '_> {
         }
         let minimum_target = Self::affine_less_equal(&AffineForm::constant(minimum), form)?;
         let maximum_target = Self::affine_less_equal(form, &AffineForm::constant(maximum))?;
-        let minimum_proof =
-            self.affine_target_proof(&minimum_target, assumptions, values, facts)?;
-        let maximum_proof =
-            self.affine_target_proof(&maximum_target, assumptions, values, facts)?;
+        let minimum_proof = self.affine_target_proof(
+            &minimum_target,
+            assumptions,
+            ProofContext::new(facts, values),
+        )?;
+        let maximum_proof = self.affine_target_proof(
+            &maximum_target,
+            assumptions,
+            ProofContext::new(facts, values),
+        )?;
         Some(AffineClosedIntervalProof {
             minimum: AffineIntervalEndpointProof {
                 value: minimum,
@@ -12010,6 +12077,7 @@ impl Analyzer<'_, '_> {
         values: &AffineFlowState,
         facts: &FactState,
     ) -> Vec<bool> {
+        let mut closed: Option<ProofClosure> = None;
         premises
             .iter()
             .zip(l0_premises)
@@ -12035,8 +12103,29 @@ impl Analyzer<'_, '_> {
                         affine: Some(std::slice::from_ref(premise)),
                     },
                 );
-                self.prove(ProofContext::new(facts, values), goal)
-                    .disposition
+                // Each relation source reads these same immutable facts. A
+                // newly registered term or goal changes the closure universe,
+                // so only the unchanged view is reused; no proof is memoized.
+                if closed
+                    .as_ref()
+                    .is_none_or(|view| !view.matches(&self.terms, &self.goals))
+                {
+                    closed = Some(ProofClosure::new(
+                        facts,
+                        &self.terms,
+                        &self.goals,
+                        &mut self.derivations,
+                    ));
+                }
+                self.prove(
+                    ProofContext {
+                        facts,
+                        affine: values,
+                        closed: closed.as_ref(),
+                    },
+                    goal,
+                )
+                .disposition
                     == ProofDisposition::Proved
             })
             .collect()
@@ -12329,8 +12418,9 @@ impl Analyzer<'_, '_> {
         let candidates = self.affine_l0_candidates(values);
         let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
         let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
+        let mut query = AffineDirectQuery::new(&l0, values, &closed);
         Ok(self
-            .affine_candidate_residual_proof(target, sum, &l0, values, &closed, &mut check)
+            .affine_candidate_residual_proof(target, sum, &mut query, &mut check)
             .is_some())
     }
 
@@ -12798,8 +12888,7 @@ impl Analyzer<'_, '_> {
     fn affine_interval_proof(
         &mut self,
         inequality: &AffineInequality,
-        values: &AffineFlowState,
-        closed: &ClosedState,
+        query: &mut AffineDirectQuery<'_>,
         check: &mut AffineCheckState,
     ) -> Result<Option<Vec<DerivationId>>, AffineCheckError> {
         let mut requested = inequality
@@ -12810,15 +12899,29 @@ impl Analyzer<'_, '_> {
         requested.sort_unstable();
         requested.dedup();
 
-        let measure_terms_by_atom = self.measure_terms_by_atom(values);
-        let mut term_intervals = HashMap::new();
+        if query.measures.is_none() {
+            query.measures = Some(self.measure_terms_by_atom(query.values));
+        }
+        let measures = query
+            .measures
+            .as_ref()
+            .expect("measure index prepared above");
         for atom_id in requested {
+            if query.intervals.contains_key(&atom_id) {
+                continue;
+            }
             let atom = *self
                 .affine_atoms
                 .get(atom_id.index() as usize)
                 .ok_or(AffineCheckError::CoefficientMismatch)?;
-            let (minimum, maximum) = (atom.minimum, atom.maximum);
-            let mut bindings = values
+            let mut interval = AffineAtomInterval {
+                minimum: atom.minimum,
+                maximum: atom.maximum,
+                minimum_parent: None,
+                maximum_parent: None,
+            };
+            let mut bindings = query
+                .values
                 .values
                 .iter()
                 .filter_map(|(binding, value)| {
@@ -12842,44 +12945,37 @@ impl Analyzer<'_, '_> {
                     )))
                 })
                 .collect::<Vec<_>>();
-            if let Some(measures) = measure_terms_by_atom.get(&atom_id) {
+            if let Some(measures) = measures.get(&atom_id) {
                 terms.extend(measures.iter().copied());
             }
-            term_intervals.insert(atom_id, (minimum, maximum, terms));
+            for term in terms {
+                if let Some(upper) = query.closed.tight_bound(term, ZERO)
+                    && upper < interval.maximum
+                {
+                    interval.maximum = upper;
+                    interval.maximum_parent = Some((term, ZERO, upper));
+                }
+                if let Some(negative_lower) = query.closed.tight_bound(ZERO, term)
+                    && let Some(lower) = negative_lower.checked_neg()
+                    && lower > interval.minimum
+                {
+                    interval.minimum = lower;
+                    interval.minimum_parent = Some((ZERO, term, negative_lower));
+                }
+            }
+            query.intervals.insert(atom_id, interval);
         }
 
-        if closed.contradictory() {
-            return Ok(closed.contradiction_proof().map(|proof| vec![proof]));
+        if query.closed.contradictory() {
+            return Ok(query.closed.contradiction_proof().map(|proof| vec![proof]));
         }
-        let intervals = term_intervals
-            .into_iter()
-            .map(|(atom, (mut minimum, mut maximum, terms))| {
-                let mut minimum_parent = None;
-                let mut maximum_parent = None;
-                for term in terms {
-                    if let Some(upper) = closed.tight_bound(term, ZERO)
-                        && upper < maximum
-                    {
-                        maximum = upper;
-                        maximum_parent = Some((term, ZERO, upper));
-                    }
-                    if let Some(negative_lower) = closed.tight_bound(ZERO, term)
-                        && let Some(lower) = negative_lower.checked_neg()
-                        && lower > minimum
-                    {
-                        minimum = lower;
-                        minimum_parent = Some((ZERO, term, negative_lower));
-                    }
-                }
-                (atom, (minimum, maximum, minimum_parent, maximum_parent))
-            })
-            .collect::<HashMap<_, _>>();
         let proved = interval_proves(
             inequality,
             |term| {
-                intervals
+                query
+                    .intervals
                     .get(&term)
-                    .map(|(minimum, maximum, _, _)| (*minimum, *maximum))
+                    .map(|interval| (interval.minimum, interval.maximum))
             },
             check,
         )?;
@@ -12888,16 +12984,18 @@ impl Analyzer<'_, '_> {
         }
         let mut parents = Vec::new();
         for coefficient in inequality.terms() {
-            let (_, _, minimum_parent, maximum_parent) = intervals
+            let interval = query
+                .intervals
                 .get(&coefficient.term())
                 .ok_or(AffineCheckError::CoefficientMismatch)?;
             let selected = if coefficient.coefficient() > 0 {
-                maximum_parent
+                interval.maximum_parent
             } else {
-                minimum_parent
+                interval.minimum_parent
             };
-            if let Some((left, right, bound)) = *selected {
-                let parent = closed
+            if let Some((left, right, bound)) = selected {
+                let parent = query
+                    .closed
                     .bound_proof(left, right, bound, &mut self.derivations)
                     .ok_or(AffineCheckError::CoefficientMismatch)?;
                 parents.push(parent);
@@ -12911,18 +13009,16 @@ impl Analyzer<'_, '_> {
     fn affine_residual_proof(
         &mut self,
         inequality: &AffineInequality,
-        l0: &AffineL0Index,
-        values: &AffineFlowState,
-        closed: &ClosedState,
+        query: &mut AffineDirectQuery<'_>,
         check: &mut AffineCheckState,
     ) -> Result<Option<Vec<DerivationId>>, AffineCheckError> {
-        if closed.contradictory() {
-            return Ok(closed.contradiction_proof().map(|proof| vec![proof]));
+        if query.closed.contradictory() {
+            return Ok(query.closed.contradiction_proof().map(|proof| vec![proof]));
         }
-        if let Some(parents) = self.affine_l0_proof(inequality, l0, closed)? {
+        if let Some(parents) = self.affine_l0_proof(inequality, query.l0, query.closed)? {
             return Ok(Some(parents));
         }
-        self.affine_interval_proof(inequality, values, closed, check)
+        self.affine_interval_proof(inequality, query, check)
     }
 
     /// Checks the fixed `DIRECT(T - S)` residual of one accumulated candidate
@@ -12940,9 +13036,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         target: &AffineInequality,
         candidate: &AffineInequality,
-        l0: &AffineL0Index,
-        values: &AffineFlowState,
-        closed: &ClosedState,
+        query: &mut AffineDirectQuery<'_>,
         check: &mut AffineCheckState,
     ) -> Option<Vec<DerivationId>> {
         let tightenings = integer_tightenings(candidate, target, check);
@@ -12950,9 +13044,7 @@ impl Analyzer<'_, '_> {
             let Ok(residual) = AffineInequality::residual_after(target, accumulated, check) else {
                 continue;
             };
-            if let Ok(Some(parents)) =
-                self.affine_residual_proof(&residual, l0, values, closed, check)
-            {
+            if let Ok(Some(parents)) = self.affine_residual_proof(&residual, query, check) {
                 return Some(parents);
             }
         }
@@ -12966,25 +13058,21 @@ impl Analyzer<'_, '_> {
     fn affine_l0_then_direct_proof(
         &mut self,
         target: &AffineInequality,
-        l0: &AffineL0Index,
-        values: &AffineFlowState,
-        closed: &ClosedState,
+        query: &mut AffineDirectQuery<'_>,
         check: &mut AffineCheckState,
     ) -> Option<Vec<DerivationId>> {
-        for entry in &l0.entries {
-            let Some(mut parents) = self.affine_candidate_residual_proof(
-                target,
-                &entry.inequality,
-                l0,
-                values,
-                closed,
-                check,
-            ) else {
+        for entry in &query.l0.entries {
+            let Some(mut parents) =
+                self.affine_candidate_residual_proof(target, &entry.inequality, query, check)
+            else {
                 continue;
             };
-            let Some(parent) =
-                closed.bound_proof(entry.left, entry.right, entry.bound, &mut self.derivations)
-            else {
+            let Some(parent) = query.closed.bound_proof(
+                entry.left,
+                entry.right,
+                entry.bound,
+                &mut self.derivations,
+            ) else {
                 continue;
             };
             parents.push(parent);
@@ -12999,16 +13087,15 @@ impl Analyzer<'_, '_> {
         &mut self,
         target: &AffineInequality,
         assumptions: &[ActiveAffineFact],
-        values: &AffineFlowState,
-        facts: &FactState,
+        context: ProofContext<'_>,
     ) -> Option<AffineConsequenceProof> {
+        let values = context.affine;
         let mut check = AffineCheckState::new();
         let candidates = self.affine_l0_candidates(values);
-        let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
+        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
         let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
-        if let Ok(Some(parents)) =
-            self.affine_residual_proof(target, &l0, values, &closed, &mut check)
-        {
+        let mut query = AffineDirectQuery::new(&l0, values, &closed);
+        if let Ok(Some(parents)) = self.affine_residual_proof(target, &mut query, &mut check) {
             return Some(AffineConsequenceProof {
                 premises: Vec::new(),
                 parents,
@@ -13028,9 +13115,7 @@ impl Analyzer<'_, '_> {
             if let Some(parents) = self.affine_candidate_residual_proof(
                 target,
                 &assumption.inequality,
-                &l0,
-                values,
-                &closed,
+                &mut query,
                 &mut check,
             ) {
                 return Some(Self::affine_consequence_from_residual(
@@ -13047,7 +13132,7 @@ impl Analyzer<'_, '_> {
         // only which successful derivation is retained, never acceptance.
         if let Some((first, second, parents)) =
             first_two_premise_candidate(&automatic, &mut check, |sum, check| {
-                self.affine_candidate_residual_proof(target, sum, &l0, values, &closed, check)
+                self.affine_candidate_residual_proof(target, sum, &mut query, check)
             })
         {
             let selected = if first == second {
@@ -13065,7 +13150,7 @@ impl Analyzer<'_, '_> {
         // strongest indexed L0 image once, then run the ordinary DIRECT check
         // on the residual. DIRECT may itself close an exact L0 image, but the
         // route never publishes or recursively saturates either relation.
-        self.affine_l0_then_direct_proof(target, &l0, values, &closed, &mut check)
+        self.affine_l0_then_direct_proof(target, &mut query, &mut check)
             .map(|parents| AffineConsequenceProof {
                 premises: Vec::new(),
                 parents,
@@ -16076,6 +16161,107 @@ const fn integer_type_name(ty: IntegerType) -> &'static str {
         IntegerType::U16 => "u16",
         IntegerType::U32 => "u32",
         IntegerType::U64 => "u64",
+    }
+}
+
+#[cfg(test)]
+mod proof_closure_tests {
+    use super::*;
+
+    #[test]
+    fn an_unchanged_entering_context_reuses_its_closed_view() {
+        let facts = FactState::new();
+        let affine = AffineFlowState::default();
+        let terms = TermTable::new();
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let context = ProofContext {
+            facts: &facts,
+            affine: &affine,
+            closed: Some(&closed),
+        };
+        for _ in 0..3 {
+            let view = context.close(&terms, &goals, &mut ledger);
+            assert!(matches!(view, Cow::Borrowed(_)));
+            assert!(std::ptr::eq(view.as_ref(), &closed.state));
+            assert!(view.derives_bound(ZERO, ZERO, 0));
+        }
+    }
+
+    #[test]
+    fn new_terms_and_changed_standing_measure_bounds_rebuild_the_view() {
+        let facts = FactState::new();
+        let affine = AffineFlowState::default();
+        let mut terms = TermTable::new();
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let term = terms.intern(TermKind::Measure(
+            CheckedMeasure::Length,
+            PlaceTerm {
+                root: PlaceRoot::Binding(BindingId(0)),
+                deref: false,
+                fields: Vec::new(),
+            },
+        ));
+        let context = ProofContext {
+            facts: &facts,
+            affine: &affine,
+            closed: Some(&closed),
+        };
+        assert!(matches!(
+            context.close(&terms, &goals, &mut ledger),
+            Cow::Owned(_)
+        ));
+
+        let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let count = terms.ids().count();
+        terms.set_measure_bound(term, MeasureBound::Constant(7));
+        assert_eq!(count, terms.ids().count());
+        let context = ProofContext {
+            facts: &facts,
+            affine: &affine,
+            closed: Some(&closed),
+        };
+        let view = context.close(&terms, &goals, &mut ledger);
+        assert!(matches!(view, Cow::Owned(_)));
+        assert!(view.derives_bound(term, ZERO, 7));
+        assert!(view.derives_bound(ZERO, term, -7));
+    }
+
+    #[test]
+    fn an_existing_goal_receiving_a_projection_invalidates_the_view() {
+        let facts = FactState::new();
+        let affine = AffineFlowState::default();
+        let terms = TermTable::new();
+        let mut goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let expression = GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Bool(true)));
+        let goal = goals.intern(expression.clone(), None, None, Vec::new());
+        let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let count = goals.ids().count();
+        let same = goals.intern(
+            expression,
+            Some(Relation::Bound {
+                left: ZERO,
+                right: ZERO,
+                bound: 0,
+            }),
+            None,
+            Vec::new(),
+        );
+        assert_eq!(goal, same);
+        assert_eq!(count, goals.ids().count());
+        let context = ProofContext {
+            facts: &facts,
+            affine: &affine,
+            closed: Some(&closed),
+        };
+        assert!(matches!(
+            context.close(&terms, &goals, &mut ledger),
+            Cow::Owned(_)
+        ));
     }
 }
 

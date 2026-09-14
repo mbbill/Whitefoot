@@ -1897,6 +1897,7 @@ struct GoalRecord {
 pub(crate) struct GoalTable {
     ids: HashMap<GoalExpression, GoalId>,
     records: Vec<GoalRecord>,
+    revision: usize,
 }
 
 impl GoalTable {
@@ -1909,6 +1910,14 @@ impl GoalTable {
     ) -> GoalId {
         if let Some(id) = self.ids.get(&expression).copied() {
             let record = &mut self.records[id.0 as usize];
+            if (record.projection.is_none() && projection.is_some())
+                || (record.normalization.is_none() && normalization.is_some())
+            {
+                self.revision = self
+                    .revision
+                    .checked_add(1)
+                    .expect("goal revision fits usize");
+            }
             debug_assert_eq!(record.support, support);
             if record.projection.is_none() {
                 record.projection = projection;
@@ -1933,7 +1942,16 @@ impl GoalTable {
             normalization,
             support,
         });
+        self.revision = self
+            .revision
+            .checked_add(1)
+            .expect("goal revision fits usize");
         id
+    }
+
+    /// Includes metadata supplied to an existing goal, not only new identities.
+    pub(crate) fn revision(&self) -> usize {
+        self.revision
     }
 
     pub(crate) fn expression(&self, id: GoalId) -> &GoalExpression {
@@ -2560,6 +2578,7 @@ fn compose_transitive_bounds(first: i128, second: i128) -> i128 {
 
 /// The closed fact state at one point: the [ENT-4] least fixed point over the
 /// live facts and the implicit facts of every registered term.
+#[derive(Clone)]
 pub(crate) struct ClosedState {
     all_derivable: bool,
     contradiction: Option<DerivationId>,

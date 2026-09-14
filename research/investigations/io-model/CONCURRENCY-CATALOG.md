@@ -1679,10 +1679,23 @@ established by the range proof.
 The shared-cursor scatter `out[pos[key[i]]++] = i` has no independent-write
 proof and remains source ordered. This is a finding about that representation,
 not a proof that every counting or radix algorithm must scatter sequentially.
-A block/bucket decomposition with proved exclusive destination ranges is a
-candidate for a later consumer. Neither an implementation nor a native
-performance comparison has been run here; the former 0.5-of-native estimate
-is withdrawn rather than promoted into a model limitation.
+[`radix_scatter.wf`](../../experiments/compute-bench/programs/radix_scatter.wf)
+now implements stable distribution by one runtime-selected bit: 256-element
+local runs carry their lengths, and a recursive continuation forms exclusive
+output ranges from those data-dependent lengths. An independent oracle checks
+109 length/shape/bit configurations, including nonempty output copies on a
+helper thread during packing after the block map has joined. No worker count
+is written in source.
+
+This establishes a working alternative, not an efficient general radix sort.
+The representation uses padded local runs, two intermediate streams, a final
+copy, and a linear continuation. A plain scalar count bound does not prove
+the input-content relation needed by the retained direct-scatter candidate.
+The [scatter trial](../compute-model/DESIGN.md#data-dependent-scatter-trial)
+compares the working representation with both the same native decomposition
+and direct native count/prefix/scatter. Wider digits and an efficient balanced
+destination partition remain open; the former 0.5-of-native estimate remains
+withdrawn.
 
 ---
 
@@ -1772,8 +1785,9 @@ This disproves the blanket "no parallel merge" limit. It does not establish
 parity with sample sort, an in-place sort, or every native sorting library.
 The experiment includes buffer allocation and copies and records small and
 skewed inputs as well as a large random input. The previous 0.7--0.9 estimate
-based on a forced sequential merge is withdrawn. In-place partition and
-block/bucket scatter remain separate, untested algorithm choices.
+based on a forced sequential merge is withdrawn. In-place partition remains
+untested. The stable binary distribution in §13 is a separate block/scatter
+consumer and does not establish a wider radix sort.
 
 ---
 
@@ -2634,7 +2648,7 @@ only.
 | 13 | BFS, low-diameter | sparse or pull, both executable | — | sparse discovery remains sequential; pull scans every vertex | see compute-model experiment; former OpenMP estimate withdrawn | R |
 | 13′ | BFS, high-diameter | sparse O(V+E) available; pull has asymptotic loss | — | parallel sparse discovery unresolved | pull O(V·D) vertex visits; compare actual chain fixture | R |
 | 13″ | Histogram | runtime block privatization, executable | fixed-worker form obsolete | block-count × bucket-count workspace and a merge | see compute-model experiment; no OpenMP parity claim | R |
-| 13‴ | Counting / radix sort | direct shared-cursor scatter denied; alternatives untested | — | destination partition proof unresolved | no measured comparison | R |
+| 13‴ | Counting / radix sort | stable binary distribution with exclusive output ranges, executable | — | padded buffers, copies and linear continuation; wider digits unresolved | see the compute-model scatter trial; no general radix-sort claim | R |
 | 14 | Stencil, 1-D | **direct** | — | none; halo exchange deleted | 0.91–1.14 of best ref (`fir` measured fastest) | M |
 | 14′ | Stencil, 2-D | ordinary loop over proved runtime rows | fixed-worker form obsolete | joins and runtime row pricing | range-loan measurements and compute-model controls; fixed W1 tax unestablished | M/R |
 | 15 | Prefix sum | ordinary three-phase runtime block scan, executable | fixed-worker form obsolete | sequential block-total scan; workspace and grain | see compute-model experiment | R |
@@ -2701,9 +2715,9 @@ worst case across kinds.
 
 **T6. Unpartitioned data-dependent write → supply a destination proof or serialize.**
 (5′, 10, 11, 13, 15′)
-A shared-cursor scatter has no independence proof. Private histogram ranges and
-binary-split merge demonstrate two ways to retain data-dependent local work
-inside proved exclusive output ranges. Therefore a denied direct scatter does
+A shared-cursor scatter has no independence proof. Private histogram ranges,
+binary-split merge and bounded-run binary distribution retain data-dependent
+local work inside proved exclusive output ranges. Therefore a denied direct scatter does
 not establish a sequential phase for every algorithm with the same result.
 The remaining cost is specific to the decomposition and its proof boundary.
 

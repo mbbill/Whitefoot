@@ -56,8 +56,11 @@ check:
 static: repository-invariants spec-append-only spec-prose-integrity design-lint
 
 # Structural lint for the design tree; form only, see design/skill/lint.py.
+# CI pins the event's review base instead of comparing main with its own tip.
+DESIGN_REVIEW_BASE ?= origin/main
 design-lint:
-	@$(PY) design/skill/lint.py --trees language compiler --base origin/main
+	@$(PY) -m unittest discover -s design/skill -p 'test_lint.py'
+	@$(PY) design/skill/lint.py --trees language compiler --base "$(DESIGN_REVIEW_BASE)"
 
 repository-invariants:
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
@@ -149,6 +152,7 @@ library-tests:
 # not current tests; their directory README states that boundary explicitly.
 research-tests:
 	@mkdir -p "$(RESEARCH_TEST_TMP)/frequency" "$(RESEARCH_TEST_TMP)/ripgrep" "$(RESEARCH_CARGO_TARGET)"
+	$(MAKE) -C research/experiments/proof-use-cost check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 	$(MAKE) -C research/experiments/container-representation check
 	TMPDIR="$(RESEARCH_TEST_TMP)/frequency" $(MAKE) -C research/experiments/frequency-study check PYTHON=python3 CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/frequency"
 	$(MAKE) -C research/experiments/ripgrep test PYTHON=python3 SCRATCH_ROOT="$(RESEARCH_TEST_TMP)/ripgrep"

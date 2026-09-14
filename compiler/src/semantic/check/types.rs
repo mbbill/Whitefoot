@@ -200,7 +200,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(node, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
-            let Some(element) = self.flat_element(element_type)? else {
+            let Some(element) = self.buffer_element(element_type)? else {
                 return self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node);
             };
             return Ok(CheckedType::Slice {
@@ -1652,8 +1652,8 @@ extent's region is one the caller must choose, so it is written at every positio
     }
 
     /// The [TYPE-2] buffer element domain: every flat copy element, plus a
-    /// region-free affine nominal stored by value. Slices keep
-    /// [`Self::flat_element`]'s copy domain; arrays use complete elements.
+    /// region-free affine nominal stored by value. Direct views use the same
+    /// represented element domain; arrays use complete elements.
     pub(super) fn buffer_element(
         &self,
         ty: CheckedType,

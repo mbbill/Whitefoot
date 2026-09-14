@@ -1,0 +1,52 @@
+diff --git a/compiler/src/semantic/entailment/flow.rs b/compiler/src/semantic/entailment/flow.rs
+index 9ee1de08..c64b880c 100644
+--- a/compiler/src/semantic/entailment/flow.rs
++++ b/compiler/src/semantic/entailment/flow.rs
+@@ -13746,6 +13746,7 @@ impl Analyzer<'_, '_> {
+                 true
+             }
+             CheckedStatement::Proof(proof) => {
++                let proof_cost_started = std::time::Instant::now();
+                 self.judge_affine_relation_subscripts(&proof.target, state);
+                 for written_use in &proof.uses {
+                     if let CheckedProofUseSource::Relation(relation) = &written_use.source {
+@@ -13845,6 +13846,7 @@ impl Analyzer<'_, '_> {
+                     .map(|(premise, multiplicity)| premise.clone().zip(multiplicity.clone()))
+                     .collect::<Option<Vec<_>>>();
+
++                eprintln!("proof-cost\t{}\tformed\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 // AUTO is exactly the unified zero-, one-, and exhaustive
+                 // unordered two-premise route for this specification version.
+                 // A written block is redundant when that route already proves
+@@ -13859,6 +13861,7 @@ impl Analyzer<'_, '_> {
+                         == ProofDisposition::Proved
+                 });
+                 let redundant = !proof.uses.is_empty() && auto_proved;
++                eprintln!("proof-cost\t{}\tauto\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 let certificate_sum = if proof.uses.is_empty() || source_failure.is_some() {
+                     None
+                 } else {
+@@ -13868,6 +13871,7 @@ impl Analyzer<'_, '_> {
+                     ))
+                 };
+
++                eprintln!("proof-cost\t{}\tsum\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 // Every written `use` is proved against the same pre-proof
+                 // program point. No premise established by this statement can
+                 // help another premise in the same statement.
+@@ -13879,6 +13883,7 @@ impl Analyzer<'_, '_> {
+                     &state.affine,
+                     &state.facts,
+                 );
++                eprintln!("proof-cost\t{}\tpremises\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 let certificate_failure = certificate_sum
+                     .as_ref()
+                     .and_then(|sum| sum.as_ref().err().copied());
+@@ -13916,6 +13921,7 @@ impl Analyzer<'_, '_> {
+                     }
+                 };
+                 let residual_failure = residual.as_ref().err().copied();
++                eprintln!("proof-cost\t{}\tresidual\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 let check = SourceProofCheck {
+                     premises: premise_results,
+                     first_unproved_premise,
