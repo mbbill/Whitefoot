@@ -13,7 +13,8 @@ use crate::syntax::NodeId;
 use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
 use super::super::super::model::{
-    CheckedCommitValues, CheckedSetTarget, CheckedStatement, CheckedWritablePlace,
+    CheckedCommitConflict, CheckedCommitValues, CheckedExpression, CheckedPlaceStep,
+    CheckedSetTarget, CheckedStatement, CheckedWritablePlace,
 };
 use super::super::super::places::{PlaceOffset, PlaceProjection, PlaceStep, paths_diverge};
 use super::super::borrows::{ResolvedPlace, places_overlap};
@@ -41,6 +42,11 @@ struct FormedTarget {
     revives: bool,
     /// [LIV-2] the right-hand side read this target's previous value out.
     read_out: bool,
+}
+
+enum CommitTargetStep<'expression> {
+    Field,
+    Subscript(&'expression CheckedExpression),
 }
 
 /// [LIV-2] one target place of the commit whose right-hand side is being
@@ -85,6 +91,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         (PlaceProjection::Subscript(left), PlaceProjection::Subscript(right)) => {
                             left.provably_distinct(*right)
+                                || self.commit_offsets_separated(*left, *right)
                         }
                         (PlaceProjection::Deref, PlaceProjection::Deref) => false,
                         _ => true,
@@ -140,7 +147,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if target.read_out
                 || target.element != element
                 || target.place.root != place.root
-                || !Self::storage_path_prefix(&target.place.storage_path, &place.storage_path)
+                || !self.storage_path_prefix(&target.place.storage_path, &place.storage_path)
             {
                 continue;
             }
@@ -150,7 +157,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         false
     }
 
-    fn storage_path_prefix(target: &[PlaceProjection], read: &[PlaceProjection]) -> bool {
+    fn commit_offsets_separated(&self, left: PlaceOffset, right: PlaceOffset) -> bool {
+        self.commit_separation_pairs
+            .borrow()
+            .contains(&(left, right))
+    }
+
+    fn storage_path_prefix(&self, target: &[PlaceProjection], read: &[PlaceProjection]) -> bool {
         target.len() <= read.len()
             && target
                 .iter()
@@ -178,7 +191,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 !target.read_out
                     && target.place.root == place.root
                     && target.place.storage_path.len() < place.storage_path.len()
-                    && Self::storage_path_prefix(&target.place.storage_path, &place.storage_path)
+                    && self.storage_path_prefix(&target.place.storage_path, &place.storage_path)
             })
     }
 
@@ -203,6 +216,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // nothing to resolve and nothing to read out: it is formed below,
         // once its ordinal has fixed its type.
         let mut targets: Vec<FormedTarget> = Vec::with_capacity(target_nodes.len());
+        let mut index_conflicts = Vec::new();
         let mut declaring: Vec<(usize, NodeId, DeclarationId)> = Vec::new();
         let mut effects = EffectSet::NONE;
         for (ordinal, target_node) in target_nodes.iter().enumerate() {
@@ -223,6 +237,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             for earlier in &targets {
                 if self.commit_targets_overlap(&earlier.mutation, &mutation) {
+                    let alternatives =
+                        Self::commit_index_alternatives(&earlier.mutation.target, &mutation.target);
+                    if !alternatives.is_empty() {
+                        index_conflicts.push(CheckedCommitConflict {
+                            site: self.tree.path(*target_node)?.clone(),
+                            first: self.place_spelling(earlier.node)?,
+                            second: self.place_spelling(*target_node)?,
+                            alternatives,
+                        });
+                        continue;
+                    }
                     return self.issue_node(
                         SemanticRule::Liv2,
                         *target_node,
@@ -249,6 +274,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let (values, read_outs) = self.check_commit_values(
             function,
             &targets,
+            &index_conflicts,
             &value_nodes,
             bindings,
             scope.loops.len(),
@@ -397,6 +423,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .map(|target| target.mutation.target)
                     .collect(),
                 values: commit_values,
+                index_conflicts,
             }
         };
         Ok(Self::continuing_statement(statement, effects))
@@ -411,10 +438,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         function: &FunctionSignature,
         targets: &[FormedTarget],
+        index_conflicts: &[CheckedCommitConflict],
         value_nodes: &[NodeId],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<(Vec<super::super::TypedExpression>, Vec<bool>), CheckStop> {
+        self.commit_separation_pairs.borrow_mut().clear();
+        for conflict in index_conflicts {
+            for (left, right) in &conflict.alternatives {
+                let left = Self::place_offset_of(left).unwrap_or(PlaceOffset::Opaque);
+                let right = Self::place_offset_of(right).unwrap_or(PlaceOffset::Opaque);
+                if !matches!(left, PlaceOffset::Opaque) && !matches!(right, PlaceOffset::Opaque) {
+                    self.commit_separation_pairs
+                        .borrow_mut()
+                        .insert((left, right));
+                    self.commit_separation_pairs
+                        .borrow_mut()
+                        .insert((right, left));
+                }
+            }
+        }
         self.commit_read_outs.replace(
             targets
                 .iter()
@@ -456,6 +499,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .into_iter()
             .map(|target| target.read_out)
             .collect();
+        self.commit_separation_pairs.borrow_mut().clear();
         outcome?;
         Ok((values, read_outs))
     }
@@ -666,6 +710,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         true
+    }
+
+    fn commit_target_proof_path(target: &CheckedSetTarget) -> Vec<CommitTargetStep<'_>> {
+        let mut path = Vec::new();
+        match target {
+            CheckedSetTarget::Place(target) => {
+                path.extend(target.fields.iter().map(|_| CommitTargetStep::Field));
+            }
+            CheckedSetTarget::ArrayIndex(target) => {
+                path.extend(target.fields.iter().map(|_| CommitTargetStep::Field));
+                path.push(CommitTargetStep::Subscript(&target.offset));
+            }
+            CheckedSetTarget::BufferIndex(target) => {
+                path.extend(target.root.fields.iter().map(|_| CommitTargetStep::Field));
+                path.push(CommitTargetStep::Subscript(&target.offset));
+            }
+            CheckedSetTarget::Storage(target) => {
+                for step in &target.path {
+                    match step {
+                        CheckedPlaceStep::Field(_) => {
+                            path.push(CommitTargetStep::Field);
+                        }
+                        CheckedPlaceStep::BoxReferent(_) => {}
+                        CheckedPlaceStep::Subscript(index) => {
+                            path.push(CommitTargetStep::Subscript(&index.offset));
+                        }
+                    }
+                }
+            }
+            CheckedSetTarget::SliceIndex(target) => {
+                path.push(CommitTargetStep::Subscript(&target.offset));
+            }
+        }
+        path
+    }
+
+    /// Every corresponding index pair that could establish separation of two
+    /// otherwise-overlapping target paths. The entailment walk tries this
+    /// finite list at target-formation state; one proved disequality suffices.
+    fn commit_index_alternatives(
+        first: &CheckedSetTarget,
+        second: &CheckedSetTarget,
+    ) -> Vec<(CheckedExpression, CheckedExpression)> {
+        Self::commit_target_proof_path(first)
+            .into_iter()
+            .zip(Self::commit_target_proof_path(second))
+            .filter_map(|(first, second)| match (first, second) {
+                (CommitTargetStep::Subscript(first), CommitTargetStep::Subscript(second)) => {
+                    Some((first.clone(), second.clone()))
+                }
+                (CommitTargetStep::Field, CommitTargetStep::Field) => None,
+                _ => None,
+            })
+            .collect()
     }
 
     /// The complete path one element target writes below its root: the

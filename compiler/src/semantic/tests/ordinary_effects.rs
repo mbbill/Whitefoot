@@ -92,6 +92,48 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn a_partial_consume_cannot_abandon_a_symbolically_linear_member() {
+    assert_rule_kind(
+        br#"struct Carrier<T: linear> {
+  must_consume: T;
+  returned: buffer<u8>;
+}
+
+fn take_returned<T: linear>(carrier: own Carrier<T>) -> result: own buffer<u8> pure {
+  return move carrier.returned;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. }),
+    );
+}
+
+#[test]
+fn a_partial_consume_cannot_abandon_storage_without_its_provider() {
+    assert_rule_kind(
+        br#"struct Carrier['s] {
+  must_have_provider: Vector<'s, u8>;
+  returned: buffer<u8>;
+}
+
+fn take_returned['s](carrier: own Carrier<'s>) -> result: own buffer<u8> pure {
+  return move carrier.returned;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. }),
+    );
+}
+
+#[test]
 fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     super::assert_parse_rule(
         b"fn probe(file: own ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",

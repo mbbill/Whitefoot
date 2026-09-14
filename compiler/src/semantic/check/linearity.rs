@@ -439,12 +439,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         root: CheckedType,
         selected: &[u32],
+        bindings: &std::collections::HashMap<crate::DeclarationId, super::LocalBinding>,
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        let Some(marked) = self.owns_modifier_linear_node(root)? else {
+        let obligation = if let Some(obligation) = self.linear_release_obligation(root)? {
+            obligation
+        } else if let Some(store) = self
+            .capability_released_stores(root)?
+            .into_iter()
+            .find(|store| !self.scope_holds_store_capability(bindings, *store))
+        {
+            format!(
+                "the provider capability of {}, which no live binding of this scope holds",
+                self.region_phrase(store)?
+            )
+        } else {
             return Ok(());
         };
-        let obligation = self.nominal(marked)?.name.clone();
         // The residual is what the consume abandons: every part of the root
         // the selected sub-place does not carry away, named by its own type.
         let residual = match self

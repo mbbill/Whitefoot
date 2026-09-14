@@ -2,9 +2,8 @@
 
 This experiment bundles [`lib/containers/vector.wf`](../../../../lib/containers/vector.wf)
 with `vector-library.wf`. It checks the reusable source implementation rather
-than a second benchmark-only vector. The measured candidate is based on
-`857b4d9e1ddcf0be809260a2a79b1d1b0ed4adf0`; `measurements.csv` contains the
-retained samples. Measurements ran on 2026-09-14 on arm64 macOS 26.6.2 with
+than a second benchmark-only vector. `measurements.csv` contains the retained
+samples for the delivered revision. Measurements ran on 2026-09-14 on arm64 macOS 26.6.2 with
 Apple Clang 21.0.0 and Rust 1.98.1.
 
 ## Executed contract
@@ -17,40 +16,45 @@ capacities 1, 2, 4, 8, 16, 32, and 64. The C controls perform the same ordered
 operations, return the same digest, make the same number of allocation
 requests, and reach the same peak live backing bytes.
 
-`make check` executes 384 combinations of path, seed, round count, helper
-contract, and implementation. The source-library gate separately runs scalar
+`make check` executes 512 three-way configurations across the ordinary and
+retained-helper binaries: 1,536 implementation executions spanning path, seed,
+round count, helper contract, and implementation. The source-library gate separately runs scalar
 and owning-`Box` operation chains in default, `--par`, and `--no-overlap`
-modes. Its observer sees 11 requests in the owning chain, refuses each of the
-nine nonzero requests in turn, stops at that request, and checks the exact
-release order and one release per successful allocation. Successful backing
+modes. Its observer sees 11 requests in the owning chain and returns null at
+each request in turn. The nine positive-byte refusals stop at that request;
+the two zero-byte formations remain successful by the allocation contract and
+the chain continues. Every case checks the exact release order and one release
+per successful allocation, including that no release is attempted for a null
+zero-byte backing. Successful backing
 sizes are 0, 8, 16, 32, 0, 8, 16, 8, 32, 8, and 64 bytes.
 
 ## Timing
 
 Each sample times 64 calls of 512 rounds. Fifteen samples in each of two
-reversed-order cohorts alternate Whitefoot, a C control that reproduces the
-source's take-back/replace/place-back exchange, and a C ceiling that swaps two
-array cells directly. Values are median nanoseconds per complete round; ratios
+reversed-order cohorts alternate Whitefoot, a matched C control that directly
+swaps two array cells as the source now does, and a legacy C control that
+reproduces the former take-back/replace/place-back workaround. Values are median nanoseconds per complete round; ratios
 are medians of paired samples. Host timing is descriptive and is not a gate.
 
-| Helpers | Path | Whitefoot ns | matched C ns | direct C ns | WF / matched | matched / direct |
+| Helpers | Path | Whitefoot ns | matched C ns | legacy C ns | WF / matched | legacy / matched |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| ordinary | reserve first | 593.1 | 371.1 | 367.4 | 1.69x | 1.07x |
-| ordinary | append growth | 875.0 | 589.8 | 572.4 | 1.48x | 1.04x |
-| retained | reserve first | 1028.3 | 623.0 | 501.3 | 1.64x | 1.23x |
-| retained | append growth | 1325.2 | 890.9 | 762.4 | 1.53x | 1.16x |
+| ordinary | reserve first | 270.6 | 176.8 | 178.0 | 1.54x | 1.01x |
+| ordinary | append growth | 402.9 | 279.2 | 280.3 | 1.44x | 1.00x |
+| retained | reserve first | 354.3 | 221.1 | 269.0 | 1.60x | 1.21x |
+| retained | append growth | 500.1 | 338.1 | 410.7 | 1.50x | 1.21x |
 
 The allocation layout does not explain the gap: both controls use a 32-byte
 descriptor and eight backing bytes per capacity unit, and every compared pair
-has equal request counts and peak bytes. Optimized ordinary IR retains six
+has equal request counts and peak bytes. Optimized ordinary IR retains three
 calls to `grow_vector_*`; forcing the source API and its internal helpers
 retains thirteen. In the retained round, Whitefoot reserves a 160-byte result
 frame and tests the tags of the fallible `Option`/`Result` values; the natural C
 round has 40 bytes of local storage and returns its small failure outcomes in
 the C ABI. That accounts for a material lowering/interface component. The
-matched/direct C split bounds the source exchange shape at 16–23% with retained
-helpers, while normal inlining removes nearly all of it. The remaining 48–69%
-ordinary gap is not attributed more narrowly by this experiment.
+legacy/matched C split measures the removed workaround at about 21% with
+retained helpers and no stable cost after normal inlining. With the source now
+using the direct commit, the remaining 44–60% gap is not attributed more
+narrowly by this experiment.
 
 ## Limits encountered
 
@@ -66,7 +70,8 @@ PROV-6 judged the hypothetical `T: linear` element node even after the run was
 empty. v0.58 admits this exact proved-empty direct-run release while retaining
 the backing provider and effect. No unchecked release operation was added.
 
-The direct generic exchange remains rejected:
+The direct generic exchange is admitted by the pending amendment implemented
+on this branch:
 
 ```whitefoot
 invariant apart: left < right;
@@ -74,12 +79,11 @@ set (deref(values).storage[left], deref(values).storage[right]) =
   move deref(values).storage[right], move deref(values).storage[left];
 ```
 
-LIV-2 reports `OverlappingCommitTargets` because OWN-7 recognizes distinct
-subscripts only when both are unequal literals. `grow_vector_exchange` uses
-take-back, replacement, and place-back instead. The pending
+OWN-7 submits the two fixed strict-order goals at target formation; the helper's
+branch discharges one before LIV-2 reads both affine elements out and commits
+them. `grow_vector_exchange` therefore uses this direct form. The pending
 [`proof-directed-index-overlap`](../../../../design/amendments/proof-directed-index-overlap.md)
-amendment proposes using an already completed finite integer proof for this
-one overlap judgment; it is not implemented here.
+records the choice beside the live design tree until the owner rules on it.
 
 This ordinary read is admitted by the specification but not implemented by
 the compiler:

@@ -28,14 +28,14 @@ use super::super::goal::{
 use super::super::model::expression_children;
 use super::super::model::{
     BindingId, CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation,
-    CheckedArrayRoot, CheckedBooleanOperation, CheckedCommitValues, CheckedConst,
-    CheckedConstructor, CheckedContainerRoot, CheckedDrop, CheckedEnumType, CheckedExpression,
-    CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedLoopId,
-    CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedNumericType, CheckedPlaceStep, CheckedProofMultiplicity,
-    CheckedProofUseSource, CheckedReleaseMode, CheckedSetTarget, CheckedSliceSource,
-    CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType, LoanStrength, MeasureCell,
-    MeasuredKind, ValueInitializerKind,
+    CheckedArrayRoot, CheckedBooleanOperation, CheckedCommitConflict, CheckedCommitValues,
+    CheckedConst, CheckedConstructor, CheckedContainerRoot, CheckedDrop, CheckedEnumType,
+    CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
+    CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode,
+    CheckedNominal, CheckedNominalKind, CheckedNumericType, CheckedPlaceStep,
+    CheckedProofMultiplicity, CheckedProofUseSource, CheckedReleaseMode, CheckedSetTarget,
+    CheckedSliceSource, CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType,
+    LoanStrength, MeasureCell, MeasuredKind, ValueInitializerKind,
 };
 use super::super::places::{
     BindingSummary, PlaceMap, PlaceOffset, PlaceStep, RangeId, ResolvedPlace,
@@ -6421,6 +6421,7 @@ impl Analyzer<'_, '_> {
             refuted,
             contradictory,
             residual,
+            overlap_targets: None,
             derivation,
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
@@ -7020,6 +7021,7 @@ impl Analyzer<'_, '_> {
             refuted: disposition == CallGoalDisposition::Refuted,
             contradictory: false,
             residual: (!discharged).then_some(rendered),
+            overlap_targets: None,
             derivation,
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
@@ -8454,6 +8456,7 @@ impl Analyzer<'_, '_> {
             refuted,
             contradictory,
             residual,
+            overlap_targets: None,
             derivation,
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
@@ -8922,6 +8925,7 @@ impl Analyzer<'_, '_> {
             refuted,
             contradictory,
             residual: (!discharged).then(|| rendered.clone()),
+            overlap_targets: None,
             derivation,
             allocation_length_upper_bound,
             allocation_length_upper_bound_derivation,
@@ -9059,6 +9063,7 @@ impl Analyzer<'_, '_> {
             canonical_goal, components: Vec::new(), discharged, refuted: false,
             contradictory: proof.is_some_and(|proof| proof.route == Some(ProofRoute::Contradiction)),
             residual: (!discharged).then(|| "the captured view ranges are disjoint (one ends before the other starts, or one is empty)".to_owned()),
+            overlap_targets: None,
             derivation, allocation_length_upper_bound: None, allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(), kernel_row: None,
             formed_range_separation,
@@ -9172,6 +9177,7 @@ impl Analyzer<'_, '_> {
             refuted,
             contradictory,
             residual: (!discharged).then(|| residual.clone()),
+            overlap_targets: None,
             derivation,
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
@@ -9349,6 +9355,7 @@ impl Analyzer<'_, '_> {
             refuted,
             contradictory,
             residual: (!discharged).then_some(residual),
+            overlap_targets: None,
             derivation: outcome.derivation,
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
@@ -13295,6 +13302,102 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// [LIV-2, OWN-7] proves that each structurally overlapping target pair
+    /// selects different storage. A path is separated when any corresponding
+    /// subscript pair is unequal, so the fixed search tries both strict orders
+    /// for each pair and succeeds on the first completed proof.
+    fn judge_commit_index_conflicts(
+        &mut self,
+        conflicts: &[CheckedCommitConflict],
+        state: &ProofFlowState,
+    ) -> bool {
+        let mut all_discharged = true;
+        for conflict in conflicts {
+            let mut canonical_alternatives = Vec::new();
+            let mut proofs = Vec::new();
+            for (left, right) in &conflict.alternatives {
+                let Some(left) = self.direct_goal_expression(left) else {
+                    continue;
+                };
+                let Some(right) = self.direct_goal_expression(right) else {
+                    continue;
+                };
+                for (left, right) in [(left.clone(), right.clone()), (right, left)] {
+                    let ordering = GoalExpression::Operation {
+                        row: GoalOperation::Integer {
+                            operation: CheckedIntegerOperation::Less,
+                            operand_type: CheckedType::Integer(IntegerType::U64),
+                        },
+                        type_arguments: Vec::new(),
+                        const_arguments: Vec::new(),
+                        result: CheckedType::Bool,
+                        arguments: vec![left, right],
+                    };
+                    if let Some(target) = self.affine_signed_goal_ordering_target(
+                        &ordering,
+                        &state.affine,
+                        GoalSign::Positive,
+                    ) {
+                        proofs.push(self.prove(
+                            ProofContext::new(&state.facts, &state.affine),
+                            ProofGoal::Affine {
+                                inequality: &target,
+                            },
+                        ));
+                    }
+                    canonical_alternatives.push(ordering);
+                }
+            }
+            let canonical_goal = canonical_alternatives.into_iter().reduce(|left, right| {
+                GoalExpression::Operation {
+                    row: GoalOperation::Boolean(CheckedBooleanOperation::Or),
+                    type_arguments: Vec::new(),
+                    const_arguments: Vec::new(),
+                    result: CheckedType::Bool,
+                    arguments: vec![left, right],
+                }
+            });
+            let proof = proofs
+                .into_iter()
+                .find(|proof| proof.disposition == ProofDisposition::Proved);
+            let discharged = proof.is_some();
+            all_discharged &= discharged;
+            let derivation = proof.as_ref().and_then(|proof| proof.derivation);
+            let ordinal =
+                u32::try_from(self.obligations.len()).expect("ENT obligation ordinal exceeds u32");
+            if let Some(root) = derivation {
+                self.derivations
+                    .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+            }
+            self.obligations.push(ObligationOutcome {
+                node_path: conflict.site.clone(),
+                family: ObligationFamily::IndexSeparation,
+                conjunct: 0,
+                canonical_goal,
+                components: Vec::new(),
+                discharged,
+                refuted: false,
+                contradictory: proof
+                    .is_some_and(|proof| proof.route == Some(ProofRoute::Contradiction)),
+                residual: (!discharged).then(|| {
+                    format!(
+                        "{} and {} select different elements",
+                        conflict.first, conflict.second
+                    )
+                }),
+                overlap_targets: Some((conflict.first.clone(), conflict.second.clone())),
+                derivation,
+                allocation_length_upper_bound: None,
+                allocation_length_upper_bound_derivation: None,
+                affine_index_maps: Vec::new(),
+                kernel_row: None,
+                formed_range_separation: None,
+                range_partitions: Vec::new(),
+            });
+        }
+        all_discharged
+    }
+
     /// [GRAM-4, SET-1, CALL-4, LIV-2] one `set` target list.
     ///
     /// Every target is judged, then the whole right-hand side is judged — the
@@ -13308,8 +13411,13 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         targets: &[CheckedSetTarget],
         values: &CheckedCommitValues,
+        index_conflicts: &[CheckedCommitConflict],
         state: &mut ProofFlowState,
     ) {
+        // [LIV-2, OWN-7] targets are formed before the right-hand side. Judge
+        // their captured index values in that entering state so a later RHS
+        // effect cannot retarget the separation proof.
+        let indices_reached = self.judge_commit_index_conflicts(index_conflicts, state);
         // [MSR-3] the [LIV-2] `set`-target placement, per ordinal: a written
         // value list commits value i into target i, so ordinal i carries
         // exactly what a single-target `set` carries.
@@ -13341,7 +13449,7 @@ impl Analyzer<'_, '_> {
             CheckedCommitValues::Written(_) => None,
         };
         let ranges_reached = self.judge_range_conflicts(node_path, state);
-        let commit_reached = target_reached && value_reached && ranges_reached;
+        let commit_reached = indices_reached && target_reached && value_reached && ranges_reached;
         for target in targets {
             invalidate_goal_origin_for_set(&mut state.facts, target);
         }
@@ -13785,8 +13893,9 @@ impl Analyzer<'_, '_> {
                 node_path,
                 targets,
                 values,
+                index_conflicts,
             } => {
-                self.walk_set_list(node_path, targets, values, state);
+                self.walk_set_list(node_path, targets, values, index_conflicts, state);
                 true
             }
             CheckedStatement::PropagateLet {

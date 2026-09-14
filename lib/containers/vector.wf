@@ -148,25 +148,15 @@ fn grow_vector_exchange<T: linear>['s](values: &uniq GrowVector<'s, T>, left: ow
   if left == right {
     return unit;
   }
-  region {
-    let tail = take_back(vector: &uniq deref(values).storage);
-    let end = len_of(deref(values).storage);
-    if left == end {
-      let previous = replace deref(values).storage[right] = move tail;
-      place_back(vector: &uniq deref(values).storage, value: move previous);
-      return unit;
-    }
-    if right == end {
-      let previous = replace deref(values).storage[left] = move tail;
-      place_back(vector: &uniq deref(values).storage, value: move previous);
-      return unit;
-    }
-    let left_value = replace deref(values).storage[left] = move tail;
-    let right_value = replace deref(values).storage[right] = move left_value;
-    let saved_tail = replace deref(values).storage[left] = move right_value;
-    place_back(vector: &uniq deref(values).storage, value: move saved_tail);
+  if left < right {
+    set (deref(values).storage[left], deref(values).storage[right]) = move deref(values).storage[right], move deref(values).storage[left];
     return unit;
   }
+  if right < left {
+    set (deref(values).storage[left], deref(values).storage[right]) = move deref(values).storage[right], move deref(values).storage[left];
+    return unit;
+  }
+  return unit;
 }
 
 fn grow_vector_insert<T: linear>['s](values: &uniq GrowVector<'s, T>, store: &uniq Heap<'s>, index: own u64, value: own T) -> outcome: own Result<u64, T> reads(values.storage, store), writes(values.storage, store), allocates(store) contract {

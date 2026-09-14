@@ -273,6 +273,9 @@ pub(crate) enum ObligationFamily {
     ViewRange,
     /// Two incompatible live range loans must be disjoint [OWN-5, OWN-7].
     RangeSeparation,
+    /// Two [LIV-2] commit targets require a proved unequal pair of
+    /// corresponding subscript values [OWN-7].
+    IndexSeparation,
     /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
     /// a call to that row and judged under [MSR-4] exactly as every other
     /// consumer's obligation is.
@@ -338,6 +341,9 @@ pub(crate) struct ObligationOutcome {
     /// offset atom's canonical source bytes, ` < len_of(`, the base place's
     /// canonical source bytes, `)`.
     pub(crate) residual: Option<String>,
+    /// The two rendered targets of an IndexSeparation obligation. Every
+    /// other family carries none.
+    pub(crate) overlap_targets: Option<(String, String)>,
     /// Exact ENT-4 derivation for an accepted obligation. Failed judgments
     /// deliberately carry no positive root.
     pub(crate) derivation: Option<DerivationId>,

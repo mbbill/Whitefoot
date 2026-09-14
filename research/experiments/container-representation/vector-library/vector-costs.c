@@ -230,7 +230,7 @@ static uint64_t nanos(void) {
 #endif
 }
 
-enum Variant { WHITEFOOT, MATCHED_C, DIRECT_C };
+enum Variant { WHITEFOOT, MATCHED_C, LEGACY_C };
 
 static NOINLINE uint64_t batch(enum Variant variant, bool reserve_first,
                                uint64_t seed, uint64_t rounds,
@@ -247,7 +247,7 @@ static NOINLINE uint64_t batch(enum Variant variant, bool reserve_first,
                                                              next);
         } else {
             checksum += native_trace(rounds, next, reserve_first,
-                                     variant == DIRECT_C);
+                                     variant != LEGACY_C);
         }
     }
     observed = checksum;
@@ -262,6 +262,8 @@ static void reset_accounting(void) {
 
 static void check(void) {
     const uint64_t rounds[] = {0, 1, 3, 17};
+    size_t configurations = 0;
+    size_t executions = 0;
     for (unsigned path = 0; path < 2; ++path) {
         bool reserve_first = path == 0;
         for (unsigned sample = 0; sample < 32; ++sample) {
@@ -271,23 +273,30 @@ static void check(void) {
                 reset_accounting();
                 uint64_t wf = batch(WHITEFOOT, reserve_first, seed,
                                     rounds[count], 1);
+                ++executions;
                 size_t wf_requests = allocation_requests;
                 reset_accounting();
                 uint64_t matched = batch(MATCHED_C, reserve_first, seed,
                                          rounds[count], 1);
+                ++executions;
                 require(wf == matched, "matched-control checksum");
                 require(allocation_requests == wf_requests,
                         "matched-control allocation count");
                 reset_accounting();
-                uint64_t direct = batch(DIRECT_C, reserve_first, seed,
+                uint64_t legacy = batch(LEGACY_C, reserve_first, seed,
                                         rounds[count], 1);
-                require(wf == direct, "direct-control checksum");
+                ++executions;
+                require(wf == legacy, "legacy-control checksum");
                 require(allocation_requests == wf_requests,
-                        "direct-control allocation count");
+                        "legacy-control allocation count");
+                ++configurations;
             }
         }
     }
-    puts("vector library costs: 384 matched traces passed");
+    require(configurations == 256, "configuration coverage count");
+    require(executions == 768, "implementation execution coverage count");
+    printf("vector library costs: %zu three-way configurations, %zu implementation executions passed\n",
+           configurations, executions);
 }
 
 static void measure(void) {
@@ -312,7 +321,7 @@ static void measure(void) {
                        CONTRACT, path_name,
                        variant == WHITEFOOT
                            ? "whitefoot"
-                           : variant == MATCHED_C ? "matched-c" : "direct-c",
+                           : variant == MATCHED_C ? "matched-c" : "legacy-c",
                        sample,
                        repetitions, rounds, elapsed, checksum,
                        allocation_requests, allocation_peak);

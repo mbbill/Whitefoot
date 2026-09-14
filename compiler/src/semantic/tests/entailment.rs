@@ -1783,6 +1783,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ObligationFamily::EmptyRunRelease => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::RangeSeparation => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::IndexSeparation => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::ViewRange => {
                         assert!(outcome.conjunct <= 1)
                     }

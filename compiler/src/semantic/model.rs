@@ -2301,6 +2301,18 @@ pub(crate) enum CheckedCommitValues {
     Written(Vec<CheckedExpression>),
 }
 
+/// One [LIV-2] target pair whose structural paths can be separated only by
+/// proving that at least one corresponding pair of subscript values differs.
+/// The expressions are the values evaluated while targets are formed, before
+/// any right-hand-side effect of the commit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedCommitConflict {
+    pub(crate) site: NodePath,
+    pub(crate) first: String,
+    pub(crate) second: String,
+    pub(crate) alternatives: Vec<(CheckedExpression, CheckedExpression)>,
+}
+
 impl CheckedCommitValues {
     /// Every ordinal value, in written order. A result list holds its one
     /// call value; a value list holds one expression per target.
@@ -2353,6 +2365,7 @@ pub(crate) enum CheckedStatement {
         node_path: NodePath,
         targets: Vec<CheckedSetTarget>,
         values: CheckedCommitValues,
+        index_conflicts: Vec<CheckedCommitConflict>,
     },
     PropagateLet {
         /// Complete owning `let_stmt`, shared by Ok delivery and Err return.

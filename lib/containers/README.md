@@ -30,7 +30,9 @@ release that run's backing without requiring providers for its now-absent
 generic elements; the backing provider and release effect remain explicit.
 
 Run this slice with `make -C lib/containers check`.
-The maintained allocation observer refuses every nonzero allocation request
-and checks the exact release ledger in all three lowering modes. The matched
+The maintained allocation observer returns null at every allocation request
+and checks the exact release ledger in all three lowering modes. Positive-byte
+refusals return the owner or stop the operation chain; zero-byte formations
+remain successful and never attempt to release a null backing. The matched
 native comparison and current limits are recorded in
 [`../../research/experiments/container-representation/vector-library/RESULTS.md`](../../research/experiments/container-representation/vector-library/RESULTS.md).

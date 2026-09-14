@@ -388,6 +388,64 @@ fn direct_field_index_reads_and_scalar_commits_use_the_terminal_type() {
 }
 
 #[test]
+fn proved_dynamic_indices_separate_one_commit_targets() {
+    let scalar = rows(
+        r#"  let left = 0_u64;
+  let right = 1_u64;
+  if left < right {
+    set (rows[left].left, rows[right].left) = rows[right].left, rows[left].left;
+  }
+"#,
+    );
+    accepts(&scalar);
+    assert_rule_kind(
+        rows(
+            r#"  let left = 0_u64;
+  let right = 0_u64;
+  set (rows[left].left, rows[right].left) = rows[right].left, rows[left].left;
+"#,
+        )
+        .as_bytes(),
+        SemanticRule::Liv2,
+        |kind| matches!(kind, SemanticIssueKind::OverlappingCommitTargets { .. }),
+    );
+
+    accepts(&rows(
+        r#"  let left = 0_u64;
+  let right = 1_u64;
+  if left < right {
+    set (rows[left], rows[right]) = move rows[right], move rows[left];
+  }
+"#,
+    ));
+
+    let named_const = rows("  set rows[first_index] = move rows[first_index];\n")
+        .replace("fn main()", "const first_index: u64 = 0_u64;\n\nfn main()");
+    accepts(&named_const);
+}
+
+#[test]
+fn a_rhs_cannot_mutate_an_index_captured_by_dynamic_commit_targets() {
+    let source = rows(
+        r#"  let left = 0_u64;
+  let right = 1_u64;
+  if left < right {
+    region {
+      set (rows[left], rows[right]) = change_index(index: &uniq left), move rows[left];
+    }
+  }
+"#,
+    )
+    .replace(
+        "fn main()",
+        "fn change_index(index: &uniq u64) -> result: own Row writes(index) {\n  set deref(index) = 1_u64;\n  return Row(left: 7_u64, right: 8_u64);\n}\n\nfn main()",
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Own5, |kind| {
+        matches!(kind, SemanticIssueKind::BorrowConflict)
+    });
+}
+
+#[test]
 fn scalar_element_field_selection_keeps_its_type_error_on_legacy_storage() {
     for body in [
         "  let value = values[0_u64].missing;\n",
