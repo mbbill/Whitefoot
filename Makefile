@@ -56,8 +56,11 @@ check:
 static: repository-invariants spec-append-only spec-prose-integrity design-lint
 
 # Structural lint for the design tree; form only, see design/skill/lint.py.
+# CI pins the event's review base instead of comparing main with its own tip.
+DESIGN_REVIEW_BASE ?= origin/main
 design-lint:
-	@$(PY) design/skill/lint.py --trees language compiler --base origin/main
+	@$(PY) -m unittest discover -s design/skill -p 'test_lint.py'
+	@$(PY) design/skill/lint.py --trees language compiler --base "$(DESIGN_REVIEW_BASE)"
 
 repository-invariants:
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
