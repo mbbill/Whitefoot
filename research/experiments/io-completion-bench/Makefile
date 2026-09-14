@@ -144,14 +144,14 @@ $(BUILD)/pipe_producer: pipe_producer.c | prepare
 $(BUILD)/pipe_harness: pipe_harness.c | prepare
 	$(CLANG) $(CFLAGS) -pthread $< -o $@
 
-# Every program the bundle carries, compiled and nothing more. The gate runs
-# this; the protocols below run the programs. The compilations are independent,
-# so they run as many at a time as the host has processors.
+# The gate compiles every WF program and executes the bounded native caller
+# correctness checks. Full workload protocols remain below; independent WF
+# compilations use as many jobs as the host has processors.
 PROGRAMS := $(wildcard programs/*.wf)
 CHECKED := $(PROGRAMS:programs/%.wf=$(BUILD)/checked_%)
 JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
-programs-check: compiler | prepare
+programs-check: compiler ordinary-check | prepare
 	$(MAKE) -j$(JOBS) $(CHECKED)
 
 $(BUILD)/checked_%: programs/%.wf | prepare
@@ -580,3 +580,38 @@ linux-net:
 
 clean:
 	rm -rf $(WORK)
+
+# Matched public/body callers use the existing ordinary-library object list.
+# Correctness is gated; the optional table uses the original runner and seeds.
+include ../container-representation/native.mk
+.PHONY: ordinary-build ordinary-check ordinary-bench
+ordinary-build: prepare $(BUILD)/ordinary-public $(BUILD)/ordinary-body $(BUILD)/gen $(BUILD)/runner
+
+$(BUILD)/ordinary-caller.o: ordinary-caller.ll | prepare
+	$(CLANG) -O2 -Wno-override-module -x ir -c $< -o $@
+
+$(BUILD)/ordinary-public: ordinary-caller.c workload.h $(BUILD)/ordinary-caller.o $(NATIVE_OBJECTS) | prepare
+	$(CLANG) $(CFLAGS) -I$(NATIVE_ROOT) $< $(BUILD)/ordinary-caller.o $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
+
+$(BUILD)/ordinary-body: ordinary-caller.c workload.h $(BUILD)/ordinary-caller.o $(NATIVE_OBJECTS) | prepare
+	$(CLANG) $(CFLAGS) -DWF_BENCH_PRIVATE_BODY=1 -I$(NATIVE_ROOT) $< $(BUILD)/ordinary-caller.o $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o $@
+
+ordinary-check: ordinary-build
+	$(BUILD)/gen $(BUILD)/ordinary-check-tree 4 16
+	$(BUILD)/ordinary-public $(BUILD)/ordinary-check-tree check
+	$(BUILD)/ordinary-body $(BUILD)/ordinary-check-tree check
+
+# This cohort isolates the view wrapper route; public minus body is not the
+# whole ordinary-call cost. WF minus public also includes its source lowering.
+ordinary-bench: ordinary-build compiler $(BUILD)/baseline $(BUILD)/many_files_narrow $(BUILD)/many_files_narrow_seq $(BUILD)/many_files_loop $(BUILD)/many_files_loop_seq
+	$(BUILD)/gen $(TREE) $(FILES) $(MAX_KIB)
+	@{ \
+	  printf 'N.direct\t\t%s\t%s\tdirect\t%s\n' '$(BUILD)/baseline' '$(TREE)' '$(FILES)'; \
+	  printf 'N.public\t\t%s\t%s\t%s\n' '$(BUILD)/ordinary-public' '$(TREE)' '$(FILES)'; \
+	  printf 'N.body\t\t%s\t%s\t%s\n' '$(BUILD)/ordinary-body' '$(TREE)' '$(FILES)'; \
+	  printf 'WF.narrow\t\t%s\n' '$(BUILD)/many_files_narrow'; \
+	  printf 'WF.narrow.seq\t\t%s\n' '$(BUILD)/many_files_narrow_seq'; \
+	  printf 'WF.loop\t\t%s\n' '$(BUILD)/many_files_loop'; \
+	  printf 'WF.loop.seq\t\t%s\n' '$(BUILD)/many_files_loop_seq'; \
+	} > $(BUILD)/ordinary-plan.tsv
+	cd $(TREE) && $(BUILD)/runner $(BUILD)/ordinary-plan.tsv $(ROUNDS) $(WARMUP) '$(EXPECTED)'

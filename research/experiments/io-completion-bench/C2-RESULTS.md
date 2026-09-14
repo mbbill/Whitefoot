@@ -91,7 +91,7 @@ The pool gap measures available native concurrency plus implementation
 differences; assigning it entirely to either cause would be unsupported.
 
 **Ordinary call transport.** Optimized `ordinary_values.ll` and arm64 assembly
-quantify the current wrapper cost without inferring it from wall time:
+quantify the first cohort's wrapper transport without inferring it from wall time:
 
 | Boundary or successful path | Observed transport |
 | --- | --- |
@@ -107,8 +107,9 @@ copies and whole-process launcher copies are outside those per-success counts.
 The direct C control also differs in component validation, result construction,
 native engine submission/join, cleanup, and WF source lowering. Its timing
 difference cannot be assigned wholly to the ordinary ABI. A separately matched
-native caller of the same ordinary functions remains needed to time that
-component. No compiler optimization or API change was made for this reading.
+native caller of the same ordinary functions was missing from this cohort;
+the matched cohort below supplies it and reports its resolution limits. No
+compiler optimization or API change was made for this first reading.
 
 ## Reproduction and identity
 
@@ -398,8 +399,18 @@ pre-C2 native library has no ordinary-values units. Its source entry also uses
 the removed `command` form. The same-version twin passes 132 correctness rows,
 and four emitted modules, four module objects and twelve native objects are
 byte-identical with all twin controls empty. That instrument check does not
-supply the missing cross-version comparison; its entry/library adaptation is
-still an owner question, with no exemption or retry applied.
+supply the missing cross-version comparison. At that historical revision the
+entry/library adaptation was still open, with no exemption or retry applied.
+The owner-directed adapter now lands in `5770b314`: the real d17 baseline
+build, all-form verification and original five-pair verdict pass locally on
+Darwin and in [Ubuntu CI](https://github.com/mbbill/Whitefoot/actions/runs/34792624994).
+The adapter changes only the nullary entry spelling and native link profile;
+current algorithms, oracle, flags and regression thresholds remain intact.
+Local ratios for baseline/head at widths 1/2/4 were Mandelbrot 0.995/1.001/1.000,
+Quadrature 0.974/1.002/0.991, Records 0.901/1.056/1.035 and
+FIR 0.892/0.997/1.079. All 12 judged blocks passed, with 0 suspects; widths 8/16
+were measured but excluded by the unchanged verdict's width set. The 28
+local image/module/adapted-source hashes were unchanged across measurement.
 
 ## Read-heavy CI on b9d79cd0
 
@@ -467,3 +478,110 @@ Artifact identities: `bench-linux-read` SHA-256
 Their host records and complete tables are attached to the linked run.
 These successful jobs do not supply WF TCP samples or repair the separate
 pre-C2 compute-regression baseline boundary described above.
+
+## Matched ordinary-call cohort: criterion
+
+Before timing the new controls, the criterion is to preserve the generated
+8192-file tree, weighted checksum, operation order, read window, linked native
+library, compiler flags and original runner schedule. The public/body C
+routes differ only in which explicit view-ABI bridge they call, with no LTO or
+runtime function dispatch. Their untimed checks cover byte content, EOF,
+missing/invalid components, zero-credit refusal and exact credit recovery.
+A public/body difference locates wrapper-route expense only to the observed
+paired spread; a WF/public difference still combines owner transport, source
+loop/name/output code and lowering. Native direct also omits component/kind
+checks and engine requests, so its difference cannot price the engine alone.
+No new I/O interface or assumption of source overlap is introduced.
+
+The old main baseline is checked for an actual staging grant before using an
+old default/no-overlap timing pair to price PAR-3. A denied grant makes that
+pair a null control, not evidence of staging benefit. Shared factory conflicts
+and removed staging are overlapping permission obstacles; these controls do
+not identify additive percentages for them.
+
+The first matched cohort had wide host-sensitive spreads, including an N.body
+maximum above twice its median. No samples are discarded. Before a second
+and final cohort, fix `WF_IO_HELPERS=0` and `WF_IO_NO_NATIVE_RING=1` on every
+line to remove adaptive engine selection as a cross-process confound. This
+controlled route is reported separately from the default; it is not a faster
+configuration selected as the language's result. Both use the same seven
+recorded passes. Out-of-timing observed runs identify the route's actual
+submission/inline/helper/ring counts. No additional timed cohort is planned.
+
+### Matched cohort result
+
+The 2026-09-13 local cohort used compiler/native sources at `b5115d19`
+(native close repair `f13ae062`) and the new experiment callers. macOS 26.6.2
+(25G83), arm64, Apple Clang 21.0.0 (`clang-2100.3.34.2`), Rust 1.98.1;
+`-O2`, no LTO, original seeds/window/digest, two warmups and seven alternating
+passes per cohort. [All 98 recorded samples](c2-ordinary-samples.csv) are
+retained, without trimming, retry or a claim of an isolated host. Both native
+callers use the same ordinary process floor as WF. Default environment left
+worker/helper/ring policy unset; the separately labelled `no-helpers` cohort
+sets the two variables above for every line. The original direct C control
+is unchanged.
+
+| Line | Default median ms (min–max) | No-helpers median ms (min–max) |
+| --- | ---: | ---: |
+| N.direct | 254.96 (227.69–289.14) | 233.25 (214.33–289.68) |
+| N.public | 304.16 (240.30–324.61) | 261.84 (226.50–306.33) |
+| N.body | 307.43 (242.72–789.63) | 240.13 (221.73–336.05) |
+| WF.narrow | 301.74 (249.43–572.83) | 232.13 (226.14–270.62) |
+| WF.narrow.seq | 278.43 (242.15–396.18) | 238.21 (224.08–304.25) |
+| WF.loop | 329.25 (262.84–444.82) | 241.95 (229.87–276.04) |
+| WF.loop.seq | 287.51 (245.48–462.38) | 261.60 (231.38–272.87) |
+
+Ratios below are medians of within-pass ratios, not quotients of medians;
+parentheses give the full seven-pair range, not confidence intervals.
+
+| Compared routes | Default ratio (range) | No-helpers ratio (range) |
+| --- | ---: | ---: |
+| N.public / N.body | 0.9893 (0.4101–1.0565) | 1.0519 (0.8049–1.1508) |
+| WF.narrow / N.public | 1.0380 (0.8454–1.7687) | 0.9586 (0.8361–0.9992) |
+| N.public / N.direct | 1.1434 (0.9825–1.3424) | 1.0574 (0.9504–1.1772) |
+
+The wrapper contrast changes sign between cohorts and lies inside broad
+spread. This instrument has not resolved a stable elapsed-time charge for
+it. WF versus public is also not evidence of a systematic by-value ABI
+penalty: that residual changes sign and includes source/name/loop/output
+lowering. Public versus direct includes component and kind validation,
+ordinary result/accounting work and completion submission/join, which these
+two controls do not separate. These data support neither assigning the
+entire direct-C gap to copies nor claiming zero-cost wrappers or universal
+native parity. No additional timed cohort or optimization was selected.
+
+Optimized arm64 experiment bridges tail-call their target. The public bridge
+loads the two view words and tail-calls the public function; the body bridge
+tail-calls its C implementation with the same view pointer. The ordinary
+public function still materializes its 16-byte view for that C body. The
+same library executes beneath both paths. An out-of-timing public run
+reported 24576 submissions, zero inline/ring executions and 21 helper
+executions with default policy; the fixed-engine run reported 24576
+submissions and zero inline/helper/ring executions. Zero helpers here still
+uses completion records and the joining thread's queue progress, not direct
+leaf execution. These are observed route examples, not counters collected
+inside every timed child.
+
+For reproduction, run `make ordinary-check`, then `make ordinary-bench` with
+`WF_BENCH_SAMPLES` naming a fresh CSV path; repeat once with
+`WF_IO_HELPERS=0 WF_IO_NO_NATIVE_RING=1`. The optional CSV hook records a
+sample only after the unchanged runner validates the child's output and exit,
+and does not change its timing boundaries or schedule. The timed caller
+source SHA-256 was `d82d07b3b981e958b38bcfc07651535c32ae64c1428daac850be155e7f2f8dcc` and bridge SHA-256
+`5b2f4852521430a4d6759cb18d3382e94003630cd9bdbadc91b3b7c3ddb47ffc`.
+The delivered caller additionally pins error classes 21/0/9 in its untimed
+checks (zero credits/missing component/invalid component); remove only those
+three `opened.error.tag` conjuncts to recover the timed source bytes. The
+operation chain and timed branch are unchanged. This distinction does not
+claim identical linked image placement after the check repair.
+
+The original `many_files_loop.wf` at main `d17e7e0d`, built with its own
+compiler and `--par-ledger`, denies PAR-3 condition1: a body statement neither
+always precedes the first submission nor is reached only through it.
+PAR-2 also denies the two-accumulator body. Consequently its default/seq
+pair is not an old staging-throughput control and no lost-staging wall-time
+number is manufactured from it. C2 deletes the permission, and shared
+factory effects independently prevent ordinary overlap as shown above;
+separately pricing their effects still needs an actually granted old
+workload and a distinguishable interface control. Existing TCP protocol
+noncompletion and dated mixed/native tables retain their stated limits.

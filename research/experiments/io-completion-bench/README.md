@@ -33,6 +33,16 @@ cannot report a time.
   difference: all four C2 many-files programs emit byte-identical LLVM in
   both configurations. Every linked call holds its loans until return.
 
+The matched ordinary-call controls use one C traversal and the same linked
+library, with explicit LLVM bridges for the public WF view ABI and its private
+C body ABI. `make ordinary-check` verifies data, EOF, factory-credit refusal
+and cleanup on both routes; `programs-check` includes it. `make ordinary-bench`
+runs the original runner, seeds, two warmups and seven alternating passes over
+native direct/public/body and WF narrow/loop pairs. This separates the public
+view-wrapper route from the remaining WF source-lowering cost. It does not
+separately price native engine scheduling, factory serialization or lost
+permission. The controls are removed with the attribution they support.
+
 ## Workloads
 
 ### The many-files workload

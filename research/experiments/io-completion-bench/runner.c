@@ -211,6 +211,16 @@ int main(int argc, char **argv) {
         perror("runner: open plan");
         return 1;
     }
+/* Optional evidence output; this records completed child samples without
+ * changing run order, timing boundaries, validation or the reducer. */
+const char *samples_path = getenv("WF_BENCH_SAMPLES");
+FILE *samples = samples_path == NULL ? NULL : fopen(samples_path, "wx");
+if (samples_path != NULL && samples == NULL) {
+    perror("runner: create samples");
+    fclose(plan);
+    return 2;
+}
+if (samples != NULL) fputs("pass,label,wall_ms,user_ms,system_ms\n", samples);
     unsigned long rounds = strtoul(argv[2], NULL, 10);
     unsigned long warmup = strtoul(argv[3], NULL, 10);
     const char *expected = argv[4];
@@ -283,6 +293,8 @@ int main(int argc, char **argv) {
             if (!recording) {
                 continue;
             }
+if (samples != NULL) fprintf(samples, "%lu,%s,%.6f,%.6f,%.6f\n",
+    pass - warmup + 1, line->label, sample.wall_ms, sample.user_ms, sample.system_ms);
             line->wall[line->recorded] = sample.wall_ms;
             line->user[line->recorded] = sample.user_ms;
             line->system_time[line->recorded] = sample.system_ms;
@@ -314,6 +326,10 @@ int main(int argc, char **argv) {
                user_middle, system_middle);
     }
     fflush(stdout);
+    if (samples != NULL && fclose(samples) != 0) {
+        perror("runner: write samples");
+        return 2;
+    }
     for (size_t at = 0; at < count; at++) {
         free(lines[at].storage);
     }

@@ -332,10 +332,9 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
 
 /// The runtime units this link stages and the subset clang compiles.
 ///
-/// One list-building rule for every platform: the floor always, the scheduler
-/// core under the union of the two predicates, the completion units under the
-/// second, and each of the three groups a shared part plus this platform's
-/// leaves.
+/// Every module links the complete ordinary library, including its floor,
+/// scheduler and completion dependencies. Each group combines shared units
+/// with this platform's leaves; source-call classifications select no units.
 fn runtime_units() -> (Vec<RuntimeUnit>, Vec<&'static str>) {
     let mut staged: Vec<RuntimeUnit> = FLOOR_SHARED_UNITS.to_vec();
     staged.extend([
@@ -362,12 +361,10 @@ fn runtime_units() -> (Vec<RuntimeUnit>, Vec<&'static str>) {
 /// Stages the compiler-owned runtime beside the emitted module and links them
 /// into one executable.
 ///
-/// One staging for every platform, and the lists above are the only thing that
-/// differs. The floor joins unconditionally, because every program can exhaust
-/// its stack. The compute core and process settings join when either compute
-/// tasks or I/O completions are used. Compute joins help on the current stack;
-/// completion joins wait through their native backend. The completion units
-/// join on the second predicate alone.
+/// The lists above supply each platform's complete ordinary library. Compute
+/// joins help on the current stack; completion joins wait through their native
+/// backend. Neither source-call classification nor effect rows select a
+/// different set of link inputs.
 ///
 /// Every one of those bytes travels inside this executable, so no installed
 /// path, no build directory, and no environment decides which runtime a
