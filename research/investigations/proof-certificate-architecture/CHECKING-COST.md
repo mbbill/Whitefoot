@@ -141,3 +141,109 @@ the endpoint change with closure reuse held constant. Compare the combination
 against baseline for selection; this does not claim the two speedups multiply
 independently. Keep prefix and histogram as real-program
 controls using their ordinary current source and unchanged LLVM emission.
+
+## Paired selection, 2026-09-14
+
+The [combined comparison](../../experiments/proof-use-cost/paired-combined-2026-09-14.tsv)
+uses baseline `50ddd638` and candidate `8881833d`, with the same host, profile
+and sources as above. Both binaries were warmed once, order alternated within
+each fixture, and all five pairs ran to completion. No compiler build or
+profiler ran alongside the comparisons. Times include compiler startup and
+LLVM emission, not source generation, host linking or program execution.
+
+| Fixture | Baseline median | Candidate median | Speedup |
+|---|---:|---:|---:|
+| Fixed context, 16 uses | 12.966 ms | 12.760 ms | 1.02x |
+| Growing context, 16 uses | 28.696 ms | 17.282 ms | 1.66x |
+| 16-pair context, three uses | 17.640 ms | 15.794 ms | 1.12x |
+| Fixed context, 64 uses | 15.749 ms | 15.208 ms | 1.04x |
+| Growing context, 64 uses | 1680.280 ms | 170.555 ms | 9.85x |
+| 64-pair context, three uses | 163.798 ms | 95.165 ms | 1.72x |
+| Fixed context, 128 uses | 19.475 ms | 18.111 ms | 1.08x |
+| Growing context, 128 uses | 21480.277 ms | 1148.945 ms | 18.70x |
+| 128-pair context, three uses | 1005.767 ms | 548.065 ms | 1.84x |
+| Fixed context, 4096 uses | 323.225 ms | 286.128 ms | 1.13x |
+| Prefix program | 175.050 ms | 169.701 ms | 1.03x |
+| Histogram program | 186.319 ms | 174.980 ms | 1.06x |
+
+The combined implementation meets the recorded 2x criterion at both costly
+cells, with no median regression in the protected controls. All 120 timed
+invocations accepted. The growing-128 ranges were 21.452–21.502 s before and
+1.142–1.166 s after. The full 4096-use case is accepted by both binaries; its
+small entering context is essential to interpreting that result. Neither a
+universal 4096-use time nor linear total checking cost follows from it.
+
+The first isolation comparison,
+[baseline versus closure reuse](../../experiments/proof-use-cost/paired-closure-2026-09-14.tsv),
+holds endpoint preparation unchanged at `d465986c`. Growing-64 falls from
+1672.267 ms to 875.405 ms (1.91x); fixed-64 and the three-use context control
+also do not regress. Closure reuse alone does not meet the 2x selection
+criterion: the separately attributed target-AUTO cost remains.
+
+The second isolation,
+[closure reuse versus the combined implementation](../../experiments/proof-use-cost/paired-endpoints-2026-09-14.tsv),
+holds closure reuse constant and changes only endpoint preparation. Growing-128
+falls from 9688.400 ms to 1159.643 ms (8.35x), with fixed-128 essentially
+unchanged (19.273 versus 19.204 ms) and the three-use context control falling
+from 832.036 to 562.394 ms. Both isolation files contain five successful
+alternating pairs per fixture. Together with the stage attribution, these
+comparisons distinguish the two sources of repeated preparation without
+assuming their effects are independent.
+
+The candidate is selected as an implementation improvement, with the proposed
+tree decision still awaiting the owner's ruling. It does not justify a new
+language boundary. The residual growing-context cost is still substantial:
+128 independent pairs take about 1.15 s even after reuse, and three uses in
+that context take about 0.55 s. Larger growing-context cells were not started;
+no verdict or practicality claim is inferred for them. The real-program
+controls establish no regression on these two programs, not a general
+compiler or runtime speedup.
+
+## Reproduction and correctness boundary
+
+The native driver is
+[`runner.rs`](../../experiments/proof-use-cost/runner.rs), whose generator and
+comparison mode are pinned at `8881833d`. Create disposable detached worktrees
+and build the three ordinary compilers before timing:
+
+```sh
+cost_root=$(mktemp -d)
+cost_checkout=$PWD
+for cost_pair in baseline:50ddd638 closure:d465986c combined:8881833d; do
+  cost_label=${cost_pair%%:*}
+  cost_revision=${cost_pair#*:}
+  git worktree add --detach "$cost_root/$cost_label" "$cost_revision"
+  cargo build --manifest-path "$cost_root/$cost_label/compiler/Cargo.toml" \
+    --profile gate --bin whitefootc --locked --offline
+done
+make -C research/experiments/proof-use-cost compare \
+  WORK_ROOT="$cost_root/combined-probe" \
+  BASELINE="$cost_root/baseline/compiler/target/gate/whitefootc" \
+  CANDIDATE="$cost_root/combined/compiler/target/gate/whitefootc" \
+  SIZES=16,64,128,4096 \
+  REAL_SOURCES="$cost_checkout/research/experiments/compute-bench/programs/prefix.wf $cost_checkout/research/experiments/compute-bench/programs/histogram.wf"
+```
+
+For the first isolation, select baseline and closure binaries with `SIZES=64`;
+for the second, select closure and combined binaries with `SIZES=128`.
+Leave `REAL_SOURCES` empty for those comparisons. The comparison target never
+rebuilds either compiler, warms both once, and requires five alternating pairs.
+It emits one TSV row per invocation; retain compiler labels with each result.
+The ordinary `bench` mode can explore other sizes without treating its times
+as paired selection evidence.
+
+Root `make check` calls the experiment's `check` target: seven accepted
+fixtures, including 4096 uses at fixed context, and invalid-premise and
+duplicate-use controls requiring PRF-1 rejection. No timing threshold enters
+the gate. The driver is format-checked and built with safe Rust and warnings
+denied. Substituting `/usr/bin/true` fails on the invalid-premise control;
+substituting a nonexistent compiler fails to start. Neither wrong success
+nor a missing executable can silently produce a green experiment check.
+
+The ordinary source-proof suite covers independent premise admission, exact
+diagnostic locations, duplicate identity, signed tightening, overflow order,
+source formation and capacity. The query-view tests additionally cover reuse
+and invalidation by new terms, an existing measure's changed bound, and an
+existing goal's newly supplied projection. The 1043-test semantic suite and
+all-target Clippy check passed on the candidate. These are correctness
+controls for changed query preparation, not a proof that the compiler is sound.
