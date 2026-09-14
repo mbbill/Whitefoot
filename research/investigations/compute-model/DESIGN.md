@@ -407,7 +407,7 @@ consumer was not added: these programs already exercise private mutable
 workspaces, runtime partition bounds and data-dependent recursive destinations;
 no distinct outstanding obligation justified another kernel in this scope.
 
-Two limits remain concrete follow-up work: runtime helper pricing, and useful
+Two limits remain concrete work: runtime helper pricing, and useful
 parallel sparse discovery without replacing O(V+E) traversal with dense rounds.
 The intrusive sparse representation shows that queue-capacity proofs are not
 the blocker for this bounded-degree family. Ownership of competing discoveries
@@ -416,3 +416,43 @@ stable parent choices, destination compaction and alternative sorting families
 still need their own discriminating consumers. The catalog's corresponding
 predictions are replaced in place. I/O-specific design and implementation
 remain deferred while these compute questions are considered.
+
+## Runtime extent estimate
+
+The grain requirement is not complete with attribution alone. The next control
+compares the unchanged programs and runtime constants at `0d571cac` against a
+compiler estimate that substitutes available runtime counted-loop extents for
+the fixed nesting factor. This criterion precedes implementation and timing.
+The same emitted operation count still supplies the price of an iteration;
+the experiment changes how many inner iterations a helper contributes.
+
+Preserve the counted loop's captured endpoints in lowering and form a bounded
+call-summary estimate from ordinary integer values and descriptor lengths.
+Translate a helper's summary through its actual arguments, so the length of
+an iteration's subrange can reduce to the captured stride without evaluating
+the loop body. Unavailable or data-dependent extents keep the static estimate.
+Estimate arithmetic must be total and must read no array elements, execute no
+user calls, and introduce no acceptance or proof dependency. Evaluate the
+estimate once at a parallel loop entry; the sequential world retains its
+ordinary chunk call. A timing-adaptive estimator, a new writer annotation,
+and another global work-floor reduction do not address this comparison.
+
+The primary cases are the default prefix, histogram and wide stencil, with
+W1/4/8, the existing five rotated passes and retained first-call, warm-wall,
+CPU and grant rows. Each must preserve its independently checked result;
+blocked loops must actually offer useful work at their runtime dimensions.
+For each primary kernel require at least one W4/W8 paired warm-wall improvement
+of ten percent or more, with at least four of five pairs lower. Retain the
+stencil threshold sweep to check that the old underpriced two/four-chunk
+ceiling no longer determines its lane use.
+
+The protected adverse cases are the width-17 stencil, coarse prefix, tiny
+histogram and high-diameter pull traversal, alongside the other maintained
+compute kernels. A candidate does not select a new default if a stable adverse
+cell adds more than ten percent warm wall or fifteen percent process CPU.
+For a sub-ten-microsecond cell, also require more than one microsecond of
+absolute wall increase before interpreting a percentage as material. Preserve
+all cells, including failures; a noisy or inconclusive comparison calls for
+isolation, not a favorable replacement fixture. The constants remain 150,000
+and 16 throughout this control. Its result determines whether this estimate
+is sufficient or a different mechanism is still needed.
