@@ -22,7 +22,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # `approval-history-integrity` and `spec-archive-integrity` were retired with
 # the approval ledger they both read.
 CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	design-lint conformance compiler research-tests bench-programs conformance-run snapshot-run
+	design-lint conformance compiler library-tests research-tests bench-programs conformance-run snapshot-run
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -138,6 +138,12 @@ conformance:
 compiler:
 	$(MAKE) -C compiler check
 
+# Reusable Whitefoot libraries are bundled with real callers and executed in
+# every supported lowering mode. Keeping this separate from compiler unit tests
+# makes a source-library regression visible as its own gate stage.
+library-tests:
+	$(MAKE) -C lib/containers check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
+
 # Maintained executable tests under research/. Self-described deferred archive
 # prototypes that require a removed historical compiler are evidence artifacts,
 # not current tests; their directory README states that boundary explicitly.
@@ -197,4 +203,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler research-tests bench-programs conformance-run snapshot-run install-hooks
+.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests research-tests bench-programs conformance-run snapshot-run install-hooks
