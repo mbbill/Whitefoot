@@ -18,6 +18,23 @@ of them is a decision. Remove an item when its fix and test land.
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
 
+- **Stable scatter has low parallel utilization and unresolved costs.** The
+  [W8 mixed-input trial](../research/investigations/compute-model/DESIGN.md#stable-scatter-result-2026-09-14)
+  gives roughly 1.78 average occupied CPUs for Whitefoot and 4.04 for oneTBB,
+  from process-CPU/wall-time medians; this includes runtime work and does not
+  identify the cause. First attribute wall time, CPU time, runnable work and
+  worker activity to block partitioning, count tally, packing and final copy.
+  Hold the algorithm and representation fixed for scheduling controls, and
+  distinguish insufficient parallel work or a long serial critical path from
+  available work not reaching workers. Both implementations have a packing
+  chain and final two-way copy. Padded storage, owned take/restore and copying
+  remain separate costs; use the attribution to choose between task expansion,
+  scheduling, critical-path reduction and a balanced destination representation.
+  Preserve stable order and machine-checked bounds. This local investigation
+  precedes the separate general grain/profile/PGO study. Remove this item when
+  the cause is established and the trial's work, space and measured-cost
+  criteria are met, or its remaining tradeoffs are accepted.
+
 - **A runtime-sized `buffer_new` fails with no rule and no location.** At an
   unproved runtime capacity the driver stops four stages after semantic
   checking with `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` and no

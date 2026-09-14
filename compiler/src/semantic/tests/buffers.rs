@@ -818,10 +818,10 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn affine_element_views_and_structural_composites_stop_explicitly() {
-    // A slice over an affine-element buffer has no implemented in-place
-    // read; it stops as capability, not as a source rejection.
-    assert_unsupported(
+fn affine_nominal_views_form_while_structural_buffers_remain_unsupported() {
+    // VIEW-2 formation does not read the element. The represented affine
+    // nominal now reaches the view path, including a FixedVector origin.
+    with_semantics(
         br#"fn main() -> status: own ExitStatus pure {
   let slots = fixed_vector::<Option<u32>, 4>();
   region {
@@ -830,7 +830,12 @@ fn affine_element_views_and_structural_composites_stop_explicitly() {
   return exit_status(code: 0_u8);
 }
 "#,
-        UnsupportedSemanticFeature::CompositeValues,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            )
+        },
     );
     // A structural affine element (a nested buffer) is spec-formable
     // [TYPE-2] but has no implemented representation.

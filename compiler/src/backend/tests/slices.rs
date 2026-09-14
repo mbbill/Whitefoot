@@ -59,6 +59,83 @@ fn run_compute_oracle(executable: &Path, name: &str, parallel: bool) {
 }
 
 #[test]
+fn affine_view_replacement_returns_the_displaced_owner_and_preserves_neighbors() {
+    let source = br#"fn exchange(values: own MutSlice<Option<box<u64>>>, replacement: own box<u64>) -> result: own Option<box<u64>> reads(values), writes(values) contract {
+  requires 1_u64 <= len_of(values);
+} {
+  let previous = replace values[0_u64] = Some<box<u64>>(value: move replacement);
+  return move previous;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let slots = buffer_vacant::<box<u64>>(3_u64);
+  region {
+    let first = box_new(17_u64);
+    let window = mut_slice_of(&uniq slots, 1_u64, 2_u64);
+    let empty = exchange(values: move window, replacement: move first);
+    match empty {
+      None() => {
+      }
+      Some(value: unexpected) => {
+        return exit_status(code: 1_u8);
+      }
+    }
+  }
+  region {
+    let second = box_new(29_u64);
+    let window = mut_slice_of(&uniq slots, 1_u64, 2_u64);
+    let displaced = exchange(values: move window, replacement: move second);
+    match displaced {
+      None() => {
+        return exit_status(code: 2_u8);
+      }
+      Some(value: previous) => {
+        if deref(previous) != 17_u64 {
+          return exit_status(code: 3_u8);
+        }
+      }
+    }
+  }
+  let kept = replace slots[1_u64] = None<box<u64>>();
+  match kept {
+    None() => {
+      return exit_status(code: 4_u8);
+    }
+    Some(value: current) => {
+      if deref(current) != 29_u64 {
+        return exit_status(code: 5_u8);
+      }
+    }
+  }
+  let before = replace slots[0_u64] = None<box<u64>>();
+  match before {
+    None() => {
+    }
+    Some(value: unexpected) => {
+      return exit_status(code: 6_u8);
+    }
+  }
+  let after = replace slots[2_u64] = None<box<u64>>();
+  match after {
+    None() => {
+    }
+    Some(value: unexpected) => {
+      return exit_status(code: 7_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
+        let module = emit_lowered(source, overlap);
+        for module in [&module, &super::owned_places::retain_calls(&module)] {
+            let output = compile_and_run(module);
+            assert_eq!(output.status.code(), Some(0), "{overlap:?}: {output:?}");
+        }
+    }
+}
+
+#[test]
 fn runtime_work_estimates_are_total_for_empty_and_inverted_ranges() {
     let source = br#"fn count_work(lower: own u64, upper: own u64) -> result: own u64 pure {
   let total = 0_u64;
@@ -535,6 +612,73 @@ fn blocked_compute_matches_independent_oracles_at_runtime_dimensions() {
             run_compute_oracle(&executable, name, !defines.is_empty());
             std::fs::remove_dir_all(directory).expect("remove blocked-compute test files");
         }
+    }
+}
+
+#[test]
+fn stable_scatter_matches_an_independent_oracle_and_hands_out_output_work() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/radix_scatter.wf");
+    let adapter =
+        include_str!("../../../../research/experiments/compute-bench/radix_scatter_host.ll");
+    let oracle = format!(
+        "#define WFB_SCATTER_ORACLE\n{}",
+        include_str!("../../../../research/experiments/compute-bench/radix_scatter_bench.c")
+    );
+    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
+        let emitted = emit_lowered(source, overlap);
+        let mut llvm = bind_compute_host_adapter(&emitted, adapter)
+            .replace("@main(", "@wf_scatter_smoke_main(")
+            .replace("@wf__main_body(", "@wf_scatter_smoke_body(");
+        let parallel = overlap == OverlapLowering::On;
+        let defines = if parallel {
+            // The count/partition map has already joined before this entry.
+            // Wrap only the ordinary parallel entry, leaving its recursive
+            // budget family and the pool-off sequential world untouched.
+            let entry = llvm
+                .lines()
+                .find(|line| line.starts_with("define ") && line.contains(" @wf_pack_chunks("))
+                .expect("ordinary packing entry")
+                .to_owned();
+            llvm = llvm.replace(
+                &entry,
+                &entry.replace("@wf_pack_chunks(", "@wf_scatter_original_pack("),
+            );
+            llvm.push_str(
+                "\ndeclare void @wf_scatter_pack_begin()\n\
+declare void @wf_scatter_pack_end()\n\
+define i64 @wf_pack_chunks({ ptr, i64 } %chunks, { ptr, i64 } %low, { ptr, i64 } %high) {\n\
+  call void @wf_scatter_pack_begin()\n\
+  %r = call i64 @wf_scatter_original_pack({ ptr, i64 } %chunks, { ptr, i64 } %low, { ptr, i64 } %high)\n\
+  call void @wf_scatter_pack_end()\n\
+  ret i64 %r\n}\n",
+            );
+            let copy_entry = llvm
+                .lines()
+                .find(|line| line.starts_with("define ") && line.contains(" @wf_copy_run("))
+                .expect("ordinary nonempty output copy entry")
+                .to_owned();
+            llvm = llvm.replace(
+                &copy_entry,
+                &copy_entry.replace("@wf_copy_run(", "@wf_scatter_original_copy("),
+            );
+            // Count completed element copies on a thread other than the
+            // packing caller; a stolen empty task is insufficient evidence.
+            llvm.push_str(
+                "\ndeclare void @wf_scatter_copy_done(i64)\n\
+define i64 @wf_copy_run(ptr %values, { ptr, i64 } %output) {\n\
+  %n = call i64 @wf_scatter_original_copy(ptr %values, { ptr, i64 } %output)\n\
+  call void @wf_scatter_copy_done(i64 %n)\n\
+  ret i64 %n\n}\n",
+            );
+            vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+        } else {
+            Vec::new()
+        };
+        let directory = test_directory();
+        let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+        run_compute_oracle(&executable, "radix_scatter", parallel);
+        std::fs::remove_dir_all(directory).expect("remove scatter oracle test files");
     }
 }
 

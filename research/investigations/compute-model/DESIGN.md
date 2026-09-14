@@ -29,6 +29,214 @@ Add a partitioned-build consumer only if it exercises an obligation the scan,
 histogram, and irregular consumers do not. Block sizes are data decomposition,
 not a worker count unrolled in source. No writer scheduling API is assumed.
 
+### Data-dependent scatter trial
+
+The next consumer starts from `2b346cf6`, after the nested-affine traversal
+repair. It distributes unsigned input values stably by a radix digit, so
+equal-digit elements retain their input order. This tests a distinct obligation:
+the number of output elements assigned to an input block depends on its data,
+rather than a fixed stride or a pivot search in already sorted inputs.
+
+Try ordinary block counts, prefix offsets, and exclusive destination ranges
+before selecting a language or compiler change. A binary digit is the smallest
+instance; a wider digit is useful only after that instance exposes its proof
+and cost obligations. The digit and block dimensions must not encode the
+worker count. Any missing capability is classified against the active
+specification, with a concrete source witness and the nearest useful
+alternative. A failed direct scatter is not a proof of inexpressibility.
+
+The discriminating criteria, recorded before implementation and measurement,
+are:
+
+- An independent stable distribution checks every output value and unchanged
+  input, including empty input, uneven blocks, repeated digits, skew, and
+  runtime dimensions. Correctness precedes timing.
+- Useful output production must actually execute in parallel. Permission or
+  parallel counting alone does not meet that condition; a mandatory serial
+  element-by-element scatter is a remaining limitation.
+- Account for counting, offsets, output writes, allocation, peak workspace,
+  and span. Repeated full-input scans per input block or worker do not count
+  as an efficient parallel representation. State dependence on radix width
+  explicitly instead of hiding it in a fixed fixture.
+- Compare identical Whitefoot source with and without overlap, a matching
+  native decomposition, and a useful native serial distribution. Retain wall
+  time, process CPU, worker count, input shape, actual grants, source revisions,
+  and build flags. A parallel win alone does not establish competitive cost.
+
+These observations select between using existing proofs, adding a narrowly
+motivated shared foundation, and recording a remaining model cost. They do
+not select a universal grain policy. Broad scheduling/profile/PGO research,
+sparse-graph discovery, and I/O remain separate follow-ups.
+
+The [direct candidate](direct-scatter.wf) reaches OP-4 at
+`high < len_of(output)`. Its scalar split bound does not establish the
+input-content relation a tight destination requires; the stated contract even
+admits an out-of-bounds counterexample. FN-8 excludes subscript expressions
+from contracts and FN-9's result relations cannot publish a count of matching
+elements in a sequence. The negative witness checks that insufficient scalar
+bounds do not authorize the write. It is not a normative rejection of stable
+distribution or a proof that no other source formulation works.
+
+The executable alternative in
+[`radix_scatter.wf`](../../experiments/compute-bench/programs/radix_scatter.wf)
+first partitions each input block into two `FixedVector<u64, 256>` runs.
+Their ordinary measures bound each stored count without an array-content
+theorem. A scalar prefix phase computes total lengths; a recursive continuation
+forms each run's actual destination range and passes the remaining range to
+the next block. Each intermediate digit buffer reserves one full block of
+capacity per input block, so the continuation's safety follows from each
+run's type bound even when the actual counts are skewed. A final copy joins
+the populated prefixes into the returned buffer. Input size and selected bit
+are runtime values; the local capacity is provisionally 256, independent of
+worker count. Wider radix digits and other local capacities are not yet
+established by this instance.
+
+This representation has linear element work, but it is not a cost-free
+replacement for direct scatter: local runs hold up to two padded inputs,
+two intermediate streams hold another two, and the result holds one actual
+input. Count extraction currently takes and restores an owned chunk because
+the legacy buffer-element borrow path is unsupported. Those transfers,
+initialization, and the continuation's linear depth must be included in the
+cost rather than dismissed as proof work. The native controls compare both
+the same block/chain decomposition and direct count/prefix/scatter; the latter
+does not materialize local element streams and is a different algorithmic
+representation, not an isolating compiler A/B.
+
+The prototype also exposes an implementation gap under unchanged VIEW-1,
+VIEW-2 and SET-2: a direct view of an already represented affine nominal
+element stopped as `CompositeValues`, and replacement had no lowering read
+for a slice target. The implementation uses the buffer representation's
+existing element domain for view formation and captures the displaced element
+from the already evaluated slice target after the replacement expression.
+Ordinary affine reads/moves, shared-view mutation, live child loans, and
+target layout retain their existing checks. This does not add general
+structural element views or the still-unsupported borrowed projection path.
+
+With `B = floor(n/256) + 1` and `p = 256B`, the source allocates `4p+n`
+words of payload, plus chunk tags/measures and call frames; input and oracle
+storage are excluded. Each key is classified once, copied into an intermediate
+digit stream once, and copied into the result once, in addition to allocation
+initialization and owned aggregate transfers. Metadata tally is O(B). Even
+with unlimited offers, packing has an O(B) continuation path and the final
+two ordinary copy loops have O(n) span. The existing recursion budget can
+further limit offered packing work. Actual steals therefore establish output
+parallelism, not scalable span or competitive performance.
+
+This trial restores an existing view capability and retains an experimental
+consumer; it does not select a new language rule, shared representation or
+scheduling policy. The existing view-loan, ownership, source-proof and parallel
+permission decisions still stand. The directly affected catalog entries are
+§13's counting/radix case, §15's deferred scatter statement, summary row 13‴,
+and transformation T6. The open representation cost is tracked in
+`docs/todo.md`; no I/O inference or broader design-tree change follows from
+this binary instance.
+
+### Stable scatter result, 2026-09-14
+
+The [retained rows](../../experiments/compute-bench/radix-scatter-2026-09-14.tsv)
+measure `e2ced20c` on an Apple M1 Pro, Darwin arm64, eight physical/logical
+CPUs. This is an unpinned interactive workstation with background applications
+active; compiler jobs were avoided during timing. Apple clang 21.0.0 compiles
+Whitefoot and its runtime at the ordinary `-O2` flags. Native references use
+the bundle's scalar `-O3`, no-vectorization, no-LTO flags; Rust is 1.98.1 and
+the native library pins are retained in each manifest. These are observations
+of this workload and build, not an isolating compiler A/B or a portable ratio.
+
+Every form passed the 109-configuration independent matrix at the harness's
+applicable widths, including W16 oversubscription. The compiler oracle checks
+both emissions at W1/W2/W4. Its correctness-only wrappers require both a
+packing-stage steal and a nonempty `copy_run` completed on a thread other
+than the packing caller. All earlier maps have joined before that observation
+starts, and all packing work joins before it ends. Only a missing scheduling
+observation may be resampled; wrong values, changed input, wrong lengths or
+missing wrapper entry fail immediately. Timing images contain no wrappers.
+
+Four fixtures use the canonical back-to-back cadence, five rotating/reversing
+passes, and five warm calls plus each process's retained first call. The
+preceding four exploratory runs use an explicit 500 microsecond gap and are
+kept separately as `gap500-*`; they are not the default cadence. Each run's
+before/after executable and LLVM hashes match. The main zero-gap medians are:
+
+| Fixture and form | Workers | Wall, ms | Process CPU, ms |
+|---|---:|---:|---:|
+| 1,048,593 mixed keys, Whitefoot sequential | 1 | 5.366 | 5.359 |
+| Same input and Whitefoot source, overlap | 4 | 4.040 | 5.822 |
+| Same input and Whitefoot source, overlap | 8 | 3.946 | 7.023 |
+| Same block/chain decomposition, oneTBB | 8 | 1.505 | 6.079 |
+| Independent two-scan serial distribution | 1 | 0.780 | 0.776 |
+| Direct-native fixture, unchanged Whitefoot source | 8 | 4.061 | 7.108 |
+| Direct count/prefix/scatter, Parlay | 8 | 0.391 | 1.712 |
+| 1,048,593 skewed keys, Whitefoot sequential | 1 | 6.274 | 6.267 |
+| Same skewed input and Whitefoot source, overlap | 8 | 4.025 | 7.771 |
+| 257 mixed keys, Whitefoot sequential | 1 | 0.0045 | 0.003 |
+| Same small input and Whitefoot source, overlap | 8 | 0.0102 | 0.034 |
+
+Large-input overlap is about 1.36 times faster than the same-source sequential
+emission by these medians, with about 31 percent more process CPU. It is still
+slower than both the native chain and the useful serial algorithm. Against
+the direct native control, the table's paired W8 wall ratio is 10.442 and CPU
+ratio is 4.119; Whitefoot is lower in zero of five wall pairs. The native chain
+borrows flat chunk payloads without Whitefoot's owned take/restore or run-head
+handling, so even that comparison does not isolate a lowering defect. Native
+direct scatter uses an output plus two scalar offsets per block, instead of
+the local element streams and packing chain.
+
+The same-chain W8 comparison also exposes a parallel-utilization gap: dividing
+the process-CPU medians by the wall medians gives roughly 1.78 occupied CPUs
+for Whitefoot and 4.04 for oneTBB. Whitefoot uses about 16 percent more CPU but
+takes 2.62 times the wall time. These ratios include runtime and spinning work;
+they neither measure useful computation alone nor isolate scheduler idleness.
+Both sources have a packing chain and final two-way copy, so those shared
+structures alone do not explain the difference. Serial critical-path costs,
+task expansion, work-supply policy and worker execution remain to be separated.
+
+Skew improves the same-source wall ratio to about 1.56 while increasing CPU
+about 24 percent. Small input is slower with overlap; its microsecond CPU
+values are especially sensitive to clock granularity and scheduling. The
+500-microsecond-gap runs retain the same large-input cost conclusion, and the
+small W8 median grows to 17.2 microseconds with no median observed steals.
+The timing table's steals count covers the complete call, unlike the separate
+correctness oracle's packing attribution. Neither cadence selects a grain
+policy, and W16 rows are oversubscribed evidence rather than scaling claims.
+
+The payload count at the large fixture is 5,243,921 words, about 40 MiB,
+before chunk metadata and stack. Stack use is not inferred from source depth:
+`otool -tvV` on the recorded sequential object shows a loop backedge replacing
+`pack_chunks`' self-call and a 16,064-byte frame including saved registers.
+This is a generated-code observation for that object, not measured aggregate
+peak stack across parallel workers. The linear dependence and final-copy span
+remain even when tail-call optimization removes recursive frame growth.
+
+The trial meets stable-result, checked-exclusive-range and useful-parallel-work
+criteria, but fails to establish competitive representation cost. It does not
+justify adopting this chunk chain as the general scatter idiom or changing
+the parallel permission rule. The next experiment should first attribute wall
+time, CPU time, runnable work and worker activity to block partitioning, count
+tally, packing and final copy. Scheduling controls should keep the algorithm
+and representation fixed to distinguish insufficient parallel work or a long
+serial critical path from available work not reaching workers. That evidence
+should select the next optimization. A balanced destination representation
+that avoids padded streams and owned count-extraction copies remains a
+candidate, checked with the same independent oracle and native controls.
+A new content-summary proof mechanism is a candidate only if a concrete
+ordinary formulation still cannot express the required bound; neither it nor
+a general grain/profile/PGO policy is selected here.
+
+Reproduce from the experiment directory with the existing dependency setup:
+
+```sh
+SCATTER_RESULTS="$(mktemp -d)"
+make deps
+make verify KERNELS=radix_scatter
+WFB_SCATTER_NATIVE=direct make verify KERNELS=radix_scatter
+WFB_SCATTER_GRID=large WFB_SCATTER_NATIVE=chain make compare KERNELS=radix_scatter PASSES=5 CALLS=5 WFB_GAP_US=0 RESULTS="$SCATTER_RESULTS/steady-chain-large"
+```
+
+Use fresh result directories for `small`, `skew`, and `WFB_SCATTER_NATIVE=direct`, and
+`WFB_GAP_US=500` for the diagnostic counterparts. The retained runs reused the
+already-built compiler and dependencies with `make -o compiler -o deps`;
+that does not remove the image rebuild or before/after hash checks.
+
 ## Runtime cost attribution
 
 The [range-loan measurements](../range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
