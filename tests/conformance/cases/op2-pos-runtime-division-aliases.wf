@@ -1,0 +1,24 @@
+fn covered(count: own u64, divisor: own u64) -> result: own u64 pure contract {
+  requires count <= 4096_u64;
+  requires 1_u64 <= divisor;
+  requires divisor <= 64_u64;
+} {
+  let quotient = count / divisor;
+  let saved_count = count;
+  let saved_divisor = divisor;
+  let saved_quotient = quotient;
+  set count = 0_u64;
+  set divisor = 64_u64;
+  set quotient = 4096_u64;
+  let product = saved_quotient * saved_divisor;
+  invariant bounded: product <= saved_count;
+  return product;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let result = covered(count: 17_u64, divisor: 3_u64);
+  if result != 15_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

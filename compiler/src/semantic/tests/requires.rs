@@ -1621,3 +1621,121 @@ fn main() -> status: own ExitStatus pure {
         },
     );
 }
+
+#[test]
+fn affine_requirements_publish_only_established_non_l0_ordering_leaves() {
+    let cases = [
+        ("  requires a + b <= limit;", true),
+        (
+            "  define sum = a + b;\n  define bound = sum <= limit;\n  define permitted = a <= 16_u64;\n  requires band(bound, permitted);",
+            true,
+        ),
+        (
+            "  define sum = a + b;\n  define overflow = sum > limit;\n  define excluded = a > 16_u64;\n  define either = bor(overflow, excluded);\n  requires bnot(either);",
+            true,
+        ),
+        (
+            "  define sum = a + b;\n  define bound = sum <= limit;\n  define permitted = a <= 16_u64;\n  requires bor(bound, permitted);",
+            false,
+        ),
+        ("  requires a + b == limit;", false),
+    ];
+    for (requirement, accepted) in cases {
+        // Contract definitions precede every requirement in canonical source.
+        let source = format!(
+            "fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {{\n{requirement}\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n}} {{\n  let total = a + b;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            if accepted {
+                let SemanticOutcome::Complete(checked) = outcome else {
+                    panic!("affine S4 image {requirement}: {outcome:?}");
+                };
+                let function = checked
+                    .data
+                    .functions
+                    .iter()
+                    .find(|f| f.name == "room")
+                    .unwrap();
+                super::entailment::validate_derivations(&function.entailment);
+                assert!(
+                    function
+                        .entailment
+                        .derivations
+                        .nodes
+                        .iter()
+                        .any(|node| matches!(
+                            node,
+                            super::super::entailment::DerivationNode::RequirementAffineImage { .. }
+                        ))
+                );
+            } else {
+                let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                    panic!("an unestablished ordering leaf must remain unavailable: {outcome:?}");
+                };
+                assert_eq!(issue.rule(), SemanticRule::Op2);
+            }
+        });
+    }
+}
+
+#[test]
+fn affine_requirement_images_keep_copies_but_do_not_retarget_replaced_scalars() {
+    for (body, accepted) in [
+        (
+            "  let old = a;\n  set a = 32_u64;\n  let total = old + b;",
+            true,
+        ),
+        ("  set a = 32_u64;\n  let total = a + b;", false),
+    ] {
+        let source = format!(
+            "fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {{\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n  requires a + b <= limit;\n}} {{\n{body}\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            if accepted {
+                let SemanticOutcome::Complete(checked) = outcome else {
+                    panic!("the copied entry value keeps its requirement: {outcome:?}");
+                };
+                let function = checked
+                    .data
+                    .functions
+                    .iter()
+                    .find(|f| f.name == "room")
+                    .unwrap();
+                super::entailment::validate_derivations(&function.entailment);
+            } else {
+                let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                    panic!("the replacement is not the captured value: {outcome:?}");
+                };
+                assert_eq!(issue.rule(), SemanticRule::Op2);
+            }
+        });
+    }
+}
+
+#[test]
+fn affine_requirement_measure_observations_survive_as_values_without_retargeting() {
+    for (observed, accepted) in [("old", true), ("current", false)] {
+        let source = format!(
+            "fn room(values: own buffer<u64>, extra: own u64, limit: own u64) -> result: own u64 reads(values), writes(values) contract {{\n  requires len_of(values) <= 16_u64;\n  requires extra <= 16_u64;\n  requires len_of(values) + extra <= limit;\n}} {{\n  let old = len_of(values);\n  let replaced = replace values = buffer_new(32_u64, 0_u64);\n  let current = len_of(values);\n  let total = {observed} + extra;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            if accepted {
+                let SemanticOutcome::Complete(checked) = outcome else {
+                    panic!("an observed measure keeps its old value: {outcome:?}");
+                };
+                let function = checked
+                    .data
+                    .functions
+                    .iter()
+                    .find(|f| f.name == "room")
+                    .unwrap();
+                super::entailment::validate_derivations(&function.entailment);
+            } else {
+                let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                    panic!("the replacement's length has no old sum bound: {outcome:?}");
+                };
+                assert_eq!(issue.rule(), SemanticRule::Op2);
+            }
+        });
+    }
+}

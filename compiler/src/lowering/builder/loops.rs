@@ -343,6 +343,12 @@ impl IrBuilder<'_> {
                 arguments: backedge_arguments,
                 drops: Vec::new(),
             })?;
+            self.counted_ranges.push(crate::IrCountedRange {
+                blocks: header.index()..self.blocks.len(),
+                continuation: exit,
+                lower: lower_capture,
+                upper: upper_capture,
+            });
         }
 
         self.current = Some(exit);

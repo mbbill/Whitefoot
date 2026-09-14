@@ -105,6 +105,22 @@ Possible variant families include record layouts and interpreter dispatch
 structures. Inspect the final emitted shape: source-level duplication that
 optimization folds away supplies no comparison between runtime strategies.
 
+### Parallel grain policies and runtime profiles
+
+The [compute-model trials](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
+show that exposing more parallel work can improve wall time while increasing
+CPU cost, and a more literal work estimate can remove a useful split. Can one
+policy serve a broad workload range, or should selection depend on workload,
+input dimensions and the machine? These results do not settle that question.
+
+Runtime profiles could record task duration, steals, idle time and input
+shape for later profile-guided compilation or online scheduling adaptation.
+Compare those candidates with static and captured-extent estimates, including
+profiling cost, unseen inputs and wall/CPU tradeoffs. Profiles select among
+already legal schedules; they cannot authorize a source operation or replace
+a required proof. Offline PGO and online adaptation remain alternatives for
+the dedicated study tracked in [TODO](todo.md), not selected mechanisms.
+
 ### A proof-gap performance coach
 
 The compiler could explain each unproved static obligation and missed

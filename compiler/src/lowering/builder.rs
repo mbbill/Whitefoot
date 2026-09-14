@@ -10,6 +10,7 @@ mod slices;
 mod split;
 mod storage;
 mod targets;
+mod work;
 
 use crate::CheckedProgram;
 use crate::NodePath;
@@ -511,6 +512,7 @@ struct IrBuilder<'program> {
     source_calls: Vec<IrSourceCall>,
     values: Vec<IrType>,
     blocks: Vec<BuildingBlock>,
+    counted_ranges: Vec<crate::IrCountedRange>,
     current: Option<IrBlockId>,
     loops: Vec<LoopTarget>,
     result: IrType,
@@ -583,6 +585,7 @@ impl<'program> IrBuilder<'program> {
             source_calls: Vec::new(),
             values: Vec::new(),
             blocks: Vec::new(),
+            counted_ranges: Vec::new(),
             current: None,
             loops: Vec::new(),
             result,
@@ -663,6 +666,7 @@ impl<'program> IrBuilder<'program> {
                 })
                 .collect::<Result<Vec<_>, LoweringFailure>>()?,
             overlaps,
+            counted_ranges: self.counted_ranges,
             synthesis,
         })
     }

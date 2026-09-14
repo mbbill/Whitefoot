@@ -85,6 +85,21 @@ fn permitted(source: &[u8], function: &str) -> LoopPermission {
     judged
 }
 
+#[test]
+fn bfs_pull_is_permitted_while_sparse_discovery_remains_source_ordered() {
+    let source = include_bytes!("../../../../research/experiments/compute-bench/programs/bfs.wf");
+    let table = permission_of(source);
+    assert_eq!(
+        only_loop(&table, "pull_level").verdict,
+        LoopVerdict::PermittedEligible
+    );
+    assert!(
+        loops(&table, "bfs_sparse")
+            .iter()
+            .all(|item| matches!(item.verdict, LoopVerdict::Denied(_)))
+    );
+}
+
 // ----------------------------------------------------------------------
 // Grants
 // ----------------------------------------------------------------------
@@ -234,6 +249,38 @@ fn runtime_stencil_rows_retain_adjacent_range_permission() {
         assert_eq!(row.actualization, Some(LoopActualization::IndependentMap));
     }
     assert!(matches!(rows[1].verdict, LoopVerdict::Denied(_)));
+}
+
+#[test]
+fn blocked_compute_helpers_retain_partition_permission_around_local_recurrences() {
+    let prefix = permission_of(include_bytes!(
+        "../../../../research/experiments/compute-bench/programs/prefix.wf"
+    ));
+    let stages = loops(&prefix, "prefix");
+    assert_eq!(stages.len(), 3);
+    for stage in [&stages[0], &stages[2]] {
+        assert_eq!(stage.verdict, LoopVerdict::PermittedEligible, "{stage:?}");
+        assert_eq!(stage.actualization, Some(LoopActualization::IndependentMap));
+    }
+    assert!(matches!(stages[1].verdict, LoopVerdict::Denied(_)));
+    assert!(matches!(
+        loops(&prefix, "scan_block")[0].verdict,
+        LoopVerdict::Denied(_)
+    ));
+
+    let histogram = permission_of(include_bytes!(
+        "../../../../research/experiments/compute-bench/programs/histogram.wf"
+    ));
+    let stages = loops(&histogram, "histogram");
+    assert_eq!(stages.len(), 2);
+    for stage in stages {
+        assert_eq!(stage.verdict, LoopVerdict::PermittedEligible, "{stage:?}");
+        assert_eq!(stage.actualization, Some(LoopActualization::IndependentMap));
+    }
+    assert!(matches!(
+        loops(&histogram, "count_block")[0].verdict,
+        LoopVerdict::Denied(_)
+    ));
 }
 
 /// The reduction: a counted loop over a pure callee, folding one accumulator

@@ -3,6 +3,21 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
+- **Parallel grain policy needs a dedicated study.** Captured extents are a
+  provisional scheduling input, not an established broadly suitable policy.
+  The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
+  improves prefix, histogram and stencil, but makes chain-pull 51 percent
+  slower at two workers and incurs substantial CPU costs in some faster
+  cases. Those measurements precede the continuation-accounting correction;
+  its performance has not been remeasured. Study whether a robust common
+  policy exists or workload, input shape, worker count and hardware require
+  different choices, comparing wall time, CPU and scheduling/profile overhead.
+  [Runtime profiles and PGO](ideas.md#parallel-grain-policies-and-runtime-profiles)
+  are candidate inputs to that later study. The trial's failures remain
+  evidence, not proof that no broadly useful strategy exists. Close this item
+  when a policy meets explicit representative criteria or its accepted
+  tradeoffs are recorded.
+
 - **Unguarded affine expression nesting depth.** A proof-domain affine
   expression nesting parentheses about 1400 deep aborts the driver with a
   stack overflow and no diagnostic (exit 134); 1200 rejects normally and
@@ -73,15 +88,6 @@ of them is a decision. Remove an item when its fix and test land.
   propagate g();` never overlaps. Allowing a `propagate` second member would
   need the lowering to join the hand-out before the `Err` return; a future
   investigation, taken up when a real program shows the gap.
-- **Parallel stencil lowering has a one-worker cost and a grain cliff.**
-  The runtime-sized stencil's parallel build is about 15–20% slower than its
-  sequential build at one worker on the measured M1 Pro, while granting no
-  tasks. At 2046 interior rows, the current estimated row cost affords only
-  two chunks even with four workers. The
-  [range-loan measurements](../research/investigations/range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
-  retain both that size and the larger four-chunk case. The one-worker cause
-  within lowering/code generation is not isolated; the finite range proofs
-  add no runtime range checks.
 
 ## Open language questions
 
