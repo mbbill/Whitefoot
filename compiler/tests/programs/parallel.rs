@@ -343,56 +343,74 @@ fn the_quadrature_program_publishes_one_byte_sequence_at_every_recursion_budget(
 /// checked against the corpus directory by
 /// [`the_corpus_units_cover_every_program_file`], which is what keeps it from
 /// silently falling behind the corpus it is intended to cover.
-const CORPUS_UNITS: &[&[&str]] = &[
-    &["adaptive_quadrature.wf"],
-    &["arena_workspace.wf"],
-    &["block_pool.wf"],
-    &["byte_string.wf"],
-    &["completion_read_boundary.wf"],
-    &["dir_walk.wf"],
-    &["feedback_controller.wf"],
-    &["fir_filter.wf"],
-    &["fixed_run_library.wf"],
-    &["generic_instances.wf"],
-    &["generic_nominals.wf"],
-    &["geometry_vectors.wf"],
-    &["grayscale_pixels.wf"],
-    &["growable_vec.wf"],
-    &["heap_run.wf"],
-    &["host_string_bytes.wf"],
-    &["ipv4_checksum.wf"],
-    &["mandelbrot_grid.wf"],
-    &["option_slots.wf"],
-    &["par_layout.wf"],
-    &["percent_decode.wf"],
-    &["prefix_expression.wf"],
-    &["recursive_tree.wf"],
-    &["run_queue.wf"],
-    &["run_views.wf"],
-    &["sha256_abc.wf"],
-    &["stdin_echo.wf"],
-    &["tcp_client.wf"],
-    &["tcp_echo.wf"],
-    &["tcp_fanout.wf"],
-    &["tcp_refused.wf"],
-    &["telemetry_packet.wf"],
-    &["utf8parse.wf"],
-    &["wfgrep.wf"],
-    &[
+///
+/// One declaration generates both the coverage list and the per-unit tests.
+/// The ordinary test runner can schedule units on its existing threads and
+/// name a slow unit; a single sequential walk left those threads idle for
+/// over three minutes after every other program test had finished.
+macro_rules! corpus_units {
+    ($($name:ident => [$($source:literal),+ $(,)?]),+ $(,)?) => {
+        const CORPUS_UNITS: &[&[&str]] = &[$(&[$($source),+]),+];
+
+        $(
+            #[test]
+            fn $name() {
+                check_corpus_unit(&[$($source),+]);
+            }
+        )+
+    };
+}
+
+corpus_units! {
+    corpus_par_adaptive_quadrature => ["adaptive_quadrature.wf"],
+    corpus_par_arena_workspace => ["arena_workspace.wf"],
+    corpus_par_block_pool => ["block_pool.wf"],
+    corpus_par_byte_string => ["byte_string.wf"],
+    corpus_par_completion_read_boundary => ["completion_read_boundary.wf"],
+    corpus_par_dir_walk => ["dir_walk.wf"],
+    corpus_par_feedback_controller => ["feedback_controller.wf"],
+    corpus_par_fir_filter => ["fir_filter.wf"],
+    corpus_par_fixed_run_library => ["fixed_run_library.wf"],
+    corpus_par_generic_instances => ["generic_instances.wf"],
+    corpus_par_generic_nominals => ["generic_nominals.wf"],
+    corpus_par_geometry_vectors => ["geometry_vectors.wf"],
+    corpus_par_grayscale_pixels => ["grayscale_pixels.wf"],
+    corpus_par_growable_vec => ["growable_vec.wf"],
+    corpus_par_heap_run => ["heap_run.wf"],
+    corpus_par_host_string_bytes => ["host_string_bytes.wf"],
+    corpus_par_ipv4_checksum => ["ipv4_checksum.wf"],
+    corpus_par_mandelbrot_grid => ["mandelbrot_grid.wf"],
+    corpus_par_option_slots => ["option_slots.wf"],
+    corpus_par_par_layout => ["par_layout.wf"],
+    corpus_par_percent_decode => ["percent_decode.wf"],
+    corpus_par_prefix_expression => ["prefix_expression.wf"],
+    corpus_par_recursive_tree => ["recursive_tree.wf"],
+    corpus_par_run_queue => ["run_queue.wf"],
+    corpus_par_run_views => ["run_views.wf"],
+    corpus_par_sha256_abc => ["sha256_abc.wf"],
+    corpus_par_stdin_echo => ["stdin_echo.wf"],
+    corpus_par_tcp_client => ["tcp_client.wf"],
+    corpus_par_tcp_echo => ["tcp_echo.wf"],
+    corpus_par_tcp_fanout => ["tcp_fanout.wf"],
+    corpus_par_tcp_refused => ["tcp_refused.wf"],
+    corpus_par_telemetry_packet => ["telemetry_packet.wf"],
+    corpus_par_utf8parse => ["utf8parse.wf"],
+    corpus_par_wfgrep => ["wfgrep.wf"],
+    corpus_par_raw_deflate_boundary => [
         "raw_deflate.wf",
         "raw_deflate_dynamic.wf",
         "raw_deflate_dynamic_decode.wf",
         "raw_deflate_boundary.wf",
     ],
-    &[
+    corpus_par_raw_deflate_vectors => [
         "raw_deflate.wf",
         "raw_deflate_dynamic.wf",
         "raw_deflate_dynamic_decode.wf",
         "raw_deflate_vectors.wf",
     ],
-];
+}
 
-/// Adding a program to the corpus puts it under the `--par` case below.
+/// Adding a program to the corpus requires a `--par` case in the declaration.
 #[test]
 fn the_corpus_units_cover_every_program_file() {
     for file in corpus_program_files() {
@@ -410,12 +428,12 @@ fn the_corpus_units_cover_every_program_file() {
 /// and every one the overlap lowering actually changes publishes exactly what
 /// its default build publishes.
 ///
-/// The case exists because compiling is not the check. A module the emitter
+/// These cases exist because compiling is not the check. A module the emitter
 /// produces can still be ill-formed, and the emitter's own `Ok` says nothing
 /// about that — it took a real host assembler to reject a `--par` build of
 /// `percent_decode.wf` and `sha256_abc.wf` whose phis named a block their
 /// world never emitted. So each unit is *linked*, which is the step that
-/// rejected them, and the case covers the whole corpus rather than the one
+/// rejected them, and the cases cover the whole corpus rather than the one
 /// program written for this path: those two were the programs no case here
 /// compiled with overlap.
 ///
@@ -433,43 +451,40 @@ fn the_corpus_units_cover_every_program_file() {
 /// its search path is covered with real arguments in `wfgrep.rs`.
 ///
 /// Every source and target failure is a failing case, with no host exemption.
-#[test]
-fn every_corpus_program_links_under_par_and_publishes_its_default_bytes() {
-    for unit in CORPUS_UNITS {
-        let named = unit.join(" + ");
-        let llvm = match try_compile_programs_with_overlap(unit) {
-            Ok(llvm) => llvm,
-            Err(failure) => panic!("{named} must compile under --par: {failure}"),
-        };
-        // Linking is the assertion: `build_program` fails the case if the host
-        // assembler rejects the module.
-        let overlapped = build_program(&llvm);
-        if !module_requires_parallel_runtime(&llvm) {
-            continue;
-        }
+fn check_corpus_unit(unit: &[&str]) {
+    let named = unit.join(" + ");
+    let llvm = match try_compile_programs_with_overlap(unit) {
+        Ok(llvm) => llvm,
+        Err(failure) => panic!("{named} must compile under --par: {failure}"),
+    };
+    // Linking is the assertion: `build_program` fails the case if the host
+    // assembler rejects the module.
+    let overlapped = build_program(&llvm);
+    if !module_requires_parallel_runtime(&llvm) {
+        return;
+    }
 
-        let default = build_program(&compile_programs(unit));
-        let reference = default.run_with_workers(None);
-        for workers in [Some("1"), Some("4"), None] {
-            let spelling = workers.unwrap_or("absent");
-            let published = overlapped.run_with_workers(workers);
-            assert_eq!(
-                published.status.code(),
-                reference.status.code(),
-                "{named} at WF_WORKERS={spelling} left the default build's exit status; \
-                 its record channel said: {}",
-                String::from_utf8_lossy(&published.stderr)
-            );
-            assert_eq!(
-                published.stdout, reference.stdout,
-                "{named} at WF_WORKERS={spelling} moved a byte of the default build's result"
-            );
-            assert_eq!(
-                published.stderr, reference.stderr,
-                "{named} at WF_WORKERS={spelling} moved a byte of the default build's \
-                 record channel"
-            );
-        }
+    let default = build_program(&compile_programs(unit));
+    let reference = default.run_with_workers(None);
+    for workers in [Some("1"), Some("4"), None] {
+        let spelling = workers.unwrap_or("absent");
+        let published = overlapped.run_with_workers(workers);
+        assert_eq!(
+            published.status.code(),
+            reference.status.code(),
+            "{named} at WF_WORKERS={spelling} left the default build's exit status; \
+             its record channel said: {}",
+            String::from_utf8_lossy(&published.stderr)
+        );
+        assert_eq!(
+            published.stdout, reference.stdout,
+            "{named} at WF_WORKERS={spelling} moved a byte of the default build's result"
+        );
+        assert_eq!(
+            published.stderr, reference.stderr,
+            "{named} at WF_WORKERS={spelling} moved a byte of the default build's \
+             record channel"
+        );
     }
 }
 
