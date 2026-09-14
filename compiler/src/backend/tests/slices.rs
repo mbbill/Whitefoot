@@ -653,6 +653,24 @@ define i64 @wf_pack_chunks({ ptr, i64 } %chunks, { ptr, i64 } %low, { ptr, i64 }
   call void @wf_scatter_pack_end()\n\
   ret i64 %r\n}\n",
             );
+            let copy_entry = llvm
+                .lines()
+                .find(|line| line.starts_with("define ") && line.contains(" @wf_copy_run("))
+                .expect("ordinary nonempty output copy entry")
+                .to_owned();
+            llvm = llvm.replace(
+                &copy_entry,
+                &copy_entry.replace("@wf_copy_run(", "@wf_scatter_original_copy("),
+            );
+            // Count completed element copies on a thread other than the
+            // packing caller; a stolen empty task is insufficient evidence.
+            llvm.push_str(
+                "\ndeclare void @wf_scatter_copy_done(i64)\n\
+define i64 @wf_copy_run(ptr %values, { ptr, i64 } %output) {\n\
+  %n = call i64 @wf_scatter_original_copy(ptr %values, { ptr, i64 } %output)\n\
+  call void @wf_scatter_copy_done(i64 %n)\n\
+  ret i64 %n\n}\n",
+            );
             vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
         } else {
             Vec::new()

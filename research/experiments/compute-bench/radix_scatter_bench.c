@@ -91,15 +91,30 @@ extern void wf_bench_radix_scatter(const uint64_t *, uint64_t, uint32_t, uint64_
 extern void wf_bench_radix_scatter_release(uint64_t *, uint64_t);
 extern int wf__floor_run(int, char **);
 #ifdef WFB_ORACLE_PARALLEL
+#include <stdatomic.h>
 extern int wf__par_pool_active(void);
 extern unsigned long wf__par_grants(void);
 static unsigned long pack_before, pack_grants;
 static size_t pack_calls;
+static _Thread_local unsigned char thread_marker;
+static const unsigned char *pack_caller;
+static _Atomic uint64_t helper_output_words;
 /* Only the correctness module wraps the outer pack entry. All earlier maps
  * have joined there, so this delta attributes steals to output packing. No
  * instrumentation is added to the recorded timing image. */
-void wf_scatter_pack_begin(void) { pack_before = wf__par_grants(); ++pack_calls; }
-void wf_scatter_pack_end(void) { pack_grants += wf__par_grants() - pack_before; }
+void wf_scatter_pack_begin(void) {
+    pack_before = wf__par_grants();
+    pack_caller = &thread_marker;
+    ++pack_calls;
+}
+void wf_scatter_copy_done(uint64_t words) {
+    if (pack_caller && words && pack_caller != &thread_marker)
+        atomic_fetch_add_explicit(&helper_output_words, words, memory_order_relaxed);
+}
+void wf_scatter_pack_end(void) {
+    pack_grants += wf__par_grants() - pack_before;
+    pack_caller = NULL;
+}
 #endif
 int wf__main_body(int argc, char **argv) {
     (void)argc;
@@ -110,14 +125,17 @@ int wf__main_body(int argc, char **argv) {
     if (workers && atoi(workers) > 1) {
         if (!wf__par_pool_active()) fail("oracle did not exercise a worker pool");
         if (pack_calls != configurations) fail("packing attribution entry was not exercised");
-        if (pack_grants == 0) {
+        if (pack_grants == 0 || atomic_load(&helper_output_words) == 0) {
+            /* The shared sampler's no-observation result. A qualifying
+             * observation here needs nonempty helper work as well as a steal. */
             (void)fprintf(stderr, "radix_scatter: oracle observed no steals\n");
             return 2;
         }
     }
     if (workers && atoi(workers) == 1 && wf__par_grants() != 0)
         fail("pool-off oracle handed out work");
-    (void)printf("radix_scatter packing: %zu calls, %lu steals\n", pack_calls, pack_grants);
+    (void)printf("radix_scatter packing: %zu calls, %lu steals, %llu helper output words\n",
+                 pack_calls, pack_grants, (unsigned long long)atomic_load(&helper_output_words));
 #endif
     (void)printf("radix_scatter oracle PASS: %zu configurations, %zu values\n", configurations, checked);
     return 0;

@@ -18,6 +18,18 @@ of them is a decision. Remove an item when its fix and test land.
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
 
+- **Stable scatter has unresolved representation costs.** The
+  [bounded-run binary distribution](../research/investigations/compute-model/DESIGN.md#data-dependent-scatter-trial)
+  establishes safe exclusive output ranges and actual parallel output work,
+  but uses four padded input lengths plus the result in payload storage,
+  owned take/restore for count extraction, and a linear packing continuation.
+  Its final two copy loops
+  also have linear span. Compare a balanced destination representation and
+  direct output construction while preserving stable order and machine-checked
+  bounds; a failed direct count contract is not proof that the cost is
+  unavoidable. Remove this item when the replacement meets the trial's work,
+  space and measured-cost criteria, or its remaining tradeoffs are accepted.
+
 - **A runtime-sized `buffer_new` fails with no rule and no location.** At an
   unproved runtime capacity the driver stops four stages after semantic
   checking with `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` and no

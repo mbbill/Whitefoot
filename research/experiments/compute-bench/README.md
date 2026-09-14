@@ -125,7 +125,8 @@ input scans. `WFB_SCATTER_GRID=large|small|skew|low|high` selects 1,048,593
 mixed keys, 257 keys, a skewed digit, all-low digits, or all-high digits at
 bit 63. The independent oracle covers tails, empty input, stable order,
 unchanged input, and bits 0, 7, and 63. Its separately instrumented correctness
-module checks steals during output packing, after earlier maps have joined;
+module checks steals during output packing and nonempty copies completed on
+another thread, after earlier maps have joined;
 the timed module has no such instrumentation. This consumer is opt-in for
 timing and included in `programs-check` and the compiler's native oracle suite.
 

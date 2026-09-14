@@ -112,6 +112,25 @@ Ordinary affine reads/moves, shared-view mutation, live child loans, and
 target layout retain their existing checks. This does not add general
 structural element views or the still-unsupported borrowed projection path.
 
+With `B = floor(n/256) + 1` and `p = 256B`, the source allocates `4p+n`
+words of payload, plus chunk tags/measures and call frames; input and oracle
+storage are excluded. Each key is classified once, copied into an intermediate
+digit stream once, and copied into the result once, in addition to allocation
+initialization and owned aggregate transfers. Metadata tally is O(B). Even
+with unlimited offers, packing has an O(B) continuation path and the final
+two ordinary copy loops have O(n) span. The existing recursion budget can
+further limit offered packing work. Actual steals therefore establish output
+parallelism, not scalable span or competitive performance.
+
+This trial restores an existing view capability and retains an experimental
+consumer; it does not select a new language rule, shared representation or
+scheduling policy. The existing view-loan, ownership, source-proof and parallel
+permission decisions still stand. The directly affected catalog entries are
+§13's counting/radix case, §15's deferred scatter statement, summary row 13‴,
+and transformation T6. The open representation cost is tracked in
+`docs/todo.md`; no I/O inference or broader design-tree change follows from
+this binary instance.
+
 ## Runtime cost attribution
 
 The [range-loan measurements](../range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
