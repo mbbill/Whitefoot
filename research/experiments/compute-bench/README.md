@@ -130,6 +130,17 @@ another thread, after earlier maps have joined;
 the timed module has no such instrumentation. This consumer is opt-in for
 timing and included in `programs-check` and the compiler's native oracle suite.
 
+[`radix-scatter-2026-09-14.tsv`](radix-scatter-2026-09-14.tsv) retains the
+stable-scatter trial at `e2ced20c` in the same fixture/record-kind format as
+the other compute-model evidence below. `steady-*` has zero call gap;
+`gap500-*` is an explicit sparse-cadence diagnostic. Each cadence retains
+large, small and skewed inputs with native chain, plus large input with native
+direct scatter. Raw numerical rows are unchanged, metadata paths are
+normalized, and before/after image hashes match. The
+[interpretation](../../investigations/compute-model/DESIGN.md#stable-scatter-result-2026-09-14)
+records the successful expression and failed competitive-cost criterion.
+Keep these rows while the scatter investigation cites them.
+
 [`compute-model-2026-09-13.tsv`](compute-model-2026-09-13.tsv) retains the
 compute-model main run and diagnostic fixtures, with an interpretation in the
 [investigation](../../investigations/compute-model/DESIGN.md#measurements-and-assessment-2026-09-13).

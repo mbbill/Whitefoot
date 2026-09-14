@@ -131,6 +131,98 @@ and transformation T6. The open representation cost is tracked in
 `docs/todo.md`; no I/O inference or broader design-tree change follows from
 this binary instance.
 
+### Stable scatter result, 2026-09-14
+
+The [retained rows](../../experiments/compute-bench/radix-scatter-2026-09-14.tsv)
+measure `e2ced20c` on an Apple M1 Pro, Darwin arm64, eight physical/logical
+CPUs. This is an unpinned interactive workstation with background applications
+active; compiler jobs were avoided during timing. Apple clang 21.0.0 compiles
+Whitefoot and its runtime at the ordinary `-O2` flags. Native references use
+the bundle's scalar `-O3`, no-vectorization, no-LTO flags; Rust is 1.98.1 and
+the native library pins are retained in each manifest. These are observations
+of this workload and build, not an isolating compiler A/B or a portable ratio.
+
+Every form passed the 109-configuration independent matrix at the harness's
+applicable widths, including W16 oversubscription. The compiler oracle checks
+both emissions at W1/W2/W4. Its correctness-only wrappers require both a
+packing-stage steal and a nonempty `copy_run` completed on a thread other
+than the packing caller. All earlier maps have joined before that observation
+starts, and all packing work joins before it ends. Only a missing scheduling
+observation may be resampled; wrong values, changed input, wrong lengths or
+missing wrapper entry fail immediately. Timing images contain no wrappers.
+
+Four fixtures use the canonical back-to-back cadence, five rotating/reversing
+passes, and five warm calls plus each process's retained first call. The
+preceding four exploratory runs use an explicit 500 microsecond gap and are
+kept separately as `gap500-*`; they are not the default cadence. Each run's
+before/after executable and LLVM hashes match. The main zero-gap medians are:
+
+| Fixture and form | Workers | Wall, ms | Process CPU, ms |
+|---|---:|---:|---:|
+| 1,048,593 mixed keys, Whitefoot sequential | 1 | 5.366 | 5.359 |
+| Same input and Whitefoot source, overlap | 4 | 4.040 | 5.822 |
+| Same input and Whitefoot source, overlap | 8 | 3.946 | 7.023 |
+| Same block/chain decomposition, oneTBB | 8 | 1.505 | 6.079 |
+| Independent two-scan serial distribution | 1 | 0.780 | 0.776 |
+| Direct-native fixture, unchanged Whitefoot source | 8 | 4.061 | 7.108 |
+| Direct count/prefix/scatter, Parlay | 8 | 0.391 | 1.712 |
+| 1,048,593 skewed keys, Whitefoot sequential | 1 | 6.274 | 6.267 |
+| Same skewed input and Whitefoot source, overlap | 8 | 4.025 | 7.771 |
+| 257 mixed keys, Whitefoot sequential | 1 | 0.0045 | 0.003 |
+| Same small input and Whitefoot source, overlap | 8 | 0.0102 | 0.034 |
+
+Large-input overlap is about 1.36 times faster than the same-source sequential
+emission by these medians, with about 31 percent more process CPU. It is still
+slower than both the native chain and the useful serial algorithm. Against
+the direct native control, the table's paired W8 wall ratio is 10.442 and CPU
+ratio is 4.119; Whitefoot is lower in zero of five wall pairs. The native chain
+borrows flat chunk payloads without Whitefoot's owned take/restore or run-head
+handling, so even that comparison does not isolate a lowering defect. Native
+direct scatter uses an output plus two scalar offsets per block, instead of
+the local element streams and packing chain.
+
+Skew improves the same-source wall ratio to about 1.56 while increasing CPU
+about 24 percent. Small input is slower with overlap; its microsecond CPU
+values are especially sensitive to clock granularity and scheduling. The
+500-microsecond-gap runs retain the same large-input cost conclusion, and the
+small W8 median grows to 17.2 microseconds with no median observed steals.
+The timing table's steals count covers the complete call, unlike the separate
+correctness oracle's packing attribution. Neither cadence selects a grain
+policy, and W16 rows are oversubscribed evidence rather than scaling claims.
+
+The payload count at the large fixture is 5,243,921 words, about 40 MiB,
+before chunk metadata and stack. Stack use is not inferred from source depth:
+`otool -tvV` on the recorded sequential object shows a loop backedge replacing
+`pack_chunks`' self-call and a 16,064-byte frame including saved registers.
+This is a generated-code observation for that object, not measured aggregate
+peak stack across parallel workers. The linear dependence and final-copy span
+remain even when tail-call optimization removes recursive frame growth.
+
+The trial meets stable-result, checked-exclusive-range and useful-parallel-work
+criteria, but fails to establish competitive representation cost. It does not
+justify adopting this chunk chain as the general scatter idiom or changing
+the parallel permission rule. The next discriminating question is whether a
+balanced destination representation can carry the needed lengths while
+avoiding padded element streams and owned count-extraction copies, followed
+by the same independent oracle and native controls. A new content-summary
+proof mechanism is a candidate only if a concrete ordinary formulation still
+cannot express the required bound; no such mechanism is selected here.
+
+Reproduce from the experiment directory with the existing dependency setup:
+
+```sh
+SCATTER_RESULTS="$(mktemp -d)"
+make deps
+make verify KERNELS=radix_scatter
+WFB_SCATTER_NATIVE=direct make verify KERNELS=radix_scatter
+WFB_SCATTER_GRID=large WFB_SCATTER_NATIVE=chain make compare KERNELS=radix_scatter PASSES=5 CALLS=5 WFB_GAP_US=0 RESULTS="$SCATTER_RESULTS/steady-chain-large"
+```
+
+Use fresh result directories for `small`, `skew`, and `WFB_SCATTER_NATIVE=direct`, and
+`WFB_GAP_US=500` for the diagnostic counterparts. The retained runs reused the
+already-built compiler and dependencies with `make -o compiler -o deps`;
+that does not remove the image rebuild or before/after hash checks.
+
 ## Runtime cost attribution
 
 The [range-loan measurements](../range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
