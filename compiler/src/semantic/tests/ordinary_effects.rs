@@ -70,6 +70,28 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn an_explicit_release_cannot_discard_a_symbolically_linear_member() {
+    assert_rule_kind(
+        br#"enum Slot<T: linear>['s] {
+  Vacant();
+  Occupied(value: T, owner: Box<'s, u64>);
+}
+
+fn discard<T: linear>['s](slot: own Slot<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(slot, store) {
+  dispose slot;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::DisposeOfLinearNode { .. }),
+    );
+}
+
+#[test]
 fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     super::assert_parse_rule(
         b"fn probe(file: own ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",

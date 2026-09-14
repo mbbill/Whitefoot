@@ -91,6 +91,19 @@ of them is a decision. Remove an item when its fix and test land.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
+- **Sparse containers over must-consume linear elements need ownership-visible
+  slot state.** The behavior-map growth witness previously wrote
+  `formal Key<K: linear, ...>` while replacing `progress.held` and disposing
+  the returned `Slot<K>`. That depended on a compiler defect which failed to
+  apply PROV-6 to a symbolic linear bound. The current checker correctly
+  rejects `dispose previous_held`: a numeric phase does not prove that the
+  returned enum is `Vacant`, and an `Occupied` value contains a `K` that must
+  be consumed. The maintained witness is narrowed to `K: affine`, which still
+  covers its scalar and store-branded owning instances. Investigate a state
+  encoding or checked variant-state relation that lets rehash move every
+  must-consume key without an impossible cleanup branch; do not add a discard
+  behavior merely to satisfy the checker.
+
 - **Local region introduction and explicit region blocks.** Revisit whether
   an ordinary function body should introduce a local region, and which
   borrows need a writer-spelled `region` block. In the
