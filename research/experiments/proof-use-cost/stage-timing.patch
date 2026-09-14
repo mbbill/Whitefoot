@@ -13,7 +13,7 @@ index 9ee1de08..c64b880c 100644
 @@ -13845,6 +13846,7 @@ impl Analyzer<'_, '_> {
                      .map(|(premise, multiplicity)| premise.clone().zip(multiplicity.clone()))
                      .collect::<Option<Vec<_>>>();
- 
+
 +                eprintln!("proof-cost\t{}\tformed\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
                  // AUTO is exactly the unified zero-, one-, and exhaustive
                  // unordered two-premise route for this specification version.
@@ -29,7 +29,7 @@ index 9ee1de08..c64b880c 100644
 @@ -13868,6 +13871,7 @@ impl Analyzer<'_, '_> {
                      ))
                  };
- 
+
 +                eprintln!("proof-cost\t{}\tsum\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
                  // Every written `use` is proved against the same pre-proof
                  // program point. No premise established by this statement can
