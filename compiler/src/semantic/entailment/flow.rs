@@ -7879,22 +7879,11 @@ impl Analyzer<'_, '_> {
         expression: &CheckedAffineExpression,
         states: &mut ProofFlowState,
     ) {
-        match &expression.kind {
-            CheckedAffineExpressionKind::Constant { .. }
-            | CheckedAffineExpressionKind::Local { .. }
-            | CheckedAffineExpressionKind::ConstGeneric { .. } => {}
-            CheckedAffineExpressionKind::Measure(measure) => {
-                if let CheckedExpression::ContainerMeasure { root, .. } = measure.as_ref() {
-                    self.judge_place_subscripts(root, states);
-                }
-            }
-            CheckedAffineExpressionKind::Add(left, right)
-            | CheckedAffineExpressionKind::Subtract(left, right) => {
-                self.judge_affine_expression_subscripts(left, states);
-                self.judge_affine_expression_subscripts(right, states);
-            }
-            CheckedAffineExpressionKind::MultiplyByConstant { value, .. } => {
-                self.judge_affine_expression_subscripts(value, states);
+        for expression in expression.postorder() {
+            if let CheckedAffineExpressionKind::Measure(measure) = &expression.kind
+                && let CheckedExpression::ContainerMeasure { root, .. } = measure.as_ref()
+            {
+                self.judge_place_subscripts(root, states);
             }
         }
     }
@@ -11635,44 +11624,50 @@ impl Analyzer<'_, '_> {
         expression: &CheckedAffineExpression,
         counted_next_binder: Option<BindingId>,
     ) -> String {
-        match &expression.kind {
-            CheckedAffineExpressionKind::Constant { value, ty } => {
-                format!("{value}_{}", integer_type_name(*ty))
-            }
-            CheckedAffineExpressionKind::Local { binding, .. } => {
-                let name = self.binding_name(*binding);
-                if counted_next_binder == Some(*binding) {
-                    format!("({name} + 1_u64)")
-                } else {
-                    name
+        let mut values = Vec::new();
+        for expression in expression.postorder() {
+            let rendered = match &expression.kind {
+                CheckedAffineExpressionKind::Constant { value, ty } => {
+                    format!("{value}_{}", integer_type_name(*ty))
                 }
-            }
-            // [INV-1] a measure factor renders as the writer wrote it: the
-            // former over the place, never an internal term identity.
-            CheckedAffineExpressionKind::Measure(measure) => self
-                .render_affine_measure(measure)
-                .unwrap_or_else(|| "?".to_owned()),
-            CheckedAffineExpressionKind::ConstGeneric { name, .. } => name.clone(),
-            CheckedAffineExpressionKind::Add(left, right) => format!(
-                "({} + {})",
-                self.render_checked_affine_expression(left, counted_next_binder),
-                self.render_checked_affine_expression(right, counted_next_binder)
-            ),
-            CheckedAffineExpressionKind::Subtract(left, right) => format!(
-                "({} - {})",
-                self.render_checked_affine_expression(left, counted_next_binder),
-                self.render_checked_affine_expression(right, counted_next_binder)
-            ),
-            CheckedAffineExpressionKind::MultiplyByConstant {
-                constant,
-                constant_ty,
-                value,
-            } => format!(
-                "({constant}_{} * {})",
-                integer_type_name(*constant_ty),
-                self.render_checked_affine_expression(value, counted_next_binder)
-            ),
+                CheckedAffineExpressionKind::Local { binding, .. } => {
+                    let name = self.binding_name(*binding);
+                    if counted_next_binder == Some(*binding) {
+                        format!("({name} + 1_u64)")
+                    } else {
+                        name
+                    }
+                }
+                // [INV-1] a measure factor renders as the writer wrote it: the
+                // former over the place, never an internal term identity.
+                CheckedAffineExpressionKind::Measure(measure) => self
+                    .render_affine_measure(measure)
+                    .unwrap_or_else(|| "?".to_owned()),
+                CheckedAffineExpressionKind::ConstGeneric { name, .. } => name.clone(),
+                CheckedAffineExpressionKind::Add(_, _)
+                | CheckedAffineExpressionKind::Subtract(_, _) => {
+                    let right = values.pop().expect("postorder retains the right child");
+                    let left = values.pop().expect("postorder retains the left child");
+                    let operator =
+                        if matches!(expression.kind, CheckedAffineExpressionKind::Add(_, _)) {
+                            '+'
+                        } else {
+                            '-'
+                        };
+                    format!("({left} {operator} {right})")
+                }
+                CheckedAffineExpressionKind::MultiplyByConstant {
+                    constant,
+                    constant_ty,
+                    ..
+                } => {
+                    let value = values.pop().expect("postorder retains the scaled child");
+                    format!("({constant}_{} * {value})", integer_type_name(*constant_ty))
+                }
+            };
+            values.push(rendered);
         }
+        values.pop().expect("postorder visits the root")
     }
 
     /// The writer's own spelling of one [INV-1] affine measure factor.
@@ -11744,57 +11739,58 @@ impl Analyzer<'_, '_> {
             visited: &mut usize,
             check: &mut AffineCheckState,
         ) -> Option<AffineForm> {
-            match &expression.kind {
-                CheckedAffineExpressionKind::Constant { value, .. } => {
-                    Some(AffineForm::constant(*value))
-                }
-                CheckedAffineExpressionKind::Local { binding, .. } => {
-                    let index = leaves
-                        .iter()
-                        .position(|candidate| matches!(candidate, SourceLeaf::Local(other) if other == binding))
-                        .unwrap_or_else(|| {
-                            leaves.push(SourceLeaf::Local(*binding));
-                            leaves.len() - 1
-                        });
-                    let index = u32::try_from(index).ok()?;
-                    Some(AffineForm::term(AffineTermId::from_index(index)))
-                }
-                CheckedAffineExpressionKind::Measure(_)
-                | CheckedAffineExpressionKind::ConstGeneric { .. } => {
-                    let term = *measures.get(*visited)?;
-                    *visited = visited.checked_add(1)?;
-                    let index = leaves
-                        .iter()
-                        .position(|candidate| matches!(candidate, SourceLeaf::Measure(other) if *other == term))
-                        .unwrap_or_else(|| {
-                            leaves.push(SourceLeaf::Measure(term));
-                            leaves.len() - 1
-                        });
-                    let index = u32::try_from(index).ok()?;
-                    Some(AffineForm::term(AffineTermId::from_index(index)))
-                }
-                CheckedAffineExpressionKind::Add(left, right) => {
-                    source_form(left, leaves, measures, visited, check)?
-                        .add(
-                            &source_form(right, leaves, measures, visited, check)?,
-                            check,
-                        )
-                        .ok()
-                }
-                CheckedAffineExpressionKind::Subtract(left, right) => {
-                    source_form(left, leaves, measures, visited, check)?
-                        .subtract(
-                            &source_form(right, leaves, measures, visited, check)?,
-                            check,
-                        )
-                        .ok()
-                }
-                CheckedAffineExpressionKind::MultiplyByConstant {
-                    constant, value, ..
-                } => source_form(value, leaves, measures, visited, check)?
-                    .scale(*constant, check)
-                    .ok(),
+            let mut values: Vec<AffineForm> = Vec::new();
+            for expression in expression.postorder() {
+                let value = match &expression.kind {
+                    CheckedAffineExpressionKind::Constant { value, .. } => {
+                        AffineForm::constant(*value)
+                    }
+                    CheckedAffineExpressionKind::Local { binding, .. } => {
+                        let index = leaves
+                            .iter()
+                            .position(|candidate| {
+                                matches!(candidate, SourceLeaf::Local(other) if other == binding)
+                            })
+                            .unwrap_or_else(|| {
+                                leaves.push(SourceLeaf::Local(*binding));
+                                leaves.len() - 1
+                            });
+                        let index = u32::try_from(index).ok()?;
+                        AffineForm::term(AffineTermId::from_index(index))
+                    }
+                    CheckedAffineExpressionKind::Measure(_)
+                    | CheckedAffineExpressionKind::ConstGeneric { .. } => {
+                        let term = *measures.get(*visited)?;
+                        *visited = visited.checked_add(1)?;
+                        let index = leaves
+                            .iter()
+                            .position(|candidate| {
+                                matches!(candidate, SourceLeaf::Measure(other) if *other == term)
+                            })
+                            .unwrap_or_else(|| {
+                                leaves.push(SourceLeaf::Measure(term));
+                                leaves.len() - 1
+                            });
+                        let index = u32::try_from(index).ok()?;
+                        AffineForm::term(AffineTermId::from_index(index))
+                    }
+                    CheckedAffineExpressionKind::Add(_, _) => {
+                        let right = values.pop()?;
+                        let left = values.pop()?;
+                        left.add(&right, check).ok()?
+                    }
+                    CheckedAffineExpressionKind::Subtract(_, _) => {
+                        let right = values.pop()?;
+                        let left = values.pop()?;
+                        left.subtract(&right, check).ok()?
+                    }
+                    CheckedAffineExpressionKind::MultiplyByConstant { constant, .. } => {
+                        values.pop()?.scale(*constant, check).ok()?
+                    }
+                };
+                values.push(value);
             }
+            values.pop()
         }
 
         // Interning needs `&mut self`, and the walk above does not have it, so
@@ -12319,22 +12315,19 @@ impl Analyzer<'_, '_> {
         expression: &CheckedAffineExpression,
         out: &mut Vec<TermId>,
     ) -> Option<()> {
-        match &expression.kind {
-            CheckedAffineExpressionKind::Constant { .. }
-            | CheckedAffineExpressionKind::Local { .. } => {}
-            CheckedAffineExpressionKind::Measure(measure) => {
-                out.push(self.checked_measure_term(measure)?);
-            }
-            CheckedAffineExpressionKind::ConstGeneric { declaration, .. } => {
-                out.push(self.terms.intern(TermKind::ConstParameter(*declaration)));
-            }
-            CheckedAffineExpressionKind::Add(left, right)
-            | CheckedAffineExpressionKind::Subtract(left, right) => {
-                self.collect_affine_measure_terms(left, out)?;
-                self.collect_affine_measure_terms(right, out)?;
-            }
-            CheckedAffineExpressionKind::MultiplyByConstant { value, .. } => {
-                self.collect_affine_measure_terms(value, out)?;
+        for expression in expression.postorder() {
+            match &expression.kind {
+                CheckedAffineExpressionKind::Constant { .. }
+                | CheckedAffineExpressionKind::Local { .. }
+                | CheckedAffineExpressionKind::Add(_, _)
+                | CheckedAffineExpressionKind::Subtract(_, _)
+                | CheckedAffineExpressionKind::MultiplyByConstant { .. } => {}
+                CheckedAffineExpressionKind::Measure(measure) => {
+                    out.push(self.checked_measure_term(measure)?);
+                }
+                CheckedAffineExpressionKind::ConstGeneric { declaration, .. } => {
+                    out.push(self.terms.intern(TermKind::ConstParameter(*declaration)));
+                }
             }
         }
         Some(())
