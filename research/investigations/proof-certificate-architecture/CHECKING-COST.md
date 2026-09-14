@@ -65,3 +65,76 @@ checking-cost experiments, not source acceptance or a timing gate. Supersede
 the harness when its compiler path is replaced; retain dated results only
 while they support a claim. This document owns the experiment and its eventual
 conclusions, and is merged or removed if a later study supersedes them.
+
+## Baseline attribution, 2026-09-14
+
+Compiler source is main `2b346cf6`; the unchanged compiler and committed
+generator at `50ddd638` produced the [raw baseline](../../experiments/proof-use-cost/baseline-2026-09-14.tsv).
+Host: Apple M1 Pro, 8 CPUs, 32 GiB, macOS 26.6.2 (25G83), aarch64 Rust 1.98.1
+(48a229cea, LLVM 22.1.8), Cargo `gate` profile. These are generated proof
+scaling probes, not representative-program or runtime-performance claims.
+The first fixed-16 invocation includes executable first-launch overhead;
+it is retained rather than removed. Warm both binaries before paired selection.
+
+| Size | Fixed context, median | Growing context and uses, median | Growing context, three uses, median |
+|---|---:|---:|---:|
+| 16 | 18.824 ms | 29.948 ms | 18.414 ms |
+| 32 | 14.341 ms | 164.483 ms | 40.780 ms |
+| 64 | 16.492 ms | 1691.041 ms | 166.322 ms |
+
+Every cell has three successful compiler invocations. This does not reproduce
+the old unpinned source; it establishes a current input with rapidly growing
+cost and shows that certificate length alone does not explain it.
+
+The [temporary instrumentation patch](../../experiments/proof-use-cost/stage-timing.patch)
+records cumulative microseconds inside one ordinary proof statement. On the
+128-pair / 128-use source its raw marks were:
+
+```text
+formed       250
+auto     9257076
+sum      9257320
+premises 21215193
+residual 21323159
+```
+
+Thus target AUTO took 9.257 s, premise admission 11.958 s, written accumulation
+0.244 ms, and residual checking 107.966 ms. These instrumented numbers are for
+attribution, not candidate selection. Formation here is proof-flow image
+formation; it does not individually time the preceding parser or structural
+checker. Full LLVM-emission runs of the same 128 fixture were about 22 s.
+The baseline 256 cell has not been started; no verdict is inferred for it.
+
+Native `sample PID 3 1 -mayDie -file OUTPUT` captures identify both costs:
+sampling from process launch put 2236 of 2444 driver samples under
+`affine_candidate_residual_proof`, with repeated interval-map construction;
+a later sample put all 2456 driver samples inside `source_proof_premise_results`,
+under the ordinary `prove` call and L0 closure. These are phase-local samples,
+not percentages of total compilation time. They agree with the stage marks
+and the code: each affine residual rebuilds the same endpoint lookup, and each
+written relation source closes the same entering state again.
+
+## Candidate and prediction
+
+The candidate reuses immutable query preparation, not successful proof answers:
+retain the entering L0 closure across the relation-premise loop, and retain
+each atom's closed/type interval and diagnostic endpoint within one affine
+candidate traversal. New term or goal information invalidates a reused L0
+view. No cache crosses a source statement or fact-state change, no premise is
+published, and candidate order, arithmetic and selected proof parents stay
+unchanged. This is proposed under `compiler/proof-query-context`; the live
+tree is not edited without a ruling.
+
+The alternative of materializing a live fact snapshot is not selected: it
+adds snapshot events and independent fact support when only an ephemeral
+query view is needed. A cross-flow cache would require kill/join invalidation
+across the walker and is not needed to remove the measured repetition.
+Pruning AUTO or accepting redundant blocks would change the language and is
+outside this implementation experiment.
+
+Prediction, before candidate measurement: closure reuse reduces the premise
+stage but not target AUTO; endpoint reuse reduces target AUTO but not repeated
+closure. Both should improve growing-64/128 while leaving fixed-context and
+small cases within the protected criterion. Compare the two isolated changes
+as well as their combination. Keep prefix and histogram as real-program
+controls using their ordinary current source and unchanged LLVM emission.
