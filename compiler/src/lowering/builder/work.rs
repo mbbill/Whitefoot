@@ -376,7 +376,14 @@ struct Summary {
 
 fn cost(environment: &mut Environment<'_>) -> Cost {
     let function = environment.function;
-    let depths = loop_depths(function.blocks());
+    let mut depths = loop_depths(function.blocks());
+    // The static back-edge interval includes a counted range's continuation.
+    // That block has left this loop: remove its level before capping depth
+    // and replacing the remaining counted levels with their extents.
+    for range in &function.counted_ranges {
+        let depth = &mut depths[range.continuation.index()];
+        *depth = depth.saturating_sub(1);
+    }
     let outer = if function.synthesis() == Some(IrSynthesis::Chunk) {
         function
             .counted_ranges

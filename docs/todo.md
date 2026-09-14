@@ -3,15 +3,20 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
-- **Runtime loop work pricing remains an unselected trial.** The implemented
-  captured-extent estimate opens useful prefix/histogram work and removes the
-  wide stencil's old grain cliffs, but lowers chain-pull's price from 168 to
-  60 and removes its useful two-worker split. That protected cell becomes
-  51 percent slower; some larger parallel gains also cost substantially more
-  process CPU. The [same-source control](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
-  retains those failures and the premeasurement acceptance criterion. A next
-  estimate must preserve the protected cases; neither this trial nor the
-  earlier globally lowered work floor selects a new default.
+- **Parallel grain policy needs a dedicated study.** Captured extents are a
+  provisional scheduling input, not an established broadly suitable policy.
+  The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
+  improves prefix, histogram and stencil, but makes chain-pull 51 percent
+  slower at two workers and incurs substantial CPU costs in some faster
+  cases. Those measurements precede the continuation-accounting correction;
+  its performance has not been remeasured. Study whether a robust common
+  policy exists or workload, input shape, worker count and hardware require
+  different choices, comparing wall time, CPU and scheduling/profile overhead.
+  [Runtime profiles and PGO](ideas.md#parallel-grain-policies-and-runtime-profiles)
+  are candidate inputs to that later study. The trial's failures remain
+  evidence, not proof that no broadly useful strategy exists. Close this item
+  when a policy meets explicit representative criteria or its accepted
+  tradeoffs are recorded.
 
 - **Unguarded affine expression nesting depth.** A proof-domain affine
   expression nesting parentheses about 1400 deep aborts the driver with a

@@ -158,6 +158,137 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 }
 
 #[test]
+fn runtime_work_prices_post_loop_arithmetic_once_per_enclosing_iteration() {
+    let mut source = String::new();
+    for (extent, bound) in [("known", "upper"), ("fallback", "i")] {
+        for position in ["before", "after"] {
+            let bias = "    let bias = upper *wrap 3_u64;\n";
+            let (before, after) = if position == "before" {
+                (bias, "")
+            } else {
+                ("", bias)
+            };
+            source.push_str(&format!(
+                r#"fn count_{extent}_{position}(upper: own u64, repeats: own u64) -> result: own u64 pure {{
+  let total = 0_u64;
+  for (i in 0_u64..repeats) {{
+{before}    for (j in 0_u64..{bound}) {{
+      let multiplied = total *wrap 3_u64;
+      set total = multiplied +wrap j;
+    }}
+{after}    set total = total +wrap bias;
+  }}
+  return total;
+}}
+
+fn write_{extent}_{position}(upper: own u64, repeats: own u64) -> result: own buffer<u64> pure {{
+  let output = buffer_new(2_u64, 0_u64);
+  for (i in 0_u64..2_u64) {{
+    set output[i] = count_{extent}_{position}(upper: upper, repeats: repeats);
+  }}
+  return move output;
+}}
+
+"#
+            ));
+        }
+    }
+    source.push_str(
+        r#"fn release_work(output: own buffer<u64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    let mut llvm = emit_with_overlap(source.as_bytes())
+        .replace("@main(", "@wf_continuation_main(")
+        .replace("@wf__main_body(", "@wf_continuation_body(")
+        .replace(
+            "call i64 @wf__par_split_budget(",
+            "call i64 @wf_work_budget(",
+        );
+    llvm.push_str("\ndeclare i64 @wf_work_budget(i64, i64)\n");
+    for extent in ["known", "fallback"] {
+        for position in ["before", "after"] {
+            llvm.push_str(&format!(
+                r#"define i64 @wf_probe_{extent}_{position}(i64 %upper, i64 %repeats) {{
+  %r = call {{ ptr, i64 }} @wf_write_{extent}_{position}(i64 %upper, i64 %repeats)
+  %p = extractvalue {{ ptr, i64 }} %r, 0
+  %first = load i64, ptr %p
+  %second_ptr = getelementptr i64, ptr %p, i64 1
+  %second = load i64, ptr %second_ptr
+  %same = icmp eq i64 %first, %second
+  %answer = select i1 %same, i64 %first, i64 -1
+  %released = call i64 @wf_release_work({{ ptr, i64 }} %r)
+  ret i64 %answer
+}}
+"#
+            ));
+        }
+    }
+    let host = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern uint64_t wf_probe_known_before(uint64_t, uint64_t), wf_probe_known_after(uint64_t, uint64_t);
+extern uint64_t wf_probe_fallback_before(uint64_t, uint64_t), wf_probe_fallback_after(uint64_t, uint64_t);
+static uint64_t price;
+uint64_t wf_work_budget(uint64_t span, uint64_t weight) {
+    (void)span; price = weight; return 0;
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const uint64_t extents[] = {0, 1, 16, 17}, repetitions[] = {1, 2, 4};
+    uint64_t outer_prices[3];
+    for (unsigned r = 0; r < 3; ++r) {
+      uint64_t repeats = repetitions[r];
+      (void)wf_probe_known_before(16, repeats);
+      uint64_t fallback_price = price;
+      for (unsigned i = 0; i < 4; ++i) {
+        uint64_t upper = extents[i];
+        uint64_t expected = 0, fallback_expected = 0;
+        for (uint64_t pass = 0; pass < repeats; ++pass) {
+            for (uint64_t j = 0; j < upper; ++j) expected = expected * 3 + j;
+            expected += 3 * upper;
+            for (uint64_t j = 0; j < pass; ++j) fallback_expected = fallback_expected * 3 + j;
+            fallback_expected += 3 * upper;
+        }
+        if (wf_probe_known_before(upper, repeats) != expected) return 1;
+        uint64_t before = price;
+        if (!i) outer_prices[r] = before;
+        if (wf_probe_known_after(upper, repeats) != expected) return 2;
+        printf("known %llu: before=%llu after=%llu\n",
+               (unsigned long long)upper, (unsigned long long)before, (unsigned long long)price);
+        if (!before || before != price) return 3;
+        if (wf_probe_fallback_before(upper, repeats) != fallback_expected) return 4;
+        before = price;
+        if (wf_probe_fallback_after(upper, repeats) != fallback_expected) return 5;
+        printf("fallback %llu: before=%llu after=%llu\n",
+               (unsigned long long)upper, (unsigned long long)before, (unsigned long long)price);
+        if (!before || before != price || price != fallback_price) return 6;
+      }
+    }
+    /* Moving the arithmetic must not erase the enclosing trip multiplier.
+       The unknown inner extent must retain the calibrated static factor 16. */
+    if (outer_prices[1] <= outer_prices[0] ||
+        outer_prices[2] - outer_prices[1] != 2 * (outer_prices[1] - outer_prices[0])) return 7;
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    let output = Command::new(executable)
+        .env("WF_WORKERS", "2")
+        .output()
+        .expect("run continuation work price probe");
+    assert!(output.status.success(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove continuation work price probe");
+}
+
+#[test]
 fn runtime_block_sizes_change_budget_prices_without_changing_scan_results() {
     let source =
         include_bytes!("../../../../research/experiments/compute-bench/programs/prefix.wf");

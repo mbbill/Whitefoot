@@ -102,9 +102,9 @@ algorithm to avoid division, or adding runtime tests for true arithmetic
 relations. They do not address the general runtime partition calculation;
 the last also conflicts with the source-proof boundary. A wider theorem or
 general nonlinear certificate language has no necessity established here.
-The proposed automatic-facts amendment records this choice pending owner
-ruling. Premise-removal cases will cover changed quotient, divisor and
-dividend values, signed operations, unproved division domains, and branch joins.
+The approved automatic-facts decision records this choice. Premise-removal
+cases cover changed quotient, divisor and dividend values, signed operations,
+unproved division domains, and branch joins.
 
 The specification amendment changes ENT-3.S7 and DIAG-2, with no new numbered
 rule, token, production, operation spelling, or exception. It archives the
@@ -360,12 +360,12 @@ versus 2.927 ms with default-size blocks and 1.336 ms for its one-pass serial
 reference. A source block size is a real memory/algorithm choice, not a free
 scheduler tuning knob.
 
-Keep the 150,000 unit and 16-per-lane cap. The new amendment revises their
-grounds and removes the unsupported universal-plateau claim; it does not
-select a dynamic estimator. The next cost experiment needs an estimate that
-distinguishes runtime helper extents while retaining the cheap-row, tiny,
-coarse, and graph controls. The current grain defect is diagnosed and remains
-open in `docs/todo.md` rather than being hidden by a favorable constant.
+Keep the 150,000 unit and 16-per-lane cap. The approved decision revises their
+grounds and removes the unsupported universal-plateau claim. This constant
+control does not establish a dynamic estimator; the subsequent runtime-extent
+trial retains the cheap-row, tiny, coarse and graph controls. Broader grain
+policy remains an open cost in `docs/todo.md` rather than being hidden by a
+favorable constant.
 
 ### Irregular algorithms
 
@@ -419,8 +419,9 @@ remain deferred while these compute questions are considered.
 
 ## Runtime extent estimate
 
-The grain requirement is not complete with attribution alone. The next control
-compares the unchanged programs and runtime constants at `0d571cac` against a
+The first extent trial asked whether attribution could yield a sufficient
+grain correction. Its control compares the unchanged programs and runtime
+constants at `0d571cac` against a
 compiler estimate that substitutes available runtime counted-loop extents for
 the fixed nesting factor. This criterion precedes implementation and timing.
 The same emitted operation count still supplies the price of an iteration;
@@ -457,8 +458,8 @@ isolation, not a favorable replacement fixture. The constants remain 150,000
 and 16 throughout this control. Its result determines whether this estimate
 is sufficient or a different mechanism is still needed.
 
-The implementation trial retains counted-loop endpoint captures and excludes
-the post-loop continuation from its iteration price. Three call-summary rounds
+The implementation retains counted-loop endpoint captures and excludes the
+post-loop continuation from its iteration price. Three call-summary rounds
 translate scalar values and descriptor lengths through actual arguments;
 unchanged values forwarded around a loop keep their identities, while an
 updated or data-dependent value that cannot reach a formal capture keeps the
@@ -467,11 +468,12 @@ Emitted sums, differences and products saturate, and divisions use positive
 compiler constants. No estimate can justify a source operation or omit its
 work. The native probes check actual prefix output while varying block sizes,
 empty and inverted ranges, and an unexecuted inner range with maximal endpoints;
-the latter still prices safely. The nine maintained consumers and baseline
-twin pass their independent native comparisons at W1/2/4/8/16. These correctness
-checks pass, but the completed timing trial below rejects this implementation
-under its protected-case criterion. The work branch retains the provisional
-amendment, and the broader grain choice remains open.
+the latter still prices safely. The first trial at `f851c65c` passed independent
+native comparisons for the nine maintained consumers and baseline twin at
+W1/2/4/8/16, but failed the timing trial's protected-case criterion below.
+The owner approved retaining the extent mechanism provisionally
+and deferred the broader policy study, including runtime profiles and PGO.
+This changes the delivery scope, not the trial's criterion or failed result.
 
 ### Runtime extent trial result
 
@@ -532,12 +534,26 @@ repeats the same input and unchanged images. It reads 2.942 ms candidate,
 1.011. It does not reproduce a material one-worker regression. The W8 CPU
 increase does reproduce, at about 1.422, alongside a 0.296 wall ratio.
 
-The result supports captured extents as useful information but rejects
-replacing the calibrated static price unconditionally. A next comparison
-should preserve the old price as a lower bound before asking whether the
-larger estimate is sufficient; the same protected wall and CPU criteria still
-apply, and the current rows remain the rejected first trial. This is a
-proposed follow-up, not a selected correction. Independent correspondence
-review also reports incomplete continuation accounting; the PR records that
-finding and the required owner direction before changes. The grain part of
-the goal remains incomplete.
+The result supports captured extents as useful information but does not
+establish their unconditional substitution as a broadly suitable policy.
+Preserving the old price as a lower bound is one possible comparison, not a
+selected correction. The protected wall and CPU criteria and all failed rows
+remain part of this first trial's evidence.
+
+Correspondence review found that omitting a counted loop's continuation from
+its known extent left that loop's factor of 16 in the static fallback depth.
+The corrected accounting removes that spurious level before the depth cap and
+extent substitution. A native regression moves identical arithmetic from
+before to after an inner counted loop: results and scheduling prices must
+agree, both for captured extents and for a data-dependent static fallback,
+while preserving the enclosing loop's multiplier. The timings above are for
+`f851c65c`, before this correction; they do not measure the corrected compiler.
+
+The owner chose to retain the mechanism provisionally and study broader
+parallel strategy separately. The open question is whether a common policy
+can serve varied workloads, shapes and machines, or whether selection needs
+more context; this trial does not prove that no broadly useful policy exists.
+Runtime profile-guided compilation and online adaptation are candidate
+directions in [the research ideas](../../../docs/ideas.md#parallel-grain-policies-and-runtime-profiles),
+with the unresolved cost tracked in [TODO](../../../docs/todo.md). No profile
+collection, adaptive policy or further timing trial is implemented here.
