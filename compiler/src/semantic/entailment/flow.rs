@@ -18,6 +18,7 @@ mod sources;
 
 use super::super::postcondition::PostconditionPlace;
 use sources::{MeasureCarry, ValueImage};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -264,11 +265,56 @@ struct CountedValueImage {
 struct ProofContext<'a> {
     facts: &'a FactState,
     affine: &'a AffineFlowState,
+    closed: Option<&'a ProofClosure>,
 }
 
 impl<'a> ProofContext<'a> {
     fn new(facts: &'a FactState, affine: &'a AffineFlowState) -> Self {
-        Self { facts, affine }
+        Self {
+            facts,
+            affine,
+            closed: None,
+        }
+    }
+
+    fn close(
+        self,
+        terms: &TermTable,
+        goals: &GoalTable,
+        ledger: &mut DerivationLedger,
+    ) -> Cow<'a, ClosedState> {
+        if let Some(closed) = self.closed.filter(|closed| closed.matches(terms, goals)) {
+            Cow::Borrowed(&closed.state)
+        } else {
+            Cow::Owned(close(self.facts, terms, goals, ledger))
+        }
+    }
+}
+
+/// A query-only view of one immutable entering fact state. It never becomes
+/// live facts or escapes the premise loop that owns that state borrow.
+struct ProofClosure {
+    term_revision: usize,
+    goal_revision: usize,
+    state: ClosedState,
+}
+
+impl ProofClosure {
+    fn new(
+        facts: &FactState,
+        terms: &TermTable,
+        goals: &GoalTable,
+        ledger: &mut DerivationLedger,
+    ) -> Self {
+        Self {
+            term_revision: terms.revision(),
+            goal_revision: goals.revision(),
+            state: close(facts, terms, goals, ledger),
+        }
+    }
+
+    fn matches(&self, terms: &TermTable, goals: &GoalTable) -> bool {
+        self.term_revision == terms.revision() && self.goal_revision == goals.revision()
     }
 }
 
@@ -7055,12 +7101,7 @@ impl Analyzer<'_, '_> {
         context: ProofContext<'_>,
         inequality: &AffineInequality,
     ) -> ProofResult {
-        let closed = close(
-            context.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
-        );
+        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory() {
             return ProofResult {
                 disposition: ProofDisposition::Proved,
@@ -7071,9 +7112,7 @@ impl Analyzer<'_, '_> {
             };
         }
         let facts = Self::affine_facts(context.affine);
-        let Some(proof) =
-            self.affine_target_proof(inequality, &facts, context.affine, context.facts)
-        else {
+        let Some(proof) = self.affine_target_proof(inequality, &facts, context) else {
             return ProofResult {
                 disposition: ProofDisposition::Unknown,
                 route: None,
@@ -7185,9 +7224,7 @@ impl Analyzer<'_, '_> {
         if let Some(target) = affine_target {
             let projection = self.goals.projection(goal).cloned();
             let assumptions = Self::affine_facts(context.affine);
-            if let Some(proof) =
-                self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-            {
+            if let Some(proof) = self.affine_target_proof(target, &assumptions, context) {
                 let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
                     relation: projection.clone().map(Box::new),
                     premises: proof.premises.into_boxed_slice(),
@@ -7248,8 +7285,7 @@ impl Analyzer<'_, '_> {
             relation = relation.negated();
         }
         let assumptions = Self::affine_facts(context.affine);
-        let proof =
-            self.affine_target_proof(&target, &assumptions, context.affine, context.facts)?;
+        let proof = self.affine_target_proof(&target, &assumptions, context)?;
         let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
             relation: Some(Box::new(relation.clone())),
             premises: proof.premises.into_boxed_slice(),
@@ -7362,12 +7398,7 @@ impl Analyzer<'_, '_> {
         relation: &Relation,
         affine_target: Option<&[AffineInequality]>,
     ) -> ProofResult {
-        let closed = close(
-            context.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
-        );
+        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
         if closed.contradictory() {
             return ProofResult {
                 disposition: ProofDisposition::Proved,
@@ -7413,9 +7444,7 @@ impl Analyzer<'_, '_> {
         let mut premises = Vec::new();
         let mut parents = Vec::new();
         for target in targets {
-            let Some(proof) =
-                self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-            else {
+            let Some(proof) = self.affine_target_proof(target, &assumptions, context) else {
                 return ProofResult {
                     disposition: ProofDisposition::Unknown,
                     route: None,
@@ -7513,9 +7542,7 @@ impl Analyzer<'_, '_> {
 
         if let Some(target) = goal.direct_affine {
             let assumptions = Self::affine_facts(context.affine);
-            if let Some(proof) =
-                self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-            {
+            if let Some(proof) = self.affine_target_proof(target, &assumptions, context) {
                 let parent = self.derivations.intern(DerivationNode::AffineConsequence {
                     relation: relation.clone().map(Box::new),
                     premises: proof.premises.into_boxed_slice(),
@@ -7717,9 +7744,7 @@ impl Analyzer<'_, '_> {
             };
         };
         let assumptions = Self::affine_facts(context.affine);
-        let Some(proof) =
-            self.affine_target_proof(target, &assumptions, context.affine, context.facts)
-        else {
+        let Some(proof) = self.affine_target_proof(target, &assumptions, *context) else {
             return ProofResult {
                 disposition: ProofDisposition::Unknown,
                 route: None,
@@ -8584,7 +8609,8 @@ impl Analyzer<'_, '_> {
         facts: &FactState,
     ) -> Option<DerivationId> {
         let assumptions = Self::affine_facts(affine);
-        let proof = self.affine_target_proof(target, &assumptions, affine, facts)?;
+        let proof =
+            self.affine_target_proof(target, &assumptions, ProofContext::new(facts, affine))?;
         Some(self.derivations.intern(DerivationNode::AffineConsequence {
             relation: relation.map(Box::new),
             premises: proof.premises.into_boxed_slice(),
@@ -9743,8 +9769,11 @@ impl Analyzer<'_, '_> {
             let mut consequences = Vec::with_capacity(clause.len());
             let mut proved = true;
             for target in clause {
-                let Some(proof) = self.affine_target_proof(target, &assumptions, affine, facts)
-                else {
+                let Some(proof) = self.affine_target_proof(
+                    target,
+                    &assumptions,
+                    ProofContext::new(facts, affine),
+                ) else {
                     proved = false;
                     break;
                 };
@@ -9944,10 +9973,16 @@ impl Analyzer<'_, '_> {
         }
         let minimum_target = Self::affine_less_equal(&AffineForm::constant(minimum), form)?;
         let maximum_target = Self::affine_less_equal(form, &AffineForm::constant(maximum))?;
-        let minimum_proof =
-            self.affine_target_proof(&minimum_target, assumptions, values, facts)?;
-        let maximum_proof =
-            self.affine_target_proof(&maximum_target, assumptions, values, facts)?;
+        let minimum_proof = self.affine_target_proof(
+            &minimum_target,
+            assumptions,
+            ProofContext::new(facts, values),
+        )?;
+        let maximum_proof = self.affine_target_proof(
+            &maximum_target,
+            assumptions,
+            ProofContext::new(facts, values),
+        )?;
         Some(AffineClosedIntervalProof {
             minimum: AffineIntervalEndpointProof {
                 value: minimum,
@@ -11875,6 +11910,7 @@ impl Analyzer<'_, '_> {
         values: &AffineFlowState,
         facts: &FactState,
     ) -> Vec<bool> {
+        let mut closed: Option<ProofClosure> = None;
         premises
             .iter()
             .zip(l0_premises)
@@ -11900,8 +11936,29 @@ impl Analyzer<'_, '_> {
                         affine: Some(std::slice::from_ref(premise)),
                     },
                 );
-                self.prove(ProofContext::new(facts, values), goal)
-                    .disposition
+                // Each relation source reads these same immutable facts. A
+                // newly registered term or goal changes the closure universe,
+                // so only the unchanged view is reused; no proof is memoized.
+                if closed
+                    .as_ref()
+                    .is_none_or(|view| !view.matches(&self.terms, &self.goals))
+                {
+                    closed = Some(ProofClosure::new(
+                        facts,
+                        &self.terms,
+                        &self.goals,
+                        &mut self.derivations,
+                    ));
+                }
+                self.prove(
+                    ProofContext {
+                        facts,
+                        affine: values,
+                        closed: closed.as_ref(),
+                    },
+                    goal,
+                )
+                .disposition
                     == ProofDisposition::Proved
             })
             .collect()
@@ -12864,12 +12921,12 @@ impl Analyzer<'_, '_> {
         &mut self,
         target: &AffineInequality,
         assumptions: &[ActiveAffineFact],
-        values: &AffineFlowState,
-        facts: &FactState,
+        context: ProofContext<'_>,
     ) -> Option<AffineConsequenceProof> {
+        let values = context.affine;
         let mut check = AffineCheckState::new();
         let candidates = self.affine_l0_candidates(values);
-        let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
+        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
         let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
         if let Ok(Some(parents)) =
             self.affine_residual_proof(target, &l0, values, &closed, &mut check)
@@ -15813,6 +15870,107 @@ const fn integer_type_name(ty: IntegerType) -> &'static str {
         IntegerType::U16 => "u16",
         IntegerType::U32 => "u32",
         IntegerType::U64 => "u64",
+    }
+}
+
+#[cfg(test)]
+mod proof_closure_tests {
+    use super::*;
+
+    #[test]
+    fn an_unchanged_entering_context_reuses_its_closed_view() {
+        let facts = FactState::new();
+        let affine = AffineFlowState::default();
+        let terms = TermTable::new();
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let context = ProofContext {
+            facts: &facts,
+            affine: &affine,
+            closed: Some(&closed),
+        };
+        for _ in 0..3 {
+            let view = context.close(&terms, &goals, &mut ledger);
+            assert!(matches!(view, Cow::Borrowed(_)));
+            assert!(std::ptr::eq(view.as_ref(), &closed.state));
+            assert!(view.derives_bound(ZERO, ZERO, 0));
+        }
+    }
+
+    #[test]
+    fn new_terms_and_changed_standing_measure_bounds_rebuild_the_view() {
+        let facts = FactState::new();
+        let affine = AffineFlowState::default();
+        let mut terms = TermTable::new();
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let term = terms.intern(TermKind::Measure(
+            CheckedMeasure::Length,
+            PlaceTerm {
+                root: PlaceRoot::Binding(BindingId(0)),
+                deref: false,
+                fields: Vec::new(),
+            },
+        ));
+        let context = ProofContext {
+            facts: &facts,
+            affine: &affine,
+            closed: Some(&closed),
+        };
+        assert!(matches!(
+            context.close(&terms, &goals, &mut ledger),
+            Cow::Owned(_)
+        ));
+
+        let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let count = terms.ids().count();
+        terms.set_measure_bound(term, MeasureBound::Constant(7));
+        assert_eq!(count, terms.ids().count());
+        let context = ProofContext {
+            facts: &facts,
+            affine: &affine,
+            closed: Some(&closed),
+        };
+        let view = context.close(&terms, &goals, &mut ledger);
+        assert!(matches!(view, Cow::Owned(_)));
+        assert!(view.derives_bound(term, ZERO, 7));
+        assert!(view.derives_bound(ZERO, term, -7));
+    }
+
+    #[test]
+    fn an_existing_goal_receiving_a_projection_invalidates_the_view() {
+        let facts = FactState::new();
+        let affine = AffineFlowState::default();
+        let terms = TermTable::new();
+        let mut goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let expression = GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Bool(true)));
+        let goal = goals.intern(expression.clone(), None, None, Vec::new());
+        let closed = ProofClosure::new(&facts, &terms, &goals, &mut ledger);
+        let count = goals.ids().count();
+        let same = goals.intern(
+            expression,
+            Some(Relation::Bound {
+                left: ZERO,
+                right: ZERO,
+                bound: 0,
+            }),
+            None,
+            Vec::new(),
+        );
+        assert_eq!(goal, same);
+        assert_eq!(count, goals.ids().count());
+        let context = ProofContext {
+            facts: &facts,
+            affine: &affine,
+            closed: Some(&closed),
+        };
+        assert!(matches!(
+            context.close(&terms, &goals, &mut ledger),
+            Cow::Owned(_)
+        ));
     }
 }
 
