@@ -1,6 +1,6 @@
-# Kernel Specification v0.56
+# Kernel Specification v0.57
 
-Status: ACTIVE v0.56
+Status: ACTIVE v0.57
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -1748,6 +1748,7 @@ The first refuted or unproved clause is the FN-8 call-site rejection and forms n
 Only total success reaches ordinary transfer, effects, and normal return; no call receives a runtime fallback, alternate entry, or body clone.
 
 At concrete body entry, every requirement goal is established independently as an [ENT-3] S4 source, in source order, with its own signed decomposition and exact L0 projection.
+Its established ordering leaves also receive exactly S4's fixed affine images below.
 The clauses are never banded together.
 There is no executable callee prologue, `llvm.assume`, optimizer license, or alternate lowering; later kills apply normally.
 Direct and mutual recursion, forward calls, and every concrete generic instance use the same finite rule.
@@ -2351,7 +2352,8 @@ A callee summary is referenced by checked-program-private `(concrete callee inst
 Every new S7 fact is retained even when no later query consumes it.
 `BitAndBound` roots the exact direct `iand` result relation at its binding and carries the selected unsigned operation row, result binding, operand ordinal, admitted operand term or constant, and source event.
 `ShiftOneNonzero` roots the exact direct `ishl.wrap` result disequality against the mathematical-zero endpoint Z and carries the selected unsigned row, result binding, count atom, and the checked mathematical-one constant identity.
-`UnsignedDivisionBound` roots the direct exact-division relation `q <= a` and carries the selected unsigned row, result binding, admitted dividend term or constant, positive written divisor value, and source event; [ENT-6]'s `k*q <= a` automatic affine image cites this same root together with the exact q and a value images rather than creating an independent source fact.
+`UnsignedDivisionBound` roots the direct exact-division relation `q <= a` and carries the selected unsigned row, result binding, admitted dividend and divisor terms or constants, and source event; [ENT-3.S7]'s literal scaled image cites this same root together with the exact q and a value images rather than creating an independent source fact. `UnsignedDivisionProduct` roots that source's product consequence and carries the exact multiplication source with the division root and that multiplication's discharged IntegerDomain root as parents.
+Each `RequirementAffineImage` roots one S4 affine ordering image and retains its exact goal, truth sign, established-goal parent, requirement ordinal, and root-or-decomposition-member ordinal. It is affine-premise evidence, not an L0 relation or an independent assumption.
 `UnsignedRemainderBound` roots the direct exact-remainder relation `r < d` and carries the selected unsigned row, result binding, admitted divisor term or constant, and source event.
 Each `SignedRemainderBound` roots one endpoint of the direct signed-remainder interval and carries the selected signed row, result binding, checked constant divisor, minimum-or-maximum endpoint identity, and source event.
 A signed row where unsigned is required, non-direct result, nonterm required operand, zero or unavailable constant, or non-one shift source forms no corresponding root.
@@ -3001,6 +3003,7 @@ L0 negation is exact over mathematical integers: the negation of `a - b <= c` is
 At a concrete function-body entry, its complete instantiated [FN-8] goal G is established as `+G`.
 When and only when G's complete root is one comparison admitted by comparison-origin shape (a), whose operands after template and call substitution are each an admitted term, constant, or `len_of(P)` length term, that exact relation R is also established.
 Beyond that projection, only the members of G's signed decomposition set and their projections are established; no other child of any goal is established.
+For G and each member of that same signed decomposition, in the existing member order, an integer ordering leaf with no L0 projection also establishes its [ENT-6] affine ordering normalization when that normalization is admitted. Its written `<`, `<=`, `>`, or `>=` and established truth sign determine the one inequality; negation reverses the order with the ordinary integer strictness adjustment. Equality, disequality, nonlinear products, and undecomposed Boolean children supply no additional image. The normalization uses the body-entry immutable scalar and measure images and is appended as one ordinary automatic affine premise, with no loop assumption. A later replacement or measure kill cannot retarget those captured images. An ordering leaf that already has an L0 projection adds no affine premise by this family, so this rule does not duplicate ordinary L0 bounds to enlarge AUTO's premise combinations.
 S4 is the admitted-body axiom justified by every ordinary caller's static discharge; no callee-entry prologue or boundary check executes.
 [ENT-3.S5]
 - S5 (copy and conversion equalities).
@@ -3022,10 +3025,11 @@ This is a mathematical difference of captured values, not a new executed subtrac
 For `let s = p +wrap k;` with p a term of type T and k a constant in either operand position, when the closed state at that point derives `min(T) <= p + k` and `p + k <= max(T)` (as bounds on p through Z), s = p + k is established; `p -wrap k` with constant k establishes s = p - k under the dual range condition.
 For proof-required exact `p + k` and `p - k` with constant k, s = p ± k is established on the normal continuation unconditionally after source acceptance: that exact site's discharged IntegerDomain obligation is the proof [OP-2, ENT-6].
 For a `match` whose scrutinee is directly `p +checked k` or `p -checked k` with constant k, or a bare IDENT let-bound to one where no [ENT-5] kill event applies to a fact supported by p between the initializer and the match and that binding is no `set` target on that path, the `Ok(value: w)` arm establishes w = p ± k at arm entry; the `Err` arm establishes nothing.
-For a direct ordinary binding `let q = a / k;` at an unsigned integer type, when a is an admitted [ENT-2] term or constant, k is a positive written integer literal, and the exact division's ordinary IntegerDomain obligation has succeeded, establish the L0 relation `q <= a` and retain the separate affine value image `k*q <= a` over the exact current value images of q and a.
-The L0 relation is an ordinary S7 fact; the scaled relation is one specification-fixed member of [ENT-6]'s automatic affine-premise list and is not copied into L0.
-Replacing q or a creates a new value image and cannot retarget either relation to the replacement; a still-live alias of an old value may continue to use the old relation under [ENT-5].
-A signed division, a nonterm dividend, a nonliteral divisor, a zero divisor, a result not introduced by the direct binding, and every other division form establish neither relation.
+For a direct ordinary binding `let q = a / d;` at an unsigned integer type, when a and d are admitted [ENT-2] terms or constants and the exact division's ordinary IntegerDomain obligation has succeeded, establish the L0 relation `q <= a` and capture the exact immutable value images of q, a, and d. When d is a positive written integer literal k, additionally retain the separate affine value image `k*q <= a`.
+At a later direct ordinary exact-multiplication binding, after its own IntegerDomain obligation succeeds over affine operand images, compare those two operand images with the captured q and d images in operand order and then reversed order. Exact identity with one such division establishes `product <= a` over the bound product image and the captured dividend image. Among matching divisions use source-establishment order; one matching division suffices. An unavailable operand image establishes nothing. This finite value-image comparison neither expands a nonlinear proposition nor proves the multiplication's own domain.
+The L0 relation is an ordinary S7 fact; the literal scaled relation and matched product relation are specification-fixed members of [ENT-6]'s automatic affine-premise list and are not copied into L0.
+Replacing q, a, or d creates a new value image and cannot retarget a captured relation to the replacement; a still-live alias of an old value may continue to use the old relation under [ENT-5].
+A signed division, a nonterm required operand, an unproved division domain, a result not introduced by the direct binding, and every other division form establish none of these relations.
 For a direct ordinary binding `let r = a % d;` whose exact remainder IntegerDomain obligation has succeeded, unsigned r establishes `r < d` when d is an admitted term or constant, while signed r establishes `-(|d|-1) <= r` and `r <= |d|-1` only when d is a nonzero written integer literal or earlier named integer const whose absolute value and endpoints are representable in the proof domain.
 No other remainder form establishes those relations.
 Additionally, for a direct ordinary binding `let r = iand(a, b);` at unsigned integer type T, establish `r <= a` when a is an admitted term or constant and independently establish `r <= b` when b is one, in operand order; signed `iand`, every other bit operation, a nonterm operand, and a result not introduced by that direct binding establish no such relation.
@@ -3247,6 +3251,7 @@ This map is not a second source fact database: it records what value a binding c
 Image formation is exactly the following structural transfer.
 An own integer parameter and any integer result whose listed form below is unavailable receive one fresh atom with that type's complete interval.
 A typed integer literal or named integer const has its mathematical constant image; reading or ordinarily copying a live own integer binding reads its current image; and a total value-preserving integer `cvt` keeps the operand image.
+A successful measure observation [MSR-1] reads its current measure image, including a standing constant or the captured range image where those rules fix it. Binding or copying that integer preserves the observed value's image; a later kill of the measured place does not retarget the copied value.
 After its ordinary IntegerDomain obligation has succeeded, an exact integer addition or subtraction has the sum or difference of its operand images, and an exact integer multiplication has the scaled image when either complete operand image is a mathematical constant; every other integer-producing operation receives a fresh atom.
 An expression that may write or consume a place before producing its result receives a fresh result atom rather than an image reconstructed across that effect.
 A view's length image from the three-operand formation [ENT-3.S6] is the difference of the captured end and start images; its `cap_of` cell denotes that same image [MSR-1].

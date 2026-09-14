@@ -50,9 +50,10 @@
 //! chunks may depend on the span, the lane count, and what this lane is already
 //! doing — asked once per loop entry, never per iteration.
 //!
-//! The static half of that allowance is [`assign_weights`]: a cost estimate over the
-//! emitted IR of the chunk and the functions it calls. It is uniform over the
-//! IR and reads no name, signature, or source shape.
+//! [`assign_weights`] prices the emitted IR of the chunk and the functions it
+//! calls. Available captured extents replace fixed inner-loop factors; unknown
+//! work retains the static estimate. No program name or writer annotation
+//! selects a price.
 //!
 //! # What declines, and loudly
 //!
@@ -296,6 +297,7 @@ impl IrBuilder<'_> {
                 // Filled in once every function exists: the estimate reads the
                 // chunk's own emitted IR and the IR of what it calls.
                 weight: 0,
+                work: None,
             },
         )?;
         if let LoopActualization::Reduction { accumulator, .. } = actualization {
@@ -815,15 +817,17 @@ fn frame_bytes(ty: IrType) -> u64 {
     raw.div_ceil(FRAME_FIELD_ALIGN) * FRAME_FIELD_ALIGN
 }
 
-/// Fills in every [`IrOperation::LoopSplit`]'s static body weight, once every
-/// function of the program exists.
+/// Fills in every [`IrOperation::LoopSplit`]'s static fallback and available
+/// runtime extent estimate, once every function of the program exists.
 ///
 /// The weight is a cost estimate over the emitted IR: the instructions of the
 /// chunk, each charged more the deeper it sits inside a loop, plus the same
 /// estimate for what the chunk calls, to a bounded depth. It reads no name, no
 /// signature, and no source shape, and it feeds nothing but the runtime
-/// allowance — an estimate that is wrong by a factor still lands on the
-/// measured grain plateau, which is flat over four thousandfold.
+/// allowance. The runtime estimate then substitutes available counted extents
+/// through helper arguments, distinguishing a 17-element row from a
+/// 1024-element row without changing either loop body. Unknown extents keep
+/// this static price; no universal grain plateau is established.
 pub(crate) fn assign_weights(functions: &mut [IrFunction]) {
     let costs: Vec<Cost> = functions.iter().map(cost).collect();
     let mut total: Vec<u64> = costs.iter().map(|cost| cost.instructions).collect();
@@ -861,6 +865,7 @@ pub(crate) fn assign_weights(functions: &mut [IrFunction]) {
             }
         }
     }
+    super::work::assign(functions, &total);
 }
 
 /// How much an instruction inside a loop is charged over one outside it.
@@ -869,7 +874,7 @@ pub(crate) fn assign_weights(functions: &mut [IrFunction]) {
 /// is to tell a body that does real work from one that does two operations. A
 /// fixed multiplier per nesting level is the smallest rule that does that; it
 /// is an estimate and is stated as one.
-const LOOP_FACTOR: u64 = 16;
+pub(super) const LOOP_FACTOR: u64 = 16;
 
 /// What one function costs before its callees are substituted in.
 struct Cost {
@@ -924,7 +929,7 @@ fn cost(function: &IrFunction) -> Cost {
 /// over-counts an exit block or two on a counted range. That is an estimate
 /// inside an estimate and is stated as one; the back-edge test is not, because
 /// getting it wrong is a factor of thousands rather than of a few instructions.
-fn loop_depths(blocks: &[IrBlock]) -> Vec<u8> {
+pub(super) fn loop_depths(blocks: &[IrBlock]) -> Vec<u8> {
     let mut depths = vec![0_u8; blocks.len()];
     for (index, block) in blocks.iter().enumerate() {
         let IrTerminator::Jump { target, .. } = block.terminator() else {

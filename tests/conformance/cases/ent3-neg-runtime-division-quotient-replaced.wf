@@ -1,0 +1,17 @@
+fn changed(count: own u64, divisor: own u64, choose: own Bool) -> result: own u64 pure contract {
+  requires count <= 4096_u64;
+  requires 1_u64 <= divisor;
+  requires divisor <= 64_u64;
+} {
+  let quotient = count / divisor;
+  if choose {
+    set quotient = count;
+  }
+  let product = quotient * divisor;
+  invariant bounded: product <= count;
+  return product;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

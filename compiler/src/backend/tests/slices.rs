@@ -1,5 +1,420 @@
 use super::*;
 
+/// Use the benchmark's actual binding path, including pool-off world selection.
+fn bind_compute_host_adapter(module: &str, adapter: &str) -> String {
+    let directory = test_directory();
+    std::fs::create_dir_all(&directory).expect("create adapter directory");
+    let input = directory.join("module.ll");
+    let host = directory.join("adapter.ll");
+    std::fs::write(&input, module).expect("write adapter module");
+    std::fs::write(&host, adapter).expect("write host adapter");
+    let output = Command::new("awk")
+        .arg("-f")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../research/experiments/compute-bench/host-adapter.awk"
+        ))
+        .arg(input)
+        .arg(host)
+        .output()
+        .expect("bind compute host adapter");
+    assert!(output.status.success(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove adapter directory");
+    String::from_utf8(output.stdout).expect("adapter LLVM text")
+}
+
+fn run_compute_oracle(executable: &Path, name: &str, parallel: bool) {
+    for workers in [1, 2, 4] {
+        // As in the counted-program tests, observing a steal is existential
+        // across schedules. Every attempt checks the entire result matrix;
+        // only its distinct no-steal outcome may be resampled, never a result
+        // or inactive-pool failure.
+        let runs = if parallel && workers > 1 {
+            super::parallel::GRANT_OBSERVATION_RUNS
+        } else {
+            1
+        };
+        for run in 0..runs {
+            let output = Command::new(executable)
+                .env("WF_WORKERS", workers.to_string())
+                .env_remove("WF_SPLIT_WORK")
+                .output()
+                .expect("run independent compute oracle");
+            if output.status.code() == Some(2)
+                && output.stderr == format!("{name}: oracle observed no steals\n").as_bytes()
+                && run + 1 < runs
+            {
+                continue;
+            }
+            assert!(
+                output.status.success(),
+                "{name} workers={workers} run={run}: {output:?}"
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains(&format!("{name} oracle PASS:"))
+            );
+            break;
+        }
+    }
+}
+
+#[test]
+fn runtime_work_estimates_are_total_for_empty_and_inverted_ranges() {
+    let source = br#"fn count_work(lower: own u64, upper: own u64) -> result: own u64 pure {
+  let total = 0_u64;
+  for (i in lower..upper) {
+    set total = total +wrap i;
+  }
+  return total;
+}
+
+fn write_work(count: own u64, lower: own u64, upper: own u64) -> result: own buffer<u64> pure contract {
+  requires count <= 2_u64;
+} {
+  let output = buffer_new(count, 0_u64);
+  for (i in 0_u64..count) {
+    set output[i] = count_work(lower: lower, upper: upper);
+  }
+  return move output;
+}
+
+fn release_work(output: own buffer<u64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let output = write_work(count: 2_u64, lower: 0_u64, upper: 17_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    let mut llvm = emit_with_overlap(source)
+        .replace("@main(", "@wf_total_work_main(")
+        .replace("@wf__main_body(", "@wf_total_work_body(")
+        .replace(
+            "call i64 @wf__par_split_budget(",
+            "call i64 @wf_work_budget(",
+        );
+    llvm.push_str(
+        r#"
+declare i64 @wf_work_budget(i64, i64)
+define void @wf_probe_work(i64 %count, i64 %lower, i64 %upper, ptr %out, ptr %length) {
+  %r = call { ptr, i64 } @wf_write_work(i64 %count, i64 %lower, i64 %upper)
+  %p = extractvalue { ptr, i64 } %r, 0
+  %n = extractvalue { ptr, i64 } %r, 1
+  store ptr %p, ptr %out
+  store i64 %n, ptr %length
+  ret void
+}
+define void @wf_probe_release(ptr %data, i64 %count) {
+  %a = insertvalue { ptr, i64 } poison, ptr %data, 0
+  %b = insertvalue { ptr, i64 } %a, i64 %count, 1
+  %r = call i64 @wf_release_work({ ptr, i64 } %b)
+  ret void
+}
+"#,
+    );
+    let host = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern void wf_probe_work(uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
+extern void wf_probe_release(uint64_t *, uint64_t);
+static uint64_t price;
+uint64_t wf_work_budget(uint64_t span, uint64_t weight) {
+    (void)span; price = weight; return 0;
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    uint64_t *output, length;
+    wf_probe_work(2, 0, 17, &output, &length);
+    if (length != 2 || output[0] != 136 || output[1] != 136) return 1;
+    wf_probe_release(output, length);
+    wf_probe_work(2, 17, 1, &output, &length);
+    if (length != 2 || output[0] || output[1]) return 2;
+    wf_probe_release(output, length);
+    wf_probe_work(0, 17, 1, &output, &length);
+    if (length) return 3;
+    uint64_t inverted = price;
+    wf_probe_release(output, length);
+    wf_probe_work(0, 0, 0, &output, &length);
+    if (length || inverted != price) return 3;
+    wf_probe_release(output, length);
+    /* No inner source iteration runs. Pricing must nevertheless remain total
+       when its independent work-count arithmetic exceeds the machine word. */
+    wf_probe_work(0, 0, UINT64_MAX, &output, &length);
+    if (length || price <= UINT64_MAX / 1024) return 4;
+    wf_probe_release(output, length);
+    printf("saturated work price: %llu\n", (unsigned long long)price);
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    let output = Command::new(executable)
+        .output()
+        .expect("run total scheduling estimate probe");
+    assert!(output.status.success(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove total scheduling estimate probe");
+}
+
+#[test]
+fn runtime_work_prices_post_loop_arithmetic_once_per_enclosing_iteration() {
+    let mut source = String::new();
+    for (extent, bound) in [("known", "upper"), ("fallback", "i")] {
+        for position in ["before", "after"] {
+            let bias = "    let bias = upper *wrap 3_u64;\n";
+            let (before, after) = if position == "before" {
+                (bias, "")
+            } else {
+                ("", bias)
+            };
+            source.push_str(&format!(
+                r#"fn count_{extent}_{position}(upper: own u64, repeats: own u64) -> result: own u64 pure {{
+  let total = 0_u64;
+  for (i in 0_u64..repeats) {{
+{before}    for (j in 0_u64..{bound}) {{
+      let multiplied = total *wrap 3_u64;
+      set total = multiplied +wrap j;
+    }}
+{after}    set total = total +wrap bias;
+  }}
+  return total;
+}}
+
+fn write_{extent}_{position}(upper: own u64, repeats: own u64) -> result: own buffer<u64> pure {{
+  let output = buffer_new(2_u64, 0_u64);
+  for (i in 0_u64..2_u64) {{
+    set output[i] = count_{extent}_{position}(upper: upper, repeats: repeats);
+  }}
+  return move output;
+}}
+
+"#
+            ));
+        }
+    }
+    source.push_str(
+        r#"fn release_work(output: own buffer<u64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    let mut llvm = emit_with_overlap(source.as_bytes())
+        .replace("@main(", "@wf_continuation_main(")
+        .replace("@wf__main_body(", "@wf_continuation_body(")
+        .replace(
+            "call i64 @wf__par_split_budget(",
+            "call i64 @wf_work_budget(",
+        );
+    llvm.push_str("\ndeclare i64 @wf_work_budget(i64, i64)\n");
+    for extent in ["known", "fallback"] {
+        for position in ["before", "after"] {
+            llvm.push_str(&format!(
+                r#"define i64 @wf_probe_{extent}_{position}(i64 %upper, i64 %repeats) {{
+  %r = call {{ ptr, i64 }} @wf_write_{extent}_{position}(i64 %upper, i64 %repeats)
+  %p = extractvalue {{ ptr, i64 }} %r, 0
+  %first = load i64, ptr %p
+  %second_ptr = getelementptr i64, ptr %p, i64 1
+  %second = load i64, ptr %second_ptr
+  %same = icmp eq i64 %first, %second
+  %answer = select i1 %same, i64 %first, i64 -1
+  %released = call i64 @wf_release_work({{ ptr, i64 }} %r)
+  ret i64 %answer
+}}
+"#
+            ));
+        }
+    }
+    let host = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern uint64_t wf_probe_known_before(uint64_t, uint64_t), wf_probe_known_after(uint64_t, uint64_t);
+extern uint64_t wf_probe_fallback_before(uint64_t, uint64_t), wf_probe_fallback_after(uint64_t, uint64_t);
+static uint64_t price;
+uint64_t wf_work_budget(uint64_t span, uint64_t weight) {
+    (void)span; price = weight; return 0;
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const uint64_t extents[] = {0, 1, 16, 17}, repetitions[] = {1, 2, 4};
+    uint64_t outer_prices[3];
+    for (unsigned r = 0; r < 3; ++r) {
+      uint64_t repeats = repetitions[r];
+      (void)wf_probe_known_before(16, repeats);
+      uint64_t fallback_price = price;
+      for (unsigned i = 0; i < 4; ++i) {
+        uint64_t upper = extents[i];
+        uint64_t expected = 0, fallback_expected = 0;
+        for (uint64_t pass = 0; pass < repeats; ++pass) {
+            for (uint64_t j = 0; j < upper; ++j) expected = expected * 3 + j;
+            expected += 3 * upper;
+            for (uint64_t j = 0; j < pass; ++j) fallback_expected = fallback_expected * 3 + j;
+            fallback_expected += 3 * upper;
+        }
+        if (wf_probe_known_before(upper, repeats) != expected) return 1;
+        uint64_t before = price;
+        if (!i) outer_prices[r] = before;
+        if (wf_probe_known_after(upper, repeats) != expected) return 2;
+        printf("known %llu: before=%llu after=%llu\n",
+               (unsigned long long)upper, (unsigned long long)before, (unsigned long long)price);
+        if (!before || before != price) return 3;
+        if (wf_probe_fallback_before(upper, repeats) != fallback_expected) return 4;
+        before = price;
+        if (wf_probe_fallback_after(upper, repeats) != fallback_expected) return 5;
+        printf("fallback %llu: before=%llu after=%llu\n",
+               (unsigned long long)upper, (unsigned long long)before, (unsigned long long)price);
+        if (!before || before != price || price != fallback_price) return 6;
+      }
+    }
+    /* Moving the arithmetic must not erase the enclosing trip multiplier.
+       The unknown inner extent must retain the calibrated static factor 16. */
+    if (outer_prices[1] <= outer_prices[0] ||
+        outer_prices[2] - outer_prices[1] != 2 * (outer_prices[1] - outer_prices[0])) return 7;
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    let output = Command::new(executable)
+        .env("WF_WORKERS", "2")
+        .output()
+        .expect("run continuation work price probe");
+    assert!(output.status.success(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove continuation work price probe");
+}
+
+#[test]
+fn runtime_block_sizes_change_budget_prices_without_changing_scan_results() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/prefix.wf");
+    let module = emit_with_overlap(source);
+    let adapter = include_str!("../../../../research/experiments/compute-bench/prefix_host.ll");
+    let mut llvm = bind_compute_host_adapter(&module, adapter)
+        .replace("@main(", "@wf_extent_test_main(")
+        .replace("@wf__main_body(", "@wf_extent_test_body(")
+        .replace(
+            "call i64 @wf__par_split_budget(",
+            "call i64 @wf_work_budget(",
+        );
+    llvm.push_str("\ndeclare i64 @wf_work_budget(i64, i64)\n");
+    let host = r#"#include <stdint.h>
+#include <stdatomic.h>
+#include <stdio.h>
+#include <stdlib.h>
+extern int wf__floor_run(int, char **);
+extern int wf__par_pool_active(void);
+extern uint64_t wf__par_split_budget(uint64_t, uint64_t);
+extern void wf_bench_prefix(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
+extern void wf_bench_prefix_release(uint64_t *, uint64_t);
+static _Atomic uint64_t observed;
+uint64_t wf_work_budget(uint64_t span, uint64_t weight) {
+    if (span == 128) {
+        uint64_t previous = atomic_load(&observed);
+        while (previous < weight && !atomic_compare_exchange_weak(&observed, &previous, weight)) {}
+    }
+    return wf__par_split_budget(span, weight);
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const uint64_t widths[] = {17, 1024, 4096};
+    uint64_t previous_price = 0;
+    for (unsigned shape = 0; shape < 3; ++shape) {
+        uint64_t width = widths[shape], count = 128 * width;
+        uint64_t *input = calloc((size_t)count, sizeof(*input));
+        if (!input) return 1;
+        for (uint64_t i = 0; i < count; ++i) input[i] = i + 1;
+        uint64_t *output = NULL, length = 0;
+        atomic_store(&observed, 0);
+        wf_bench_prefix(input, count, width, 1, &output, &length);
+        if (!output || length != count) return 2;
+        uint64_t expected = 0;
+        for (uint64_t i = 0; i < count; ++i) {
+            if (output[i] != expected || input[i] != i + 1) return 3;
+            expected += i + 1;
+        }
+        uint64_t price = atomic_load(&observed);
+        printf("%llu %llu\n", (unsigned long long)width, (unsigned long long)price);
+        if (wf__par_pool_active()) {
+            if (!price || (shape == 1 && price <= previous_price * 10) ||
+                (shape == 2 && price <= previous_price * 3)) return 4;
+        } else if (price) return 5;
+        previous_price = price;
+        wf_bench_prefix_release(output, length);
+        free(input);
+    }
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    for workers in [1, 2, 4] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers.to_string())
+            .env_remove("WF_SPLIT_WORK")
+            .output()
+            .expect("run runtime extent price probe");
+        assert!(output.status.success(), "workers={workers}: {output:?}");
+    }
+    std::fs::remove_dir_all(directory).expect("remove runtime extent probe");
+}
+
+#[test]
+fn compute_oracle_sampling_rejects_wrong_values_and_missing_observations() {
+    let source = include_str!("../../../../research/experiments/compute-bench/programs/prefix.wf");
+    let adapter = include_str!("../../../../research/experiments/compute-bench/prefix_host.ll");
+    let oracle = format!(
+        "#define WFB_BLOCKED_ORACLE\n#define WFB_PREFIX\n{}",
+        include_str!("../../../../research/experiments/compute-bench/blocked_bench.c")
+    );
+    for corrupt in [true, false] {
+        let program = if corrupt {
+            let changed = source.replacen("total +wrap input[i]", "total -wrap input[i]", 1);
+            assert_ne!(
+                changed, source,
+                "the block-sum mutant must change the algorithm"
+            );
+            changed
+        } else {
+            source.to_owned()
+        };
+        let module = emit_with_overlap(program.as_bytes());
+        let llvm = bind_compute_host_adapter(&module, adapter)
+            .replace("@main(", "@wf_oracle_negative_main(")
+            .replace("@wf__main_body(", "@wf_oracle_negative_body(");
+        let directory = test_directory();
+        let mut defines = vec!["WFB_ORACLE_PARALLEL=1".to_owned()];
+        if !corrupt {
+            // The real algorithm still runs, but no attempt can observe a
+            // steal through the intentionally disabled counter.
+            defines.push("WF_SCHED_STATS=0".to_owned());
+        }
+        let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+        let failure = std::panic::catch_unwind(|| run_compute_oracle(&executable, "prefix", true))
+            .expect_err("a wrong result or absent observation must fail the oracle test");
+        let message = failure
+            .downcast_ref::<String>()
+            .expect("oracle assertion message");
+        if corrupt {
+            assert!(message.contains("workers=1 run=0"), "{message}");
+            assert!(message.contains("wrong result"), "{message}");
+        } else {
+            let final_run = super::parallel::GRANT_OBSERVATION_RUNS - 1;
+            assert!(
+                message.contains(&format!("workers=2 run={final_run}")),
+                "{message}"
+            );
+            assert!(message.contains("oracle observed no steals"), "{message}");
+        }
+        std::fs::remove_dir_all(directory).expect("remove oracle negative-test files");
+    }
+}
+
 #[test]
 fn borrowed_storage_subranges_write_the_original_array_and_run() {
     let source = r#"struct Packet {
@@ -86,6 +501,44 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn blocked_compute_matches_independent_oracles_at_runtime_dimensions() {
+    let kernels: [(&str, &[u8], &str, &str); 2] = [
+        (
+            "prefix",
+            include_bytes!("../../../../research/experiments/compute-bench/programs/prefix.wf"),
+            include_str!("../../../../research/experiments/compute-bench/prefix_host.ll"),
+            "WFB_PREFIX",
+        ),
+        (
+            "histogram",
+            include_bytes!("../../../../research/experiments/compute-bench/programs/histogram.wf"),
+            include_str!("../../../../research/experiments/compute-bench/histogram_host.ll"),
+            "WFB_HISTOGRAM",
+        ),
+    ];
+    for (name, source, adapter, selection) in kernels {
+        let oracle = format!(
+            "#define WFB_BLOCKED_ORACLE\n#define {selection}\n{}",
+            include_str!("../../../../research/experiments/compute-bench/blocked_bench.c")
+        );
+        for emitted in [compile(source), emit_with_overlap(source)] {
+            let llvm = bind_compute_host_adapter(&emitted, adapter)
+                .replace("@main(", "@wf_blocked_smoke_main(")
+                .replace("@wf__main_body(", "@wf_blocked_smoke_body(");
+            let directory = test_directory();
+            let defines = if emitted.contains("call void @wf__par_publish(") {
+                vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+            } else {
+                Vec::new()
+            };
+            let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+            run_compute_oracle(&executable, name, !defines.is_empty());
+            std::fs::remove_dir_all(directory).expect("remove blocked-compute test files");
+        }
+    }
+}
+
+#[test]
 fn runtime_stencil_ranges_reach_their_backing_buffers() {
     let source =
         include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
@@ -108,21 +561,17 @@ fn stencil_matches_an_independent_dimension_and_step_matrix() {
         include_str!("../../../../research/experiments/compute-bench/stencil_bench.c")
     );
     for emitted in [compile(source), emit_with_overlap(source)] {
-        let llvm = format!(
-            "{}\n{adapter}",
-            emitted.replace("@main(", "@wf_stencil_smoke_main(")
-        );
+        let llvm = bind_compute_host_adapter(&emitted, adapter)
+            .replace("@main(", "@wf_stencil_smoke_main(")
+            .replace("@wf__main_body(", "@wf_stencil_smoke_body(");
         let directory = test_directory();
-        let executable = build_linked_executable(&llvm, Some(&oracle), &[], &directory);
-        for workers in [1, 2, 4] {
-            let output = Command::new(&executable)
-                .env("WF_WORKERS", workers.to_string())
-                .env_remove("WF_SPLIT_WORK")
-                .output()
-                .expect("run independent stencil oracle");
-            assert!(output.status.success(), "workers={workers}: {output:?}");
-            assert!(String::from_utf8_lossy(&output.stdout).contains("stencil oracle PASS:"));
-        }
+        let defines = if emitted.contains("call void @wf__par_publish(") {
+            vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+        } else {
+            Vec::new()
+        };
+        let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+        run_compute_oracle(&executable, "stencil", !defines.is_empty());
         std::fs::remove_dir_all(directory).expect("remove native stencil test files");
     }
 }
@@ -822,4 +1271,76 @@ fn a_view_of_a_frame_resident_run_reaches_its_own_slots_until_call_return() {
     assert!(output.status.success());
     assert_eq!(output.stdout, b"AAAA");
     assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn a_returning_loop_with_no_break_has_a_valid_unreachable_continuation() {
+    let source = br#"fn count_down(count: own u64) -> result: own u64 pure {
+  let remaining = count;
+  loop {
+    if remaining == 0_u64 {
+      return 7_u64;
+    }
+    set remaining = remaining - 1_u64;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let value = count_down(count: 17_u64);
+  if value != 7_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for module in [compile(source), emit_with_overlap(source)] {
+        let output = compile_and_run(&module);
+        assert!(output.status.success(), "{output:?}");
+    }
+}
+
+#[test]
+fn irregular_compute_matches_independent_sort_and_graph_oracles() {
+    let kernels: [(&str, &[u8], &str, &str, &str); 2] = [
+        (
+            "merge_sort",
+            include_bytes!("../../../../research/experiments/compute-bench/programs/merge_sort.wf"),
+            include_str!("../../../../research/experiments/compute-bench/merge_sort_host.ll"),
+            "WFB_SORT_ORACLE",
+            include_str!("../../../../research/experiments/compute-bench/merge_sort_bench.c"),
+        ),
+        (
+            "bfs",
+            include_bytes!("../../../../research/experiments/compute-bench/programs/bfs.wf"),
+            include_str!("../../../../research/experiments/compute-bench/bfs_host.ll"),
+            "WFB_BFS_ORACLE",
+            include_str!("../../../../research/experiments/compute-bench/bfs_bench.c"),
+        ),
+    ];
+    for (name, source, adapter, selection, harness) in kernels {
+        let oracle = format!("#define {selection}\n{harness}");
+        for emitted in [compile(source), emit_with_overlap(source)] {
+            if name == "merge_sort" && emitted.contains("call void @wf__par_publish(") {
+                for stage in ["_par_budget_sort_values", "_par_budget_merge_values"] {
+                    assert!(
+                        emitted_function(&emitted, stage).contains("call void @wf__par_publish("),
+                        "{stage} must offer recursive work independently of initialization"
+                    );
+                }
+            }
+            let llvm = bind_compute_host_adapter(&emitted, adapter)
+                .replace("@main(", "@wf_irregular_smoke_main(")
+                .replace("@wf__main_body(", "@wf_irregular_smoke_body(");
+            let directory = test_directory();
+            let defines = if emitted.contains("call void @wf__par_publish(") {
+                vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+            } else {
+                Vec::new()
+            };
+            let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+            run_compute_oracle(&executable, name, !defines.is_empty());
+            std::fs::remove_dir_all(directory).expect("remove irregular-compute test files");
+        }
+    }
 }

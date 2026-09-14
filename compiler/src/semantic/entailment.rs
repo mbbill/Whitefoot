@@ -836,7 +836,7 @@ pub(crate) enum S7DerivationKind {
     },
     UnsignedDivisionBound {
         dividend: TermId,
-        divisor: i128,
+        divisor: TermId,
     },
     SignedRemainderBound {
         divisor: i128,
@@ -1417,40 +1417,55 @@ fn strongly_connected_components(graph: &[Vec<usize>]) -> Vec<Vec<usize>> {
     }
 
     impl Tarjan<'_> {
-        fn visit(&mut self, node: usize) {
+        fn discover(&mut self, node: usize) {
             let index = self.next_index;
             self.next_index += 1;
             self.indices[node] = Some(index);
             self.lowlinks[node] = index;
             self.stack.push(node);
             self.on_stack[node] = true;
+        }
 
-            for successor in &self.graph[node] {
-                if self.indices[*successor].is_none() {
-                    self.visit(*successor);
-                    self.lowlinks[node] = self.lowlinks[node].min(self.lowlinks[*successor]);
-                } else if self.on_stack[*successor] {
-                    self.lowlinks[node] = self.lowlinks[node].min(
-                        self.indices[*successor]
-                            .expect("on-stack node has a Tarjan discovery index"),
-                    );
-                }
-            }
-
-            if self.lowlinks[node] == index {
-                let mut component = Vec::new();
-                loop {
-                    let member = self
-                        .stack
-                        .pop()
-                        .expect("Tarjan root retains its stack member");
-                    self.on_stack[member] = false;
-                    component.push(member);
-                    if member == node {
-                        break;
+        fn visit(&mut self, root: usize) {
+            self.discover(root);
+            // Retain the recursive walk's successor order and postorder,
+            // without tying an FN-9 call chain to the native stack depth.
+            let mut pending = vec![(root, 0)];
+            while let Some((node, next_successor)) = pending.last_mut() {
+                let node = *node;
+                if let Some(&successor) = self.graph[node].get(*next_successor) {
+                    *next_successor += 1;
+                    if self.indices[successor].is_none() {
+                        self.discover(successor);
+                        pending.push((successor, 0));
+                    } else if self.on_stack[successor] {
+                        self.lowlinks[node] = self.lowlinks[node].min(
+                            self.indices[successor]
+                                .expect("on-stack node has a Tarjan discovery index"),
+                        );
                     }
+                    continue;
                 }
-                self.components.push(component);
+
+                pending.pop();
+                if Some(self.lowlinks[node]) == self.indices[node] {
+                    let mut component = Vec::new();
+                    loop {
+                        let member = self
+                            .stack
+                            .pop()
+                            .expect("Tarjan root retains its stack member");
+                        self.on_stack[member] = false;
+                        component.push(member);
+                        if member == node {
+                            break;
+                        }
+                    }
+                    self.components.push(component);
+                }
+                if let Some(&(parent, _)) = pending.last() {
+                    self.lowlinks[parent] = self.lowlinks[parent].min(self.lowlinks[node]);
+                }
             }
         }
     }
@@ -1478,5 +1493,71 @@ const fn fragment_type(ty: CheckedType) -> Option<super::model::IntegerType> {
     match ty {
         CheckedType::Integer(ty) => Some(ty),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod component_tests {
+    use super::strongly_connected_components;
+
+    #[test]
+    fn a_deep_call_chain_and_cycle_do_not_use_the_native_stack() {
+        let count = 20_000;
+        let mut graph = (1..count).map(|next| vec![next]).collect::<Vec<_>>();
+        graph.push(Vec::new());
+        let expected = (0..count).rev().map(|node| vec![node]).collect::<Vec<_>>();
+        assert_eq!(strongly_connected_components(&graph), expected);
+
+        graph[count - 1].push(0);
+        assert_eq!(
+            strongly_connected_components(&graph),
+            vec![(0..count).rev().collect::<Vec<_>>()]
+        );
+    }
+
+    #[test]
+    fn components_agree_with_mutual_reachability_for_every_three_node_graph() {
+        // Reachability is an independent partition oracle, including self
+        // edges, already-completed components and edges to active ancestors.
+        for edges in 0..(1 << 9) {
+            let graph = (0..3)
+                .map(|from| {
+                    (0..3)
+                        .filter(|to| edges & (1 << (3 * from + to)) != 0)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let mut reachable = [[false; 3]; 3];
+            for from in 0..3 {
+                reachable[from][from] = true;
+                for &to in &graph[from] {
+                    reachable[from][to] = true;
+                }
+            }
+            for via in 0..3 {
+                for from in 0..3 {
+                    for to in 0..3 {
+                        reachable[from][to] |= reachable[from][via] && reachable[via][to];
+                    }
+                }
+            }
+            let components = strongly_connected_components(&graph);
+            let mut component_of = [usize::MAX; 3];
+            for (index, members) in components.iter().enumerate() {
+                for &member in members {
+                    assert_eq!(component_of[member], usize::MAX);
+                    component_of[member] = index;
+                }
+            }
+            for from in 0..3 {
+                assert_ne!(component_of[from], usize::MAX);
+                for to in 0..3 {
+                    assert_eq!(
+                        component_of[from] == component_of[to],
+                        reachable[from][to] && reachable[to][from]
+                    );
+                }
+            }
+        }
     }
 }

@@ -54,22 +54,96 @@ released outside it. Native references submit one interior row per callback;
 WF uses the compiler's default decomposition. Several nested loops and
 initialization have different spans, so the stencil reports no single chunk
 count, while actual scheduler grants are still measured.
+`WFB_STENCIL_WIDTH` and `WFB_STENCIL_HEIGHT` may override those dimensions
+within 3..4096 for an explicit size sweep; the workload header records the
+actual values. The original, large, and small presets remain unchanged.
 
-The default comparison retains the four existing kernels, which do not require
-range-loan syntax. This does not supply the pre-C2 entry and native-library
-adapters that the cross-version twin still needs, as described below.
-Stencil additionally requires the range-loan amendment. Its native comparison
-and evidence are recorded in
+Stencil is included in the default timed comparison now that the baseline
+compiler admits range loans. Cross-version twins still use the entry and
+native-library adapters described below where their interfaces differ.
+Stencil's original native comparison and evidence are recorded in
 [`range-loans/DESIGN.md`](../../investigations/range-loans/DESIGN.md).
+
+Select `KERNELS='prefix histogram'` for the blocked scan and privatized
+histogram comparisons. Their runtime input, block size, and bucket count also
+run through independent one-pass C oracles in the compiler's native tests,
+including empty inputs, partial blocks, wraparound scan values, repeated keys,
+and skew. The ordinary `programs-check` target compiles both consumers.
+They require the runtime division images investigated in
+[`compute-model/DESIGN.md`](../../investigations/compute-model/DESIGN.md), so
+they are not yet selected by the default baseline twin.
+
+The default blocked fixture has 4,194,321 input words and blocks of 4,096 words;
+histogram uses 256 buckets. `WFB_BLOCKED_GRID=small|fine|coarse|skew` selects
+the 17-word tail fixture, 256-word blocks, 65,536-word blocks, or a mostly
+single-key distribution respectively. Every process prints the actual input
+dimensions and distribution. Inputs and independent expected results are
+prepared outside timing. WF and the parallel references allocate and release
+their temporary block storage and allocate their result inside timing; result
+checking and release happen outside. The native `serial` reference uses the
+direct one-pass algorithm, while parallel references use complete blocks plus
+a tail. Worker counts never appear as an unrolled source decomposition.
+
+`KERNELS=merge_sort` selects the comparison sort with recursively partitioned
+merges. Binary-search ranks determine disjoint destination views. The native
+parallel references share this algorithm and its 64-element merge leaf;
+`serial` uses `qsort`. The default is 1,048,593 random keys, with
+`WFB_SORT_GRID=small|skew|equal` retaining a 257-key input, mostly repeated
+keys, or all-equal keys. Two work buffers are allocated inside timing;
+native copies use `memcpy` while Whitefoot copies ordinary element loops.
+
+`KERNELS=bfs` selects the bounded-degree sparse graph experiment.
+`WFB_BFS_MODE=sparse|pull` selects intrusive frontier lists or a full-vertex
+pull round; `WFB_BFS_GRAPH=tree|chain|grid|disconnected` selects the fixture.
+The graph and independent FIFO distances are prepared outside timing. Both
+Whitefoot modes use two vertex-sized work arrays, allocated inside timing.
+The native `serial` row always uses FIFO; the parallel native rows use FIFO
+in sparse mode and the same pull algorithm in pull mode. Each process prints
+levels, reachable vertices, sparse adjacency slots, and pull vertex visits.
+The graph family is undirected with at most four adjacency entries per vertex;
+it does not stand in for arbitrary CSR or high-degree graphs. The compiler
+oracle covers 86 graph/mode configurations and checks every distance and
+unchanged edge. The sort and graph consumers are opt-in for timing and always
+included in `programs-check`.
+
+[`compute-model-2026-09-13.tsv`](compute-model-2026-09-13.tsv) retains the
+compute-model main run and diagnostic fixtures, with an interpretation in the
+[investigation](../../investigations/compute-model/DESIGN.md#measurements-and-assessment-2026-09-13).
+Each line starts with a fixture name and record kind (`manifest`, `raw`, or
+`table`), followed by the original line. Metadata normalizes host and scratch
+paths; manifests and tables omit empty rendered lines and terminal padding.
+Raw numerical rows are unchanged. For example, extract the main raw
+stream with `awk -F '\t' '$1 == "main" && $2 == "raw" { sub(/^[^\t]*\t[^\t]*\t/, ""); print }' compute-model-2026-09-13.tsv`.
+The manifest records the 10,000-unit runtime control; pass
+`-v runtimecontrol=-DWF_PAR_SPLIT_WORK_UNIT=10000` when reducing these rows.
+The `initial-pooloff-*` groups instead record the earlier adapter-only control
+and are explicitly inconclusive. This dated evidence is retained while its
+measurement-method and grain decisions cite it; new runs do not overwrite it.
+
+[`runtime-extent-2026-09-13.tsv`](runtime-extent-2026-09-13.tsv) uses the same
+record format for the subsequent compiler-estimate trial: candidate `f851c65c`
+against compiler `0d571cac`, with the runtime constants unchanged. It retains
+the main run, protected adverse fixtures, threshold sweep and isolated
+histogram repeat, including the failed chain-pull control. The
+[interpretation](../../investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
+states why this trial fails its policy criterion despite the mechanism's
+provisional retention. These rows precede the continuation-accounting fix and
+the ordinary-callable/container integration and do not measure their
+performance. Runtime-valued estimates are reported
+as `chunks=na` by the harness's static header extraction; `steals` remains the
+actual runtime observation. Retain these rows while the estimate investigation
+or a design decision cites them; subsequent trials do not replace them.
 
 The `wf` row is the module `whitefootc` emits from the kernel's `.wf` source
 under **plain `--par --emit-llvm` and no other flag**, linked with
 the complete ordinary native library under `compiler/src/backend/`
 **from this same tree**, built with the driver's clang flags plus the symmetric
-x86_64 `WF_ALIGN` placement control documented below, and called through a host adapter of at most
-eighteen lines of LLVM IR that does nothing but build buffer descriptors and
-forward. The adapter is LLVM IR so it also works with versions whose source
-functions have internal linkage. The two emissions are isolated by renaming
+x86_64 `WF_ALIGN` placement control documented below, and called through a
+descriptor-only LLVM IR host adapter. `host-adapter.awk` binds its calls to the
+same execution world as entry: the emitted sequential clone when the worker
+pool is off, and the ordinary parallel symbol otherwise. Selection occurs at
+each host entry, outside the kernel algorithm. LLVM IR also supports versions
+whose source functions have internal linkage. The two emissions are isolated by renaming
 their defined functions and all corresponding references; this preserves
 linkage and optimization attributes and leaves library imports and weak
 runtime hooks unchanged. Changing a strong definition to internal linkage

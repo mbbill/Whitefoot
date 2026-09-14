@@ -1,0 +1,15 @@
+fn room(values: own buffer<u64>, extra: own u64, limit: own u64) -> result: own u64 reads(values), writes(values) contract {
+  requires len_of(values) <= 16_u64;
+  requires extra <= 16_u64;
+  requires len_of(values) + extra <= limit;
+} {
+  let replaced = replace values = buffer_new(32_u64, 0_u64);
+  let current = len_of(values);
+  let total = current + extra;
+  let remaining = limit - total;
+  return remaining;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

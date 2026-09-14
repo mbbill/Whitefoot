@@ -8,7 +8,7 @@ use crate::{
     SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, StaticObligationDisposition,
 };
 
-use super::super::entailment::{DerivationNode, ObligationFamily, S7DerivationKind};
+use super::super::entailment::{DerivationNode, ObligationFamily, S7DerivationKind, TermKind};
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{CheckedFunction, CheckedIntegerOperation};
 use super::entailment::validate_derivations;
@@ -455,12 +455,52 @@ fn main() -> status: own ExitStatus pure {
                 .entailment
                 .s7_derivations
                 .iter()
-                .any(|source| matches!(
-                    source.kind,
-                    S7DerivationKind::UnsignedDivisionBound { divisor: 2, .. }
-                ))
+                .any(|source| match source.kind {
+                    S7DerivationKind::UnsignedDivisionBound { divisor, .. } => {
+                        matches!(
+                            function.entailment.inventory.terms[divisor.0 as usize],
+                            TermKind::Constant(2)
+                        )
+                    }
+                    _ => false,
+                })
         );
     });
+}
+
+#[test]
+fn runtime_division_publishes_its_quotient_bound_without_a_later_product() {
+    for transfer in [
+        "let quotient = count / divisor;",
+        "let quotient = 0_u64;\n  set quotient = count / divisor;",
+    ] {
+        let source = format!(
+            "fn quotient_bound(count: own u64, divisor: own u64) -> result: own u64 pure contract {{
+  requires 1_u64 <= divisor;
+  ensures result <= count;
+}} {{
+  {transfer}
+  return quotient;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("runtime quotient bound must establish the postcondition: {outcome:?}");
+            };
+            let function = named(&checked.data.functions, "quotient_bound");
+            validate_derivations(&function.entailment);
+            assert!(function.entailment.postconditions[0].aggregate.discharged);
+            assert!(function.entailment.s7_derivations.iter().any(|source| {
+                matches!(source.kind, S7DerivationKind::UnsignedDivisionBound { divisor, .. }
+                    if !matches!(function.entailment.inventory.terms[divisor.0 as usize], TermKind::Constant(_)))
+            }));
+        });
+    }
 }
 
 #[test]
@@ -1165,5 +1205,134 @@ fn main() -> status: own ExitStatus pure {
                 ..
             } if residual == "values[offset] +defined 1_u8"
         ));
+    });
+}
+
+#[test]
+fn runtime_unsigned_division_retains_the_checked_product_bound_in_either_order() {
+    for product in ["quotient * divisor", "divisor * quotient"] {
+        let source = format!(
+            r#"fn covered(count: own u64, divisor: own u64) -> result: own u64 pure contract {{
+  requires count <= 16777216_u64;
+  requires 1_u64 <= divisor;
+  requires divisor <= 65536_u64;
+  ensures result <= count;
+}} {{
+  let quotient = count / divisor;
+  let product = {product};
+  return product;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("runtime quotient-product consequence: {product}: {outcome:?}");
+            };
+            let function = named(&checked.data.functions, "covered");
+            validate_derivations(&function.entailment);
+            assert!(function.entailment.postconditions[0].aggregate.discharged);
+            assert!(
+                function
+                    .entailment
+                    .derivations
+                    .nodes
+                    .iter()
+                    .any(|node| { matches!(node, DerivationNode::UnsignedDivisionProduct { .. }) })
+            );
+        });
+    }
+}
+
+#[test]
+fn captured_runtime_division_values_survive_only_in_their_unchanged_aliases() {
+    let source =
+        br#"fn covered(count: own u64, divisor: own u64) -> result: own u64 pure contract {
+  requires count <= 4096_u64;
+  requires 1_u64 <= divisor;
+  requires divisor <= 64_u64;
+} {
+  let quotient = count / divisor;
+  let old_count = count;
+  let old_divisor = divisor;
+  let old_quotient = quotient;
+  set count = 0_u64;
+  set divisor = 1_u64;
+  set quotient = 4096_u64;
+  let product = old_divisor * old_quotient;
+  invariant covered_input: product <= old_count;
+  return product;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("unchanged aliases retain captured values: {outcome:?}");
+        };
+        validate_derivations(&named(&checked.data.functions, "covered").entailment);
+    });
+}
+
+#[test]
+fn changed_runtime_division_operands_cannot_retarget_the_product_bound() {
+    for mutation in [
+        "set count = 0_u64;",
+        "set divisor = 64_u64;",
+        "set quotient = count;",
+        "if choose {\n    set quotient = count;\n  }",
+    ] {
+        let source = format!(
+            r#"fn changed(count: own u64, divisor: own u64, choose: own Bool) -> result: own u64 pure contract {{
+  requires count <= 4096_u64;
+  requires 1_u64 <= divisor;
+  requires divisor <= 64_u64;
+}} {{
+  let quotient = count / divisor;
+  {mutation}
+  let product = quotient * divisor;
+  invariant covered_input: product <= count;
+  return product;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("a replacement must not inherit captured facts: {mutation}: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Inv1, "{mutation}: {issue:?}");
+        });
+    }
+}
+
+#[test]
+fn a_quotient_product_consequence_cannot_discharge_its_own_domain() {
+    let source =
+        br#"fn covered(count: own u64, divisor: own u64) -> result: own u64 pure contract {
+  requires 1_u64 <= divisor;
+} {
+  let quotient = count / divisor;
+  let product = quotient * divisor;
+  return product;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the product's ordinary domain must discharge first: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op2);
     });
 }

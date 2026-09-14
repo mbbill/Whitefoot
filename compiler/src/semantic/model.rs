@@ -19,10 +19,76 @@ pub(crate) struct CheckedLoopId(pub(crate) u32);
 /// One proof-only mathematical integer expression. Each leaf retains
 /// its exact source integer type while denoting its value in the mathematical
 /// integers; this metadata does not request a runtime conversion.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) struct CheckedAffineExpression {
     pub(crate) node_path: NodePath,
     pub(crate) kind: CheckedAffineExpressionKind,
+}
+
+impl CheckedAffineExpression {
+    /// Children before their parent, with leaves in written left-to-right
+    /// order, independent of the expression's nesting depth.
+    pub(crate) fn postorder(&self) -> impl Iterator<Item = &Self> {
+        let mut pending = vec![(self, false)];
+        std::iter::from_fn(move || {
+            loop {
+                let (expression, visited) = pending.pop()?;
+                if !visited {
+                    match &expression.kind {
+                        CheckedAffineExpressionKind::Add(left, right)
+                        | CheckedAffineExpressionKind::Subtract(left, right) => {
+                            pending.push((expression, true));
+                            pending.push((right, false));
+                            pending.push((left, false));
+                            continue;
+                        }
+                        CheckedAffineExpressionKind::MultiplyByConstant { value, .. } => {
+                            pending.push((expression, true));
+                            pending.push((value, false));
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+                return Some(expression);
+            }
+        })
+    }
+}
+
+impl Clone for CheckedAffineExpression {
+    fn clone(&self) -> Self {
+        let mut values = Vec::new();
+        for expression in self.postorder() {
+            let kind = match &expression.kind {
+                CheckedAffineExpressionKind::Add(_, _)
+                | CheckedAffineExpressionKind::Subtract(_, _) => {
+                    let right = Box::new(values.pop().expect("postorder retains the right child"));
+                    let left = Box::new(values.pop().expect("postorder retains the left child"));
+                    if matches!(expression.kind, CheckedAffineExpressionKind::Add(_, _)) {
+                        CheckedAffineExpressionKind::Add(left, right)
+                    } else {
+                        CheckedAffineExpressionKind::Subtract(left, right)
+                    }
+                }
+                CheckedAffineExpressionKind::MultiplyByConstant {
+                    constant,
+                    constant_ty,
+                    ..
+                } => CheckedAffineExpressionKind::MultiplyByConstant {
+                    constant: *constant,
+                    constant_ty: *constant_ty,
+                    value: Box::new(values.pop().expect("postorder retains the scaled child")),
+                },
+                leaf => leaf.clone(),
+            };
+            values.push(Self {
+                node_path: expression.node_path.clone(),
+                kind,
+            });
+        }
+        values.pop().expect("postorder visits the root")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -63,6 +129,42 @@ pub(crate) enum CheckedAffineExpressionKind {
         constant_ty: IntegerType,
         value: Box<CheckedAffineExpression>,
     },
+}
+
+impl Drop for CheckedAffineExpression {
+    fn drop(&mut self) {
+        fn take_children(
+            expression: &mut CheckedAffineExpression,
+            pending: &mut Vec<CheckedAffineExpression>,
+        ) {
+            let kind = std::mem::replace(
+                &mut expression.kind,
+                CheckedAffineExpressionKind::Constant {
+                    value: 0,
+                    ty: IntegerType::U64,
+                },
+            );
+            match kind {
+                CheckedAffineExpressionKind::Add(left, right)
+                | CheckedAffineExpressionKind::Subtract(left, right) => {
+                    pending.push(*left);
+                    pending.push(*right);
+                }
+                CheckedAffineExpressionKind::MultiplyByConstant { value, .. } => {
+                    pending.push(*value)
+                }
+                _ => {}
+            }
+        }
+
+        // The source tree can exceed INV-1's formation capacity before it
+        // reaches normalization, including while unwinding a source error.
+        let mut pending = Vec::new();
+        take_children(self, &mut pending);
+        while let Some(mut expression) = pending.pop() {
+            take_children(&mut expression, &mut pending);
+        }
+    }
 }
 
 /// One normalized source-written affine ordered relation. `left - right <=

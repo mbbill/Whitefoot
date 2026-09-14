@@ -54,11 +54,11 @@ pub(super) struct CountedTerms {
     pub(super) upper_source: TermId,
 }
 
-/// The affine half of one admitted unsigned literal-division transfer.
+/// The affine half of one admitted unsigned exact-division transfer.
 /// The ordinary S7 relation supplies the retained source proof; the parent
 /// flow binds the scaled quotient image to the exact current operand values.
 pub(super) struct EstablishedUnsignedDivision {
-    pub(super) divisor: i128,
+    pub(super) literal_divisor: Option<i128>,
     pub(super) parent: DerivationId,
 }
 
@@ -1039,10 +1039,9 @@ impl Analyzer<'_, '_> {
         true
     }
 
-    /// [ENT-3] S7: an admitted unsigned exact division by a positive written
-    /// integer literal publishes `quotient <= dividend`. The returned source
-    /// proof lets the parent flow also retain the exact affine image
-    /// `literal * quotient <= dividend` over the same runtime value atoms.
+    /// [ENT-3] S7: an admitted unsigned exact division over admitted terms
+    /// publishes `quotient <= dividend`. The returned source proof also
+    /// supports the literal scaled image and captured quotient-product image.
     /// Signed division deliberately has no member of this rule.
     fn establish_unsigned_division_bound(
         &mut self,
@@ -1067,18 +1066,16 @@ impl Analyzer<'_, '_> {
         let [dividend, divisor] = arguments.as_slice() else {
             return None;
         };
-        let CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) = divisor else {
-            return None;
+        let literal_divisor = match divisor {
+            CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) if ty == row => {
+                let value = integer_value(*ty, *bits);
+                (value > 0).then_some(value)
+            }
+            _ => None,
         };
-        if ty != row {
-            return None;
-        }
-        let divisor = integer_value(*ty, *bits);
-        if divisor <= 0 {
-            return None;
-        }
         let result = self.bound_term(destination, value)?;
         let dividend = self.read_operand(dividend)?;
+        let divisor = self.read_operand(divisor)?;
         let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
         let relation = Relation::Bound {
             left: result,
@@ -1096,7 +1093,10 @@ impl Analyzer<'_, '_> {
             event,
             parent,
         });
-        Some(EstablishedUnsignedDivision { divisor, parent })
+        Some(EstablishedUnsignedDivision {
+            literal_divisor,
+            parent,
+        })
     }
 
     /// [ENT-3] S7: an admitted unsigned exact remainder publishes

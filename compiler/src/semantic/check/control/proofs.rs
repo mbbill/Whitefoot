@@ -413,118 +413,147 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
         owner: AffineProofOwner,
     ) -> Result<CheckedAffineExpression, CheckStop> {
-        let children = self.tree.children(node)?;
-        let Some(first) = children.first().copied() else {
-            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-        };
-        if self.tree.production(first)? != Production::AffineTerm {
-            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        enum Formation {
+            Expression(NodeId),
+            Term(NodeId),
+            Factor(NodeId),
+            Group,
+            Add { node: NodeId, subtract: bool },
+            Multiply(NodeId),
         }
-        let mut expression =
-            self.check_affine_term(first, bindings, allowed_values, function, loop_depth, owner)?;
-        let mut cursor = 1;
-        while cursor < children.len() {
-            let Some(operator) = children.get(cursor).copied() else {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            };
-            let Some(term) = children.get(cursor + 1).copied() else {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            };
-            if self.tree.production(operator)? != Production::AffineAddOp
-                || self.tree.production(term)? != Production::AffineTerm
-            {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            }
-            let right = self.check_affine_term(
-                term,
-                bindings,
-                allowed_values,
-                function,
-                loop_depth,
-                owner,
-            )?;
-            let [operator_token] = self.tree.direct_token_indices(operator)? else {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            };
-            let kind = match self.tree.token_bytes(*operator_token)? {
-                b"+" => CheckedAffineExpressionKind::Add(Box::new(expression), Box::new(right)),
-                b"-" => {
-                    CheckedAffineExpressionKind::Subtract(Box::new(expression), Box::new(right))
+
+        // Grouping is not an extra affine node or a source depth limit.
+        // Keep source-order formation on the heap, like normalization, so
+        // a nested factor cannot exhaust the host stack before INV-1 runs.
+        let mut pending = vec![Formation::Expression(node)];
+        let mut values: Vec<(CheckedAffineExpression, Option<(i128, IntegerType)>)> = Vec::new();
+        while let Some(next) = pending.pop() {
+            match next {
+                Formation::Expression(node) => {
+                    let children = self.tree.children(node)?;
+                    let Some((&first, rest)) = children.split_first() else {
+                        return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+                    };
+                    if self.tree.production(first)? != Production::AffineTerm || rest.len() % 2 != 0
+                    {
+                        return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+                    }
+                    for pair in rest.rchunks_exact(2) {
+                        let [operator, term] = [pair[0], pair[1]];
+                        if self.tree.production(operator)? != Production::AffineAddOp
+                            || self.tree.production(term)? != Production::AffineTerm
+                        {
+                            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+                        }
+                        let [token] = self.tree.direct_token_indices(operator)? else {
+                            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+                        };
+                        let subtract = match self.tree.token_bytes(*token)? {
+                            b"+" => false,
+                            b"-" => true,
+                            _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+                        };
+                        pending.push(Formation::Add { node, subtract });
+                        pending.push(Formation::Term(term));
+                    }
+                    pending.push(Formation::Term(first));
                 }
-                _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
-            };
-            expression = CheckedAffineExpression {
-                node_path: self.tree.path(node)?.clone(),
-                kind,
-            };
-            cursor = cursor
-                .checked_add(2)
-                .ok_or(SemanticCompilerFailure::CounterOverflow)?;
+                Formation::Term(node) => {
+                    let factors = self.tree.children_with(node, Production::AffineFactor)?;
+                    match factors.as_slice() {
+                        [factor] => pending.push(Formation::Factor(*factor)),
+                        [left, right] => {
+                            pending.push(Formation::Multiply(node));
+                            pending.push(Formation::Factor(*right));
+                            pending.push(Formation::Factor(*left));
+                        }
+                        _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+                    }
+                }
+                Formation::Factor(node) => {
+                    if let Some(nested) =
+                        self.tree.first_child_with(node, Production::AffineExpr)?
+                    {
+                        pending.push(Formation::Group);
+                        pending.push(Formation::Expression(nested));
+                    } else {
+                        values.push(self.check_affine_factor(
+                            node,
+                            bindings,
+                            allowed_values,
+                            function,
+                            loop_depth,
+                            owner,
+                        )?);
+                    }
+                }
+                Formation::Group => {
+                    // Parentheses never make their child a direct literal.
+                    values
+                        .last_mut()
+                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?
+                        .1 = None;
+                }
+                Formation::Add { node, subtract } => {
+                    let (right, _) = values
+                        .pop()
+                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                    let (left, _) = values
+                        .pop()
+                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                    let kind = if subtract {
+                        CheckedAffineExpressionKind::Subtract(Box::new(left), Box::new(right))
+                    } else {
+                        CheckedAffineExpressionKind::Add(Box::new(left), Box::new(right))
+                    };
+                    values.push((
+                        CheckedAffineExpression {
+                            node_path: self.tree.path(node)?.clone(),
+                            kind,
+                        },
+                        None,
+                    ));
+                }
+                Formation::Multiply(node) => {
+                    let (right, right_literal) = values
+                        .pop()
+                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                    let (left, left_literal) = values
+                        .pop()
+                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                    let (constant, constant_ty, value) = match (left_literal, right_literal) {
+                        (Some((constant, ty)), _) => (constant, ty, right),
+                        (None, Some((constant, ty))) => (constant, ty, left),
+                        (None, None) => {
+                            return self.invalid_affine_proof(
+                                owner,
+                                node,
+                                "an affine multiplication has no direct integer-literal operand",
+                                "multiply one affine factor by a directly written integer literal",
+                            );
+                        }
+                    };
+                    values.push((
+                        CheckedAffineExpression {
+                            node_path: self.tree.path(node)?.clone(),
+                            kind: CheckedAffineExpressionKind::MultiplyByConstant {
+                                constant,
+                                constant_ty,
+                                value: Box::new(value),
+                            },
+                        },
+                        None,
+                    ));
+                }
+            }
+        }
+        let (expression, _) = values
+            .pop()
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        if !values.is_empty() {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
         Ok(expression)
-    }
-
-    fn check_affine_term(
-        &self,
-        node: NodeId,
-        bindings: &HashMap<DeclarationId, LocalBinding>,
-        allowed_values: &HashSet<DeclarationId>,
-        function: &FunctionSignature,
-        loop_depth: usize,
-        owner: AffineProofOwner,
-    ) -> Result<CheckedAffineExpression, CheckStop> {
-        let factors = self.tree.children_with(node, Production::AffineFactor)?;
-        match factors.as_slice() {
-            [factor] => self
-                .check_affine_factor(
-                    *factor,
-                    bindings,
-                    allowed_values,
-                    function,
-                    loop_depth,
-                    owner,
-                )
-                .map(|(expression, _)| expression),
-            [left_node, right_node] => {
-                let (left, left_literal) = self.check_affine_factor(
-                    *left_node,
-                    bindings,
-                    allowed_values,
-                    function,
-                    loop_depth,
-                    owner,
-                )?;
-                let (right, right_literal) = self.check_affine_factor(
-                    *right_node,
-                    bindings,
-                    allowed_values,
-                    function,
-                    loop_depth,
-                    owner,
-                )?;
-                let (constant, constant_ty, value) = match (left_literal, right_literal) {
-                    (Some((constant, constant_ty)), _) => (constant, constant_ty, right),
-                    (None, Some((constant, constant_ty))) => (constant, constant_ty, left),
-                    (None, None) => {
-                        return self.invalid_affine_proof(
-                            owner,
-                            node,
-                            "an affine multiplication has no direct integer-literal operand",
-                            "multiply one affine factor by a directly written integer literal",
-                        );
-                    }
-                };
-                Ok(CheckedAffineExpression {
-                    node_path: self.tree.path(node)?.clone(),
-                    kind: CheckedAffineExpressionKind::MultiplyByConstant {
-                        constant,
-                        constant_ty,
-                        value: Box::new(value),
-                    },
-                })
-            }
-            _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
-        }
     }
 
     /// The closed integer value of one named const named by a proof relation.
@@ -606,19 +635,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ));
         }
 
-        let nested = self
-            .tree
-            .first_child_with(node, Production::AffineExpr)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let expression = self.check_affine_expression(
-            nested,
-            bindings,
-            allowed_values,
-            function,
-            loop_depth,
-            owner,
-        )?;
-        Ok((expression, None))
+        Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
     }
 
     /// [INV-1] the one `atom` an affine factor admits: a bare IDENT place or
