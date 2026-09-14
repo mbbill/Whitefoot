@@ -18,7 +18,7 @@ fn preserve_pair_bounds(first: own u64, first_limit: own u64, second: own u64, s
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let finished = preserve_pair_bounds(first: 3_u64, first_limit: 5_u64, second: 7_u64, second_limit: 9_u64);
   return exit_status(code: 0_u8);
 }

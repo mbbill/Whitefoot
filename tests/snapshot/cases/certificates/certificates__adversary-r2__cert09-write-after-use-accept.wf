@@ -11,7 +11,7 @@ fn use_then_write(first: own u8, first_limit: own u8, second: own u8, second_lim
   return second;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = use_then_write(first: 1_u8, first_limit: 4_u8, second: 2_u8, second_limit: 4_u8, replacement: 9_u8);
   return exit_status(code: result);
 }

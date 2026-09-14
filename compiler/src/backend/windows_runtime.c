@@ -210,8 +210,8 @@ static DWORD wf_windows_error_from_errno(int error_code) {
 /* One code per condition, whichever route produced it; `windows_runtime.h`
  * says at the declaration why the two routes need it.
  *
- * The right column is the code the [SYS-7] Windows class table in
- * `backend/qualification.rs` already carries for that condition, so this adds
+ * The right column is the code the ordinary native library's error conversion
+ * already uses for that condition, so this adds
  * no class and moves no existing mapping.  The two address refusals keep their
  * Winsock numbers, because bind and listen never reach the completion port and
  * those are the numbers that table already names. */
@@ -234,7 +234,7 @@ int wf__windows_error_from_socket(int error_code) {
     case (int)ERROR_CONNECTION_ABORTED:
         return (int)ERROR_REQUEST_ABORTED;
     /* A send on a direction this program has already shut down, which is what
-     * `BrokenPipe` means [SYS-8]. */
+     * `BrokenPipe` means (ordinary native library). */
     case WSAESHUTDOWN:
     case (int)ERROR_GRACEFUL_DISCONNECT:
     case (int)ERROR_NO_DATA:
@@ -331,7 +331,7 @@ int wf__windows_socket_open(int family) {
         return -1;
     }
     /* The descriptor number is the CRT's, because every writer-visible
-     * resource on this target is a CRT i32 descriptor and the [SYS-10] handle
+     * resource on this target is a CRT i32 descriptor and the (ordinary native library) handle
      * factory's capacity argument is written in that one numbering
      * (`completion/file_adapter.h`, WF_FILE_CONNECTION_DESCRIPTORS).  The
      * adoption stores this socket's handle in that table and nothing else;
@@ -536,7 +536,7 @@ int wf__windows_completion_descriptor_state(
  * A socket is admitted on its class alone and never on `GetFileType`, which
  * answers FILE_TYPE_PIPE for one: the class is the fact that this runtime
  * created it with `WSA_FLAG_OVERLAPPED`, which is what the port needs
- * [SYS-17, SYS-18].
+ * (ordinary native library).
  *
  * The lock is held across three host calls.  This is once per descriptor, not
  * once per operation: the second and every later offer on the same descriptor
@@ -957,7 +957,7 @@ int wf__windows_stderr_descriptor(void) {
     return wf_windows_duplicate_descriptor(2, WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT);
 }
 
-/* The [SYS-15] standard input stream.
+/* The (ordinary native library) standard input stream.
  *
  * It is registered under its own class, not the output one, because the two
  * are read and written by different request kinds and the registry's class is

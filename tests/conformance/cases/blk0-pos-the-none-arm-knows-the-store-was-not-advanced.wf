@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "BLK-0, CALL-6: the other arm of the same row. The None arm publishes len_of(store) = len_of(store at the call), so the store the caller holds after a refused take is the store it held before it, and the smaller proved take that follows discharges its own room requirement from that and from the row's unrouted cap_of(store) relation.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

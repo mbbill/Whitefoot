@@ -3,6 +3,6 @@ fn widen_bad(x: own i8) -> result: own u16 pure {
   return cvt::<i8, u16>(x);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

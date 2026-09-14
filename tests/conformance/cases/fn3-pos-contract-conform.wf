@@ -1,9 +1,9 @@
-contract Zeroed {
-  doc "A contract declares fn signatures [FN-3].";
+formal Zeroed {
+  doc "A formal declares function-kind signatures [FN-3].";
   fn zero() -> result: own i32 pure;
 }
 
-conform i32: Zeroed {
+actual First : Zeroed {
   zero = i32_zero;
 }
 
@@ -11,6 +11,6 @@ fn i32_zero() -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

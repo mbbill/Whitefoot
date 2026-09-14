@@ -5,17 +5,33 @@ fn get_bounded<const n: u64>(b: own FixedVector<u8, n>, i: own u64) -> value: ow
   return b[i];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: requires uses define spare = len_of(b); caller proves index 3 < len 8 statically.";
   let buf = fixed_vector::<u8, 8>();
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
-  set buf = place_back(vector: move buf, value: 0_u8);
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
+  region {
+    place_back(vector: &uniq buf, value: 0_u8);
+  }
   let value = get_bounded::<8>(b: move buf, i: 3_u64);
   if value == 0_u8 {
   } else {

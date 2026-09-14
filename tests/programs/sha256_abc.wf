@@ -105,7 +105,7 @@ fn sha256_abc_word_zero() -> result: own u32 pure {
   return a +wrap 1779033703_u32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let direct_digest_word = sha256_abc_word_zero();
   if direct_digest_word == 3128432319_u32 {
   } else {

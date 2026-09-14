@@ -7,7 +7,7 @@ fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 p
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = increment(x: 2_u8, middle: 10_u8, replacement: 0_u8);
   if result == 3_u8 {
   } else {

@@ -16,7 +16,7 @@ fn countdown_sum(start: own u64) -> total: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let total = countdown_sum(start: 5_u64);
   let correct = total == 15_u64;
   if correct {

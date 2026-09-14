@@ -3,7 +3,7 @@ fn negate_min(x: own i16) -> result: own i16 pure {
   return ineg(x);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let sample = -32768_i16;
   let is_extreme = sample == -32768_i16;
   if is_extreme {

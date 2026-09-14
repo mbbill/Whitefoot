@@ -62,7 +62,7 @@ static inline int wf_file_open_kind_flags(enum wf_file_expected_kind expected) {
  *
  * SO_REUSEADDR is deliberately not set.  It exists to let a program bind a
  * port a previous connection still holds in TIME_WAIT, which is a decision
- * about what the program's own bind means, and [SYS-17] already fixes that
+ * about what the program's own bind means, and (ordinary native library) already fixes that
  * meaning: two binds of one port are the program's own source-order conflict
  * and `AddressInUse` is the host's answer to the second.  Setting it would
  * make that answer depend on a runtime option no source names. */

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "OWN-5: two shared borrows of one place coexist and are both read - shared reads never conflict.";
   let a = 7_i32;
   region {

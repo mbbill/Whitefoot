@@ -7,7 +7,7 @@ fn offset_from_floor(value: own i32) -> result: own i32 pure contract {
   return offset;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let offset = offset_from_floor(value: -400_i32);
   if offset == 600_i32 {
   } else {

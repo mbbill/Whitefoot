@@ -24,7 +24,7 @@ fn find_in_grid(target: own u64, width: own u64, height: own u64) -> found: own 
   return found;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let found = find_in_grid(target: 23_u64, width: 10_u64, height: 4_u64);
   let correct = found == 23_u64;
   if correct {

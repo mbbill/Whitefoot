@@ -3,9 +3,8 @@ use std::collections::HashSet;
 use crate::syntax::NodeId;
 use crate::syntax::terminal::TerminalPredicate;
 use crate::{
-    DeclarationClass, DeclarationRole, DependentDeclarationRole, LexicalUseRole,
-    PreludeDeclarationId, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
-    SemanticRule,
+    BuiltinPreludeId, DeclarationClass, DeclarationRole, DependentDeclarationRole, LexicalUseRole,
+    Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
 use super::super::model::{
@@ -18,6 +17,19 @@ use super::{
 };
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn is_opaque_declaration(&self, node: NodeId) -> Result<bool, CheckStop> {
+        let source = self.tree.coordinate(node)?.source();
+        Ok(self
+            .resolved
+            .syntax()
+            .finalized
+            .parsed
+            .classified
+            .source_bundle()
+            .file(source)
+            .is_some_and(|file| file.prelude() == Some(crate::source::PreludeSource::Opaque)))
+    }
+
     pub(super) fn declare_nominals(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         let nodes = items
             .iter()
@@ -154,6 +166,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         if role == DeclarationRole::Struct
+            && !self.is_opaque_declaration(node)?
             && self
                 .constructor_templates_by_declaration
                 .insert(
@@ -220,7 +233,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for ty in self.nominal_type_descendants(node)? {
             self.ensure_nominal_type_head(ty, substitution)?;
         }
-        for construct in self.tree.descendants_with(node, Production::Construct)? {
+        for construct in self.tree.constructor_descendants(node)? {
             self.ensure_source_constructor_instance(construct, substitution)?;
         }
         self.ensure_implicit_prelude_nominals(node, substitution, false)?;
@@ -253,10 +266,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             self.ensure_nominal_type_head(ty, substitution)?;
         }
-        for construct in self
-            .tree
-            .descendants_with(function, Production::Construct)?
-        {
+        for construct in self.tree.constructor_descendants(function)? {
             if self.node_is_inside_postcondition(construct)? {
                 continue;
             }
@@ -338,6 +348,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn nominal_type_descendants(&self, node: NodeId) -> Result<Vec<NodeId>, CheckStop> {
         let mut nested = self.tree.descendants_with(node, Production::Type)?;
+        let mut uses = Vec::with_capacity(nested.len());
+        for ty in nested {
+            if self
+                .optional_declaration_at(ty, DeclarationRole::GenericType)?
+                .is_none()
+            {
+                uses.push(ty);
+            }
+        }
+        nested = uses;
         nested.sort_by(|left, right| {
             let left_depth = self
                 .tree
@@ -402,12 +422,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(());
         }
         match usage.target() {
-            ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(3) => {
+            ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::OPTION => {
                 let value = self.option_type_argument_with(node, substitution)?;
                 self.intern_prelude_nominal(PreludeType::Option(value))?;
                 Ok(())
             }
-            ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(8) => {
+            ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::RESULT => {
                 let (ok, error) = self.result_type_arguments_with(node, substitution)?;
                 self.intern_prelude_nominal(PreludeType::Result(ok, error))?;
                 Ok(())
@@ -440,12 +460,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.ensure_source_nominal_instance(template_index, instance)?;
                 Ok(())
             }
-            ResolvedTarget::System(id) => {
-                if let Some(index) = crate::system_nominal_index(id) {
-                    self.intern_system_nominal(index)?;
-                }
-                Ok(())
-            }
             _ => Ok(()),
         }
     }
@@ -456,16 +470,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         caller: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
-        if let ResolvedTarget::System(id) = usage.target() {
-            if let Some(index) = crate::system_constructor_index(id) {
-                let owner = crate::SYSTEM_CONSTRUCTORS
-                    .get(usize::from(index))
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                    .owner;
-                self.intern_system_nominal(owner)?;
-            }
-            return Ok(());
-        }
         // [TYPE-5] a prelude variant constructor writes its nominal's
         // arguments, so the instance it names is interned from those written
         // arguments here, before function checking reads it immutably.
@@ -539,36 +543,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(call, Production::Callee)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            // A call to an admitted system operation needs its written
-            // [SYS-2] parameter and result instances — including `Result`
-            // instantiations no source type spells — before function
-            // checking reads them immutably.
-            let callee_path = self.tree.path(callee)?;
-            let system_operation = self
-                .resolved
-                .lexical_uses()
-                .iter()
-                .find(|usage| {
-                    usage.origin().node() == callee_path
-                        && matches!(
-                            usage.role(),
-                            LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee
-                        )
-                })
-                .and_then(|usage| match usage.target() {
-                    ResolvedTarget::System(id) => crate::system_operation_index(id),
-                    _ => None,
-                });
-            if let Some(index) = system_operation {
-                let operation = crate::SYSTEM_OPERATIONS
-                    .get(usize::from(index))
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                for parameter in operation.parameters {
-                    self.ensure_system_type(parameter.ty)?;
-                }
-                self.ensure_system_type(operation.result)?;
-                continue;
-            }
             let spelling = self.tree.direct_spelling(callee)?;
             if spelling == b"cvt" {
                 self.ensure_conversion_result(call, substitution)?;
@@ -591,7 +565,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(error) = error else {
                 continue;
             };
-            let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            let Some(targs) = self.tree.argument_list(call)? else {
                 continue;
             };
             let arguments = self.tree.children_with(targs, Production::Targ)?;
@@ -619,7 +593,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(), CheckStop> {
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return Ok(());
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
@@ -687,6 +661,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name,
             kind: match template.role {
+                DeclarationRole::Struct if self.is_opaque_declaration(template.node)? => {
+                    CheckedNominalKind::Opaque
+                }
                 DeclarationRole::Struct => CheckedNominalKind::Struct { fields: Vec::new() },
                 DeclarationRole::Enum => CheckedNominalKind::Enum {
                     variants: Vec::new(),
@@ -803,24 +780,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let mut constructors = Vec::with_capacity(variants.len());
         for fields in variants {
+            let field_regions = fields
+                .iter()
+                .map(|field| self.type_region_shape(field.ty, None))
+                .collect::<Result<Vec<_>, _>>()?;
             let mut determining_field = vec![None; region_parameters.len()];
-            for (index, field) in fields.iter().enumerate() {
-                let Some(region) = self.written_type_region(field.ty)? else {
-                    continue;
-                };
-                let Some(slot) = region_parameters
-                    .iter()
-                    .position(|parameter| *parameter == region)
-                else {
-                    continue;
-                };
-                if determining_field[slot].is_none() {
-                    determining_field[slot] = Some(index);
+            for (index, shape) in field_regions.iter().enumerate() {
+                for (slot, formal) in region_parameters.iter().enumerate() {
+                    if determining_field[slot].is_none() && shape.determines(*formal) {
+                        determining_field[slot] = Some(index);
+                    }
                 }
             }
             constructors.push(super::ConstructorShape {
                 fields: fields.iter().map(|field| field.name.clone()).collect(),
                 determining_field,
+                field_regions,
             });
         }
         Ok(constructors)
@@ -923,15 +898,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(template_index)
             .cloned()
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let kind = match template.role {
-            DeclarationRole::Struct => CheckedNominalKind::Struct {
-                fields: self.parse_struct_fields(template.node, &substitution)?,
-            },
-            DeclarationRole::Enum => CheckedNominalKind::Enum {
-                variants: self.parse_enum_variants(template.node, &substitution)?,
-            },
-            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+        // [PROV-1] an elided stored brand belongs to this declaration's
+        // sole region, not a caller's enclosing nominal. Zero/multiple
+        // regions mask any outer nominal's elision context.
+        let brand = match substitution.region_arguments() {
+            [(_, region)] => Some(*region),
+            _ => None,
         };
+        let outer_brand = self.elided_store_brand.replace(brand);
+        let kind = (|| {
+            Ok(match template.role {
+                DeclarationRole::Struct if self.is_opaque_declaration(template.node)? => {
+                    CheckedNominalKind::Opaque
+                }
+                DeclarationRole::Struct => CheckedNominalKind::Struct {
+                    fields: self.parse_struct_fields(template.node, &substitution)?,
+                },
+                DeclarationRole::Enum => CheckedNominalKind::Enum {
+                    variants: self.parse_enum_variants(template.node, &substitution)?,
+                },
+                _ => return Err(CheckStop::from(SemanticCompilerFailure::InvalidResolution)),
+            })
+        })();
+        self.elided_store_brand.set(outer_brand);
+        let kind = kind?;
         self.nominals
             .get_mut(id.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?
@@ -966,7 +956,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.reject_region_bearing_storage_type(ty, substitution)?;
             self.ensure_nominal_type(ty, substitution)?;
             let parsed = self.parse_type_with(ty, substitution)?;
-            self.reject_confined_type_without_store(parsed, ty)?;
+
             fields.push(CheckedField { name, ty: parsed });
         }
         Ok(fields)
@@ -1009,7 +999,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.reject_region_bearing_storage_type(ty, substitution)?;
                     self.ensure_nominal_type(ty, substitution)?;
                     let parsed = self.parse_type_with(ty, substitution)?;
-                    self.reject_confined_type_without_store(parsed, ty)?;
+
                     fields.push(CheckedField {
                         name: field_name,
                         ty: parsed,
@@ -1028,14 +1018,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [S20] where each nominal instance's region axis leaves the program.
     ///
-    /// Two instances of one declaration whose type and const arguments agree
-    /// and whose regions differ are two checked types and one representation:
-    /// a region names a store for the proof and nothing at run time, exactly
-    /// as `Vector<'a, T>` and `Vector<'b, T>` are one lowered run. The first
-    /// such instance is the one they all lower as, so a callee's own
-    /// formal-region instance and a caller's actual-region instance meet as
-    /// one IR nominal at the boundary between them.
+    /// Two instances share a representation when their region-erased source
+    /// families and complete reclamation graphs agree. Region identity is
+    /// proof-only, but the store's release class still selects runtime work.
+    /// This table uses declaration-level classes; physical specialization
+    /// interprets those classes in each accepted call's closed environment.
     pub(super) fn nominal_lowering_aliases(&self) -> Result<Vec<NominalId>, CheckStop> {
+        self.nominal_aliases(true)
+    }
+
+    /// The region-erased source/type family used to select a release-class
+    /// specialization after semantic acceptance. Unlike the ordinary
+    /// lowering alias, this deliberately ignores a Box or Vector release
+    /// class; the physical specialization key restores those classes before
+    /// any IR type or cleanup action is selected.
+    pub(super) fn nominal_physical_aliases(&self) -> Result<Vec<NominalId>, CheckStop> {
+        self.nominal_aliases(false)
+    }
+
+    fn nominal_aliases(&self, release_sensitive: bool) -> Result<Vec<NominalId>, CheckStop> {
         let mut aliases = Vec::with_capacity(self.nominals.len());
         for index in 0..self.nominals.len() {
             let id = NominalId(
@@ -1046,7 +1047,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let candidate = NominalId(
                     u32::try_from(earlier).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
                 );
-                if self.nominals_differ_only_in_region(id, candidate)? {
+                if self.nominals_share_region_erased_family(id, candidate, release_sensitive)? {
                     alias = candidate;
                     break;
                 }
@@ -1058,7 +1059,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// The actual one formal region of a call denotes, or the region itself
     /// when this call substitutes nothing for it [FORM-8].
-    fn substituted_region(
+    pub(super) fn substituted_region(
         regions: &[(crate::DeclarationId, crate::DeclarationId)],
         region: crate::DeclarationId,
     ) -> crate::DeclarationId {
@@ -1106,18 +1107,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Float(_)
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_)
-            | CheckedType::Array { .. }
-            | CheckedType::Buffer { .. } => ty,
+            | CheckedType::GenericFloat(_) => ty,
             CheckedType::Nominal(id) => self.substitute_nominal_regions(id, regions)?,
+            CheckedType::Array { element, length } => CheckedType::Array {
+                element: self.substitute_element_regions(element, regions)?,
+                length,
+            },
             CheckedType::Slice {
                 region,
                 element,
                 strength,
             } => CheckedType::Slice {
                 region: Self::substituted_region(regions, region),
-                element,
+                element: self.substitute_flat_element_regions(element, regions)?,
                 strength,
+            },
+            CheckedType::Buffer { element } => CheckedType::Buffer {
+                element: self.substitute_flat_element_regions(element, regions)?,
             },
             CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
                 element: self.substitute_element_regions(element, regions)?,
@@ -1129,7 +1135,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let region = Self::substituted_region(regions, region);
                 CheckedType::Vector {
                     region,
-                    element,
+                    element: self.substitute_element_regions(element, regions)?,
                     release: self.vector_release_class(region)?,
                 }
             }
@@ -1154,18 +1160,40 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         element: CheckedElement,
         regions: &[(crate::DeclarationId, crate::DeclarationId)],
     ) -> Result<CheckedElement, CheckStop> {
-        Ok(match element {
-            CheckedElement::Flat(_) | CheckedElement::FixedVector { .. } => element,
-            CheckedElement::Vector {
-                region, element, ..
-            } => {
-                let region = Self::substituted_region(regions, region);
-                CheckedElement::Vector {
-                    region,
-                    element,
-                    release: self.vector_release_class(region)?,
-                }
-            }
+        let ty = self.substitute_type_regions(self.element_type(element)?, regions)?;
+        self.intern_element(ty)
+    }
+
+    /// One flat slot element with the same substitution [FN-2, TYPE-2].
+    ///
+    /// Scalar and symbolic elements contain no region. A nominal element can
+    /// contain one arbitrarily far inside its instance — for example the
+    /// `'s` in `Option<Entry<'s>>` — while remaining one flat slot element.
+    /// Substitution changes that instance identity and preserves whether the
+    /// element was admitted as tag-only or as an affine nominal.
+    fn substitute_flat_element_regions(
+        &self,
+        element: CheckedFlatElement,
+        regions: &[(crate::DeclarationId, crate::DeclarationId)],
+    ) -> Result<CheckedFlatElement, CheckStop> {
+        let (id, tag_only) = match element {
+            CheckedFlatElement::TagOnlyNominal(id) => (id, true),
+            CheckedFlatElement::Nominal(id) => (id, false),
+            CheckedFlatElement::Unit
+            | CheckedFlatElement::Bool
+            | CheckedFlatElement::Integer(_)
+            | CheckedFlatElement::Float(_)
+            | CheckedFlatElement::GenericInt(_)
+            | CheckedFlatElement::GenericFloat(_)
+            | CheckedFlatElement::Generic(_) => return Ok(element),
+        };
+        let CheckedType::Nominal(id) = self.substitute_nominal_regions(id, regions)? else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        Ok(if tag_only {
+            CheckedFlatElement::TagOnlyNominal(id)
+        } else {
+            CheckedFlatElement::Nominal(id)
         })
     }
 
@@ -1206,6 +1234,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         super::generics::GenericArgument::Const(value) => {
                             super::generics::GenericArgument::Const(*value)
+                        }
+                        super::generics::GenericArgument::Function(value) => {
+                            let substituted =
+                                self.substitute_function_argument_regions(*value, regions)?;
+                            changed |= substituted != *value;
+                            super::generics::GenericArgument::Function(substituted)
                         }
                     },
                 ));
@@ -1318,7 +1352,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedNominalKind::Struct { .. }
             | CheckedNominalKind::Enum { .. }
             | CheckedNominalKind::ArenaStorage
-            | CheckedNominalKind::SystemResource { .. } => Ok(CheckedType::Nominal(id)),
+            | CheckedNominalKind::Opaque => Ok(CheckedType::Nominal(id)),
         }
     }
 
@@ -1331,9 +1365,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [STOR-2] — and the same lowered content: a region names a store for
     /// the proof, so two such nominals are two checked types and one IR
     /// nominal. The content comparison is what keeps a difference the run
-    /// time *can* see out of the relation — a run's release class is read off
-    /// its region's own declaration [PROV-6], so two instances whose classes
-    /// differ are two representations and are not related here.
+    /// time *can* see out of the relation — a run or box's release class is
+    /// read off its region's own declaration [PROV-6]. Representation aliasing
+    /// keeps those classes distinct; the release-insensitive formation view
+    /// compares only the structural family.
     ///
     /// The relation reaches beyond a source instance because a call's region
     /// substitution does: a callee returning `own Option<BlockPool<'s>>`
@@ -1341,71 +1376,147 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// callee hands back its result-list nominal with every ordinal
     /// substituted, so those two classes meet at the same boundary a source
     /// instance does.
-    pub(super) fn nominals_differ_only_in_region(
+    fn nominals_share_region_erased_family(
         &self,
         left: NominalId,
         right: NominalId,
+        release_sensitive: bool,
     ) -> Result<bool, CheckStop> {
         if left == right {
             return Ok(false);
         }
-        self.nominals_are_region_blind_equal(left, right, 0, &mut Vec::new())
+        // Every obligation is a pair of nodes in the finite checked type
+        // graph. Visit each pair once, including recursive boxes, and finish
+        // every reachable obligation. Neither depth nor traversal order can
+        // turn two members of one family into unrelated representations.
+        let mut pending = vec![(CheckedType::Nominal(left), CheckedType::Nominal(right))];
+        let mut visited = HashSet::new();
+        while let Some((left, right)) = pending.pop() {
+            if left == right || !visited.insert((left, right)) {
+                continue;
+            }
+            let same = match (left, right) {
+                (CheckedType::Nominal(left), CheckedType::Nominal(right)) => self
+                    .nominals_have_same_region_erased_shape(
+                        left,
+                        right,
+                        release_sensitive,
+                        &mut pending,
+                    )?,
+                (
+                    CheckedType::Vector {
+                        element: left,
+                        release: left_release,
+                        ..
+                    },
+                    CheckedType::Vector {
+                        element: right,
+                        release: right_release,
+                        ..
+                    },
+                ) => {
+                    pending.push((self.element_type(left)?, self.element_type(right)?));
+                    !release_sensitive || left_release == right_release
+                }
+                (
+                    CheckedType::FixedVector {
+                        element: left,
+                        length: left_length,
+                    },
+                    CheckedType::FixedVector {
+                        element: right,
+                        length: right_length,
+                    },
+                ) => {
+                    pending.push((self.element_type(left)?, self.element_type(right)?));
+                    left_length == right_length
+                }
+                (
+                    CheckedType::Array {
+                        element: left,
+                        length: left_length,
+                    },
+                    CheckedType::Array {
+                        element: right,
+                        length: right_length,
+                    },
+                ) => {
+                    pending.push((self.element_type(left)?, self.element_type(right)?));
+                    left_length == right_length
+                }
+                (CheckedType::Buffer { element: left }, CheckedType::Buffer { element: right }) => {
+                    pending.push((left.ty(), right.ty()));
+                    true
+                }
+                (
+                    CheckedType::Slice {
+                        element: left,
+                        strength: left_strength,
+                        ..
+                    },
+                    CheckedType::Slice {
+                        element: right,
+                        strength: right_strength,
+                        ..
+                    },
+                ) => {
+                    pending.push((left.ty(), right.ty()));
+                    left_strength == right_strength
+                }
+                (CheckedType::Heap { .. }, CheckedType::Heap { .. }) => true,
+                (
+                    CheckedType::Extent {
+                        bytes: left_bytes,
+                        align: left_align,
+                        ..
+                    },
+                    CheckedType::Extent {
+                        bytes: right_bytes,
+                        align: right_align,
+                        ..
+                    },
+                ) => left_bytes == right_bytes && left_align == right_align,
+                _ => false,
+            };
+            if !same {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
-    fn nominals_are_region_blind_equal(
+    fn nominals_have_same_region_erased_shape(
         &self,
         left: NominalId,
         right: NominalId,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
+        release_sensitive: bool,
+        pending: &mut Vec<(CheckedType, CheckedType)>,
     ) -> Result<bool, CheckStop> {
-        if left == right {
-            return Ok(true);
-        }
-        // S39 a type whose release graph has a cycle — a cell-linked tree —
-        // compares against its own instance at another store, so the walk
-        // assumes the pair it is already deciding. Without it the comparison
-        // is the infinite one the depth cap used to cut off, and cutting it
-        // off answered `false` for two instances that differ only in region.
-        if assumed.contains(&(left, right)) {
-            return Ok(true);
-        }
-        if depth > 64 {
-            return Ok(false);
-        }
-        assumed.push((left, right));
-        let outcome = self.nominals_are_region_blind_equal_assuming(left, right, depth, assumed);
-        assumed.pop();
-        outcome
-    }
-
-    fn nominals_are_region_blind_equal_assuming(
-        &self,
-        left: NominalId,
-        right: NominalId,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        // [STOR-2] a box and an arena carry their whole content in the kind
-        // rather than in fields, so the content comparison below has nothing
-        // to read for them.
+        // Box and legacy arena content lives in the kind, rather than in
+        // fields. The ordinary lowering alias retains Box's release action;
+        // the physical family defers it to the closed release environment.
         match (&self.nominal(left)?.kind, &self.nominal(right)?.kind) {
             (
-                CheckedNominalKind::Box { referent: left, .. },
                 CheckedNominalKind::Box {
-                    referent: right, ..
+                    referent: left,
+                    release: left_release,
+                    ..
                 },
-            )
-            | (
+                CheckedNominalKind::Box {
+                    referent: right,
+                    release: right_release,
+                    ..
+                },
+            ) => {
+                pending.push((*left, *right));
+                return Ok(!release_sensitive || left_release == right_release);
+            }
+            (
                 CheckedNominalKind::Arena { content: left, .. },
                 CheckedNominalKind::Arena { content: right, .. },
             ) => {
-                return self.types_are_region_blind_equal(
-                    *left,
-                    *right,
-                    depth.saturating_add(1),
-                    assumed,
-                );
+                pending.push((*left, *right));
+                return Ok(true);
             }
             (CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }, _)
             | (_, CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }) => {
@@ -1413,20 +1524,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             _ => {}
         }
-        if !self.nominal_names_are_region_blind_equal(left, right, depth, assumed)? {
+        if !self.nominal_names_are_region_blind_equal(left, right, pending)? {
             return Ok(false);
         }
-        self.nominal_content_is_region_blind_equal(left, right, depth, assumed)
+        let (left_nominal, right_nominal) = (self.nominal(left)?, self.nominal(right)?);
+        if left_nominal.linear != right_nominal.linear {
+            return Ok(false);
+        }
+        match (&left_nominal.kind, &right_nominal.kind) {
+            (
+                CheckedNominalKind::Struct { fields: left },
+                CheckedNominalKind::Struct { fields: right },
+            ) => Ok(Self::queue_region_blind_fields(left, right, pending)),
+            (
+                CheckedNominalKind::Enum { variants: left },
+                CheckedNominalKind::Enum { variants: right },
+            ) => {
+                if left.len() != right.len() {
+                    return Ok(false);
+                }
+                for (left, right) in left.iter().zip(right) {
+                    if left.name != right.name
+                        || left.tag != right.tag
+                        || !Self::queue_region_blind_fields(&left.fields, &right.fields, pending)
+                    {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
 
-    /// Whether two nominals name the same shape once every region is erased:
-    /// the half of the relation that is about identity rather than layout.
+    /// Compare identity before content: identical layout never merges two
+    /// source declarations, different const arguments, or phantom type
+    /// arguments. A type argument may itself contain the only region axis.
     fn nominal_names_are_region_blind_equal(
         &self,
         left: NominalId,
         right: NominalId,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
+        pending: &mut Vec<(CheckedType, CheckedType)>,
     ) -> Result<bool, CheckStop> {
         let (left_source, right_source) = (
             self.source_nominal_instance_entry(left)?,
@@ -1435,21 +1573,51 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let (Some((left_template, left_instance)), Some((right_template, right_instance))) =
             (left_source, right_source)
         {
-            return Ok(left_template == right_template
-                && left_instance.entries() == right_instance.entries()
-                && !left_instance.region_arguments().is_empty());
+            if left_template != right_template
+                || left_instance.entries().len() != right_instance.entries().len()
+            {
+                return Ok(false);
+            }
+            for ((left_declaration, left_argument), (right_declaration, right_argument)) in
+                left_instance.entries().iter().zip(right_instance.entries())
+            {
+                if left_declaration != right_declaration {
+                    return Ok(false);
+                }
+                use super::generics::GenericArgument;
+                match (left_argument, right_argument) {
+                    (GenericArgument::Type(left), GenericArgument::Type(right)) => {
+                        pending.push((*left, *right));
+                    }
+                    (GenericArgument::Const(left), GenericArgument::Const(right))
+                        if left == right => {}
+                    (GenericArgument::Function(left), GenericArgument::Function(right))
+                        if left == right => {}
+                    _ => return Ok(false),
+                }
+            }
+            return Ok(true);
         }
         if left_source.is_some() || right_source.is_some() {
             return Ok(false);
         }
         let (left_prelude, right_prelude) = (self.prelude_type(left), self.prelude_type(right));
-        if let (Some(left_prelude), Some(right_prelude)) = (left_prelude, right_prelude) {
-            return self.prelude_types_are_region_blind_equal(
-                left_prelude,
-                right_prelude,
-                depth,
-                assumed,
-            );
+        if let (Some(left), Some(right)) = (left_prelude, right_prelude) {
+            return Ok(match (left, right) {
+                (PreludeType::Option(left), PreludeType::Option(right)) => {
+                    pending.push((left, right));
+                    true
+                }
+                (
+                    PreludeType::Result(left_ok, left_error),
+                    PreludeType::Result(right_ok, right_error),
+                ) => {
+                    pending.push((left_ok, right_ok));
+                    pending.push((left_error, right_error));
+                    true
+                }
+                (left, right) => left == right,
+            });
         }
         if left_prelude.is_some() || right_prelude.is_some() {
             return Ok(false);
@@ -1458,42 +1626,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.result_list_ordinal_names(left),
             self.result_list_ordinal_names(right),
         );
-        if let (Some(left_list), Some(right_list)) = (&left_list, &right_list) {
-            return Ok(left_list == right_list);
-        }
-        Ok(false)
+        Ok(matches!((left_list, right_list), (Some(left), Some(right)) if left == right))
     }
 
-    /// One prelude instance's arguments, compared with every region erased.
-    fn prelude_types_are_region_blind_equal(
-        &self,
-        left: PreludeType,
-        right: PreludeType,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        Ok(match (left, right) {
-            (PreludeType::Option(left), PreludeType::Option(right)) => {
-                self.types_are_region_blind_equal(left, right, depth.saturating_add(1), assumed)?
+    fn queue_region_blind_fields(
+        left: &[CheckedField],
+        right: &[CheckedField],
+        pending: &mut Vec<(CheckedType, CheckedType)>,
+    ) -> bool {
+        if left.len() != right.len() {
+            return false;
+        }
+        for (left, right) in left.iter().zip(right) {
+            if left.name != right.name {
+                return false;
             }
-            (
-                PreludeType::Result(left_ok, left_error),
-                PreludeType::Result(right_ok, right_error),
-            ) => {
-                self.types_are_region_blind_equal(
-                    left_ok,
-                    right_ok,
-                    depth.saturating_add(1),
-                    assumed,
-                )? && self.types_are_region_blind_equal(
-                    left_error,
-                    right_error,
-                    depth.saturating_add(1),
-                    assumed,
-                )?
-            }
-            (left, right) => left == right,
-        })
+            pending.push((left.ty, right.ty));
+        }
+        true
     }
 
     /// The ordinal names of a compiler-owned result-list nominal [CALL-4],
@@ -1503,210 +1653,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .find(|(_, candidate)| **candidate == id)
             .map(|(results, _)| results.iter().map(|(name, _)| name.clone()).collect())
-    }
-
-    /// The two instances' fields or variant payloads, compared with every
-    /// region erased and every region-derived datum kept [S20, PROV-6].
-    fn nominal_content_is_region_blind_equal(
-        &self,
-        left: NominalId,
-        right: NominalId,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        if depth > 16 {
-            return Ok(false);
-        }
-        let (left_nominal, right_nominal) = (self.nominal(left)?, self.nominal(right)?);
-        if left_nominal.linear != right_nominal.linear {
-            return Ok(false);
-        }
-        let (left_types, right_types) = (
-            Self::nominal_content_types(&left_nominal.kind),
-            Self::nominal_content_types(&right_nominal.kind),
-        );
-        let (Some(left_types), Some(right_types)) = (left_types, right_types) else {
-            return Ok(false);
-        };
-        if left_types.len() != right_types.len() {
-            return Ok(false);
-        }
-        for (left_type, right_type) in left_types.into_iter().zip(right_types) {
-            if !self.types_are_region_blind_equal(left_type, right_type, depth, assumed)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn nominal_content_types(kind: &CheckedNominalKind) -> Option<Vec<CheckedType>> {
-        match kind {
-            CheckedNominalKind::Struct { fields } => {
-                Some(fields.iter().map(|field| field.ty).collect())
-            }
-            CheckedNominalKind::Enum { variants } => Some(
-                variants
-                    .iter()
-                    .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
-                    .collect(),
-            ),
-            _ => None,
-        }
-    }
-
-    /// One slot's content [BLK-1], compared with every region erased and every
-    /// region-derived datum kept [S20].
-    fn elements_are_region_blind_equal(
-        &self,
-        left: CheckedElement,
-        right: CheckedElement,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        Ok(match (left, right) {
-            (CheckedElement::Flat(left), CheckedElement::Flat(right)) => {
-                self.flat_elements_are_region_blind_equal(left, right, depth, assumed)?
-            }
-            (
-                CheckedElement::FixedVector {
-                    element: left_element,
-                    length: left_length,
-                },
-                CheckedElement::FixedVector {
-                    element: right_element,
-                    length: right_length,
-                },
-            ) => {
-                left_length == right_length
-                    && self.flat_elements_are_region_blind_equal(
-                        left_element,
-                        right_element,
-                        depth,
-                        assumed,
-                    )?
-            }
-            (
-                CheckedElement::Vector {
-                    element: left_element,
-                    release: left_release,
-                    ..
-                },
-                CheckedElement::Vector {
-                    element: right_element,
-                    release: right_release,
-                    ..
-                },
-            ) => {
-                left_release == right_release
-                    && self.flat_elements_are_region_blind_equal(
-                        left_element,
-                        right_element,
-                        depth,
-                        assumed,
-                    )?
-            }
-            _ => false,
-        })
-    }
-
-    fn flat_elements_are_region_blind_equal(
-        &self,
-        left: CheckedFlatElement,
-        right: CheckedFlatElement,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        Ok(match (left, right) {
-            (CheckedFlatElement::Nominal(left), CheckedFlatElement::Nominal(right))
-            | (
-                CheckedFlatElement::TagOnlyNominal(left),
-                CheckedFlatElement::TagOnlyNominal(right),
-            ) => self.types_are_region_blind_equal(
-                CheckedType::Nominal(left),
-                CheckedType::Nominal(right),
-                depth,
-                assumed,
-            )?,
-            _ => left == right,
-        })
-    }
-
-    fn types_are_region_blind_equal(
-        &self,
-        left: CheckedType,
-        right: CheckedType,
-        depth: usize,
-        assumed: &mut Vec<(NominalId, NominalId)>,
-    ) -> Result<bool, CheckStop> {
-        Ok(match (left, right) {
-            (CheckedType::Nominal(left), CheckedType::Nominal(right)) => {
-                self.nominals_are_region_blind_equal(left, right, depth.saturating_add(1), assumed)?
-            }
-            (
-                CheckedType::Vector {
-                    element: left_element,
-                    release: left_release,
-                    ..
-                },
-                CheckedType::Vector {
-                    element: right_element,
-                    release: right_release,
-                    ..
-                },
-            ) => {
-                left_release == right_release
-                    && self.elements_are_region_blind_equal(
-                        left_element,
-                        right_element,
-                        depth,
-                        assumed,
-                    )?
-            }
-            (
-                CheckedType::FixedVector {
-                    element: left_element,
-                    length: left_length,
-                },
-                CheckedType::FixedVector {
-                    element: right_element,
-                    length: right_length,
-                },
-            ) => {
-                left_length == right_length
-                    && self.elements_are_region_blind_equal(
-                        left_element,
-                        right_element,
-                        depth,
-                        assumed,
-                    )?
-            }
-            (
-                CheckedType::Slice {
-                    element: left_element,
-                    strength: left_strength,
-                    ..
-                },
-                CheckedType::Slice {
-                    element: right_element,
-                    strength: right_strength,
-                    ..
-                },
-            ) => left_element == right_element && left_strength == right_strength,
-            (CheckedType::Heap { .. }, CheckedType::Heap { .. }) => true,
-            (
-                CheckedType::Extent {
-                    bytes: left_bytes,
-                    align: left_align,
-                    ..
-                },
-                CheckedType::Extent {
-                    bytes: right_bytes,
-                    align: right_align,
-                    ..
-                },
-            ) => left_bytes == right_bytes && left_align == right_align,
-            _ => left == right,
-        })
     }
 
     /// The template index and instance arguments of one source nominal, when
@@ -1794,6 +1740,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if checkpoint > self.nominals.len() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
+        // Element identities are append-only because a retained generic goal
+        // may still carry a scratch structural handle until its bridge is
+        // reified. Never reuse a key whose nominal identity is being retired.
+        // Unreachable historical entries are not executable type roots.
+        let mut retained = HashSet::new();
+        for (index, ty) in self.elements.borrow().iter().copied().enumerate() {
+            let mut nominals = Vec::new();
+            self.collect_type_nominals(ty, &mut nominals)?;
+            if nominals.iter().all(|id| (id.0 as usize) < checkpoint) {
+                retained.insert(CheckedElement(
+                    u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                ));
+            }
+        }
+        self.element_ids
+            .borrow_mut()
+            .retain(|_, id| retained.contains(id));
         self.nominals.truncate(checkpoint);
         self.nominal_nodes.truncate(checkpoint);
         self.nominal_states.truncate(checkpoint);
@@ -1807,6 +1770,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.box_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
+        self.store_box_nominals
+            .retain(|_, id| (id.0 as usize) < checkpoint);
         self.arena_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.result_list_nominals
@@ -1817,8 +1782,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             self.arena_storage_nominal = None;
         }
-        self.system_nominals
-            .retain(|_, id| (id.0 as usize) < checkpoint);
         Ok(())
     }
 }

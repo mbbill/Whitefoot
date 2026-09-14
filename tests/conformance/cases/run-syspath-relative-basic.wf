@@ -1,5 +1,9 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  doc "PATH-1: construction from one host string succeeds when the complete code-unit sequence contains no NUL code unit and begins with no target-root prefix. Success retypes the same inline lease with no allocation and no code-unit change, and the released path is a logical consume [SYS-5].";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "The ordinary relative_path implementation accepts the arranged relative native name, returning the normal Ok variant without changing its code units. The fixture checks library behavior, not a language path kind.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {

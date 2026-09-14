@@ -2,7 +2,7 @@ struct Counter {
   n: i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "TYPE-5: mutate a struct field with `set place.f = atom`, use the machine-derived S5 post-write equality to discharge the following exact addition, and control-check the expected result.";
   let c = Counter(n: 1_i32);
   set c.n = 41_i32;

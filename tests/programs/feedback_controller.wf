@@ -10,7 +10,7 @@ fn controller_output(error: own f64, integral: own f64, previous_error: own f64,
   return fmin(lower_bounded, 2.0_f64);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let iteration = 0_u64;
   let measured = 0.0_f64;
   let integral = 0.0_f64;

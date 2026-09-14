@@ -4,10 +4,154 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 use super::super::entailment::{CallGoalDisposition, CallGoalEvidence};
 use super::super::goal::{GoalDatum, GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
-    CheckedConst, CheckedElement, CheckedExpression, CheckedFlatElement, CheckedIntegerOperation,
-    CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue, IntegerType, MeasuredKind,
+    CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedNominalKind, CheckedStatement,
+    CheckedType, CheckedValue, IntegerType, MeasuredKind,
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
+
+#[test]
+fn whole_unique_result_preserves_location_but_not_prewrite_value_facts() {
+    for actual in ["deref(chosen)", "&deref(chosen)"] {
+        let (mode, term, read, effects) = if actual.starts_with('&') {
+            ("&", "deref(value)", "deref(value)", "reads(value)")
+        } else {
+            ("own ", "value", "value", "pure")
+        };
+        for changed in [false, true] {
+            let (select_effect, write, forward_effect) = if changed {
+                (
+                    "writes(value)",
+                    "  set deref(value) = 9_u64;\n",
+                    "reads(value), writes(value)",
+                )
+            } else {
+                ("pure", "", "reads(value)")
+            };
+            let source = format!(
+                "fn select['r](value: &uniq 'r u64) -> result: &uniq 'r u64 {select_effect} {{\n{write}  return move value;\n}}\n\nfn indexed(value: {mode}u64) -> result: own u64 {effects} contract {{\n  requires {term} < 1_u64;\n}} {{\n  let rows = array_new::<u64, 1>(7_u64);\n  let index = {read};\n  return rows[index];\n}}\n\nfn forward(value: &uniq u64) -> result: own u64 {forward_effect} contract {{\n  requires deref(value) < 1_u64;\n}} {{\n  let chosen = select(value: move value);\n  region {{\n    return indexed(value: {actual});\n  }}\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            );
+            if changed {
+                super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+                    matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+                });
+            } else {
+                with_semantics(source.as_bytes(), |outcome| {
+                    assert!(
+                        matches!(outcome, SemanticOutcome::Complete(_)),
+                        "unchanged unique whole location preserves its established fact: {outcome:?}"
+                    );
+                });
+            }
+        }
+    }
+}
+
+/// FN-1's candidate is a loan ceiling. A shared result may instead point to
+/// immutable static storage, so the input's predicate is not a predicate of
+/// the delivered referent [ENT-2]. These sources must fail before lowering.
+#[test]
+fn borrow_result_loan_ceilings_do_not_transfer_value_requirements() {
+    for actual in ["chosen", "&deref(chosen)", "alias"] {
+        let alias = if actual == "alias" {
+            "  let alias = chosen;\n"
+        } else {
+            ""
+        };
+        let source = format!(
+            "const alternative: u64 = 9_u64;\n\nfn select['r](value: &'r u64) -> result: &'r u64 pure {{\n  return &'r alternative;\n}}\n\nfn indexed(value: &u64) -> result: own u64 reads(value) contract {{\n  requires deref(value) < 1_u64;\n}} {{\n  let rows = array_new::<u64, 1>(7_u64);\n  let index = deref(value);\n  return rows[index];\n}}\n\nfn forward(value: &u64) -> result: own u64 reads(value) contract {{\n  requires deref(value) < 1_u64;\n}} {{\n  let chosen = select(value: value);\n{alias}  region {{\n    return indexed(value: {actual});\n  }}\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+            matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+        });
+    }
+    for scalar in [false, true] {
+        let (declarations, ty, alternative, input, projected, effect) = if scalar {
+            ("", "u64", "9_u64", "deref(value)", "deref(chosen)", "value")
+        } else {
+            (
+                "struct Entry {\n  offset: u64;\n}\n\n",
+                "Entry",
+                "Entry(offset: 9_u64)",
+                "deref(value).offset",
+                "deref(chosen).offset",
+                "value.offset",
+            )
+        };
+        let source = format!(
+            "{declarations}const alternative: {ty} = {alternative};\n\nfn select['r](value: &'r {ty}) -> result: &'r {ty} pure {{\n  return &'r alternative;\n}}\n\nfn indexed(value: own u64) -> result: own u64 pure contract {{\n  requires value < 1_u64;\n}} {{\n  let rows = array_new::<u64, 1>(7_u64);\n  return rows[value];\n}}\n\nfn forward(value: &{ty}) -> result: own u64 reads({effect}) contract {{\n  requires {input} < 1_u64;\n}} {{\n  let chosen = select(value: value);\n  return indexed(value: {projected});\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+            matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+        });
+    }
+    super::assert_rule_kind(
+        br#"const zero: u64 = 0_u64;
+
+const alternative: u64 = 9_u64;
+
+fn select['r](value: &'r u64) -> result: &'r u64 pure {
+  return &'r alternative;
+}
+
+fn indexed(value: &u64) -> result: own u64 reads(value) contract {
+  requires deref(value) < 1_u64;
+} {
+  let rows = array_new::<u64, 1>(7_u64);
+  let index = deref(value);
+  return rows[index];
+}
+
+fn main() -> status: own ExitStatus pure {
+  region {
+    let chosen = select(value: &zero);
+    let value = indexed(value: chosen);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Fn8,
+        |kind| matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_)),
+    );
+}
+
+#[test]
+fn borrow_result_own_referent_guard_authorizes_its_actual_value() {
+    with_semantics(
+        br#"const alternative: u64 = 9_u64;
+
+fn select['r](value: &'r u64) -> result: &'r u64 pure {
+  return &'r alternative;
+}
+
+fn indexed(value: &u64) -> result: own u64 reads(value) contract {
+  requires deref(value) < 1_u64;
+} {
+  let rows = array_new::<u64, 1>(7_u64);
+  let index = deref(value);
+  return rows[index];
+}
+
+fn forward(value: &u64) -> result: own u64 reads(value) {
+  let chosen = select(value: value);
+  if deref(chosen) < 1_u64 {
+    return indexed(value: chosen);
+  } else {
+    return 99_u64;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "the guard tests the delivered referent, and refusal is real behavior: {outcome:?}"
+            )
+        },
+    );
+}
 
 #[test]
 fn a_non_bool_requires_predicate_cites_op5() {
@@ -18,7 +162,7 @@ fn a_non_bool_requires_predicate_cites_op5() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -36,7 +180,7 @@ fn plural_requires_keep_every_source_occurrence_at_the_call() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = 1_i32;
   let observed = exact(value: value);
   return exit_status(code: 0_u8);
@@ -58,11 +202,11 @@ command fn main() -> status: own ExitStatus pure {
             .functions
             .iter()
             .find(|function| function.name == "main")
-            .expect("command main");
+            .expect("ordinary main");
         let CheckedStatement::Let {
             value: CheckedExpression::UserCall { requirements, .. },
             ..
-        } = &main.body[1]
+        } = &main.body.as_deref().expect("WF body")[1]
         else {
             panic!("the second statement must retain the user call");
         };
@@ -84,7 +228,7 @@ fn a_later_requires_clause_is_not_dropped_after_an_earlier_success() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = 1_i32;
   let observed = exact(value: value);
   return exit_status(code: 0_u8);
@@ -138,7 +282,7 @@ fn requires_retains_one_static_goal_without_a_second_expression_tree() {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let x = 7_i32;
   let value = bounded(x: x);
   return exit_status(code: 0_u8);
@@ -180,7 +324,7 @@ fn requires_is_static_and_keeps_op5_typing() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -212,7 +356,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
           define doubled = a *wrap 2_u64;\n  \
           requires doubled <= 16_u64;\n} {\n  \
           return a;\n}\n\n\
-          command fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
@@ -228,7 +372,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
           define raised = x + 1_i32;\n  \
           requires raised > x;\n} {\n  \
           return x;\n}\n\n\
-          command fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
@@ -244,7 +388,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
           define half = x / 2_u64;\n  \
           requires half <= x;\n} {\n  \
           return x;\n}\n\n\
-          command fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
@@ -255,7 +399,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
           define sum = a +wrap xs[1_u64];\n  \
           requires sum <= 8_u64;\n} {\n  \
           return a;\n}\n\n\
-          command fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
@@ -266,7 +410,7 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
           define candidate = x;\n  \
           requires candidate > 0_i32;\n} {\n  \
           return x;\n}\n\n\
-          command fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
@@ -288,7 +432,7 @@ fn requires_holds_a_clause_local_to_a_copy_type() {
           define xs = fixed_vector::<i32, 4>();\n  \
           requires a < 8_u64;\n} {\n  \
           return a;\n}\n\n\
-          command fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
@@ -304,7 +448,7 @@ fn requires_holds_a_clause_local_to_a_copy_type() {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -318,7 +462,7 @@ command fn main() -> status: own ExitStatus pure {
           define raised = x +checked 1_i32;\n  \
           requires x > 0_i32;\n} {\n  \
           return x;\n}\n\n\
-          command fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
@@ -330,7 +474,7 @@ command fn main() -> status: own ExitStatus pure {
           define ok = a < 8_u64;\n  \
           requires ok;\n} {\n  \
           return a;\n}\n\n\
-          command fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else {
@@ -349,7 +493,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn resolved_system_calls_in_requires_are_fn8_source_rejections() {
+fn ordinary_prelude_calls_in_requires_are_fn8_source_rejections() {
     assert_rule(
         br#"fn invalid() -> result: own ExitStatus pure contract {
   define status = exit_status(code: 0_u8);
@@ -358,7 +502,7 @@ fn resolved_system_calls_in_requires_are_fn8_source_rejections() {
   return exit_status(code: 0_u8);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -377,7 +521,7 @@ fn requires_locals_are_distinct_from_same_named_body_locals() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let x = 7_i32;
   let value = increment(x: x);
   return exit_status(code: 0_u8);
@@ -389,7 +533,10 @@ command fn main() -> status: own ExitStatus pure {
         };
         let function = &checked.data.functions[0];
         assert!(!function.requirements.is_empty());
-        assert!(matches!(function.body[0], CheckedStatement::Let { .. }));
+        assert!(matches!(
+            function.body.as_deref().expect("WF body")[0],
+            CheckedStatement::Let { .. }
+        ));
     });
 }
 
@@ -416,7 +563,7 @@ fn duplicated(left: own u64, right: own u64) -> result: own u64 pure contract {
   return left;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -470,7 +617,7 @@ fn different_const(value: own u64) -> result: own u64 pure contract {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -500,13 +647,13 @@ fn goal_cell_deref_projection_retains_the_selected_referent_type() {
     // The holder is a store cell [S39] where it was the retiring `box<i32>`.
     // A cell carries no measure and its referent read is the same `deref`
     // projection, so the retained goal datum is unchanged.
-    let source = br#"fn positive(owner: own Box<i32>) -> result: own Box<i32> pure contract {
+    let source = br#"fn positive['heap](owner: own Box<'heap, i32>) -> result: own Box<'heap, i32> pure contract {
   requires deref(owner) > 0_i32;
 } {
   return move owner;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -547,7 +694,7 @@ fn measured(envelope: own Envelope) -> result: own Envelope pure contract {
   return move envelope;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -578,12 +725,13 @@ command fn main() -> status: own ExitStatus pure {
             panic!("projected run must remain the formal datum");
         };
         assert_eq!(projections, &[GoalProjection::Field(0)]);
+        let CheckedType::FixedVector { element, length } = *ty else {
+            panic!("projected type must remain a fixed run");
+        };
+        assert_eq!(length, CheckedConst::Value(2));
         assert_eq!(
-            *ty,
-            CheckedType::FixedVector {
-                element: CheckedElement::Flat(CheckedFlatElement::Integer(IntegerType::U8)),
-                length: CheckedConst::Value(2),
-            }
+            checked.element_type(element),
+            Some(CheckedType::Integer(IntegerType::U8))
         );
     });
 }
@@ -612,7 +760,7 @@ fn different<const width: u64>(items: own FixedVector<u8, width>) -> result: own
   return move items;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left_input = fixed_vector::<u8, 2>();
   let left_output = left::<2>(value: move left_input);
   let right_input = fixed_vector::<u8, 2>();
@@ -652,7 +800,7 @@ fn unused_generic_requirement_is_retained_symbolically_without_a_concrete_functi
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -660,7 +808,15 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("unused generic requirement must survive symbolic checking: {outcome:?}");
         };
-        assert_eq!(checked.data.functions.len(), 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            1
+        );
         assert_eq!(checked.data.functions[0].name, "main");
         assert_eq!(checked.data.generic_requirements.len(), 1);
         let symbolic = &checked.data.generic_requirements[0];
@@ -691,7 +847,7 @@ fn need<T: Int>(length: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -739,7 +895,7 @@ fn a_derived_const_in_generic_requirement_has_checked_program_owned_structure() 
   return move value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -776,7 +932,7 @@ fn called_generic_keeps_concrete_instances_and_one_symbolic_requirement() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let narrow = 1_i32;
   let narrow_result = positive::<i32>(value: narrow);
   let wide = 1_i64;
@@ -823,7 +979,7 @@ fn outer<T: Int>(value: own T) -> result: own T pure contract {
   return inner::<T>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -831,7 +987,15 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("transitive symbolic validation must retain canonical entries: {outcome:?}");
         };
-        assert_eq!(checked.data.functions.len(), 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            1
+        );
         assert_eq!(checked.data.generic_requirements.len(), 2);
         assert_ne!(
             checked.data.generic_requirements[0].declaration,
@@ -846,7 +1010,7 @@ fn forward_calls_retain_paths_and_exact_literal_place_and_named_const_images() {
 
 const equal_value_other_const: u64 = 8_u64;
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let local = 3_u64;
   let from_place = below(value: local);
   let from_literal = below(value: 4_u64);
@@ -871,10 +1035,12 @@ fn below(value: own u64) -> result: own u64 pure contract {
             .iter()
             .find(|function| function.name == "main")
             .expect("main function");
-        let CheckedStatement::Let { binding: local, .. } = &main.body[0] else {
+        let CheckedStatement::Let { binding: local, .. } =
+            &main.body.as_deref().expect("WF body")[0]
+        else {
             panic!("main must bind the place actual");
         };
-        let calls = main.body[1..=4]
+        let calls = main.body.as_deref().expect("WF body")[1..=4]
             .iter()
             .map(|statement| match statement {
                 CheckedStatement::Let {
@@ -1004,7 +1170,7 @@ fn positive(value: own u8) -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   positive(value: values[0_u64]);
   return exit_status(code: 0_u8);
 }
@@ -1019,7 +1185,8 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "main")
             .expect("main function");
-        let CheckedStatement::Evaluate(call @ CheckedExpression::UserCall { .. }) = &main.body[0]
+        let CheckedStatement::Evaluate(call @ CheckedExpression::UserCall { .. }) =
+            &main.body.as_deref().expect("WF body")[0]
         else {
             panic!("main must retain the call expression");
         };
@@ -1037,7 +1204,13 @@ command fn main() -> status: own ExitStatus pure {
         let [requirement] = requirements.as_slice() else {
             panic!("call must retain exactly one requirement");
         };
-        assert!(matches!(arguments[0], CheckedExpression::ArrayIndex { .. }));
+        assert!(matches!(
+            &arguments[0],
+            CheckedExpression::ReadStorage { root, .. }
+                if matches!(root.root, super::super::places::PlaceRoot::Constant(_))
+                    && matches!(root.path.as_slice(), [super::super::model::CheckedPlaceStep::Subscript(index)]
+                        if !index.obligation.components().is_empty())
+        ));
         assert_eq!(argument_nodes.len(), 1);
         let GoalExpression::Datum(GoalDatum::EvaluatedValue {
             function: caller,
@@ -1090,7 +1263,7 @@ fn positive(value: own u8) -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   if values[0_u64] < 10_u8 {
     positive(value: values[0_u64]);
   }
@@ -1140,7 +1313,7 @@ fn proxy(value: &u64) -> result: own unit reads(value) {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let local = 1_u64;
   region {
     observe(value: &local);
@@ -1158,7 +1331,8 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "proxy")
             .expect("proxy function");
-        let CheckedStatement::Region { body, .. } = &proxy.body[0] else {
+        let CheckedStatement::Region { body, .. } = &proxy.body.as_deref().expect("WF body")[0]
+        else {
             panic!("proxy must retain child region");
         };
         let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) = &body[0]
@@ -1189,10 +1363,13 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "main")
             .expect("main function");
-        let CheckedStatement::Let { binding: local, .. } = &main.body[0] else {
+        let CheckedStatement::Let { binding: local, .. } =
+            &main.body.as_deref().expect("WF body")[0]
+        else {
             panic!("main local binding");
         };
-        let CheckedStatement::Region { body, .. } = &main.body[1] else {
+        let CheckedStatement::Region { body, .. } = &main.body.as_deref().expect("WF body")[1]
+        else {
             panic!("main direct region");
         };
         let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) = &body[0]
@@ -1243,7 +1420,7 @@ fn guarded<T: Int, const n: u64>(value: own T, values: own FixedVector<u8, n>) -
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&bytes);
     inspect(values: view);
@@ -1276,7 +1453,8 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "main")
             .expect("main function");
-        let CheckedStatement::Region { body, .. } = &main.body[0] else {
+        let CheckedStatement::Region { body, .. } = &main.body.as_deref().expect("WF body")[0]
+        else {
             panic!("main view region");
         };
         let CheckedStatement::Evaluate(CheckedExpression::UserCall {
@@ -1328,7 +1506,7 @@ command fn main() -> status: own ExitStatus pure {
                     ..
                 },
             ..
-        } = &main.body[2]
+        } = &main.body.as_deref().expect("WF body")[2]
         else {
             panic!("guarded call metadata");
         };
@@ -1431,7 +1609,7 @@ fn inspect(holder: own Holder) -> result: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let holder = Value(content: 4_u64);
   let held = inspect(holder: move holder);
   return exit_status(code: 0_u8);

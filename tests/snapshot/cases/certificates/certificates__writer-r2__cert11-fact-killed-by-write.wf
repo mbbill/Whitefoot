@@ -12,6 +12,6 @@ fn refresh_then_bound(x: own u8, limit: own u8, replacement: own u8, y: own u8, 
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

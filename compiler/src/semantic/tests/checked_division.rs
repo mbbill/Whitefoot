@@ -7,7 +7,7 @@ use super::with_semantics;
 
 #[test]
 fn produces_div_error_results() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let quotient = -2147483648_i32 /checked -1_i32;
   let remainder = 42_u64 %checked 5_u64;
   return exit_status(code: 0_u8);
@@ -17,7 +17,7 @@ fn produces_div_error_results() {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("checked division family must check: {outcome:?}");
         };
-        let body = &checked.data.functions[0].body;
+        let body = &checked.data.functions[0].body.as_deref().expect("WF body");
         let [
             CheckedStatement::Let {
                 value:
@@ -38,7 +38,7 @@ fn produces_div_error_results() {
                 ..
             },
             CheckedStatement::Return { .. },
-        ] = body.as_slice()
+        ] = *body
         else {
             panic!("checked division and remainder must retain distinct operations");
         };

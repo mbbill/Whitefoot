@@ -5,10 +5,16 @@ fn element<const n: u64>(values: own FixedVector<u8, n>) -> result: own u8 reads
   return values[2_u64];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 7_u8);
-  let narrow = place_back(vector: move one, value: 7_u8);
+  region {
+    place_back(vector: &uniq empty, value: 7_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 7_u8);
+  }
+  let narrow = move one;
   let value = element::<2>(values: move narrow);
   return exit_status(code: 0_u8);
 }

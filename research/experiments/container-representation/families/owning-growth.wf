@@ -1,0 +1,764 @@
+struct Resource {
+  id: u64;
+  data0: u64;
+  data1: u64;
+  data2: u64;
+  data3: u64;
+}
+
+enum Slot['s] {
+  Vacant();
+  Deleted();
+  Occupied(fingerprint: u8, key: u64, payload: Box<'s, Resource>);
+}
+
+enum Probe {
+  Stop();
+  Skip();
+  Miss();
+  Match();
+}
+
+enum PutOutcome['s] {
+  Inserted();
+  Replaced(previous: Box<'s, Resource>);
+  Full(offered: Box<'s, Resource>);
+  AllocationRefused();
+}
+
+struct Progress['s] {
+  held: Slot<'s>;
+  source_next: u64;
+  next_probe: u64;
+  phase: u8;
+}
+
+struct Rehash['s] {
+  source: Vector<'s, Slot<'s>>;
+  target: Vector<'s, Slot<'s>>;
+  progress: Progress<'s>;
+}
+
+enum Begin['s] {
+  Refused(source: Vector<'s, Slot<'s>>);
+  Started(state: Rehash<'s>);
+}
+
+fn occupied['s](slot: &Slot<'s>) -> full: own Bool reads(slot) {
+  match deref(slot) {
+    Occupied(fingerprint: tag, key: present, payload: owner) => {
+      return True();
+    }
+    Vacant() => {
+      return False();
+    }
+    Deleted() => {
+      return False();
+    }
+  }
+}
+
+fn slot_key['s](slot: &Slot<'s>) -> key: own u64 reads(slot) {
+  match deref(slot) {
+    Occupied(fingerprint: tag, key: present, payload: owner) => {
+      return deref(present);
+    }
+    Vacant() => {
+      return 0_u64;
+    }
+    Deleted() => {
+      return 0_u64;
+    }
+  }
+}
+
+fn fingerprint(key: own u64) -> result: own u8 pure {
+  let tag = 0_u8;
+  let bit0 = iand(key, 1_u64);
+  if bit0 != 0_u64 {
+    set tag = ior(tag, 1_u8);
+  }
+  let bit1 = iand(key, 2_u64);
+  if bit1 != 0_u64 {
+    set tag = ior(tag, 2_u8);
+  }
+  let bit2 = iand(key, 4_u64);
+  if bit2 != 0_u64 {
+    set tag = ior(tag, 4_u8);
+  }
+  let bit3 = iand(key, 8_u64);
+  if bit3 != 0_u64 {
+    set tag = ior(tag, 8_u8);
+  }
+  let bit4 = iand(key, 16_u64);
+  if bit4 != 0_u64 {
+    set tag = ior(tag, 16_u8);
+  }
+  let bit5 = iand(key, 32_u64);
+  if bit5 != 0_u64 {
+    set tag = ior(tag, 32_u8);
+  }
+  let bit6 = iand(key, 64_u64);
+  if bit6 != 0_u64 {
+    set tag = ior(tag, 64_u8);
+  }
+  return tag;
+}
+
+fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 pure contract {
+  requires home < count;
+  requires step < count;
+  ensures index < count;
+} {
+  let until_end = count - home;
+  if step >= until_end {
+    let wrapped = step - until_end;
+    return wrapped;
+  }
+  let straight = home + step;
+  return straight;
+}
+
+fn probe['s](slot: &Slot<'s>, key: own u64) -> result: own Probe reads(slot) {
+  match deref(slot) {
+    Vacant() => {
+      return Stop();
+    }
+    Deleted() => {
+      return Skip();
+    }
+    Occupied(fingerprint: saved, key: present, payload: owner) => {
+      if deref(present) == key {
+        return Match();
+      }
+      return Miss();
+    }
+  }
+}
+
+fn fill_slots['s](slots: &uniq Vector<'s, Slot<'s>>, count: own u64) -> result: own unit reads(slots), writes(slots) contract {
+  requires len_of(deref(slots)) == 0_u64;
+  requires head_of(deref(slots)) <= 0_u64;
+  requires room_of(deref(slots)) >= count;
+  ensures len_of(deref(slots)) == count;
+  ensures head_of(deref(slots)) <= 0_u64;
+} {
+  for (
+    index in 0_u64..count,
+    invariant filled: len_of(deref(slots)) >= index,
+    invariant bounded: len_of(deref(slots)) <= index,
+    invariant spare: room_of(deref(slots)) + index >= count,
+    invariant flat: head_of(deref(slots)) <= 0_u64
+  ) {
+    let vacant = Vacant<'s>();
+    region {
+      place_back(vector: &uniq deref(slots), value: move vacant);
+    }
+  }
+  invariant complete_min: len_of(deref(slots)) >= count;
+  invariant complete_max: len_of(deref(slots)) <= count;
+  return unit;
+}
+
+fn put['s](slots: &uniq Vector<'s, Slot<'s>>, key: own u64, payload: own Box<'s, Resource>) -> outcome: own PutOutcome<'s> reads(slots), writes(slots) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  let count = len_of(deref(slots));
+  let first_deleted = count;
+  for (step in 0_u64..count) {
+    let home = key % count;
+    let index = probe_index(home: home, step: step, count: count);
+    region {
+      let action = probe(slot: &deref(slots)[index], key: key);
+      match action {
+        Match() => {
+          let tag = fingerprint(key: key);
+          let replacement = Occupied(fingerprint: tag, key: key, payload: move payload);
+          let previous = replace deref(slots)[index] = move replacement;
+          match move previous {
+            Occupied(fingerprint: old_tag, key: old_key, payload: old_payload) => {
+              return Replaced(previous: move old_payload);
+            }
+            Vacant() => {
+              return Inserted<'s>();
+            }
+            Deleted() => {
+              return Inserted<'s>();
+            }
+          }
+        }
+        Skip() => {
+          if first_deleted == count {
+            set first_deleted = index;
+          }
+        }
+        Stop() => {
+          let destination = index;
+          if first_deleted < count {
+            set destination = first_deleted;
+          }
+          let tag = fingerprint(key: key);
+          let replacement = Occupied(fingerprint: tag, key: key, payload: move payload);
+          let previous = replace deref(slots)[destination] = move replacement;
+          match move previous {
+            Vacant() => {
+              return Inserted<'s>();
+            }
+            Deleted() => {
+              return Inserted<'s>();
+            }
+            Occupied(fingerprint: old_tag, key: old_key, payload: old_payload) => {
+              return Replaced(previous: move old_payload);
+            }
+          }
+        }
+        Miss() => {
+        }
+      }
+    }
+  }
+  if first_deleted < count {
+    let tag = fingerprint(key: key);
+    let replacement = Occupied(fingerprint: tag, key: key, payload: move payload);
+    let previous = replace deref(slots)[first_deleted] = move replacement;
+    match move previous {
+      Vacant() => {
+        return Inserted<'s>();
+      }
+      Deleted() => {
+        return Inserted<'s>();
+      }
+      Occupied(fingerprint: old_tag, key: old_key, payload: old_payload) => {
+        return Replaced(previous: move old_payload);
+      }
+    }
+  }
+  return Full(offered: move payload);
+}
+
+fn begin['s](store: &uniq Heap<'s>, source: own Vector<'s, Slot<'s>>, count: own u64) -> result: own Begin<'s> reads(store), writes(store), allocates(store) {
+  let fits = buffer_fits::<Slot<'s>>(count);
+  if fits {
+  } else {
+    return Refused(source: move source);
+  }
+  region {
+    match heap_vector::<Slot<'s>>(store: &uniq deref(store), count: count) {
+      None() => {
+        return Refused(source: move source);
+      }
+      Some(value: spare) => {
+        region {
+          fill_slots(slots: &uniq spare, count: count);
+        }
+        let held = Vacant<'s>();
+        let progress = Progress(held: move held, source_next: 0_u64, next_probe: 0_u64, phase: 0_u8);
+        let state = Rehash(source: move source, target: move spare, progress: move progress);
+        return Started(state: move state);
+      }
+    }
+  }
+}
+
+fn read_slot['s](slot: &Slot<'s>) -> (control: own u8, key: own u64, id: own u64) reads(slot) {
+  match deref(slot) {
+    Vacant() => {
+      return 128_u8, 0_u64, 0_u64;
+    }
+    Deleted() => {
+      return 254_u8, 0_u64, 0_u64;
+    }
+    Occupied(fingerprint: saved_tag, key: saved_key, payload: owner) => {
+      return deref(saved_tag), deref(saved_key), deref(deref(owner)).id;
+    }
+  }
+}
+
+fn find['s](slots: &Vector<'s, Slot<'s>>, key: own u64) -> (found: own Option<u64>, examined: own u64) reads(slots) {
+  let count = len_of(deref(slots));
+  let tag = fingerprint(key: key);
+  for (offset in 0_u64..count) {
+    let home = key % count;
+    let index = probe_index(home: home, step: offset, count: count);
+    let work = offset + 1_u64;
+    region {
+      let (control, present_key, present_id) = read_slot(slot: &deref(slots)[index]);
+      if control == 128_u8 {
+        return None<u64>(), work;
+      }
+      if control == tag {
+        if present_key == key {
+          return Some<u64>(value: present_id), work;
+        }
+      }
+    }
+  }
+  return None<u64>(), count;
+}
+
+fn remove['s](slots: &uniq Vector<'s, Slot<'s>>, key: own u64) -> removed: own Option<Box<'s, Resource>> reads(slots), writes(slots) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  let count = len_of(deref(slots));
+  let tag = fingerprint(key: key);
+  for (offset in 0_u64..count) {
+    let home = key % count;
+    let index = probe_index(home: home, step: offset, count: count);
+    region {
+      let (control, present_key, present_id) = read_slot(slot: &deref(slots)[index]);
+      if control == 128_u8 {
+        return None<Box<'s, Resource>>();
+      }
+      if control == tag {
+        if present_key == key {
+          let deleted = Deleted<'s>();
+          let previous = replace deref(slots)[index] = move deleted;
+          match move previous {
+            Vacant() => {
+              return None<Box<'s, Resource>>();
+            }
+            Deleted() => {
+              return None<Box<'s, Resource>>();
+            }
+            Occupied(fingerprint: old_tag, key: old_key, payload: old_payload) => {
+              return Some<Box<'s, Resource>>(value: move old_payload);
+            }
+          }
+        }
+      }
+    }
+  }
+  return None<Box<'s, Resource>>();
+}
+
+fn allocate_put['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s>>, key: own u64, id: own u64) -> outcome: own PutOutcome<'s> reads(store, slots), writes(store, slots), allocates(store) contract {
+  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
+  ensures head_of(deref(slots)) == head_of(deref(entry(slots)));
+} {
+  let data0 = id *wrap 17_u64;
+  let data1 = data0 +wrap 1_u64;
+  let data2 = data0 +wrap 2_u64;
+  let data3 = data0 +wrap 3_u64;
+  let resource = Resource(id: id, data0: data0, data1: data1, data2: data2, data3: data3);
+  region {
+    match heap_box(store: &uniq deref(store), value: move resource) {
+      Err(error: back) => {
+        return AllocationRefused<'s>();
+      }
+      Ok(value: owner) => {
+        let result = put(slots: &uniq deref(slots), key: key, payload: move owner);
+        return move result;
+      }
+    }
+  }
+}
+
+fn check_put['s](store: &uniq Heap<'s>, outcome: own PutOutcome<'s>, kind: own u64, expected: own u64) -> code: own u8 writes(store) {
+  match move outcome {
+    Inserted() => {
+      if kind != 1_u64 {
+        return 1_u8;
+      }
+      return 0_u8;
+    }
+    Replaced(previous: old) => {
+      if kind != 2_u64 {
+        return 2_u8;
+      }
+      if deref(old).id != expected {
+        return 3_u8;
+      }
+      return 0_u8;
+    }
+    Full(offered: back) => {
+      if kind != 3_u64 {
+        return 4_u8;
+      }
+      if deref(back).id != expected {
+        return 5_u8;
+      }
+      return 0_u8;
+    }
+    AllocationRefused() => {
+      return 70_u8;
+    }
+  }
+}
+
+fn digest['s](slots: &Vector<'s, Slot<'s>>) -> result: own u64 reads(slots) {
+  let count = len_of(deref(slots));
+  let start = ixor(1469598103934665603_u64, count);
+  let hash = start *wrap 1099511628211_u64;
+  for (index in 0_u64..count) {
+    let (control, key, id) = read_slot(slot: &deref(slots)[index]);
+    let wide = cvt::<u8, u64>(control);
+    let with_tag = ixor(hash, wide);
+    set hash = with_tag *wrap 1099511628211_u64;
+    if control <= 127_u8 {
+      let with_key = ixor(hash, key);
+      let keyed = with_key *wrap 1099511628211_u64;
+      let with_id = ixor(keyed, id);
+      set hash = with_id *wrap 1099511628211_u64;
+    }
+  }
+  return hash;
+}
+
+fn cleanup['s](store: &uniq Heap<'s>, state: own Rehash<'s>) -> result: own unit writes(store, state) {
+  dispose state;
+  return unit;
+}
+
+fn advance['s](store: &uniq Heap<'s>, source: &uniq Vector<'s, Slot<'s>>, target: &uniq Vector<'s, Slot<'s>>, progress: &uniq Progress<'s>, budget: own u64) -> (examined: own u64, moved: own u64) reads(source, target, progress.held, progress.source_next, progress.next_probe, progress.phase), writes(store, source, target, progress.held, progress.source_next, progress.next_probe, progress.phase) {
+  let source_cursor = deref(progress).source_next;
+  let probe_cursor = deref(progress).next_probe;
+  let phase = deref(progress).phase;
+  let inspected = 0_u64;
+  let transfers = 0_u64;
+  if phase < 2_u8 {
+    for (
+      tick in 0_u64..budget,
+      invariant work_min: inspected >= tick,
+      invariant work_max: inspected <= tick,
+      invariant moved_bound: transfers <= inspected
+    ) {
+      if phase == 0_u8 {
+        let count = len_of(deref(source));
+        if source_cursor >= count {
+          set phase = 3_u8;
+          break;
+        }
+        let index = source_cursor;
+        set source_cursor = source_cursor + 1_u64;
+        region {
+          let full = occupied(slot: &deref(source)[index]);
+          if full {
+            let deleted = Deleted<'s>();
+            let held_slot = replace deref(source)[index] = move deleted;
+            let previous_held = replace deref(progress).held = move held_slot;
+            dispose previous_held;
+            set probe_cursor = 0_u64;
+            set phase = 1_u8;
+          }
+        }
+      } else {
+        let count = len_of(deref(target));
+        if probe_cursor >= count {
+          set phase = 2_u8;
+          break;
+        }
+        region {
+          let key = slot_key(slot: &deref(progress).held);
+          let home = key % count;
+          let index = probe_index(home: home, step: probe_cursor, count: count);
+          set probe_cursor = probe_cursor + 1_u64;
+          let full = occupied(slot: &deref(target)[index]);
+          if full {
+          } else {
+            let vacant = Vacant<'s>();
+            let held_slot = replace deref(progress).held = move vacant;
+            let previous = replace deref(target)[index] = move held_slot;
+            dispose previous;
+            set transfers = transfers + 1_u64;
+            set phase = 0_u8;
+          }
+        }
+      }
+      set inspected = inspected + 1_u64;
+    }
+    if phase == 0_u8 {
+      let source_count = len_of(deref(source));
+      if source_cursor == source_count {
+        set phase = 3_u8;
+      }
+    }
+  }
+  set deref(progress).source_next = source_cursor;
+  set deref(progress).next_probe = probe_cursor;
+  set deref(progress).phase = phase;
+  return inspected, transfers;
+}
+
+fn rehash_all['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s>>, count: own u64) -> (code: own u8, examined: own u64, moved: own u64) reads(store, slots), writes(store, slots), allocates(store) contract {
+  requires len_of(deref(slots)) <= 1048576_u64;
+  requires count >= len_of(deref(slots));
+  requires count <= 2097152_u64;
+} {
+  let fits = buffer_fits::<Slot<'s>>(count);
+  if fits {
+  } else {
+    return 1_u8, 0_u64, 0_u64;
+  }
+  region {
+    match heap_vector::<Slot<'s>>(store: &uniq deref(store), count: count) {
+      None() => {
+        return 1_u8, 0_u64, 0_u64;
+      }
+      Some(value: target) => {
+        let held = Vacant<'s>();
+        let progress = Progress(held: move held, source_next: 0_u64, next_probe: 0_u64, phase: 0_u8);
+        region {
+          fill_slots(slots: &uniq target, count: count);
+          let (work, moved) = advance(store: &uniq deref(store), source: &uniq deref(slots), target: &uniq target, progress: &uniq progress, budget: 18446744073709551615_u64);
+          let phase = progress.phase;
+          let old = replace deref(slots) = move target;
+          dispose old;
+          return phase, work, moved;
+        }
+      }
+    }
+  }
+}
+
+fn create_table['s](store: &uniq Heap<'s>, count: own u64) -> result: own Option<Vector<'s, Slot<'s>>> reads(store), writes(store), allocates(store) {
+  let fits = buffer_fits::<Slot<'s>>(count);
+  if fits {
+  } else {
+    return None<Vector<'s, Slot<'s>>>();
+  }
+  region {
+    match heap_vector::<Slot<'s>>(store: &uniq deref(store), count: count) {
+      None() => {
+        return None<Vector<'s, Slot<'s>>>();
+      }
+      Some(value: spare) => {
+        region {
+          fill_slots(slots: &uniq spare, count: count);
+        }
+        return Some<Vector<'s, Slot<'s>>>(value: move spare);
+      }
+    }
+  }
+}
+
+fn checked_insert['s](store: &uniq Heap<'s>, slots: &uniq Vector<'s, Slot<'s>>, key: own u64, id: own u64, kind: own u64, expected: own u64) -> code: own u8 reads(store, slots), writes(store, slots), allocates(store) {
+  region {
+    let outcome = allocate_put(store: &uniq deref(store), slots: &uniq deref(slots), key: key, id: id);
+    let verdict = check_put(store: &uniq deref(store), outcome: move outcome, kind: kind, expected: expected);
+    return verdict;
+  }
+}
+
+fn state_hash['s](state: &Rehash<'s>) -> result: own u64 reads(state.source, state.target, state.progress.held, state.progress.source_next, state.progress.next_probe, state.progress.phase) {
+  region {
+    let source = digest(slots: &deref(state).source);
+    let target = digest(slots: &deref(state).target);
+    let (control, key, id) = read_slot(slot: &deref(state).progress.held);
+    let first = source *wrap 131_u64;
+    let second = first +wrap target;
+    let third = second *wrap 131_u64;
+    let fourth = third +wrap deref(state).progress.source_next;
+    let fifth = fourth *wrap 131_u64;
+    let sixth = fifth +wrap deref(state).progress.next_probe;
+    let phase = cvt::<u8, u64>(deref(state).progress.phase);
+    let seventh = sixth *wrap 131_u64;
+    let eighth = seventh +wrap phase;
+    let ninth = eighth *wrap 131_u64;
+    if control <= 127_u8 {
+      let tenth = ninth +wrap key;
+      let eleventh = tenth *wrap 131_u64;
+      return eleventh +wrap id;
+    }
+    return ninth *wrap 131_u64;
+  }
+}
+
+fn check_lookup['s](slots: &Vector<'s, Slot<'s>>, key: own u64, expected: own u64, work: own u64) -> code: own u8 reads(slots) {
+  region {
+    let (found, examined) = find(slots: &deref(slots), key: key);
+    if examined != work {
+      return 11_u8;
+    }
+    match move found {
+      None() => {
+        return 12_u8;
+      }
+      Some(value: present) => {
+        if present != expected {
+          return 13_u8;
+        }
+        return 0_u8;
+      }
+    }
+  }
+}
+
+fn map_contract['s](store: &uniq Heap<'s>, seed: own u64, scenario: own u64, budget: own u64) -> result: own u64 reads(store), writes(store), allocates(store) {
+  let initial = 8_u64;
+  let entries = 3_u64;
+  if scenario == 0_u64 {
+    set entries = 5_u64;
+  }
+  if scenario >= 3_u64 {
+    set initial = 1_u64;
+    set entries = 1_u64;
+  }
+  let base = seed *wrap 100_u64;
+  region {
+    match create_table(store: &uniq deref(store), count: initial) {
+      None() => {
+        return 70_u64;
+      }
+      Some(value: slots) => {
+        for (ordinal in 0_u64..entries) {
+          let key_offset = ordinal *wrap 8_u64;
+          let kind = 1_u64;
+          let expected = 0_u64;
+          if scenario == 0_u64 {
+            if ordinal == 2_u64 {
+              set key_offset = 8_u64;
+              set kind = 2_u64;
+              set expected = base +wrap 2_u64;
+            }
+            if ordinal == 3_u64 {
+              let removed = remove(slots: &uniq slots, key: seed);
+              match move removed {
+                None() => {
+                  return 14_u64;
+                }
+                Some(value: owner) => {
+                  let expected_removed = base +wrap 1_u64;
+                  if deref(owner).id != expected_removed {
+                    return 15_u64;
+                  }
+                }
+              }
+              set key_offset = 8_u64;
+              set kind = 2_u64;
+              set expected = base +wrap 3_u64;
+              let query = seed +wrap 8_u64;
+              let query_id = base +wrap 3_u64;
+              region {
+                let checked_lookup = check_lookup(slots: &slots, key: query, expected: query_id, work: 2_u64);
+                if checked_lookup != 0_u8 {
+                  return cvt::<u8, u64>(checked_lookup);
+                }
+              }
+            }
+            if ordinal == 4_u64 {
+              set key_offset = 16_u64;
+            }
+          }
+          let key = seed +wrap key_offset;
+          let index_id = base +wrap ordinal;
+          let id = index_id +wrap 1_u64;
+          region {
+            let checked_put = checked_insert(store: &uniq deref(store), slots: &uniq slots, key: key, id: id, kind: kind, expected: expected);
+            if checked_put != 0_u8 {
+              return cvt::<u8, u64>(checked_put);
+            }
+          }
+        }
+        if scenario == 4_u64 {
+          let key = seed +wrap 1_u64;
+          let id = base +wrap 2_u64;
+          region {
+            let checked_full = checked_insert(store: &uniq deref(store), slots: &uniq slots, key: key, id: id, kind: 3_u64, expected: id);
+            if checked_full != 0_u8 {
+              return cvt::<u8, u64>(checked_full);
+            }
+            region {
+              return digest(slots: &slots);
+            }
+          }
+        }
+        let target_capacity = 8_u64;
+        if scenario == 0_u64 {
+          set target_capacity = 16_u64;
+        }
+        if scenario == 3_u64 {
+          set target_capacity = 1_u64;
+        }
+        region {
+          let before = digest(slots: &slots);
+          match begin(store: &uniq deref(store), source: move slots, count: target_capacity) {
+            Refused(source: original) => {
+              region {
+                let after = digest(slots: &original);
+                if before != after {
+                  return 16_u64;
+                }
+              }
+              return 70_u64;
+            }
+            Started(state: migration) => {
+              region {
+                let total_work = 0_u64;
+                let total_moved = 0_u64;
+                if scenario == 3_u64 {
+                  let key = seed +wrap 1_u64;
+                  let id = base +wrap 2_u64;
+                  let checked_target = checked_insert(store: &uniq deref(store), slots: &uniq migration.target, key: key, id: id, kind: 1_u64, expected: 0_u64);
+                  if checked_target != 0_u8 {
+                    return cvt::<u8, u64>(checked_target);
+                  }
+                }
+                if scenario == 2_u64 {
+                  for (round in 0_u64..14_u64) {
+                    let unchanged = state_hash(state: &migration);
+                    let (idle_work, idle_moved) = advance(store: &uniq deref(store), source: &uniq migration.source, target: &uniq migration.target, progress: &uniq migration.progress, budget: 0_u64);
+                    let after_idle = state_hash(state: &migration);
+                    if unchanged != after_idle {
+                      return 17_u64;
+                    }
+                    if idle_work != 0_u64 {
+                      return 18_u64;
+                    }
+                    if idle_moved != 0_u64 {
+                      return 19_u64;
+                    }
+                    let (work, moved) = advance(store: &uniq deref(store), source: &uniq migration.source, target: &uniq migration.target, progress: &uniq migration.progress, budget: 1_u64);
+                    set total_work = total_work +wrap work;
+                    set total_moved = total_moved +wrap moved;
+                    if work != 1_u64 {
+                      return 20_u64;
+                    }
+                  }
+                } else {
+                  let (work, moved) = advance(store: &uniq deref(store), source: &uniq migration.source, target: &uniq migration.target, progress: &uniq migration.progress, budget: budget);
+                  set total_work = work;
+                  set total_moved = moved;
+                  if work > budget {
+                    return 21_u64;
+                  }
+                  if scenario == 3_u64 {
+                    let unchanged = state_hash(state: &migration);
+                    let (retry_work, retry_moved) = advance(store: &uniq deref(store), source: &uniq migration.source, target: &uniq migration.target, progress: &uniq migration.progress, budget: 99_u64);
+                    let after_retry = state_hash(state: &migration);
+                    if unchanged != after_retry {
+                      return 22_u64;
+                    }
+                    if retry_work != 0_u64 {
+                      return 23_u64;
+                    }
+                    if retry_moved != 0_u64 {
+                      return 24_u64;
+                    }
+                  }
+                }
+                let hash = state_hash(state: &migration);
+                cleanup(store: &uniq deref(store), state: move migration);
+                let first = hash *wrap 131_u64;
+                let second = first +wrap total_work;
+                let third = second *wrap 131_u64;
+                return third +wrap total_moved;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    let observed = map_contract(store: &uniq heap, seed: 0_u64, scenario: 0_u64, budget: 100_u64);
+    if observed <= 70_u64 {
+      return exit_status(code: 1_u8);
+    }
+    return exit_status(code: 0_u8);
+  }
+}

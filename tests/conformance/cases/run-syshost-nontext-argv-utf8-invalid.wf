@@ -1,5 +1,9 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  doc "HOST-2: the text route validates the complete code-unit sequence and reports an explicit invalid-text outcome rather than emitting a replacement code point, dropping a code unit, or producing a truncated encoding. The same argument the lossless route copies verbatim is Utf8Invalid here [SYS-6, SYS-9].";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "The ordinary host_copy_utf8 implementation reports invalid text for the arranged non-UTF-8 argument. The outcome is a normal enum match; no semantic operand class or target qualification applies.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {

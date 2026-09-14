@@ -3,6 +3,6 @@ fn hold['r0](x: own i32, anchor: &'r0 i32) -> function_result: &'r0 i32 pure {
   return anchor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

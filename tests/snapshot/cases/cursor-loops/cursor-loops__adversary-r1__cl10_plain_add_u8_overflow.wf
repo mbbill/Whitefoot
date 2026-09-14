@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: plain + on a u8 cursor stepping by 2 for 200 counted-for iterations mathematically exceeds 255 (at i==128 cursor would be 256), so the addition domain is unproven";
   let cursor = 0_u8;
   for (i in 0_u64..200_u64) {

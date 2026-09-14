@@ -4,7 +4,7 @@ fn saturating_step(level: own u8, delta: own u8) -> result: own u8 pure {
   return saturated;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let below_max = saturating_step(level: 100_u8, delta: 20_u8);
   let at_ceiling = saturating_step(level: 250_u8, delta: 20_u8);
   if below_max == 120_u8 {

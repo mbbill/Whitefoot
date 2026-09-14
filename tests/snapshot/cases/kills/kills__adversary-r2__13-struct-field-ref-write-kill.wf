@@ -15,7 +15,7 @@ fn h3(b: &uniq Cell, w: own u8) -> result: own u8 reads(b.v), writes(b.v) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT (OP-2): writing through &uniq deref(b).v=w kills old<=5; old=0(ok), w=255 -> cur+250_u8 overflows u8";
   let cell = Cell(v: 0_u8);
   region {

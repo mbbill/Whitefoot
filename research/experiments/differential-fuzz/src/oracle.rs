@@ -1,6 +1,6 @@
 //! The oracle: what it means for one generated program to pass.
 //!
-//! [PAR-1], [PAR-2], and [PAR-3] all state the same guarantee in the same
+//! [PAR-1] and [PAR-2] all state the same guarantee in the same
 //! words -- under a permitted overlap, bindings and every Whitefoot state place
 //! equal the source-order result, and whether an overlap happened at all is not
 //! observable. So the reference is not a model of the language: it is the same
@@ -26,8 +26,8 @@ use std::time::{Duration, Instant};
 pub enum Lowering {
     /// `--no-overlap`: the source-order reference.
     Sequential,
-    /// The shipped default: completion overlap.
-    Completion,
+    /// The shipped default, retained as its own invocation control.
+    Default,
     /// `--par`: the actualizing parallel lowering.
     Parallel,
 }
@@ -36,7 +36,7 @@ impl Lowering {
     pub fn flag(self) -> Option<&'static str> {
         match self {
             Lowering::Sequential => Some("--no-overlap"),
-            Lowering::Completion => None,
+            Lowering::Default => None,
             Lowering::Parallel => Some("--par"),
         }
     }
@@ -44,7 +44,7 @@ impl Lowering {
     pub fn spelling(self) -> &'static str {
         match self {
             Lowering::Sequential => "no-overlap",
-            Lowering::Completion => "completion",
+            Lowering::Default => "default",
             Lowering::Parallel => "par",
         }
     }
@@ -178,8 +178,6 @@ pub struct Ledger {
     pub pair_denied: u64,
     pub loop_permitted: u64,
     pub loop_denied: u64,
-    pub stage_permitted: u64,
-    pub stage_denied: u64,
 }
 
 impl Ledger {
@@ -189,8 +187,6 @@ impl Ledger {
             pair_denied: 0,
             loop_permitted: 0,
             loop_denied: 0,
-            stage_permitted: 0,
-            stage_denied: 0,
         };
         for line in lines {
             // The verdict is a field of the line, not a word anywhere in it: a
@@ -209,12 +205,6 @@ impl Ledger {
                     ledger.loop_permitted += 1;
                 } else {
                     ledger.loop_denied += 1;
-                }
-            } else if line.starts_with("PAR stage") {
-                if permitted {
-                    ledger.stage_permitted += 1;
-                } else {
-                    ledger.stage_denied += 1;
                 }
             }
         }
@@ -255,11 +245,9 @@ pub enum Judgment {
     Unstable(String),
     /// The reference itself did not finish.
     ReferenceTimeout,
-    /// The sequential build itself was killed by a signal. An accepted
-    /// program has exactly one writer-reachable trap, a written claim, and the
-    /// generated claims are always true; so this is a defect of its own class
-    /// and never a reference. Comparing it against other builds would only
-    /// report whether they died the same way.
+    /// The sequential build itself was killed by a signal. Source invariants
+    /// are erased and no writer-reachable proof trap exists. Keep this outcome
+    /// as a separate finding instead of accepting agreement on the same crash.
     ReferenceCrash,
     /// Every run agreed with the source-order reference.
     Agreed,
@@ -507,7 +495,7 @@ fn cited_rule(message: &str) -> String {
 }
 
 /// The subset of the matrix the actualizing parallel lowering is run over. The
-/// completion build is the shipped one and gets the whole matrix; the parallel
+/// default build is the shipped one and gets the whole matrix; the parallel
 /// build is the only one `WF_WORKERS` reaches, so it gets the worker axis at
 /// both ends of the helper axis.
 const PARALLEL_MATRIX: &[Setting] = &[
@@ -547,7 +535,7 @@ impl Oracle {
         // thing about the run that the harness rather than the compiler
         // decides; equal-length names keep even that out of the comparison.
         let sequential = self.build.join(format!("{tag}-a"));
-        let completion = self.build.join(format!("{tag}-b"));
+        let default = self.build.join(format!("{tag}-b"));
         let parallel = self.build.join(format!("{tag}-c"));
         let mut runs = 0;
         let mut fifo_runs = 0;
@@ -560,25 +548,25 @@ impl Oracle {
                 fifo_runs,
             };
         }
-        let ledger = match self.compile(source, Lowering::Completion, &completion, true) {
+        if let Err(rejection) = self.compile(source, Lowering::Default, &default, false) {
+            return Verdict {
+                judgment: Judgment::LoweringRefusal(Lowering::Default, rejection),
+                ledger: None,
+                runs,
+                fifo_runs,
+            };
+        }
+        let ledger = match self.compile(source, Lowering::Parallel, &parallel, true) {
             Ok(lines) => Ledger::read(&lines),
             Err(rejection) => {
                 return Verdict {
-                    judgment: Judgment::LoweringRefusal(Lowering::Completion, rejection),
+                    judgment: Judgment::LoweringRefusal(Lowering::Parallel, rejection),
                     ledger: None,
                     runs,
                     fifo_runs,
                 }
             }
         };
-        if let Err(rejection) = self.compile(source, Lowering::Parallel, &parallel, false) {
-            return Verdict {
-                judgment: Judgment::LoweringRefusal(Lowering::Parallel, rejection),
-                ledger: Some(ledger),
-                runs,
-                fifo_runs,
-            };
-        }
 
         let quiet = Setting {
             workers: "0",
@@ -625,7 +613,7 @@ impl Oracle {
         }
 
         let plan: [(Lowering, &Path, &[Setting]); 2] = [
-            (Lowering::Completion, &completion, MATRIX),
+            (Lowering::Default, &default, MATRIX),
             (Lowering::Parallel, &parallel, PARALLEL_MATRIX),
         ];
         for (lowering, binary, matrix) in plan {
@@ -679,11 +667,11 @@ impl Oracle {
                     helpers: "4",
                 },
             ] {
-                let observed = self.execute_on_fifo(&completion, setting, tag);
+                let observed = self.execute_on_fifo(&default, setting, tag);
                 fifo_runs += 1;
                 if let Some((field, expected, actual)) = reference.agrees(&observed) {
                     let candidate = Divergence {
-                        lowering: Lowering::Completion,
+                        lowering: Lowering::Default,
                         setting: format!(
                             "WF_WORKERS={} WF_IO_HELPERS={}",
                             setting.workers, setting.helpers
@@ -695,7 +683,7 @@ impl Oracle {
                     };
                     return self.confirm(
                         &sequential,
-                        &completion,
+                        &default,
                         setting,
                         candidate,
                         &reference,

@@ -3,7 +3,7 @@ enum Flag {
   B();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "OWN-1 copy vs affine: i32 n is reused three times (copy on use); the enum is consumed by exactly one match (affine).";
   let n = 14_i32;
   if n +defined n {

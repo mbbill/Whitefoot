@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Nothing inside the block names `'r` after elision, so [FORM-8] writes the block as `region { ... }`.";
   let a = 40_i32;
   region 'r {

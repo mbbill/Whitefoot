@@ -7,7 +7,7 @@ fn safe_divide(n: own u64, d: own u64) -> result: own u64 pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let q = safe_divide(n: 20_u64, d: 4_u64);
   if q == 5_u64 {
   } else {

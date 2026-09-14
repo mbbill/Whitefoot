@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Primitive types i32 and unit are in-language [TYPE-1].";
   let a = 7_i32;
   let b = a + 35_i32;

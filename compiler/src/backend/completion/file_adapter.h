@@ -244,8 +244,8 @@ int wf_file_request_valid(const wf_file_request *request);
  * code that applies them. */
 int wf_file_request_is_peer_bound(const wf_file_request *request);
 
-/* Records one direction of one connection as released, and answers whether it
- * was the pair's second release [SYS-18].
+/* Records one direction of one connection as released after its host shutdown
+ * has returned, and answers whether it was the pair's second release.
  *
  * The two directions of one connection are two Whitefoot places and the
  * target's object behind them is one, so the runtime keeps the "both halves
@@ -258,30 +258,20 @@ int wf_file_request_is_peer_bound(const wf_file_request *request);
  *
  * Which direction releases first is the program's own ordinary release order
  * and changes no outcome, so this answers the same way whichever comes first.
- * A pair is always released exactly twice -- by `close_connection`, or by
- * derived release of both halves -- so a descriptor's byte returns to zero
- * before the host can hand that descriptor out again.
+ * A pair is released exactly twice by its ordinary explicit half-close calls.
+ * Each caller finishes using the native socket before publishing its release;
+ * only the second publisher may close it and return a factory credit. The
+ * descriptor's byte returns to zero before the host can reuse that number.
  *
- * The table covers every descriptor the [SYS-10] handle factory can produce:
- * that factory's own capacity ceiling is this same number less the reserve it
- * keeps for the runtime's descriptors (`backend/wf_floor.c`), and the host
- * hands out the lowest free descriptor, so a connection's descriptor is
- * always below this bound.  A descriptor outside it is half-closed and never
- * closed here, because closing a descriptor whose pair this runtime cannot
- * count could reach an object the program still owns.
- *
- * Not read from a header shared with `wf_floor.c`: that unit must build
- * standalone, with no dependency on this directory, for a program that needs
- * neither I/O nor parallelism (`tests/programs/support.rs`,
- * `stage_runtime_units`, which stages `completion/` only when the module
- * asks for it, while `wf_floor.c` is always staged and always compiled
- * alone).  The pinned assertion below is what a shared constant cannot be
- * here: changing this number without changing the other fails one of the
- * two builds immediately. */
+ * The ordinary launcher in `ordinary_values.c` caps POSIX factory capacity
+ * at this number less its runtime descriptor reserve; Windows uses its
+ * smaller descriptor table. A descriptor outside this table is half-closed
+ * and never closed here, because closing a descriptor whose pair this runtime
+ * cannot count could reach an object the program still owns. */
 #define WF_FILE_CONNECTION_DESCRIPTORS (1u << 20)
 _Static_assert(
     WF_FILE_CONNECTION_DESCRIPTORS == (1u << 20),
-    "must change together with backend/wf_floor.c's WF_FILE_CAPACITY_CEILING"
+    "must match the POSIX factory capacity ceiling in ordinary_values.c"
 );
 
 int wf_file_connection_release(int descriptor);

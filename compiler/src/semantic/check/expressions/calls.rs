@@ -2,7 +2,6 @@ mod conversions;
 mod floating;
 mod kernel;
 mod reinterpret;
-mod system;
 mod user;
 
 use std::collections::HashMap;
@@ -32,6 +31,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
+        if self.tree.is_constructor_call(node)? {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "a function or operation call in this statement position",
+                    "a construction",
+                ),
+            );
+        }
+        if let Some(key) = self.behavior_call_key(node)? {
+            return self.check_behavior_call(node, key, function, bindings, loop_depth);
+        }
         let callee = self
             .tree
             .first_child_with(node, Production::Callee)?
@@ -50,11 +62,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } => self.check_user_call(node, declaration, function, bindings, loop_depth),
             ResolvedTarget::Operation(operation) => {
                 self.check_operation(node, operation, function, bindings, loop_depth)
-            }
-            ResolvedTarget::System(id) => {
-                let operation = crate::system_operation_index(id)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                self.check_system_call(node, operation, function, bindings, loop_depth)
             }
             // One [BLK-0] kernel-domain row: a fourth callee class, checked
             // from its own compiler-owned signature record.
@@ -348,16 +355,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         function: &FunctionSignature,
     ) -> Result<[CheckedNumericType; 2], CheckStop> {
-        let targs = self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRule::Type5,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                )
-            })?;
+        let targs = self.tree.argument_list(node)?.ok_or_else(|| {
+            self.issue_value(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::InvalidOperation,
+            )
+        })?;
         let arguments = self.tree.children_with(targs, Production::Targ)?;
         let [source, destination] = arguments.as_slice() else {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
@@ -405,7 +409,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // GRAM-11 named-argument rejection plus [STOR-5] on the written
         // content argument.
         self.reject_region_bearing_storage_operation_argument(node, "arena_new", function, 2, 1)?;
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
@@ -414,8 +418,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         if self
             .tree
-            .first_child_with(*region_argument, Production::Type)?
-            .is_some()
+            .direct_token_with(*region_argument, crate::TerminalPredicate::RegionIdentifier)?
+            .is_none()
         {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
@@ -532,7 +536,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 nominal,
                 value: Box::new(value.expression),
             },
-            value.effects.union(EffectSet::ALLOCATES_HEAP),
+            value.effects,
         ))
     }
 
@@ -659,11 +663,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        if self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .is_some()
-        {
+        if self.tree.argument_list(node)?.is_some() {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
         Ok(())
@@ -677,16 +677,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         function: &FunctionSignature,
     ) -> Result<CheckedType, CheckStop> {
-        let targs = self
-            .tree
-            .first_child_with(node, Production::Targs)?
-            .ok_or_else(|| {
-                self.issue_value(
-                    SemanticRule::Type5,
-                    node,
-                    SemanticIssueKind::InvalidOperation,
-                )
-            })?;
+        let targs = self.tree.argument_list(node)?.ok_or_else(|| {
+            self.issue_value(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::InvalidOperation,
+            )
+        })?;
         let targs = self.tree.children_with(targs, Production::Targ)?;
         if targs.len() != 1 {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
@@ -746,7 +743,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let Some(arguments) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(arguments) = self.tree.argument_list(node)? else {
             return Ok(());
         };
         let arguments = self.tree.children_with(arguments, Production::Targ)?;
@@ -758,82 +755,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if let Some(ty) = self.tree.first_child_with(argument, Production::Type)? {
             self.reject_region_bearing_storage_type(ty, &function.substitution)?;
-        }
-        Ok(())
-    }
-
-    /// Checks [GRAM-11] named arguments at every call to a system operation.
-    ///
-    /// [GRAM-11] applies the [GRAM-8] discipline to calls: a `call` whose
-    /// callee resolves to an admitted system operation [SYS-1] writes its
-    /// value arguments as a `fieldinit_list` whose IDENTs equal the callee's
-    /// [SYS-2] declared parameter names in declared order, and positional
-    /// operands are not admitted at all. A missing, extra, repeated,
-    /// misspelled, or out-of-order name is a hard error citing GRAM-11 and the
-    /// callee's parameter list.
-    ///
-    /// The judgment runs whole-unit on resolved facts because the rest of a
-    /// system call's semantic path is still an unsupported capability: an
-    /// unsupported capability establishes no source violation [DIAG-1], so it
-    /// must not swallow the argument-spelling rejection this checker can
-    /// already establish. Region `targs`, argument types, modes, effects, and
-    /// lowering stay outside this judgment.
-    pub(in crate::semantic::check) fn check_system_call_arguments(&self) -> Result<(), CheckStop> {
-        for usage in self.resolved.lexical_uses() {
-            if usage.role() != LexicalUseRole::IdentifierCallee {
-                continue;
-            }
-            let ResolvedTarget::System(id) = usage.target() else {
-                continue;
-            };
-            let Some(crate::SystemEntity::Operation(operation)) = crate::system_entity(id) else {
-                continue;
-            };
-            let callee = self
-                .tree
-                .node_with_path(usage.origin().node())
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            let call = self
-                .tree
-                .parent(callee)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.check_system_call_argument_names(call, operation)?;
-        }
-        Ok(())
-    }
-
-    fn check_system_call_argument_names(
-        &self,
-        call: NodeId,
-        operation: &'static crate::SystemOperation,
-    ) -> Result<(), CheckStop> {
-        let invalid = || SemanticIssueKind::InvalidNamedArguments {
-            callee: operation.spelling.to_owned(),
-            declared_parameters: operation
-                .parameters
-                .iter()
-                .map(|parameter| parameter.name.to_owned())
-                .collect(),
-        };
-        let fields = match self
-            .tree
-            .first_child_with(call, Production::FieldinitList)?
-        {
-            Some(list) => self.tree.children_with(list, Production::Fieldinit)?,
-            None => Vec::new(),
-        };
-        if self
-            .tree
-            .first_child_with(call, Production::AtomList)?
-            .is_some()
-            || fields.len() != operation.parameters.len()
-        {
-            return self.issue_node(SemanticRule::Gram11, call, invalid());
-        }
-        for (field, parameter) in fields.into_iter().zip(operation.parameters) {
-            if self.identifier(field)? != parameter.name {
-                return self.issue_node(SemanticRule::Gram11, field, invalid());
-            }
         }
         Ok(())
     }

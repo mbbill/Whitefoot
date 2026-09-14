@@ -29,6 +29,14 @@ pub(in crate::semantic::check) struct BreakState {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    fn loop_binding_agrees(
+        &self,
+        entry: Option<&LocalBinding>,
+        backedge: Option<&LocalBinding>,
+    ) -> bool {
+        entry == backedge
+    }
+
     fn form_loop_invariants(
         &self,
         nodes: Vec<NodeId>,
@@ -92,9 +100,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .binding_names
             .push(binder_declaration.spelling().to_owned());
 
-        // The structural false-header edge always carries this exact state to
-        // the continuation. The binder and body locals exist only in the
-        // separate header/body state below.
+        // Exhaustion can follow any iteration, so it carries the stable
+        // header image, including entry and every possible backedge origin.
         let base_bindings = bindings.clone();
         let base_keys = base_bindings.keys().copied().collect::<Vec<_>>();
         let preserved = base_keys.iter().copied().collect::<HashSet<_>>();
@@ -107,7 +114,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration: binder_declaration_id,
                     mode: CheckedMode::Own,
                     ty: CheckedType::Integer(IntegerType::U64),
-                    state_origins: None,
                     live: true,
                     loop_depth: scope.loops.len() + 1,
                     compiler_updated: true,
@@ -169,9 +175,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.judge_backedge_liveness(node, &header_keys, &header_bindings, &body_bindings)?;
         if checked.can_continue
-            && header_keys
-                .iter()
-                .any(|key| body_bindings.get(key) != header_bindings.get(key))
+            && header_keys.iter().any(|key| {
+                !self.loop_binding_agrees(header_bindings.get(key), body_bindings.get(key))
+            })
         {
             return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
         }
@@ -520,9 +526,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.judge_backedge_liveness(node, &base_keys, &base_bindings, &body_bindings)?;
         if checked.can_continue
-            && base_keys
-                .iter()
-                .any(|key| body_bindings.get(key) != base_bindings.get(key))
+            && base_keys.iter().any(|key| {
+                !self.loop_binding_agrees(base_bindings.get(key), body_bindings.get(key))
+            })
         {
             return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
         }

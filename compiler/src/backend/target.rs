@@ -2,10 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind,
-    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId, SystemIntegerResultBound,
+    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId,
 };
-
-use super::qualification::Qualification;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TargetObject {
@@ -156,9 +154,8 @@ impl TargetLayout {
     }
 
     /// Minimum alignment guaranteed by the selected target's heap allocator.
-    /// Current source representations require at most eight-byte alignment;
-    /// keeping the guarantee explicit makes a future wider representation a
-    /// target-layout decision rather than an unchecked emitter assumption.
+    /// Keeping this explicit checks wider element representations against the
+    /// allocator promise rather than assuming the address ABI guarantees it.
     pub(super) const fn runtime_allocation_alignment(self) -> u64 {
         self.allocator_alignment
     }
@@ -171,7 +168,6 @@ impl TargetLayout {
         byte_maximum: u64,
         alignment: u64,
     ) -> Self {
-        self.address_index_max = byte_maximum;
         self.allocator_parameter_max = byte_maximum;
         self.allocator_alignment = alignment;
         self
@@ -329,16 +325,15 @@ impl TargetFramePlan {
 /// field list is the sole input from which the emitter may form that frame.
 pub(super) fn plan_target_frame(
     target: TargetLayout,
-    qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
     slots: &[TargetFrameSlot],
 ) -> Result<TargetFramePlan, TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
-        qualification,
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
+        visiting_elements: HashSet::new(),
     };
     let mut physical_fields = Vec::new();
     let mut logical_fields = Vec::with_capacity(slots.len());
@@ -385,16 +380,15 @@ pub(super) fn plan_target_frame(
 
 pub(super) fn validate_static_storage(
     target: TargetLayout,
-    qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
     ty: &TargetStorageType,
 ) -> Result<TargetAggregateLayout, TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
-        qualification,
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
+        visiting_elements: HashSet::new(),
     };
     let layout = layouts
         .storage_layout(ty)
@@ -450,17 +444,16 @@ pub(super) const PARALLEL_LANE_FRAME_ALIGNMENT: u64 = 16;
 /// variant and must carry that budget across the hand-out.
 pub(super) fn parallel_lane_frame_layout(
     target: TargetLayout,
-    qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
     function: &IrFunction,
     carries_budget: bool,
 ) -> Result<Option<TargetAggregateLayout>, TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
-        qualification,
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
+        visiting_elements: HashSet::new(),
     };
     let mut fields = Vec::with_capacity(function.parameters().len() + 1);
     for (_, ty) in function.parameters() {
@@ -497,15 +490,14 @@ pub(super) fn parallel_lane_frame_layout(
 
 pub(super) fn validate_program(
     target: TargetLayout,
-    qualification: &Qualification,
     program: &IrProgram<'_, '_, '_>,
 ) -> Result<(), TargetLayoutFailure> {
     let mut layouts = LayoutComputer {
         target,
-        qualification,
         program,
         nominal: HashMap::new(),
         visiting: HashSet::new(),
+        visiting_elements: HashSet::new(),
     };
 
     for nominal in program.nominals() {
@@ -515,6 +507,12 @@ pub(super) fn validate_program(
         if let IrNominalKind::Box { referent, .. } = nominal.kind() {
             layouts.layout(*referent)?;
         }
+    }
+    // A run descriptor's representation does not contain its elements.
+    // Validate their complete layouts independently, so an ownership cycle
+    // through a Vector does not become a false inline-layout cycle.
+    for element in program.elements() {
+        layouts.layout(*element)?;
     }
     for constant in program.constants() {
         layouts
@@ -562,8 +560,7 @@ fn validate_function(
 }
 
 /// Attaches selected-target integer bounds to the exact SSA values that carry
-/// them. Qualified system-operation rows contribute their declared bounds;
-/// buffer lengths contribute the representation invariant established by
+/// them. Buffer lengths contribute the representation invariant established by
 /// target validation. This metadata never becomes an ambient source fact.
 fn target_integer_result_bounds(
     layouts: &mut LayoutComputer<'_, '_, '_, '_>,
@@ -585,19 +582,6 @@ fn target_integer_result_bounds(
                 continue;
             };
             let upper_bound = match operation {
-                IrOperation::SystemCall { operation, .. } => {
-                    let implementation = layouts
-                        .qualification
-                        .operation(*operation)
-                        .map_err(|_| TargetLayoutFailure::InvalidIr)?;
-                    implementation
-                        .integer_result_bound()
-                        .map(|bound| match bound {
-                            SystemIntegerResultBound::AddressIndexMaximum => {
-                                layouts.target.address_index_max()
-                            }
-                        })
-                }
                 IrOperation::BufferMeasure { buffer } => {
                     let Some(IrType::Buffer { element }) = function.value_type(*buffer) else {
                         return Err(TargetLayoutFailure::InvalidIr);
@@ -928,10 +912,10 @@ fn validate_target_obligation(
 
 struct LayoutComputer<'program, 'classified, 'lexed, 'source> {
     target: TargetLayout,
-    qualification: &'program Qualification,
     program: &'program IrProgram<'classified, 'lexed, 'source>,
     nominal: HashMap<IrNominalId, Layout>,
     visiting: HashSet<IrNominalId>,
+    visiting_elements: HashSet<IrElement>,
 }
 
 impl LayoutComputer<'_, '_, '_, '_> {
@@ -989,7 +973,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
             IrType::Address(_) => Ok(POINTER_LAYOUT),
             IrType::Array { length: 0, .. } => Ok(Layout { size: 0, align: 1 }),
             IrType::Array { element, length } => {
-                let element = self.layout(element.ty())?;
+                let element = self.element(element)?;
                 let stride = align_up(
                     self.target,
                     element.size,
@@ -1014,7 +998,9 @@ impl LayoutComputer<'_, '_, '_, '_> {
             // window origin [BLK-1]; a provider is proof-only and carries at
             // most its own cursor.
             IrType::Vector { element, .. } => {
-                self.element(element)?;
+                self.program
+                    .element(element)
+                    .ok_or(TargetLayoutFailure::InvalidIr)?;
                 Ok(Layout { size: 32, align: 8 })
             }
             IrType::Provider => Ok(Layout { size: 16, align: 8 }),
@@ -1056,7 +1042,16 @@ impl LayoutComputer<'_, '_, '_, '_> {
     /// descriptor words inline, a `Vector`'s four-word descriptor -- so the
     /// slot layout is that type's own.
     fn element(&mut self, element: IrElement) -> Result<Layout, TargetLayoutFailure> {
-        self.layout(element.ty())
+        if !self.visiting_elements.insert(element) {
+            return Err(TargetLayoutFailure::InvalidIr);
+        }
+        let ty = self
+            .program
+            .element(element)
+            .ok_or(TargetLayoutFailure::InvalidIr)?;
+        let layout = self.layout(ty);
+        self.visiting_elements.remove(&element);
+        layout
     }
 
     fn nominal_layout(&mut self, id: IrNominalId) -> Result<Layout, TargetLayoutFailure> {
@@ -1070,18 +1065,10 @@ impl LayoutComputer<'_, '_, '_, '_> {
             .program
             .nominal(id)
             .ok_or(TargetLayoutFailure::InvalidIr)?;
-        // [QUAL-1] fixes an opaque system resource's representation in its
-        // qualification record, which qualification resolved before layout
-        // ran, so the selected target has an exact size and alignment for it.
-        if let IrNominalKind::SystemResource(contract) = nominal.kind() {
-            let representation = self
-                .qualification
-                .resource(contract.resource)
-                .map_err(|_| TargetLayoutFailure::InvalidIr)?
-                .representation();
+        if matches!(nominal.kind(), IrNominalKind::Opaque) {
             let layout = Layout {
-                size: representation.size(),
-                align: representation.align(),
+                size: 32,
+                align: 16,
             };
             self.visiting.remove(&id);
             self.nominal.insert(id, layout);
@@ -1120,13 +1107,13 @@ impl LayoutComputer<'_, '_, '_, '_> {
                     );
                 }
                 // A box, arena, or allocation list has its own pointer
-                // layout above, and an opaque system resource returned with
-                // its qualified representation before this match; none
+                // layout above, and an opaque nominal returned with its
+                // uniform representation before this match; none
                 // reaches the field walk.
                 IrNominalKind::Box { .. }
                 | IrNominalKind::Arena { .. }
                 | IrNominalKind::ArenaStorage
-                | IrNominalKind::SystemResource(_) => {
+                | IrNominalKind::Opaque => {
                     return Err(TargetLayoutFailure::InvalidIr);
                 }
             }

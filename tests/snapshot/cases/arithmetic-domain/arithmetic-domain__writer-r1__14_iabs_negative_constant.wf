@@ -7,7 +7,7 @@ fn magnitude(value: own i32) -> result: own i32 pure {
   return 2147483647_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let m = magnitude(value: -17_i32);
   if m == 17_i32 {
   } else {

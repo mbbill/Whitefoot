@@ -10,7 +10,7 @@ fn narrow(x: own i64) -> result: own i8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = narrow(x: -100_i64);
   if a == -100_i8 {
   } else {

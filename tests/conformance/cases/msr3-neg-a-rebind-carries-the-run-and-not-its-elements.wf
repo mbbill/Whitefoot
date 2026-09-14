@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "MSR-3: a placement carries the measures of the value the event names and nothing below it. A rebind of a run carries that run's own four measures, so the element measures an earlier element placement established are killed by the consume the rebind performs and the value displaced out of the renamed run's slot arrives with none.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();
@@ -7,11 +7,17 @@ command fn main() -> status: own ExitStatus pure {
       let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
       let second = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
       let third = arena_vector_proved::<u8>(store: &uniq workspace, count: 32_u64);
-      let one = place_back(vector: move blocks, value: move first);
+      region {
+        place_back(vector: &uniq blocks, value: move first);
+      }
+      let one = move blocks;
       let spare = replace one[0_u64] = move second;
       let renamed = move one;
       let held = replace renamed[0_u64] = move third;
-      let filled = place_back(vector: move held, value: 9_u8);
+      region {
+        place_back(vector: &uniq held, value: 9_u8);
+      }
+      let filled = move held;
       let seen = filled[0_u64];
       if seen == 9_u8 {
       } else {

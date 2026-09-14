@@ -7,7 +7,7 @@ fn pick<T: affine>(value: own T) -> result: own T pure {
   return move value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "The call states no instantiation argument; instantiation arguments are always explicit [FN-2].";
   let a = Held(v: 1_i32);
   let b = pick(value: move a);

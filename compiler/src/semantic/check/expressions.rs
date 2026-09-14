@@ -12,9 +12,9 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedConstant, CheckedExpression, CheckedIntegerOperation, CheckedMode,
-    CheckedNominalKind, CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue,
-    CheckedWritablePlace, FloatType, IntegerType,
+    CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
+    CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue, CheckedWritablePlace,
+    FloatType, IntegerType,
 };
 use super::borrows::{AccessKind, OwnedContent, ReborrowPosition, ResolvedPlace};
 use super::{
@@ -53,11 +53,10 @@ pub(super) enum MutationForm {
 
 /// One formed and judged mutation target [SET-1, SET-2, LIV-2].
 ///
-/// The resolved place is what the commit writes and what every judgment
-/// stated over places reads: [LIV-2]'s pairwise disjointness, its read-out
-/// matching, and [OWN-5]'s loan state. It is not the written spelling: a
-/// `deref` target resolves through its holder to the borrowed place, so two
-/// targets that overlap are refused however they are spelled.
+/// The resolved place carries both [OWN-7]'s conservative overlap path and
+/// [LIV-2]'s storage path, whose owning dereferences distinguish a target
+/// from its strict prefixes. Borrow-holder dereferences resolve to the
+/// borrowed origin, so neither relation depends on the holder's spelling.
 pub(in crate::semantic::check) struct MutationTarget {
     /// The source declaration the written place is rooted at: the value
     /// binding for a bare, field or subscript target, the holder for a
@@ -68,8 +67,10 @@ pub(in crate::semantic::check) struct MutationTarget {
     /// The access captured during target formation, rechecked after the RHS
     /// without evaluating its source offsets again [SET-1, OWN-5].
     pub(in crate::semantic::check) access: MutationAccess,
-    /// Whether the write selects one element of `place` rather than `place`
-    /// itself, which is the granularity [MSR-2] states over storage.
+    /// Whether the target uses the element-position judgment [MSR-2].
+    /// Legacy indexed targets retain their base in `place`; typed Storage
+    /// targets already retain the complete selected path. Commit formation
+    /// accounts for that distinction before matching any read-out.
     pub(in crate::semantic::check) element: bool,
     pub(in crate::semantic::check) target: CheckedSetTarget,
     pub(in crate::semantic::check) effects: EffectSet,
@@ -233,6 +234,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if !self.has_fixed(pbase, FixedTerminal::Deref)? && self.tree.children(pbase)?.is_empty() {
             let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+            if matches!(
+                usage.target(),
+                ResolvedTarget::Source {
+                    class: DeclarationClass::NamedConst,
+                    ..
+                }
+            ) {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    node,
+                    SemanticIssueKind::ImmutableSetTarget,
+                );
+            }
             if let ResolvedTarget::Source {
                 declaration,
                 class: DeclarationClass::Value,
@@ -328,7 +342,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         self.check_mutation_target_class(node, ty, form)?;
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(&resolved, bindings)? {
+        for path in self.effect_paths_for_place(node, &resolved, bindings)? {
             effects.add_write(path.clone());
             if form.is_replace() {
                 effects.add_read(path);
@@ -466,14 +480,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// which is exactly how the source spells it, and every caller that
     /// splices a region into a longer form drops the separator with it.
     pub(in crate::semantic::check) fn region_spelling(&self, region: DeclarationId) -> String {
-        // [PROV-1] the entry heap's store region has no written spelling at
-        // all: `main` declares no region parameter, so every position that
-        // names it names it by elision, and rendering the identity the
-        // compiler holds it under would name a region the writer cannot
-        // write.
-        if region.is_entry_heap_region() {
-            return String::new();
-        }
         let spelling = self
             .declaration_spelling(region)
             .unwrap_or_else(|_| format!("'region#{}", region.index()));
@@ -533,7 +539,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedType::Array { element, length } => {
                 let length = self.checked_const_name(length)?;
-                format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
+                format!(
+                    "array<{}, {length}>",
+                    self.checked_type_name(self.element_type(element)?)?
+                )
             }
             CheckedType::Slice {
                 region,
@@ -554,13 +563,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let length = self.checked_const_name(length)?;
                 format!(
                     "FixedVector<{}, {length}>",
-                    self.checked_type_name(element.ty())?
+                    self.checked_type_name(self.element_type(element)?)?
                 )
             }
             CheckedType::Vector {
                 region, element, ..
             } => {
-                let element = self.checked_type_name(element.ty())?;
+                let element = self.checked_type_name(self.element_type(element)?)?;
                 match self.region_spelling(region).as_str() {
                     "" => format!("Vector<{element}>"),
                     region => format!("Vector<{region}, {element}>"),
@@ -583,52 +592,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         })
-    }
-
-    /// A field-suffix chain rooted at a struct-typed const [CONST-2
-    /// candidate]. The path is resolved by the ordinary projection judgment,
-    /// then folded against the constant's total value: a copy scalar
-    /// selection copies out as a constant, and a composite selection keeps
-    /// the whole-composite read rules.
-    fn check_struct_constant_projection(
-        &self,
-        use_node: NodeId,
-        constant: &CheckedConstant,
-        suffixes: &[NodeId],
-    ) -> Result<TypedExpression, CheckStop> {
-        let (fields, ty) = self.resolve_struct_path(suffixes, constant.ty)?;
-        let mut value = &constant.value;
-        for index in &fields {
-            let CheckedValue::Struct { fields: values, .. } = value else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            value = values
-                .get(*index as usize)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        }
-        if value.ty() != ty {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        }
-        match value {
-            CheckedValue::Struct { .. } => self.issue_node(
-                SemanticRule::Own1,
-                use_node,
-                SemanticIssueKind::BareAffineUse {
-                    mechanical_fix: "read a const struct through its fields",
-                },
-            ),
-            CheckedValue::Array { .. } => self.issue_node(
-                SemanticRule::Own1,
-                use_node,
-                SemanticIssueKind::BareAffineUse {
-                    mechanical_fix: "read a const FixedVector<T, n> through a subscript, one of `len_of`, `cap_of`, `room_of` and `head_of`, or a shared `slice_of` view",
-                },
-            ),
-            scalar => Ok(TypedExpression::owned(
-                CheckedExpression::Constant(scalar.clone()),
-                EffectSet::NONE,
-            )),
-        }
     }
 
     pub(super) fn checked_const_name(&self, value: CheckedConst) -> Result<String, CheckStop> {
@@ -986,8 +949,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 place_context,
                 ReborrowPosition::Forbidden,
             ),
+            Production::Call if self.tree.is_constructor_call(node)? => {
+                self.check_construct(function, node, bindings, loop_depth)
+            }
             Production::Call => self.check_call(function, node, bindings, loop_depth),
-            Production::Construct => self.check_construct(function, node, bindings, loop_depth),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
     }
@@ -1272,6 +1237,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(node, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
+        if !suffixes.is_empty()
+            && !self.has_fixed(pbase, FixedTerminal::Deref)?
+            && self.tree.children(pbase)?.is_empty()
+            && let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::NamedConst,
+            } = self.use_at(pbase, LexicalUseRole::PlaceBase)?.target()
+        {
+            let constant = *self
+                .constants
+                .get(&declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            return self.check_constant_storage_read(
+                use_node, constant, &suffixes, bindings, function, options,
+            );
+        }
         if let Some(subscript) = self.last_subscript(&suffixes)? {
             return self.check_index_use(
                 function, use_node, node, &suffixes, subscript, bindings, options,
@@ -1369,7 +1350,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         expression: CheckedExpression::Binding {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
-                            state_origins: local.state_origins.clone(),
                             ty: local.ty,
                             slice_origins,
                             consume_root: !copy,
@@ -1456,17 +1436,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Vec::new()
                 } else {
                     let paths = self.residual_drop_paths(local.ty, &fields)?;
-                    self.released_paths(paths)?
+                    paths
                         .into_iter()
-                        .map(|(fields, ty, release)| CheckedProjectedDrop {
-                            state_origins: local
-                                .state_origins
-                                .clone()
-                                .map(|origins| origins.projected(&fields)),
-                            fields,
-                            ty,
-                            release,
-                        })
+                        .map(|(fields, ty)| CheckedProjectedDrop { fields, ty })
                         .collect()
                 };
                 // [LIV-2] after its read-out the target is dead for the
@@ -1498,7 +1470,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if (matches!(access_kind, AccessKind::Read) || read_out)
                     && !Self::checked_type_is_loan_bearing(ty)
                 {
-                    for path in self.effect_paths_for_place(&access, bindings)? {
+                    for path in self.effect_paths_for_place(use_node, &access, bindings)? {
                         effects.add_read(path);
                     }
                 }
@@ -1512,10 +1484,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedExpression::Binding {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
-                            state_origins: local
-                                .state_origins
-                                .clone()
-                                .map(|origins| origins.projected(&fields)),
                             ty,
                             slice_origins,
                             consume_root: !copy,
@@ -1524,6 +1492,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         access,
                         access_kind,
                     );
+                    if slice.is_some() {
+                        // Projected callee effects use this descriptor's
+                        // continuing view loan, just as a direct index does.
+                        expression.holder = Some(declaration);
+                    }
                     expression.slice = slice;
                     Ok(expression)
                 } else {
@@ -1531,10 +1504,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         CheckedExpression::Project {
                             carrier: self.tree.path(use_node)?.clone(),
                             binding: local.binding,
-                            state_origins: local
-                                .state_origins
-                                .clone()
-                                .map(|origins| origins.projected(&fields)),
                             fields,
                             ty,
                             consume_root: !copy && !read_out,
@@ -1608,17 +1577,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .copied()
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 let constant = self.constant(constant)?;
-                if !suffixes.is_empty() {
-                    // A field-suffix chain rooted at a struct-typed const
-                    // [CONST-2 candidate] copies the selected value out; the
-                    // selection is total at compile time, so the read folds
-                    // to the selected constant.
-                    if matches!(constant.value, CheckedValue::Struct { .. }) {
-                        return self
-                            .check_struct_constant_projection(use_node, constant, &suffixes);
-                    }
-                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
-                }
                 if matches!(
                     constant.ty,
                     CheckedType::Array { .. }
@@ -1735,6 +1693,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         form: MutationForm,
     ) -> Result<MutationTarget, CheckStop> {
+        if let Some(target) = self.check_box_storage_set_target(node, bindings, form)? {
+            return Ok(target);
+        }
         // [SET-1] makes a `deref` target writable through either of two roots:
         // an explicit `deref` of a live usable `&uniq` holder, or a live
         // own-mode binding whose storage the `deref` reaches [STOR-1]. Only
@@ -1769,7 +1730,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )?;
         self.check_mutation_target_class(node, ty, form)?;
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(&resolved, bindings)? {
+        for path in self.effect_paths_for_place(node, &resolved, bindings)? {
             effects.add_write(path.clone());
             if form.is_replace() {
                 // [SET-2, EFF-2]: the commit is one read and one write of
@@ -1815,10 +1776,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         UnsupportedSemanticFeature::BorrowedBufferDescriptorMutation,
                     ));
                 }
-                CheckedType::Array { element, .. } => pending.push(element.ty()),
-                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    pending.push(element.ty())
-                }
+                CheckedType::Array { element, .. }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => pending.push(self.element_type(element)?),
                 CheckedType::Nominal(id) if visited.insert(id) => match &self.nominal(id)?.kind {
                     CheckedNominalKind::Struct { fields } => {
                         pending.extend(fields.iter().map(|field| field.ty));
@@ -1832,8 +1792,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
                     CheckedNominalKind::Arena { content, .. } => pending.push(*content),
-                    CheckedNominalKind::ArenaStorage
-                    | CheckedNominalKind::SystemResource { .. } => {}
+                    CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => {}
                 },
                 _ => {}
             }
@@ -1962,7 +1921,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(field)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
             let ty = operand.expression.ty();
-            let Some(actual) = self.written_type_region(ty)? else {
+            let matches = self.match_type_regions(&site.shape.field_regions[field], ty)?;
+            let Some((_, actual)) = matches
+                .into_iter()
+                .find(|(position, _)| position.formal == *formal)
+            else {
                 return self.issue_node(
                     SemanticRule::Type5,
                     atom,
@@ -2046,7 +2009,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if determined == 0 {
             return Ok(());
         }
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(node)? else {
             return Ok(());
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
@@ -2089,12 +2052,58 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<TypedExpression, CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let constructor_name = usage.spelling().to_owned();
-        if let ResolvedTarget::Prelude(id) = usage.target()
-            && matches!(id.ordinal(), 1 | 2)
+        // GRAM-5 factors constructor and qualified-member prefixes through
+        // one call node. Constructors still write nominal arguments directly
+        // after the TYPEID, and every field remains named [TYPE-5, GRAM-8].
+        if self
+            .tree
+            .first_child_with(node, Production::Targs)?
+            .is_some()
         {
-            let value = match id.ordinal() {
-                1 => CheckedValue::Bool(true),
-                2 => CheckedValue::Bool(false),
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "constructor arguments immediately after its TYPEID",
+                    "function-style :: arguments",
+                ),
+            );
+        }
+        if self
+            .tree
+            .first_child_with(node, Production::AtomList)?
+            .is_some()
+        {
+            return self.issue_node(
+                SemanticRule::Gram8,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "named constructor fields in declaration order",
+                    "positional constructor arguments",
+                ),
+            );
+        }
+        if matches!(usage.target(), ResolvedTarget::Prelude(id) if !matches!(id, crate::BuiltinPreludeId::NONE | crate::BuiltinPreludeId::SOME | crate::BuiltinPreludeId::OK | crate::BuiltinPreludeId::ERR))
+            && self.tree.argument_list(node)?.is_some()
+        {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "a constructor with no nominal arguments",
+                    "written nominal arguments",
+                ),
+            );
+        }
+        if let ResolvedTarget::Prelude(id) = usage.target()
+            && matches!(
+                id,
+                crate::BuiltinPreludeId::TRUE | crate::BuiltinPreludeId::FALSE
+            )
+        {
+            let value = match id {
+                crate::BuiltinPreludeId::TRUE => CheckedValue::Bool(true),
+                crate::BuiltinPreludeId::FALSE => CheckedValue::Bool(false),
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             };
             if self
@@ -2157,7 +2166,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 self.source_constructor(node, declaration, &function.substitution)?
             }
-            ResolvedTarget::Prelude(id) => match id.ordinal() {
+            ResolvedTarget::Prelude(id) => match id {
                 // [TYPE-5] the prelude generic nominals are constructed
                 // through these variant constructors, and they write the
                 // nominal's arguments in every position, mandatorily:
@@ -2166,30 +2175,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // written arguments are read here exactly as
                 // `generic_substitution` reads a source generic's, so both
                 // classes cite TYPE-5 at the complete `construct`.
-                5 | 6 => {
+                crate::BuiltinPreludeId::NONE | crate::BuiltinPreludeId::SOME => {
                     let value = self.option_type_argument_with(node, &function.substitution)?;
                     Constructor::Enum {
                         nominal: self.prelude_nominal(super::PreludeType::Option(value))?,
-                        variant: u32::from(id.ordinal() == 6),
+                        variant: u32::from(id == crate::BuiltinPreludeId::SOME),
                     }
                 }
-                11 | 13 => {
+                crate::BuiltinPreludeId::OK | crate::BuiltinPreludeId::ERR => {
                     let (ok, error) =
                         self.result_type_arguments_with(node, &function.substitution)?;
                     Constructor::Enum {
                         nominal: self.prelude_nominal(super::PreludeType::Result(ok, error))?,
-                        variant: u32::from(id.ordinal() == 13),
+                        variant: u32::from(id == crate::BuiltinPreludeId::ERR),
                     }
                 }
-                16 => Constructor::Enum {
+                crate::BuiltinPreludeId::OVERFLOW => Constructor::Enum {
                     nominal: self.prelude_nominal(super::PreludeType::Overflow)?,
                     variant: 0,
                 },
-                18 | 19 => Constructor::Enum {
-                    nominal: self.prelude_nominal(super::PreludeType::DivError)?,
-                    variant: u32::from(id.ordinal() == 19),
-                },
-                21 => Constructor::Enum {
+                crate::BuiltinPreludeId::DIVIDE_BY_ZERO | crate::BuiltinPreludeId::DIV_OVERFLOW => {
+                    Constructor::Enum {
+                        nominal: self.prelude_nominal(super::PreludeType::DivError)?,
+                        variant: u32::from(id == crate::BuiltinPreludeId::DIV_OVERFLOW),
+                    }
+                }
+                crate::BuiltinPreludeId::NARROW_ERROR => Constructor::Enum {
                     nominal: self.prelude_nominal(super::PreludeType::NarrowError)?,
                     variant: 0,
                 },
@@ -2198,22 +2209,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .unsupported(UnsupportedSemanticFeature::PreludeNominalValues, node);
                 }
             },
-            ResolvedTarget::System(id) => {
-                let index = crate::system_constructor_index(id)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let record = crate::SYSTEM_CONSTRUCTORS
-                    .get(usize::from(index))
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                let tag = crate::SYSTEM_CONSTRUCTORS[..usize::from(index)]
-                    .iter()
-                    .filter(|candidate| candidate.owner == record.owner)
-                    .count();
-                Constructor::Enum {
-                    nominal: self.system_nominal(record.owner)?,
-                    variant: u32::try_from(tag)
-                        .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
-                }
-            }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
         let declared_fields = match constructor {

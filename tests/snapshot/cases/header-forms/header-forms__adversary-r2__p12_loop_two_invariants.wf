@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: ordinary loop-stmt header carries two ordered induction relations, comma-separated, no trailing comma.";
   let cursor = 0_u64;
   let doubled = 0_u64;

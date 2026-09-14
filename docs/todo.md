@@ -42,28 +42,27 @@ of them is a decision. Remove an item when its fix and test land.
   path. A narrower projection must preserve every surviving consequence,
   including implicit type edges and disequality strengthening; filtering
   explicit edges alone is insufficient. No speedup is established.
-- **Connection-level concurrency through suspended user calls is missing, and
-  silently.** A loop that accepts and serves connections in source order
+- **Connection-level concurrency is not supplied by ordinary source order.**
+  A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting
   on a silent peer holds up every later connection, and 1024 open connections
   are not 1024 independently resumable handlers. The source is accepted and
-  compiled through ordinary calls with no report. No restoration mechanism has
-  been chosen. `WF_STACKS` is inert for the same reason: the runtime has no
+  compiled through ordinary calls. The retained multi-client TCP protocol can
+  wait forever when the first handler awaits EOF while clients close only
+  after every peer has finished; the
+  [C2 measurements](../research/experiments/io-completion-bench/C2-RESULTS.md)
+  record that noncompletion without a throughput result. No replacement
+  interface has been chosen. `WF_STACKS` is inert: the runtime has no
   switchable-stack pool for it to size, so it is neither read nor validated.
-- **Result-state origins are derived from callee bodies.**
-  `semantic/check/result_state_origin.rs` walks every function's checked body
-  to a whole-program fixed point to learn which parameter a returned
-  resource's state came from, and that feeds the acceptance-bearing
-  effect-row check, so a caller's verdict can change when a callee's body
-  changes. The system-interface decision rules this out: a resource's state
-  is carried by its type at the API boundary. The mechanism is being removed;
-  until it is, the contradiction stands.
-- **[PAR-3] replicates only iteration-own storage.** Condition 5's
-  replicated disposition for a place rooted outside the loop, which the rule
-  defines under a byte-coverage proof, is not implemented; every such place
-  is denied and the loop stages sequentially. The byte-range coverage
-  analysis the case needs consumes the entailment fact state and was
-  sequenced after the schedule and storage discipline shipped.
+- **Acyclic generic instantiation has no established practical bound.**
+  D7's unchanged-argument cycle rule establishes termination while acyclic
+  fan-out may still require exponentially many instances relative to written
+  source. The owner deferred this question in D7, whereas the current language
+  design rules out exponential checking work. The
+  [behavior investigation](../research/investigations/containers-and-resources/BEHAVIOR.md#shared-semantic-boundary-and-exact-deltas)
+  records the accepted 1343-byte / 2047-instance witness, same-instance controls,
+  stage measurements and unresolved correspondence finding. No budget, timeout, new
+  source refusal, or measured asymptotic guarantee has been selected.
 - **At most eight peers may wait at once on a host without a native ring.**
   On Darwin, and under `WF_IO_NO_NATIVE_RING`, a peer wait beyond the eighth
   concurrent one has no helper and queues with no timeout. The readiness-
@@ -89,11 +88,23 @@ of them is a decision. Remove an item when its fix and test land.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
-- **The unique-parameter container refusal.** [BLK-4] refuses a `&uniq`
-  parameter that can reach a container, the fourth disposition of the
-  replace-through-unique-borrow defect the containers investigation records,
-  after refusal by written type, a conservative fact kill, and doctrine each
-  failed. The owner wants to reconsider the rule before it enters the tree.
+- **Local region introduction and explicit region blocks.** Revisit whether
+  an ordinary function body should introduce a local region, and which
+  borrows need a writer-spelled `region` block. In the
+  [weighted-sum example](../tests/snapshot/cases/accumulators/accumulators__adversary-r1__p12_per_byte_widened_checked_sum.wf),
+  the four `place_back(vector: &uniq weights, ...)` calls can share one region
+  after the `weights` binding, but removing that region rejects under FORM-8.
+  The temporary loans already end at their statement boundaries under OWN-6;
+  their region's formation and storage-validity extent is a different matter
+  under OWN-3 and OWN-10. Compare explicit blocks, function-body regions and
+  implicit regions for non-escaping temporaries without conflating those two
+  boundaries. Cover locals declared partway through a body, bound holders,
+  surviving views, returned borrows, loops and control headers; preserve
+  storage validity and exclusivity with deterministic checking. The owner
+  requested this investigation during PR #30 review; no alternative is selected.
+  Defer bulk cleanup of the repeated per-call region wrappers in migrated
+  tests until this question is settled, preserving each case's intended
+  behavior or rejection reason when the selected spelling is applied.
 - **A view-valued match or if.** [OWN-5] rejects a `match` or `if` expression
   whose value is a view, rather than joining the arms' origin sets, which the
   origin machinery could represent. If the join can be admitted it should be;

@@ -98,18 +98,28 @@ fn combine['r](out: &uniq 'r Summary, left: &'r Summary, right: &'r Summary) -> 
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left_input = fixed_vector::<u8, 4>();
-  set left_input = place_back(vector: move left_input, value: 97_u8);
-  set left_input = place_back(vector: move left_input, value: 32_u8);
-  set left_input = place_back(vector: move left_input, value: 98_u8);
-  set left_input = place_back(vector: move left_input, value: 10_u8);
+  region {
+    place_back(vector: &uniq left_input, value: 97_u8);
+  }
+  region {
+    place_back(vector: &uniq left_input, value: 32_u8);
+  }
+  region {
+    place_back(vector: &uniq left_input, value: 98_u8);
+  }
+  region {
+    place_back(vector: &uniq left_input, value: 10_u8);
+  }
   let left = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
   region {
     summarize::<4>(out: &uniq left, input: move left_input);
   }
   let right_input = fixed_vector::<u8, 1>();
-  set right_input = place_back(vector: move right_input, value: 99_u8);
+  region {
+    place_back(vector: &uniq right_input, value: 99_u8);
+  }
   let right = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
   region {
     summarize::<1>(out: &uniq right, input: move right_input);

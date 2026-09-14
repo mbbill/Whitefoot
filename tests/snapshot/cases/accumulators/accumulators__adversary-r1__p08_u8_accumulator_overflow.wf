@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [OP-2] -- count is u8 (max 255) and the loop runs 300 times unconditionally adding 1 each time; the checked `+` at count=255 would overflow u8, so the domain obligation count +defined 1_u8 is genuinely unproved (and unprovable, since it is false for i=255).";
   let count = 0_u8;
   for (

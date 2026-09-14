@@ -11,9 +11,8 @@ use super::super::goal::{
     CheckedRequirement, GoalDatum, GoalExpression, GoalOperation, GoalProjection, GoalTemplate,
 };
 use super::super::model::{
-    BindingId, CheckedConst, CheckedElement, CheckedExpression, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType,
-    CheckedValue,
+    BindingId, CheckedConst, CheckedExpression, CheckedFloatOperation, CheckedIntegerOperation,
+    CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue,
 };
 use super::super::postcondition::PostconditionConstantOrigin;
 use super::{CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature, LocalBinding};
@@ -31,12 +30,15 @@ pub(super) enum ClauseKind<'record> {
 /// One source-stable leaf shared by FN-8 and FN-9 alpha expansion.  The
 /// symbolic result is private to this intermediate tree; conversion to a
 /// GoalTemplate rejects it, so GoalDatum and GoalTemplate remain unchanged.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum ExpandedClauseDatum {
     Parameter {
         ordinal: u32,
         projections: Vec<GoalProjection>,
         ty: CheckedType,
+        /// Bare exclusive measures in ensures denote exit state. An entry
+        /// former clears this bit before ordinary projections are expanded.
+        exit_state: bool,
     },
     NamedConst {
         declaration: DeclarationId,
@@ -86,7 +88,7 @@ impl ExpandedClauseDatum {
 /// The one alpha-expanded expression representation used by both clause
 /// families.  FN-8 converts the complete tree to GoalExpression; FN-9 admits
 /// only a comparison root whose two children downcast to closed datums.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum ExpandedClauseExpression {
     Datum(ExpandedClauseDatum),
     Operation {
@@ -132,6 +134,7 @@ impl ExpandedClauseExpression {
                 ordinal,
                 projections,
                 ty,
+                ..
             }) => Some(GoalExpression::Datum(GoalDatum::Parameter {
                 ordinal,
                 projections,
@@ -193,6 +196,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ordinal,
                     projections: Vec::new(),
                     ty: parameter.ty,
+                    exit_state: false,
                 }),
             );
         }
@@ -458,11 +462,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::FixedVector { element, length } => (Some(element), Some(length)),
                 CheckedType::Vector { element, .. } => (Some(element), None),
                 CheckedType::Extent { bytes, .. } => (None, Some(bytes)),
-                CheckedType::Array { element, length } => {
-                    (Some(CheckedElement::Flat(element)), Some(length))
-                }
+                CheckedType::Array { element, length } => (Some(element), Some(length)),
                 CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
-                    (Some(CheckedElement::Flat(element)), None)
+                    (Some(self.intern_element(element.ty())?), None)
                 }
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             };
@@ -784,7 +786,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .children_with(list, Production::Atom)
                     .map_err(Into::into);
             }
-            Production::Construct => return Ok(Vec::new()),
             _ => {}
         }
         if let Some(tail) = self
@@ -1020,6 +1021,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             }
         };
+        if self.has_fixed(pbase, FixedTerminal::Entry)? {
+            let ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
+                exit_state, ..
+            }) = &mut expression
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            *exit_state = false;
+        }
         let suffixes = self.tree.children_with(place, Production::Psuffix)?;
         if holder_pending && !suffixes.is_empty() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -1151,6 +1161,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(true);
         }
         if let Some(call) = self.tree.first_child_with(expression, Production::Call)? {
+            if self.tree.is_constructor_call(call)? {
+                return Ok(false);
+            }
             self.validate_clause_operation(clause, entry, call)?;
             return Ok(true);
         }
@@ -1237,10 +1250,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             LexicalUseRole::IdentifierCallee | LexicalUseRole::OperationCallee
                         )
                 }),
-        }
-        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        };
+        let Some(usage) = usage else {
+            return self.invalid_clause(clause, entry);
+        };
         let ResolvedTarget::Operation(operation) = usage.target() else {
-            // FN-8 admits only table-operation calls. User and system
+            // FN-8 admits only table-operation calls. Ordinary function
             // callees have already resolved successfully, so they are an
             // InvalidRequires source form rather than a compiler-resolution
             // failure.

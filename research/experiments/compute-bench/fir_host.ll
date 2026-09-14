@@ -1,10 +1,9 @@
 ; Serves compute-bench: the FIR host adapter. It is LLVM IR rather than C
-; because every user function the compiler emits has internal linkage, so
-; nothing outside the module can call @wf_filter or @wf_release_samples.
+; so it also works when @wf_filter and @wf_release_samples have internal linkage.
 ; It builds the two buffer descriptors -- the history-prefixed input and the
 ; taps -- and forwards; it computes nothing. The Makefile appends this file to
-; each emitted module and sed-renames the two entry points to the -par or -seq
-; spelling, so one text serves both. Eighteen lines of IR, the ceiling
+; each emitted module and isolates definitions with the -par or -seq adapter
+; spellings, so one text serves both. Eighteen lines of IR, the ceiling
 ; section 2 of the specification records.
 define void @wf_bench_fir(ptr %input, i64 %input_len, ptr %taps, i64 %tap_len, i64 %first, i64 %end, i64 %last_tap, ptr %out, ptr %out_len) {
   %a = insertvalue { ptr, i64 } poison, ptr %input, 0

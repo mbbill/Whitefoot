@@ -25,7 +25,7 @@ fn rows(width: own u64) -> result: own buffer<u64> pure contract {
   return move values;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = rows(width: 5_u64);
   let count = len_of(values);
   if count != 15_u64 {

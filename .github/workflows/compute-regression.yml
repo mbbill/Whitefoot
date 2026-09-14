@@ -212,7 +212,9 @@ jobs:
           if [ "$merge_base" = "$(git rev-parse HEAD)" ]; then
             echo "::notice::the merge base is this revision, so both arms are the same tree: this run is the instrument's null check rather than a comparison"
           fi
+          baseline_interface=$(sh research/experiments/compute-bench/baseline-entry.sh profile "$RUNNER_TEMP/baseline/research/experiments/compute-bench/programs/quadrature.wf")
           {
+            echo "WF_B_INTERFACE=$baseline_interface"
             echo "WF_B_SOURCE=$merge_base"
             echo "WF_B_SCHED_DIR=$RUNNER_TEMP/baseline/compiler/src/backend/sched"
             echo "WF_B_FLOOR=$RUNNER_TEMP/baseline/compiler/src/backend/wf_floor.c"

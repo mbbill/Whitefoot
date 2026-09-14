@@ -6,7 +6,10 @@ Decision: A call result may be bound as a borrow holder only when the signature 
 
 Decision: A completed owned-enum match header or exact owned-Boolean conditional header ends only the call-scoped temporary loans that header created, before the selected arm or branch, because retaining them for the whole statement blocked sequential typed acquisition through a retained unique provider after the owned header value had completed, while non-escape and completed-access checks permit the narrower endpoint without weakening exclusivity, instead of whole-statement retention of header loans.
 
+Decision: An argument child's local region may contain statements before and after its receiving statement while its temporary loan retains the existing statement or completed-header endpoint, because sequential provider calls and displaced-owner reads need that local region ceiling without requiring last-use inference, instead of confining the entire region block to one statement.
+
 Rejected:
+- Confining an argument child's local region to one receiving statement: rejected because the ordinary temporary endpoint and independent surviving-loan checks already preserve exclusivity across later statements.
 - Strict no-reborrow, with exclusive access flowing only by linear threading or restructuring: rejected because about a thousand sites that hand a borrow through to a callee forced the compiler into threading owned values in place of borrows, a shape the language does not teach, while the bounded child form preserves the no-alias facts; forms outside the admitted family remain deferred.
 - Shared-only child views through borrowed holders: rejected because they prevent recursive subdivision of exclusive output storage even when containment is proved and parent access is suspended, as the range consumers in research/investigations/range-loans/DESIGN.md demonstrate.
 - Every header-created child reborrow living through the complete enclosing statement including every arm: rejected because it blocked sequential typed acquisition through a retained unique provider after the header value had completed.

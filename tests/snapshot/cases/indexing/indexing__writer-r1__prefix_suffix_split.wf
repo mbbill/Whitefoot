@@ -27,21 +27,45 @@ fn tail_sum<const n: u64>(data: own FixedVector<u8, n>, split: own u64) -> total
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let data = fixed_vector::<u8, 6>();
-  set data = place_back(vector: move data, value: 2_u8);
-  set data = place_back(vector: move data, value: 2_u8);
-  set data = place_back(vector: move data, value: 2_u8);
-  set data = place_back(vector: move data, value: 2_u8);
-  set data = place_back(vector: move data, value: 2_u8);
-  set data = place_back(vector: move data, value: 2_u8);
+  region {
+    place_back(vector: &uniq data, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_u8);
+  }
   let data2 = fixed_vector::<u8, 6>();
-  set data2 = place_back(vector: move data2, value: 2_u8);
-  set data2 = place_back(vector: move data2, value: 2_u8);
-  set data2 = place_back(vector: move data2, value: 2_u8);
-  set data2 = place_back(vector: move data2, value: 2_u8);
-  set data2 = place_back(vector: move data2, value: 2_u8);
-  set data2 = place_back(vector: move data2, value: 2_u8);
+  region {
+    place_back(vector: &uniq data2, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data2, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data2, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data2, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data2, value: 2_u8);
+  }
+  region {
+    place_back(vector: &uniq data2, value: 2_u8);
+  }
   let prefix = head_sum::<6>(data: move data, split: 2_u64);
   let suffix = tail_sum::<6>(data: move data2, split: 2_u64);
   if prefix == 4_u32 {

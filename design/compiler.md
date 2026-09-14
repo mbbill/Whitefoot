@@ -14,7 +14,11 @@ Decision: Recognize adjacent counted ranges by a finite decomposition of checked
 
 Decision: Anchor each incoming formal view at its parameter origin while leaving unresolved callee-result views conservative, because recursive subdivision must retain its ultimate incoming storage and an iteration-local descriptor does not establish fresh storage, instead of discarding formal origins or recovering them from callee bodies.
 
+Decision: A WF body and a linked body with the same ordinary signature use one callable ABI and the same permission path, with native engines confined to implementation inside that call, because choosing a native implementation cannot change source acceptance, effect overlap or loan duration, instead of qualification tables, special system-call emission, suspension summaries or early source-loan release.
+
 Rejected:
+- A source acceptance tripwire maintained by a hand-checked native qualification version: rejected because ordinary declarations and link-selected implementations have no separate system domain to qualify.
+- A source staged-loop permission selected by a native operation or suspension classification: rejected because ordinary call and loan boundaries must apply equally to source and linked bodies.
 - A product-grade checked-artifact toolchain with stable crate boundaries, serialized artifacts, and replay: rejected because it multiplied crates and gates before a resolver or backend existed and imposed protocols that had no consumer.
 - Hardening the frontend against hostile input and re-verifying a previous stage's result inside the trusted path: rejected because this compiler exists to iterate the language and will be replaced by a self-hosted one, so defense in depth here is work that buys nothing, while ordinary engineering quality stays required for fast iteration.
 - Superseded system-inventory states kept reachable behind compile-time switches so that a differential test can show an earlier program's module unchanged: rejected because the compiler implements exactly one specification, the active one, so a switch that reconstructs a superseded inventory has no consumer and only adds code paths to maintain.

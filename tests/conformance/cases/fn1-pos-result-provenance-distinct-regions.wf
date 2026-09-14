@@ -3,7 +3,7 @@ fn pick['r](a: &uniq 'r i32, b: &uniq i32) -> result: &uniq 'r i32 pure {
   return &uniq 'r deref(a);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let v = 1_i32;
   let w = 2_i32;
   region 'a {

@@ -71,7 +71,7 @@ const NUMERIC_TYPES: [NumericType; 10] = [
 
 #[test]
 fn every_total_conversion_with_a_float_endpoint_executes() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let i8_f32 = cvt::<i8, f32>(-8_i8);
   if feq(i8_f32, -8.0_f32) {
   } else {
@@ -157,7 +157,7 @@ fn every_total_conversion_with_a_float_endpoint_executes() {
 
 #[test]
 fn every_partial_conversion_with_a_float_endpoint_has_exact_success_and_failure() {
-    let mut source = String::from("command fn main() -> status: own ExitStatus pure {\n");
+    let mut source = String::from("fn main() -> status: own ExitStatus pure {\n");
     let mut conversion = 0;
     for source_type in NUMERIC_TYPES {
         for destination_type in NUMERIC_TYPES {
@@ -275,7 +275,7 @@ fn reject_f64_u64(value: own f64) -> result: own Bool pure {
   return rejected;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let i32_boundary = power_f32(exponent: 31_u32);
   let rejected_i32_boundary = reject_f32_i32(value: i32_boundary);
   if rejected_i32_boundary {

@@ -405,3 +405,32 @@ by ordinary LLVM optimization. None of this selects compiler-owned container
 state machines over checked library representations, settles stable handles,
 establishes arbitrary-record support, or proves any native implementation safe
 enough to become a Whitefoot kernel.
+
+## C2 ordinary-host-values rerun
+
+The 2026-09-12 PDT C2 worktree based on `d695f385` reran the unchanged
+`make measure` harness on arm64 macOS 26.6.2, Apple Clang 21.0.0, Rust 1.98.1.
+[Raw samples](c2-measurements.csv) retain the original seeds, seven rotating
+samples, three scalar sizes and zero/four update passes. Compiler validation
+also ran on this shared host during the session; absolute cross-date timings
+are not a controlled amendment comparison. All ordinary WF/C result checks
+passed, including the four-field execution case and retained C boundary control.
+
+C2 changes the fixture's entry spelling and the build linkage, not its dense
+algorithm or proof obligations. The C harness links real ordinary prelude
+implementations through `../native.mk`; `../linkage.rs` restores the original
+closed helper optimization scope. There is no host call, factory access or
+PAR-3 overlap inside these timed traces.
+
+Median ns per call, four update passes:
+
+| Elements | C2 Whitefoot | C2 C value | C2 C destination |
+| --- | ---: | ---: | ---: |
+| 16 | 250.94 | 150.56 | 150.92 |
+| 256 | 4040.65 | 4222.29 | 3990.60 |
+| 4096 | 87851.56 | 103925.78 | 101500.00 |
+
+The 16-element retained source-shape cost remains; at the larger sizes these
+observations do not show an additional ordinary-call or host-model cost. This
+is a descriptive repeat, not a replacement for the earlier controlled lowering
+comparisons or evidence about I/O latency.

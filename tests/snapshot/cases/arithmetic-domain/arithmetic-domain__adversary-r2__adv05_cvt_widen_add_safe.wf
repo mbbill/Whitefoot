@@ -6,7 +6,7 @@ fn widen_add(x: own i8, y: own i8) -> result: own i32 pure {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = widen_add(x: 120_i8, y: 120_i8);
   if result == 240_i32 {
   } else {

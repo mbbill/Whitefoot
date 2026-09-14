@@ -7,17 +7,11 @@ use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
-    COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
-    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
-    COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
-    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
-    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailure,
-    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SourceInput, WINDOWS_RUNTIME_HEADER, compile,
-    compile_with_overlap, compile_with_permission_ledger, module_requires_completion_runtime,
-    module_requires_parallel_runtime,
+    CompilationFailure, CompilerLimits, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
+    OverlapLowering, SourceInput, compile, compile_with_overlap, compile_with_permission_ledger,
 };
+
+use crate::support::append_runtime_objects;
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 
@@ -43,123 +37,12 @@ fn invocation_argument(bytes: &[u8]) -> OsString {
     )
 }
 
-/// Stages the compiler-owned runtime units into one link on exactly the
-/// conditions the driver uses.
-///
-/// The scheduler core joins under the union of the two predicates
-/// (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Where the core is
-/// linked"): one scheduler serves compute hand-outs and I/O completions, so a
-/// module that hands work out needs it and so does a module that submits an
-/// operation. The completion units join only under the second. Returns the
-/// staged names, for the caller to remove.
-fn stage_runtime_units(
-    command: &mut Command,
-    llvm: &str,
-    directory: &Path,
-) -> Option<Vec<&'static str>> {
-    let completion = module_requires_completion_runtime(llvm);
-    if !completion && !module_requires_parallel_runtime(llvm) {
-        return None;
-    }
-    let mut units = vec![
-        ("sched/core.h", SCHED_CORE_HEADER),
-        ("sched/prim.h", SCHED_PRIM_HEADER),
-        ("sched/entry.h", SCHED_ENTRY_HEADER),
-        ("sched/core.c", SCHED_CORE_SOURCE),
-        ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
-        ("sched/entry.c", SCHED_ENTRY_SOURCE),
-    ];
-    if completion {
-        units.extend([
-            ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
-            ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-            ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
-            (
-                "completion/socket_address.h",
-                COMPLETION_SOCKET_ADDRESS_HEADER,
-            ),
-            (
-                "completion/linux_io_uring.h",
-                COMPLETION_LINUX_IO_URING_HEADER,
-            ),
-            // Every header of the runtime is staged on every platform, exactly
-            // as the driver stages them (`src/bin/whitefootc.rs`): a header is
-            // never a clang input, and `bridge.c` is one shared unit whose
-            // Windows arm names these two in text this host does not compile.
-            ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
-            ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
-            ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-            ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
-            ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-            ("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
-            ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-            (
-                "completion/linux_io_uring.c",
-                COMPLETION_LINUX_IO_URING_SOURCE,
-            ),
-        ]);
-    }
-    // The staged tree keeps the repository's own two directories, because the
-    // completion header reaches the scheduler core by the relative path it
-    // uses in the tree.
-    std::fs::create_dir_all(directory.join("completion")).expect("stage completion directory");
-    std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
-    for (name, source) in &units {
-        std::fs::write(directory.join(name), source).expect("write runtime unit");
-    }
-    command
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("sched/core.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("sched/prim_host.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("sched/entry.c"));
-    if completion {
-        command
-            .arg("-I")
-            .arg(directory.join("completion"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/completion_runtime.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/wait_host.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/file_adapter.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/file_posix.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/completion_bridge.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/linux_io_uring.c"));
-    }
-    Some(units.into_iter().map(|(name, _)| name).collect())
-}
-
-/// Links one emitted module into `executable`, adding the runtime units on
-/// exactly the conditions the driver uses.
-///
-/// One definition serves both program-corpus link paths, so a program that
-/// overlaps nothing links nothing extra and no path can omit the runtime a
-/// module actually calls.
+/// Links one emitted module with the same ordinary library as the driver.
 fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     let mut command = Command::new("/usr/bin/clang");
     command.arg("-x").arg("ir").arg(module);
-    // Every integration executable links the current resource floor so the
-    // harness exercises the same runtime boundary as the driver. Stack
-    // availability remains outside the language verdict modeled by this test.
-    let floor_unit = directory.join("wf_floor.c");
-    std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
-    command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
-    let completion_units = stage_runtime_units(&mut command, llvm, directory);
+    command.arg("-pthread");
+    let (sources, objects) = append_runtime_objects(&mut command, directory, None, None);
     let compilation = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(HOST_LINK_LIBRARIES)
@@ -173,22 +56,27 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
         String::from_utf8_lossy(&compilation.stderr),
         llvm
     );
-    std::fs::remove_file(&floor_unit).expect("remove the floor runtime unit");
-    if let Some(names) = completion_units {
-        for name in names {
-            std::fs::remove_file(directory.join(name)).expect("remove completion runtime unit");
-        }
-        // The staged tree keeps the repository's own two directories, because
-        // the completion header reaches the scheduler core by the relative
-        // path it uses in the tree.
-        for staged in ["completion", "sched"] {
-            std::fs::remove_dir(directory.join(staged)).expect("remove staged runtime directory");
-        }
+    for path in objects.into_iter().chain(sources) {
+        std::fs::remove_file(path).expect("remove staged native build input");
+    }
+    for name in ["completion", "sched"] {
+        std::fs::remove_dir(directory.join(name)).expect("remove staged native source directory");
     }
 }
 
 pub fn compile_program(name: &str) -> String {
     compile_programs(&[name])
+}
+
+/// Compiles the explicit sequential lowering used by paired corpus controls.
+pub fn compile_program_without_overlap(name: &str) -> String {
+    let source = read_program(name);
+    compile_with_overlap(
+        &[SourceInput::new(name, &source)],
+        CompilerLimits::default(),
+        OverlapLowering::Off,
+    )
+    .expect("sequential program corpus source must compile")
 }
 
 pub fn compile_programs(names: &[&str]) -> String {
@@ -204,15 +92,9 @@ pub fn compile_programs(names: &[&str]) -> String {
     compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
 }
 
-/// [`compile_programs_with_overlap`] where a target that cannot compile the
-/// unit is an answer rather than a panic.
-///
-/// The one caller is the case that walks the whole corpus. A target with no
-/// approved [SYS-14] directory-enumeration row does not compile the programs
-/// that walk a directory, and that is the compiler's own report about the
-/// target rather than something a test may paper over — so the case reads the
-/// report, names the units it covers, and still fails on every other kind of
-/// failure.
+/// [`compile_programs_with_overlap`] returning a compilation failure to the
+/// caller. The complete corpus walk names the failing unit in its assertion;
+/// every source or target failure fails that test.
 pub fn try_compile_programs_with_overlap(names: &[&str]) -> Result<String, CompilationFailure> {
     let sources = names
         .iter()
@@ -245,19 +127,6 @@ pub fn compile_program_with_overlap(name: &str) -> String {
 /// lowering.
 pub fn compile_programs_with_overlap(names: &[&str]) -> String {
     try_compile_programs_with_overlap(names).expect("program corpus source must compile")
-}
-
-/// Compiles one corpus program with no permission group actualized at all,
-/// which is what `whitefootc --no-overlap` compiles.
-///
-/// It is the exact sequential reference: a case that asks whether a schedule
-/// exists only in the world that asked for it reads this module beside the
-/// `--par` one, and neither is inferred from the other.
-pub fn compile_program_without_overlap(name: &str) -> String {
-    let source = read_program(name);
-    let inputs = [SourceInput::new(name, &source)];
-    compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::Off)
-        .expect("program corpus source must compile")
 }
 
 /// Every `.wf` file the program corpus holds, in one stable order.
@@ -368,11 +237,9 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
     ));
     std::fs::create_dir(&directory).expect("create unique grant-count directory");
     let module = directory.join("counted.ll");
-    let floor = directory.join("wf_floor.c");
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&module, llvm).expect("write the module");
-    std::fs::write(&floor, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     std::fs::write(
         &observer,
         "#include <stdio.h>\nextern unsigned long wf__par_grants(void);\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants());\n}\n",
@@ -384,16 +251,10 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
         .arg("-pthread")
         .arg("-x")
         .arg("ir")
-        .arg(&module)
-        .arg("-x")
-        .arg("c")
-        .arg(&floor)
-        .arg(&observer);
-    // This is the normal compiler link plus one read-only observer.  Keep its
-    // runtime-unit selection identical to every other executable path: a
-    // program that actualizes target I/O must never become linkable merely
-    // because the caller did not ask to observe the compute scheduler.
-    let _runtime_units = stage_runtime_units(&mut command, llvm, &directory);
+        .arg(&module);
+    // Keep the observer fresh and in its original position after the floor.
+    let (_sources, objects) =
+        append_runtime_objects(&mut command, &directory, Some("c11"), Some(&observer));
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(HOST_LINK_LIBRARIES)
@@ -406,6 +267,9 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
         "the runtime and its observer must link:\n{}",
         String::from_utf8_lossy(&linked.stderr)
     );
+    for object in objects {
+        std::fs::remove_file(object).expect("remove materialized native library object");
+    }
     let mut command = Command::new(&executable);
     command.current_dir(&directory);
     match workers {
@@ -425,8 +289,8 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
 
 /// One built executable that a case invokes repeatedly.
 ///
-/// A command-entry program takes its input from `command.args` and
-/// `command.cwd`, so a case needs one executable it can invoke many times
+/// An ordinary entry receives arguments and a directory through `Inputs`,
+/// so a case needs one executable it can invoke many times
 /// with different arguments and working directories, rather than the single
 /// argument-free run [`compile_and_run`] performs.
 pub struct CompiledProgram {
@@ -454,7 +318,7 @@ pub fn build_program(llvm: &str) -> CompiledProgram {
 impl CompiledProgram {
     /// Runs the program in `working_directory` with `arguments` as argv[1..].
     ///
-    /// Arguments are raw bytes, because a command entry reads them through the
+    /// Arguments are raw bytes, because the program reads them through the
     /// lossless host-string route and a case must be able to supply an
     /// argument that is not valid UTF-8.
     pub fn run(&self, working_directory: &Path, arguments: &[&[u8]]) -> Output {
@@ -485,7 +349,7 @@ impl CompiledProgram {
     ///
     /// This is the argument-bearing counterpart to [`Self::run_with_workers`]:
     /// it keeps the runtime environment under test control while allowing a
-    /// program to select a larger deterministic workload through `command.args`.
+    /// program to select a larger deterministic workload through `Inputs.args`.
     pub fn run_with_workers_and_arguments(
         &self,
         workers: Option<&str>,
@@ -588,7 +452,7 @@ impl CompiledProgram {
     /// Runs the program with its standard input redirected from a pipe this
     /// process fills with `bytes` and then closes.
     ///
-    /// This is one of the two shapes a real standard input takes [SYS-15]: a
+    /// This is one of the two standard-input implementations exercised here: a
     /// stream whose end the writer decides, where a read may return less than
     /// the requested range and the end arrives only when the writer closes.
     /// `native_ring` selects the runtime route — `true` is the shipped
@@ -618,7 +482,7 @@ impl CompiledProgram {
     /// Runs the program with its standard input redirected from a regular
     /// file holding `bytes`.
     ///
-    /// This is the other shape [SYS-15] admits, and it is a different runtime
+    /// This is the other implementation exercised here, and a different runtime
     /// path on Linux: a regular file's descriptor is one the kernel ring
     /// completes without any readiness wait, while a pipe's is not.
     pub fn run_with_file_input(&self, bytes: &[u8], native_ring: bool) -> Output {
@@ -759,6 +623,9 @@ fn set_fixture_mode(path: &Path, mode: u32) {
     std::fs::set_permissions(path, permissions).expect("set fixture path mode");
 }
 
+/// Extracts the exact source symbol's definition, independent of its linkage.
+/// Ordinary callable definitions use public linkage under the shared ABI;
+/// declarations and calls to the same symbol must not count as definitions.
 pub fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
     let symbol = format!(" @wf_{name}(");
     let function_start = module
@@ -768,7 +635,7 @@ pub fn emitted_function<'module>(module: &'module str, name: &str) -> &'module s
                 .rfind('\n')
                 .map_or(0, |newline| newline + 1);
             module[line_start..symbol_start]
-                .starts_with("define internal")
+                .starts_with("define ")
                 .then_some(line_start)
         })
         .unwrap_or_else(|| panic!("missing emitted function {name}"));
@@ -777,6 +644,19 @@ pub fn emitted_function<'module>(module: &'module str, name: &str) -> &'module s
         .map(|offset| function_start + offset + 3)
         .expect("source function definition must close");
     &module[function_start..function_end]
+}
+
+#[test]
+fn emitted_function_selects_exact_definitions_across_ordinary_linkages() {
+    for linkage in ["", "internal "] {
+        let definition = format!(
+            "define {linkage}i64 @wf_selected(i64 %value) {{\nentry:\n  ret i64 %value\n}}\n"
+        );
+        let module = format!(
+            "declare i64 @wf_selected(i64)\n\ndefine i64 @wf_other() {{\nentry:\n  %result = call i64 @wf_selected(i64 1)\n  ret i64 %result\n}}\n\ndefine i64 @wf_selected_suffix() {{\nentry:\n  ret i64 0\n}}\n\n{definition}\n"
+        );
+        assert_eq!(emitted_function(&module, "selected"), definition);
+    }
 }
 
 fn read_program(name: &str) -> Vec<u8> {

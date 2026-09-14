@@ -13,6 +13,6 @@ fn tail_byte(data: own Slice<u8>) -> result: own u8 reads(data) {
   return out;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

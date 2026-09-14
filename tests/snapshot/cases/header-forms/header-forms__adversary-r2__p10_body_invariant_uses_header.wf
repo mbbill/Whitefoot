@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: a body invariant_stmt inside the loop body cites the header invariant name via an explicit-factor 'use'; header names are visible in the body.";
   let cursor = 0_u64;
   for (

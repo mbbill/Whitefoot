@@ -18,7 +18,7 @@ fn store_byte(out: &uniq MutSlice<u8>, i: own u64, value: own u8, pick: own Bool
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region 'w {
     let workspace = arena_frame::<8, 1, 'w>();
     region {
@@ -29,7 +29,7 @@ command fn main() -> status: own ExitStatus pure {
         invariant spare_scratch: room_of(scratch) + at >= 8_u64,
         invariant flat_scratch: head_of(scratch) <= 0_u64
       ) {
-        set scratch = place_back(vector: move scratch, value: 0_u8);
+        place_back(vector: &uniq scratch, value: 0_u8);
       }
       let take_direct = True();
       let take_reversed = False();

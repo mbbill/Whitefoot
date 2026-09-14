@@ -18,6 +18,6 @@ fn replace_component(first: own u8, first_limit: own u8, second: own u8, second_
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

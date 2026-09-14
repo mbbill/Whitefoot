@@ -35,7 +35,7 @@ fn dense(seed: own u64, rounds: own u64) -> result: own u64 pure {
   return checksum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let observed = dense(seed: 19_u64, rounds: 3_u64);
   if observed == @EXPECTED@_u64 {
     return exit_status(code: 0_u8);

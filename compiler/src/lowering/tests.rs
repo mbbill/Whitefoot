@@ -1,29 +1,23 @@
-//! Typed-IR shape assertions for [SYS-2] resource identities and the
-//! compiler-derived releases [STOR-3] places on normal control-flow edges.
-//!
-//! These read the IR directly rather than emitted code: target qualification
-//! and native emission for the system interface are later stages, and the
-//! question here is whether the IR carries the facts they will need.
+//! Typed-IR tests for ordinary calls, source ownership and proof erasure.
 
 #![allow(clippy::panic)]
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalLimits, CanonicalOutcome, FinalizeLimits, FinalizeOutcome,
-    OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome, SYSTEM_OPERATIONS,
-    SemanticOutcome, SourceBundle, SourceInput, SourceLimits, SystemReleaseAction,
-    SystemReleaseRow, SystemResourceBacking, SystemResourceType, TerminalLimits, TerminalOutcome,
-    audit_canonical, check_semantics, classify_terminals, finalize, parse, resolve,
+    OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle,
+    SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
+    classify_terminals, finalize, parse, resolve,
 };
 
 use super::{
-    IrBlock, IrDrop, IrDropSubject, IrEntry, IrFunction, IrInstruction, IrIntegerOperation,
-    IrNominalKind, IrOperation, IrProgram, IrSourceArgument, IrSourceCall, IrSourceMode,
-    IrTerminator, IrType, IrValueId, lower_checked,
+    IrBlock, IrDrop, IrDropSubject, IrFunction, IrInstruction, IrIntegerOperation, IrOperation,
+    IrProgram, IrSourceArgument, IrSourceCall, IrSourceMode, IrTerminator, IrType, IrValueId,
+    lower_checked,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
-    max_sources: 4,
+    max_sources: 64,
     max_logical_path_bytes: 128,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
@@ -31,7 +25,7 @@ const SOURCE_LIMITS: SourceLimits = SourceLimits {
 };
 
 const LEX_LIMITS: LexLimits = LexLimits {
-    max_sources: 4,
+    max_sources: 64,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
     max_token_bytes: 16_384,
@@ -53,7 +47,7 @@ const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
     max_nodes: 131_072,
     max_child_edges: 131_072,
     max_terminals: 131_072,
-    max_sources: 4,
+    max_sources: 64,
 };
 
 const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
@@ -64,9 +58,9 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
     max_path_components: 8_192,
 };
 
-/// The valid `command` entry these whole-program lowering fixtures need [FN-7].
-const COMMAND_ENTRY: &str =
-    "command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+/// An ordinary function selected by executable fixtures.
+const PLAIN_ENTRY: &str =
+    "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 fn with_ir<ResultValue>(
     source: &[u8],
@@ -84,8 +78,36 @@ fn with_ir_mode<ResultValue>(
         &IrProgram<'classified, 'lexed, 'source>,
     ) -> ResultValue,
 ) -> ResultValue {
+    with_checked(source, |checked| {
+        let ir = lower_checked(checked, overlap).expect("checked system program must lower");
+        for function in ir.functions() {
+            for source in &function.source_calls {
+                let (target, arguments) = call_definition(function, source.result);
+                let signature = ir.functions()[target as usize]
+                    .source_signature
+                    .as_ref()
+                    .expect("a source call retains a source callee");
+                assert_eq!(source.arguments.len(), arguments.len());
+                assert_eq!(signature.parameters.len(), arguments.len());
+                if let Some(argument) = source.returned_borrow_argument {
+                    assert!(argument < arguments.len());
+                    assert_ne!(signature.parameters[argument], IrSourceMode::Own);
+                    assert_ne!(signature.result, IrSourceMode::Own);
+                }
+            }
+        }
+        run(&ir)
+    })
+}
+
+fn with_checked<ResultValue>(
+    source: &[u8],
+    run: impl for<'classified, 'lexed, 'source> FnOnce(
+        crate::semantic::CheckedProgram<'classified, 'lexed, 'source>,
+    ) -> ResultValue,
+) -> ResultValue {
     let inputs = [SourceInput::new("test.wf", source)];
-    let Ok(bundle) = SourceBundle::with_limits(&inputs, SOURCE_LIMITS) else {
+    let Ok(bundle) = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS) else {
         panic!("lowering test bundle must be valid");
     };
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -116,24 +138,7 @@ fn with_ir_mode<ResultValue>(
     let SemanticOutcome::Complete(checked) = outcome else {
         panic!("lowering test source must check: {outcome:?}");
     };
-    let ir = lower_checked(*checked, overlap).expect("checked system program must lower");
-    for function in ir.functions() {
-        for source in &function.source_calls {
-            let (target, arguments) = call_definition(function, source.result);
-            let signature = ir.functions()[target as usize]
-                .source_signature
-                .as_ref()
-                .expect("a source call retains a source callee");
-            assert_eq!(source.arguments.len(), arguments.len());
-            assert_eq!(signature.parameters.len(), arguments.len());
-            if let Some(argument) = source.returned_borrow_argument {
-                assert!(argument < arguments.len());
-                assert_ne!(signature.parameters[argument], IrSourceMode::Own);
-                assert_ne!(signature.result, IrSourceMode::Own);
-            }
-        }
-    }
-    run(&ir)
+    run(*checked)
 }
 
 fn call_definition(function: &IrFunction, result: IrValueId) -> (u32, &[IrValueId]) {
@@ -154,6 +159,217 @@ fn call_definition(function: &IrFunction, result: IrValueId) -> (u32, &[IrValueI
             _ => None,
         })
         .expect("source metadata must name an actual IR call")
+}
+
+const RELEASE_INVENTORY_SOURCE: &[u8] = br#"fn observe['s](cell: &Box<'s, u64>, witness: &Box<'s, u64>) -> result: own unit pure {
+  return unit;
+}
+
+fn pair['l, 'r](left: &Box<'l, u64>, right: &Box<'r, u64>, left_witness: &Box<'l, u64>, right_witness: &Box<'r, u64>) -> result: own unit pure {
+  return unit;
+}
+
+fn pass<T: linear>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn relay['s](cell: own Box<'s, u64>) -> result: own Box<'s, u64> pure {
+  return pass::<Box<'s, u64>>(value: move cell);
+}
+
+fn recurse['s](cell: &Box<'s, u64>, witness: &Box<'s, u64>, again: own Bool) -> result: own unit pure {
+  if again {
+    let stop = False();
+    return recurse(cell: cell, witness: witness, again: stop);
+  }
+  return unit;
+}
+
+fn borrow_scalar(value: &u64) -> result: own unit pure {
+  return unit;
+}
+
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region 'a {
+    let first = arena_frame::<8, 8, 'a>();
+    region 'b {
+      let second = arena_frame::<8, 8, 'b>();
+      region {
+        match heap_box(store: &uniq heap, value: 1_u64) {
+          Err(error: back) => {
+            return exit_status(code: 70_u8);
+          }
+          Ok(value: general) => {
+            match arena_box(store: &uniq first, value: 2_u64) {
+              Err(error: back) => {
+                return exit_status(code: 70_u8);
+              }
+              Ok(value: extent_a) => {
+                match arena_box(store: &uniq second, value: 3_u64) {
+                  Err(error: back) => {
+                    return exit_status(code: 70_u8);
+                  }
+                  Ok(value: extent_b) => {
+                    let general_ready = relay(cell: move general);
+                    let extent_ready = relay(cell: move extent_a);
+                    region {
+                      let again = True();
+                      observe(cell: &general_ready, witness: &general_ready);
+                      observe(cell: &extent_ready, witness: &extent_ready);
+                      observe(cell: &extent_b, witness: &extent_b);
+                      pair(left: &general_ready, right: &extent_ready, left_witness: &general_ready, right_witness: &extent_ready);
+                      pair(left: &extent_ready, right: &general_ready, left_witness: &extent_ready, right_witness: &general_ready);
+                      recurse(cell: &general_ready, witness: &general_ready, again: again);
+                      recurse(cell: &extent_b, witness: &extent_b, again: again);
+                      return exit_status(code: 0_u8);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+
+#[test]
+fn physical_call_inventory_reuses_classes_and_keeps_independent_axes() {
+    use crate::semantic::CheckedReleaseClass::{Extent, General};
+
+    with_checked(RELEASE_INVENTORY_SOURCE, |checked| {
+        let plan = super::specialize::PhysicalFunctions::build(&checked.data)
+            .expect("accepted call inventory must close");
+        let variants = |name: &str| {
+            let source = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("named source function")
+                .id;
+            plan.variants
+                .iter()
+                .filter(|variant| variant.source == source)
+                .map(|variant| {
+                    variant
+                        .releases
+                        .iter()
+                        .map(|(_, class)| *class)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(variants("observe"), [vec![General], vec![Extent]]);
+        assert_eq!(
+            variants("pair"),
+            [
+                vec![General, General],
+                vec![General, Extent],
+                vec![Extent, General]
+            ],
+            "ordinary callable definitions retain their default physical ABI as well as the two independently instantiated call environments"
+        );
+        assert_eq!(
+            variants("borrow_scalar"),
+            [vec![]],
+            "loan-only regions are erased"
+        );
+        let main = plan
+            .variants
+            .iter()
+            .find(|variant| checked.data.functions[variant.source.0 as usize].name == "main")
+            .expect("ordinary main");
+        let observe = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "observe")
+            .expect("observe declaration")
+            .id;
+        let calls = main
+            .calls
+            .iter()
+            .filter_map(|(_, target)| {
+                (plan.variants[*target as usize].source == observe).then_some(*target)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(calls.len(), 3);
+        assert_ne!(calls[0], calls[1]);
+        assert_eq!(
+            calls[1], calls[2],
+            "distinct extent brands share physical code"
+        );
+        assert!(
+            plan.variants
+                .windows(2)
+                .all(|pair| pair[0].source.0 <= pair[1].source.0)
+        );
+    });
+}
+
+#[test]
+fn physical_call_inventory_closes_captured_regions_and_recursive_edges() {
+    use crate::semantic::CheckedReleaseClass::{Extent, General};
+
+    with_checked(RELEASE_INVENTORY_SOURCE, |checked| {
+        let plan = super::specialize::PhysicalFunctions::build(&checked.data)
+            .expect("accepted recursive call inventory must close");
+        let pass = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "pass")
+            .expect("concrete generic pass instance");
+        assert!(
+            pass.region_parameters.is_empty(),
+            "the store is captured inside T"
+        );
+        let classes = plan
+            .variants
+            .iter()
+            .filter(|variant| variant.source == pass.id)
+            .map(|variant| {
+                variant
+                    .releases
+                    .iter()
+                    .map(|(_, class)| *class)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(classes, [vec![General], vec![Extent]]);
+        let recursive = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "recurse")
+            .expect("recursive source declaration")
+            .id;
+        let variants = plan
+            .variants
+            .iter()
+            .enumerate()
+            .filter(|(_, variant)| variant.source == recursive)
+            .collect::<Vec<_>>();
+        assert_eq!(variants.len(), 2);
+        for (index, variant) in variants {
+            assert_eq!(variant.calls.len(), 1);
+            assert_eq!(
+                variant.calls[0].1 as usize, index,
+                "recursive calls retain the class environment"
+            );
+        }
+        for variant in &plan.variants {
+            assert!(
+                variant
+                    .calls
+                    .iter()
+                    .all(|(_, target)| (*target as usize) < plan.variants.len())
+            );
+        }
+    });
 }
 
 fn source_call<'program>(
@@ -201,7 +417,7 @@ fn return_drops(function: &IrFunction) -> &[IrDrop] {
 #[test]
 fn source_signature_modes_distinguish_identical_descriptor_representations() {
     let source = format!(
-        "fn owned(value: own buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn shared(value: &buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn unique(value: &uniq buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
+        "fn owned(value: own buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn shared(value: &buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn unique(value: &uniq buffer<u8>) -> result: own unit pure {{\n  return unit;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let owned = function(program, "owned");
@@ -232,7 +448,7 @@ fn source_signature_modes_distinguish_identical_descriptor_representations() {
 #[test]
 fn source_signature_modes_retain_borrow_results_without_inventing_ownership() {
     let source = format!(
-        "fn owned(value: own u64) -> result: own u64 pure {{\n  return value;\n}}\n\nfn shared['r](value: &'r u64) -> result: &'r u64 pure {{\n  return value;\n}}\n\nfn unique['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  return move value;\n}}\n\n{COMMAND_ENTRY}"
+        "fn owned(value: own u64) -> result: own u64 pure {{\n  return value;\n}}\n\nfn shared['r](value: &'r u64) -> result: &'r u64 pure {{\n  return value;\n}}\n\nfn unique['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  return move value;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         for (name, mode) in [
@@ -263,7 +479,7 @@ fn source_signature_modes_retain_borrow_results_without_inventing_ownership() {
 #[test]
 fn source_signature_modes_are_not_invented_for_synthesized_functions() {
     let source = format!(
-        "fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {{\n  let total = 0_u64;\n  for @points (i in lo..hi) {{\n    set total = total +wrap i;\n  }}\n  return total;\n}}\n\n{COMMAND_ENTRY}"
+        "fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {{\n  let total = 0_u64;\n  for @points (i in lo..hi) {{\n    set total = total +wrap i;\n  }}\n  return total;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir_mode(source.as_bytes(), OverlapLowering::On, |program| {
         let generated = program
@@ -294,7 +510,7 @@ fn source_signature_modes_are_not_invented_for_synthesized_functions() {
 #[test]
 fn source_call_uses_distinguish_borrow_and_consume_of_the_same_ir_value() {
     let source = format!(
-        "fn inspect(value: &buffer<u8>) -> result: own u64 reads(value) {{\n  return len_of(deref(value));\n}}\n\nfn consume(value: own buffer<u8>) -> result: own u64 reads(value) {{\n  return len_of(value);\n}}\n\nfn run() -> result: own u64 pure {{\n  let data = buffer_new(2_u64, 7_u8);\n  region {{\n    let before = inspect(value: &data);\n  }}\n  let after = consume(value: move data);\n  return after;\n}}\n\n{COMMAND_ENTRY}"
+        "fn inspect(value: &buffer<u8>) -> result: own u64 reads(value) {{\n  return len_of(deref(value));\n}}\n\nfn consume(value: own buffer<u8>) -> result: own u64 reads(value) {{\n  return len_of(value);\n}}\n\nfn run() -> result: own u64 pure {{\n  let data = buffer_new(2_u64, 7_u8);\n  region {{\n    let before = inspect(value: &data);\n  }}\n  let after = consume(value: move data);\n  return after;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let (borrow, borrowed_values) = source_call(program, "run", "inspect");
@@ -312,7 +528,7 @@ fn source_call_uses_distinguish_borrow_and_consume_of_the_same_ir_value() {
 #[test]
 fn source_call_uses_keep_unique_holder_transfer_distinct_from_owning_storage() {
     let source = format!(
-        "fn forward['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  return move value;\n}}\n\nfn relay['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  let next = forward(value: move value);\n  return move next;\n}}\n\n{COMMAND_ENTRY}"
+        "fn forward['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  return move value;\n}}\n\nfn relay['r](value: &uniq 'r u64) -> result: &uniq 'r u64 pure {{\n  let next = forward(value: move value);\n  return move next;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let (call, _) = source_call(program, "relay", "forward");
@@ -333,7 +549,7 @@ fn source_call_uses_keep_unique_holder_transfer_distinct_from_owning_storage() {
 #[test]
 fn source_call_uses_retain_projected_root_consumption() {
     let source = format!(
-        "struct Packet {{\n  first: box<u64>;\n  second: box<u64>;\n}}\n\nfn consume(value: own box<u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn run() -> result: own unit pure {{\n  let first = box_new(3_u64);\n  let second = box_new(5_u64);\n  let packet = Packet(first: move first, second: move second);\n  return consume(value: move packet.first);\n}}\n\n{COMMAND_ENTRY}"
+        "struct Packet {{\n  first: box<u64>;\n  second: box<u64>;\n}}\n\nfn consume(value: own box<u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn run() -> result: own unit pure {{\n  let first = box_new(3_u64);\n  let second = box_new(5_u64);\n  let packet = Packet(first: move first, second: move second);\n  return consume(value: move packet.first);\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let (call, _) = source_call(program, "run", "consume");
@@ -355,12 +571,18 @@ fn select['r](stamp: own u64, value: &'r Row) -> result: &'r Row pure {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<Row, 2>();
   let first = Row(value: 3_u64);
-  let prefix = place_back(vector: move empty, value: move first);
+  region {
+    place_back(vector: &uniq empty, value: move first);
+  }
+  let prefix = move empty;
   let second = Row(value: 5_u64);
-  let rows = place_back(vector: move prefix, value: move second);
+  region {
+    place_back(vector: &uniq prefix, value: move second);
+  }
+  let rows = move prefix;
   region {
     let chosen = select(stamp: 7_u64, value: &rows[1_u64]);
     let observed = deref(chosen).value;
@@ -405,7 +627,7 @@ fn counted_range_cfg_emits_with_distinct_header_update_and_exit_interfaces() {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -472,7 +694,7 @@ fn leave_by_return(stop: own Bool) -> result: own u64 pure {
   return 7_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -570,7 +792,7 @@ fn counted_range_carries_one_stable_binder_address_for_body_local_shared_borrows
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -613,7 +835,7 @@ fn nested_counted_breaks_keep_each_exit_interface_local_to_its_range() {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -622,253 +844,6 @@ command fn main() -> status: own ExitStatus pure {
         if let Err(error) = crate::emit_llvm(program) {
             panic!("nested counted IR must emit: {error:?}\n{counted:#?}");
         }
-    });
-}
-
-/// The [SYS-2] resource identity the IR records for one drop's type.
-fn dropped_resource(program: &IrProgram<'_, '_, '_>, drop: IrDrop) -> Option<SystemResourceType> {
-    let IrType::Nominal(id) = drop.ty() else {
-        return None;
-    };
-    match program.nominal(id).expect("drop type must exist").kind() {
-        IrNominalKind::SystemResource(contract) => Some(contract.resource),
-        _ => None,
-    }
-}
-
-/// Asserts the complete [SYS-5]/[HOST-3] contract the IR records for one
-/// opaque system nominal, located by the identity rather than by a spelling.
-fn assert_contract(
-    program: &IrProgram<'_, '_, '_>,
-    resource: SystemResourceType,
-    action: SystemReleaseAction,
-    row: SystemReleaseRow,
-    backing: SystemResourceBacking,
-) {
-    let contract = program
-        .nominals()
-        .iter()
-        .find_map(|nominal| match nominal.kind() {
-            IrNominalKind::SystemResource(contract) if contract.resource == resource => {
-                Some(*contract)
-            }
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("the IR must carry a {resource:?} resource identity"));
-    assert_eq!(contract.action, action);
-    assert_eq!(contract.row, row);
-    assert_eq!(contract.backing, backing);
-}
-
-const fn close_row() -> SystemReleaseRow {
-    SystemReleaseRow {
-        target_action: crate::TargetAction::MAY_SUSPEND,
-        state_write: true,
-    }
-}
-
-#[test]
-fn every_system_type_carries_its_release_contract_and_one_release_edge() {
-    // One release helper per opaque [SYS-2] type. Each function's whole
-    // exhibited row is the release contribution of its own parameter, so the
-    // declared rows below are exactly [SYS-5]'s table read back through
-    // [EFF-2]: only the two native close attempts carry a category.
-    let source = format!(
-        "fn release_args(value: own Args) -> result: own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_host_string(value: own HostString) -> result: own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_relative_path(value: own RelativePath) -> result: own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_directory_read(value: own DirectoryRead) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
-         fn release_read_file(value: own ReadFile) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
-         fn release_output(value: own OutputStream) -> result: own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_exit_status(value: own ExitStatus) -> result: own unit pure {{\n  return unit;\n}}\n\n\
-         fn release_directory_source(value: own DirectorySource) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
-         {COMMAND_ENTRY}"
-    );
-    with_ir(source.as_bytes(), |program| {
-        use SystemReleaseAction::{LogicalConsume, NativeCloseAttempt, SourceDetach};
-        use SystemResourceBacking::{CommandLifetimeLease, Opaque};
-
-        // The seven identities and their complete contracts. `HostString` and
-        // `RelativePath` are inline leases over command-lifetime backing
-        // [HOST-3]; the fact is retained for auditing and lowering and
-        // refuses no program.
-        assert_contract(
-            program,
-            SystemResourceType::Args,
-            LogicalConsume,
-            SystemReleaseRow::EMPTY,
-            Opaque,
-        );
-        assert_contract(
-            program,
-            SystemResourceType::HostString,
-            LogicalConsume,
-            SystemReleaseRow::EMPTY,
-            CommandLifetimeLease,
-        );
-        assert_contract(
-            program,
-            SystemResourceType::RelativePath,
-            LogicalConsume,
-            SystemReleaseRow::EMPTY,
-            CommandLifetimeLease,
-        );
-        assert_contract(
-            program,
-            SystemResourceType::DirectoryRead,
-            NativeCloseAttempt,
-            close_row(),
-            Opaque,
-        );
-        assert_contract(
-            program,
-            SystemResourceType::ReadFile,
-            NativeCloseAttempt,
-            close_row(),
-            Opaque,
-        );
-        assert_contract(
-            program,
-            SystemResourceType::OutputStream,
-            SourceDetach,
-            SystemReleaseRow::EMPTY,
-            Opaque,
-        );
-        assert_contract(
-            program,
-            SystemResourceType::ExitStatus,
-            LogicalConsume,
-            SystemReleaseRow::EMPTY,
-            Opaque,
-        );
-        assert_contract(
-            program,
-            SystemResourceType::DirectorySource,
-            NativeCloseAttempt,
-            close_row(),
-            Opaque,
-        );
-
-        // Each helper carries exactly one release on its return edge, with
-        // the action its type fixes. A logical consume is an explicit release
-        // operation too, even though its row is empty and it makes no call.
-        for (name, resource, action) in [
-            ("release_args", SystemResourceType::Args, LogicalConsume),
-            (
-                "release_host_string",
-                SystemResourceType::HostString,
-                LogicalConsume,
-            ),
-            (
-                "release_relative_path",
-                SystemResourceType::RelativePath,
-                LogicalConsume,
-            ),
-            (
-                "release_directory_read",
-                SystemResourceType::DirectoryRead,
-                NativeCloseAttempt,
-            ),
-            (
-                "release_read_file",
-                SystemResourceType::ReadFile,
-                NativeCloseAttempt,
-            ),
-            (
-                "release_output",
-                SystemResourceType::OutputStream,
-                SourceDetach,
-            ),
-            (
-                "release_exit_status",
-                SystemResourceType::ExitStatus,
-                LogicalConsume,
-            ),
-            (
-                "release_directory_source",
-                SystemResourceType::DirectorySource,
-                NativeCloseAttempt,
-            ),
-        ] {
-            let function = function(program, name);
-            let [drop] = return_drops(function) else {
-                panic!("{name} must release its one owner on the return edge");
-            };
-            assert_eq!(dropped_resource(program, *drop), Some(resource));
-            assert_eq!(drop.release().action, Some(action));
-            assert_eq!(
-                drop.release().row,
-                if action == NativeCloseAttempt {
-                    close_row()
-                } else {
-                    SystemReleaseRow::EMPTY
-                }
-            );
-            // The released value is the parameter itself: nothing between the
-            // entry and the release replaced the resource identity.
-            assert_eq!(drop.operand(), function.parameters()[0].0);
-        }
-    });
-}
-
-#[test]
-fn a_move_keeps_the_resource_identity_and_its_release() {
-    let source = format!(
-        "fn release_after_move(file: own ReadFile) -> result: own unit writes(file) {{\n  \
-         let moved = move file;\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
-    );
-    with_ir(source.as_bytes(), |program| {
-        let function = function(program, "release_after_move");
-        let [drop] = return_drops(function) else {
-            panic!("the moved owner must be released exactly once");
-        };
-        assert_eq!(
-            dropped_resource(program, *drop),
-            Some(SystemResourceType::ReadFile)
-        );
-        assert_eq!(
-            drop.release().action,
-            Some(SystemReleaseAction::NativeCloseAttempt)
-        );
-        // A move rebinds without materializing another value, so the release
-        // still names the incoming resource.
-        assert_eq!(drop.operand(), function.parameters()[0].0);
-    });
-}
-
-#[test]
-fn a_struct_field_release_reaches_the_contained_resource() {
-    let source = format!(
-        "struct Holder {{\n  file: ReadFile;\n}}\n\n\
-         fn release_holder(holder: own Holder) -> result: own unit writes(holder.file) {{\n  return unit;\n}}\n\n\
-         {COMMAND_ENTRY}"
-    );
-    with_ir(source.as_bytes(), |program| {
-        let function = function(program, "release_holder");
-        let drops = return_drops(function);
-        // The struct decomposes into its field's release and its own, in that
-        // order. The field release names the `ReadFile` itself, projected out
-        // of the aggregate: storing a resource in a field never loses its
-        // identity or downgrades its action to a memory-only drop.
-        let [field, aggregate] = drops else {
-            panic!("expected the field release then the struct's own");
-        };
-        assert_eq!(
-            dropped_resource(program, *field),
-            Some(SystemResourceType::ReadFile)
-        );
-        assert_eq!(
-            field.release().action,
-            Some(SystemReleaseAction::NativeCloseAttempt)
-        );
-        assert_eq!(field.release().row, close_row());
-        assert_ne!(field.operand(), function.parameters()[0].0);
-        // The struct itself has no release action of its own, and its row is
-        // the union of what its owned content may run.
-        assert_eq!(dropped_resource(program, *aggregate), None);
-        assert_eq!(aggregate.release().action, None);
-        assert_eq!(aggregate.release().row, close_row());
-        assert_eq!(aggregate.operand(), function.parameters()[0].0);
     });
 }
 
@@ -885,7 +860,7 @@ fn touch(value: &uniq Holder) -> result: own unit writes(value.stamp) {{
   return unit;
 }}
 
-fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes(value.bytes, value.stamp) {{
+fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes(value, value.stamp) {{
   region {{
     touch(value: &uniq value);
   }}
@@ -896,7 +871,7 @@ fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes
   return unit;
 }}
 
-{COMMAND_ENTRY}"#
+{PLAIN_ENTRY}"#
     );
     with_ir(source.as_bytes(), |program| {
         let function = function(program, "release_holder");
@@ -947,27 +922,6 @@ fn release_holder(value: own Holder, early: own Bool) -> result: own unit writes
 }
 
 #[test]
-fn an_enum_release_carries_the_union_of_its_components_rows() {
-    let source = format!(
-        "enum Holder {{\n  Empty();\n  Full(file: ReadFile);\n}}\n\n\
-         fn release_holder(holder: own Holder) -> result: own unit writes(holder) {{\n  return unit;\n}}\n\n\
-         {COMMAND_ENTRY}"
-    );
-    with_ir(source.as_bytes(), |program| {
-        let function = function(program, "release_holder");
-        let [drop] = return_drops(function) else {
-            panic!("the enum owner must be released once");
-        };
-        // Release of an outcome value is release of its components [SYS-5]:
-        // the enum itself has no release action of its own, and its row is
-        // the union of the rows its variants may run.
-        assert_eq!(dropped_resource(program, *drop), None);
-        assert_eq!(drop.release().action, None);
-        assert_eq!(drop.release().row, close_row());
-    });
-}
-
-#[test]
 fn an_unused_state_writing_call_reaches_ir() {
     let source = format!(
         "struct Pair {{\n  left: u64;\n}}\n\n\
@@ -975,7 +929,7 @@ fn an_unused_state_writing_call_reaches_ir() {
          set deref(pair).left = 1_u64;\n  return unit;\n}}\n\n\
          fn wrapper(pair: &uniq Pair) -> result: own unit writes(pair.left) {{\n  \
          mutate(pair: move pair);\n  return unit;\n}}\n\n\
-         {COMMAND_ENTRY}"
+         {PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let wrapper = function(program, "wrapper");
@@ -994,193 +948,6 @@ fn an_unused_state_writing_call_reaches_ir() {
 }
 
 #[test]
-fn one_match_arm_releases_its_binder_on_that_arms_normal_edge() {
-    let source = format!(
-        "enum Holder {{\n  Empty();\n  Full(file: ReadFile);\n}}\n\n\
-         fn release_arm(holder: own Holder) -> result: own unit writes(holder) {{\n  \
-         match move holder {{\n    Empty() => {{\n    }}\n    Full(file: opened) => {{\n    }}\n  }}\n  \
-         return unit;\n}}\n\n{COMMAND_ENTRY}"
-    );
-    with_ir(source.as_bytes(), |program| {
-        let function = function(program, "release_arm");
-        let arm_releases: Vec<Vec<IrDrop>> = function
-            .blocks()
-            .iter()
-            .filter_map(|block| match block.terminator() {
-                IrTerminator::Jump { drops, .. } => Some(drops.clone()),
-                _ => None,
-            })
-            .collect();
-        // Exactly one arm holds a resource, so exactly one arm edge carries a
-        // release; the other arm's edge carries none. A release derived on
-        // only one arm is still explicit on that arm's own normal edge.
-        let released: Vec<&IrDrop> = arm_releases
-            .iter()
-            .flatten()
-            .filter(|drop| drop.release().action.is_some())
-            .collect();
-        let [drop] = released.as_slice() else {
-            panic!("exactly one match arm must release the bound resource");
-        };
-        assert_eq!(
-            dropped_resource(program, **drop),
-            Some(SystemResourceType::ReadFile)
-        );
-        assert_eq!(
-            drop.release().action,
-            Some(SystemReleaseAction::NativeCloseAttempt)
-        );
-    });
-}
-
-#[test]
-fn returning_or_passing_an_owner_derives_no_release_here() {
-    let source = format!(
-        "fn pass_through(file: own ReadFile) -> result: own ReadFile pure {{\n  return move file;\n}}\n\n\
-         fn release_read_file(file: own ReadFile) -> result: own unit writes(file) {{\n  return unit;\n}}\n\n\
-         fn hand_off(file: own ReadFile) -> result: own unit writes(file) {{\n  \
-         release_read_file(file: move file);\n  return unit;\n}}\n\n\
-         fn receive(file: own ReadFile) -> result: own unit writes(file) {{\n  \
-         let received = pass_through(file: move file);\n  return unit;\n}}\n\n\
-         {COMMAND_ENTRY}"
-    );
-    with_ir(source.as_bytes(), |program| {
-        // An owner returned across the function boundary is not released by
-        // the callee: its identity leaves with the value.
-        assert!(return_drops(function(program, "pass_through")).is_empty());
-        // Nor is an owner moved into a call released by the caller; the
-        // callee's own edge owns that release.
-        assert!(return_drops(function(program, "hand_off")).is_empty());
-        // The value that comes back across a call boundary is released by
-        // the receiver, with the identity and action the type fixes.
-        let receive = function(program, "receive");
-        let [drop] = return_drops(receive) else {
-            panic!("the received owner must be released once");
-        };
-        assert_eq!(
-            dropped_resource(program, *drop),
-            Some(SystemResourceType::ReadFile)
-        );
-        assert_eq!(
-            drop.release().action,
-            Some(SystemReleaseAction::NativeCloseAttempt)
-        );
-        // It is the call result, not the incoming parameter.
-        assert_ne!(drop.operand(), receive.parameters()[0].0);
-    });
-}
-
-#[test]
-fn releases_keep_reverse_declaration_order_on_the_normal_edge() {
-    let source = format!(
-        "fn ordered(first: own ReadFile, second: own ReadFile) \
-         -> result: own unit writes(first, second) {{\n  return unit;\n}}\n\n{COMMAND_ENTRY}"
-    );
-    with_ir(source.as_bytes(), |program| {
-        let function = function(program, "ordered");
-        let block = only_block(function);
-        // Releases are not ordinary instructions interleaved with the body;
-        // they belong to the normal return edge.
-        assert!(
-            block
-                .instructions()
-                .iter()
-                .all(|instruction| !matches!(instruction, IrInstruction::Drops(_)))
-        );
-        // Both releases sit on the one normal edge, in the reverse
-        // declaration order [STOR-3] fixes, which is the order [EFF-5]
-        // requires of every conforming lowering.
-        let drops = return_drops(function);
-        let ordered: Vec<IrValueId> = drops.iter().map(|drop| drop.operand()).collect();
-        assert_eq!(
-            ordered,
-            vec![function.parameters()[1].0, function.parameters()[0].0]
-        );
-        assert!(
-            drops
-                .iter()
-                .all(|drop| drop.release().action == Some(SystemReleaseAction::NativeCloseAttempt))
-        );
-    });
-}
-
-#[test]
-fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
-    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
-    with_ir(source.as_bytes(), |program| {
-        let main = function(program, "main");
-        let block = only_block(main);
-        // The identity is the specification's own inventory index, resolved
-        // in the system declaration domain — no source spelling reaches the
-        // IR [QUAL-1].
-        let expected = SYSTEM_OPERATIONS
-            .iter()
-            .position(|operation| operation.spelling == "exit_status")
-            .and_then(|index| u8::try_from(index).ok())
-            .expect("the SYS-2 inventory declares exit_status");
-        let calls: Vec<u8> = block
-            .instructions()
-            .iter()
-            .filter_map(|instruction| match instruction {
-                IrInstruction::Define {
-                    operation: IrOperation::SystemCall { operation, .. },
-                    ..
-                } => Some(operation.ordinal()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(calls, vec![expected]);
-
-        // Every release occupies the position its normal edge gives it,
-        // after the operations that precede it in source order [EFF-5], and
-        // the five standard inputs release in reverse declaration order with
-        // the actions [SYS-5] fixes for their types.
-        let drops = return_drops(main);
-        let actions: Vec<Option<SystemReleaseAction>> =
-            drops.iter().map(|drop| drop.release().action).collect();
-        assert_eq!(
-            actions,
-            vec![
-                Some(SystemReleaseAction::LogicalConsume),
-                Some(SystemReleaseAction::SourceDetach),
-                Some(SystemReleaseAction::SourceDetach),
-                Some(SystemReleaseAction::NativeCloseAttempt),
-                Some(SystemReleaseAction::LogicalConsume),
-            ]
-        );
-        let resources: Vec<Option<SystemResourceType>> = drops
-            .iter()
-            .map(|drop| dropped_resource(program, *drop))
-            .collect();
-        assert_eq!(
-            resources,
-            vec![
-                Some(SystemResourceType::HandleFactory),
-                Some(SystemResourceType::OutputStream),
-                Some(SystemResourceType::OutputStream),
-                Some(SystemResourceType::DirectoryRead),
-                Some(SystemResourceType::Args),
-            ]
-        );
-    });
-}
-
-#[test]
-fn the_entry_retains_distinct_standard_input_rows_without_alias_metadata() {
-    let both = "command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    with_ir(both.as_bytes(), |program| {
-        let IrEntry::Command { inputs } = program.entry();
-        assert_eq!(inputs, &vec![2, 3]);
-    });
-
-    let one = "command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
-    with_ir(one.as_bytes(), |program| {
-        let IrEntry::Command { inputs } = program.entry();
-        assert_eq!(inputs, &vec![2]);
-    });
-}
-
-#[test]
 fn ordinary_requires_is_not_lowered_as_a_callee_prologue() {
     let source = br#"fn bounded(value: own u64) -> result: own u64 pure contract {
   requires value < 8_u64;
@@ -1188,7 +955,7 @@ fn ordinary_requires_is_not_lowered_as_a_callee_prologue() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = 4_u64;
   let result = bounded(value: value);
   return exit_status(code: 0_u8);
@@ -1231,7 +998,7 @@ fn prove_only(left: own u64, left_limit: own u64, middle: own u64, middle_limit:
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1250,223 +1017,6 @@ command fn main() -> status: own ExitStatus pure {
             "PRF-1 contributes no instruction, effect, branch, runtime check, or terminator change"
         );
         assert_eq!(proved.overlaps(), plain.overlaps());
-        assert_eq!(proved.completion_steps(), plain.completion_steps());
-        assert_eq!(proved.completion_pipeline(), plain.completion_pipeline());
-    });
-}
-
-#[test]
-fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identity() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let total = 0_u64;
-  for @plain (index in 0_u64..1_u64) {
-    set total = total +wrap 1_u64;
-  }
-  for @scan (index in 0_u64..4_u64) {
-    let name = buffer_new(16_u64, 97_u8);
-    region 'f {
-      match reserve_handle(factory: &uniq files) {
-        Ok(value: permit) => {
-          region {
-            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                set total = total +wrap 1_u64;
-              }
-              FileOpenFailed(error: problem, permit: refused) => {
-              }
-            }
-          }
-        }
-        Err(error: spent) => {
-          return exit_status(code: 8_u8);
-        }
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_ir_mode(source, OverlapLowering::Completion, |program| {
-        let main = function(program, "main");
-        let pipeline = main
-            .completion_pipeline()
-            .expect("the permitted staged loop must reach IR");
-        assert_eq!(
-            pipeline.source_loop().0,
-            1,
-            "the pure first loop has id 0; only the permitted I/O loop's checked identity may select the descriptor"
-        );
-        assert!(
-            pipeline.entry().ordinal() > 0,
-            "the descriptor must name the selected loop's preheader, not the function entry or the first loop"
-        );
-        assert!(
-            pipeline.driver_ready(),
-            "the feeder-drain edge is a complete depth-one driver"
-        );
-        let plan = pipeline
-            .planned_driver()
-            .expect("the eligible result dispatch must have a materialized one-slot plan");
-        assert!(
-            pipeline.carries(plan.feeder()),
-            "the feeder must carry its submitted operation across the mandatory drain edge"
-        );
-        assert!(
-            !pipeline.carries(plan.drain()),
-            "the drain must retire the operation before dispatching its result"
-        );
-        assert!(!pipeline.drains(plan.feeder()));
-        assert!(pipeline.drains(plan.drain()));
-        assert_eq!(pipeline.slots(), 1);
-        assert!(pipeline.slot_index(plan.feeder()).is_none());
-        assert!(pipeline.slot_index(plan.drain()).is_none());
-        assert!(
-            plan.feeder().ordinal() < plan.drain().ordinal(),
-            "the K=1 feeder must be emitted before the exact drain that owns its result"
-        );
-        let feeder = &main.blocks()[plan.feeder().index()];
-        let IrTerminator::Jump { target, .. } = feeder.terminator() else {
-            panic!("the feeder must have exactly one edge to its drain");
-        };
-        assert_eq!(*target, plan.drain());
-        let drain = &main.blocks()[plan.drain().index()];
-        let IrTerminator::Match { scrutinee, .. } = drain.terminator() else {
-            panic!("the drain must own the original result dispatch");
-        };
-        assert_eq!(
-            *scrutinee,
-            plan.result(),
-            "the result is consumed only after the feeder's mandatory drain edge"
-        );
-        let llvm = crate::emit_llvm(program)
-            .expect("a complete depth-one staged descriptor must emit")
-            .into_string();
-        assert!(
-            llvm.contains("@wf__completion_window("),
-            "the production driver must ask for its bounded window once at loop entry"
-        );
-        assert!(
-            llvm.contains("@wf__completion_file_open_at_submit(")
-                && llvm.contains("@wf__completion_file_open_join("),
-            "the staged cut must use one typed submission followed by its mandatory depth-one retirement"
-        );
-    });
-}
-
-#[test]
-fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let opened = 0_u64;
-  let name = buffer_new(4_u64, 97_u8);
-  for @scan (index in 0_u64..4_u64) {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        region {
-          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-            FileOpened(value: handle) => {
-              set opened = opened +wrap 1_u64;
-            }
-            FileOpenFailed(error: problem, permit: refused) => {
-            }
-          }
-        }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 8_u8);
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_ir_mode(source, OverlapLowering::Completion, |program| {
-        let main = function(program, "main");
-        let pipeline = main
-            .completion_pipeline()
-            .expect("the direct staged loop must reach IR");
-        let driver = pipeline
-            .planned_batch_driver()
-            .expect("the direct result dispatch must use the bounded batch driver");
-        assert_eq!(pipeline.slots(), 2);
-        assert!(pipeline.window_value().is_some());
-        assert!(pipeline.carries(driver.feeder()));
-        assert!(!pipeline.carries(driver.drain()));
-        assert!(!pipeline.drains(driver.feeder()));
-        assert!(pipeline.drains(driver.drain()));
-        assert!(pipeline.slot_index(driver.feeder()).is_some());
-        assert!(pipeline.slot_index(driver.drain()).is_some());
-        let llvm = crate::emit_llvm(program)
-            .expect("a source-derived two-slot driver must emit valid LLVM text")
-            .into_string();
-        assert!(llvm.contains("call i64 @wf__completion_window(i64 4, i64 0, i64 2)"));
-        assert!(llvm.contains("%wf.frame = alloca {"));
-        // Two blocks of WF_COMPLETION_RECORD_BYTES, which the record grew to
-        // when it stopped being a token into a pool and became the operation's
-        // own state in the submitting frame
-        // (`research/investigations/io-model/PARK-ON-MISS.md` §5). The number
-        // is the contract header's, checked against the emitter's own constant
-        // by `the_record_block_abi_constants_agree_with_the_contract_header`.
-        assert!(llvm.contains("[2 x [160 x i8]]"));
-        assert!(llvm.contains("getelementptr inbounds [2 x [160 x i8]]"));
-        assert!(llvm.contains("call void @wf__completion_file_open_at_submit("));
-        assert!(llvm.contains("call void @wf__completion_file_open_join("));
-    });
-}
-
-#[test]
-fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let opened = 0_u64;
-  let name = buffer_new(4_u64, 97_u8);
-  for @first (index in 0_u64..3_u64) {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        region {
-          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-            FileOpened(value: handle) => {
-              set opened = opened +wrap 1_u64;
-            }
-            FileOpenFailed(error: problem, permit: refused) => {
-            }
-          }
-        }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 8_u8);
-      }
-    }
-  }
-  for @second (index in 0_u64..3_u64) {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        region {
-          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-            FileOpened(value: handle) => {
-              set opened = opened +wrap 1_u64;
-            }
-            FileOpenFailed(error: problem, permit: refused) => {
-            }
-          }
-        }
-      }
-      Err(error: spent) => {
-        return exit_status(code: 8_u8);
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_ir_mode(source, OverlapLowering::Completion, |program| {
-        let main = function(program, "main");
-        assert!(
-            main.completion_pipeline().is_none(),
-            "a function-level descriptor must not partially transform one of two independently permitted loops"
-        );
-        let llvm = crate::emit_llvm(program)
-            .expect("both loops must remain valid on the ordinary target path")
-            .into_string();
-        assert!(!llvm.contains("@wf__completion_window("));
     });
 }
 
@@ -1480,7 +1030,7 @@ fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligat
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   allocate(n: 4_u64);
   return exit_status(code: 0_u8);
 }
@@ -1517,7 +1067,7 @@ fn an_uninhabited_function_keeps_its_abi_and_lowers_to_one_unreachable_block() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1540,17 +1090,65 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_memory_only_release_carries_no_system_action_or_row() {
-    // The negative boundary: a `buffer` release is compiler-derived too, and
-    // it must stay distinguishable from a system release [STOR-3].
+fn physical_call_inventory_omits_proof_closed_body_edges() {
+    let source = br#"fn child() -> result: own unit pure {
+  return unit;
+}
+
+fn impossible(value: own i32) -> result: own unit pure contract {
+  requires value == 0_i32;
+  requires value != 0_i32;
+} {
+  child();
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_checked(source, |checked| {
+        let impossible = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "impossible")
+            .expect("impossible declaration");
+        assert!(matches!(
+            impossible.body_disposition,
+            crate::semantic::CheckedBodyDisposition::Uninhabited { .. }
+        ));
+        assert!(impossible.body.iter().flatten().any(|statement| matches!(
+            statement,
+            crate::semantic::CheckedStatement::Evaluate(
+                crate::semantic::CheckedExpression::UserCall { .. }
+            )
+        )));
+        let plan = super::specialize::PhysicalFunctions::build(&checked.data)
+            .expect("proof-closed functions retain their physical signature");
+        let variant = plan
+            .variants
+            .iter()
+            .find(|variant| variant.source == impossible.id)
+            .expect("unreferenced source definition still emitted");
+        assert!(
+            variant.calls.is_empty(),
+            "a proof-closed body has no executable calls"
+        );
+        assert!(variant.releases.is_empty());
+    });
+}
+
+#[test]
+fn a_buffer_release_retains_its_owned_storage_type() {
+    // STOR-3 release names ordinary owned storage; opaque drops are empty.
     with_ir(
-        b"fn drop_buffer(values: own buffer<u8>) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn drop_buffer(values: own buffer<u8>) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |program| {
             let [drop] = return_drops(function(program, "drop_buffer")) else {
                 panic!("the buffer owner must be released once");
             };
-            assert_eq!(drop.release().action, None);
-            assert_eq!(drop.release().row, SystemReleaseRow::EMPTY);
+            assert!(matches!(drop.ty(), IrType::Buffer { .. }));
         },
     );
 }
@@ -1559,7 +1157,7 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "command fn main() -> status: own ExitStatus pure {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len_of(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "fn main() -> status: own ExitStatus pure {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len_of(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
@@ -1612,51 +1210,5 @@ fn a_needle_declared_inside_the_loop_declines_the_wide_probe() {
     let middle = "    let inner_mark = 88_u8;\n    let lead = byte == inner_mark;\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
     with_ir(&byte_walk_source(middle, "1_u64"), |program| {
         assert_eq!(probe_needle_counts(program), Vec::<usize>::new());
-    });
-}
-
-/// A gate whose exiting arm breaks rather than returns takes the same bounded
-/// batch driver: the exit runs after the batch in flight has drained, on the
-/// carried bindings, and leaves through the driver's exit block.
-#[test]
-fn a_prologue_gate_leaving_by_break_keeps_the_two_slot_driver() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let opened = 0_u64;
-  let name = buffer_new(4_u64, 97_u8);
-  for @scan (index in 0_u64..4_u64) {
-    match reserve_handle(factory: &uniq files) {
-      Ok(value: permit) => {
-        region {
-          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-            FileOpened(value: handle) => {
-              set opened = opened +wrap 1_u64;
-            }
-            FileOpenFailed(error: problem, permit: refused) => {
-            }
-          }
-        }
-      }
-      Err(error: spent) => {
-        break;
-      }
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_ir_mode(source, OverlapLowering::Completion, |program| {
-        let main = function(program, "main");
-        let pipeline = main
-            .completion_pipeline()
-            .expect("the gated staged loop must reach IR");
-        assert!(
-            pipeline.planned_batch_driver().is_some(),
-            "a break in the gate's exiting arm keeps the bounded batch driver"
-        );
-        assert_eq!(pipeline.slots(), 2);
-        let llvm = crate::backend::emit_llvm(program)
-            .expect("a gated two-slot driver must emit valid LLVM text")
-            .into_string();
-        assert!(llvm.contains("call i64 @wf__completion_window(i64 4, i64 0, i64 2)"));
     });
 }

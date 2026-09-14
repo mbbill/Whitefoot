@@ -18,7 +18,7 @@ fn fill(output: own MutSlice<u64>) -> result: own u64 reads(output), writes(outp
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let values = buffer_new(17_u64, 0_u64);
   for (i in 0_u64..17_u64) {
     set values[i] = i;

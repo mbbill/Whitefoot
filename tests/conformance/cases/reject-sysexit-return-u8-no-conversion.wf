@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "ExitStatus has one constructor and no implicit conversion from u8 [SYS-13, TYPE-4]; a return whose type differs from the written rtype is a hard error citing FN-1.";
+fn main() -> status: own ExitStatus pure {
+  doc "The ordinary function promises ExitStatus but returns u8 without a declared conversion. FN-1 rejects that result type mismatch at the return statement, independently of the function name or any launcher.";
   return 0_u8;
 }

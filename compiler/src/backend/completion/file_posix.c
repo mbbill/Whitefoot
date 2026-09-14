@@ -33,6 +33,12 @@
 #include <time.h>
 #include <unistd.h>
 
+#if !defined(WF_COMPLETION_SHUTDOWN)
+#define WF_COMPLETION_SHUTDOWN shutdown
+#else
+extern int WF_COMPLETION_SHUTDOWN(int, int);
+#endif
+
 #if !defined(WF_COMPLETION_POLL)
 #define WF_COMPLETION_POLL poll
 #else
@@ -67,12 +73,11 @@ extern ssize_t WF_COMPLETION_GETDIRENTRIES64(
     int64_t *
 );
 #elif defined(__linux__)
-/* glibc exports the exact facility used by the qualified Linux target.  It is
+/* glibc exports the batch facility used by the Linux native library. It is
  * declared here rather than reached through <dirent.h> for the same reason
  * the Darwin entry above is: the declaration is behind _GNU_SOURCE, which
  * this unit does not ask for, and the prototype is fixed by the ABI.  It is
- * intentionally not replaced with an opendir/readdir loop, which is a scan
- * built out of other operations [QUAL-2, QUAL-3]. */
+ * used directly so one engine request returns one bounded native batch. */
 #if !defined(WF_COMPLETION_GETDENTS64)
 #define WF_COMPLETION_GETDENTS64 getdents64
 #endif
@@ -96,10 +101,9 @@ _Static_assert(
  * and one socket of that address's family.
  *
  * Both endpoint kinds do exactly these two things before their own host call,
- * and both dispose of the socket on any refusal, because a listener or a
- * connection that was never created holds no credit and the permit goes back
- * to the program [SYS-10].  Returns -1 with `errno` set when the host refused
- * the socket. */
+ * and both dispose of the socket on any refusal. The ordinary linked caller
+ * restores the factory's reserved credit on failure. Returns -1
+ * with `errno` set when the host refused the socket. */
 static int wf_socket_endpoint(
     const wf_file_request *request,
     wf_socket_native_address *native,
@@ -312,9 +316,8 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
 #endif
         break;
 #endif
-    /* The six socket kinds [SYS-17, SYS-18].  Each is exactly the host calls
-     * its operation names and nothing else; the descriptor accounting is the
-     * emitted program's, through the permit it holds. */
+    /* The six private socket request kinds perform their named host calls.
+     * The ordinary linked caller maintains the factory's descriptor credit. */
     case WF_FILE_SOCKET_LISTEN: {
         wf_socket_native_address native;
         unsigned length = 0;
@@ -406,12 +409,15 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
             request->operation.shutdown.direction == WF_SOCKET_DIRECTION_SEND
             ? SHUT_WR
             : SHUT_RD;
-        /* The count is taken first, so two directions released on two threads
-         * agree on which of them is the second whatever order the two host
-         * calls below land in. */
+        /* A published release means this direction has finished using the
+         * descriptor. Otherwise the other direction could close it before
+         * this shutdown and the host could reuse its number. */
+        (void)WF_COMPLETION_SHUTDOWN(descriptor, direction);
         int last = wf_file_connection_release(descriptor);
-        (void)shutdown(descriptor, direction);
-        result.head.value = last ? close(descriptor) : 0;
+        if (last && close(descriptor) < 0) result.head.error_code = errno;
+        // A linked close returns the released descriptor credit to its passed
+        // factory. Preserve the last-half fact in this private native result.
+        result.head.value = last ? 1 : 0;
         break;
     }
     default:

@@ -72,11 +72,35 @@ fn const_evaluation_rejects_every_out_of_domain_result() {
 /// is observable.
 #[test]
 fn const_position_arithmetic_parses_and_evaluates() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n  let filled = fixed_vector::<u64, 2 * 3>();\n  let count = cap_of(filled);\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn main() -> status: own ExitStatus pure {\n  let filled = fixed_vector::<u64, 2 * 3>();\n  let count = cap_of(filled);\n  return exit_status(code: 0_u8);\n}\n";
     with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
             "const-position arithmetic is an accepted const-expression: {outcome:?}",
+        );
+    });
+}
+
+#[test]
+fn struct_constant_labels_are_not_bare_constant_reference_candidates() {
+    // PRE-1 supplies ensures in every complete unit, so the FN-9 preflight
+    // must classify ordinary Cvalue field labels without treating several
+    // labels as a malformed single IDENT reference.
+    let source = br#"struct Dimensions {
+  width: u64;
+  height: u64;
+}
+
+const frame: Dimensions = Dimensions(width: 3_u64, height: 2_u64);
+
+fn width() -> result: own u64 pure {
+  return frame.width;
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
         );
     });
 }

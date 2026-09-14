@@ -31,9 +31,10 @@ use super::{build_executable, compile, test_directory};
 /// the fill of a seven-thousand-element one and a tenth of a second on this,
 /// for the same arithmetic under test.
 ///
-/// The depth comes from the argument count rather than a literal so the host
-/// optimizer cannot solve the recursion in closed form, which it does — and
-/// then there is no recursion left to measure.
+/// The depth comes from the argument count. The recursive result selects the
+/// later read from a nonuniform array, keeping the complete local array live
+/// across the call. Reading only the slot just overwritten with depth lets
+/// LLVM eliminate the array and solve the recursion, leaving no wide frame.
 fn wide_frame_source(depth: u64) -> Vec<u8> {
     format!(
         r#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {{
@@ -44,7 +45,9 @@ fn wide_frame_source(depth: u64) -> Vec<u8> {
     invariant spare: room_of(pad) + at >= 256_u64,
     invariant flat: head_of(pad) <= 0_u64
   ) {{
-    set pad = place_back(vector: move pad, value: v);
+    let seed = v +wrap at;
+    let square = seed *wrap seed;
+    place_back(vector: &uniq pad, value: square);
   }}
   let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
@@ -54,11 +57,16 @@ fn wide_frame_source(depth: u64) -> Vec<u8> {
   }}
   let next = depth -wrap 1_u64;
   let a = spine(depth: next, v: v, i: i);
-  let b = pad[wide];
+  let after = a % 256_u64;
+  let b = pad[after];
   return a +wrap b;
 }}
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
+  let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;
+  region {{
+    close_directory(factory: &uniq factory, directory: move cwd);
+  }}
   let count = 0_u64;
   region {{
     set count = args_count(args: &args);
@@ -343,7 +351,11 @@ fn boxed_branch['s](store: &uniq Heap<'s>, left: own Box<'s, Tree<'s>>, right: o
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match boxed_leaf(store: &uniq heap) {
       None() => {

@@ -30,7 +30,7 @@ fn mandelbrot_escapes(cx: own f64, cy: own f64) -> result: own Bool pure {
   return escaped;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let y = 0_u32;
   let escaped_points = 0_u32;
   loop @rows {

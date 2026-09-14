@@ -1,0 +1,47 @@
+struct Observed {
+  previous: u64;
+  current: u64;
+}
+
+fn exchange['s](slot: &uniq Box<'s, u64>, incoming: own Box<'s, u64>) -> previous: own Box<'s, u64> reads(slot), writes(slot) {
+  let previous = replace deref(slot) = move incoming;
+  return move previous;
+}
+
+fn observe['s](owner: own Box<'s, u64>, incoming: own Box<'s, u64>, store: &uniq Heap<'s>) -> result: own Observed reads(owner), writes(owner, store) {
+  let previous_value = 0_u64;
+  region {
+    let previous = exchange(slot: &uniq owner, incoming: move incoming);
+    set previous_value = deref(previous);
+  }
+  let current_value = deref(owner);
+  return Observed(previous: previous_value, current: current_value);
+}
+
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "FN-1, EFF-2, SET-2: a helper returns the old ordinary Box and installs the incoming Box in the exclusive actual. A second helper reads both values using ordinary storage-place effects and releases each through its ordinary Heap capability.";
+  region {
+    match heap_box(store: &uniq heap, value: 11_u64) {
+      Err(error: first_failure) => {
+        return exit_status(code: 70_u8);
+      }
+      Ok(value: owner) => {
+        match heap_box(store: &uniq heap, value: 22_u64) {
+          Err(error: second_failure) => {
+            return exit_status(code: 71_u8);
+          }
+          Ok(value: incoming) => {
+            let seen = observe(owner: move owner, incoming: move incoming, store: &uniq heap);
+            if seen.previous != 11_u64 {
+              return exit_status(code: 1_u8);
+            }
+            if seen.current != 22_u64 {
+              return exit_status(code: 2_u8);
+            }
+            return exit_status(code: 0_u8);
+          }
+        }
+      }
+    }
+  }
+}

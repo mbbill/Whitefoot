@@ -10,6 +10,6 @@ fn scale_zero(first: own u64, first_limit: own u64, second: own u64, second_limi
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

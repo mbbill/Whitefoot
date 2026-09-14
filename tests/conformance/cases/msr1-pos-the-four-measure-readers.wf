@@ -11,12 +11,12 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> 
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: value);
+    place_back(vector: &uniq built, value: value);
   }
   return move built;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "[MSR-1] the four measures are one quantity read two ways, a term and an [OP-1] reader. A run's cap is the capacity it was formed with - the type constant for a fixed run, the count for a store run - and its len, room and head describe the window inside that capacity, so a run filled to its capacity reads room and head at zero. The program reads all four over a fixed run, over a store run and over a slice, and observes those values.";
   let fixed = filled::<u8, 4>(value: 0_u8);
   let fixed_length = len_of(fixed);
@@ -36,7 +36,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
           invariant spare: room_of(built) + at >= 8_u64,
           invariant flat: head_of(built) <= 0_u64
         ) {
-          set built = place_back(vector: move built, value: 0_u8);
+          place_back(vector: &uniq built, value: 0_u8);
         }
         let run_length = len_of(built);
         let run_capacity = cap_of(built);

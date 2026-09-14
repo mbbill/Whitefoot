@@ -218,7 +218,7 @@ static unsigned char expected_byte(uint64_t offset) {
 
 /* One loopback round trip through the bridge's own ABI: listen, connect,
  * accept, send, receive, and the four releases that end the two connections
- * and the listener [SYS-17, SYS-18].
+ * and the listener (ordinary native library).
  *
  * It is one text on every platform, which is the point: the same six request
  * kinds reach the Linux ring's four opcodes, the Windows completion port's
@@ -236,10 +236,10 @@ static unsigned char expected_byte(uint64_t offset) {
  * its own.
  *
  * The specification declares no operation reporting a listener's own local
- * address ([SYS-17]), so the port is chosen the only way a program can choose
+ * address ((ordinary native library)), so the port is chosen the only way a program can choose
  * one: bind a candidate and take the host's answer.  A port another process
  * holds answers `AddressInUse` and the next candidate is tried, which is that
- * outcome being the program's own [SYS-17]. */
+ * outcome being the program's own (ordinary native library). */
 #define PROBE_TCP_PORT_FIRST 45231u
 #define PROBE_TCP_PORT_TRIES 64u
 /* 127.0.0.1 in the portable layout `contract.h` fixes: byte `i` occupies bits
@@ -399,7 +399,7 @@ static int probe_loopback_round_trip(unsigned *chosen_port) {
 
     /* Two releases per connection, which is what a `close_connection` lowers
      * to: the first half-closes that direction and the second releases the
-     * target's object [SYS-18].  The listener's close is the ordinary one. */
+     * target's object (ordinary native library).  The listener's close is the ordinary one. */
     for (index = 0; index < 2u; ++index) {
         wf__completion_socket_shutdown_submit((int)client, index, record);
         if (probe_socket_step("client half-close", record, &value) != 0) {

@@ -1,0 +1,15 @@
+formal Factory<T: affine> {
+  fn make(value: own T) -> result: own T pure;
+}
+
+fn retain(value: own FixedVector<u8, 4>) -> result: own FixedVector<u8, 4> pure {
+  return move value;
+}
+
+actual Identity : Factory<FixedVector<u8, 4>> {
+  make = retain;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

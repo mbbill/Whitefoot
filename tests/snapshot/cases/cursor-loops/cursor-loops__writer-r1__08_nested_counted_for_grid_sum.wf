@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: two nested counted for loops walk a fixed grid row by row and column by column, guarding each addend against a diagonal skip before accumulating a wrapped total.";
   let grid = fixed_vector::<u32, 9>();
   for (
@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant spare_grid: room_of(grid) + at_grid >= 9_u64,
     invariant flat_grid: head_of(grid) <= 0_u64
   ) {
-    set grid = place_back(vector: move grid, value: 1_u32);
+    place_back(vector: &uniq grid, value: 1_u32);
   }
   let total = 0_u32;
   for (row in 0_u64..3_u64) {

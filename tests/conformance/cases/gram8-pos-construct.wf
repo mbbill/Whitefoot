@@ -3,7 +3,7 @@ enum Wrap {
   N();
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "GRAM-8: named construction - declared field written once as IDENT:atom in order; nullary written K().";
   let a = W(inner: 7_i32);
   let b = N();

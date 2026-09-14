@@ -8,18 +8,18 @@ fn grow['s](old: own Vector<'s, u8>) -> bigger: own Vector<'s, u8> reads(old) {
   return move old;
 }
 
-fn bump(cell: own Box<u64>) -> back: own Box<u64> pure {
+fn bump['heap](cell: own Box<'heap, u64>) -> back: own Box<'heap, u64> pure {
   doc "Consumes the cell it is handed and hands one back.";
   return move cell;
 }
 
-fn refill(out: &uniq Box<u64>) -> done: own unit reads(out), writes(out) {
+fn refill['heap](out: &uniq Box<'heap, u64>) -> done: own unit reads(out), writes(out) {
   doc "The commit at a deref: the read-out is admitted on [SET-2]'s exchange ground.";
   set deref(out) = bump(cell: move deref(out));
   return unit;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "LIV-2: probe q9's statement at each of the three place shapes a commit reinitializes. The right-hand side reads the target's previous value out, so the target is dead at the commit and every one of the three is admitted where [STOR-1] refused all three before.";
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {

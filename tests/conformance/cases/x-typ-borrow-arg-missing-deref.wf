@@ -2,7 +2,7 @@ fn takes_i32(x: own i32) -> function_result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Passing a borrow where an own i32 argument is declared needs deref [TYPE-7].";
   let a = 7_i32;
   region {

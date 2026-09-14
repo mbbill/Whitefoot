@@ -1,0 +1,23 @@
+formal Zeroed {
+  fn zero() -> result: own i32 pure;
+}
+
+actual First : Zeroed {
+  zero = i32_zero_a;
+}
+
+actual Second : Zeroed {
+  zero = i32_zero_b;
+}
+
+fn i32_zero_a() -> result: own i32 pure {
+  return 0_i32;
+}
+
+fn i32_zero_b() -> result: own i32 pure {
+  return 0_i32;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

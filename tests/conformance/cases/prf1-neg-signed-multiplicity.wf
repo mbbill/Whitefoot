@@ -15,7 +15,7 @@ fn inner(p: own i64, k: own i64, j: own i64, n: own i64) -> at: own i64 pure con
   return at;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let at = inner(p: 1_i64, k: 2_i64, j: 3_i64, n: 4_i64);
   return exit_status(code: 0_u8);
 }

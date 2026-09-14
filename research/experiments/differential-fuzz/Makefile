@@ -1,6 +1,6 @@
 # Differential fuzzing of the overlap lowerings.
 #
-# One generator writes accepted Whitefoot command programs that do real I/O and
+# One generator writes accepted ordinary Whitefoot programs that do real I/O and
 # control flow; one oracle compiles each program under every overlap lowering
 # and runs it across the worker and helper matrix, comparing published bytes
 # and exit status against the program's own sequential run.
@@ -49,7 +49,7 @@ $(FUZZ): build
 # test.
 compiler:
 	$(CARGO) build --manifest-path $(ROOT)/compiler/Cargo.toml \
-		--profile gate --bin whitefootc --locked --offline
+		--target-dir $(ROOT)/compiler/target --profile gate --bin whitefootc --locked --offline
 
 smoke: build compiler
 	@mkdir -p "$(WORK)"

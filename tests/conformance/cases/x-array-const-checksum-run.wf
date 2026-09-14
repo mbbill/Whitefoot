@@ -9,7 +9,7 @@ fn checksum() -> function_result: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "A static const run feeds a counted-loop checksum whose range facts discharge indexing.";
   let result = checksum();
   if result == 228_u64 {

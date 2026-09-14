@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "deref of a non-reference value is malformed [TYPE-7].";
   let a = 42_i32;
   let v = deref(a);

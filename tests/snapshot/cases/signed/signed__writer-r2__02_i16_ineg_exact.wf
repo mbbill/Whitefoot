@@ -8,7 +8,7 @@ fn negate_guarded(x: own i16) -> negated: own i16 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = negate_guarded(x: 300_i16);
   let b = negate_guarded(x: -32768_i16);
   if a == -300_i16 {

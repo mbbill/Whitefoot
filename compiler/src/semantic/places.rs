@@ -259,9 +259,9 @@ pub(crate) fn range_pair(left: &[PlaceStep], right: &[PlaceStep]) -> Option<(Ran
 /// What one binding reads through by `deref`, for place resolution.
 #[derive(Clone, Debug)]
 pub(crate) enum HolderReferent {
-    /// A borrow of a known local place.
+    /// A borrow of a known local or immutable constant place.
     Place {
-        binding: BindingId,
+        root: PlaceRoot,
         path: Vec<PlaceStep>,
     },
     /// A reborrow: reads through another holder.
@@ -331,7 +331,7 @@ impl PlaceMap {
                 summary.view_origin = Some(ResolvedPlace::binding(parameter.binding));
             }
         }
-        map.collect_block_bindings(&function.body);
+        map.collect_block_bindings(function.body.as_deref().unwrap_or_default());
         for outcome in &function.entailment.obligations {
             if outcome.discharged
                 && let Some((left, right)) = outcome.formed_range_separation
@@ -566,11 +566,15 @@ impl PlaceMap {
             .summary(holder)
             .and_then(|summary| summary.holder.as_ref())
         {
-            Some(HolderReferent::Place { binding, path }) => {
-                let mut resolved = if self.is_holder(*binding) {
-                    self.resolve_deref(*binding, depth + 1)
-                } else {
-                    ResolvedPlace::binding(*binding)
+            Some(HolderReferent::Place { root, path }) => {
+                let mut resolved = match *root {
+                    PlaceRoot::Binding(binding) if self.is_holder(binding) => {
+                        self.resolve_deref(binding, depth + 1)
+                    }
+                    root => ResolvedPlace {
+                        root,
+                        path: Vec::new(),
+                    },
                 };
                 resolved.path.extend_from_slice(path);
                 resolved
@@ -595,11 +599,15 @@ impl PlaceMap {
             .summary(holder)
             .and_then(|summary| summary.holder.as_ref())
         {
-            Some(HolderReferent::Place { binding, path }) => {
-                let mut resolved = if self.is_holder(*binding) {
-                    self.resolve_deref_with_holders(*binding, depth + 1, holders)
-                } else {
-                    ResolvedPlace::binding(*binding)
+            Some(HolderReferent::Place { root, path }) => {
+                let mut resolved = match *root {
+                    PlaceRoot::Binding(binding) if self.is_holder(binding) => {
+                        self.resolve_deref_with_holders(binding, depth + 1, holders)
+                    }
+                    root => ResolvedPlace {
+                        root,
+                        path: Vec::new(),
+                    },
                 };
                 resolved.path.extend_from_slice(path);
                 resolved
@@ -665,24 +673,15 @@ impl PlaceMap {
                 };
                 Some((self.resolve(&place), false))
             }
-            // A borrowed system resource that is a struct field names that
-            // field, so a write through it kills the facts on the field and
-            // not on its siblings [SYS-18, ENT-5].
-            CheckedExpression::BorrowSystemResource {
-                binding, fields, ..
-            } => {
-                let place = PlaceTerm {
-                    root: PlaceRoot::Binding(*binding),
-                    deref: self.is_holder(*binding),
-                    fields: fields.clone(),
-                };
-                Some((self.resolve(&place), false))
-            }
             CheckedExpression::BorrowAddressed { root, .. } => {
-                let mut resolved = if self.is_holder(root.binding) {
-                    self.resolve_deref(root.binding, 0)
-                } else {
-                    ResolvedPlace::binding(root.binding)
+                let mut resolved = match root.root {
+                    PlaceRoot::Binding(binding) if self.is_holder(binding) => {
+                        self.resolve_deref(binding, 0)
+                    }
+                    root => ResolvedPlace {
+                        root,
+                        path: Vec::new(),
+                    },
                 };
                 resolved.path.extend(root.place_path());
                 Some((resolved, false))
@@ -708,22 +707,16 @@ impl PlaceMap {
 
 pub(crate) fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
     match value {
-        CheckedExpression::BorrowSystemResource {
-            binding, fields, ..
-        } => Some(HolderReferent::Place {
-            binding: *binding,
-            path: fields.iter().copied().map(PlaceStep::Field).collect(),
-        }),
         CheckedExpression::BorrowAddressed { root, .. } => Some(HolderReferent::Place {
-            binding: root.binding,
+            root: root.root,
             path: root.place_path(),
         }),
         CheckedExpression::BorrowBox { binding, .. } => Some(HolderReferent::Place {
-            binding: *binding,
+            root: PlaceRoot::Binding(*binding),
             path: Vec::new(),
         }),
         CheckedExpression::BorrowBuffer { root, .. } => Some(HolderReferent::Place {
-            binding: root.binding,
+            root: PlaceRoot::Binding(root.binding),
             path: root.fields.iter().copied().map(PlaceStep::Field).collect(),
         }),
         CheckedExpression::ReborrowAddressed { binding, .. } => {
@@ -736,7 +729,7 @@ pub(crate) fn holder_from_value(value: &CheckedExpression) -> Option<HolderRefer
             result_borrow: Some(result_borrow),
             ..
         } => Some(HolderReferent::Place {
-            binding: result_borrow.binding,
+            root: result_borrow.root,
             path: result_borrow.path.clone(),
         }),
         CheckedExpression::BoxNew { .. } | CheckedExpression::ArenaNew { .. } => {
@@ -754,7 +747,6 @@ pub(crate) const fn value_has_implicit_deref(value: &CheckedExpression) -> bool 
         CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
             | CheckedExpression::UserCall {
                 result_borrow: Some(_),

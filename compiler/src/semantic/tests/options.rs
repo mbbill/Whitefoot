@@ -26,7 +26,7 @@ fn absent() -> result: own Option<Pair> pure {
   return None<Pair>();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -62,7 +62,7 @@ command fn main() -> status: own ExitStatus pure {
 /// variant-dependent, and one drop on the return edge.
 #[test]
 fn option_of_a_resource_bearing_payload_uses_variant_dependent_cleanup() {
-    let source = b"fn abandon['s](value: own Option<Vector<'s, u8>>, store: &uniq Heap<'s>) -> result: own unit writes(store) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn abandon['s](value: own Option<Vector<'s, u8>>, store: &uniq Heap<'s>) -> result: own unit writes(store) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("Option<Vector<'s, u8>> must check: {outcome:?}");
@@ -74,7 +74,7 @@ fn option_of_a_resource_bearing_payload_uses_variant_dependent_cleanup() {
             .find(|nominal| nominal.name == "Option<Vector<'s, u8>>")
             .expect("concrete Option instance must be interned");
         let super::super::model::CheckedStatement::Return { drops, .. } =
-            &checked.data.functions[0].body[0]
+            &checked.data.functions[0].body.as_deref().expect("WF body")[0]
         else {
             panic!("abandon must end in return");
         };

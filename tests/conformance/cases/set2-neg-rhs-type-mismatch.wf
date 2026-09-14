@@ -10,7 +10,7 @@ struct Slot {
   item: Item;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "SET-2 derives a writable affine target place of type T and hands the right-hand side the same exact-`own T` judgment TYPE-5 states, located at the complete expr child of the replace_let_rhs. An `own Replacement` value for an `own Item` place has no mode coercion, conversion, or target-selected overload and is a hard error citing TYPE-5.";
   let first = Item(value: 1_u64);
   let slot = Slot(item: move first);

@@ -9,6 +9,6 @@ fn scale_one(first: own u64, first_limit: own u64) -> result: own unit pure cont
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

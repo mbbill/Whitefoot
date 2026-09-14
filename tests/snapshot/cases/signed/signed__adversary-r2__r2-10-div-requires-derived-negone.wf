@@ -14,7 +14,7 @@ fn quotient_guarded(n: own i32, d: own i32) -> result: own i32 pure contract {
   return n / d;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let safe = quotient_guarded(n: 6_i32, d: -1_i32);
   if safe == -6_i32 {
   } else {

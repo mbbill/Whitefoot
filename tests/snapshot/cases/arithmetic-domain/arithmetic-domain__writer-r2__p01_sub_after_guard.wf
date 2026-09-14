@@ -9,7 +9,7 @@ fn clamp_difference(a: own u32, b: own u32) -> result: own u32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = clamp_difference(a: 10_u32, b: 4_u32);
   let second = clamp_difference(a: 3_u32, b: 9_u32);
   if first == 6_u32 {

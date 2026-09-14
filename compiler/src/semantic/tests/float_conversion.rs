@@ -46,14 +46,24 @@ fn classifies_every_distinct_pair_with_a_float_endpoint() {
             expected.push((source_type, destination_type, total, destination_name));
         }
     }
-    source.push_str("command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n");
+    source.push_str(
+        "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+    );
 
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("all concrete float-endpoint conversion pairs must check: {outcome:?}");
         };
         assert_eq!(expected.len(), 34);
-        assert_eq!(checked.data.functions.len(), expected.len() + 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            expected.len() + 1
+        );
         for (function, (expected_source, expected_destination, total, destination_name)) in
             checked.data.functions.iter().zip(expected)
         {
@@ -68,7 +78,7 @@ fn classifies_every_distinct_pair_with_a_float_endpoint() {
                         },
                     ..
                 },
-            ] = function.body.as_slice()
+            ] = function.body.as_deref().expect("WF body")
             else {
                 panic!("conversion function must retain one numeric conversion");
             };
@@ -93,7 +103,7 @@ fn classifies_every_distinct_pair_with_a_float_endpoint() {
 
 #[test]
 fn partial_float_conversion_result_is_available_without_an_annotation() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   match cvt::<f32, u8>(1.0_f32) {
     Ok(value: byte) => {
     }
@@ -114,12 +124,12 @@ fn partial_float_conversion_result_is_available_without_an_annotation() {
 #[test]
 fn float_conversion_operand_failures_keep_their_rule_owners() {
     assert_rule(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = cvt::<f32, f32>(1.0_f32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = cvt::<f32, f32>(1.0_f32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op6,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = cvt::<u32, f64>(1_u16);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = cvt::<u32, f64>(1_u16);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );

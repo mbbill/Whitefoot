@@ -8,6 +8,6 @@ fn mutable_clause(x: own i32) -> result: own i32 pure contract {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

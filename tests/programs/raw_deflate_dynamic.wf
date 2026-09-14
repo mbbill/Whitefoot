@@ -125,7 +125,7 @@ fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: 
     invariant spare_hi: room_of(counts) + at <= 16_u64,
     invariant flat: head_of(counts) <= 0_u64
   ) {
-    set counts = place_back(vector: move counts, value: 0_u64);
+    place_back(vector: &uniq counts, value: 0_u64);
   }
   let symbols = fixed_vector::<u64, 286>();
   for @reserve_symbols (
@@ -136,7 +136,7 @@ fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: 
     invariant spare_hi: room_of(symbols) + at <= 286_u64,
     invariant flat: head_of(symbols) <= 0_u64
   ) {
-    set symbols = place_back(vector: move symbols, value: 0_u64);
+    place_back(vector: &uniq symbols, value: 0_u64);
   }
   let nonzero = 0_u64;
   let sole_length = 0_u32;
@@ -202,7 +202,7 @@ fn build_huffman_table(lengths: own Slice<u8>, symbol_count: own u64, max_bits: 
     invariant spare_hi: room_of(offsets) + at <= 16_u64,
     invariant flat: head_of(offsets) <= 0_u64
   ) {
-    set offsets = place_back(vector: move offsets, value: 0_u64);
+    place_back(vector: &uniq offsets, value: 0_u64);
   }
   let offset = 0_u64;
   set length = 1_u32;

@@ -7,7 +7,7 @@ fn hand_back(lease: own Lease) -> returned: own Lease pure {
   return move lease;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "PROV-6: the first of the two routes out of a scope for a value linear in it. The lease is moved out whole into the callee and the callee moves it out whole again, so no edge of either scope carries a derived release of it.";
   let lease = Lease(slot: 3_u8);
   let back = hand_back(lease: move lease);

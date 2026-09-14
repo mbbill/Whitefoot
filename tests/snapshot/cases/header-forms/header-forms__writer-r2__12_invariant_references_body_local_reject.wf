@@ -10,7 +10,7 @@ fn sum_weighted(count: own u64) -> total: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "REJECT: header invariant names scratch, a body-local declared inside the loop body, not live in the preheader [INV-1].";
   let total = sum_weighted(count: 5_u64);
   return exit_status(code: 0_u8);

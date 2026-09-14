@@ -87,10 +87,11 @@ or harder for an agent to use.
 
 The affected set is CONST-2's coverage requirement, its GRAM-8 construction
 dependency, and the [construction rationale](../../../mcts_mem/whitefoot/surface-form/construction-form.md).
-The [broader grounds assessment](../decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage)
-also assesses CONST-2's eligibility, lifetime, representation, and read rules;
-those arguments are not results of this initialization experiment.
+The [historical grounds assessment](../decision-workflow/RULE-GROUNDS.md#types-ownership-and-storage)
+also examined CONST-2's eligibility, lifetime, representation, and read rules;
+those arguments are not results of this initialization experiment or a current
+rule inventory.
 GRAM-8's general naming/order selection remains provisional without comparative
-authoring evidence. The current index points to that broader assessment and
-retains this study as the source for the bounded initialization result.
+authoring evidence. The retired rule index linked that assessment and this
+study's bounded initialization result; it is no longer a current authority.
 The active specification, compiler, and conformance expectations need no change.

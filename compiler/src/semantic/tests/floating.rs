@@ -7,7 +7,7 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
 fn retains_the_complete_direct_float_operation_family() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let a = fadd.strict(1.0_f32, 2.0_f32);
   let b = fsub.strict(a, 1.0_f32);
   let c = fmul.strict(a, b);
@@ -41,6 +41,8 @@ fn retains_the_complete_direct_float_operation_family() {
         };
         let operations = checked.data.functions[0]
             .body
+            .as_deref()
+            .expect("WF body")
             .iter()
             .filter_map(|statement| match statement {
                 CheckedStatement::Let {
@@ -83,17 +85,17 @@ fn retains_the_complete_direct_float_operation_family() {
 #[test]
 fn float_literal_and_operation_failures_keep_their_rule_owners() {
     assert_rule(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = 1.00_f64;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = 1.00_f64;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Form7,
         SemanticIssueKind::InvalidFloatLiteral,
     );
     assert_rule(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = fadd.strict(1_i32, 2_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = fadd.strict(1_i32, 2_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = fadd.strict(1.0_f64, 2_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = fadd.strict(1.0_f64, 2_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "+checked returns Result<T, Overflow> [OP-1]; i32::MAX + 1 must yield Err, while any unexpected Ok result returns a nonzero status.";
   let hi = 2147483647_i32;
   match hi +checked 1_i32 {

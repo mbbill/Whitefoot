@@ -1,0 +1,21 @@
+fn relay(value: own ReadFile) -> result: own ReadFile pure {
+  let local = move value;
+  return move local;
+}
+
+fn exchange(slot: &uniq ReadFile, incoming: own ReadFile) -> previous: own ReadFile reads(slot), writes(slot) {
+  let previous = replace deref(slot) = move incoming;
+  return move previous;
+}
+
+fn transfer(first: own ReadFile, second: own ReadFile) -> (old: own ReadFile, current: own ReadFile) pure {
+  let value = relay(value: move first);
+  region {
+    let previous = exchange(slot: &uniq value, incoming: move second);
+    return move previous, move value;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

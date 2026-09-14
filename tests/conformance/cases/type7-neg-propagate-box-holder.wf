@@ -2,12 +2,12 @@ enum StepError {
   Failed();
 }
 
-fn forward(holder: own Box<Result<i32, StepError>>) -> function_result: own Result<i32, StepError> pure {
+fn forward['heap](holder: own Box<'heap, Result<i32, StepError>>) -> function_result: own Result<i32, StepError> pure {
   doc "TYPE-7: propagate cannot implicitly read a Result from a box holder; write deref(holder).";
   let value = propagate holder;
   return Ok<i32, StepError>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

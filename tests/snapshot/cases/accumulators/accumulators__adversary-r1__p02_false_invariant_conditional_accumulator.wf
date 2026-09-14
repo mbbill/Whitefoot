@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [INV-1] -- the even branch adds 2 each hit, so count can reach 2*ceil(i/2) which exceeds the stated bound count <= i at the very first even step (i=0 -> count=2 > 0); the backedge obligation count <= i+1 is genuinely false.";
   let count = 0_u64;
   for (

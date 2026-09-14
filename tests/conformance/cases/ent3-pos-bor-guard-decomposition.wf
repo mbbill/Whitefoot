@@ -12,12 +12,24 @@ fn get(table: own FixedVector<u8, 4>, symbol: own u64) -> result: own u8 reads(t
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
-  let one = place_back(vector: move empty, value: 7_u8);
-  let two = place_back(vector: move one, value: 7_u8);
-  let three = place_back(vector: move two, value: 7_u8);
-  let table = place_back(vector: move three, value: 7_u8);
+  region {
+    place_back(vector: &uniq empty, value: 7_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 7_u8);
+  }
+  let two = move one;
+  region {
+    place_back(vector: &uniq two, value: 7_u8);
+  }
+  let three = move two;
+  region {
+    place_back(vector: &uniq three, value: 7_u8);
+  }
+  let table = move three;
   let value = get(table: move table, symbol: 2_u64);
   if value == 7_u8 {
   } else {

@@ -6,7 +6,7 @@ fn negate(n: own i32) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = negate(n: 7_i32);
   let b = negate(n: -7_i32);
   if a == -7_i32 {

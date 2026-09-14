@@ -7,6 +7,6 @@ fn make() -> return_value: own Wrap pure {
   return W(inr: 7_i32);
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

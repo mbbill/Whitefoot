@@ -16,7 +16,7 @@ fn quotient_byte(n: own u32, d: own u32) -> result: own u8 pure {
   return 0_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let byte = quotient_byte(n: 100_u32, d: 5_u32);
   if byte == 20_u8 {
   } else {

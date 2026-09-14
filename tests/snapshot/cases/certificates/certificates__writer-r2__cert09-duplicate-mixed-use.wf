@@ -12,6 +12,6 @@ fn duplicate_mixed(alpha: own u16, alpha_cap: own u16, beta: own u16, beta_cap: 
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

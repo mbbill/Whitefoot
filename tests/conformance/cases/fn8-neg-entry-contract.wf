@@ -1,7 +1,7 @@
-command fn main() -> status: own ExitStatus pure contract {
+fn main() -> status: own ExitStatus pure contract {
   define permitted = 0_i32 > 0_i32;
   requires permitted;
 } {
-  doc "A command entry cannot carry a static contract; requirements belong only to internal functions [FN-7, FN-8].";
+  doc "FN-7 and FN-8: a selected function has an ordinary static contract; this contradictory requirement makes its body uninhabited and is never checked by a runtime fallback.";
   return exit_status(code: 0_u8);
 }

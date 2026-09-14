@@ -11,7 +11,7 @@ fn count_to_strict(limit: own u64) -> count: own u64 pure contract {
   return cursor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT REJECT: ensures claims count < limit (strict), but on normal exhaustion cursor == limit, so for limit = 4 the claimed postcondition 4 < 4 is false and unprovable.";
   let observed = count_to_strict(limit: 4_u64);
   if observed == 4_u64 {

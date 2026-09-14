@@ -30,10 +30,9 @@
 //! backend change with its own proof obligation and its own cases, and it is
 //! a precondition of the retirement rather than part of this batch.
 //!
-//! The other two blockers this file was expected to have are real but
-//! secondary: `publish_all`'s `&uniq buffer<u8>` source becomes a
-//! `&Slice<u8>` and every fixture becomes a store take, which needs a
-//! `command.heap` entry row.
+//! Publication uses an ordinary slice view of the retained buffer fixture.
+//! Migrating the fixtures to store-backed runs would also require an ordinary
+//! `Heap` entry parameter.
 
 use super::support::{build_program, compile_sources, fixture_directory};
 
@@ -44,7 +43,7 @@ const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure c
   return n;
 }
 
-fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(factory: &uniq HandleFactory, output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(factory, output, source), writes(factory, output) contract {
   define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
@@ -57,12 +56,15 @@ fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64)
       break @publish;
     }
     region {
-      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
-        Ok(value: next) => {
-          set sent = next;
-        }
-        Err(error: problem) => {
-          return Err<unit, IoError>(error: move problem);
+      let window = slice_of(&deref(source));
+      region {
+        match write_once(factory: &uniq deref(factory), output: &uniq deref(output), source: &window, start: sent, end: length) {
+          Ok(value: next) => {
+            set sent = next;
+          }
+          Err(error: problem) => {
+            return Err<unit, IoError>(error: move problem);
+          }
         }
       }
     }
@@ -70,8 +72,12 @@ fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64)
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(args, out), writes(out) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   doc "Runs three equivalence byte walks, publishes their recorded positions, then runs one argument-selected boundary walk with a typed exhaustion status.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: out, stderr: unused_err, handles: factory, stdin: unused_in) = move inputs;
+  region {
+    close_directory(factory: &uniq factory, directory: move unused_cwd);
+  }
   let selector = 111_u8;
   let choice = buffer_new(8_u64, 0_u8);
   let chosen = 0_u64;
@@ -79,11 +85,14 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         region {
-          match host_copy_bytes(value: &text, destination: &uniq choice, start: 0_u64, end: 8_u64) {
-            Ok(value: next) => {
-              set chosen = next;
-            }
-            Err(error: too_small) => {
+          let choice_view = mut_slice_of(&uniq choice);
+          region {
+            match host_copy_bytes(value: &text, destination: &uniq choice_view, start: 0_u64, end: 8_u64) {
+              Ok(value: next) => {
+                set chosen = next;
+              }
+              Err(error: too_small) => {
+              }
             }
           }
         }
@@ -234,7 +243,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let phase_fits = count <= phase_room;
   if phase_fits {
     region {
-      match publish_all(output: &uniq out, source: &found, length: count) {
+      match publish_all(factory: &uniq factory, output: &uniq out, source: &found, length: count) {
         Ok(value: published) => {
         }
         Err(error: problem) => {
@@ -285,7 +294,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
         if selected_lead {
           set scratch[0_u64] = 88_u8;
           region {
-            match publish_all(output: &uniq out, source: &scratch, length: 1_u64) {
+            match publish_all(factory: &uniq factory, output: &uniq out, source: &scratch, length: 1_u64) {
               Ok(value: lead_published) => {
               }
               Err(error: lead_problem) => {
@@ -297,7 +306,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
         if selected_tail {
           set scratch[0_u64] = 89_u8;
           region {
-            match publish_all(output: &uniq out, source: &scratch, length: 1_u64) {
+            match publish_all(factory: &uniq factory, output: &uniq out, source: &scratch, length: 1_u64) {
               Ok(value: tail_published) => {
               }
               Err(error: tail_problem) => {

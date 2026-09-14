@@ -8,7 +8,7 @@ fn stays_zero(limit: own u64) -> value: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: [INV-1] the header invariant holds at entry but a body write breaks it on the backedge";
   let total = 0_u64;
   for (

@@ -10,7 +10,7 @@ fn sum_and_count(count: own u64) -> total: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: counted for with two comma-separated header invariants, no trailing comma [GRAM-4].";
   let total = sum_and_count(count: 4_u64);
   if total == 4_u64 {

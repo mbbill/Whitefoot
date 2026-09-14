@@ -63,14 +63,6 @@ _Static_assert(
     WF_BRIDGE_MAX_HELPERS <= WF_FILE_MAX_HELPERS,
     "the helper policy may not ask for more helpers than the adapter holds"
 );
-/* Bound the storage of in-flight direct completion operations before applying
- * the compiler's ceiling and the loop's per-iteration record size. A result
- * below one selects the sequential window. This is not handler-stack storage. */
-#define WF_BRIDGE_WINDOW_BYTE_BUDGET (4u * 1024u * 1024u)
-/* Retain the runtime window ceiling; current generated direct-I/O batches
- * impose their own smaller ceiling of two. May-suspend user calls are not
- * staged into this window, and this constant supplies no connection fanout. */
-#define WF_BRIDGE_WINDOW_DEFAULT 1024u
 /* How many completions one progress pass reaps before it returns to the
  * scheduler loop.  It was one, and one is what made the reap the serial
  * resource of the TCP echo control test: every idle thread took the
@@ -151,13 +143,10 @@ static uint64_t wf_bridge_ring_submission_enters(void);
  * fifth, and a program asked for none keeps the zero-helper path where a
  * waiting thread is itself the target engine.
  *
- * Unset asks for demand-driven growth from one. One helper is the right
- * answer for a program with a single operation outstanding, and it was the
- * old fixed default; it is the wrong answer for a program that exposes real
- * width, because the submitting thread then waits on a queue only one
- * thread is draining. On the four-wide many-file workload the fixed default
- * finished 1.6x slower than the same program at four helpers, so growth is
- * bounded by the machine rather than pinned at one. */
+ * Unset selects one of two policies: a ready native ring keeps initial and
+ * cap at zero; otherwise the pool starts empty and may grow on demand within
+ * WF_BRIDGE_MAX_HELPERS. That ceiling is a provisional implementation limit,
+ * not a CPU count or a bound on outstanding operations. */
 static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
     unsigned long written = 0;
     /* One rule for every startup setting this runtime reads (`sched/entry.h`):
@@ -176,37 +165,29 @@ static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
         wf_bridge_helpers_pinned = 1;
         return;
     }
-    /* A ready ring already carries every transfer without a thread handoff, so
-     * a helper can only serve the operations the ring does not take — today,
-     * open and close. Those are exactly the operations a warm page cache
-     * answers immediately, and handing one to a helper costs a wake and a
-     * publication to save nothing. Measured on the four-wide many-file
-     * workload with a warm cache: 115 ms at zero helpers against 171 ms at
-     * one, two, or four, the whole difference being about 7 us per open. So a
-     * host with a native completion path starts with none, and the waiting
-     * thread runs those operations itself. WF_IO_HELPERS still pins a pool
-     * for a target whose opens really do wait. */
+    /* With a ready native ring, adapter requests run on a waiting caller and
+     * the default pool stays empty. The warm Linux many-file comparison in
+     * research/investigations/io-model/RESULTS.md found helper handoff more
+     * expensive than the adapter work it moved. This is that workload's
+     * selection ground, not a guarantee that every native engine carries
+     * every transfer or that adapter work never waits. WF_IO_HELPERS can
+     * still pin a pool for a different target or workload. */
     if (wf_bridge_ring_ready()) {
         *initial = 0u;
         *cap = 0u;
         return;
     }
-    /* No helper until the adapter has measured an operation that waits.
+    /* The fallback starts empty to avoid a handoff when there is no wait to
+     * overlap. Within the cap, growth requires queued demand beyond the held
+     * helpers and a measured long wait; a peer-bound request bypasses those
+     * two tests so progress need not await a completed blocking operation.
      *
-     * A helper exists to overlap a wait.  Starting with one and growing on
-     * queue depth alone gave every program a thread handoff whether or not it
-     * had anything to overlap, and on a warm page cache — where a read is a
-     * memory copy — that handoff was the whole cost of the completion path.
-     * With none, a waiting thread is the queue's own engine and the path
-     * costs a queue crossing; the adapter's growth rule adds the first helper
-     * as soon as the operations it has executed show a real wait.
-     *
-     * The ceiling is the bridge's own, not the machine's core count.  A helper
-     * inside a host call holds no CPU, so what bounds useful I/O concurrency
-     * here is how many operations a program can have outstanding.  Sizing the
-     * pool by cores capped a three-core host at three outstanding reads for a
-     * program that stated eight, which is a device left idle rather than a
-     * machine kept busy. */
+     * The ceiling is the bridge's own, not the machine's core count. A blocked
+     * helper does not occupy a CPU. The three-CPU macOS comparisons in
+     * research/investigations/io-model/RESULTS.md found useful width at four
+     * and eight helpers. They support going beyond CPU count, not eight as a
+     * universal optimum. Eight remains the provisional helper storage limit;
+     * the queued operation count is not bounded by it. */
     *cap = WF_BRIDGE_MAX_HELPERS;
     *initial = 0u;
 }
@@ -264,7 +245,7 @@ static void wf_bridge_shutdown(void) {
  *
  * This is the whole of what the bridge cannot write once.  Everything else in
  * this unit -- the routing, the helper policy, the in-place wait, the
- * own-record run, the joins, the window, the statistics and the
+ * own-record run, the joins, the statistics and the
  * process configuration helpers -- is one implementation, and each of the three arms
  * below is exactly its platform's ring behind these names:
  *
@@ -1046,13 +1027,12 @@ void wf__completion_file_open_join(
     *open_outcome = (unsigned)held->result.open_outcome;
 }
 
-/* The accept's join.  The peer address is three scalars because that is what
- * an emitted `SocketAddress` value is, so the emitted wrapper builds its own
- * value out of them and neither side holds a pointer into the other's layout.
+/* The accept's join returns the peer address as three scalars. The ordinary
+ * linked implementation builds its SocketAddress value from them, so neither
+ * side holds a pointer into the other's layout.
  *
- * A refused accept publishes the all-zero address, which the emitted mapper
- * never reads: `AcceptFailed` carries the error and the permit and no peer
- * [SYS-17]. */
+ * A refused accept publishes the all-zero address, which the linked caller
+ * ignores: a failed accept carries an error and no peer address. */
 void wf__completion_socket_accept_join(
     const void *record,
     int64_t *value,
@@ -1153,9 +1133,8 @@ static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
  * changed is that the record is published at the end, so every submit path
  * ends in a published record (design §7).  A refusal the host gives it,
  * including an open that found no descriptor, is the outcome the program
- * sees: the descriptor an open needs is owned by its `HandlePermit` [SYS-10],
- * drawn from a factory whose capacity is inside what the host provides, so a
- * refusal here is a genuine exhaustion and not a schedule's invention. */
+ * sees. Factory quota is ordinary library state outside this private engine;
+ * native descriptor refusal is reported unchanged to that library. */
 static void wf_bridge_execute_here(wf_completion_record *record) {
     wf_file_result result;
     record->route = WF_COMPLETION_ROUTE_INLINE;
@@ -1315,9 +1294,8 @@ void wf__completion_file_read_submit(
  * one of them is what an offset the target ABI cannot express deserves: the
  * writer may spell any `u64` offset, and the host answers an offset above
  * `INT64_MAX` with EINVAL.  The record is completed with exactly that answer,
- * so the emitted mapper builds the same failed outcome it built when this
- * shape still went to the direct wrapper (design section 8, "One lowering for
- * every I/O operation").  Nothing is executed, so the inline-execution count
+ * so the ordinary linked caller builds its failed outcome from that error.
+ * No host request is executed, so the inline-execution count
  * is untouched; the publication count is not, because this is one record's
  * one terminal completion. */
 static void wf_bridge_complete_refused(
@@ -1622,9 +1600,8 @@ void wf__completion_directory_next_submit(
     held->request.operation.directory_next.position = position;
     wf_bridge_dispatch(held);
 #else
-    /* A family with no [QUAL-2] enumeration facility compiles no such request
-     * kind, and `backend/qualification.rs` refuses the operation for that
-     * target, so reaching this entry at all is a contract violation. */
+    /* This private engine build has no enumeration request kind. A linked
+     * library must not call an engine facility absent from its build. */
     (void)descriptor;
     (void)buffer;
     (void)count;
@@ -1634,64 +1611,6 @@ void wf__completion_directory_next_submit(
         "this target has no directory enumeration facility and no such request may reach this entry"
     );
 #endif
-}
-
-/* ------------------------------------------------------------ the window */
-
-/* How many iterations of one loop the runtime will carry in flight at once.
- *
- * Asked once per loop entry and never per iteration, exactly as
- * `wf__par_split_budget` is.  The writer never sees this number, never spells
- * it, and cannot influence it: there is no attribute, no environment variable,
- * and no source form for a window.
- *
- * `span` is the loop's trip count where it is statically known and zero where
- * it is not; `slot_bytes` is the private storage one in-flight iteration owns;
- * `ceiling` is the compiler's own static cap from that storage's cost.  A zero
- * in any of the three means "this one places no bound", so
- * `wf__completion_window(0, 0, 0)` is the runtime's unconstrained answer.
- *
- * **One is always a legal answer**, and it reproduces the sequential program
- * exactly, so this query can never make a correct program fail.  That is why
- * the fallback a link without this unit gets returns one.
- *
- * Every term that read an operation capacity is gone with the capacity: the
- * record is a block of the submitting frame, so no number of in-flight
- * iterations can exhaust a pool, and the ring's depth is a throughput
- * parameter rather than a bound on operations in flight (design §7).  What is
- * left is the byte budget, the span, the compiler's ceiling, and — where a
- * bounded helper pool is the engine — the pool's width. */
-uint64_t wf__completion_window(
-    uint64_t span,
-    uint64_t slot_bytes,
-    uint64_t ceiling
-) {
-    uint64_t window;
-    wf__sched_once(&wf_bridge_once, wf_bridge_initialize);
-    if (wf_bridge_ready == 0) {
-        /* With no completion runtime every operation is a blocking direct
-         * call, so depth buys nothing and one is the honest answer. */
-        return 1;
-    }
-    window = WF_BRIDGE_WINDOW_DEFAULT;
-    if (!wf_bridge_ring_ready()
-        && (uint64_t)WF_BRIDGE_MAX_HELPERS < window) {
-        window = (uint64_t)WF_BRIDGE_MAX_HELPERS;
-    }
-    if (ceiling != 0 && ceiling < window) {
-        window = ceiling;
-    }
-    if (span != 0 && span < window) {
-        window = span;
-    }
-    if (slot_bytes != 0) {
-        uint64_t affordable =
-            (uint64_t)WF_BRIDGE_WINDOW_BYTE_BUDGET / slot_bytes;
-        if (affordable < window) {
-            window = affordable;
-        }
-    }
-    return window == 0 ? 1u : window;
 }
 
 /* ------------------------------------------------------- the statistics */

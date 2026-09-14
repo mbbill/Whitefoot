@@ -17,7 +17,7 @@ fn bounded_sum(first: own u8, first_limit: own u8, second: own u8, second_limit:
   return result;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = bounded_sum(first: 1_u8, first_limit: 5_u8, second: 2_u8, second_limit: 5_u8, third: 3_u8, third_limit: 5_u8);
   return exit_status(code: result);
 }

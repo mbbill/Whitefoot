@@ -1,9 +1,9 @@
-struct Columns {
+struct Columns['heap] {
   left: Vector<u64>;
   right: Vector<u64>;
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Parallel runtime-length columns are filled, folded, and released through one struct owner; counted-loop range facts discharge the indexing.";
   region {
     match heap_vector::<u64>(store: &uniq heap, count: 6_u64) {
@@ -18,7 +18,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
           invariant spare: room_of(left) + at >= 6_u64,
           invariant flat: head_of(left) <= 0_u64
         ) {
-          set left = place_back(vector: move left, value: 0_u64);
+          place_back(vector: &uniq left, value: 0_u64);
         }
         region {
           match heap_vector::<u64>(store: &uniq heap, count: 6_u64) {
@@ -33,7 +33,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
                 invariant spare: room_of(right) + at >= 6_u64,
                 invariant flat: head_of(right) <= 0_u64
               ) {
-                set right = place_back(vector: move right, value: 0_u64);
+                place_back(vector: &uniq right, value: 0_u64);
               }
               let columns = Columns(left: move left, right: move right);
               let length = len_of(columns.left);

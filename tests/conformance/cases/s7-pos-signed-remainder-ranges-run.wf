@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let left_seed = 40_i32;
   let right_seed = 2_i32;
   let left = left_seed % 41_i32;

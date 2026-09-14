@@ -9,7 +9,7 @@ fn sum_weighted(count: own u64) -> total: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: counted for with exactly one header invariant, multi-line form [GRAM-4, INV-1].";
   let total = sum_weighted(count: 6_u64);
   if total == 0_u64 {

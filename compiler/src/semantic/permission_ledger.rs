@@ -31,18 +31,6 @@
 //! rewrite would be refused too, and advice a writer cannot safely take is
 //! worse than silence.
 //!
-//! A `stage` line is the [PAR-3] verdict of one loop whose body performs I/O,
-//! and it is followed by one `place` line for every place that judgment
-//! classified. Those `place` lines are the teaching channel: a denial without
-//! them says only that a loop lost its pipeline, while the table says which
-//! place cost it, on which condition, and what the writer may write instead.
-//! The `stage` line therefore always names its condition, its offending node,
-//! and one admitted writer form, and the `place` lines always print the whole
-//! table, granted or denied — a granted loop's table is what a reader checks a
-//! later change against. Both are anchored at the loop's cut, because a
-//! `loop_stmt` carries no node path of its own and the cut identifies the loop
-//! exactly.
-//!
 //! Nothing here participates in acceptance, in lowering, or in any mandatory
 //! [DIAG-3] record. It reads the finished permission table and the source
 //! text, renders text, and returns it to the caller to print on the developer
@@ -54,24 +42,12 @@ use super::loop_permission::{LoopDenial, LoopPermission, LoopVerdict};
 use super::permission::{
     Access, Denial, ExitKind, PairSide, PermissionMetadata, PermissionVerdict,
 };
-use super::staged_permission::{StagedDenial, StagedPermission, StagedVerdict};
 
-/// One rendered ledger line and whether an ordinary compile reports it.
-///
-/// Every line belongs to the full `--par-ledger` report. A `notice` line also
-/// belongs on the default channel, because it is a verdict about a loop the
-/// writer wrote for I/O that the completion model could not stage — the one
-/// class of ledger fact that is a missed optimization on the program in front
-/// of them rather than a reading of the judgment. The blind-writer trial of
-/// 2026-08-28 found every I/O loop in five ordinary utilities denied, and the
-/// writer heard nothing: the flag they would have had to know about is the
-/// flag they had no reason to run.
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// One rendered line of the ordinary permission ledger.
 pub(crate) struct LedgerLine {
     /// The rendered line, identical in both channels.
     pub(crate) text: String,
-    /// Whether an ordinary compile reports this line without a flag.
-    pub(crate) notice: bool,
 }
 
 /// The source facts one ledger line needs, supplied by the checker because
@@ -94,17 +70,10 @@ pub(crate) trait LedgerSource {
 ///
 /// The table is dense by `FunctionId`, so one source function that is
 /// monomorphized more than once contributes its pairs more than once. Lines
-/// that come out byte-identical *at the same position of the same table* are
+/// that come out byte-identical at the same source site are
 /// therefore collapsed: the ledger reports source sites, and two instances of
 /// one generic that agree on the verdict are one reported site. Two instances
 /// that disagree keep both lines.
-///
-/// The position is part of the key because a disposition table holds one row
-/// per place and two different places can render identically: every operand
-/// read of one statement is cited at that statement, so two enclosing buffers
-/// read by one `let` carry the same citation, the same disposition, and the
-/// same reason. Collapsing those would print fewer rows than the `stage` line
-/// above them counts, and the table is only evidence if it is complete.
 pub(crate) fn render_ledger<Source: LedgerSource>(
     metadata: &PermissionMetadata,
     source: &Source,
@@ -117,30 +86,8 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
     const CHAIN: u8 = 1;
     const LOOP: u8 = 2;
     const HINT: u8 = 3;
-    const STAGE: u8 = 4;
-    const PLACE: u8 = 5;
-    // Every entry outside a disposition table is the only one of its kind at
-    // its position, so its ordinal is zero; a table's rows carry the source
-    // order of the walk that found them, which the text alone would not
-    // preserve.
-    const ONLY: u32 = 0;
     let mut entries: Vec<Entry> = Vec::new();
     for permissions in &metadata.functions {
-        // A loop whose body performs I/O is exactly a loop the staged judgment
-        // reached, because the staged cut is that body's first may-suspend
-        // call. Where that judgment granted the loop its pipeline, the counted
-        // [PAR-2] rule's own denial is not a loss and stays inside the full
-        // report: the counted rule refuses the short factory loan that the
-        // staged rule exists to admit, and reporting it by default would tell
-        // a writer their granted loop was denied. Where the staged judgment
-        // denied the loop, both verdicts are losses on the same loop and both
-        // are reported, because they refuse it for different reasons.
-        let lost_pipeline: Vec<&NodePath> = permissions
-            .staged
-            .iter()
-            .filter(|judged| !judged.verdict.is_permitted())
-            .filter_map(|judged| judged.head.as_ref())
-            .collect();
         for pair in &permissions.pairs {
             let (display_path, line) = source.location(&pair.first.statement)?;
             let verdict = match &pair.verdict {
@@ -152,12 +99,10 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 display_path.clone(),
                 line,
                 PAIR,
-                ONLY,
                 format!(
                     "PAR {verdict:<10}  {display_path}:{line}  pair({}, {})  {detail}",
                     pair.first.callee_name, pair.second.callee_name
                 ),
-                false,
             ));
         }
         for run in &permissions.runs {
@@ -174,12 +119,10 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 display_path.clone(),
                 line,
                 CHAIN,
-                ONLY,
                 format!(
                     "PAR chain       {display_path}:{line}  run({members})  {} members through line {last_line}",
                     run.sites.len()
                 ),
-                false,
             ));
         }
         for judged in &permissions.loops {
@@ -194,9 +137,7 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 display_path.clone(),
                 line,
                 LOOP,
-                ONLY,
                 format!("PAR loop        {display_path}:{line}  loop  {verdict:<10}  {detail}"),
-                !judged.verdict.is_permitted() && lost_pipeline.contains(&&judged.statement),
             ));
             if !judged.advises_split {
                 continue;
@@ -209,71 +150,17 @@ pub(crate) fn render_ledger<Source: LedgerSource>(
                 display_path.clone(),
                 line,
                 HINT,
-                ONLY,
                 format!(
                     "PAR hint        {display_path}:{line}  loop  refused by condition {condition}; a recursive split over its index range would be eligible, combining under {}",
                     judged.combines.join(", ")
                 ),
-                false,
             ));
-        }
-        for judged in &permissions.staged {
-            // The loop head when the checked tree carries one, so two nested
-            // loops that share a cut do not print two lines at one anchor; a
-            // `loop_stmt` carries none and falls back to the cut.
-            let anchor = judged.head.as_ref().unwrap_or(&judged.cut);
-            let (display_path, line) = source.location(anchor)?;
-            let verdict = if judged.verdict.is_permitted() {
-                "permitted"
-            } else {
-                "denied"
-            };
-            let detail = staged_detail(judged, source)?;
-            entries.push(Entry::new(
-                display_path.clone(),
-                line,
-                STAGE,
-                ONLY,
-                format!(
-                    "PAR stage       {display_path}:{line}  {:<4}  {verdict:<10}  {detail}",
-                    judged.form
-                ),
-                !judged.verdict.is_permitted(),
-            ));
-            for (ordinal, place) in judged.dispositions.iter().enumerate() {
-                let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
-                entries.push(Entry::new(
-                    display_path.clone(),
-                    line,
-                    PLACE,
-                    ordinal,
-                    format!(
-                        "PAR place       {display_path}:{line}  {:<12}  {}  {}",
-                        place.disposition.spelling(),
-                        source.spelling(&place.citation)?,
-                        place.reason
-                    ),
-                    // The `stage` line above names the one condition the
-                    // judgment stopped at, and a loop that fails one condition
-                    // usually fails others: the verification of 2026-08-28 read
-                    // a default-channel denial naming a break, repaired the
-                    // break, and found two more denied places waiting behind
-                    // it. Every denied row of a denied loop is therefore a
-                    // notice too, so the default channel states the whole cost
-                    // of that loop and not its first cause. The line is the
-                    // report's own, byte for byte.
-                    !judged.verdict.is_permitted() && place.disposition.is_denied(),
-                ));
-            }
         }
     }
     collapse(&mut entries);
     Ok(entries
         .into_iter()
-        .map(|entry| LedgerLine {
-            text: entry.text,
-            notice: entry.notice,
-        })
+        .map(|entry| LedgerLine { text: entry.text })
         .collect())
 }
 
@@ -284,27 +171,16 @@ struct Entry {
     display_path: String,
     line: u64,
     kind: u8,
-    ordinal: u32,
     text: String,
-    notice: bool,
 }
 
 impl Entry {
-    fn new(
-        display_path: String,
-        line: u64,
-        kind: u8,
-        ordinal: u32,
-        text: String,
-        notice: bool,
-    ) -> Self {
+    fn new(display_path: String, line: u64, kind: u8, text: String) -> Self {
         Self {
             display_path,
             line,
             kind,
-            ordinal,
             text,
-            notice,
         }
     }
 }
@@ -312,29 +188,17 @@ impl Entry {
 /// Sorts the rendered lines into source order and collapses the duplicates one
 /// generic's several instances produce.
 ///
-/// The rendered text carries the path, the line, and the kind, so ordinal and
-/// text are the whole reported identity. The notice flag is not part of it: one
-/// source loop of a generic monomorphized twice can render one `loop` line
-/// whose staged sibling was denied in one instance and granted in the other,
-/// and the two entries then differ only in the flag. Dropping either silently
-/// would make the default channel depend on table order, so the surviving line
-/// carries the flag when any instance raised it.
+/// The rendered text carries the path, line, and kind, giving a deterministic
+/// reported identity across instances.
 fn collapse(entries: &mut Vec<Entry>) {
     entries.sort_by(|left, right| {
         left.display_path
             .cmp(&right.display_path)
             .then(left.line.cmp(&right.line))
             .then(left.kind.cmp(&right.kind))
-            .then(left.ordinal.cmp(&right.ordinal))
             .then(left.text.cmp(&right.text))
     });
-    entries.dedup_by(|removed, retained| {
-        let same = removed.ordinal == retained.ordinal && removed.text == retained.text;
-        if same {
-            retained.notice |= removed.notice;
-        }
-        same
-    });
+    entries.dedup_by(|removed, retained| removed.text == retained.text);
 }
 
 /// The part of the line that states the outcome.
@@ -479,120 +343,6 @@ fn loop_denied_detail<Source: LedgerSource>(
     Ok(format!("condition {condition}: {reason}"))
 }
 
-/// The part of a `stage` line that states the outcome.
-///
-/// A permitted loop states the cut it was granted over and how many places it
-/// classified, so the `place` lines underneath are read as a complete table
-/// rather than a selection. A denied loop states the condition, the node, and
-/// one admitted writer form, which is the whole of what a writer can act on.
-fn staged_detail<Source: LedgerSource>(
-    judged: &StagedPermission,
-    source: &Source,
-) -> Result<String, Source::Error> {
-    Ok(match &judged.verdict {
-        StagedVerdict::Permitted => format!(
-            "staged at {}; {} places classified",
-            source.spelling(&judged.cut)?,
-            judged.dispositions.len()
-        ),
-        StagedVerdict::Denied(denial) => staged_denied_detail(denial, source)?,
-    })
-}
-
-fn staged_denied_detail<Source: LedgerSource>(
-    denial: &StagedDenial,
-    source: &Source,
-) -> Result<String, Source::Error> {
-    // The number and the writer form both come from the judgment itself, so
-    // neither can drift from the condition that actually refused the loop. The
-    // cited node comes last, because a statement's canonical spelling carries
-    // its own terminator and anything appended after one reads as a typo.
-    let condition = denial.condition();
-    // The edge already names which loop a `break_stmt` leaves, which is the
-    // only identity a break has in the checked tree.
-    let exit = |edge: &str| format!("{edge} leaves the loop from the remainder");
-    // The second node a denial names, with the phrase that says how it stands
-    // to the first. Two denials name a second node for two different reasons
-    // and one phrase cannot carry both: an [OWN-7] pair is an overlap claim,
-    // and a write of the borrowed place itself is not.
-    const OVERLAPS: &str = "which overlaps";
-    const WRITES: &str = "and the body writes it at";
-    let (reason, node, paired) = match denial {
-        StagedDenial::NoCut { reason, statement } => {
-            ((*reason).to_owned(), statement.as_ref(), None)
-        }
-        StagedDenial::ExitInRemainder { edge, statement, .. } => {
-            (exit(edge), statement.as_ref(), None)
-        }
-        StagedDenial::RetainedBorrow {
-            argument,
-            written_at,
-            overlapping,
-            ..
-        } => (
-            "a may-suspend call retains a borrow past its own submission on storage the body writes and the iteration does not introduce"
-                .to_owned(),
-            Some(argument),
-            written_at
-                .as_ref()
-                .map(|node| (if *overlapping { OVERLAPS } else { WRITES }, node)),
-        ),
-        StagedDenial::RemainderExclusiveLoan { argument, .. } => (
-            "a call of the remainder holds an exclusive loan on storage the iteration does not introduce"
-                .to_owned(),
-            Some(argument),
-            None,
-        ),
-        StagedDenial::NoDisposition {
-            argument,
-            overlapping,
-        } => (
-            "the body reaches storage rooted outside the loop that no disposition of this rule covers"
-                .to_owned(),
-            Some(argument),
-            overlapping.as_ref().map(|node| (OVERLAPS, node)),
-        ),
-        StagedDenial::NotReplicable { statement } => (
-            "per-iteration storage whose element type has no copy class this judgment resolves"
-                .to_owned(),
-            Some(statement),
-            None,
-        ),
-        StagedDenial::BodyForm { form, .. } => {
-            return Ok(format!(
-                "condition {condition}: the body contains {form}; instead, {}",
-                denial.writer_form()
-            ));
-        }
-        StagedDenial::Unresolved { argument } => (
-            "a footprint element this judgment does not resolve".to_owned(),
-            Some(argument),
-            None,
-        ),
-    };
-    // A `break_stmt`, a `loop_stmt`, and a `region_stmt` carry no node path of
-    // their own, so a denial citing one names the condition without a source
-    // node rather than naming a node the writer did not write there.
-    let cited = match node {
-        Some(node) => format!(", at {}", source.spelling(node)?),
-        None => String::new(),
-    };
-    // [OWN-7] makes a place and its prefix one storage, so a denial the overlap
-    // decided names both halves: one statement alone never shows the reader why
-    // the loop refused, because the statement that refused it names a different
-    // path. A denial whose write is on the borrowed place itself names that
-    // write under its own phrase instead, so no line ever reports one place as
-    // overlapping itself.
-    let paired = match paired {
-        Some((phrase, node)) => format!(", {phrase} {}", source.spelling(node)?),
-        None => String::new(),
-    };
-    Ok(format!(
-        "condition {condition}: {reason}; instead, {}{cited}{paired}",
-        denial.writer_form()
-    ))
-}
-
 /// One footprint element as the writer wrote it.
 fn access<Source: LedgerSource>(access: &Access, source: &Source) -> Result<String, Source::Error> {
     match access {
@@ -618,100 +368,17 @@ fn statement_name(side: PairSide) -> String {
 mod tests {
     use super::{Entry, collapse};
 
-    /// One source line reported by two instances of one generic keeps the
-    /// notice either instance raised.
-    ///
-    /// The two entries differ in nothing a reader can see — same path, same
-    /// line, same kind, same text — so the ledger reports one site, which is
-    /// what the dedup is for. The notice flag is not part of that text, and a
-    /// `loop` line's flag depends on the *staged* verdict of the same
-    /// instance: a generic whose staged sibling is denied in one instance and
-    /// granted in another renders exactly this pair. Keeping whichever
-    /// happened to sort first would make the default channel depend on the
-    /// order of the permission table.
     #[test]
-    fn a_collapsed_line_keeps_the_notice_either_instance_raised() {
-        for (first, second) in [(false, true), (true, false)] {
-            let mut entries = vec![
-                Entry::new(
-                    "walk.wf".to_owned(),
-                    5,
-                    2,
-                    0,
-                    "PAR loop  denied".to_owned(),
-                    first,
-                ),
-                Entry::new(
-                    "walk.wf".to_owned(),
-                    5,
-                    2,
-                    0,
-                    "PAR loop  denied".to_owned(),
-                    second,
-                ),
-            ];
-            collapse(&mut entries);
-            assert_eq!(entries.len(), 1, "{entries:?}");
-            assert!(entries[0].notice, "{entries:?}");
-        }
-    }
-
-    /// Two lines that differ in their text stay two lines, and a flagged one
-    /// does not lend its flag to a neighbour.
-    #[test]
-    fn collapsing_keeps_two_distinct_lines_and_their_own_flags() {
+    fn duplicate_instance_lines_collapse_but_distinct_verdicts_stay() {
+        let line = |text: &str| Entry::new("walk.wf".to_owned(), 5, 2, text.to_owned());
         let mut entries = vec![
-            Entry::new(
-                "walk.wf".to_owned(),
-                5,
-                5,
-                1,
-                "PAR place  read-only".to_owned(),
-                false,
-            ),
-            Entry::new(
-                "walk.wf".to_owned(),
-                5,
-                5,
-                0,
-                "PAR place  denied".to_owned(),
-                true,
-            ),
+            line("PAR loop permitted"),
+            line("PAR loop denied"),
+            line("PAR loop permitted"),
         ];
         collapse(&mut entries);
-        assert_eq!(entries.len(), 2, "{entries:?}");
-        // Source order: the ordinal carries the order of the walk that found
-        // the rows, so the denied row at ordinal 0 comes first.
-        assert!(entries[0].notice, "{entries:?}");
-        assert!(!entries[1].notice, "{entries:?}");
-    }
-
-    /// One rendered identity repeated at two different ordinals is two rows.
-    ///
-    /// A disposition table holds one row per place and two different places
-    /// can render identically, so the position is part of the key: collapsing
-    /// those would print fewer rows than the `stage` line above them counts.
-    #[test]
-    fn collapsing_keeps_one_row_per_position_of_a_disposition_table() {
-        let mut entries = vec![
-            Entry::new(
-                "walk.wf".to_owned(),
-                5,
-                5,
-                0,
-                "PAR place  read-only  n".to_owned(),
-                false,
-            ),
-            Entry::new(
-                "walk.wf".to_owned(),
-                5,
-                5,
-                1,
-                "PAR place  read-only  n".to_owned(),
-                false,
-            ),
-        ];
-        collapse(&mut entries);
-        assert_eq!(entries.len(), 2, "{entries:?}");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].text, "PAR loop denied");
+        assert_eq!(entries[1].text, "PAR loop permitted");
     }
 }

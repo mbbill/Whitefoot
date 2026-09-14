@@ -12,7 +12,7 @@ const GENERIC_CONSUMER: &[u8] = br#"fn forward<T: Int>(value: own T) -> pair: ow
   return bundle_pair::<T>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let small = forward::<u8>(value: 13_u8);
   let wide = forward::<i64>(value: -17_i64);
   let small_value = small.value;
@@ -36,7 +36,7 @@ fn concrete_type_and_const_instances_have_distinct_symbols_and_execute() {
         let symbol = format!("@wf_{name}$instance$");
         let definitions = llvm
             .lines()
-            .filter(|line| line.starts_with("define internal") && line.contains(&symbol))
+            .filter(|line| line.starts_with("define ") && line.contains(&symbol))
             .collect::<Vec<_>>();
         assert_eq!(definitions.len(), 2, "{name} definitions: {definitions:?}");
         assert_ne!(definitions[0], definitions[1]);
@@ -44,7 +44,7 @@ fn concrete_type_and_const_instances_have_distinct_symbols_and_execute() {
     assert_eq!(
         llvm.lines()
             .filter(|line| {
-                line.starts_with("define internal") && line.contains("@wf_filled_array$instance$")
+                line.starts_with("define ") && line.contains("@wf_filled_array$instance$")
             })
             .count(),
         2
@@ -52,7 +52,7 @@ fn concrete_type_and_const_instances_have_distinct_symbols_and_execute() {
     assert_eq!(
         llvm.lines()
             .filter(|line| {
-                line.starts_with("define internal") && line.contains("@wf_filled_buffer$instance$")
+                line.starts_with("define ") && line.contains("@wf_filled_buffer$instance$")
             })
             .count(),
         1
@@ -79,7 +79,7 @@ fn concrete_generic_struct_enum_and_const_nominal_instances_execute() {
         let symbol = format!("@wf_{name}$instance$");
         assert_eq!(
             llvm.lines()
-                .filter(|line| line.starts_with("define internal") && line.contains(&symbol))
+                .filter(|line| line.starts_with("define ") && line.contains(&symbol))
                 .count(),
             2,
             "{name} must have one definition per concrete type"
@@ -110,8 +110,7 @@ fn generic_instances_forward_across_ordered_source_records() {
         assert_eq!(
             llvm.lines()
                 .filter(|line| {
-                    line.starts_with("define internal")
-                        && line.contains(&format!("@wf_{name}$instance$"))
+                    line.starts_with("define ") && line.contains(&format!("@wf_{name}$instance$"))
                 })
                 .count(),
             2

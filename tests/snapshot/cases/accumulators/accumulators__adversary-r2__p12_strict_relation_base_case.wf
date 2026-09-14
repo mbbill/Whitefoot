@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [INV-1] -- count starts at 0 and i starts at 0, so the stated invariant count < i, a strict less-than, requires 0 < 0 at loop entry (preheader), which is genuinely false; `<=` would have been the correct, provable relation.";
   let count = 0_u64;
   for (

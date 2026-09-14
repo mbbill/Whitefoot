@@ -26,7 +26,7 @@ fn score(packet: own Packet) -> function_result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Construct, pass, destructure, and validate every field of one mixed-width payload variant [GRAM-8, GRAM-10, OWN-13].";
   let ready = True();
   let packet = Data(left: 20_i32, right: 22_u64, ready: ready);

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let run = wrapped();
   let first = run[0_u64];
   let second = run[1_u64];

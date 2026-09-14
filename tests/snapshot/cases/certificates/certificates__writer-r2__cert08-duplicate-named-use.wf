@@ -12,6 +12,6 @@ fn double_report(alpha: own u32, alpha_cap: own u32, beta: own u32, beta_cap: ow
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

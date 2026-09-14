@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn every_reinterpret_pair_preserves_its_source_bits() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let u8_bits = reinterpret::<i8, u8>(-1_i8);
   if u8_bits == 255_u8 {
   } else {

@@ -9,7 +9,7 @@ fn sum_xy(v: own Vec2) -> function_result: own i32 reads(v.x, v.y) {
   return s;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "TYPE-5: pass an own struct to a fn by value and use its fields cross-fn.";
   let vec2_atom_0001 = Vec2(x: 20_i32, y: 22_i32);
   let total = sum_xy(v: move vec2_atom_0001);

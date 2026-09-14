@@ -37,14 +37,24 @@ fn retains_every_equal_width_reinterpret_pair() {
             expected.push((source_type, destination_type));
         }
     }
-    source.push_str("command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n");
+    source.push_str(
+        "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+    );
 
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("complete reinterpret family must check: {outcome:?}");
         };
         assert_eq!(expected.len(), 16);
-        assert_eq!(checked.data.functions.len(), expected.len() + 1);
+        assert_eq!(
+            checked
+                .data
+                .functions
+                .iter()
+                .filter(|function| function.body.is_some())
+                .count(),
+            expected.len() + 1
+        );
         for (function, (expected_source, expected_destination)) in
             checked.data.functions.iter().zip(expected)
         {
@@ -58,7 +68,7 @@ fn retains_every_equal_width_reinterpret_pair() {
                         },
                     ..
                 },
-            ] = function.body.as_slice()
+            ] = function.body.as_deref().expect("WF body")
             else {
                 panic!("function must retain one reinterpret operation");
             };
@@ -73,10 +83,10 @@ fn retains_every_equal_width_reinterpret_pair() {
 #[test]
 fn reinterpret_shape_pair_and_operand_failures_keep_their_rule_owners() {
     for source in [
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<i32, i32>(1_i32);\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<i8, u16>(1_i8);\n  return exit_status(code: 0_u8);\n}\n",
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<f32, f64>(1.0_f32);\n  return exit_status(code: 0_u8);\n}\n",
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<i32>(1_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<i32, i32>(1_i32);\n  return exit_status(code: 0_u8);\n}\n".as_slice(),
+        b"fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<i8, u16>(1_i8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<f32, f64>(1.0_f32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<i32>(1_i32);\n  return exit_status(code: 0_u8);\n}\n",
     ] {
         assert_rule(
             source,
@@ -85,7 +95,7 @@ fn reinterpret_shape_pair_and_operand_failures_keep_their_rule_owners() {
         );
     }
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<i32, u32>(1_u32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: own ExitStatus pure {\n  let value = reinterpret::<i32, u32>(1_u32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );

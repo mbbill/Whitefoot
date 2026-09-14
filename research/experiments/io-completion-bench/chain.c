@@ -1,3 +1,7 @@
+/* Historical managed-stack control. Its wf_sched_core/record interfaces were
+ * retired by the current-stack runtime. This source is retained measurement
+ * evidence, is outside make check, and does not build against current core.h. */
+
 /* The four-stage chain of design section 0, in C on io_uring, in the four
  * shapes section 12's fourth item names.
  *

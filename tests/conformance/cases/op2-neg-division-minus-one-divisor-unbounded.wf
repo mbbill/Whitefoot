@@ -4,6 +4,6 @@ fn negate(n: own i32) -> return_value: own i32 pure {
   return m;
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

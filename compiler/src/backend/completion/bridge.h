@@ -7,28 +7,16 @@
 extern "C" {
 #endif
 
-/* How many iterations of one loop the runtime will carry in flight at once,
- * asked once per loop entry and never per iteration.  `span` is the loop's
- * statically known trip count, `slot_bytes` the private storage one in-flight
- * iteration owns, and `ceiling` the compiler's own static cap; a zero in any
- * of the three places no bound.  One is always a legal answer and reproduces
- * the sequential program exactly, which is why a link without this unit gets a
- * weak fallback returning one.  Nothing a writer can spell reaches this. */
-uint64_t wf__completion_window(
-    uint64_t span,
-    uint64_t slot_bytes,
-    uint64_t ceiling
-);
-
 /* Every submit fills the record the caller supplies and answers nothing: the
  * runtime either accepted the operation or executed it itself and published
  * its completion into the record, and either way the operation is the
  * runtime's and will be joined
  * (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Every submit path
  * ends in a published record" -- "never with a 0 the caller must interpret").
- * There is no second lowering left for a verdict to select, so a submit that
- * returned one would be a value no caller could act on.  A `NULL` record, or
- * an argument this ABI cannot mean, is a contract violation and terminates;
+ * The ordinary linked body always joins the supplied record; engine selection
+ * is private to this implementation and returns no alternate-call verdict.
+ * A `NULL` record, or an argument this ABI cannot mean, is a contract violation
+ * and terminates;
  * an argument the host itself would refuse is an ordinary failed outcome and
  * is published as one, which is why a `pread` offset above `INT64_MAX`
  * completes with `EINVAL` rather than terminating. */
@@ -83,14 +71,14 @@ void wf__completion_file_close_submit(
     void *record
 );
 
-/* The selected family's qualified directory-enumeration facility through the
- * same target-progress normalization as typed file operations --
+/* The platform's directory-enumeration facility through the same native
+ * progress normalization as file operations --
  * `__getdirentries64` on Darwin, `getdents64` on Linux.  EINTR and readiness
  * refusal never cross this ABI as writer-visible errors.  `position` is the
  * base-position cell Darwin's facility requires; Linux keeps the whole cursor
  * in the descriptor and leaves the cell untouched.  The native record the
- * batch holds differs by family and is decoded by the emitted shim, not
- * here. */
+ * batch holds differs by platform and is decoded by the ordinary linked
+ * library, not here. */
 void wf__completion_directory_next_submit(
     int descriptor,
     void *buffer,
@@ -99,7 +87,7 @@ void wf__completion_directory_next_submit(
     void *record
 );
 
-/* The six TCP submits [SYS-17, SYS-18].
+/* The six TCP submits (ordinary native library).
  *
  * A listen and a connect name one address and no descriptor, because each
  * creates its own socket from the address's family; the address arrives as
@@ -147,6 +135,11 @@ void wf__completion_socket_shutdown_submit(
     unsigned direction,
     void *record
 );
+
+/* A shutdown's joined value is zero for the first half and one for the
+ * descriptor-close attempt on its last half. Its error code independently
+ * reports the close outcome. The ordinary linked close uses that private
+ * result to return one descriptor credit to its explicit factory argument. */
 
 void wf__completion_file_open_join(
     const void *record,

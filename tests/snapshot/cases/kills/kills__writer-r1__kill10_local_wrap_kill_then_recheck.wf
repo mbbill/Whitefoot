@@ -15,16 +15,32 @@ fn scan_pair(data: own FixedVector<i16, 8>, start: own u64) -> result: own i16 r
   return first +wrap second;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let data = fixed_vector::<i16, 8>();
-  set data = place_back(vector: move data, value: 2_i16);
-  set data = place_back(vector: move data, value: 2_i16);
-  set data = place_back(vector: move data, value: 2_i16);
-  set data = place_back(vector: move data, value: 2_i16);
-  set data = place_back(vector: move data, value: 2_i16);
-  set data = place_back(vector: move data, value: 2_i16);
-  set data = place_back(vector: move data, value: 2_i16);
-  set data = place_back(vector: move data, value: 2_i16);
+  region {
+    place_back(vector: &uniq data, value: 2_i16);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_i16);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_i16);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_i16);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_i16);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_i16);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_i16);
+  }
+  region {
+    place_back(vector: &uniq data, value: 2_i16);
+  }
   let picked = scan_pair(data: move data, start: 4_u64);
   if picked == 4_i16 {
   } else {

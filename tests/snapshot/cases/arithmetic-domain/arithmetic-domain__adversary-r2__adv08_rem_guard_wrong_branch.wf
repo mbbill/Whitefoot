@@ -16,7 +16,7 @@ fn safe_mod_wrapped(n: own u64, d: own u64) -> result: own u64 pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let result = safe_mod(n: 10_u64, d: 3_u64);
   let wrapped_result = safe_mod_wrapped(n: 10_u64, d: 3_u64);
   return exit_status(code: 0_u8);

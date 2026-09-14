@@ -14,7 +14,7 @@ fn widen_true_ensures(x: own u8) -> result: own i16 pure contract {
   return cvt::<u8, i16>(x);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let widened = widen_true_ensures(x: 200_u8);
   if widened == 200_i16 {
   } else {

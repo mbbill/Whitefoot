@@ -3,11 +3,10 @@ use std::fmt::Write;
 
 use crate::{IrFlatElement, IrReleaseClass, IrVariant};
 
-use super::super::qualification::Qualification;
 use super::super::target::TargetLayout;
 use super::{
     BackendFailure, IrNominalId, IrNominalKind, IrProgram, IrType, llvm_type, nominal_symbol,
-    system, variant_field_base,
+    variant_field_base,
 };
 
 /// One release action per node type of the release graph [PROV-6].
@@ -23,7 +22,6 @@ use super::{
 /// release path is a runtime trap the writer never wrote.
 pub(super) fn emit_resource_drop_helpers(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     _target: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let mut output = String::new();
@@ -43,14 +41,7 @@ pub(super) fn emit_resource_drop_helpers(
             "define private void @{symbol}({aggregate_ty} %value) {{"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        emit_enum_cleanup_body(
-            program,
-            qualification,
-            &mut output,
-            variants,
-            ty,
-            &aggregate_ty,
-        )?;
+        emit_enum_cleanup_body(program, &mut output, variants, ty, &aggregate_ty)?;
         output.push_str("}\n\n");
     }
     for element in cleanup_buffer_element_nominals(program)? {
@@ -68,7 +59,6 @@ pub(super) fn emit_resource_drop_helpers(
         let mut temporary = 0_u32;
         emit_value_cleanup(
             program,
-            qualification,
             &mut output,
             &mut temporary,
             element_ty,
@@ -79,7 +69,7 @@ pub(super) fn emit_resource_drop_helpers(
         );
     }
     for (index, ty) in cleanup_run_types(program)?.into_iter().enumerate() {
-        emit_run_drop_helper(program, qualification, &mut output, index, ty)?;
+        emit_run_drop_helper(program, &mut output, index, ty)?;
     }
     Ok(output)
 }
@@ -92,15 +82,11 @@ pub(super) fn emit_resource_drop_helpers(
 /// read. The physical slot of logical offset `i` is `(head + i) mod cap`,
 /// which is the one conditional subtract a subscript already emits.
 ///
-/// The backing release itself is empty in this version and is emitted after
-/// the walk: a frame-resident run reclaims no storage of its own, and every
-/// store-resident run this version can form is taken from a bump extent, whose
-/// region reset reclaims the whole extent [BLK-2]. The general store's free
-/// lands with `heap_vector`, and it lands *here*, after the loop, which is what
-/// [PROV-6]'s ordering requires.
+/// This helper visits elements only. Its caller releases a general store's
+/// backing after the walk; a frame-resident run has no backing action, and an
+/// extent-backed run's storage is reclaimed by its region reset [BLK-2].
 fn emit_run_drop_helper(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     output: &mut String,
     index: usize,
     ty: IrType,
@@ -113,6 +99,16 @@ fn emit_run_drop_helper(
     )
     .map_err(|_| BackendFailure::TextEmission)?;
     let element = match ty {
+        // A full array has no window descriptor. Every logical element is
+        // live; the shared walk performs no access for an empty array.
+        IrType::Array { element, length } => {
+            writeln!(
+                output,
+                "  %storage = alloca {run_llvm}\n  store {run_llvm} %value, ptr %storage\n  %pointer = getelementptr inbounds {run_llvm}, ptr %storage, i64 0, i64 0\n  %capacity = add i64 {length}, 0\n  %length = add i64 {length}, 0\n  %origin = add i64 0, 0"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            element
+        }
         // A frame-resident run's slots are inside its own value, so the walk
         // needs an address for it; its capacity is the type constant.
         IrType::FixedVector { element, length } => {
@@ -134,7 +130,7 @@ fn emit_run_drop_helper(
         }
         _ => return Err(BackendFailure::InvalidIr),
     };
-    let element_ty = element.ty();
+    let element_ty = program.element(element).ok_or(BackendFailure::InvalidIr)?;
     let element_llvm = llvm_type(program, element_ty)?;
     writeln!(
         output,
@@ -144,7 +140,6 @@ fn emit_run_drop_helper(
     let mut temporary = 0_u32;
     emit_value_cleanup(
         program,
-        qualification,
         output,
         &mut temporary,
         element_ty,
@@ -154,37 +149,20 @@ fn emit_run_drop_helper(
     Ok(())
 }
 
-/// Every run type in the program whose window holds values deriving a release
-/// action, in deterministic order.
-///
-/// The one-level lift [BLK-1] means an element run's own element is flat, so
-/// closing the enumeration over element types takes one extra pass and not a
-/// fixed point.
+/// Every full array or run whose live elements derive release work.
+/// The complete type graph includes arbitrary nested arrays, runs, and cycles;
+/// its deterministic inventory fixes helper identities without a depth cap.
 fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
-    let mut candidates: Vec<IrType> = Vec::new();
-    for ty in program_types(program) {
-        if !matches!(ty, IrType::FixedVector { .. } | IrType::Vector { .. }) {
-            continue;
-        }
-        if !candidates.contains(&ty) {
-            candidates.push(ty);
-        }
-        let (IrType::FixedVector { element, .. } | IrType::Vector { element, .. }) = ty else {
-            continue;
-        };
-        let inner = element.ty();
-        if matches!(inner, IrType::FixedVector { .. } | IrType::Vector { .. })
-            && !candidates.contains(&inner)
-        {
-            candidates.push(inner);
-        }
-    }
     let mut needed = Vec::new();
-    for ty in candidates {
-        let (IrType::FixedVector { element, .. } | IrType::Vector { element, .. }) = ty else {
+    for ty in program_types(program)? {
+        let (IrType::Array { element, .. }
+        | IrType::FixedVector { element, .. }
+        | IrType::Vector { element, .. }) = ty
+        else {
             continue;
         };
-        if type_requires_cleanup(program, element.ty())? {
+        let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
+        if type_requires_cleanup(program, element)? {
             needed.push(ty);
         }
     }
@@ -208,14 +186,13 @@ fn run_drop_helper(
 }
 
 /// Every buffer element nominal in the program whose element drop derives an
-/// action, in deterministic nominal order. A buffer type occurs only as a
-/// defined value, parameter, or result type or as nominal content, so the
-/// flat enumeration below is complete.
+/// action, in deterministic nominal order. The complete type inventory also
+/// reaches buffers stored inside arbitrarily nested run elements.
 fn cleanup_buffer_element_nominals(
     program: &IrProgram<'_, '_, '_>,
 ) -> Result<Vec<IrNominalId>, BackendFailure> {
     let mut needed = BTreeMap::new();
-    for ty in program_types(program) {
+    for ty in program_types(program)? {
         if let IrType::Buffer {
             element: IrFlatElement::Nominal(id),
         } = ty
@@ -227,35 +204,66 @@ fn cleanup_buffer_element_nominals(
     Ok(needed.into_values().collect())
 }
 
-/// Every type written anywhere in the program: nominal content, and the
-/// defined values, parameters, and results of every function.
-fn program_types(program: &IrProgram<'_, '_, '_>) -> Vec<IrType> {
-    let mut types: Vec<IrType> = Vec::new();
+/// Every type reachable from the program's declarations and values, including
+/// arbitrary run nesting, in deterministic discovery order. Ownership cycles
+/// through descriptors or nominal references visit each exact type once.
+fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
+    let mut pending = Vec::new();
     for nominal in program.nominals() {
-        types.push(IrType::Nominal(nominal.id()));
-        match nominal.kind() {
-            IrNominalKind::Struct { fields } => {
-                types.extend(fields.iter().map(|field| field.ty()));
-            }
-            IrNominalKind::Enum { variants } => {
-                types.extend(
-                    variants
-                        .iter()
-                        .flat_map(|variant| variant.fields())
-                        .map(|field| field.ty()),
-                );
-            }
-            IrNominalKind::Box { referent, .. } => types.push(*referent),
-            IrNominalKind::Arena { content } => types.push(*content),
-            IrNominalKind::ArenaStorage | IrNominalKind::SystemResource(_) => {}
-        }
+        pending.push(IrType::Nominal(nominal.id()));
+    }
+    for constant in program.constants() {
+        pending.push(constant.ty());
     }
     for function in program.functions() {
-        types.extend(function.value_types().iter().copied());
-        types.extend(function.parameters().iter().map(|(_, ty)| *ty));
-        types.push(function.result());
+        pending.extend(function.value_types().iter().copied());
+        pending.extend(function.parameters().iter().map(|(_, ty)| *ty));
+        pending.push(function.result());
     }
-    types
+    let mut types = Vec::new();
+    let mut visited = HashSet::new();
+    let mut cursor = 0;
+    while let Some(ty) = pending.get(cursor).copied() {
+        cursor += 1;
+        if !visited.insert(ty) {
+            continue;
+        }
+        types.push(ty);
+        match ty {
+            IrType::Array { element, .. }
+            | IrType::FixedVector { element, .. }
+            | IrType::Vector { element, .. } => {
+                pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
+            }
+            IrType::Buffer { element } | IrType::Slice { element } => pending.push(element.ty()),
+            IrType::Address(referent) => pending.push(referent.ty()),
+            IrType::Nominal(id) => {
+                let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
+                match nominal.kind() {
+                    IrNominalKind::Struct { fields } => {
+                        pending.extend(fields.iter().map(|field| field.ty()));
+                    }
+                    IrNominalKind::Enum { variants } => {
+                        pending.extend(
+                            variants
+                                .iter()
+                                .flat_map(|variant| variant.fields())
+                                .map(|field| field.ty()),
+                        );
+                    }
+                    IrNominalKind::Box { referent, .. } => pending.push(*referent),
+                    IrNominalKind::Arena { content } => pending.push(*content),
+                    IrNominalKind::ArenaStorage | IrNominalKind::Opaque => {}
+                }
+            }
+            IrType::Unit
+            | IrType::Bool
+            | IrType::Integer { .. }
+            | IrType::Float { .. }
+            | IrType::Provider => {}
+        }
+    }
+    Ok(types)
 }
 
 pub(super) fn buffer_drop_helper_symbol(element: IrNominalId) -> String {
@@ -265,34 +273,27 @@ pub(super) fn buffer_drop_helper_symbol(element: IrNominalId) -> String {
 /// Whether any type of this program is a run taken from a general store
 /// [PROV-1]. Such a run's backing release is a free, so the module declares
 /// the two allocator symbols even where nothing else allocates.
-pub(super) fn program_has_general_run(program: &IrProgram<'_, '_, '_>) -> bool {
-    let mut pending = program_types(program);
-    let mut visited: HashSet<IrType> = HashSet::new();
-    while let Some(ty) = pending.pop() {
-        if !visited.insert(ty) {
-            continue;
-        }
-        match ty {
+pub(super) fn program_has_general_run(
+    program: &IrProgram<'_, '_, '_>,
+) -> Result<bool, BackendFailure> {
+    Ok(program_types(program)?.into_iter().any(|ty| {
+        matches!(
+            ty,
             IrType::Vector {
                 release: IrReleaseClass::General,
                 ..
-            } => return true,
-            IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
-                pending.push(element.ty());
             }
-            _ => {}
-        }
-    }
-    false
+        )
+    }))
 }
 
 pub(super) fn type_requires_cleanup(
     program: &IrProgram<'_, '_, '_>,
     ty: IrType,
 ) -> Result<bool, BackendFailure> {
-    // One reading, shared with the staged lowering: whether a value of this
-    // type derives any release work at all [STOR-3, PROV-6].
-    crate::lowering::type_derives_release(program.nominals(), ty).ok_or(BackendFailure::InvalidIr)
+    // Whether a value of this type derives release work [STOR-3, PROV-6].
+    crate::lowering::type_derives_release(program.nominals(), program.elements(), ty)
+        .ok_or(BackendFailure::InvalidIr)
 }
 
 pub(super) fn drop_helper_symbol(nominal: IrNominalId) -> String {
@@ -315,7 +316,6 @@ enum CleanupJob {
 
 pub(super) fn emit_value_cleanup(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     output: &mut String,
     temporary: &mut u32,
     ty: IrType,
@@ -323,7 +323,6 @@ pub(super) fn emit_value_cleanup(
 ) -> Result<(), BackendFailure> {
     emit_cleanup_jobs(
         program,
-        qualification,
         output,
         temporary,
         vec![CleanupJob::Value { ty, operand }],
@@ -332,7 +331,6 @@ pub(super) fn emit_value_cleanup(
 
 fn emit_cleanup_jobs(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     output: &mut String,
     temporary: &mut u32,
     mut jobs: Vec<CleanupJob>,
@@ -419,17 +417,7 @@ fn emit_cleanup_jobs(
                                 .map_err(|_| BackendFailure::TextEmission)?;
                             }
                         }
-                        // A resource reached through owned content releases
-                        // with its own type's action, exactly as a directly
-                        // released owner does [SYS-5].
-                        IrNominalKind::SystemResource(contract) => {
-                            system::emit_resource_release(
-                                qualification,
-                                output,
-                                *contract,
-                                &operand,
-                            )?;
-                        }
+                        IrNominalKind::Opaque => {}
                         // [PROV-6, S39] the referent is released first and
                         // the cell's own storage after it: a general store's
                         // cell frees, and a bump extent's is reclaimed by its
@@ -471,9 +459,10 @@ fn emit_cleanup_jobs(
                 // store's capability, and its backing action is the free
                 // emitted here, after the window walk.
                 IrType::Vector { element, release } => {
-                    if type_requires_cleanup(program, element.ty())?
-                        && let Some(symbol) = run_drop_helper(program, ty)?
-                    {
+                    let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
+                    if type_requires_cleanup(program, element)? {
+                        let symbol =
+                            run_drop_helper(program, ty)?.ok_or(BackendFailure::InvalidIr)?;
                         let run_llvm = llvm_type(program, ty)?;
                         writeln!(output, "  call void @{symbol}({run_llvm} {operand})")
                             .map_err(|_| BackendFailure::TextEmission)?;
@@ -488,10 +477,11 @@ fn emit_cleanup_jobs(
                         .map_err(|_| BackendFailure::TextEmission)?;
                     }
                 }
-                IrType::FixedVector { element, .. } => {
-                    if type_requires_cleanup(program, element.ty())?
-                        && let Some(symbol) = run_drop_helper(program, ty)?
-                    {
+                IrType::Array { element, .. } | IrType::FixedVector { element, .. } => {
+                    let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
+                    if type_requires_cleanup(program, element)? {
+                        let symbol =
+                            run_drop_helper(program, ty)?.ok_or(BackendFailure::InvalidIr)?;
                         let run_llvm = llvm_type(program, ty)?;
                         writeln!(output, "  call void @{symbol}({run_llvm} {operand})")
                             .map_err(|_| BackendFailure::TextEmission)?;
@@ -501,7 +491,6 @@ fn emit_cleanup_jobs(
                 | IrType::Bool
                 | IrType::Integer { .. }
                 | IrType::Float { .. }
-                | IrType::Array { .. }
                 | IrType::Slice { .. }
                 | IrType::Provider
                 | IrType::Address(_) => {}
@@ -523,7 +512,6 @@ fn next_temporary(counter: &mut u32) -> Result<String, BackendFailure> {
 /// cleanup, from the entry label through the closing `ret`.
 fn emit_enum_cleanup_body(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     output: &mut String,
     variants: &[IrVariant],
     ty: IrType,
@@ -564,7 +552,7 @@ fn emit_enum_cleanup_body(
                 });
             }
         }
-        emit_cleanup_jobs(program, qualification, output, &mut temporary, jobs)?;
+        emit_cleanup_jobs(program, output, &mut temporary, jobs)?;
         output.push_str("  br label %done\n");
     }
 

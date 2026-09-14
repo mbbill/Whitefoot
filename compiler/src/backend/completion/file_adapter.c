@@ -44,7 +44,7 @@ int wf_file_request_valid(const wf_file_request *request) {
     /* A listen and a connect name an address and create their own socket, so
      * there is no descriptor and no buffer to check; the address is a value
      * the emitter built and every combination of its operands is one address
-     * [SYS-16]. */
+     * (ordinary native library). */
     case WF_FILE_SOCKET_LISTEN:
     case WF_FILE_SOCKET_CONNECT:
         return 1;
@@ -100,7 +100,7 @@ int wf_file_request_is_peer_bound(const wf_file_request *request) {
 }
 
 /* The two-count of every connection descriptor, one byte each: zero when
- * neither direction has been released and one when exactly one has.  See
+ * neither direction has completed its shutdown and one when exactly one has. See
  * `wf_file_connection_release` in the header for what it promises and why it
  * is a table rather than something a record could carry.
  *

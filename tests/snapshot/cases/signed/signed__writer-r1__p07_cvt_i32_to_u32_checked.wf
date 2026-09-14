@@ -10,7 +10,7 @@ fn to_unsigned(x: own i32) -> result: own u32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = to_unsigned(x: 300_i32);
   if a == 300_u32 {
   } else {

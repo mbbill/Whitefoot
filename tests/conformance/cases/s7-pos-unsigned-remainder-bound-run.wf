@@ -1,6 +1,6 @@
 const values: FixedVector<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "An unsigned remainder publishes its strict divisor bound, so the following table read is proved before lowering.";
   let unexpected = False();
   let seed = 7_u64;

@@ -14,16 +14,40 @@ fn read_pair(table: own FixedVector<u8, 8>, low: own u64, high: own u64) -> resu
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 8>();
-  let s1 = place_back(vector: move empty, value: 3_u8);
-  let s2 = place_back(vector: move s1, value: 3_u8);
-  let s3 = place_back(vector: move s2, value: 3_u8);
-  let s4 = place_back(vector: move s3, value: 3_u8);
-  let s5 = place_back(vector: move s4, value: 3_u8);
-  let s6 = place_back(vector: move s5, value: 3_u8);
-  let s7 = place_back(vector: move s6, value: 3_u8);
-  let table = place_back(vector: move s7, value: 3_u8);
+  region {
+    place_back(vector: &uniq empty, value: 3_u8);
+  }
+  let s1 = move empty;
+  region {
+    place_back(vector: &uniq s1, value: 3_u8);
+  }
+  let s2 = move s1;
+  region {
+    place_back(vector: &uniq s2, value: 3_u8);
+  }
+  let s3 = move s2;
+  region {
+    place_back(vector: &uniq s3, value: 3_u8);
+  }
+  let s4 = move s3;
+  region {
+    place_back(vector: &uniq s4, value: 3_u8);
+  }
+  let s5 = move s4;
+  region {
+    place_back(vector: &uniq s5, value: 3_u8);
+  }
+  let s6 = move s5;
+  region {
+    place_back(vector: &uniq s6, value: 3_u8);
+  }
+  let s7 = move s6;
+  region {
+    place_back(vector: &uniq s7, value: 3_u8);
+  }
+  let table = move s7;
   let value = read_pair(table: move table, low: 1_u64, high: 2_u64);
   if value == 3_u8 {
   } else {

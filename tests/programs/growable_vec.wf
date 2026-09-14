@@ -1,18 +1,18 @@
 const appended_bytes: FixedVector<u8, 5> =[33_u8, 33_u8, 33_u8, 33_u8, 33_u8];
 
-enum Grown {
-  Grew(value: Vector<u8>);
-  Refused(value: Vector<u8>);
+enum Grown['heap] {
+  Grew(value: Vector<'heap, u8>);
+  Refused(value: Vector<'heap, u8>);
 }
 
-fn bs_new(heap: &uniq Heap) -> made: own Option<Vector<u8>> reads(heap), writes(heap), allocates(heap) {
+fn bs_new['heap](heap: &uniq Heap<'heap>) -> made: own Option<Vector<'heap, u8>> reads(heap), writes(heap), allocates(heap) {
   doc "Builds one empty byte string over a zero-length backing run.";
   region {
     return heap_vector::<u8>(store: &uniq deref(heap), count: 0_u64);
   }
 }
 
-fn bs_reserve(s: own Vector<u8>, heap: &uniq Heap, total: own u64) -> grown: own Grown reads(s, heap), writes(s, heap), allocates(heap) contract {
+fn bs_reserve['heap](s: own Vector<'heap, u8>, heap: &uniq Heap<'heap>, total: own u64) -> grown: own Grown<'heap> reads(s, heap), writes(s, heap), allocates(heap) contract {
   requires total >= len_of(s);
 } {
   doc "Grows the backing run to total slots, preserving element order, or reports that the store refused. Growth is the drain-front, append-back walk the growth policy fixes, and the superseded run is disposed before the new one is handed back, which is the difference between a peak of count + total slots and a peak of total. The four measures the policy publishes on the Grew arm are not written here: a variant-routed measure clause is a deferred contract route, so the caller reads them back instead.";
@@ -34,8 +34,8 @@ fn bs_reserve(s: own Vector<u8>, heap: &uniq Heap, total: own u64) -> grown: own
           invariant spare_hi: room_of(built) + at <= total,
           invariant flat: head_of(built) <= 0_u64
         ) {
-          set (s, byte) = take_front(vector: move s);
-          set built = place_back(vector: move built, value: byte);
+          set byte = take_front(vector: &uniq s);
+          place_back(vector: &uniq built, value: byte);
         }
         dispose s;
         return Grew(value: move built);
@@ -44,7 +44,7 @@ fn bs_reserve(s: own Vector<u8>, heap: &uniq Heap, total: own u64) -> grown: own
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "The growth policy exercised twice: one string grown to twenty-four slots and filled with twenty bytes, and one grown to eight and filled from a const run.";
   region {
     match bs_new(heap: &uniq heap) {
@@ -88,7 +88,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
                 invariant spare_left: room_of(grown) + at >= 24_u64,
                 invariant flat_run: head_of(grown) <= 0_u64
               ) {
-                set grown = place_back(vector: move grown, value: b);
+                place_back(vector: &uniq grown, value: b);
                 set b = b +wrap 7_u8;
               }
               let total = len_of(grown);
@@ -150,7 +150,9 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
               } else {
                 return exit_status(code: 1_u8);
               }
-              set held = place_back(vector: move held, value: 65_u8);
+              region {
+                place_back(vector: &uniq held, value: 65_u8);
+              }
               region {
                 let source = slice_of(&appended_bytes);
                 for @append (
@@ -161,7 +163,7 @@ command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(
                   invariant flat_run: head_of(held) <= 0_u64
                 ) {
                   let byte = source[at];
-                  set held = place_back(vector: move held, value: byte);
+                  place_back(vector: &uniq held, value: byte);
                 }
               }
               let stored = len_of(held);

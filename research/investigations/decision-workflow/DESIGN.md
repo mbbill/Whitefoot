@@ -9,8 +9,9 @@ method lives in [decision practice](../../../docs/practice.md#decision-work);
 [agent instructions](../../../AGENTS.md) own branch work and merging. The
 constitutional reassessment and initial index migration below implement the
 first application. They do not establish the method's long-term efficacy.
-The subsequent [full-rule assessment](RULE-GROUNDS.md) supplies present-day
-arguments for the remaining inherited grounds and retains unresolved questions.
+The subsequent [full-rule assessment](RULE-GROUNDS.md) preserves historical
+arguments and questions from that workflow; its later pre-C2 additions are
+also historical, not a current rule inventory or selection.
 
 The recommended direction is a small decision method used at actual choices
 and evidence changes, with the existing task-completion review as its review

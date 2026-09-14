@@ -3,8 +3,8 @@
 //!
 //! A run carries no per-slot tag and no runtime discriminant: `len` and `head`
 //! are the complete typestate. Boundary operations update these words and the
-//! selected element in the result destination; a surviving input value keeps
-//! an independent snapshot.
+//! selected element through the exclusive referent. A placement returns unit;
+//! a take returns the removed element without transferring the run owner.
 //!
 //! The window is `len` slots beginning at `head` modulo `cap`, so a subscript
 //! at logical offset `i` reads slot `(head + i) mod cap` [BLK-1]. Because
@@ -38,6 +38,12 @@ impl RunShape {
         match self {
             Self::Inline { element, .. } | Self::Descriptor { element } => element,
         }
+    }
+
+    fn element_type(self, program: &IrProgram<'_, '_, '_>) -> Result<IrType, BackendFailure> {
+        program
+            .element(self.element())
+            .ok_or(BackendFailure::InvalidIr)
     }
 
     /// The aggregate field index of `len`.
@@ -83,6 +89,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run: IrValueId,
         ty: IrType,
     ) -> Result<IrValueId, BackendFailure> {
+        if matches!(self.value_type(run), Some(IrType::Address(_))) {
+            return Ok(run);
+        }
         if self.storage.slot(result).is_some() {
             let source = self.value_place(run)?;
             let destination = self.value_place(result)?;
@@ -105,7 +114,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         };
         if target_domain != IrTargetDomainObligation::ElementAddress
-            || shape.element().ty() != element
+            || shape.element_type(self.program)? != element
             || self.value_type(offset)
                 != Some(IrType::Integer {
                     width: 64,
@@ -538,7 +547,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// [VIEW-2] one view formed over a run's initialized window.
+    /// [VIEW-2] one view formed over typed owner storage.
     ///
     /// The window is `len` slots beginning at `head`, and the row's own
     /// requirement `head_of(vector) <= room_of(vector)` is discharged before
@@ -546,6 +555,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     /// is one contiguous range: the descriptor is the address of slot `head`
     /// together with `len`, and no modulus is emitted.
     ///
+    /// A complete array instead contributes its type's length and the address
+    /// of its first slot, without descriptor metadata in the owner.
     /// Both view modes point into the checked owner's stable storage. A
     /// descriptor copy does not create storage or prolong its lifetime.
     pub(super) fn emit_slice_from_run(
@@ -558,10 +569,23 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Err(BackendFailure::InvalidIr);
         };
         let run_type = self.run_value_type(run)?;
+        if let IrType::Array {
+            element: actual,
+            length,
+        } = run_type
+        {
+            if self.program.element(actual) != Some(element.ty())
+                || !matches!(self.value_type(run), Some(IrType::Address(_)))
+            {
+                return Err(BackendFailure::InvalidIr);
+            }
+            let pointer = self.value_name(run);
+            return self.emit_slice_descriptor(result, ty, &pointer, length);
+        }
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if shape.element() != IrElement::Flat(element) {
+        if shape.element_type(self.program)? != element.ty() {
             return Err(BackendFailure::InvalidIr);
         }
         let head = self.run_word(run_type, run, shape.head_field())?;
@@ -593,7 +617,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if shape.element().ty() != ty
+        if shape.element_type(self.program)? != ty
             || self.value_type(offset)
                 != Some(IrType::Integer {
                     width: 64,
@@ -621,11 +645,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if row.places() {
             return Err(BackendFailure::InvalidIr);
         }
-        let run_type = self.value_type(run).ok_or(BackendFailure::InvalidIr)?;
+        let run_type = self.run_value_type(run)?;
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        if shape.element().ty() != ty {
+        if shape.element_type(self.program)? != ty {
             return Err(BackendFailure::InvalidIr);
         }
         let physical = self.boundary_slot(shape, run_type, run, row)?;
@@ -633,8 +657,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.load_place_result(result, ty, &format!("%{element_pointer}"))
     }
 
-    /// [BLK-3] the run one boundary operation hands back: one store at the
-    /// boundary slot for a placement, and the moved boundary for both.
+    /// [BLK-3] update an exclusive run: one store at the boundary slot for a
+    /// placement, and the moved boundary for both.
     pub(super) fn emit_run_boundary(
         &mut self,
         result: IrValueId,
@@ -643,8 +667,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run: IrValueId,
         value: Option<IrValueId>,
     ) -> Result<(), BackendFailure> {
-        let run_type = self.value_type(run).ok_or(BackendFailure::InvalidIr)?;
-        if run_type != ty {
+        let run_type = self.run_value_type(run)?;
+        if ty != IrType::Unit || !matches!(self.value_type(run), Some(IrType::Address(_))) {
             return Err(BackendFailure::InvalidIr);
         }
         let Some(shape) = RunShape::of(run_type) else {
@@ -652,14 +676,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         };
         match (row.places(), value) {
             (true, Some(value)) => {
-                if self.value_type(value) != Some(shape.element().ty()) {
+                if self.value_type(value) != Some(shape.element_type(self.program)?) {
                     return Err(BackendFailure::InvalidIr);
                 }
             }
             (false, None) => {}
             _ => return Err(BackendFailure::InvalidIr),
         }
-        let llvm = llvm_type(self.program, run_type)?;
         let length = self.run_word(run_type, run, shape.length_field())?;
         let head = self.run_word(run_type, run, shape.head_field())?;
         let updated = self.prepare_run_update(result, run, run_type)?;
@@ -669,7 +692,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             let physical = self.boundary_slot(shape, run_type, run, row)?;
             let element_pointer =
                 self.element_pointer(result, shape, run_type, updated, &physical)?;
-            let element_type = llvm_type(self.program, shape.element().ty())?;
+            let element_type = llvm_type(self.program, shape.element_type(self.program)?)?;
             let operand = self.value_operand(value)?;
             writeln!(
                 self.output,
@@ -699,29 +722,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         } else {
             head
         };
-        if self.storage.slot(result).is_some() {
-            let destination = self.value_place(result)?;
-            let length_address = self.aggregate_field_pointer(
-                run_type,
-                &destination,
-                shape.length_field() as usize,
-            )?;
-            let head_address =
-                self.aggregate_field_pointer(run_type, &destination, shape.head_field() as usize)?;
-            return writeln!(self.output, "  store i64 %{new_length}, ptr {length_address}\n  store i64 {new_head}, ptr {head_address}")
-                .map_err(|_| BackendFailure::TextEmission);
-        }
-        // Only an external-backing descriptor remains an SSA aggregate.
-        let base = self.value_name(run);
-        let with_length = self.next_temporary()?;
-        writeln!(
-            self.output,
-            "  %{with_length} = insertvalue {llvm} {base}, i64 %{new_length}, {}\n  {} = insertvalue {llvm} %{with_length}, i64 {new_head}, {}",
-            shape.length_field(),
-            self.value_name(result),
-            shape.head_field(),
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        let destination = self.run_storage(run)?.ok_or(BackendFailure::InvalidIr)?;
+        let length_address =
+            self.aggregate_field_pointer(run_type, &destination, shape.length_field() as usize)?;
+        let head_address =
+            self.aggregate_field_pointer(run_type, &destination, shape.head_field() as usize)?;
+        writeln!(self.output, "  store i64 %{new_length}, ptr {length_address}\n  store i64 {new_head}, ptr {head_address}")
+            .map_err(|_| BackendFailure::TextEmission)?;
+        self.emit_constant(result, ty, IrConstant::Unit)
     }
 
     /// The physical slot one boundary operation touches [BLK-1].
@@ -846,7 +854,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run: IrValueId,
         physical: &str,
     ) -> Result<String, BackendFailure> {
-        let element_type = llvm_type(self.program, shape.element().ty())?;
+        let element_type = llvm_type(self.program, shape.element_type(self.program)?)?;
         let pointer = self.next_temporary()?;
         match shape {
             RunShape::Inline { .. } => {

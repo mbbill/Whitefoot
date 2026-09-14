@@ -12,7 +12,7 @@ fn probe() -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: /checked on i32::MIN/-1 must yield Err(DivOverflow).";
   let v = probe();
   if v == 0_u8 {

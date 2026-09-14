@@ -95,7 +95,7 @@ fn release_stencil(output: own buffer<f64>) -> result: own u64 pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let output = stencil(width: 5_u64, height: 5_u64, steps: 2_u64);
   let count = len_of(output);
   if count != 25_u64 {

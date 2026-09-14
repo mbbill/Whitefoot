@@ -22,7 +22,7 @@ fn a_bool_scrutinee_match_is_a_gram6_rejection_at_the_scrutinee() {
     // The Bool `match` is this test's whole subject: any mechanical rewrite
     // into the `if` [GRAM-6] demands leaves a source that checks clean and an
     // assertion that no longer asserts anything.
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   match flag {
     True() => {
@@ -44,7 +44,7 @@ fn an_enum_scrutinee_still_takes_match() {
   Go();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let signal = Go();
   match signal {
     Stop() => {
@@ -61,7 +61,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_empty_else_is_a_gram6_rejection_at_the_if() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   if flag {
     return exit_status(code: 0_u8);
@@ -79,7 +79,7 @@ fn an_empty_else_is_a_gram6_rejection_at_the_if() {
 
 #[test]
 fn an_unflattened_else_if_is_a_gram6_rejection_at_the_nested_if() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   if flag {
     return exit_status(code: 0_u8);
@@ -101,7 +101,7 @@ fn an_unflattened_else_if_is_a_gram6_rejection_at_the_nested_if() {
 
 #[test]
 fn a_flattened_else_if_chain_checks() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   if flag {
     return exit_status(code: 0_u8);
@@ -117,7 +117,7 @@ fn a_flattened_else_if_chain_checks() {
 
 #[test]
 fn an_else_free_if_is_the_empty_alternative_form() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   if flag {
     return exit_status(code: 0_u8);
@@ -130,7 +130,7 @@ fn an_else_free_if_is_the_empty_alternative_form() {
 
 #[test]
 fn an_empty_then_block_is_admitted_where_an_empty_else_is_not() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   if flag {
   } else {
@@ -144,7 +144,7 @@ fn an_empty_then_block_is_admitted_where_an_empty_else_is_not() {
 
 #[test]
 fn a_non_bool_condition_is_a_gram6_rejection_at_the_condition() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let count = 3_u64;
   if count {
     return exit_status(code: 0_u8);
@@ -157,7 +157,7 @@ fn a_non_bool_condition_is_a_gram6_rejection_at_the_condition() {
 
 #[test]
 fn a_value_if_derives_its_binder_from_the_delivery_set() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   let picked = if flag {
     give 1_i32;
@@ -172,7 +172,7 @@ fn a_value_if_derives_its_binder_from_the_delivery_set() {
 
 #[test]
 fn checked_value_initializers_retain_their_source_production_kind() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   let from_if = if flag {
     give 1_i32;
@@ -195,7 +195,7 @@ fn checked_value_initializers_retain_their_source_production_kind() {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("value initializer kinds must check: {outcome:?}");
         };
-        let body = &checked.data.functions[0].body;
+        let body = &checked.data.functions[0].body.as_deref().expect("WF body");
         let CheckedStatement::ValueMatchLet { kind, .. } = &body[1] else {
             panic!("second statement must be the value-if initializer");
         };
@@ -209,7 +209,7 @@ fn checked_value_initializers_retain_their_source_production_kind() {
 
 #[test]
 fn a_value_if_holds_its_deliveries_to_one_exact_type() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   let picked = if flag {
     give 1_i32;
@@ -229,7 +229,7 @@ fn a_value_if_holds_its_deliveries_to_one_exact_type() {
 /// rather than the else-free form GRAM-6 asks for.
 #[test]
 fn an_empty_value_if_else_is_a_give1_rejection() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   let picked = if flag {
     give 1_i32;

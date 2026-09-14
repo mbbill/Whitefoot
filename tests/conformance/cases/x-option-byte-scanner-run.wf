@@ -10,14 +10,26 @@ fn find_byte(input: own Slice<u8>, needle: own u8) -> function_result: own Optio
   return None<u64>();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let bytes = fixed_vector::<u8, 6>();
-  set bytes = place_back(vector: move bytes, value: 10_u8);
-  set bytes = place_back(vector: move bytes, value: 20_u8);
-  set bytes = place_back(vector: move bytes, value: 30_u8);
-  set bytes = place_back(vector: move bytes, value: 40_u8);
-  set bytes = place_back(vector: move bytes, value: 50_u8);
-  set bytes = place_back(vector: move bytes, value: 60_u8);
+  region {
+    place_back(vector: &uniq bytes, value: 10_u8);
+  }
+  region {
+    place_back(vector: &uniq bytes, value: 20_u8);
+  }
+  region {
+    place_back(vector: &uniq bytes, value: 30_u8);
+  }
+  region {
+    place_back(vector: &uniq bytes, value: 40_u8);
+  }
+  region {
+    place_back(vector: &uniq bytes, value: 50_u8);
+  }
+  region {
+    place_back(vector: &uniq bytes, value: 60_u8);
+  }
   region {
     let view = slice_of(&bytes);
     let present = find_byte(input: view, needle: 40_u8);

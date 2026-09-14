@@ -109,7 +109,11 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   return total;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let value = folded(lo: 0_u64, hi: 400000_u64);
   let report = buffer_new(8_u64, 0_u8);
   region {
@@ -118,14 +122,19 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
       let filled = spell(destination: &uniq window, at: 0_u64, value: value);
     }
   }
-  region 'o {
+  region {
     region {
-      match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64) {
-        Ok(value: next) => {
-          return exit_status(code: 0_u8);
-        }
-        Err(error: problem) => {
-          return exit_status(code: 1_u8);
+      region {
+        let native_window_1 = slice_of(&report);
+        region {
+          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_1, start: 0_u64, end: 8_u64) {
+            Ok(value: next) => {
+              return exit_status(code: 0_u8);
+            }
+            Err(error: problem) => {
+              return exit_status(code: 1_u8);
+            }
+          }
         }
       }
     }
@@ -165,7 +174,7 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Every degenerate range folds to the accumulator it arrived with, and one wide range folds to the same value split or not.";
   let empty = folded(lo: 5_u64, hi: 5_u64);
   if empty == 7_u64 {
@@ -212,7 +221,7 @@ const WIDE_FRAME: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Thirty-two live scalars stand between the loop and a frame that fits.";
   let a0 = 0_u64;
   let a1 = 1_u64;
@@ -331,7 +340,11 @@ fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pu
   return total;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
   let report = buffer_new(8_u64, 0_u8);
   region {
@@ -340,14 +353,19 @@ command fn main(command.stdout as out: own OutputStream) -> status: own ExitStat
       let filled = spell(destination: &uniq window, at: 0_u64, value: value);
     }
   }
-  region 'o {
+  region {
     region {
-      match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64) {
-        Ok(value: next) => {
-          return exit_status(code: 0_u8);
-        }
-        Err(error: problem) => {
-          return exit_status(code: 1_u8);
+      region {
+        let native_window_2 = slice_of(&report);
+        region {
+          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_2, start: 0_u64, end: 8_u64) {
+            Ok(value: next) => {
+              return exit_status(code: 0_u8);
+            }
+            Err(error: problem) => {
+              return exit_status(code: 1_u8);
+            }
+          }
         }
       }
     }
@@ -400,12 +418,17 @@ fn mapped() -> result: own buffer<u8> pure {
   return move out;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let report = mapped();
   let size = len_of(report);
-  region 'o {
+  region {
+    let source = slice_of(&report);
     region {
-      match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: size) {
+      match write_once(factory: &uniq entry_factory, output: &uniq out, source: &source, start: 0_u64, end: size) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -481,11 +504,11 @@ fn a_permitted_loop_is_outlined_split_and_joined() {
     let module = emit_with_overlap(PERMITTED_FOLD);
 
     assert!(
-        module.contains("define internal i64 @wf__par_chunk_"),
+        module.contains("define i64 @wf__par_chunk_"),
         "a split loop must outline its own body as a chunk:\n{module}"
     );
     assert!(
-        module.contains("define internal i64 @wf__par_split_"),
+        module.contains("define i64 @wf__par_split_"),
         "a split loop must synthesize a range splitter:\n{module}"
     );
     let splitter_symbol = synthesized(&module, "@wf__par_split_");
@@ -922,11 +945,11 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     let splitter = function_body(&split, &splitter_symbol);
     let chunk = function_body(&split, &chunk_symbol);
     assert!(
-        chunk.starts_with("define internal i8 "),
+        chunk.starts_with("define i8 "),
         "an independent map chunk must return the Unit token:\n{chunk}"
     );
     assert!(
-        splitter.starts_with("define internal i8 "),
+        splitter.starts_with("define i8 "),
         "an independent map splitter must return the Unit token:\n{splitter}"
     );
     assert!(
@@ -1061,11 +1084,11 @@ fn a_map_and_reduction_preserves_both_results() {
     let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
     let splitter = function_body(&split, &synthesized(&split, "@wf__par_split_"));
     assert!(
-        chunk.starts_with("define internal i64 "),
+        chunk.starts_with("define i64 "),
         "the combined loop must retain its real reduction result:\n{chunk}"
     );
     assert!(
-        splitter.starts_with("define internal i64 "),
+        splitter.starts_with("define i64 "),
         "the combined loop must retain its real reduction result:\n{splitter}"
     );
     assert!(
@@ -1418,8 +1441,9 @@ fn admitted_combine_source() -> Vec<u8> {
     }
     let width = 8 * ADMITTED_COMBINES.len();
     source.push_str(&format!(
-        "\ncommand fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus \
-         reads(out), writes(out) {{\n  \
+        "\nfn main(inputs: own Inputs) -> status: own ExitStatus pure {{\n  \
+         let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;\n  region {{\n    \
+         close_directory(factory: &uniq factory, directory: move cwd);\n  }}\n  \
          let report = buffer_new({width}_u64, 0_u8);\n  region {{\n    \
          let window = mut_slice_of(&uniq report);\n"
     ));
@@ -1435,8 +1459,8 @@ fn admitted_combine_source() -> Vec<u8> {
         at = format!("a{index}");
     }
     source.push_str(&format!(
-        "  }}\n  region {{\n    region {{\n      \
-         match write_once(output: &uniq out, source: &report, start: 0_u64, \
+        "  }}\n  region {{\n    let source = slice_of(&report);\n    region {{\n      \
+         match write_once(factory: &uniq factory, output: &uniq out, source: &source, start: 0_u64, \
          end: {width}_u64) {{\n        Ok(value: next) => {{\n          \
          return exit_status(code: 0_u8);\n        }}\n        Err(error: problem) => {{\n          \
          return exit_status(code: 1_u8);\n        }}\n      }}\n    }}\n  }}\n}}\n"

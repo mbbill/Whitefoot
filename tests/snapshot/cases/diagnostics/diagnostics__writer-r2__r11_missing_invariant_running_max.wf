@@ -17,6 +17,6 @@ fn value_at_max(scores: own Slice<u32>) -> value: own u32 reads(scores) contract
   return scores[best_idx];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

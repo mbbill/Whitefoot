@@ -18,7 +18,7 @@ fn pick(c: own Color) -> result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "An exhaustive match over all declared variants is accepted [ERR-2].";
   let green_atom_0001 = Green();
   let n = pick(c: green_atom_0001);

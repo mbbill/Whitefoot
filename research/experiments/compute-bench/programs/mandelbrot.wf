@@ -68,6 +68,6 @@ fn command_smoke() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return command_smoke();
 }

@@ -5,7 +5,7 @@ fn carve['s: affine](store: &uniq Arena<'s, 256, 16>) -> made: own Option<Vector
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "PROV-6, S37: a region argument naming a bump extent has store class affine and satisfies an `affine`-bounded region parameter, so a source function may be generic over a store. The region occupies an input position, so FORM-8 leaves it unwritten at the call and the actual determines it.";
   region 'a {
     let workspace = arena_frame::<256, 16, 'a>();

@@ -5,7 +5,7 @@ fn shift_up(temperature: own i32) -> result: own i32 pure contract {
   return temperature + 10_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a verified requires clause with a negative lower bound discharges the exact add's overflow obligation inside the callee [FN-8, ENT-3].";
   let a = shift_up(temperature: -273_i32);
   let b = shift_up(temperature: 20_i32);

@@ -7,7 +7,7 @@ fn adaptive_quadrature_matches_the_analytic_integral_with_and_without_leaf_offer
     let source = include_bytes!("../../../tests/programs/adaptive_quadrature.wf");
     let mut outputs = Vec::new();
     for mode in [
-        OverlapLowering::Completion,
+        OverlapLowering::Off,
         OverlapLowering::On,
         OverlapLowering::OnWithoutSmallScalarLeaves {
             maximum_operations: 16,

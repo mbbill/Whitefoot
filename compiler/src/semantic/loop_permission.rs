@@ -33,11 +33,9 @@
 //!    retained flow proofs; overlapping sources require the same partition.
 //!    The mapped root may be owned directly or reached through the
 //!    live usable `&uniq` holder that made the `set` target writable.
-//! 3. **Complete target summaries.** Every call and derived release in B
-//!    identifies its target action. Ordinary effects and loans have already
-//!    denied every conflicting cross-iteration access. A may-suspend target
-//!    keeps the permission but requires a completion-capable loop actualizer;
-//!    this version otherwise leaves the loop sequential.
+//! 3. **Resolved ordinary footprints.** Each call's declared effects and
+//!    retained argument loans identify the places accessed. An unresolved
+//!    footprint denies permission, and each loan lasts through call return.
 //! 4. **No exit edge.** No `return`, `give`, `propagate` `Err` edge, or
 //!    `break` naming L or an enclosing loop leaves the loop, so every
 //!    iteration of the whole range runs.
@@ -138,7 +136,7 @@ pub(crate) struct LoopPermission {
     /// permitted one, which needs no rewrite.
     pub(crate) advises_split: bool,
     /// What actualizing this permission needs from the judgment, present for a
-    /// permitted non-suspending independent map or one-accumulator reduction.
+    /// permitted independent map or one-accumulator reduction.
     ///
     /// The judgment does not decide that anything is emitted: lowering reads
     /// this, applies its own emission conditions, and may still decline. The
@@ -292,7 +290,7 @@ pub(crate) fn judge_loops<'check>(
         program,
         places,
         &function.entailment.obligations,
-        &function.body,
+        function.body.as_deref().unwrap_or_default(),
         &mut judged,
     );
     for loop_permission in &mut judged {
@@ -374,7 +372,6 @@ fn judge<'check>(
         view_ranges: Vec::new(),
         view_writes: Vec::new(),
         form: None,
-        may_suspend: false,
         exit: None,
     };
     survey.introduce(body);
@@ -471,10 +468,7 @@ struct Survey<'check, 'run> {
     view_ranges: Vec<ProvenViewRange>,
     view_writes: Vec<(ResolvedPlace, NodePath)>,
     form: Option<&'static str>,
-    /// Permission remains recorded, but a may-suspend function keeps the
-    /// synchronous ABI of the sequential world (design section 8), so this
-    /// loop actualizer must stay sequential.
-    may_suspend: bool,
+    /// A control edge that leaves the counted loop's iteration sequence.
     exit: Option<&'static str>,
 }
 
@@ -520,10 +514,8 @@ impl<'check> Survey<'check, '_> {
                 // parameter modes of the [EFF-2] projection below. Any other
                 // value may form a borrow only of iteration-own storage,
                 // where no loan is needed; `admits_borrow_forms` states why.
-                if !matches!(
-                    value,
-                    CheckedExpression::UserCall { .. } | CheckedExpression::SystemCall { .. }
-                ) && !self.admits_borrow_forms(value)
+                if !matches!(value, CheckedExpression::UserCall { .. })
+                    && !self.admits_borrow_forms(value)
                 {
                     self.refuse_form("a statement that forms a borrow of storage the iteration does not introduce");
                     return;
@@ -705,9 +697,10 @@ impl<'check> Survey<'check, '_> {
             CheckedSetTarget::Storage(target) => {
                 let index = target.path.iter().rev().find_map(|step| match step {
                     super::model::CheckedPlaceStep::Subscript(index) => Some(index),
-                    super::model::CheckedPlaceStep::Field(_) => None,
+                    super::model::CheckedPlaceStep::Field(_)
+                    | super::model::CheckedPlaceStep::BoxReferent(_) => None,
                 })?;
-                (target.binding, &index.obligation)
+                (target.binding()?, &index.obligation)
             }
             // PAR-2's element family names direct storage, not a view's
             // relative index frame. View writes use the independently proved
@@ -747,7 +740,6 @@ impl<'check> Survey<'check, '_> {
         let occurrence = match expression {
             CheckedExpression::Binding { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
-            | CheckedExpression::BorrowSystemResource { binding, .. }
             | CheckedExpression::ReborrowAddressed { binding, .. }
             | CheckedExpression::DerefAddressed { binding, .. } => {
                 Some((*binding, rooted_place(self.places, *binding, &[])))
@@ -763,25 +755,27 @@ impl<'check> Survey<'check, '_> {
             // A run's or a bump extent's descriptor storage is the resolved
             // place of the measured value itself [MSR-2].
             CheckedExpression::ContainerMeasure { root, .. }
-            | CheckedExpression::BorrowAddressed { root, .. } => {
-                Some((root.binding, rooted_container_place(self.places, root)))
-            }
+            | CheckedExpression::BorrowAddressed { root, .. } => root
+                .binding()
+                .map(|binding| (binding, rooted_container_place(self.places, root))),
             CheckedExpression::ReadStorage { root, .. } => {
                 let place = rooted_container_place(self.places, root);
                 let index = root.path.iter().rev().find_map(|step| match step {
                     super::model::CheckedPlaceStep::Subscript(index) => Some(index),
-                    super::model::CheckedPlaceStep::Field(_) => None,
+                    super::model::CheckedPlaceStep::Field(_)
+                    | super::model::CheckedPlaceStep::BoxReferent(_) => None,
                 });
                 if let Some(index) = index
-                    && let Some(map) = self.proven_affine_map_at(root.binding, &index.obligation)
+                    && let Some(binding) = root.binding()
+                    && let Some(map) = self.proven_affine_map_at(binding, &index.obligation)
                 {
                     self.element_reads.push(ProvenElementRead {
-                        binding: root.binding,
+                        binding,
                         place: place.clone(),
                         map,
                     });
                 }
-                Some((root.binding, place))
+                root.binding().map(|binding| (binding, place))
             }
             CheckedExpression::BufferIndex {
                 root, obligation, ..
@@ -842,7 +836,6 @@ impl<'check> Survey<'check, '_> {
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::UserCall { .. }
-            | CheckedExpression::SystemCall { .. }
             | CheckedExpression::KernelCall { .. }
             | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::IntegerOperation { .. }
@@ -958,7 +951,7 @@ impl<'check> Survey<'check, '_> {
             | CheckedSliceSource::ArenaContent { binding, .. }
             | CheckedSliceSource::ViewHolder { binding, .. } => Some(*binding),
             CheckedSliceSource::Buffer(root) => Some(root.binding),
-            CheckedSliceSource::Run(root) => Some(root.binding),
+            CheckedSliceSource::Run(root) => root.binding(),
             CheckedSliceSource::Array {
                 root: CheckedArrayRoot::Constant(_),
                 ..
@@ -1042,19 +1035,11 @@ impl<'check> Survey<'check, '_> {
     /// footprint by the shape of the statement that holds it.
     fn calls(&mut self, expression: &CheckedExpression) {
         match expression {
-            CheckedExpression::UserCall { function, .. } => {
+            CheckedExpression::UserCall { .. } => {
                 if let Some(projection) = call_projection(expression) {
                     let footprint = self.program.footprint(self.places, &projection);
                     self.record_writes(&footprint);
                 }
-                self.may_suspend |= self.program.target_action(*function).may_suspend();
-            }
-            CheckedExpression::SystemCall { target_action, .. } => {
-                if let Some(projection) = call_projection(expression) {
-                    let footprint = self.program.footprint(self.places, &projection);
-                    self.record_writes(&footprint);
-                }
-                self.may_suspend |= target_action.may_suspend();
             }
             // A [BLK-0] row's effect row is declaration data this analysis
             // does not project, so a loop body that calls one has no computed
@@ -1145,7 +1130,7 @@ impl<'check> Survey<'check, '_> {
         // exact range is the positive witness which selects IndependentMap;
         // an accumulator selects Reduction, including a reduction whose body
         // also contains independently proved element maps.
-        let actualization = if denial.is_some() || self.may_suspend {
+        let actualization = if denial.is_some() {
             None
         } else if let Some(accumulate) = self.accumulates.first() {
             Some(LoopActualization::Reduction {
@@ -1397,8 +1382,7 @@ const fn boolean_combine(operation: CheckedBooleanOperation) -> Option<LoopCombi
 ///
 /// Storage rooted in one of these is created fresh by every iteration of the
 /// loop that owns the block and dies with it; everything else outlives the
-/// iteration. The staged judgment next door asks the same question of the same
-/// body, so both read this one walk rather than growing two drifting copies.
+/// iteration.
 pub(super) fn collect_introduced(statements: &[CheckedStatement], out: &mut Vec<BindingId>) {
     for statement in statements {
         match statement {
@@ -1459,7 +1443,6 @@ pub(super) fn borrows_only_iteration_own(
         CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
-            | CheckedExpression::BorrowSystemResource { .. }
             | CheckedExpression::ReborrowAddressed { .. }
     );
     if is_borrow_form {

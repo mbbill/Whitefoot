@@ -3,7 +3,7 @@ enum State {
   Done();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "TYPE-7 applies to match scrutinees: a reference holder requires explicit deref(.) before matching its referent.";
   let state = Ready();
   region {

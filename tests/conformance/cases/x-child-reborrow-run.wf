@@ -35,14 +35,18 @@ fn proxy_counter(counter: &uniq Counter) -> function_result: own unit reads(coun
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let counter = Counter(value: 40_u64);
   region 'w {
     let workspace = arena_frame::<2, 1, 'w>();
     region {
       let output = arena_vector_proved::<u8>(store: &uniq workspace, count: 2_u64);
-      set output = place_back(vector: move output, value: 0_u8);
-      set output = place_back(vector: move output, value: 0_u8);
+      region {
+        place_back(vector: &uniq output, value: 0_u8);
+      }
+      region {
+        place_back(vector: &uniq output, value: 0_u8);
+      }
       region {
         let window = mut_slice_of(&uniq output);
         proxy_byte(out: move window);

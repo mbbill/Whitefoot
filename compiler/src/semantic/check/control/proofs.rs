@@ -573,8 +573,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         if self
             .tree
-            .first_child_with(node, Production::Construct)?
-            .is_some()
+            .first_child_with(node, Production::Call)?
+            .is_some_and(|call| self.tree.is_constructor_call(call).unwrap_or(false))
         {
             return self.invalid_affine_proof(
                 owner,
@@ -837,7 +837,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 LexicalUseRole::IdentifierCallee,
                 LexicalUseRole::OperationCallee,
             ],
-        )?;
+        );
+        let Ok(usage) = usage else {
+            return self.invalid_affine_proof(
+                owner,
+                call,
+                "an affine factor calls something other than a measure former",
+                "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
+            );
+        };
         let ResolvedTarget::Operation(operation) = usage.target() else {
             return self.invalid_affine_proof(
                 owner,

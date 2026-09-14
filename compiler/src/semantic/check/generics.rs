@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
+mod finiteness;
+
 use crate::syntax::NodeId;
-use crate::syntax::terminal::TerminalPredicate;
 use crate::{
-    DeclarationClass, DeclarationId, DeclarationRole, FixedTerminal, LexicalUseRole,
-    PreludeDeclarationId, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
+    BuiltinPreludeId, DeclarationClass, DeclarationId, DeclarationRole, FixedTerminal,
+    LexicalUseRole, Production, ResolvedTarget, SemanticCompilerFailure, SemanticIssueKind,
     SemanticRule, UnsupportedSemanticFeature,
 };
 
@@ -47,12 +48,31 @@ pub(super) enum GenericParameter {
         declaration: DeclarationId,
         ty: IntegerType,
     },
+    /// A raw function parameter, or one hygienically expanded group member.
+    Function {
+        key: GenericParameterKey,
+        signature: NodeId,
+    },
+}
+
+/// Group members retain both written identities. Reusing one formal twice
+/// never merges its function arguments or introduces lexical member names.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum GenericParameterKey {
+    Source(DeclarationId),
+    Member {
+        application: NodeId,
+        member: DeclarationId,
+    },
 }
 
 impl GenericParameter {
-    pub(super) const fn declaration(self) -> DeclarationId {
+    pub(super) const fn key(self) -> GenericParameterKey {
         match self {
-            Self::Type { declaration, .. } | Self::Const { declaration, .. } => declaration,
+            Self::Type { declaration, .. } | Self::Const { declaration, .. } => {
+                GenericParameterKey::Source(declaration)
+            }
+            Self::Function { key, .. } => key,
         }
     }
 }
@@ -61,11 +81,12 @@ impl GenericParameter {
 pub(super) enum GenericArgument {
     Type(CheckedType),
     Const(CheckedConst),
+    Function(super::behavior::FunctionArgument),
 }
 
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub(super) struct GenericSubstitution {
-    bindings: Vec<(DeclarationId, GenericArgument)>,
+    bindings: Vec<(GenericParameterKey, GenericArgument)>,
     /// [S20, PROV-1] the region axis of one nominal instance: each
     /// `region_params` member of the owning declaration bound to the actual
     /// region this instance names.
@@ -83,8 +104,8 @@ pub(super) struct GenericSubstitution {
 /// while replaying generic source bodies. Replay intentionally runs in a
 /// scratch nominal suffix; only this structural form crosses its rollback.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct StableGenericSubstitution {
-    bindings: Vec<(DeclarationId, StableGenericArgument)>,
+pub(super) struct StableGenericSubstitution {
+    bindings: Vec<(GenericParameterKey, StableGenericArgument)>,
     regions: Vec<(DeclarationId, DeclarationId)>,
 }
 
@@ -92,6 +113,7 @@ struct StableGenericSubstitution {
 enum StableGenericArgument {
     Type(StableCheckedType),
     Const(CheckedConst),
+    Function(super::behavior::FunctionArgument),
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -102,14 +124,16 @@ enum StableCheckedType {
         substitution: StableGenericSubstitution,
     },
     Prelude(StablePreludeType),
-    Boxed(Box<StableCheckedType>),
+    Boxed {
+        region: Option<DeclarationId>,
+        referent: Box<StableCheckedType>,
+    },
     Arena {
         region: DeclarationId,
         content: Box<StableCheckedType>,
     },
-    System(u8),
     Array {
-        element: StableFlatElement,
+        element: StableElement,
         length: CheckedConst,
     },
     Slice {
@@ -138,22 +162,9 @@ enum StableCheckedType {
     },
 }
 
-/// The interned form of [BLK-1]'s element domain, with the same one-level
-/// lift [`crate::semantic::CheckedElement`] carries.
+/// A structural bridge across speculative nominal rollback.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum StableElement {
-    Flat(StableFlatElement),
-    FixedVector {
-        element: StableFlatElement,
-        length: CheckedConst,
-    },
-    /// A store-branded element run. Its release class is a function of its
-    /// region alone, so it is recomputed on reification rather than interned.
-    Vector {
-        region: DeclarationId,
-        element: StableFlatElement,
-    },
-}
+struct StableElement(Box<StableCheckedType>);
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum StableFlatElement {
@@ -193,7 +204,7 @@ enum StablePreludeType {
 
 impl GenericSubstitution {
     pub(super) fn from_bindings(
-        bindings: Vec<(DeclarationId, GenericArgument)>,
+        bindings: Vec<(GenericParameterKey, GenericArgument)>,
     ) -> Result<Self, SemanticCompilerFailure> {
         for (index, (declaration, _)) in bindings.iter().enumerate() {
             if bindings[..index]
@@ -234,20 +245,24 @@ impl GenericSubstitution {
     pub(super) fn type_argument(&self, declaration: DeclarationId) -> Option<CheckedType> {
         self.bindings
             .iter()
-            .find_map(|(candidate, argument)| (*candidate == declaration).then_some(argument))
+            .find_map(|(candidate, argument)| {
+                (*candidate == GenericParameterKey::Source(declaration)).then_some(argument)
+            })
             .and_then(|argument| match argument {
                 GenericArgument::Type(ty) => Some(*ty),
-                GenericArgument::Const(_) => None,
+                GenericArgument::Const(_) | GenericArgument::Function(_) => None,
             })
     }
 
     pub(super) fn const_argument(&self, declaration: DeclarationId) -> Option<CheckedConst> {
         self.bindings
             .iter()
-            .find_map(|(candidate, argument)| (*candidate == declaration).then_some(argument))
+            .find_map(|(candidate, argument)| {
+                (*candidate == GenericParameterKey::Source(declaration)).then_some(argument)
+            })
             .and_then(|argument| match argument {
                 GenericArgument::Const(value) => Some(*value),
-                GenericArgument::Type(_) => None,
+                GenericArgument::Type(_) | GenericArgument::Function(_) => None,
             })
     }
 
@@ -265,28 +280,142 @@ impl GenericSubstitution {
                         CheckedType::Generic(bound)
                         | CheckedType::GenericInt(bound)
                         | CheckedType::GenericFloat(bound),
-                    ) => bound == declaration,
-                    GenericArgument::Const(CheckedConst::Parameter(bound)) => bound == declaration,
+                    ) => GenericParameterKey::Source(*bound) == *declaration,
+                    GenericArgument::Const(CheckedConst::Parameter(bound)) => {
+                        GenericParameterKey::Source(*bound) == *declaration
+                    }
+                    GenericArgument::Function(super::behavior::FunctionArgument::Parameter(
+                        key,
+                    )) => key == declaration,
+                    GenericArgument::Function(_) => false,
                     GenericArgument::Type(_) | GenericArgument::Const(_) => false,
                 })
     }
 
-    pub(super) fn is_concrete(&self) -> bool {
+    pub(super) fn is_concrete(&self, elements: &[CheckedType]) -> bool {
         self.bindings.iter().all(|(_, argument)| match argument {
-            GenericArgument::Type(ty) => ty.is_concrete(),
+            GenericArgument::Type(ty) => ty.is_concrete(elements),
             GenericArgument::Const(value) => value.is_concrete(),
+            GenericArgument::Function(value) => value.is_concrete(),
         })
     }
 
-    pub(super) fn entries(&self) -> &[(DeclarationId, GenericArgument)] {
+    pub(super) fn entries(&self) -> &[(GenericParameterKey, GenericArgument)] {
         &self.bindings
+    }
+
+    pub(super) fn function_argument(
+        &self,
+        key: GenericParameterKey,
+    ) -> Option<super::behavior::FunctionArgument> {
+        self.bindings.iter().find_map(|(candidate, argument)| {
+            if *candidate != key {
+                return None;
+            }
+            match argument {
+                GenericArgument::Function(value) => Some(*value),
+                _ => None,
+            }
+        })
     }
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Substitute captured brands without reintroducing scratch nominal IDs
+    /// into the structural identity of a function argument.
+    pub(super) fn substitute_stable_regions(
+        &self,
+        substitution: &mut StableGenericSubstitution,
+        regions: &[(DeclarationId, DeclarationId)],
+    ) -> Result<(), CheckStop> {
+        for (_, actual) in &mut substitution.regions {
+            *actual = Self::substituted_region(regions, *actual);
+        }
+        for (_, argument) in &mut substitution.bindings {
+            match argument {
+                StableGenericArgument::Type(ty) => {
+                    self.substitute_stable_type_regions(ty, regions)?
+                }
+                StableGenericArgument::Function(value) => {
+                    *value = self.substitute_function_argument_regions(*value, regions)?
+                }
+                StableGenericArgument::Const(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn substitute_stable_type_regions(
+        &self,
+        ty: &mut StableCheckedType,
+        regions: &[(DeclarationId, DeclarationId)],
+    ) -> Result<(), CheckStop> {
+        match ty {
+            StableCheckedType::Scalar(_) => {}
+            StableCheckedType::SourceNominal { substitution, .. } => {
+                self.substitute_stable_regions(substitution, regions)?
+            }
+            StableCheckedType::Prelude(prelude) => match prelude {
+                StablePreludeType::Option(value) => {
+                    self.substitute_stable_type_regions(value, regions)?
+                }
+                StablePreludeType::Result(value, error) => {
+                    self.substitute_stable_type_regions(value, regions)?;
+                    self.substitute_stable_type_regions(error, regions)?;
+                }
+                StablePreludeType::Overflow
+                | StablePreludeType::DivError
+                | StablePreludeType::NarrowError => {}
+            },
+            StableCheckedType::Boxed { region, referent } => {
+                if let Some(region) = region {
+                    *region = Self::substituted_region(regions, *region);
+                }
+                self.substitute_stable_type_regions(referent, regions)?;
+            }
+            StableCheckedType::Arena { region, content } => {
+                *region = Self::substituted_region(regions, *region);
+                self.substitute_stable_type_regions(content, regions)?;
+            }
+            StableCheckedType::Array { element, .. }
+            | StableCheckedType::FixedVector { element, .. } => {
+                self.substitute_stable_type_regions(&mut element.0, regions)?
+            }
+            StableCheckedType::Vector { region, element } => {
+                *region = Self::substituted_region(regions, *region);
+                self.substitute_stable_type_regions(&mut element.0, regions)?;
+            }
+            StableCheckedType::Slice {
+                region, element, ..
+            } => {
+                *region = Self::substituted_region(regions, *region);
+                self.substitute_stable_element_regions(element, regions)?;
+            }
+            StableCheckedType::Buffer { element } => {
+                self.substitute_stable_element_regions(element, regions)?
+            }
+            StableCheckedType::Heap { region } | StableCheckedType::Extent { region, .. } => {
+                *region = Self::substituted_region(regions, *region)
+            }
+        }
+        Ok(())
+    }
+
+    fn substitute_stable_element_regions(
+        &self,
+        element: &mut StableFlatElement,
+        regions: &[(DeclarationId, DeclarationId)],
+    ) -> Result<(), CheckStop> {
+        match element {
+            StableFlatElement::TagOnlyNominal(ty) | StableFlatElement::Nominal(ty) => {
+                self.substitute_stable_type_regions(ty, regions)
+            }
+            _ => Ok(()),
+        }
+    }
+
     pub(super) fn collect_function_templates(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
         self.collect_function_template_inventory(items)?;
-        self.reject_generic_call_cycles()?;
         Ok(())
     }
 
@@ -301,9 +430,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .copied()
             .filter(|node| {
-                self.tree
-                    .production(*node)
-                    .is_ok_and(|production| production == Production::FnDecl)
+                self.tree.production(*node).is_ok_and(|production| {
+                    matches!(production, Production::FnDecl | Production::FnSig)
+                })
             })
             .collect::<Vec<_>>();
         for node in nodes {
@@ -316,17 +445,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Err(stop) => return Err(stop),
             }
         }
-        let (unavailable, _) = self.generic_cycle_analysis()?;
-        for (index, is_unavailable) in unavailable.into_iter().enumerate() {
-            if is_unavailable {
-                let declaration = self
-                    .function_templates
-                    .get(index)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                    .declaration;
-                self.mark_postcondition_unavailable(declaration);
-            }
-        }
         Ok(())
     }
 
@@ -335,9 +453,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .iter()
             .copied()
             .filter(|node| {
-                self.tree
-                    .production(*node)
-                    .is_ok_and(|production| production == Production::FnDecl)
+                self.tree.production(*node).is_ok_and(|production| {
+                    matches!(production, Production::FnDecl | Production::FnSig)
+                })
             })
             .collect::<Vec<_>>();
         for node in nodes {
@@ -421,6 +539,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
+        self.materialize_actual_groups(tolerate_source_failure)?;
         self.discover_called_function_signatures(true, tolerate_source_failure)
     }
 
@@ -430,13 +549,68 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         tolerate_source_failure: bool,
     ) -> Result<(), CheckStop> {
         let mut cursor = 0_usize;
-        while cursor < self.signatures.len() {
+        let mut nominal_cursor = 0_usize;
+        while cursor < self.signatures.len() || nominal_cursor < self.source_nominal_instances.len()
+        {
+            // A function argument is checked at every instantiation boundary,
+            // including a nominal used only in a signature. Those bindings
+            // can themselves name functions with further nominal instances.
+            while nominal_cursor < self.source_nominal_instances.len() {
+                let instance = self.source_nominal_instances[nominal_cursor].clone();
+                nominal_cursor += 1;
+                let Some((_, substitution)) = instance else {
+                    continue;
+                };
+                if require_concrete && !substitution.is_concrete(&self.elements.borrow()) {
+                    continue;
+                }
+                for (key, argument) in substitution.entries() {
+                    let GenericArgument::Function(argument) = argument else {
+                        continue;
+                    };
+                    self.ensure_formal_nominals(*key, &substitution)?;
+                    self.materialize_function_argument(*argument)?;
+                    // Only stable concrete declaration roots outlive the
+                    // source-schema scratch inventory. Symbolic hypotheses
+                    // are already reached through its signature arguments.
+                    if argument.is_concrete()
+                        && !self.behavior.declaration_arguments.contains(argument)
+                    {
+                        self.behavior.declaration_arguments.push(*argument);
+                    }
+                }
+            }
+            if cursor == self.signatures.len() {
+                continue;
+            }
             let signature = self.signatures[cursor].clone();
+            for (key, argument) in signature.substitution.entries() {
+                if let GenericArgument::Function(argument) = argument {
+                    if require_concrete && !argument.is_concrete() {
+                        return Err(SemanticCompilerFailure::InvalidResolution.into());
+                    }
+                    self.ensure_formal_nominals(*key, &signature.substitution)?;
+                    self.materialize_function_argument(*argument)?;
+                }
+            }
+            if signature.formal_parameter.is_some() {
+                cursor += 1;
+                continue;
+            }
             for call in self
                 .tree
                 .descendants_with(signature.node, Production::Call)?
             {
                 if self.call_is_inside_postcondition(call)? {
+                    continue;
+                }
+                if let Some(key) = self.behavior_call_key(call)? {
+                    let argument = signature
+                        .substitution
+                        .function_argument(key)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    self.ensure_formal_nominals(key, &signature.substitution)?;
+                    self.materialize_function_argument(argument)?;
                     continue;
                 }
                 let Some((template_index, template)) = self.called_function_template(call)? else {
@@ -453,9 +627,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if tolerate_source_failure && !self.postcondition_call_arguments_have_links(call)? {
                     continue;
                 }
-                if tolerate_source_failure
-                    && let Some(targs) = self.tree.first_child_with(call, Production::Targs)?
-                {
+                if tolerate_source_failure && let Some(targs) = self.tree.argument_list(call)? {
                     let checkpoint = self.nominal_checkpoint();
                     match self.ensure_nominals_in_node(targs, &signature.substitution) {
                         Ok(()) => {}
@@ -485,7 +657,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     Err(stop) => return Err(stop),
                 };
-                if require_concrete && !substitution.is_concrete() {
+                if require_concrete && !substitution.is_concrete(&self.elements.borrow()) {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
                 let already_present = self
@@ -529,7 +701,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         call: NodeId,
     ) -> Result<bool, CheckStop> {
-        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+        let Some(targs) = self.tree.argument_list(call)? else {
             return Ok(true);
         };
         let owner = self.tree.path(targs)?.components();
@@ -564,7 +736,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 let path = self.tree.path(ty)?;
                 if !self.resolved.lexical_uses().iter().any(|usage| {
-                    usage.role() == LexicalUseRole::Type && usage.origin().node() == path
+                    matches!(
+                        usage.role(),
+                        LexicalUseRole::Type | LexicalUseRole::TypeArgument
+                    ) && usage.origin().node() == path
                 }) {
                     return Ok(false);
                 }
@@ -606,6 +781,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(argument, Production::Const)?
                     .is_some()
+                || self
+                    .tree
+                    .first_child_with(argument, Production::FunctionArg)?
+                    .is_some()
             {
                 continue;
             }
@@ -638,12 +817,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 declaration,
                 class: DeclarationClass::Function,
             } => declaration,
-            // A system operation and a kernel-domain row [BLK-0] are not user
-            // function templates; recursion through either is impossible, so
+            // Function parameters are selected through behavior substitution.
+            // They have no ordinary source template; FN-6 checks their edges
+            // in the finite function-target graph before discovery.
+            ResolvedTarget::Source {
+                class: DeclarationClass::FunctionParameter,
+                ..
+            } => return Ok(None),
+            // An OP family and a kernel-domain row [BLK-0] have no function
+            // template; recursion through either is impossible, so
             // neither contributes a cycle edge.
-            ResolvedTarget::Operation(_)
-            | ResolvedTarget::System(_)
-            | ResolvedTarget::Kernel(_) => {
+            ResolvedTarget::Operation(_) | ResolvedTarget::Kernel(_) => {
                 return Ok(None);
             }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
@@ -690,7 +874,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
-    fn instantiate_function_signature(
+    pub(super) fn instantiate_function_signature(
         &mut self,
         template_index: usize,
         substitution: GenericSubstitution,
@@ -794,7 +978,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 {
                     let path = self.tree.path(ty)?;
                     if !self.resolved.lexical_uses().iter().any(|usage| {
-                        usage.role() == LexicalUseRole::Type && usage.origin().node() == path
+                        matches!(
+                            usage.role(),
+                            LexicalUseRole::Type | LexicalUseRole::TypeArgument
+                        ) && usage.origin().node() == path
                     }) {
                         return Ok(false);
                     }
@@ -986,6 +1173,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             slice_return_ceiling,
             effects_node: effects,
             declared_effects,
+            formal_parameter: None,
             substitution,
         })
     }
@@ -1029,13 +1217,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 canonical_generic_signatures.push((signature_index, template.declaration));
             }
         }
+        self.materialize_actual_groups(false)?;
         self.discover_called_function_signatures(false, false)?;
         // Concrete selectors are keyed by the dense FunctionId inventory.
         // Schema validation uses a separate scratch inventory starting at
         // zero, so it must build and later discard its own selector table
         // rather than aliasing the real concrete entries by accident.
         self.admit_postcondition_selectors()?;
-        self.derive_result_state_origins()?;
         let mut phase_a = Vec::with_capacity(self.signatures.len());
         for index in 0..self.signatures.len() {
             // Symbolic generic validation may discover a derived box or
@@ -1137,7 +1325,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     if callee.generic_parameters.is_empty() {
                         continue;
                     }
-                    if let Some(targs) = self.tree.first_child_with(call, Production::Targs)? {
+                    if let Some(targs) = self.tree.argument_list(call)? {
                         self.ensure_nominals_in_node(targs, &caller_substitution)?;
                     }
                     let substitution =
@@ -1225,6 +1413,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     };
                     StableGenericArgument::Const(CheckedConst::Value(value))
                 }
+                GenericArgument::Function(value) => {
+                    if !value.is_concrete() {
+                        return Ok(None);
+                    }
+                    StableGenericArgument::Function(*value)
+                }
             };
             bindings.push((*declaration, stable));
         }
@@ -1281,10 +1475,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .cloned()
                     .flatten();
                 let prelude = self.prelude_types.get(id.0 as usize).cloned().flatten();
-                let system = self
-                    .system_nominals
-                    .iter()
-                    .find_map(|(index, candidate)| (*candidate == id).then_some(*index));
                 let kind = self
                     .nominals
                     .get(id.0 as usize)
@@ -1317,11 +1507,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return Ok(None);
                     };
                     StableCheckedType::Prelude(prelude)
-                } else if let Some(system) = system {
-                    StableCheckedType::System(system)
                 } else {
                     match kind {
-                        CheckedNominalKind::Box { referent, .. } => {
+                        CheckedNominalKind::Box {
+                            referent, region, ..
+                        } => {
                             let Some(referent) = self.stabilize_type(
                                 referent,
                                 nominal_checkpoint,
@@ -1332,7 +1522,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 visiting.remove(&id);
                                 return Ok(None);
                             };
-                            StableCheckedType::Boxed(Box::new(referent))
+                            StableCheckedType::Boxed {
+                                region,
+                                referent: Box::new(referent),
+                            }
                         }
                         CheckedNominalKind::Arena { region, content } => {
                             let Some(content) = self.stabilize_type(
@@ -1350,7 +1543,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 content: Box::new(content),
                             }
                         }
-                        CheckedNominalKind::SystemResource { .. } => {
+                        CheckedNominalKind::Opaque => {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
                         CheckedNominalKind::Struct { .. }
@@ -1364,12 +1557,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 stable
             }
             CheckedType::Array { element, length } => {
-                let Some(element) = self.stabilize_flat_element(
-                    element,
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )?
+                let Some(element) =
+                    self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
                 else {
                     return Ok(None);
                 };
@@ -1453,7 +1642,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(stable))
     }
 
-    fn stabilize_substitution_with_visiting(
+    pub(super) fn stabilize_substitution_with_visiting(
         &self,
         substitution: &GenericSubstitution,
         nominal_checkpoint: usize,
@@ -1477,6 +1666,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     StableGenericArgument::Const(*value)
                 }
+                GenericArgument::Function(value) => {
+                    if !allow_symbolic && !value.is_concrete() {
+                        return Ok(None);
+                    }
+                    StableGenericArgument::Function(*value)
+                }
             };
             bindings.push((*declaration, stable));
         }
@@ -1493,23 +1688,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         visiting: &mut HashSet<NominalId>,
         allow_symbolic: bool,
     ) -> Result<Option<StableElement>, CheckStop> {
-        Ok(match element {
-            CheckedElement::Flat(flat) => self
-                .stabilize_flat_element(flat, nominal_checkpoint, visiting, allow_symbolic)?
-                .map(StableElement::Flat),
-            CheckedElement::FixedVector { element, length } => {
-                if !allow_symbolic && !length.is_concrete() {
-                    return Ok(None);
-                }
-                self.stabilize_flat_element(element, nominal_checkpoint, visiting, allow_symbolic)?
-                    .map(|element| StableElement::FixedVector { element, length })
-            }
-            CheckedElement::Vector {
-                region, element, ..
-            } => self
-                .stabilize_flat_element(element, nominal_checkpoint, visiting, allow_symbolic)?
-                .map(|element| StableElement::Vector { region, element }),
-        })
+        Ok(self
+            .stabilize_type(
+                self.element_type(element)?,
+                nominal_checkpoint,
+                visiting,
+                allow_symbolic,
+            )?
+            .map(|ty| StableElement(Box::new(ty))))
     }
 
     fn stabilize_flat_element(
@@ -1582,7 +1768,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    fn reify_concrete_substitution(
+    pub(super) fn reify_concrete_substitution(
         &mut self,
         substitution: &StableGenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
@@ -1593,6 +1779,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     GenericArgument::Type(self.reify_concrete_type(ty)?)
                 }
                 StableGenericArgument::Const(value) => GenericArgument::Const(*value),
+                StableGenericArgument::Function(value) => GenericArgument::Function(*value),
             };
             bindings.push((*declaration, argument));
         }
@@ -1626,19 +1813,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 CheckedType::Nominal(self.intern_prelude_nominal(ty)?)
             }
-            StableCheckedType::Boxed(referent) => {
+            StableCheckedType::Boxed { region, referent } => {
                 let referent = self.reify_concrete_type(referent)?;
-                CheckedType::Nominal(self.intern_box_nominal(referent)?)
+                CheckedType::Nominal(match region {
+                    Some(region) => self.intern_store_box_nominal(*region, referent)?,
+                    None => self.intern_box_nominal(referent)?,
+                })
             }
             StableCheckedType::Arena { region, content } => {
                 let content = self.reify_concrete_type(content)?;
                 CheckedType::Nominal(self.intern_arena_nominal(*region, content)?)
             }
-            StableCheckedType::System(index) => {
-                CheckedType::Nominal(self.intern_system_nominal(*index)?)
-            }
             StableCheckedType::Array { element, length } => CheckedType::Array {
-                element: self.reify_flat_element(element)?,
+                element: self.reify_element(element)?,
                 length: *length,
             },
             StableCheckedType::Slice {
@@ -1676,18 +1863,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn reify_element(&mut self, element: &StableElement) -> Result<CheckedElement, CheckStop> {
-        Ok(match element {
-            StableElement::Flat(flat) => CheckedElement::Flat(self.reify_flat_element(flat)?),
-            StableElement::FixedVector { element, length } => CheckedElement::FixedVector {
-                element: self.reify_flat_element(element)?,
-                length: *length,
-            },
-            StableElement::Vector { region, element } => CheckedElement::Vector {
-                region: *region,
-                element: self.reify_flat_element(element)?,
-                release: self.vector_release_class(*region)?,
-            },
-        })
+        let ty = self.reify_concrete_type(&element.0)?;
+        self.intern_element(ty)
     }
 
     fn reify_flat_element(
@@ -1728,7 +1905,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         nominal_checkpoint: usize,
     ) -> Result<PendingGenericRequirement, CheckStop> {
         let mut nominals = Vec::new();
-        collect_goal_nominals(&requirement.template.root, &mut nominals);
+        self.collect_goal_nominals(&requirement.template.root, &mut nominals)?;
         nominals.sort_by_key(|id| id.0);
         nominals.dedup();
 
@@ -1771,7 +1948,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
             }
-            rewrite_goal_nominals(
+            self.rewrite_goal_nominals(
                 &mut pending.requirement.template.root,
                 pending.nominal_checkpoint,
                 &replacements,
@@ -1811,8 +1988,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     GenericParameter::Const { declaration, .. } => {
                         GenericArgument::Const(CheckedConst::Parameter(declaration))
                     }
+                    GenericParameter::Function { key, .. } => {
+                        GenericArgument::Function(super::behavior::FunctionArgument::Parameter(key))
+                    }
                 };
-                (parameter.declaration(), argument)
+                (parameter.key(), argument)
             })
             .collect();
         GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
@@ -1837,137 +2017,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ))
     }
 
-    fn reject_generic_call_cycles(&self) -> Result<(), CheckStop> {
-        let edges = self.generic_call_edges()?;
-        // [FN-6] recursion is permitted, and polymorphic recursion is rejected
-        // by a syntactic rule. That source judgment is asked before the
-        // capability report below so that a program the language rejects is
-        // never reported as an unimplemented capability instead.
-        if let Some((call, cycle)) = self.first_polymorphic_recursion(&edges)? {
-            return self.issue_node(
-                SemanticRule::Fn6,
-                call,
-                SemanticIssueKind::PolymorphicRecursion {
-                    cycle,
-                    mechanical_fix:
-                        "instantiate every call on the cycle at exactly the caller's own type parameters, or move the differently instantiated call off the cycle",
-                },
-            );
-        }
-        if let Some(call) = self.generic_cycle_components(&edges)?.1 {
-            return self.unsupported(UnsupportedSemanticFeature::Generics, call);
-        }
-        Ok(())
-    }
-
-    /// The first [FN-6] polymorphic-recursion violation in call order, with
-    /// the cycle the rule requires the diagnostic to name.
-    ///
-    /// FN-6 constrains a call cycle *among generic functions*, so an edge is
-    /// judged when its caller and callee are both generic and the callee
-    /// reaches the caller again. A cycle through a nongeneric participant is
-    /// left to the ordinary path: a nongeneric caller has no type parameter to
-    /// write, so every argument it writes is fixed and the cycle's instance
-    /// set is finite by construction.
-    fn first_polymorphic_recursion(
-        &self,
-        edges: &[Vec<(usize, NodeId)>],
-    ) -> Result<Option<(NodeId, String)>, CheckStop> {
-        for (caller, outgoing) in edges.iter().enumerate() {
-            let caller_parameters = Self::type_parameters(&self.function_templates[caller]);
-            if caller_parameters.is_empty() {
-                continue;
-            }
-            for (callee, call) in outgoing {
-                let callee_parameters = &self.function_templates[*callee].generic_parameters;
-                if callee_parameters.is_empty() || !Self::graph_reaches(*callee, caller, edges) {
-                    continue;
-                }
-                if self.call_instantiates_caller_parameters(
-                    *call,
-                    &caller_parameters,
-                    callee_parameters,
-                )? {
-                    continue;
-                }
-                return Ok(Some((
-                    *call,
-                    self.render_call_cycle(caller, *callee, edges),
-                )));
-            }
-        }
-        Ok(None)
-    }
-
-    /// Whether one call writes exactly the caller's own type parameters, in
-    /// order, at the callee's type-parameter positions [FN-6].
-    ///
-    /// The judgment is syntactic, as FN-6 states it is: a written `targ`
-    /// satisfies it only as a bare TYPEID carrying no arguments of its own
-    /// that resolves to the caller's type parameter at the same position, and
-    /// the two type-parameter counts must agree for the lists to be equal at
-    /// all. An absent or short argument list is [FN-2]'s violation rather than
-    /// this rule's, so it is not attributed here.
-    fn call_instantiates_caller_parameters(
-        &self,
-        call: NodeId,
-        caller_parameters: &[DeclarationId],
-        callee_parameters: &[GenericParameter],
-    ) -> Result<bool, CheckStop> {
-        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
-            return Ok(true);
-        };
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        if arguments.len() < callee_parameters.len() {
-            return Ok(true);
-        }
-        let mut position = 0;
-        for (parameter, argument) in callee_parameters.iter().zip(&arguments) {
-            if !matches!(parameter, GenericParameter::Type { .. }) {
-                continue;
-            }
-            let Some(expected) = caller_parameters.get(position) else {
-                return Ok(false);
-            };
-            position += 1;
-            if !self.targ_names_type_parameter(*argument, *expected)? {
-                return Ok(false);
-            }
-        }
-        Ok(position == caller_parameters.len())
-    }
-
-    /// Whether one `targ` is written as exactly the named type parameter.
-    fn targ_names_type_parameter(
-        &self,
-        argument: NodeId,
-        expected: DeclarationId,
-    ) -> Result<bool, CheckStop> {
-        let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
-            return Ok(false);
-        };
-        if self
-            .tree
-            .direct_token_with(ty, TerminalPredicate::TypeIdentifier)?
-            .is_none()
-            || self.tree.first_child_with(ty, Production::Targs)?.is_some()
-        {
-            return Ok(false);
-        }
-        let path = self.tree.path(ty)?;
-        Ok(self.resolved.lexical_uses().iter().any(|usage| {
-            usage.role() == LexicalUseRole::Type
-                && usage.origin().node() == path
-                && matches!(
-                    usage.target(),
-                    ResolvedTarget::Source {
-                        declaration,
-                        class: DeclarationClass::GenericType,
-                    } if declaration == expected
-                )
-        }))
-    }
-
     /// The written integer type of one const `gparam` [MSR-6].
     ///
     /// A const generic is declared by exactly one function or nominal
@@ -1985,6 +2034,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .iter()
                     .flat_map(|template| template.generic_parameters.iter()),
             )
+            .chain(
+                self.behavior
+                    .formals
+                    .values()
+                    .flat_map(|formal| formal.parameters.iter()),
+            )
             .find_map(|parameter| match parameter {
                 GenericParameter::Const {
                     declaration: candidate,
@@ -1993,229 +2048,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => None,
             })
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
-    }
-
-    fn type_parameters(template: &FunctionTemplate) -> Vec<DeclarationId> {
-        template
-            .generic_parameters
-            .iter()
-            .filter_map(|parameter| match parameter {
-                GenericParameter::Type { declaration, .. } => Some(*declaration),
-                GenericParameter::Const { .. } => None,
-            })
-            .collect()
-    }
-
-    /// The cycle FN-6 requires the diagnostic to name: the caller, the
-    /// shortest call path from this call's callee back to it, and the caller
-    /// again, so the reader sees where the offending instantiation sits.
-    fn render_call_cycle(
-        &self,
-        caller: usize,
-        callee: usize,
-        edges: &[Vec<(usize, NodeId)>],
-    ) -> String {
-        let mut previous = vec![None; edges.len()];
-        let mut seen = vec![false; edges.len()];
-        let mut pending = std::collections::VecDeque::from([callee]);
-        seen[callee] = true;
-        while let Some(node) = pending.pop_front() {
-            if node == caller {
-                break;
-            }
-            for (next, _) in &edges[node] {
-                if !seen[*next] {
-                    seen[*next] = true;
-                    previous[*next] = Some(node);
-                    pending.push_back(*next);
-                }
-            }
-        }
-        // The predecessor chain runs backwards from the caller to the callee,
-        // so the rendered cycle reverses it and closes on the caller.
-        let mut chain = vec![caller];
-        let mut cursor = caller;
-        while let Some(node) = previous[cursor] {
-            chain.push(node);
-            cursor = node;
-        }
-        let mut names = vec![self.function_templates[caller].name.clone()];
-        names.extend(
-            chain
-                .into_iter()
-                .rev()
-                .map(|index| self.function_templates[index].name.clone()),
-        );
-        names.join(" -> ")
-    }
-
-    fn generic_call_edges(&self) -> Result<Vec<Vec<(usize, NodeId)>>, CheckStop> {
-        let mut edges = vec![Vec::new(); self.function_templates.len()];
-        for (caller, template) in self.function_templates.iter().enumerate() {
-            for call in self
-                .tree
-                .descendants_with(template.node, Production::Call)?
-            {
-                if self.call_is_inside_postcondition(call)? {
-                    continue;
-                }
-                let Some((callee, _)) = self.called_function_template(call)? else {
-                    continue;
-                };
-                edges[caller].push((callee, call));
-            }
-        }
-        Ok(edges)
-    }
-
-    fn generic_cycle_analysis(&self) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
-        let edges = self.generic_call_edges()?;
-        self.generic_cycle_components(&edges)
-    }
-
-    /// The generic call cycles whose instance set this compiler cannot
-    /// enumerate, and the first call that makes one of them so.
-    ///
-    /// [FN-6] has already refused every cycle whose call writes anything but
-    /// the caller's own *type* parameters, so what survives it is a cycle each
-    /// of whose calls repeats the caller's type parameters. That leaves the
-    /// const arguments, which FN-6 does not speak about: a call writing a
-    /// const argument derived from the caller's own const parameter mints a
-    /// second instance, which mints a third, and the worklist does not
-    /// terminate. Such a cycle is an explicit unsupported capability.
-    ///
-    /// A call that repeats the caller's complete parameter list — every type
-    /// parameter and every const parameter, in position — is the caller's own
-    /// instance and mints nothing, so its cycle is finite and is compiled.
-    fn generic_cycle_components(
-        &self,
-        edges: &[Vec<(usize, NodeId)>],
-    ) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
-        let mut unavailable = vec![false; self.function_templates.len()];
-        let mut first = None;
-        for (caller, outgoing) in edges.iter().enumerate() {
-            for (callee, call) in outgoing {
-                if !Self::graph_reaches(*callee, caller, edges) {
-                    continue;
-                }
-                if self.call_repeats_caller_generic_arguments(*call, caller, *callee)? {
-                    continue;
-                }
-                let generic_component = (0..self.function_templates.len()).any(|candidate| {
-                    Self::graph_reaches(caller, candidate, edges)
-                        && Self::graph_reaches(candidate, caller, edges)
-                        && !self.function_templates[candidate]
-                            .generic_parameters
-                            .is_empty()
-                });
-                if generic_component {
-                    if first.is_none() {
-                        first = Some(*call);
-                    }
-                    for (candidate, slot) in unavailable.iter_mut().enumerate() {
-                        if Self::graph_reaches(caller, candidate, edges)
-                            && Self::graph_reaches(candidate, caller, edges)
-                        {
-                            *slot = true;
-                        }
-                    }
-                }
-            }
-        }
-        Ok((unavailable, first))
-    }
-
-    /// Whether one call writes exactly its caller's own generic parameters,
-    /// in order, at every one of the callee's generic-parameter positions.
-    ///
-    /// The judgment is syntactic, as [FN-6]'s own is: a type position is
-    /// satisfied by a bare TYPEID carrying no arguments that resolves to the
-    /// caller's type parameter there, and a const position by a bare
-    /// identifier — no literal, no operator — that resolves to the caller's
-    /// const parameter there. A callee with a different parameter shape, or a
-    /// call writing no argument list at all, satisfies neither.
-    fn call_repeats_caller_generic_arguments(
-        &self,
-        call: NodeId,
-        caller: usize,
-        callee: usize,
-    ) -> Result<bool, CheckStop> {
-        let caller_parameters = &self.function_templates[caller].generic_parameters;
-        let callee_parameters = &self.function_templates[callee].generic_parameters;
-        if caller_parameters.is_empty() || caller_parameters.len() != callee_parameters.len() {
-            return Ok(caller_parameters.is_empty() && callee_parameters.is_empty());
-        }
-        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
-            return Ok(false);
-        };
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        if arguments.len() != callee_parameters.len() {
-            return Ok(false);
-        }
-        for ((caller_parameter, callee_parameter), argument) in caller_parameters
-            .iter()
-            .zip(callee_parameters)
-            .zip(&arguments)
-        {
-            let repeats = match (caller_parameter, callee_parameter) {
-                (
-                    GenericParameter::Type {
-                        declaration: expected,
-                        ..
-                    },
-                    GenericParameter::Type { .. },
-                ) => self.targ_names_type_parameter(*argument, *expected)?,
-                (
-                    GenericParameter::Const {
-                        declaration: expected,
-                        ..
-                    },
-                    GenericParameter::Const { .. },
-                ) => self.targ_names_const_parameter(*argument, *expected)?,
-                _ => false,
-            };
-            if !repeats {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    /// Whether one `targ` is written as exactly the named const parameter.
-    fn targ_names_const_parameter(
-        &self,
-        argument: NodeId,
-        expected: DeclarationId,
-    ) -> Result<bool, CheckStop> {
-        let Some(value) = self.tree.first_child_with(argument, Production::Const)? else {
-            return Ok(false);
-        };
-        if self
-            .tree
-            .first_child_with(value, Production::InfixOp)?
-            .is_some()
-            || !self
-                .tree
-                .direct_tokens_matching(value, &[TerminalPredicate::Digits])?
-                .is_empty()
-        {
-            return Ok(false);
-        }
-        let [_] = self.tree.direct_identifiers(value)?.as_slice() else {
-            return Ok(false);
-        };
-        let path = self.tree.path(value)?;
-        Ok(self.resolved.lexical_uses().iter().any(|usage| {
-            usage.role() == LexicalUseRole::Const
-                && usage.origin().node() == path
-                && matches!(
-                    usage.target(),
-                    ResolvedTarget::Source {
-                        declaration,
-                        class: DeclarationClass::ConstGeneric,
-                    } if declaration == expected
-                )
-        }))
     }
 
     pub(super) fn call_is_inside_postcondition(&self, call: NodeId) -> Result<bool, CheckStop> {
@@ -2230,22 +2062,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }))
     }
 
-    fn graph_reaches(start: usize, target: usize, edges: &[Vec<(usize, NodeId)>]) -> bool {
-        let mut seen = vec![false; edges.len()];
-        let mut pending = vec![start];
-        while let Some(node) = pending.pop() {
-            if node == target {
-                return true;
-            }
-            if seen[node] {
-                continue;
-            }
-            seen[node] = true;
-            pending.extend(edges[node].iter().rev().map(|(callee, _)| *callee));
-        }
-        false
-    }
-
     pub(super) fn parse_generic_parameters(
         &self,
         declaration: NodeId,
@@ -2258,6 +2074,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let mut parameters = Vec::new();
         for node in self.tree.children_with(generics, Production::Gparam)? {
+            if let Some(signature) = self.tree.first_child_with(node, Production::FnSig)? {
+                let declaration = self
+                    .declaration_at(signature, DeclarationRole::FunctionParameter)?
+                    .id();
+                parameters.push(GenericParameter::Function {
+                    key: GenericParameterKey::Source(declaration),
+                    signature,
+                });
+                continue;
+            }
+            if let Some(application) = self.tree.first_child_with(node, Production::PackUse)? {
+                parameters.extend(self.expand_formal_parameters(application)?);
+                continue;
+            }
             if self.has_fixed(node, FixedTerminal::Const)? {
                 let declaration = self
                     .declaration_at(node, DeclarationRole::ConstGeneric)?
@@ -2297,15 +2127,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.written_linearity_bound(node)?
                         .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?,
                 ),
-                Some((ResolvedTarget::Prelude(id), _)) if id == PreludeDeclarationId::new(22) => {
+                Some((ResolvedTarget::Prelude(id), _)) if id == BuiltinPreludeId::INT => {
                     GenericBound::Int
                 }
-                Some((ResolvedTarget::Prelude(id), _)) if id == PreludeDeclarationId::new(23) => {
+                Some((ResolvedTarget::Prelude(id), _)) if id == BuiltinPreludeId::FLOAT => {
                     GenericBound::Float
                 }
                 Some((
                     ResolvedTarget::Source {
-                        class: DeclarationClass::Contract,
+                        class: DeclarationClass::NumericBound,
                         ..
                     },
                     coordinate,
@@ -2330,15 +2160,47 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         template: &FunctionTemplate,
         caller: &GenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
-        // [DIAG-1] a user-generic call's argument list is FN-2's.
+        let leading_regions = match self.tree.argument_list(node)? {
+            Some(targs) => {
+                self.user_call_region_prefix(&self.tree.children_with(targs, Production::Targ)?)?
+            }
+            None => 0,
+        };
+        // [FORM-8] user calls write caller-chosen regions before type/const
+        // arguments. [DIAG-1] their generic argument list is FN-2's.
         self.generic_substitution(
             node,
             &template.generic_parameters,
             caller,
-            true,
             SemanticRule::Fn2,
-            0,
+            leading_regions,
         )
+    }
+
+    /// The shared split for user-call instantiation, region binding, and
+    /// syntactic generic-cycle judgments. Kernel rows keep their own table
+    /// argument order and do not use this function [FORM-8, FN-2, FN-6].
+    pub(super) fn user_call_region_prefix(&self, arguments: &[NodeId]) -> Result<usize, CheckStop> {
+        let mut count = 0;
+        for argument in arguments {
+            if self
+                .tree
+                .first_child_with(*argument, Production::Type)?
+                .is_some()
+                || self
+                    .tree
+                    .first_child_with(*argument, Production::Const)?
+                    .is_some()
+                || self
+                    .tree
+                    .first_child_with(*argument, Production::FunctionArg)?
+                    .is_some()
+            {
+                break;
+            }
+            count += 1;
+        }
+        Ok(count)
     }
 
     /// One nominal instance's complete argument list: its region arguments,
@@ -2399,7 +2261,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 parameters,
                 caller,
-                false,
                 SemanticRule::Type5,
                 written_parameters.len(),
             )?
@@ -2423,7 +2284,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if region_parameters.is_empty() {
             return Ok(Vec::new());
         }
-        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+        let arguments = match self.tree.argument_list(node)? {
             Some(targs) => self.tree.children_with(targs, Production::Targ)?,
             None => Vec::new(),
         };
@@ -2441,12 +2302,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for (formal, argument) in region_parameters.iter().copied().zip(arguments) {
             if self
                 .tree
-                .first_child_with(argument, Production::Type)?
-                .is_some()
-                || self
-                    .tree
-                    .first_child_with(argument, Production::Const)?
-                    .is_some()
+                .direct_token_with(argument, crate::TerminalPredicate::RegionIdentifier)?
+                .is_none()
             {
                 return self.issue_node(
                     SemanticRule::Type5,
@@ -2486,470 +2343,486 @@ region parameter for",
     /// user-generic call cites FN-2, a generic nominal's construct cites
     /// TYPE-5. The rule therefore arrives from the caller that knows its own
     /// class, instead of being chosen here from the shape of the failure.
-    fn generic_substitution(
+    pub(super) fn generic_substitution(
         &self,
         node: NodeId,
         parameters: &[GenericParameter],
         caller: &GenericSubstitution,
-        allow_trailing_regions: bool,
         argument_rule: SemanticRule,
         leading_regions: usize,
     ) -> Result<GenericSubstitution, CheckStop> {
-        if parameters.is_empty() {
-            if leading_regions == 0
-                && !allow_trailing_regions
-                && self
-                    .tree
-                    .first_child_with(node, Production::Targs)?
-                    .is_some()
-            {
+        let written = match self.tree.argument_list(node)? {
+            Some(list) => self.tree.children_with(list, Production::Targ)?,
+            None if parameters.is_empty() && leading_regions == 0 => {
+                return Ok(GenericSubstitution::default());
+            }
+            None => {
                 return self.issue_node(
                     argument_rule,
                     node,
                     SemanticIssueKind::type_mismatch(
-                        "no type arguments, because this form declares no generic parameters",
-                        "a written `<...>` type-argument list",
+                        crate::semantic::written_count(
+                            parameters.len() + leading_regions,
+                            "generic argument",
+                        ),
+                        "no explicit argument list",
                     ),
                 );
             }
-            // A nominal that declares only region parameters writes exactly
-            // those and nothing else [S20, TYPE-5].
-            if leading_regions > 0 {
-                let written = match self.tree.first_child_with(node, Production::Targs)? {
-                    Some(targs) => self.tree.children_with(targs, Production::Targ)?.len(),
-                    None => 0,
-                };
-                if written != leading_regions {
-                    return self.issue_node(
-                        argument_rule,
-                        node,
-                        SemanticIssueKind::type_mismatch(
-                            crate::semantic::written_count(leading_regions, "region argument"),
-                            crate::semantic::written_count(written, "type argument"),
-                        ),
-                    );
-                }
-            }
-            return Ok(GenericSubstitution::default());
-        }
-        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
-            return self.issue_node(
-                argument_rule,
-                node,
-                SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(parameters.len(), "type argument"),
-                    "no type-argument list",
-                ),
-            );
         };
-        let arguments = self.tree.children_with(targs, Production::Targ)?;
-        let expected = parameters.len().saturating_add(leading_regions);
-        if (allow_trailing_regions && arguments.len() < expected)
-            || (!allow_trailing_regions && arguments.len() != expected)
-        {
+        if written.len() < leading_regions {
+            return self.behavior_mismatch(
+                argument_rule,
+                node,
+                "write every undetermined region before the generic arguments",
+            );
+        }
+        let arguments = self.expand_written_arguments(&written[leading_regions..], caller)?;
+        if arguments.len() != parameters.len() {
             return self.issue_node(
                 argument_rule,
                 node,
                 SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(expected, "type argument"),
-                    crate::semantic::written_count(arguments.len(), "type argument"),
+                    crate::semantic::written_count(parameters.len(), "expanded generic argument"),
+                    crate::semantic::written_count(arguments.len(), "expanded generic argument"),
                 ),
             );
-        }
-        // [S20, FORM-8] the leading members are the nominal's region
-        // arguments, already read by `nominal_region_arguments`.
-        let arguments = arguments
-            .into_iter()
-            .skip(leading_regions)
-            .collect::<Vec<_>>();
-        for argument in arguments.iter().take(parameters.len()) {
-            self.reject_region_bearing_generic_argument(*argument, caller)?;
         }
         let mut bindings = Vec::with_capacity(parameters.len());
+        let mut binding_sites = Vec::new();
         for (parameter, argument) in parameters.iter().copied().zip(arguments) {
-            let value = match parameter {
-                GenericParameter::Type { bound, declaration } => {
-                    let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
-                        return self.issue_node(
-                            argument_rule,
-                            argument,
-                            SemanticIssueKind::type_mismatch(
-                                "a type in this type-argument position",
-                                "a const argument in a type-parameter position",
-                            ),
-                        );
-                    };
-                    let ty = self.parse_type_with(ty, caller)?;
-                    // A marker bound is a numeric row and carries the
-                    // requirement's own words; a linearity bound is checked by
-                    // [PROV-6] below and prints that rule's sentence instead.
+            let source = argument.source();
+            let value = match argument {
+                super::behavior::WrittenArgument::Expanded { value, .. } => value,
+                super::behavior::WrittenArgument::Source(source) => match parameter {
+                    GenericParameter::Type { .. } => {
+                        let Some(ty) = self.tree.first_child_with(source, Production::Type)? else {
+                            return self.behavior_mismatch(
+                                argument_rule,
+                                source,
+                                "a type argument occupies this parameter position",
+                            );
+                        };
+                        self.reject_region_bearing_generic_argument(source, caller)?;
+                        GenericArgument::Type(self.parse_type_with(ty, caller)?)
+                    }
+                    GenericParameter::Const { .. } => {
+                        let Some(value) = self.tree.first_child_with(source, Production::Const)?
+                        else {
+                            return self.behavior_mismatch(
+                                argument_rule,
+                                source,
+                                "a const argument occupies this parameter position",
+                            );
+                        };
+                        GenericArgument::Const(self.parse_const_expression_with(value, caller)?)
+                    }
+                    GenericParameter::Function { .. } => {
+                        GenericArgument::Function(self.parse_function_argument(source, caller)?)
+                    }
+                },
+            };
+            match (parameter, value) {
+                (GenericParameter::Type { declaration, bound }, GenericArgument::Type(ty)) => {
+                    if self.checked_type_is_region_bearing(ty)? {
+                        return self.issue_node(SemanticRule::Fn2, source, SemanticIssueKind::RegionBearingGenericArgument {
+                            mechanical_fix: "make the slice or arena a direct written parameter or result instead of a generic argument",
+                        });
+                    }
                     let requirement = match bound {
-                        GenericBound::Class(_) => None,
-                        GenericBound::Int => {
+                        GenericBound::Int
+                            if !matches!(
+                                ty,
+                                CheckedType::Integer(_) | CheckedType::GenericInt(_)
+                            ) =>
+                        {
                             Some("an integer type, which the parameter's `Int` bound requires")
                         }
-                        GenericBound::Float => {
+                        GenericBound::Float
+                            if !matches!(
+                                ty,
+                                CheckedType::Float(_) | CheckedType::GenericFloat(_)
+                            ) =>
+                        {
                             Some("a float type, which the parameter's `Float` bound requires")
                         }
+                        _ => None,
                     };
-                    let satisfies_bound = match bound {
-                        GenericBound::Class(_) => true,
-                        GenericBound::Int => {
-                            matches!(ty, CheckedType::Integer(_) | CheckedType::GenericInt(_))
-                        }
-                        GenericBound::Float => {
-                            matches!(ty, CheckedType::Float(_) | CheckedType::GenericFloat(_))
-                        }
-                    };
-                    if let Some(required) = requirement
-                        && !satisfies_bound
-                    {
+                    if let Some(required) = requirement {
                         return self.issue_node(
                             SemanticRule::Fn3,
-                            argument,
+                            source,
                             SemanticIssueKind::type_mismatch(required, self.checked_type_name(ty)?),
                         );
                     }
-                    // [PROV-6, S37] the bound is checked at every
-                    // instantiation, against the class the argument's own
-                    // release graph gives it in this scope, and satisfaction
-                    // is the chain `copy < affine < linear` read left to
-                    // right. A marker bound implies `copy` and is admitted by
-                    // its own numeric requirement above.
                     if let GenericBound::Class(required) = bound {
-                        let spelling = self
-                            .resolved
-                            .declarations()
-                            .iter()
-                            .find(|candidate| candidate.id() == declaration)
-                            .map_or_else(String::new, |candidate| candidate.spelling().to_owned());
-                        self.check_linearity_bound(&spelling, required, ty, argument)?;
+                        let spelling = self.declaration_spelling(declaration)?;
+                        self.check_linearity_bound(&spelling, required, ty, source)?;
                     }
-                    GenericArgument::Type(ty)
                 }
-                GenericParameter::Const { .. } => {
-                    let Some(value) = self.tree.first_child_with(argument, Production::Const)?
-                    else {
-                        return self.issue_node(
-                            argument_rule,
-                            argument,
-                            SemanticIssueKind::type_mismatch(
-                                "a const argument in this type-argument position",
-                                "a type in a const-parameter position",
-                            ),
-                        );
-                    };
-                    GenericArgument::Const(self.parse_const_expression_with(value, caller)?)
+                (GenericParameter::Const { .. }, GenericArgument::Const(_))
+                | (GenericParameter::Function { .. }, GenericArgument::Function(_)) => {}
+                _ => {
+                    return self.behavior_mismatch(
+                        argument_rule,
+                        source,
+                        "the expanded argument kind matches its formal parameter",
+                    );
                 }
-            };
-            bindings.push((parameter.declaration(), value));
+            }
+            if matches!(value, GenericArgument::Function(_)) {
+                binding_sites.push((parameter.key(), source));
+            }
+            bindings.push((parameter.key(), value));
         }
-        GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
+        let substitution = GenericSubstitution::from_bindings(bindings)?;
+        self.record_behavior_binding_sites(&substitution, &binding_sites)?;
+        Ok(substitution)
     }
 }
 
-fn collect_goal_nominals(expression: &GoalExpression, output: &mut Vec<NominalId>) {
-    match expression {
-        GoalExpression::Datum(datum) => match datum {
-            GoalDatum::Parameter { ty, .. }
-            | GoalDatum::NamedConst { ty, .. }
-            | GoalDatum::Place { ty, .. } => collect_type_nominals(*ty, output),
-            GoalDatum::EvaluatedValue {
-                captured_type, ty, ..
+impl Checker<'_, '_, '_, '_> {
+    fn collect_goal_nominals(
+        &self,
+        expression: &GoalExpression,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match expression {
+            GoalExpression::Datum(datum) => match datum {
+                GoalDatum::Parameter { ty, .. }
+                | GoalDatum::NamedConst { ty, .. }
+                | GoalDatum::Place { ty, .. } => self.collect_type_nominals(*ty, output)?,
+                GoalDatum::EvaluatedValue {
+                    captured_type, ty, ..
+                } => {
+                    self.collect_type_nominals(*captured_type, output)?;
+                    self.collect_type_nominals(*ty, output)?;
+                }
+                GoalDatum::Literal(value) => self.collect_value_nominals(value, output)?,
+            },
+            GoalExpression::Operation {
+                row,
+                type_arguments,
+                result,
+                arguments,
+                ..
             } => {
-                collect_type_nominals(*captured_type, output);
-                collect_type_nominals(*ty, output);
+                self.collect_operation_nominals(*row, output)?;
+                for ty in type_arguments {
+                    self.collect_type_nominals(*ty, output)?;
+                }
+                self.collect_type_nominals(*result, output)?;
+                for argument in arguments {
+                    self.collect_goal_nominals(argument, output)?;
+                }
             }
-            GoalDatum::Literal(value) => collect_value_nominals(value, output),
-        },
-        GoalExpression::Operation {
-            row,
-            type_arguments,
-            result,
-            arguments,
-            ..
-        } => {
-            collect_operation_nominals(*row, output);
-            for ty in type_arguments {
-                collect_type_nominals(*ty, output);
+        };
+        Ok(())
+    }
+
+    fn collect_operation_nominals(
+        &self,
+        operation: GoalOperation,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match operation {
+            GoalOperation::Integer { operand_type, .. }
+            | GoalOperation::Float { operand_type, .. }
+            | GoalOperation::EnumEquality { operand_type, .. }
+            | GoalOperation::BufferFits {
+                element: operand_type,
+                ..
+            } => self.collect_type_nominals(operand_type, output)?,
+            GoalOperation::BufferMeasure { element, .. }
+            | GoalOperation::BufferIndex { element }
+            | GoalOperation::SliceMeasure { element, .. }
+            | GoalOperation::SliceIndex { element, .. } => {
+                self.collect_flat_element_nominals(element, output)?;
             }
-            collect_type_nominals(*result, output);
-            for argument in arguments {
-                collect_goal_nominals(argument, output);
+            GoalOperation::ArrayFill { element, .. }
+            | GoalOperation::ArrayMeasure { element, .. }
+            | GoalOperation::ArrayIndex { element, .. }
+            | GoalOperation::RunIndex { element, .. } => {
+                self.collect_element_nominals(element, output)?
             }
-        }
-    }
-}
-
-fn collect_operation_nominals(operation: GoalOperation, output: &mut Vec<NominalId>) {
-    match operation {
-        GoalOperation::Integer { operand_type, .. }
-        | GoalOperation::Float { operand_type, .. }
-        | GoalOperation::EnumEquality { operand_type, .. }
-        | GoalOperation::BufferFits {
-            element: operand_type,
-            ..
-        } => collect_type_nominals(operand_type, output),
-        GoalOperation::ArrayFill { element, .. }
-        | GoalOperation::ArrayMeasure { element, .. }
-        | GoalOperation::ArrayIndex { element, .. }
-        | GoalOperation::BufferMeasure { element, .. }
-        | GoalOperation::BufferIndex { element }
-        | GoalOperation::SliceMeasure { element, .. }
-        | GoalOperation::SliceIndex { element, .. } => {
-            collect_flat_element_nominals(element, output);
-        }
-        GoalOperation::RunIndex { element, .. } => collect_element_nominals(element, output),
-        GoalOperation::ContainerMeasure { element, .. } => {
-            if let Some(element) = element {
-                collect_element_nominals(element, output);
+            GoalOperation::ContainerMeasure { element, .. } => {
+                if let Some(element) = element {
+                    self.collect_element_nominals(element, output)?;
+                }
             }
-        }
-        GoalOperation::NumericConversion { .. }
-        | GoalOperation::Reinterpret { .. }
-        | GoalOperation::Boolean(_) => {}
+            GoalOperation::NumericConversion { .. }
+            | GoalOperation::Reinterpret { .. }
+            | GoalOperation::Boolean(_) => {}
+        };
+        Ok(())
     }
-}
 
-fn collect_type_nominals(ty: CheckedType, output: &mut Vec<NominalId>) {
-    match ty {
-        CheckedType::Nominal(id) => output.push(id),
-        CheckedType::Array { element, .. }
-        | CheckedType::Slice { element, .. }
-        | CheckedType::Buffer { element } => collect_flat_element_nominals(element, output),
-        CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-            collect_element_nominals(element, output);
-        }
-        CheckedType::Unit
-        | CheckedType::Bool
-        | CheckedType::Integer(_)
-        | CheckedType::Float(_)
-        | CheckedType::Generic(_)
-        | CheckedType::GenericInt(_)
-        | CheckedType::GenericFloat(_)
-        | CheckedType::Heap { .. }
-        | CheckedType::Extent { .. } => {}
-    }
-}
-
-fn collect_element_nominals(element: CheckedElement, output: &mut Vec<NominalId>) {
-    match element {
-        CheckedElement::Flat(flat) => collect_flat_element_nominals(flat, output),
-        CheckedElement::FixedVector { element, .. } | CheckedElement::Vector { element, .. } => {
-            collect_flat_element_nominals(element, output);
-        }
-    }
-}
-
-fn collect_flat_element_nominals(element: CheckedFlatElement, output: &mut Vec<NominalId>) {
-    match element {
-        CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id) => output.push(id),
-        CheckedFlatElement::Unit
-        | CheckedFlatElement::Bool
-        | CheckedFlatElement::Integer(_)
-        | CheckedFlatElement::Float(_)
-        | CheckedFlatElement::GenericInt(_)
-        | CheckedFlatElement::GenericFloat(_)
-        | CheckedFlatElement::Generic(_) => {}
-    }
-}
-
-fn collect_value_nominals(value: &CheckedValue, output: &mut Vec<NominalId>) {
-    match value {
-        CheckedValue::NumericIdentity { ty, .. } => collect_type_nominals(*ty, output),
-        CheckedValue::Array { ty, elements } => {
-            collect_type_nominals(*ty, output);
-            for element in elements {
-                collect_value_nominals(element, output);
+    pub(super) fn collect_type_nominals(
+        &self,
+        ty: CheckedType,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match ty {
+            CheckedType::Nominal(id) => output.push(id),
+            CheckedType::Slice { element, .. } | CheckedType::Buffer { element } => {
+                self.collect_flat_element_nominals(element, output)?
             }
-        }
-        CheckedValue::Struct { ty, fields } => {
-            collect_type_nominals(*ty, output);
-            for field in fields {
-                collect_value_nominals(field, output);
+            CheckedType::Array { element, .. }
+            | CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. } => {
+                self.collect_element_nominals(element, output)?;
             }
-        }
-        CheckedValue::ConstGeneric { .. }
-        | CheckedValue::Unit
-        | CheckedValue::Bool(_)
-        | CheckedValue::Integer { .. }
-        | CheckedValue::Float { .. } => {}
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::Generic(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_)
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => {}
+        };
+        Ok(())
     }
-}
 
-fn rewrite_goal_nominals(
-    expression: &mut GoalExpression,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match expression {
-        GoalExpression::Datum(datum) => match datum {
-            GoalDatum::Parameter { ty, .. }
-            | GoalDatum::NamedConst { ty, .. }
-            | GoalDatum::Place { ty, .. } => rewrite_type_nominals(ty, checkpoint, replacements)?,
-            GoalDatum::EvaluatedValue {
-                captured_type, ty, ..
+    fn collect_element_nominals(
+        &self,
+        element: CheckedElement,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        self.collect_type_nominals(self.element_type(element)?, output)
+    }
+
+    fn collect_flat_element_nominals(
+        &self,
+        element: CheckedFlatElement,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match element {
+            CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id) => {
+                output.push(id)
+            }
+            CheckedFlatElement::Unit
+            | CheckedFlatElement::Bool
+            | CheckedFlatElement::Integer(_)
+            | CheckedFlatElement::Float(_)
+            | CheckedFlatElement::GenericInt(_)
+            | CheckedFlatElement::GenericFloat(_)
+            | CheckedFlatElement::Generic(_) => {}
+        };
+        Ok(())
+    }
+
+    fn collect_value_nominals(
+        &self,
+        value: &CheckedValue,
+        output: &mut Vec<NominalId>,
+    ) -> Result<(), CheckStop> {
+        match value {
+            CheckedValue::NumericIdentity { ty, .. } => self.collect_type_nominals(*ty, output)?,
+            CheckedValue::Array { ty, elements } => {
+                self.collect_type_nominals(*ty, output)?;
+                for element in elements {
+                    self.collect_value_nominals(element, output)?;
+                }
+            }
+            CheckedValue::Struct { ty, fields } => {
+                self.collect_type_nominals(*ty, output)?;
+                for field in fields {
+                    self.collect_value_nominals(field, output)?;
+                }
+            }
+            CheckedValue::ConstGeneric { .. }
+            | CheckedValue::Unit
+            | CheckedValue::Bool(_)
+            | CheckedValue::Integer { .. }
+            | CheckedValue::Float { .. } => {}
+        };
+        Ok(())
+    }
+
+    fn rewrite_goal_nominals(
+        &self,
+        expression: &mut GoalExpression,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match expression {
+            GoalExpression::Datum(datum) => match datum {
+                GoalDatum::Parameter { ty, .. }
+                | GoalDatum::NamedConst { ty, .. }
+                | GoalDatum::Place { ty, .. } => {
+                    self.rewrite_type_nominals(ty, checkpoint, replacements)?
+                }
+                GoalDatum::EvaluatedValue {
+                    captured_type, ty, ..
+                } => {
+                    self.rewrite_type_nominals(captured_type, checkpoint, replacements)?;
+                    self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+                }
+                GoalDatum::Literal(value) => {
+                    self.rewrite_value_nominals(value, checkpoint, replacements)?
+                }
+            },
+            GoalExpression::Operation {
+                row,
+                type_arguments,
+                result,
+                arguments,
+                ..
             } => {
-                rewrite_type_nominals(captured_type, checkpoint, replacements)?;
-                rewrite_type_nominals(ty, checkpoint, replacements)?;
-            }
-            GoalDatum::Literal(value) => rewrite_value_nominals(value, checkpoint, replacements)?,
-        },
-        GoalExpression::Operation {
-            row,
-            type_arguments,
-            result,
-            arguments,
-            ..
-        } => {
-            rewrite_operation_nominals(row, checkpoint, replacements)?;
-            for ty in type_arguments {
-                rewrite_type_nominals(ty, checkpoint, replacements)?;
-            }
-            rewrite_type_nominals(result, checkpoint, replacements)?;
-            for argument in arguments {
-                rewrite_goal_nominals(argument, checkpoint, replacements)?;
+                self.rewrite_operation_nominals(row, checkpoint, replacements)?;
+                for ty in type_arguments {
+                    self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+                }
+                self.rewrite_type_nominals(result, checkpoint, replacements)?;
+                for argument in arguments {
+                    self.rewrite_goal_nominals(argument, checkpoint, replacements)?;
+                }
             }
         }
+        Ok(())
     }
-    Ok(())
-}
 
-fn rewrite_operation_nominals(
-    operation: &mut GoalOperation,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match operation {
-        GoalOperation::Integer { operand_type, .. }
-        | GoalOperation::Float { operand_type, .. }
-        | GoalOperation::EnumEquality { operand_type, .. }
-        | GoalOperation::BufferFits {
-            element: operand_type,
-            ..
-        } => rewrite_type_nominals(operand_type, checkpoint, replacements)?,
-        GoalOperation::ArrayFill { element, .. }
-        | GoalOperation::ArrayMeasure { element, .. }
-        | GoalOperation::ArrayIndex { element, .. }
-        | GoalOperation::BufferMeasure { element, .. }
-        | GoalOperation::BufferIndex { element }
-        | GoalOperation::SliceMeasure { element, .. }
-        | GoalOperation::SliceIndex { element, .. } => {
-            rewrite_flat_element_nominals(element, checkpoint, replacements)?;
-        }
-        GoalOperation::RunIndex { element, .. } => {
-            rewrite_element_nominals(element, checkpoint, replacements)?;
-        }
-        GoalOperation::ContainerMeasure { element, .. } => {
-            if let Some(element) = element {
-                rewrite_element_nominals(element, checkpoint, replacements)?;
+    fn rewrite_operation_nominals(
+        &self,
+        operation: &mut GoalOperation,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match operation {
+            GoalOperation::Integer { operand_type, .. }
+            | GoalOperation::Float { operand_type, .. }
+            | GoalOperation::EnumEquality { operand_type, .. }
+            | GoalOperation::BufferFits {
+                element: operand_type,
+                ..
+            } => self.rewrite_type_nominals(operand_type, checkpoint, replacements)?,
+            GoalOperation::BufferMeasure { element, .. }
+            | GoalOperation::BufferIndex { element }
+            | GoalOperation::SliceMeasure { element, .. }
+            | GoalOperation::SliceIndex { element, .. } => {
+                self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
             }
-        }
-        GoalOperation::NumericConversion { .. }
-        | GoalOperation::Reinterpret { .. }
-        | GoalOperation::Boolean(_) => {}
-    }
-    Ok(())
-}
-
-fn rewrite_type_nominals(
-    ty: &mut CheckedType,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match ty {
-        CheckedType::Nominal(id) if (id.0 as usize) >= checkpoint => {
-            *id = *replacements
-                .get(id)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        }
-        CheckedType::Array { element, .. }
-        | CheckedType::Slice { element, .. }
-        | CheckedType::Buffer { element } => {
-            rewrite_flat_element_nominals(element, checkpoint, replacements)?;
-        }
-        CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-            rewrite_element_nominals(element, checkpoint, replacements)?;
-        }
-        CheckedType::Unit
-        | CheckedType::Bool
-        | CheckedType::Integer(_)
-        | CheckedType::Float(_)
-        | CheckedType::Generic(_)
-        | CheckedType::GenericInt(_)
-        | CheckedType::GenericFloat(_)
-        | CheckedType::Heap { .. }
-        | CheckedType::Extent { .. }
-        | CheckedType::Nominal(_) => {}
-    }
-    Ok(())
-}
-
-fn rewrite_element_nominals(
-    element: &mut CheckedElement,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match element {
-        CheckedElement::Flat(flat) => rewrite_flat_element_nominals(flat, checkpoint, replacements),
-        CheckedElement::FixedVector { element, .. } | CheckedElement::Vector { element, .. } => {
-            rewrite_flat_element_nominals(element, checkpoint, replacements)
-        }
-    }
-}
-
-fn rewrite_flat_element_nominals(
-    element: &mut CheckedFlatElement,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match element {
-        CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id)
-            if (id.0 as usize) >= checkpoint =>
-        {
-            *id = *replacements
-                .get(id)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        }
-        CheckedFlatElement::Unit
-        | CheckedFlatElement::Bool
-        | CheckedFlatElement::Integer(_)
-        | CheckedFlatElement::Float(_)
-        | CheckedFlatElement::GenericInt(_)
-        | CheckedFlatElement::GenericFloat(_)
-        | CheckedFlatElement::TagOnlyNominal(_)
-        | CheckedFlatElement::Nominal(_)
-        | CheckedFlatElement::Generic(_) => {}
-    }
-    Ok(())
-}
-
-fn rewrite_value_nominals(
-    value: &mut CheckedValue,
-    checkpoint: usize,
-    replacements: &HashMap<NominalId, NominalId>,
-) -> Result<(), CheckStop> {
-    match value {
-        CheckedValue::NumericIdentity { ty, .. } => {
-            rewrite_type_nominals(ty, checkpoint, replacements)?;
-        }
-        CheckedValue::Array { ty, elements } => {
-            rewrite_type_nominals(ty, checkpoint, replacements)?;
-            for element in elements {
-                rewrite_value_nominals(element, checkpoint, replacements)?;
+            GoalOperation::ArrayFill { element, .. }
+            | GoalOperation::ArrayMeasure { element, .. }
+            | GoalOperation::ArrayIndex { element, .. }
+            | GoalOperation::RunIndex { element, .. } => {
+                self.rewrite_element_nominals(element, checkpoint, replacements)?;
             }
-        }
-        CheckedValue::Struct { ty, fields } => {
-            rewrite_type_nominals(ty, checkpoint, replacements)?;
-            for field in fields {
-                rewrite_value_nominals(field, checkpoint, replacements)?;
+            GoalOperation::ContainerMeasure { element, .. } => {
+                if let Some(element) = element {
+                    self.rewrite_element_nominals(element, checkpoint, replacements)?;
+                }
             }
+            GoalOperation::NumericConversion { .. }
+            | GoalOperation::Reinterpret { .. }
+            | GoalOperation::Boolean(_) => {}
         }
-        CheckedValue::ConstGeneric { .. }
-        | CheckedValue::Unit
-        | CheckedValue::Bool(_)
-        | CheckedValue::Integer { .. }
-        | CheckedValue::Float { .. } => {}
+        Ok(())
     }
-    Ok(())
+
+    fn rewrite_type_nominals(
+        &self,
+        ty: &mut CheckedType,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match ty {
+            CheckedType::Nominal(id) if (id.0 as usize) >= checkpoint => {
+                *id = *replacements
+                    .get(id)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            }
+            CheckedType::Slice { element, .. } | CheckedType::Buffer { element } => {
+                self.rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+            }
+            CheckedType::Array { element, .. }
+            | CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. } => {
+                self.rewrite_element_nominals(element, checkpoint, replacements)?;
+            }
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::Generic(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_)
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. }
+            | CheckedType::Nominal(_) => {}
+        }
+        Ok(())
+    }
+
+    fn rewrite_element_nominals(
+        &self,
+        element: &mut CheckedElement,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        let mut ty = self.element_type(*element)?;
+        self.rewrite_type_nominals(&mut ty, checkpoint, replacements)?;
+        *element = self.intern_element(ty)?;
+        Ok(())
+    }
+
+    fn rewrite_flat_element_nominals(
+        &self,
+        element: &mut CheckedFlatElement,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match element {
+            CheckedFlatElement::TagOnlyNominal(id) | CheckedFlatElement::Nominal(id)
+                if (id.0 as usize) >= checkpoint =>
+            {
+                *id = *replacements
+                    .get(id)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            }
+            CheckedFlatElement::Unit
+            | CheckedFlatElement::Bool
+            | CheckedFlatElement::Integer(_)
+            | CheckedFlatElement::Float(_)
+            | CheckedFlatElement::GenericInt(_)
+            | CheckedFlatElement::GenericFloat(_)
+            | CheckedFlatElement::TagOnlyNominal(_)
+            | CheckedFlatElement::Nominal(_)
+            | CheckedFlatElement::Generic(_) => {}
+        }
+        Ok(())
+    }
+
+    fn rewrite_value_nominals(
+        &self,
+        value: &mut CheckedValue,
+        checkpoint: usize,
+        replacements: &HashMap<NominalId, NominalId>,
+    ) -> Result<(), CheckStop> {
+        match value {
+            CheckedValue::NumericIdentity { ty, .. } => {
+                self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+            }
+            CheckedValue::Array { ty, elements } => {
+                self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+                for element in elements {
+                    self.rewrite_value_nominals(element, checkpoint, replacements)?;
+                }
+            }
+            CheckedValue::Struct { ty, fields } => {
+                self.rewrite_type_nominals(ty, checkpoint, replacements)?;
+                for field in fields {
+                    self.rewrite_value_nominals(field, checkpoint, replacements)?;
+                }
+            }
+            CheckedValue::ConstGeneric { .. }
+            | CheckedValue::Unit
+            | CheckedValue::Bool(_)
+            | CheckedValue::Integer { .. }
+            | CheckedValue::Float { .. } => {}
+        }
+        Ok(())
+    }
 }

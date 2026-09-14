@@ -1,4 +1,4 @@
 fn main() -> status: own unit pure {
-  doc "An entry with a named result but no command marker is not an alternate entry form. FN-7 rejects the missing marker.";
+  doc "FN-7: program start uses an ordinary function; neither a marker nor ExitStatus is a source-acceptance requirement.";
   return unit;
 }

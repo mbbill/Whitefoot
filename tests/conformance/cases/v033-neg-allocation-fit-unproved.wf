@@ -4,6 +4,6 @@ fn make['s](store: &uniq Heap<'s>, length: own u64) -> values: own Option<Vector
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

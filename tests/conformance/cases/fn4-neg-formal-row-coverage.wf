@@ -1,0 +1,24 @@
+formal PureMember {
+  fn apply['heap](store: &uniq Heap<'heap>, x: own i32) -> result: own i32 reads(store);
+}
+
+fn allocating_apply['heap](store: &uniq Heap<'heap>, x: own i32) -> result: own i32 reads(store), writes(store), allocates(store) {
+  region {
+    match heap_vector::<u8>(store: &uniq deref(store), count: 1_u64) {
+      None() => {
+        return x;
+      }
+      Some(value: scratch) => {
+        return x;
+      }
+    }
+  }
+}
+
+actual First : PureMember {
+  apply = allocating_apply;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

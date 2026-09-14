@@ -3,7 +3,7 @@ enum Light {
   On();
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "enum is a composite type [TYPE-2]: construct and match a value.";
   let s = On();
   match s {

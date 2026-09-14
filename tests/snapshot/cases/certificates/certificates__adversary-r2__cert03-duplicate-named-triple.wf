@@ -12,6 +12,6 @@ fn triple_cite(first: own u64, first_limit: own u64, second: own u64, second_lim
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -3,7 +3,7 @@ fn widen(x: own u8) -> result: own i32 pure {
   return cvt::<u8, i32>(x);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = widen(x: 250_u8);
   if a == 250_i32 {
   } else {

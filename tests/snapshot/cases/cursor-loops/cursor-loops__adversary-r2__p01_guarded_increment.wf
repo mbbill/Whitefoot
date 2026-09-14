@@ -14,7 +14,7 @@ fn count_to(limit: own u64) -> reached: own u64 pure {
   return cursor;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: ordinary loop guarded increment stays in [0,limit], no OOB";
   let reached = count_to(limit: 6_u64);
   let correct = reached == 6_u64;

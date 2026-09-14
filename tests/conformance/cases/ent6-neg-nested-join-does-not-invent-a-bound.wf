@@ -24,7 +24,7 @@ fn drift(count: own u64, base: own u64) -> done: own u64 pure contract {
   return count;
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "ENT-6: folding an earlier join's delta widens nothing, so a body that really does not preserve the invariant is still rejected.";
   let done = drift(count: 3_u64, base: 0_u64);
   return exit_status(code: 0_u8);

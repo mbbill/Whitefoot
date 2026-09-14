@@ -97,8 +97,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<bool, CheckStop> {
         match ty {
             CheckedType::Slice { .. } => Ok(true),
-            CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
-                self.loan_bearing_with(element.ty(), visited)
+            CheckedType::Buffer { element } => self.loan_bearing_with(element.ty(), visited),
+            CheckedType::Array { element, .. }
+            | CheckedType::FixedVector { element, .. }
+            | CheckedType::Vector { element, .. } => {
+                self.loan_bearing_with(self.element_type(element)?, visited)
             }
             CheckedType::Nominal(id) => {
                 if !visited.insert(id) {
@@ -126,9 +129,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .collect(),
             CheckedNominalKind::Box { referent, .. } => vec![*referent],
             CheckedNominalKind::Arena { content, .. } => vec![*content],
-            CheckedNominalKind::ArenaStorage | CheckedNominalKind::SystemResource { .. } => {
-                Vec::new()
-            }
+            CheckedNominalKind::ArenaStorage | CheckedNominalKind::Opaque => Vec::new(),
         })
     }
 
@@ -158,13 +159,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 nodes.push(current);
             }
             match current {
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
                 // A run owns the elements of its window [BLK-1], so its
                 // element is a sub-node exactly as a field is.
-                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
-                    pending.push(element.ty());
+                CheckedType::Array { element, .. }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => {
+                    pending.push(self.element_type(element)?);
                 }
                 CheckedType::Nominal(id) => pending.extend(self.owned_components(id)?),
                 _ => {}
@@ -293,11 +296,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if self.scope_holds_store_capability(bindings, store) {
                 continue;
             }
-            let phrase = if store.is_entry_heap_region() {
-                "the entry heap's store region".to_owned()
-            } else {
-                self.region_phrase(store)?
-            };
+            let phrase = self.region_phrase(store)?;
             return self
                 .issue_node::<()>(
                     SemanticRule::Prov6,
@@ -472,6 +471,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .node_with_path(record.origin().node())
             .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+        if self.tree.production(node)? == Production::Type {
+            let mut application = node;
+            while self.tree.production(application)? != Production::PackUse {
+                application = self
+                    .tree
+                    .parent(application)?
+                    .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+            }
+            for parameter in self.expand_formal_parameters(application)? {
+                if let super::generics::GenericParameter::Type {
+                    declaration: candidate,
+                    bound,
+                } = parameter
+                    && candidate == declaration
+                {
+                    return Ok(match bound {
+                        super::generics::GenericBound::Class(class) => class,
+                        super::generics::GenericBound::Int
+                        | super::generics::GenericBound::Float => LinearityClass::Copy,
+                    });
+                }
+            }
+            return Err(crate::SemanticCompilerFailure::InvalidResolution.into());
+        }
         Ok(self
             .written_linearity_bound(node)?
             .unwrap_or(LinearityClass::Copy))
@@ -491,9 +514,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         region: crate::DeclarationId,
     ) -> Result<Option<LinearityClass>, CheckStop> {
-        if region.is_entry_heap_region() {
-            return Ok(Some(LinearityClass::Linear));
-        }
         let record = self
             .resolved
             .declarations()
@@ -527,7 +547,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// It is the store class read fail-closed: an `affine`-bounded region
     /// parameter and a `region_stmt` region are bump extents, whose
     /// reclamation is the region's own reset, and every other region — the
-    /// entry heap, an unbounded region parameter, a `linear`-bounded one — is
+    /// an unbounded region parameter or a `linear`-bounded one — is
     /// a general store whose run is released by spending a provider. A
     /// misclassification in the extent direction would drop a free, so the
     /// two extent cases are the ones that must be positively identified.
@@ -536,9 +556,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         region: crate::DeclarationId,
     ) -> Result<super::super::model::CheckedReleaseClass, CheckStop> {
         use super::super::model::CheckedReleaseClass;
-        if region.is_entry_heap_region() {
-            return Ok(CheckedReleaseClass::General);
-        }
         let Some(record) = self
             .resolved
             .declarations()
@@ -625,11 +642,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             SemanticIssueKind::LinearityBoundMismatch {
                 parameter: parameter.to_owned(),
                 bound: bound.spelling(),
-                argument: if argument.is_entry_heap_region() {
-                    "the entry heap's store region".to_owned()
-                } else {
-                    self.region_phrase(argument)?
-                },
+                argument: self.region_phrase(argument)?,
                 actual: actual.map_or("a region that names no store", LinearityClass::spelling),
             },
         )?;
@@ -692,8 +705,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [PROV-6, D3] the provider place each general store reached by `ty`'s
     /// release graph spends, resolved against this function's own parameters.
     ///
-    /// A provider enters a function only as a parameter or as an entry input
-    /// [PROV-2, FN-7], so the parameter list is the complete candidate set,
+    /// A general-store provider enters a function as an ordinary parameter
+    /// [TYPE-2], so the parameter list is the complete candidate set,
     /// and the write this returns is what makes a derived or early release of
     /// store-backed storage visible in the declared row [EFF-2].
     pub(in crate::semantic) fn resolved_provider_writes(
@@ -729,11 +742,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ) {
                 continue;
             }
-            let phrase = if store.is_entry_heap_region() {
-                "the entry heap's store region".to_owned()
-            } else {
-                self.region_phrase(store)?
-            };
+            let phrase = self.region_phrase(store)?;
             return self.issue_node(
                 SemanticRule::Prov6,
                 node,

@@ -48,7 +48,9 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) contract {
+  ensures len_of(deref(destination)) == len_of(deref(entry(destination)));
+} {
   doc "Writes the fold as eight little-endian bytes, so a difference anywhere in the fold is a difference in the published bytes.";
   let cursor = at;
   let rest = value;
@@ -58,7 +60,7 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let room = len(deref(destination));
+    let room = len_of(deref(destination));
     let writable = cursor < room;
     if writable {
       let byte = low_byte(v: rest);
@@ -70,15 +72,20 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
   return at +wrap 8_u64;
 }
 
-command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   let value = counted(lo: 0_u64, hi: 16777216_u64);
   let report = buffer_new(8_u64, 0_u8);
   region {
     let filled = spell(destination: &uniq report, at: 0_u64, value: value);
   }
-  region 'o {
+  region {
+    let native_window_190 = slice_of(&report);
     region {
-      match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64) {
+      match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_190, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }

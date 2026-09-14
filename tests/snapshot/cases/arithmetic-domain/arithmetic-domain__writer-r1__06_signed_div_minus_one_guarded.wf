@@ -7,7 +7,7 @@ fn negate_by_div(n: own i32) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let m = negate_by_div(n: 41_i32);
   if m == -41_i32 {
   } else {

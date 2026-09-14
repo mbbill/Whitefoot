@@ -25,7 +25,7 @@ fn locate_pair(target: own u64) -> hit: own u64 pure {
   return found;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let hit = locate_pair(target: 12_u64);
   let correct = hit == 12_u64;
   if correct {

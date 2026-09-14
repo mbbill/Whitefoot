@@ -60,7 +60,7 @@ fn integrate(a: own f64, b: own f64, center: own f64, width: own f64, tolerance:
   return adaptive(a: a, b: b, center: center, width: width, fa: fa, fm: fm, fb: fb, whole: whole, tolerance: tolerance, depth: depth);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let tolerance = fdiv.strict(1.0_f64, 1073741824.0_f64);
   let value = integrate(a: 0.0_f64, b: 1.0_f64, center: 0.5_f64, width: 0.25_f64, tolerance: tolerance, depth: 24_u64);
   if fgt(value, 0.5_f64) {

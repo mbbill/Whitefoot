@@ -12,7 +12,7 @@ fn attempt(fail: own Bool) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let yes = 0_u8 == 0_u8;
   let result = attempt(fail: yes);
   return exit_status(code: result);

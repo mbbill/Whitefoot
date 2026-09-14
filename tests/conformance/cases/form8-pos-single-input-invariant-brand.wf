@@ -1,0 +1,27 @@
+struct Marker['s] {
+  value: u64;
+}
+
+fn read_marker['s](marker: &Marker<'s>) -> value: own u64 reads(marker.value) {
+  return deref(marker).value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "FORM-8: an invariant type brand remains named with one input occurrence, while the reader's independent temporary loan is elided. The same reader accepts two exact nominal brands without a provider argument.";
+  region 'outer {
+    let first = Marker<'outer>(value: 7_u64);
+    region 'inner {
+      let second = Marker<'inner>(value: 9_u64);
+      region {
+        let first_value = read_marker(marker: &first);
+        let second_value = read_marker(marker: &second);
+        if first_value == 7_u64 {
+          if second_value == 9_u64 {
+            return exit_status(code: 0_u8);
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}

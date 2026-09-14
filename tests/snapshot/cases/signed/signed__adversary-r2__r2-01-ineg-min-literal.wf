@@ -6,7 +6,7 @@ fn safe_negate(n: own i32) -> result: own i32 pure {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: exact ineg(-2147483648_i32) violates ineg.defined (x != MIN(T)) [OP-2].";
   let guarded = safe_negate(n: 5_i32);
   if guarded == -5_i32 {

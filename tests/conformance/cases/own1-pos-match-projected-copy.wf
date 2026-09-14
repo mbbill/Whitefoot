@@ -7,7 +7,7 @@ struct Holder {
   state: State;
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   doc "OWN-1: projected Copy reads do not consume their affine struct or run owner.";
   let state = Ready();
   let holder = Holder(state: state);
@@ -25,8 +25,14 @@ command fn main() -> return_value: own ExitStatus pure {
   }
   let saved_holder = move holder;
   let empty = fixed_vector::<u8, 2>();
-  let one = place_back(vector: move empty, value: 7_u8);
-  let items = place_back(vector: move one, value: 7_u8);
+  region {
+    place_back(vector: &uniq empty, value: 7_u8);
+  }
+  let one = move empty;
+  region {
+    place_back(vector: &uniq one, value: 7_u8);
+  }
+  let items = move one;
   let first = items[0_u64];
   let second = items[1_u64];
   if first == 7_u8 {

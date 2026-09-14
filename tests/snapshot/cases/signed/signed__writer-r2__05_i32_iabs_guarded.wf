@@ -8,7 +8,7 @@ fn magnitude(x: own i32) -> abs_value: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = magnitude(x: -17_i32);
   let b = magnitude(x: 17_i32);
   let c = magnitude(x: -2147483648_i32);

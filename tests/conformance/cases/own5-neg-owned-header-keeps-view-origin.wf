@@ -2,9 +2,12 @@ fn choose(view: &uniq MutSlice<u8>) -> result: own Option<u64> pure {
   return Some<u64>(value: 7_u64);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 1>();
-  let bytes = place_back(vector: move empty, value: 3_u8);
+  region {
+    place_back(vector: &uniq empty, value: 3_u8);
+  }
+  let bytes = move empty;
   region {
     let view = mut_slice_of(&uniq bytes);
     region {

@@ -21,7 +21,7 @@ fn sole_operation(source: &[u8]) -> (CheckedIntegerOperation, CheckedType) {
             .find(|function| function.name == "main")
             .expect("main is checked");
         let mut found = None;
-        for statement in &main.body {
+        for statement in main.body.as_deref().expect("WF body") {
             let CheckedStatement::Let { value, .. } = statement else {
                 continue;
             };
@@ -67,7 +67,7 @@ fn every_operator_token_selects_its_row() {
         // Proof-required exact rows are statically discharged for these
         // constant operands and therefore contribute no runtime effect.
         let source = format!(
-            "command fn main() -> status: own ExitStatus pure {{\n  let c = 6_i32 {operator} 7_i32;\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn main() -> status: own ExitStatus pure {{\n  let c = 6_i32 {operator} 7_i32;\n  return exit_status(code: 0_u8);\n}}\n"
         );
         let (operation, operand_type) = sole_operation(source.as_bytes());
         assert_eq!(operation, expected, "operator {operator:?} selects its row");
@@ -84,7 +84,7 @@ fn every_operator_token_selects_its_row() {
 /// disagreement is reported.
 #[test]
 fn a_disagreeing_second_operand_is_a_type5_rejection_at_that_operand() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let a = 1_i32;
   let b = 2_u64;
   let c = a + b;
@@ -98,7 +98,7 @@ fn a_disagreeing_second_operand_is_a_type5_rejection_at_that_operand() {
 /// reports it at the whole expression rather than at one operand.
 #[test]
 fn an_operand_type_outside_every_row_is_an_op1_rejection() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let f = True();
   let g = False();
   let h = f + g;
@@ -117,7 +117,7 @@ fn bare_arithmetic_is_a_static_obligation_without_a_runtime_effect() {
   return a + b;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -148,7 +148,7 @@ command fn main() -> status: own ExitStatus pure {
 const EXPRESSION_POSITIONS: [(&str, &str); 9] = [
     (
         "ordinary_let_rhs",
-        "command fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = a +wrap b;
@@ -164,14 +164,14 @@ const EXPRESSION_POSITIONS: [(&str, &str); 9] = [
   return Ok<u64, Overflow>(value: c);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "set_stmt",
-        "command fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   set a = a +wrap b;
@@ -186,14 +186,14 @@ command fn main() -> status: own ExitStatus pure {
   return a +wrap b;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "give_stmt",
-        "command fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let f = True();
@@ -208,7 +208,7 @@ command fn main() -> status: own ExitStatus pure {
     ),
     (
         "match_stmt scrutinee",
-        "command fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   match a +checked b {
@@ -224,7 +224,7 @@ command fn main() -> status: own ExitStatus pure {
     ),
     (
         "value_match scrutinee",
-        "command fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = match a +checked b {
@@ -241,7 +241,7 @@ command fn main() -> status: own ExitStatus pure {
     ),
     (
         "if_stmt condition",
-        "command fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   if a +defined b {
@@ -253,7 +253,7 @@ command fn main() -> status: own ExitStatus pure {
     ),
     (
         "value_if condition",
-        "command fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: own ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = if a +defined b {
@@ -328,7 +328,7 @@ fn an_infix_returned_from_a_borrow_result_is_an_fn1_rejection() {
   return a +wrap b;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -337,7 +337,7 @@ command fn main() -> status: own ExitStatus pure {
   return a;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

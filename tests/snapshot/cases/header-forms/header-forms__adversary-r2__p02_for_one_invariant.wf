@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: for-loop with exactly one invariant uses the multi-line header with a single header_invariant clause.";
   let cursor = 0_u64;
   for (

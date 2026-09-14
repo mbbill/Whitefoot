@@ -1,5 +1,9 @@
-command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
-  doc "SYS-8 rejects start greater than end statically. The first range goal is refuted before lowering, so no host call, source read, destination write, or runtime fallback exists.";
+fn main['heap](inputs: own Inputs, heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "The original start greater than end refutes the ordinary PRE-1 function requirement start <= end. FN-8 rejects the call before lowering; the retired SYS-8 family supplies no special goal.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
       None() => {
@@ -13,16 +17,16 @@ command fn main(command.args as args: own Args, command.heap as heap: own Heap) 
           invariant spare: room_of(bytes) + at >= 4_u64,
           invariant flat: head_of(bytes) <= 0_u64
         ) {
-          set bytes = place_back(vector: move bytes, value: 0_u8);
+          place_back(vector: &uniq bytes, value: 0_u8);
         }
         region {
           let window = mut_slice_of(&uniq bytes);
           region {
             match arg_get(args: &args, position: 1_u64) {
               Ok(value: text) => {
-                region 'v {
+                region {
                   region {
-                    match host_copy_bytes(value: &'v text, destination: &uniq window, start: 18446744073709551615_u64, end: 0_u64) {
+                    match host_copy_bytes(value: &text, destination: &uniq window, start: 18446744073709551615_u64, end: 0_u64) {
                       Ok(value: copied) => {
                         return exit_status(code: 10_u8);
                       }

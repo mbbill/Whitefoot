@@ -2,7 +2,7 @@ struct Chunk['s] {
   page: Vector<'s, u8>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "FORM-8: writing a determined region parameter at a construct is the same rejection writing one at a call is. The field operand already fixes the store, so the written argument carries no fact a reader can check and the mechanical fix is to drop it.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();

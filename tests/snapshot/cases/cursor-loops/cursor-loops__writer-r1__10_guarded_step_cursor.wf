@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an ordinary loop advances a cursor by one or by two depending on a parity guard, counting how many steps it takes to reach a fixed bound before breaking.";
   let cursor = 0_u64;
   let steps = 0_u32;

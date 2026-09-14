@@ -3,6 +3,6 @@ fn overwrite['s](out: &uniq Box<'s, u64>, replacement: own Box<'s, u64>) -> func
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn allocate_then_return(heap: &uniq Heap, x: own i32) -> function_result: own i32 reads(heap), writes(heap), allocates(heap) {
+fn allocate_then_return['heap](heap: &uniq Heap<'heap>, x: own i32) -> function_result: own i32 reads(heap), writes(heap), allocates(heap) {
   doc "The allocation effect is part of the callee's checked row, named over the provider it takes.";
   region {
     match heap_vector::<u8>(store: &uniq deref(heap), count: 1_u64) {
@@ -12,14 +12,14 @@ fn allocate_then_return(heap: &uniq Heap, x: own i32) -> function_result: own i3
   }
 }
 
-fn f(heap: &uniq Heap, x: own i32) -> function_result: own i32 pure {
+fn f['heap](heap: &uniq Heap<'heap>, x: own i32) -> function_result: own i32 pure {
   doc "Declares pure but calls an allocating function [EFF-2].";
   region {
     return allocate_then_return(heap: &uniq deref(heap), x: x);
   }
 }
 
-command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus pure {
   doc "Driver.";
   region {
     let a = f(heap: &uniq heap, x: 7_i32);

@@ -8,7 +8,7 @@ fn widen_and_scale(a: own i16, factor: own i32) -> result: own i32 pure contract
   return scaled;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let scaled = widen_and_scale(a: 300_i16, factor: 10_i32);
   if scaled == 3000_i32 {
   } else {

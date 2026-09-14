@@ -21,7 +21,7 @@ pub enum Verdict {
     Reject(Option<String>),
     /// The program ran to completion with this command status.
     Run(i32),
-    /// The specification's own non-rejection stop [QUAL-1, QUAL-2, PROG-3].
+    /// A compiler or backend capability limit, distinct from source rejection.
     Unsupported(String),
     /// Not one of the corpus's verdicts: the compiler stopped for a reason
     /// the corpus does not model, such as an internal invariant or a resource

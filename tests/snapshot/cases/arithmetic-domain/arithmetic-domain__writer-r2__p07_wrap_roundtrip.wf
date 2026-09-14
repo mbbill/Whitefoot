@@ -5,7 +5,7 @@ fn wrap_and_back(value: own i32) -> result: own i32 pure {
   return back;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let lo = -2147483648_i32;
   let hi = 2147483647_i32;
   let lo_back = wrap_and_back(value: lo);

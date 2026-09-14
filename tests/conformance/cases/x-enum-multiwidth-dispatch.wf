@@ -24,7 +24,7 @@ fn classify(v: own Val) -> function_result: own i32 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Construct all three variants and dispatch each through a by-value cross-fn match; the pinned sum proves every payload width round-trips.";
   let small_atom_0001 = Small(a: 40_i32);
   let a = classify(v: move small_atom_0001);

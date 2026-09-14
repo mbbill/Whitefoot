@@ -29,30 +29,6 @@ __attribute__((weak)) void wf__runtime_start(void) {}
 
 size_t wf__floor_stack_bytes(void) { return WF_FLOOR_STACK_BYTES; }
 
-/* The `HandleFactory`'s one native fact [SYS-10]: the credits this program may
- * still spend on opens. Windows grants a process on the order of sixteen
- * million handles, so a fixed capacity far below that is a true lower bound
- * on what the target provides; an open holding a permit is never refused a
- * handle by this process's own consumption. Nothing raises the count again:
- * an explicit close hands the credit back as the permit it returns [SYS-10].
- * Atomic because a permit may be reserved on whichever thread resumed the
- * reserving frame. */
-#define WF_FILE_CAPACITY 4096L
-
-static volatile LONG wf__handle_credits = (LONG)WF_FILE_CAPACITY;
-
-int wf__handle_reserve(void) {
-    LONG credits = wf__handle_credits;
-    while (credits > 0) {
-        LONG seen = InterlockedCompareExchange(&wf__handle_credits, credits - 1, credits);
-        if (seen == credits) {
-            return 1;
-        }
-        credits = seen;
-    }
-    return 0;
-}
-
 static volatile int wf__floor_latch;
 
 _Static_assert(sizeof(int) == sizeof(LONG), "floor latch width");

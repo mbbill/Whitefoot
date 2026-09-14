@@ -5,7 +5,7 @@ fn checked_identity(value: own u32) -> result: own Result<u32, Overflow> pure co
   return Ok<u32, Overflow>(value: value);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: requires bounds the input and ensures is stated only on the Ok outcome via `ensures when`.";
   match checked_identity(value: 8_u32) {
     Ok(value: found) => {

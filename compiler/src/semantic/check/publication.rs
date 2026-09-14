@@ -147,12 +147,15 @@ impl DifferenceSystem {
 /// constant name one term; a literal is folded onto the zero term instead.
 #[derive(Eq, PartialEq)]
 enum OperandKey {
-    Result,
+    /// One declared result ordinal [CALL-4]. Distinct ordinals are distinct
+    /// destination datums even when their value types agree.
+    Result(u32),
     Parameter(u32, ProjectionKey),
     NamedConst(crate::DeclarationId, ProjectionKey),
     /// One measure of one formal place [MSR-1]: two clauses name one term
     /// only when they name the same measure of the same place.
     Measure(CheckedMeasure, u32, ProjectionKey),
+    ExitMeasure(CheckedMeasure, u32, ProjectionKey),
     /// One measure of one declared result place [CALL-4].
     ResultMeasure(CheckedMeasure, u32, ProjectionKey),
 }
@@ -195,7 +198,7 @@ impl DeclaredSystem {
 
     fn operand(&mut self, datum: &RelationDatum) -> Option<Operand> {
         let key = match datum {
-            RelationDatum::Result { .. } => OperandKey::Result,
+            RelationDatum::Result { ordinal, .. } => OperandKey::Result(*ordinal),
             RelationDatum::Parameter {
                 ordinal,
                 projections,
@@ -209,6 +212,9 @@ impl DeclaredSystem {
             RelationDatum::Measure(measure, place) => match place.root {
                 PostconditionPlaceRoot::Parameter { ordinal } => {
                     OperandKey::Measure(*measure, ordinal, projection_key(&place.projections))
+                }
+                PostconditionPlaceRoot::ExitParameter { ordinal } => {
+                    OperandKey::ExitMeasure(*measure, ordinal, projection_key(&place.projections))
                 }
                 PostconditionPlaceRoot::Result { ordinal } => {
                     OperandKey::ResultMeasure(*measure, ordinal, projection_key(&place.projections))
@@ -315,7 +321,7 @@ enum KernelOperandKey {
 #[derive(Eq, PartialEq)]
 enum KernelPlaceKey {
     Parameter(u32),
-    ParameterAtCall(u32),
+    ParameterEntry(u32),
     Result(u32),
     Payload,
 }
@@ -324,7 +330,7 @@ enum KernelPlaceKey {
 const fn kernel_place_key(place: KernelPlace) -> KernelPlaceKey {
     match place {
         KernelPlace::Parameter(ordinal) => KernelPlaceKey::Parameter(ordinal),
-        KernelPlace::ParameterAtCall(ordinal) => KernelPlaceKey::ParameterAtCall(ordinal),
+        KernelPlace::ParameterEntry(ordinal) => KernelPlaceKey::ParameterEntry(ordinal),
         KernelPlace::Result(ordinal) => KernelPlaceKey::Result(ordinal),
         KernelPlace::Payload => KernelPlaceKey::Payload,
     }

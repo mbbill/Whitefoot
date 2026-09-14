@@ -54,17 +54,18 @@ use crate::{
     COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
     COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CanonicalLimits, CanonicalOutcome,
     FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome, HOST_LINK_LIBRARIES,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome,
+    HOST_OPTIMIZATION_ARGUMENTS, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
+    ORDINARY_VALUES_SOURCE, OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome,
     SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
     SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SemanticOutcome, SourceBundle, SourceInput,
     SourceLimits, TerminalLimits, TerminalOutcome, WINDOWS_RUNTIME_HEADER, audit_canonical,
-    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    check_semantics_arithmetic_obligations, check_semantics_division_obligations,
     classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
-    module_requires_completion_runtime, module_requires_parallel_runtime, parse, resolve,
+    module_requires_parallel_runtime, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
-    max_sources: 4,
+    max_sources: 64,
     max_logical_path_bytes: 128,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
@@ -72,7 +73,7 @@ const SOURCE_LIMITS: SourceLimits = SourceLimits {
 };
 
 const LEX_LIMITS: LexLimits = LexLimits {
-    max_sources: 4,
+    max_sources: 64,
     max_source_bytes: 262_144,
     max_total_source_bytes: 524_288,
     max_token_bytes: 16_384,
@@ -94,7 +95,7 @@ const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
     max_nodes: 131_072,
     max_child_edges: 131_072,
     max_terminals: 131_072,
-    max_sources: 4,
+    max_sources: 64,
 };
 
 const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
@@ -107,9 +108,7 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 
 static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 
-/// The shipped default compilation: only eligible compiler-owned completion
-/// operations are actualized; pure compute still emits the exact sequential
-/// reference bytes.
+/// The shipped default compilation, with ordinary overlap actualization off.
 ///
 /// It is also the only *non-outlined* reference on the parallel path. Every
 /// comparison that links one emitted module two ways has a defect in the
@@ -118,7 +117,7 @@ static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 /// "changes nothing observable" claim a statement about the lowering rather
 /// than about the linker.
 fn emit(source: &[u8]) -> String {
-    emit_lowered(source, OverlapLowering::Completion)
+    emit_lowered(source, OverlapLowering::Off)
 }
 
 /// [`emit`] with the [PAR-1 candidate] overlap lowering switched on, which is
@@ -148,39 +147,8 @@ fn compile_permission_ledger(source: &[u8]) -> Vec<String> {
 /// named overlap-lowering choice.
 fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
-    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
-    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
-        panic!("backend test source must lex");
-    };
-    let TerminalOutcome::Complete(classified) = classify_terminals(
-        &lexed,
-        ACTIVE_KERNEL_SPEC_HASH,
-        TerminalLimits {
-            max_tokens: LEX_LIMITS.max_tokens,
-        },
-    ) else {
-        panic!("backend test source must classify");
-    };
-    let ParseOutcome::Complete(parsed) = parse(&classified, PARSE_LIMITS) else {
-        panic!("backend test source must parse");
-    };
-    let FinalizeOutcome::Complete(finalized) = finalize(parsed, FINALIZE_LIMITS) else {
-        panic!("backend test source must finalize");
-    };
-    let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, CANONICAL_LIMITS) else {
-        panic!("backend test source must be canonical");
-    };
-    let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
-        panic!("backend test source must resolve");
-    };
-    let checked = match check_semantics(resolved) {
-        SemanticOutcome::Complete(checked) => checked,
-        other => panic!("backend test source must check: {other:?}"),
-    };
-    let ir = lower_checked(*checked, overlap).expect("checked program must lower");
-    emit_llvm(&ir)
-        .expect("lowered program must emit")
-        .into_string()
+    crate::compile_with_overlap(&inputs, crate::CompilerLimits::default(), overlap)
+        .expect("ordinary compiler and executable builder must emit")
 }
 
 /// [`emit`] through the test-only checker entry that forces the
@@ -189,7 +157,7 @@ fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
 /// default v0.30 emission of the same source.
 fn emit_arithmetic_obligations(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
-    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
         panic!("backend test source must lex");
     };
@@ -218,10 +186,21 @@ fn emit_arithmetic_obligations(source: &[u8]) -> String {
     else {
         panic!("backend test source must check under the arithmetic switch");
     };
+    assert!(
+        checked
+            .data
+            .functions
+            .iter()
+            .filter(|function| function.name == "main")
+            .all(|function| function.requirements.is_empty()),
+        "the test build caller must discharge every selected precondition"
+    );
     let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
-    emit_llvm(&ir)
+    let mut llvm = emit_llvm(&ir)
         .expect("lowered program must emit")
-        .into_string()
+        .into_string();
+    llvm.push_str(&crate::driver::launcher::render(&ir, "main").expect("ordinary test launcher"));
+    llvm
 }
 
 /// [`emit`] through the test-only checker entry that forces the division
@@ -230,7 +209,7 @@ fn emit_arithmetic_obligations(source: &[u8]) -> String {
 /// its callers mean.
 fn emit_division_obligations(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
-    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
         panic!("backend test source must lex");
     };
@@ -258,10 +237,21 @@ fn emit_division_obligations(source: &[u8]) -> String {
     let SemanticOutcome::Complete(checked) = check_semantics_division_obligations(resolved) else {
         panic!("backend test source must check under the division switch");
     };
+    assert!(
+        checked
+            .data
+            .functions
+            .iter()
+            .filter(|function| function.name == "main")
+            .all(|function| function.requirements.is_empty()),
+        "the test build caller must discharge every selected precondition"
+    );
     let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
-    emit_llvm(&ir)
+    let mut llvm = emit_llvm(&ir)
         .expect("lowered program must emit")
-        .into_string()
+        .into_string();
+    llvm.push_str(&crate::driver::launcher::render(&ir, "main").expect("ordinary test launcher"));
+    llvm
 }
 
 fn compile(source: &[u8]) -> String {
@@ -274,7 +264,7 @@ fn compile(source: &[u8]) -> String {
 /// mean.
 fn emit_reborrow_extension(source: &[u8]) -> String {
     let inputs = [SourceInput::new("test.wf", source)];
-    let bundle = SourceBundle::with_limits(&inputs, SOURCE_LIMITS).expect("valid test bundle");
+    let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
         panic!("backend test source must lex");
     };
@@ -305,10 +295,21 @@ fn emit_reborrow_extension(source: &[u8]) -> String {
             panic!("backend test source must check under the reborrow extension: {outcome:?}")
         }
     };
+    assert!(
+        checked
+            .data
+            .functions
+            .iter()
+            .filter(|function| function.name == "main")
+            .all(|function| function.requirements.is_empty()),
+        "the test build caller must discharge every selected precondition"
+    );
     let ir = lower_checked(*checked, OverlapLowering::Off).expect("checked program must lower");
-    emit_llvm(&ir)
+    let mut llvm = emit_llvm(&ir)
         .expect("lowered program must emit")
-        .into_string()
+        .into_string();
+    llvm.push_str(&crate::driver::launcher::render(&ir, "main").expect("ordinary test launcher"));
+    llvm
 }
 
 /// Compiles a source that must be rejected, returning the failure for rule
@@ -347,110 +348,111 @@ fn build_executable(llvm: &str, directory: &Path) -> PathBuf {
     build_linked_executable(llvm, None, &[], directory)
 }
 
-/// Adds the compiler-owned runtime units to one test link on the exact
-/// conditions the driver uses: the scheduler core when the module hands work
-/// out *or* submits an operation, and the completion units when it submits.
-/// Custom grant/floor observers use this too, so none can accidentally test a
-/// link shape the shipped compiler never produces.
+/// Stages the same ordinary library and its private engine as the build driver.
+/// Source effect rows never choose a separate runtime or callable class.
 pub(super) fn append_runtime_units(
     command: &mut Command,
-    llvm: &str,
+    _llvm: &str,
     directory: &Path,
 ) -> Option<Vec<&'static str>> {
-    let completion = module_requires_completion_runtime(llvm);
-    if !completion && !module_requires_parallel_runtime(llvm) {
-        return None;
-    }
-    // The staged tree keeps the repository's own two directories, because the
-    // completion header reaches the scheduler core by the relative path it
-    // uses in the tree: the record begins with a `wf_sched_record`.
-    let mut units = vec![
+    append_runtime_units_with_library_defines(command, directory, &[])
+}
+
+fn append_runtime_units_with_library_defines(
+    command: &mut Command,
+    directory: &Path,
+    library_defines: &[String],
+) -> Option<Vec<&'static str>> {
+    let units = [
+        ("ordinary_values.h", ORDINARY_VALUES_HEADER),
+        ("ordinary_values.c", ORDINARY_VALUES_SOURCE),
+        ("ordinary_values.ll", ORDINARY_VALUES_LLVM),
         ("sched/core.h", SCHED_CORE_HEADER),
         ("sched/prim.h", SCHED_PRIM_HEADER),
         ("sched/entry.h", SCHED_ENTRY_HEADER),
         ("sched/core.c", SCHED_CORE_SOURCE),
         ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
         ("sched/entry.c", SCHED_ENTRY_SOURCE),
+        ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
+        ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+        ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+        ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
+        (
+            "completion/socket_address.h",
+            COMPLETION_SOCKET_ADDRESS_HEADER,
+        ),
+        (
+            "completion/linux_io_uring.h",
+            COMPLETION_LINUX_IO_URING_HEADER,
+        ),
+        ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
+        ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
+        ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+        ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
+        ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+        ("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
+        ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
+        (
+            "completion/linux_io_uring.c",
+            COMPLETION_LINUX_IO_URING_SOURCE,
+        ),
     ];
-    if completion {
-        units.extend([
-            ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
-            ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-            ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
-            (
-                "completion/socket_address.h",
-                COMPLETION_SOCKET_ADDRESS_HEADER,
-            ),
-            (
-                "completion/linux_io_uring.h",
-                COMPLETION_LINUX_IO_URING_HEADER,
-            ),
-            // Every header of the runtime is staged on every platform, exactly
-            // as the driver stages them (`src/bin/whitefootc.rs`): a header is
-            // never a clang input, and `bridge.c` is one shared unit whose
-            // Windows arm names these two in text this host does not compile.
-            ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
-            ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
-            ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-            ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
-            ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-            ("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
-            ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-            (
-                "completion/linux_io_uring.c",
-                COMPLETION_LINUX_IO_URING_SOURCE,
-            ),
-        ]);
-    }
     std::fs::create_dir_all(directory.join("completion")).expect("stage completion directory");
     std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
-    for (name, source) in &units {
-        std::fs::write(directory.join(name), source).expect("write runtime unit");
+    for (name, source) in units {
+        std::fs::write(directory.join(name), source).expect("write ordinary library unit");
     }
+    let mut artifacts: Vec<_> = units.into_iter().map(|(name, _)| name).collect();
     command
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("sched/core.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("sched/prim_host.c"))
-        .arg("-x")
-        .arg("c")
-        .arg(directory.join("sched/entry.c"));
-    if completion {
+        .arg("-I")
+        .arg(directory)
+        .arg("-I")
+        .arg(directory.join("completion"));
+    for (name, _) in units {
+        if name.ends_with(".h") || (name == "ordinary_values.c" && !library_defines.is_empty()) {
+            continue;
+        }
         command
-            .arg("-I")
-            .arg(directory.join("completion"))
             .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/completion_runtime.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/wait_host.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/file_adapter.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/file_posix.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/completion_bridge.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/linux_io_uring.c"));
+            .arg(if name.ends_with(".ll") { "ir" } else { "c" })
+            .arg(directory.join(name));
     }
-    Some(units.into_iter().map(|(name, _)| name).collect())
+    if !library_defines.is_empty() {
+        // A scripted linked body interposes this library translation unit's
+        // private dependencies. The WF module and native engine stay unchanged.
+        let mut library = Command::new("/usr/bin/clang");
+        library
+            .arg("-std=c11")
+            .arg("-c")
+            .arg("-I")
+            .arg(directory)
+            .args(HOST_OPTIMIZATION_ARGUMENTS);
+        for define in library_defines {
+            library.arg(format!("-D{define}"));
+        }
+        let object = directory.join("ordinary_values.o");
+        let reached = library
+            .arg(directory.join("ordinary_values.c"))
+            .arg("-o")
+            .arg(&object)
+            .output()
+            .expect("compile scripted library body");
+        assert!(
+            reached.status.success(),
+            "{}",
+            String::from_utf8_lossy(&reached.stderr)
+        );
+        command.arg("-x").arg("none").arg(&object);
+        artifacts.push("ordinary_values.o");
+    }
+    Some(artifacts)
 }
 
 /// Links one emitted module, optionally with one host translation unit, into
 /// an executable inside `directory`.
 ///
-/// A program emitted for the native target links against the host's own
-/// facilities and passes no extra unit; a program emitted for the
-/// deterministic test target supplies the unit that answers its scripted
-/// facilities [QUAL-1].
+/// The same ordinary emitted module links against the host's own facilities,
+/// or an explicit test unit supplies scripted native facility results.
 ///
 /// `defines` reaches the compiler-owned C units only, through the same
 /// facility-substitution macros `compiler/Makefile` uses for the completion
@@ -462,6 +464,16 @@ fn build_linked_executable(
     llvm: &str,
     host: Option<&str>,
     defines: &[String],
+    directory: &Path,
+) -> PathBuf {
+    build_linked_executable_with_library_defines(llvm, host, defines, &[], directory)
+}
+
+pub(super) fn build_linked_executable_with_library_defines(
+    llvm: &str,
+    host: Option<&str>,
+    defines: &[String],
+    library_defines: &[String],
     directory: &Path,
 ) -> PathBuf {
     let module = directory.join("program.ll");
@@ -489,12 +501,11 @@ fn build_linked_executable(
     let floor_unit = directory.join("wf_floor.c");
     std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
-    // The runtime units join the link on exactly the conditions the driver
-    // uses: the emitted module names the core's entry points, or a submit. A
-    // test therefore cannot link a runtime a shipped build would not, and a
-    // module that overlaps nothing and submits nothing is linked here with
-    // nothing extra at all.
-    let completion_units = append_runtime_units(&mut command, llvm, directory);
+    // Every executable links the ordinary library and its private runtime
+    // dependencies, using the same build inputs as the driver. Source
+    // classification never selects a second linkage or callable ABI.
+    let completion_units =
+        append_runtime_units_with_library_defines(&mut command, directory, library_defines);
     let compile = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(HOST_LINK_LIBRARIES)
@@ -619,26 +630,6 @@ fn host_optimized_module(llvm: &str) -> String {
     String::from_utf8(output.stdout).expect("optimized module is UTF-8")
 }
 
-/// Returns the definition of the host entry `@main` inside one optimized
-/// module.
-///
-/// This is the wrapper the exhaustion floor left behind: it keeps the host's
-/// entry signature and hands the program to `@wf__floor_run`. Nothing about a
-/// program's shape is read here, but a census that claims to inventory
-/// everything the finished program calls has to include it, or it is complete
-/// over every generated function except the one whose call it would not
-/// otherwise account for.
-/// Reached only from the `wfgrep` cost census.
-pub(super) fn optimized_main_wrapper(module: &str) -> &str {
-    let start = module
-        .find("define i32 @main(")
-        .expect("the optimized module defines a host entry");
-    let end = module[start..]
-        .find("\n}\n")
-        .expect("the host entry closes");
-    &module[start..start + end]
-}
-
 /// Returns the definition of the program's entry inside one optimized module.
 ///
 /// This is `@wf__main_body`, not `@main`. Since the exhaustion floor landed,
@@ -675,7 +666,7 @@ fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
                 .rfind('\n')
                 .map_or(0, |newline| newline + 1);
             module[line_start..symbol_start]
-                .starts_with("define internal")
+                .starts_with("define ")
                 .then_some(line_start)
         })
         .unwrap_or_else(|| panic!("missing emitted function {name}"));
@@ -706,7 +697,7 @@ enum Payload {
   Value(number: i32);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let flag = On();
   match flag {
     Off() => {
@@ -823,7 +814,7 @@ fn cleanup_match(value: own Holder, flag: own Bool) -> result: own i32 pure {
   return selected;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   cleanup();
   let cell = Cell(value: 8_i32);
   let holder = Held(cell: move cell);
@@ -862,7 +853,7 @@ struct Outer {
   other: i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
   let outer = Outer(inner: move inner, other: 7_i32);
@@ -943,7 +934,7 @@ command fn main() -> status: own ExitStatus pure {
 /// here is observable: a wrong one returns a distinct nonzero status.
 #[test]
 fn bool_conditionals_execute_through_the_existing_match_lowering() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   let other = False();
   let seen = False();
@@ -996,7 +987,7 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
 /// content reads back, and it is released. `box<u64>` is spelled nowhere.
 #[test]
 fn a_derived_box_nominal_allocates_reads_back_and_releases() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let flag = True();
   let owner = box_new(flag);
   let loaded = deref(owner);
@@ -1020,7 +1011,7 @@ fn a_derived_box_nominal_allocates_reads_back_and_releases() {
 /// mis-selected row returns a distinct nonzero status here.
 #[test]
 fn infix_operators_execute_the_rows_they_name() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let a = 20_i32;
   let b = a + 22_i32;
   let want = 42_i32;
@@ -1082,7 +1073,7 @@ fn eq(a: own i32, b: own i32) -> result: own Bool pure {
   return a == b;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let sum = add(a: 20_i32, b: 22_i32);
   if sum != 42_i32 {
     return exit_status(code: 1_u8);
@@ -1109,7 +1100,7 @@ command fn main() -> status: own ExitStatus pure {
 /// is no implicit runtime fallback.
 #[test]
 fn bare_infix_overflow_is_a_static_op2_rejection() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let hi = 2147483647_i32;
   let one = 1_i32;
   let overflowed = hi + one;
@@ -1205,7 +1196,7 @@ fn make_pair() -> result: own Result<Pair, StepError> pure {
   return Ok<Pair, StepError>(value: move pair);
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match move arithmetic_result {
     Ok(value: sum) => {
@@ -1314,7 +1305,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let outer = 0_i32;
   loop @outer_loop {
     set outer = outer +wrap 1_i32;
@@ -1378,7 +1369,7 @@ fn compiler_independent_nominal_data_cases_execute_through_host_llvm() {
 
 #[test]
 fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let aw = 127_i8 +wrap 1_i8;
   let sw = 0_u8 -wrap 1_u8;
   let mw = 65535_u16 *wrap 2_u16;
@@ -1445,7 +1436,7 @@ fn unit_is_a_first_class_parameter_result_and_local() {
   return value;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = identity(value: unit);
   return exit_status(code: 0_u8);
 }
@@ -1466,7 +1457,7 @@ fn a_failing_contract_is_a_static_fn8_rejection() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   only_one(value: 0_u8);
   return exit_status(code: 0_u8);
 }
@@ -1477,7 +1468,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn integer_overflow_has_no_op2_runtime_record_path() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: own ExitStatus pure {
   let hi = 127_i8;
   let one = 1_i8;
   let overflow = hi + one;

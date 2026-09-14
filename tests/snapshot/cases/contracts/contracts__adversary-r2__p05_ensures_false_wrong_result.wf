@@ -4,7 +4,7 @@ fn bad_identity(value: own i32) -> result: own i32 pure contract {
   return 0_i32;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "EXPECT REJECT: ensures claims result == value but the body always returns 0, so for value = 9 the claimed postcondition 0 == 9 is false and unprovable.";
   let observed = bad_identity(value: 9_i32);
   if observed == 9_i32 {

@@ -7,7 +7,7 @@
 
 use super::*;
 
-pub(super) fn returned_storage_slot(
+pub(in crate::backend) fn returned_storage_slot(
     function: &IrFunction,
     storage: &FunctionStoragePlan,
 ) -> Option<usize> {
@@ -21,7 +21,40 @@ pub(super) fn returned_storage_slot(
             returned = Some(slot);
         }
     }
-    returned
+    let returned = returned?;
+    // Keep the complete parent allocation when returning one of its fields;
+    // the caller's result contract supplies only the returned child's extent.
+    if storage.allocation_root(returned) != returned {
+        return None;
+    }
+    let mut parameters = function
+        .parameters()
+        .iter()
+        .enumerate()
+        .filter(|(_, (value, _))| {
+            storage
+                .slot(*value)
+                .is_some_and(|slot| storage.allocation_root(slot) == returned)
+        });
+    let Some((ordinal, _)) = parameters.next() else {
+        return Some(returned);
+    };
+    // All other indirect inputs reach private storage before this group's
+    // entry transfer writes the result or a field within it. The result may alias any consumed
+    // argument, not necessarily this parameter. Keep that last transfer:
+    // the same ABI also admits an independent result destination.
+    // Source roles, complete CFG interference and exposed-storage exclusion
+    // remain independent prerequisites; a matching representation grants none.
+    let signature = function.source_signature()?;
+    if parameters.next().is_some()
+        || signature.parameters().get(ordinal) != Some(&crate::IrSourceMode::Own)
+        || signature.result() != crate::IrSourceMode::Own
+        || storage.is_exposed(returned)
+        || !function.overlaps().is_empty()
+    {
+        return None;
+    }
+    Some(returned)
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
@@ -54,6 +87,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 target_domain,
             } => {
                 self.emit_array_index(result, ty, *root, *offset, *target_domain)?;
+            }
+            IrOperation::FullArrayConversion { value } => {
+                self.emit_full_array_conversion(result, ty, *value)?;
             }
             IrOperation::SliceFromArray { array } => {
                 self.emit_slice_from_array(result, ty, *array)?
@@ -318,6 +354,49 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 }
                 self.aggregate_field_pointer(base.ty(), &self.value_name(address), *field as usize)?
             }
+            crate::IrPlaceProjection::BoxReferent { nominal } => {
+                let IrNominalKind::Box {
+                    referent: boxed, ..
+                } = self.nominal(*nominal)?.kind()
+                else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                if base.ty() != IrType::Nominal(*nominal) || *boxed != referent.ty() {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let pointer = self.next_temporary()?;
+                writeln!(
+                    self.output,
+                    "  %{pointer} = load ptr, ptr {}",
+                    self.value_name(address)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                format!("%{pointer}")
+            }
+            crate::IrPlaceProjection::EnumVariant {
+                nominal,
+                variant,
+                field,
+            } => {
+                let IrNominalKind::Enum { variants } = self.nominal(*nominal)?.kind() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let selected = variants
+                    .iter()
+                    .find(|candidate| candidate.tag() == *variant)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                if base.ty() != IrType::Nominal(*nominal)
+                    || selected
+                        .fields()
+                        .get(*field as usize)
+                        .map(|field| field.ty())
+                        != Some(referent.ty())
+                {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let index = variant_field_base(variants, *variant)? + *field as usize;
+                self.aggregate_field_pointer(base.ty(), &self.value_name(address), index)?
+            }
             crate::IrPlaceProjection::RunElement {
                 offset,
                 target_domain,
@@ -329,7 +408,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let IrType::Array { element, .. } = base.ty() else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if element.ty() != referent.ty()
+                if self.program.element(element) != Some(referent.ty())
                     || *target_domain != IrTargetDomainObligation::ElementAddress
                     || self.value_type(*offset)
                         != Some(IrType::Integer {
@@ -359,39 +438,25 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// Resolve the selected backing at the point where its contents are used.
-    /// A staged address must be recomputed from this block's slot, rather than
-    /// reusing an issue-block SSA pointer in a later retirement block.
+    /// Resolve the binding's ordinary backing storage.
     pub(super) fn binding_place(&mut self, value: IrValueId) -> Result<String, BackendFailure> {
-        if !self
-            .frame
-            .slots
-            .contains_key(&FunctionSlot::StagedAddress(value))
-        {
-            return self.entry_slot(FunctionSlot::Address(value));
-        }
-        let Some(IrType::Address(referent)) = self.value_type(value) else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        let pipeline = self.pipeline.ok_or(BackendFailure::InvalidIr)?;
-        let slot = self
-            .block_slot
-            .ok_or(BackendFailure::MisaddressedCompletionSlot)?;
-        let backing = self.entry_slot(FunctionSlot::StagedAddress(value))?;
-        let address = format!("%{}", self.next_temporary()?);
-        writeln!(
-            self.output,
-            "  {address} = getelementptr inbounds [{} x {}], ptr {backing}, i64 0, i64 {}",
-            pipeline.slots(),
-            llvm_type(self.program, referent.ty())?,
-            self.value_name(slot)
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        Ok(address)
+        self.entry_slot(FunctionSlot::Address(value))
     }
 
     pub(super) fn value_place(&mut self, value: IrValueId) -> Result<String, BackendFailure> {
         let slot = self.storage.slot(value).ok_or(BackendFailure::InvalidIr)?;
+        if let Some(field) = self.storage.field_destination(slot) {
+            let parent = self.slot_place(field.parent_slot)?;
+            return self.aggregate_field_pointer(
+                IrType::Nominal(field.nominal),
+                &parent,
+                field.field as usize,
+            );
+        }
+        self.slot_place(slot)
+    }
+
+    fn slot_place(&mut self, slot: usize) -> Result<String, BackendFailure> {
         if let Some(destination) = self.storage.destination(slot) {
             self.binding_place(destination)
         } else if Some(slot) == self.result_slot {
@@ -441,10 +506,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             return Ok(());
         }
         let llvm = llvm_type(self.program, ty)?;
-        let temporary = self.next_temporary()?;
+        // Keep the checked snapshot and its ordering, but do not expand an
+        // aggregate into SSA fields merely to copy it. The target's allocated
+        // type size includes representation padding and is not the source
+        // layout ceiling or a run's initialized length. memmove also preserves
+        // a snapshot when the proven places overlap and is a no-op at size zero.
+        self.intrinsics.insert(IntrinsicDeclaration::MemoryMove);
         writeln!(
             self.output,
-            "  %{temporary} = load {llvm}, ptr {source}\n  store {llvm} %{temporary}, ptr {destination}"
+            "  call void @llvm.memmove.p0.p0.i64(ptr {destination}, ptr {source}, i64 ptrtoint (ptr getelementptr ({llvm}, ptr null, i32 1) to i64), i1 false)"
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

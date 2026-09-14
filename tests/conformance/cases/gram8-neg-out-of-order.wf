@@ -7,6 +7,6 @@ fn make() -> return_value: own Pair pure {
   return P(b: 2_i32, a: 1_i32);
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

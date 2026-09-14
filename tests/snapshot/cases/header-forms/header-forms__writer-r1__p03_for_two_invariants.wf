@@ -12,7 +12,7 @@ fn merge_pair_bounds(a_limit: own u64, b_limit: own u64) -> total: own u64 pure 
   return a +wrap b;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- counted for with two header invariants proved simultaneously [INV-1].";
   let total = merge_pair_bounds(a_limit: 3_u64, b_limit: 4_u64);
   if total == 7_u64 {

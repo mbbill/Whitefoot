@@ -4,7 +4,7 @@ fn dbl(x: own i32) -> result: own i32 pure {
   return r;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let a = dbl(x: 21_i32);
   if a == 42_i32 {
   } else {

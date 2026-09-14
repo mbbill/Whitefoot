@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: signed division truncates toward zero and remainder carries the dividend's sign; -7 / 3 = -2 and -7 % 3 = -1 satisfy n = (n/d)*d + (n%d).";
   let dividend = -7_i32;
   let divisor = 3_i32;

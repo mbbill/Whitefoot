@@ -1,4 +1,4 @@
-# Finite interval authority experiment
+# Finite authority and membership experiments
 
 This safe-Rust experiment checks concrete finite certificates for storage range
 ownership. It is not a Whitefoot language extension, a production acceptance path,
@@ -110,3 +110,51 @@ obligations, plus composable finite ranges as an implementation basis to evaluat
 They do not establish that checked library representation is cheaper to implement,
 easier to write, or faster than compiler-owned state machines. That decision also
 needs the real source results and the native dense-storage measurements.
+
+## Two indexes and object lifetime
+
+`membership.rs` is a separate, sequential native protocol control. It asks which
+behavior a runtime-checked stable identity actually promises; it is not an
+extension of `model.rs`'s certificate checker or a proposed WF implementation.
+Its existing `make check` caller builds the safe-Rust model and its two tests.
+Retire it when a checked source protocol and its maintained tests supersede this
+contract comparison. It was checked on 2026-09-08 with Rust 1.98.1.
+
+Each slot holds a boxed four-word payload. Handles contain store identity, slot
+and finite generation. Two key indexes refer to the same object. Under weak
+membership, deletion succeeds and later index lookup returns `Expired`, including
+after the slot is reused. Under retained membership, deletion returns
+`BusyMemberships(2)`, then `BusyMemberships(1)` as the indexes unlink. A separate
+affine logical access ticket makes deletion return `BusyAccess(1)` until that
+ticket is returned. These are different application contracts, not interchangeable
+implementations of one retained reference.
+
+Thirty-one fixed observations check lookup, capacity refusal returning its
+unconsumed payload, both membership policies, access retirement, wrong-store
+rejection, slot reuse and generation exhaustion. With a deliberately tiny maximum
+generation of two, the slot retires after generations 0, 1 and 2 rather than
+wrapping. An independent drop ledger observes all nine payload resources consumed
+exactly once. A second test checks that the finite generations never repeat.
+
+Review exposed a resource-loss bug in the candidate: returning a ticket to the
+wrong store consumed the only ticket and left the original object permanently
+busy. The corrected error carries `(error, original_ticket)`; a retained control
+then returns that same ticket to the correct store and successfully deletes the
+object. Refusal needs an ownership return contract even when runtime validation
+itself is acceptable.
+
+This candidate's metadata is sufficient only for its bounded operations; it is
+not a measured minimum. The ticket is a logical deletion guard, **not a memory
+borrow or backing keepalive**, and can outlive a dropped store. A separate
+`borrowed_words` call returns a real safe-Rust reference tied to `&Store`; its
+lifetime safety comes from Rust. Caller-selected distinct IDs exercise a
+wrong-store check but supply no uniqueness authority for a real store factory.
+Ticket abandonment, access-counter saturation, duplicate-link/refcount policy,
+store-ID reuse, parallel readers, address relocation and deferred reclamation
+remain outside the executed scenarios. The drop ledger's `Rc<RefCell<...>>` is
+test instrumentation, not the candidate lifetime protocol.
+
+No WF acceptance, stored-borrow design, pointer-sized handle, timing or concurrent
+reclamation claim follows. The useful result is the contract distinction and the
+need to retain access authority on a rejected transition. Optional slots or
+initialization permissions alone do not provide either membership policy.

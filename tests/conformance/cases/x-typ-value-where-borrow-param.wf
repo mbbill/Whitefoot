@@ -2,7 +2,7 @@ fn needs_ref(p: &i32) -> function_result: own unit pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "Passing an own i32 value where a &'r i32 borrow parameter is declared [TYPE-5].";
   let a = 5_i32;
   region {

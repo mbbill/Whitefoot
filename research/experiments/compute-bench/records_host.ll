@@ -1,10 +1,9 @@
 ; Serves compute-bench: the records host adapter. It is LLVM IR rather than C
-; because every user function the compiler emits has internal linkage, so
-; nothing outside the module can call @wf_summarize_records or
-; @wf_record_result_release. It builds the two buffer descriptors -- the input
+; so it also works when @wf_summarize_records and @wf_record_result_release
+; have internal linkage. It builds the two buffer descriptors -- the input
 ; bytes and the record offsets -- and forwards; it computes nothing.
-; The Makefile appends this file to each emitted module and sed-renames the
-; two entry points to the -par or -seq spelling, so one text serves both.
+; The Makefile appends this file to each emitted module and isolates its
+; definitions with the -par or -seq adapter spellings, so one text serves both.
 ; Eighteen lines of IR, the ceiling section 2 of the specification records.
 define void @wf_bench_records(ptr %data, i64 %data_len, ptr %offsets, i64 %offsets_len, i64 %first, i64 %end, ptr %out, ptr %out_len) {
   %a = insertvalue { ptr, i64 } poison, ptr %data, 0

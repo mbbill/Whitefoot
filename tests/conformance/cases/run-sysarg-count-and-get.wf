@@ -1,5 +1,9 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  doc "SYS-9: args_count is total and arg_get returns Ok at a present position and InvalidIndex beyond the last; the counted vector is the complete native one, so position 0 is the invoked name.";
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "The ordinary Args library value contains the arranged complete native argument vector. args_count reports three; arg_get returns the present HostString values and InvalidIndex beyond the last. No semantic qualification or special release authority is involved.";
+  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
   region {
     let count = args_count(args: &args);
     let counted = count == 3_u64;

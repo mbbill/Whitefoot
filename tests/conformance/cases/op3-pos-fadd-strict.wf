@@ -3,6 +3,6 @@ fn fsum(a: own f32, b: own f32) -> return_value: own f32 pure {
   return fadd.strict(a, b);
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

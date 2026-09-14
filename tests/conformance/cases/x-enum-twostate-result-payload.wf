@@ -67,7 +67,7 @@ fn option_code(option: own Option<Flag>) -> function_result: own u64 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let ok = make_ok(value: 7_u64);
   let ok_code = result_code(result: move ok);
   if ok_code == 7_u64 {

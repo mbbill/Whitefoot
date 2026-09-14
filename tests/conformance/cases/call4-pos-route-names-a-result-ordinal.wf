@@ -11,7 +11,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> 
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = place_back(vector: move built, value: value);
+    place_back(vector: &uniq built, value: value);
   }
   return move built;
 }
@@ -32,7 +32,7 @@ fn needs_eight(bound: own u64) -> ok: own unit pure contract {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "CALL-4: a route names a result ordinal, an unrouted clause over another ordinal reaches its binder, and both arms of the match on the routed ordinal are written.";
   let run = filled::<u8, 8>(value: 0_u8);
   let (outcome, spare) = probe(taken: move run);

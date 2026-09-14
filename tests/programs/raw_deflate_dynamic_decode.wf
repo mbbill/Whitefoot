@@ -158,7 +158,7 @@ fn decode_dynamic(state: &uniq InflateState, input: own Slice<u8>, out: &uniq Mu
         invariant spare: room_of(code_lengths) + at >= 19_u64,
         invariant flat: head_of(code_lengths) <= 0_u64
       ) {
-        set code_lengths = place_back(vector: move code_lengths, value: 0_u8);
+        place_back(vector: &uniq code_lengths, value: 0_u8);
       }
       region {
         let code_window = mut_slice_of(&uniq code_lengths);
@@ -180,7 +180,7 @@ fn decode_dynamic(state: &uniq InflateState, input: own Slice<u8>, out: &uniq Mu
           invariant spare_hi: room_of(literal_lengths) + at <= 286_u64,
           invariant flat: head_of(literal_lengths) <= 0_u64
         ) {
-          set literal_lengths = place_back(vector: move literal_lengths, value: 0_u8);
+          place_back(vector: &uniq literal_lengths, value: 0_u8);
         }
         let distance_lengths = arena_vector_proved::<u8>(store: &uniq workspace, count: 32_u64);
         for @reserve_distance_lengths (
@@ -191,7 +191,7 @@ fn decode_dynamic(state: &uniq InflateState, input: own Slice<u8>, out: &uniq Mu
           invariant spare_hi: room_of(distance_lengths) + at <= 32_u64,
           invariant flat: head_of(distance_lengths) <= 0_u64
         ) {
-          set distance_lengths = place_back(vector: move distance_lengths, value: 0_u8);
+          place_back(vector: &uniq distance_lengths, value: 0_u8);
         }
         let total_lengths = literal_count +wrap distance_count;
         let position = 0_u64;

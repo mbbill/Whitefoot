@@ -12,7 +12,7 @@ fn scaled_bound(limit: own u64) -> total: own u64 pure {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- a local invariant inside the loop body names the header invariant in its certificate [PRF-1].";
   let total = scaled_bound(limit: 5_u64);
   if total == 5_u64 {

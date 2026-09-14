@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+#[path = "../linkage.rs"]
+mod linkage;
+
 use std::{collections::BTreeMap, env, fs};
 
 fn write_changed(path: &str, content: &str) {
@@ -47,11 +50,11 @@ fn element_code(lanes: usize) -> (String, String, String) {
         ));
     }
     if lanes == 1 {
-        build.push_str("    set values = place_back(vector: move values, value: a);");
+        build.push_str("    place_back(vector: &uniq values, value: a);");
         update.push_str("      set values[at] = a;");
     } else {
-        build.push_str("    let entry = Wide(a: a, b: b, c: c, d: d);\n    set values = place_back(vector: move values, value: move entry);");
-        update.push_str("      }\n      let entry = Wide(a: a, b: b, c: c, d: d);\n      let previous_entry = replace values[at] = move entry;");
+        build.push_str("    let stored_entry = Wide(a: a, b: b, c: c, d: d);\n    place_back(vector: &uniq values, value: move stored_entry);");
+        update.push_str("      }\n      let stored_entry = Wide(a: a, b: b, c: c, d: d);\n      let previous_entry = replace values[at] = move stored_entry;");
     }
     (build, update, consume)
 }
@@ -116,7 +119,9 @@ fn main() {
             write_changed(&arguments[4], source.trim_start_matches('\n'));
         }
         Some("adapt") if arguments.len() == 4 => {
-            let module = fs::read_to_string(&arguments[2]).expect("read emitted module");
+            let module = linkage::closed_helpers(
+                &fs::read_to_string(&arguments[2]).expect("read emitted module"),
+            );
             let symbol = "define internal i64 @wf_dense(i64 ";
             assert_eq!(module.matches(symbol).count(), 1, "unexpected measured ABI");
             assert_eq!(module.matches("define i32 @main(").count(), 1);

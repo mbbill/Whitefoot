@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   doc "REJECT: `<` requires a common exact type (OP-1); comparing i32 against u32 with no cvt is a TYPE-5 mismatch.";
   let signed_value = -1_i32;
   let unsigned_value = 1_u32;

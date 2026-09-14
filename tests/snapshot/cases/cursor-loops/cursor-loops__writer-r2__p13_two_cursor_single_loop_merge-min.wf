@@ -15,7 +15,7 @@ fn f(left_len: own u64, right_len: own u64) -> total: own u64 pure {
   return i;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let t = f(left_len: 3_u64, right_len: 2_u64);
   return exit_status(code: 0_u8);
 }

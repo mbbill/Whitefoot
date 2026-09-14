@@ -2,11 +2,11 @@ enum State {
   Ready();
 }
 
-fn steal(holder: &Box<State>) -> return_value: own Box<State> pure {
+fn steal['heap](holder: &Box<'heap, State>) -> return_value: own Box<'heap, State> pure {
   doc "OWN-1: one dereference exposes the borrowed box value, which remains non-owning even though State is Copy.";
   return deref(holder);
 }
 
-command fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -15,7 +15,7 @@ fn slice_sum(data: own Slice<u8>) -> total: own u32 reads(data) {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&buffer_bytes);
     let total = slice_sum(data: view);

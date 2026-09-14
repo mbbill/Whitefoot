@@ -18,6 +18,6 @@ fn indexed_byte(b: own Slice<u8>, flag: own Bool) -> result: own u8 reads(b) con
   return b[idx];
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
