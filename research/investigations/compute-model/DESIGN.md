@@ -68,6 +68,50 @@ motivated shared foundation, and recording a remaining model cost. They do
 not select a universal grain policy. Broad scheduling/profile/PGO research,
 sparse-graph discovery, and I/O remain separate follow-ups.
 
+The [direct candidate](direct-scatter.wf) reaches OP-4 at
+`high < len_of(output)`. Its scalar split bound does not establish the
+input-content relation a tight destination requires; the stated contract even
+admits an out-of-bounds counterexample. FN-8 excludes subscript expressions
+from contracts and FN-9's result relations cannot publish a count of matching
+elements in a sequence. The negative witness checks that insufficient scalar
+bounds do not authorize the write. It is not a normative rejection of stable
+distribution or a proof that no other source formulation works.
+
+The executable alternative in
+[`radix_scatter.wf`](../../experiments/compute-bench/programs/radix_scatter.wf)
+first partitions each input block into two `FixedVector<u64, 256>` runs.
+Their ordinary measures bound each stored count without an array-content
+theorem. A scalar prefix phase computes total lengths; a recursive continuation
+forms each run's actual destination range and passes the remaining range to
+the next block. Each intermediate digit buffer reserves one full block of
+capacity per input block, so the continuation's safety follows from each
+run's type bound even when the actual counts are skewed. A final copy joins
+the populated prefixes into the returned buffer. Input size and selected bit
+are runtime values; the local capacity is provisionally 256, independent of
+worker count. Wider radix digits and other local capacities are not yet
+established by this instance.
+
+This representation has linear element work, but it is not a cost-free
+replacement for direct scatter: local runs hold up to two padded inputs,
+two intermediate streams hold another two, and the result holds one actual
+input. Count extraction currently takes and restores an owned chunk because
+the legacy buffer-element borrow path is unsupported. Those transfers,
+initialization, and the continuation's linear depth must be included in the
+cost rather than dismissed as proof work. The native controls compare both
+the same block/chain decomposition and direct count/prefix/scatter; the latter
+does not materialize local element streams and is a different algorithmic
+representation, not an isolating compiler A/B.
+
+The prototype also exposes an implementation gap under unchanged VIEW-1,
+VIEW-2 and SET-2: a direct view of an already represented affine nominal
+element stopped as `CompositeValues`, and replacement had no lowering read
+for a slice target. The implementation uses the buffer representation's
+existing element domain for view formation and captures the displaced element
+from the already evaluated slice target after the replacement expression.
+Ordinary affine reads/moves, shared-view mutation, live child loans, and
+target layout retain their existing checks. This does not add general
+structural element views or the still-unsupported borrowed projection path.
+
 ## Runtime cost attribution
 
 The [range-loan measurements](../range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)

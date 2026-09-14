@@ -247,20 +247,11 @@ inside the `region` block whose region it takes",
                 place_node, bindings, &suffixes, place_node, function, loop_depth,
             )?
             .into_element_storage()?;
-        // [OP-2] derives the element from the viewed place. Full arrays and
-        // runs admit owning elements; general element views remain a
-        // capability gap, not a source-language rejection.
+        // [OP-2] derives the element from the viewed place. Views use the
+        // buffer representation's element domain, including affine nominals.
+        // Formation carries a loan; it does not read or move an element.
         let element_type = indexed.element_type(self)?;
-        // An affine-element buffer is viewable in principle ([OP-1] states no
-        // copy bound on the viewed T), but the in-place borrowed element read
-        // a view would serve is not implemented, so the view stops as an
-        // explicit unsupported capability rather than a source rejection.
-        if let CheckedType::Nominal(id) = element_type
-            && !self.nominal(id)?.is_copy()
-        {
-            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, atoms[0]);
-        }
-        let Some(element) = self.flat_element(element_type)? else {
+        let Some(element) = self.buffer_element(element_type)? else {
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, atoms[0]);
         };
         let offsets = match &indexed {
@@ -462,12 +453,7 @@ inside the `region` block whose region it takes",
                 );
             }
         };
-        if let CheckedType::Nominal(id) = element_type
-            && !self.nominal(id)?.is_copy()
-        {
-            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
-        }
-        let Some(element) = self.flat_element(element_type)? else {
+        let Some(element) = self.buffer_element(element_type)? else {
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
         };
         let source = match argument.expression.clone() {
@@ -850,7 +836,7 @@ take the view in a region it outlives"
         let CheckedType::Array { element, length } = content else {
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
         };
-        let Some(element) = self.flat_element(self.element_type(element)?)? else {
+        let Some(element) = self.buffer_element(self.element_type(element)?)? else {
             return self.unsupported(UnsupportedSemanticFeature::CompositeValues, place_node);
         };
         let range_id = self.slice_loan_id(node)?;

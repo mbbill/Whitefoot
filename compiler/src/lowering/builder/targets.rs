@@ -28,6 +28,7 @@ enum TargetStorage<'target> {
     Slice {
         slice: IrValueId,
         index: IrValueId,
+        target_domain: IrTargetDomainObligation,
     },
 }
 
@@ -109,8 +110,13 @@ impl IrBuilder<'_> {
             CheckedSetTarget::SliceIndex(target) => {
                 let slice = self.slice_root(&target.root)?;
                 let index = self.expression(&target.offset)?;
-                self.check_target_offset(index, target.target_domain.into())?;
-                TargetStorage::Slice { slice, index }
+                let target_domain = target.target_domain.into();
+                self.check_target_offset(index, target_domain)?;
+                TargetStorage::Slice {
+                    slice,
+                    index,
+                    target_domain,
+                }
             }
         };
         Ok(PreparedTarget { ty, kind })
@@ -160,7 +166,19 @@ impl IrBuilder<'_> {
                     target_domain: *target_domain,
                 },
             )?,
-            TargetStorage::Place(_) | TargetStorage::Slice { .. } => {
+            TargetStorage::Slice {
+                slice,
+                index,
+                target_domain,
+            } => self.define(
+                target.ty,
+                IrOperation::SliceIndex {
+                    slice: *slice,
+                    offset: *index,
+                    target_domain: *target_domain,
+                },
+            )?,
+            TargetStorage::Place(_) => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };
@@ -192,7 +210,7 @@ impl IrBuilder<'_> {
                     });
                 Ok(())
             }
-            TargetStorage::Slice { slice, index } => {
+            TargetStorage::Slice { slice, index, .. } => {
                 self.current_block_mut()?
                     .instructions
                     .push(IrInstruction::StoreSlice {

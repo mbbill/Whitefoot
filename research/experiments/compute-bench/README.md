@@ -106,6 +106,29 @@ oracle covers 86 graph/mode configurations and checks every distance and
 unchanged edge. The sort and graph consumers are opt-in for timing and always
 included in `programs-check`.
 
+`KERNELS=radix_scatter` selects stable distribution by one runtime-selected
+bit. Whitefoot partitions input into 256-element local runs, packs them into
+two intermediate digit streams through a recursive chain of exclusive
+ranges, and copies their populated prefixes into the result. All allocations,
+initialization, packing, and temporary releases are inside timing; releasing
+the checked result is outside it. With `p = 256 * (floor(n/256) + 1)`, payload
+workspace is `4p+n` words, plus chunk metadata and the recursive call stack.
+The 256-element capacity is data decomposition, independent of worker count;
+this consumer establishes neither wider radix digits nor runtime block sizes.
+
+The default native parallel rows use the same block/chain decomposition.
+`WFB_SCATTER_NATIVE=direct` selects a native count/prefix/scatter control with
+two counts per block and no local element streams or packing chain. It changes
+the native algorithm only, is printed as `native=direct` in the workload,
+and is not a compiler A/B. The native `serial` row always uses two ordered
+input scans. `WFB_SCATTER_GRID=large|small|skew|low|high` selects 1,048,593
+mixed keys, 257 keys, a skewed digit, all-low digits, or all-high digits at
+bit 63. The independent oracle covers tails, empty input, stable order,
+unchanged input, and bits 0, 7, and 63. Its separately instrumented correctness
+module checks steals during output packing, after earlier maps have joined;
+the timed module has no such instrumentation. This consumer is opt-in for
+timing and included in `programs-check` and the compiler's native oracle suite.
+
 [`compute-model-2026-09-13.tsv`](compute-model-2026-09-13.tsv) retains the
 compute-model main run and diagnostic fixtures, with an interpretation in the
 [investigation](../../investigations/compute-model/DESIGN.md#measurements-and-assessment-2026-09-13).

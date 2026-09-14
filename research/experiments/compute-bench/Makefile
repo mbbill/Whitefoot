@@ -399,7 +399,7 @@ CHECK   := $(WORK)/check
 # Every compute consumer runs in the untimed gate. Prefix and histogram
 # also have opt-in timed references; their runtime division images require
 # this branch's language, so the baseline twin does not select them by default.
-MODULE_KERNELS := $(sort $(KERNELS) stencil prefix histogram merge_sort bfs)
+MODULE_KERNELS := $(sort $(KERNELS) stencil prefix histogram merge_sort bfs radix_scatter)
 CHECKED := $(addprefix $(CHECK)/checked_,$(sort $(MODULE_KERNELS) range_split))
 JOBS    ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
