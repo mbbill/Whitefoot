@@ -49,8 +49,11 @@ of them is a decision. Remove an item when its fix and test land.
   the same context with only three uses takes 0.55 s. This is not a cost of
   certificate length alone: a fixed three-pair context admits all 4096 uses
   in 286 ms. Reusing repeated closure and interval preparation reduced the
-  128-use case from 21.48 s, but larger contexts remain unmeasured and the
-  remaining closure/index/candidate work is not yet separately attributed.
+  128-use case from 21.48 s. The
+  [entering-context follow-up](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-candidate-and-prediction)
+  extends measurement through 256 pairs and separately attributes five L0
+  closures and the long-target AUTO candidate traversal; index construction
+  and written accumulation are smaller in those probes.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
 - **Pre-kill L0 closure has an unresolved compilation cost.** Before an
   [ENT-5] invalidation batch, `materialize_before_event_kill` in

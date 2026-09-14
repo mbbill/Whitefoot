@@ -258,8 +258,33 @@ samples in `close_with_excluded_term`, called by function-entry analysis;
 2328 terminate in that function's own instructions. This identifies that
 phase's transitive loop, not a percentage of whole compilation. Competing
 test jobs were active, so elapsed time from this sampled run is not used for
-selection. Temporary phase marks will distinguish closure from affine-index,
-candidate, and certificate work before attributing the complete invocation.
+selection.
+
+The [temporary context instrumentation](../../experiments/proof-use-cost/context-stage-timing.patch)
+applies to `277a1844`; it is not part of the candidate compiler. Its
+[raw stage marks](../../experiments/proof-use-cost/context-stages-2026-09-14.tsv)
+retain the entry closure and every mark through the proof's residual check.
+`proof-*` marks are cumulative from proof-flow entry; the other marks time
+one operation. `items` counts terms for closure/index, target atoms for AUTO,
+and uses for proof marks; `entries` counts incoming bounds, indexed L0
+images, or listed automatic premises respectively. The four instrumented
+invocations completed successfully, but competing builds/tests were active;
+these timings attribute work and must not be compared with ordinary runs.
+
+| Fixture | Five L0 closures, total | Two affine indexes, total | Final L0-candidate AUTO traversal | Written accumulation |
+|---|---:|---:|---:|---:|
+| Growing-128 | 1449.572 ms | 105.236 ms | 1988.556 ms | 0.701 ms |
+| Control-128 | 1551.555 ms | 134.131 ms | 125.022 ms | 0.190 ms |
+| Growing-256 | 11469.501 ms | 800.640 ms | 14926.492 ms | 1.564 ms |
+| Control-256 | 11732.713 ms | 788.255 ms | 310.963 ms | 0.195 ms |
+
+Each source closes once at function entry, twice during complete target AUTO,
+once for premise admission, and once for the final residual. The index has
+65,793 images at 128 pairs and 262,657 at 256. The matched controls separate
+the closure cost from the additional long-target candidate work: both matter,
+while source-order accumulation is small here. No non-fast pre-kill
+materialization mark was observed in these invocations. This study therefore
+does not attribute the separate pre-kill TODO to certificate checking.
 
 The proposed candidate summarizes each dense closure row with its populated
 cell count, a lower bound on every cell's numeric bound, an upper bound on

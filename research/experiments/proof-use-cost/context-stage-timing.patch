@@ -1,0 +1,121 @@
+diff --git a/compiler/src/semantic/entailment/flow.rs b/compiler/src/semantic/entailment/flow.rs
+index be74bb91..0e368dfd 100644
+--- a/compiler/src/semantic/entailment/flow.rs
++++ b/compiler/src/semantic/entailment/flow.rs
+@@ -12592,6 +12592,7 @@ impl Analyzer<'_, '_> {
+         closed: &ClosedState,
+         check: &mut AffineCheckState,
+     ) -> AffineL0Index {
++        let context_cost_started = std::time::Instant::now();
+         let mut index = AffineL0Index::default();
+         for left in candidates {
+             for right in candidates {
+@@ -12627,6 +12628,7 @@ impl Analyzer<'_, '_> {
+                 });
+             }
+         }
++        eprintln!("context-cost\tindex\t{}\t{}\t{}", candidates.len(), index.entries.len(), context_cost_started.elapsed().as_micros());
+         index
+     }
+ 
+@@ -12960,6 +12962,7 @@ impl Analyzer<'_, '_> {
+         let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
+         let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
+         let mut query = AffineDirectQuery::new(&l0, values, &closed);
++        let context_cost_started = std::time::Instant::now();
+         if let Ok(Some(parents)) = self.affine_residual_proof(target, &mut query, &mut check) {
+             return Some(AffineConsequenceProof {
+                 premises: Vec::new(),
+@@ -13015,11 +13018,15 @@ impl Analyzer<'_, '_> {
+         // strongest indexed L0 image once, then run the ordinary DIRECT check
+         // on the residual. DIRECT may itself close an exact L0 image, but the
+         // route never publishes or recursively saturates either relation.
+-        self.affine_l0_then_direct_proof(target, &mut query, &mut check)
++        eprintln!("context-cost\tauto-listed\t{}\t{}\t{}", target.terms().len(), automatic.len(), context_cost_started.elapsed().as_micros());
++        let context_cost_l0_started = std::time::Instant::now();
++        let proof = self.affine_l0_then_direct_proof(target, &mut query, &mut check)
+             .map(|parents| AffineConsequenceProof {
+                 premises: Vec::new(),
+                 parents,
+-            })
++            });
++        eprintln!("context-cost\tauto-l0\t{}\t{}\t{}", target.terms().len(), l0.entries.len(), context_cost_l0_started.elapsed().as_micros());
++        proof
+     }
+ 
+     fn affine_event_kills_binding(binding: BindingId, event: &KillEvent) -> bool {
+@@ -13831,6 +13838,7 @@ impl Analyzer<'_, '_> {
+                 true
+             }
+             CheckedStatement::Proof(proof) => {
++                let proof_cost_started = std::time::Instant::now();
+                 self.judge_affine_relation_subscripts(&proof.target, state);
+                 for written_use in &proof.uses {
+                     if let CheckedProofUseSource::Relation(relation) = &written_use.source {
+@@ -13930,6 +13938,7 @@ impl Analyzer<'_, '_> {
+                     .map(|(premise, multiplicity)| premise.clone().zip(multiplicity.clone()))
+                     .collect::<Option<Vec<_>>>();
+ 
++                eprintln!("context-cost\tproof-formed\t{}\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 // AUTO is exactly the unified zero-, one-, and exhaustive
+                 // unordered two-premise route for this specification version.
+                 // A written block is redundant when that route already proves
+@@ -13944,6 +13953,7 @@ impl Analyzer<'_, '_> {
+                         == ProofDisposition::Proved
+                 });
+                 let redundant = !proof.uses.is_empty() && auto_proved;
++                eprintln!("context-cost\tproof-auto\t{}\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 let certificate_sum = if proof.uses.is_empty() || source_failure.is_some() {
+                     None
+                 } else {
+@@ -13953,6 +13963,7 @@ impl Analyzer<'_, '_> {
+                     ))
+                 };
+ 
++                eprintln!("context-cost\tproof-sum\t{}\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 // Every written `use` is proved against the same pre-proof
+                 // program point. No premise established by this statement can
+                 // help another premise in the same statement.
+@@ -13964,6 +13975,7 @@ impl Analyzer<'_, '_> {
+                     &state.affine,
+                     &state.facts,
+                 );
++                eprintln!("context-cost\tproof-premises\t{}\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 let certificate_failure = certificate_sum
+                     .as_ref()
+                     .and_then(|sum| sum.as_ref().err().copied());
+@@ -14001,6 +14013,7 @@ impl Analyzer<'_, '_> {
+                     }
+                 };
+                 let residual_failure = residual.as_ref().err().copied();
++                eprintln!("context-cost\tproof-residual\t{}\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
+                 let check = SourceProofCheck {
+                     premises: premise_results,
+                     first_unproved_premise,
+diff --git a/compiler/src/semantic/entailment/state.rs b/compiler/src/semantic/entailment/state.rs
+index 510a936f..fca2754a 100644
+--- a/compiler/src/semantic/entailment/state.rs
++++ b/compiler/src/semantic/entailment/state.rs
+@@ -3092,7 +3092,10 @@ pub(crate) fn close(
+     goals: &GoalTable,
+     ledger: &mut DerivationLedger,
+ ) -> ClosedState {
+-    close_with_excluded_term(state, terms, goals, ledger, None)
++    let context_cost_started = std::time::Instant::now();
++    let closed = close_with_excluded_term(state, terms, goals, ledger, None);
++    eprintln!("context-cost\tclosure\t{}\t{}\t{}", terms.ids().count(), state.bounds.len(), context_cost_started.elapsed().as_micros());
++    closed
+ }
+ 
+ /// Emits every [ENT-2] implicit bound carried by one term: the reflexive
+@@ -3919,8 +3922,10 @@ pub(crate) fn materialize_closure_before_kill(
+     if state.bounds.is_empty() && state.distinct.is_empty() && state.opaque.is_empty() {
+         return;
+     }
++    let context_cost_started = std::time::Instant::now();
+     let event = ledger.event(FlowEventKind::Snapshot, None);
+     *state = materialize_closure_at(state, terms, goals, ledger, event);
++    eprintln!("context-cost\tpre-kill\t{}\t{}", term_count, context_cost_started.elapsed().as_micros());
+ }
+ 
+ /// The proof one snapshot files for one closed bound.

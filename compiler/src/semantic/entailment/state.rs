@@ -3357,6 +3357,18 @@ fn close_with_excluded_term(
     ledger: &mut DerivationLedger,
     excluded: Option<TermId>,
 ) -> ClosedState {
+    close_with_row_pruning::<true>(state, terms, goals, ledger, excluded)
+}
+
+/// One closure implementation; tests instantiate the unpruned traversal to
+/// compare its complete facts and selected derivations with row pruning.
+fn close_with_row_pruning<const PRUNE_ROWS: bool>(
+    state: &FactState,
+    terms: &TermTable,
+    goals: &GoalTable,
+    ledger: &mut DerivationLedger,
+    excluded: Option<TermId>,
+) -> ClosedState {
     if state.all_derivable {
         return ClosedState {
             all_derivable: true,
@@ -3402,7 +3414,7 @@ fn close_with_excluded_term(
     // dropping one hashed pair insert per accepted candidate, of which
     // `tests/programs/wfgrep.wf` accepts eighteen million.
     let mut dense_bounds =
-        DenseClosureBounds::from_maps(term_count, &state.bounds, &state.bound_proofs);
+        DenseClosureBounds::from_maps(term_count, &state.bounds, &state.bound_proofs, ledger);
     let ids = terms
         .ids()
         .filter(|id| Some(*id) != excluded)
@@ -3486,6 +3498,20 @@ fn close_with_excluded_term(
                 let (first, first_proof) = dense_bounds
                     .get(left, *middle)
                     .expect("incoming closure key collected above");
+                // These summaries can only prove that every scalar candidate
+                // below would fail its existing numeric/depth comparison. A
+                // missing destination cell or an equal-depth tie keeps the
+                // original traversal, including its diagnostic selection.
+                if PRUNE_ROWS
+                    && dense_bounds.product_cannot_improve(
+                        left,
+                        *middle,
+                        first,
+                        ledger.depth(first_proof),
+                    )
+                {
+                    continue;
+                }
                 for right in &outgoing {
                     if !dense_bounds.fresh(left, *middle) && !dense_bounds.fresh(*middle, *right) {
                         continue;
@@ -3760,8 +3786,56 @@ struct ClosedBoundCandidate {
 struct DenseClosureBounds {
     dimension: usize,
     cells: Vec<Option<ClosedCell>>,
+    rows: Vec<ClosureRowSummary>,
     live: usize,
     round: u32,
+}
+
+/// Conservative bounds on one row's current cells. Maxima need not decrease
+/// when a cell improves: overestimates only decline a pruning opportunity.
+/// The minimum must follow every decrease, and the depth maximum must follow
+/// a stronger bound supported by a deeper proof.
+#[derive(Clone, Copy)]
+struct ClosureRowSummary {
+    live: usize,
+    minimum: i128,
+    maximum: i128,
+    maximum_depth: u32,
+}
+
+impl Default for ClosureRowSummary {
+    fn default() -> Self {
+        Self {
+            live: 0,
+            minimum: i128::MAX,
+            maximum: i128::MIN,
+            maximum_depth: 0,
+        }
+    }
+}
+
+impl ClosureRowSummary {
+    fn observe(&mut self, bound: i128, depth: u32, new_cell: bool) {
+        self.live += usize::from(new_cell);
+        self.minimum = self.minimum.min(bound);
+        self.maximum = self.maximum.max(bound);
+        self.maximum_depth = self.maximum_depth.max(depth);
+    }
+
+    fn rejects_product(
+        &self,
+        width: usize,
+        first: i128,
+        first_depth: u32,
+        outgoing_minimum: i128,
+    ) -> bool {
+        if self.live != width {
+            return false;
+        }
+        let lower = compose_transitive_bounds(first, outgoing_minimum);
+        lower > self.maximum
+            || (lower == self.maximum && first_depth.saturating_add(1) > self.maximum_depth)
+    }
 }
 
 /// The closed state's live bound and proof maps, in that order.
@@ -3787,6 +3861,7 @@ impl DenseClosureBounds {
         dimension: usize,
         bounds: &HashMap<(TermId, TermId), i128>,
         proofs: &HashMap<(TermId, TermId), DerivationId>,
+        ledger: &DerivationLedger,
     ) -> Self {
         let count = dimension
             .checked_mul(dimension)
@@ -3794,6 +3869,7 @@ impl DenseClosureBounds {
         let mut dense = Self {
             dimension,
             cells: vec![None; count],
+            rows: vec![ClosureRowSummary::default(); dimension],
             live: 0,
             round: 0,
         };
@@ -3802,7 +3878,7 @@ impl DenseClosureBounds {
                 .get(&(left, right))
                 .copied()
                 .expect("every live ENT bound has a proof");
-            dense.set(left, right, bound, proof);
+            dense.set(left, right, bound, proof, ledger.depth(proof));
         }
         dense
     }
@@ -3829,11 +3905,28 @@ impl DenseClosureBounds {
         self.cells[self.index(left, right)].map(|cell| (cell.bound, cell.proof))
     }
 
-    fn set(&mut self, left: TermId, right: TermId, bound: i128, proof: DerivationId) {
+    fn product_cannot_improve(
+        &self,
+        left: TermId,
+        middle: TermId,
+        first: i128,
+        first_depth: u32,
+    ) -> bool {
+        self.rows[left.0 as usize].rejects_product(
+            self.dimension,
+            first,
+            first_depth,
+            self.rows[middle.0 as usize].minimum,
+        )
+    }
+
+    fn set(&mut self, left: TermId, right: TermId, bound: i128, proof: DerivationId, depth: u32) {
         let index = self.index(left, right);
-        if self.cells[index].is_none() {
+        let new_cell = self.cells[index].is_none();
+        if new_cell {
             self.live += 1;
         }
+        self.rows[left.0 as usize].observe(bound, depth, new_cell);
         self.cells[index] = Some(ClosedCell {
             bound,
             proof,
@@ -3887,7 +3980,7 @@ fn insert_closed_candidate(
         return false;
     }
     let proof = ledger.intern(node);
-    dense.set(left, right, bound, proof);
+    dense.set(left, right, bound, proof, ledger.depth(proof));
     true
 }
 
@@ -4337,6 +4430,152 @@ mod tests {
     use crate::DeclarationId;
     use crate::semantic::entailment::VerifiedPostconditionSummary;
     use crate::semantic::model::FunctionId;
+
+    #[test]
+    fn row_summary_skips_only_scalar_rejections() {
+        let bounds = [i128::MIN, -2, 0, 2, i128::MAX];
+        let depths = [0_u32, 2, u32::MAX];
+        let cells = bounds
+            .into_iter()
+            .flat_map(|bound| depths.map(|depth| (bound, depth)))
+            .collect::<Vec<_>>();
+        let mut skipped = 0;
+        for &left in &cells {
+            for &right in &cells {
+                let mut row = ClosureRowSummary::default();
+                row.observe(left.0, left.1, true);
+                row.observe(right.0, right.1, true);
+                for &(first, first_depth) in &cells {
+                    for minimum in bounds {
+                        if !row.rejects_product(2, first, first_depth, minimum) {
+                            continue;
+                        }
+                        skipped += 1;
+                        // The outgoing summary constrains only the numeric
+                        // minimum; every second-parent depth is possible.
+                        for &(second, second_depth) in &cells {
+                            if second < minimum {
+                                continue;
+                            }
+                            for (current, current_depth) in [left, right] {
+                                let via = first.saturating_add(second);
+                                let depth = first_depth.max(second_depth).saturating_add(1);
+                                assert!(
+                                    via > current || (via == current && depth > current_depth),
+                                    "first={first}/{first_depth}, second={second}/{second_depth}, current={current}/{current_depth}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(skipped > 0, "the comparison must exercise skipped products");
+    }
+
+    #[test]
+    fn row_summary_tracks_improvements_and_retains_ties_and_missing_cells() {
+        let mut row = ClosureRowSummary::default();
+        row.observe(7, 2, true);
+        assert!(!row.rejects_product(2, 100, 10, 0));
+        row.observe(3, 1, true);
+        assert!(!row.rejects_product(2, 7, 1, 0), "equal-depth ties remain");
+        assert!(row.rejects_product(2, 7, 2, 0));
+        row.observe(-5, 9, false);
+        assert_eq!(row.live, 2);
+        assert_eq!(row.minimum, -5);
+        assert_eq!(row.maximum, 7, "a stale high maximum is conservative");
+        assert_eq!(row.maximum_depth, 9);
+        assert!(!row.rejects_product(2, 7, 2, 0));
+    }
+
+    #[test]
+    fn row_pruning_preserves_complete_facts_and_selected_derivations() {
+        let mut terms = TermTable::new();
+        let places = [0, 1, 2, 3].map(|binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                IntegerType::U8,
+            ))
+        });
+        let values = [1_i128, 2, 4, 5];
+        let edges = [
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 0),
+            (0, 2),
+            (2, 0),
+            (1, 3),
+            (3, 1),
+        ];
+        for mask in 0_u32..256 {
+            let mut ledger = DerivationLedger::default();
+            let event = ledger.event(FlowEventKind::S1, None);
+            let mut state = FactState::new();
+            for offset in 0..edges.len() {
+                let index = if mask & 1 == 0 {
+                    offset
+                } else {
+                    edges.len() - 1 - offset
+                };
+                if mask & (1 << index) == 0 {
+                    continue;
+                }
+                let (left, right) = edges[index];
+                // Each graph has this concrete model. Varied slack gives
+                // numeric improvements, equal paths and weak bounds that a
+                // disequality can strengthen in a subsequent round.
+                let slack = i128::from((mask + index as u32) % 3);
+                state.establish_bound_with_proof(
+                    places[left],
+                    places[right],
+                    values[left] - values[right] + slack,
+                    &mut ledger,
+                    event,
+                );
+            }
+            state.establish_distinct_with_proof(places[0], places[1], &mut ledger, event);
+            for excluded in [None, Some(places[2])] {
+                let mut original_ledger = ledger.clone();
+                let mut pruned_ledger = ledger.clone();
+                let original = close_with_row_pruning::<false>(
+                    &state,
+                    &terms,
+                    &GoalTable::default(),
+                    &mut original_ledger,
+                    excluded,
+                );
+                let pruned = close_with_row_pruning::<true>(
+                    &state,
+                    &terms,
+                    &GoalTable::default(),
+                    &mut pruned_ledger,
+                    excluded,
+                );
+                assert!(
+                    !original.all_derivable,
+                    "generated graph {mask} has a model"
+                );
+                assert_eq!(pruned.all_derivable, original.all_derivable);
+                assert_eq!(pruned.contradiction, original.contradiction);
+                assert_eq!(pruned.bounds, original.bounds);
+                assert_eq!(pruned.bound_proofs, original.bound_proofs);
+                assert_eq!(pruned.distinct, original.distinct);
+                assert_eq!(pruned.distinct_proofs, original.distinct_proofs);
+                assert_eq!(pruned.opaque, original.opaque);
+                assert_eq!(pruned.opaque_proofs, original.opaque_proofs);
+                assert_eq!(
+                    pruned_ledger, original_ledger,
+                    "graph {mask}, excluded {excluded:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn dormant_const_length_aliases_still_transfer_ranges_and_equality() {
