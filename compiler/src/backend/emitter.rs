@@ -1607,6 +1607,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 upper,
                 captures,
                 weight,
+                work,
             } => self.emit_loop_split(
                 result,
                 ty,
@@ -1618,6 +1619,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     upper: *upper,
                     captures,
                     weight: *weight,
+                    work: work.as_ref(),
                 },
             ),
             IrOperation::Integer {

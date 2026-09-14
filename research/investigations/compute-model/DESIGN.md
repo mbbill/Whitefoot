@@ -456,3 +456,17 @@ all cells, including failures; a noisy or inconclusive comparison calls for
 isolation, not a favorable replacement fixture. The constants remain 150,000
 and 16 throughout this control. Its result determines whether this estimate
 is sufficient or a different mechanism is still needed.
+
+The implementation trial retains counted-loop endpoint captures and excludes
+the post-loop continuation from its iteration price. Three call-summary rounds
+translate scalar values and descriptor lengths through actual arguments;
+unchanged values forwarded around a loop keep their identities, while an
+updated or data-dependent value that cannot reach a formal capture keeps the
+static price. The bounded analysis controls optimization precision only.
+Emitted sums, differences and products saturate, and divisions use positive
+compiler constants. No estimate can justify a source operation or omit its
+work. The native probes check actual prefix output while varying block sizes,
+empty and inverted ranges, and an unexecuted inner range with maximal endpoints;
+the latter still prices safely. The nine maintained consumers and baseline
+twin pass their independent native comparisons at W1/2/4/8/16. Timing selection
+is pending; the work branch carries the corresponding provisional amendment.

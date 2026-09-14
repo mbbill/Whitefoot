@@ -71,6 +71,132 @@ fn with_ir<ResultValue>(
     with_ir_mode(source, OverlapLowering::Off, run)
 }
 
+#[test]
+fn runtime_work_keeps_data_dependent_inner_extents_static() {
+    let source = br#"fn count_work(upper: own u64) -> result: own u64 pure {
+  let total = 0_u64;
+  for (i in 0_u64..upper) {
+    set total = total +wrap i;
+  }
+  return total;
+}
+
+fn write_work(input: own Slice<u64>) -> result: own buffer<u64> reads(input) contract {
+  requires len_of(input) <= 1024_u64;
+} {
+  let count = len_of(input);
+  let output = buffer_new(count, 0_u64);
+  for (i in 0_u64..count) {
+    let upper = input[i];
+    set output[i] = count_work(upper: upper);
+  }
+  return move output;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir_mode(source, OverlapLowering::On, |program| {
+        let function = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "write_work")
+            .expect("data-dependent consumer");
+        let mut splits = 0;
+        for instruction in function
+            .blocks()
+            .iter()
+            .flat_map(|block| block.instructions())
+        {
+            if let IrInstruction::Define {
+                operation: IrOperation::LoopSplit { work, .. },
+                ..
+            } = instruction
+            {
+                assert!(
+                    matches!(work, Some(super::IrWorkEstimate::Constant(value)) if *value > 0),
+                    "{work:?}"
+                );
+                splits += 1;
+            }
+        }
+        assert_eq!(splits, 1);
+    });
+}
+
+#[test]
+fn runtime_helper_extents_reach_the_outer_split_estimate() {
+    fn evaluate(work: &super::IrWorkEstimate, extent: u64) -> u64 {
+        use super::IrWorkEstimate as Work;
+        match work {
+            Work::Constant(value) => *value,
+            Work::Value(_) | Work::Length(_) => extent,
+            Work::Sum(parts) => parts.iter().fold(0_u64, |total, part| {
+                total.saturating_add(evaluate(part, extent))
+            }),
+            Work::Product(left, right) => {
+                evaluate(left, extent).saturating_mul(evaluate(right, extent))
+            }
+            Work::Difference(left, right) => {
+                evaluate(left, extent).saturating_sub(evaluate(right, extent))
+            }
+            Work::Quotient(value, divisor) => evaluate(value, extent) / divisor,
+        }
+    }
+    for (source, name) in [
+        (
+            include_bytes!("../../../research/experiments/compute-bench/programs/prefix.wf")
+                .as_slice(),
+            "prefix",
+        ),
+        (
+            include_bytes!("../../../research/experiments/compute-bench/programs/stencil.wf")
+                .as_slice(),
+            "stencil",
+        ),
+        (
+            include_bytes!("../../../research/experiments/compute-bench/programs/histogram.wf")
+                .as_slice(),
+            "histogram",
+        ),
+    ] {
+        with_ir_mode(source, OverlapLowering::On, |program| {
+            let function = program
+                .functions()
+                .iter()
+                .find(|function| function.name() == name)
+                .expect("consumer function");
+            let weights: Vec<_> = function
+                .blocks()
+                .iter()
+                .flat_map(|block| block.instructions())
+                .filter_map(|instruction| {
+                    if let IrInstruction::Define {
+                        operation:
+                            IrOperation::LoopSplit {
+                                work: Some(work), ..
+                            },
+                        ..
+                    } = instruction
+                    {
+                        Some(work)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert!(!weights.is_empty(), "{name}: no split");
+            assert!(
+                weights
+                    .iter()
+                    .any(|work| evaluate(work, 1024) > evaluate(work, 17).saturating_mul(10)),
+                "{name}: helper extent not priced: {weights:?}"
+            );
+        });
+    }
+}
+
 fn with_ir_mode<ResultValue>(
     source: &[u8],
     overlap: OverlapLowering,

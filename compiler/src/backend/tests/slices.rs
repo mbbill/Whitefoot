@@ -59,6 +59,181 @@ fn run_compute_oracle(executable: &Path, name: &str, parallel: bool) {
 }
 
 #[test]
+fn runtime_work_estimates_are_total_for_empty_and_inverted_ranges() {
+    let source = br#"fn count_work(lower: own u64, upper: own u64) -> result: own u64 pure {
+  let total = 0_u64;
+  for (i in lower..upper) {
+    set total = total +wrap i;
+  }
+  return total;
+}
+
+fn write_work(count: own u64, lower: own u64, upper: own u64) -> result: own buffer<u64> pure contract {
+  requires count <= 2_u64;
+} {
+  let output = buffer_new(count, 0_u64);
+  for (i in 0_u64..count) {
+    set output[i] = count_work(lower: lower, upper: upper);
+  }
+  return move output;
+}
+
+fn release_work(output: own buffer<u64>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let output = write_work(count: 2_u64, lower: 0_u64, upper: 17_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    let mut llvm = emit_with_overlap(source)
+        .replace("@main(", "@wf_total_work_main(")
+        .replace("@wf__main_body(", "@wf_total_work_body(")
+        .replace(
+            "call i64 @wf__par_split_budget(",
+            "call i64 @wf_work_budget(",
+        );
+    llvm.push_str(
+        r#"
+declare i64 @wf_work_budget(i64, i64)
+define void @wf_probe_work(i64 %count, i64 %lower, i64 %upper, ptr %out, ptr %length) {
+  %r = call { ptr, i64 } @wf_write_work(i64 %count, i64 %lower, i64 %upper)
+  %p = extractvalue { ptr, i64 } %r, 0
+  %n = extractvalue { ptr, i64 } %r, 1
+  store ptr %p, ptr %out
+  store i64 %n, ptr %length
+  ret void
+}
+define void @wf_probe_release(ptr %data, i64 %count) {
+  %a = insertvalue { ptr, i64 } poison, ptr %data, 0
+  %b = insertvalue { ptr, i64 } %a, i64 %count, 1
+  %r = call i64 @wf_release_work({ ptr, i64 } %b)
+  ret void
+}
+"#,
+    );
+    let host = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern void wf_probe_work(uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
+extern void wf_probe_release(uint64_t *, uint64_t);
+static uint64_t price;
+uint64_t wf_work_budget(uint64_t span, uint64_t weight) {
+    (void)span; price = weight; return 0;
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    uint64_t *output, length;
+    wf_probe_work(2, 0, 17, &output, &length);
+    if (length != 2 || output[0] != 136 || output[1] != 136) return 1;
+    wf_probe_release(output, length);
+    wf_probe_work(2, 17, 1, &output, &length);
+    if (length != 2 || output[0] || output[1]) return 2;
+    wf_probe_release(output, length);
+    wf_probe_work(0, 17, 1, &output, &length);
+    if (length) return 3;
+    uint64_t inverted = price;
+    wf_probe_release(output, length);
+    wf_probe_work(0, 0, 0, &output, &length);
+    if (length || inverted != price) return 3;
+    wf_probe_release(output, length);
+    /* No inner source iteration runs. Pricing must nevertheless remain total
+       when its independent work-count arithmetic exceeds the machine word. */
+    wf_probe_work(0, 0, UINT64_MAX, &output, &length);
+    if (length || price <= UINT64_MAX / 1024) return 4;
+    wf_probe_release(output, length);
+    printf("saturated work price: %llu\n", (unsigned long long)price);
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    let output = Command::new(executable)
+        .output()
+        .expect("run total scheduling estimate probe");
+    assert!(output.status.success(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove total scheduling estimate probe");
+}
+
+#[test]
+fn runtime_block_sizes_change_budget_prices_without_changing_scan_results() {
+    let source =
+        include_bytes!("../../../../research/experiments/compute-bench/programs/prefix.wf");
+    let module = emit_with_overlap(source);
+    let adapter = include_str!("../../../../research/experiments/compute-bench/prefix_host.ll");
+    let mut llvm = bind_compute_host_adapter(&module, adapter)
+        .replace("@main(", "@wf_extent_test_main(")
+        .replace("@wf__main_body(", "@wf_extent_test_body(")
+        .replace(
+            "call i64 @wf__par_split_budget(",
+            "call i64 @wf_work_budget(",
+        );
+    llvm.push_str("\ndeclare i64 @wf_work_budget(i64, i64)\n");
+    let host = r#"#include <stdint.h>
+#include <stdatomic.h>
+#include <stdio.h>
+#include <stdlib.h>
+extern int wf__floor_run(int, char **);
+extern int wf__par_pool_active(void);
+extern uint64_t wf__par_split_budget(uint64_t, uint64_t);
+extern void wf_bench_prefix(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
+extern void wf_bench_prefix_release(uint64_t *, uint64_t);
+static _Atomic uint64_t observed;
+uint64_t wf_work_budget(uint64_t span, uint64_t weight) {
+    if (span == 128) {
+        uint64_t previous = atomic_load(&observed);
+        while (previous < weight && !atomic_compare_exchange_weak(&observed, &previous, weight)) {}
+    }
+    return wf__par_split_budget(span, weight);
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const uint64_t widths[] = {17, 1024, 4096};
+    uint64_t previous_price = 0;
+    for (unsigned shape = 0; shape < 3; ++shape) {
+        uint64_t width = widths[shape], count = 128 * width;
+        uint64_t *input = calloc((size_t)count, sizeof(*input));
+        if (!input) return 1;
+        for (uint64_t i = 0; i < count; ++i) input[i] = i + 1;
+        uint64_t *output = NULL, length = 0;
+        atomic_store(&observed, 0);
+        wf_bench_prefix(input, count, width, 1, &output, &length);
+        if (!output || length != count) return 2;
+        uint64_t expected = 0;
+        for (uint64_t i = 0; i < count; ++i) {
+            if (output[i] != expected || input[i] != i + 1) return 3;
+            expected += i + 1;
+        }
+        uint64_t price = atomic_load(&observed);
+        printf("%llu %llu\n", (unsigned long long)width, (unsigned long long)price);
+        if (wf__par_pool_active()) {
+            if (!price || (shape == 1 && price <= previous_price * 10) ||
+                (shape == 2 && price <= previous_price * 3)) return 4;
+        } else if (price) return 5;
+        previous_price = price;
+        wf_bench_prefix_release(output, length);
+        free(input);
+    }
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    for workers in [1, 2, 4] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers.to_string())
+            .env_remove("WF_SPLIT_WORK")
+            .output()
+            .expect("run runtime extent price probe");
+        assert!(output.status.success(), "workers={workers}: {output:?}");
+    }
+    std::fs::remove_dir_all(directory).expect("remove runtime extent probe");
+}
+
+#[test]
 fn compute_oracle_sampling_rejects_wrong_values_and_missing_observations() {
     let source = include_str!("../../../../research/experiments/compute-bench/programs/prefix.wf");
     let adapter = include_str!("../../../../research/experiments/compute-bench/prefix_host.ll");

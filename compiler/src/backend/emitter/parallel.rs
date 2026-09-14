@@ -58,9 +58,12 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
-use super::{BackendFailure, FunctionEmitter, llvm_type, value_name};
+use super::{BackendFailure, FunctionEmitter, IntrinsicDeclaration, llvm_type, value_name};
 use crate::backend::abi::{FunctionAbi, ResultAbi};
-use crate::{IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId};
+use crate::{
+    IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId,
+    IrWorkEstimate,
+};
 
 /// The counted loop's index type [FN-1], which fixes every width question the
 /// split could otherwise have.
@@ -78,6 +81,7 @@ pub(super) struct LoopSplitSite<'ir> {
     pub(super) upper: IrValueId,
     pub(super) captures: &'ir [IrValueId],
     pub(super) weight: u64,
+    pub(super) work: Option<&'ir IrWorkEstimate>,
 }
 
 /// The Windows parallel ABI as external obligations.
@@ -612,18 +616,117 @@ impl FunctionEmitter<'_, '_> {
         let budget = format!("%{}", self.next_temporary()?);
         let lower = self.value_name(split.lower);
         let upper = self.value_name(split.upper);
+        let weight = if let Some(work) = split.work {
+            self.emit_work_estimate(work, &mut std::collections::HashMap::new())?
+        } else {
+            split.weight.to_string()
+        };
         writeln!(
             self.output,
             "  {width} = sub i64 {upper}, {lower}\n  \
              {ascending} = icmp ugt i64 {upper}, {lower}\n  \
              {span} = select i1 {ascending}, i64 {width}, i64 0\n  \
-             {budget} = call i64 @wf__par_split_budget(i64 {span}, i64 {})",
-            split.weight
+             {budget} = call i64 @wf__par_split_budget(i64 {span}, i64 {weight})"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         self.parallel.queries_split_budget = true;
         arguments.push(format!("i64 {budget}"));
         self.emit_split_call(result, abi.result(), &callee, arguments)
+    }
+
+    /// Scheduling arithmetic is total even when the priced source branch
+    /// would never execute. Only already-materialized SSA captures are read.
+    fn emit_work_estimate(
+        &mut self,
+        work: &IrWorkEstimate,
+        memo: &mut std::collections::HashMap<IrWorkEstimate, String>,
+    ) -> Result<String, BackendFailure> {
+        if let Some(value) = memo.get(work) {
+            return Ok(value.clone());
+        }
+        let value = match work {
+            IrWorkEstimate::Constant(value) => value.to_string(),
+            IrWorkEstimate::Value(value) => {
+                if self.value_type(*value) != Some(U64) {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                self.value_name(*value)
+            }
+            IrWorkEstimate::Length(value) => {
+                let ty = self.value_type(*value).ok_or(BackendFailure::InvalidIr)?;
+                if !matches!(ty, IrType::Buffer { .. } | IrType::Slice { .. }) {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let result = format!("%{}", self.next_temporary()?);
+                writeln!(
+                    self.output,
+                    "  {result} = extractvalue {} {}, 1",
+                    llvm_type(self.program, ty)?,
+                    self.value_name(*value)
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                result
+            }
+            IrWorkEstimate::Sum(parts) => {
+                let mut result = "0".to_owned();
+                for part in parts {
+                    let value = self.emit_work_estimate(part, memo)?;
+                    result = self.emit_work_binary("llvm.uadd.sat.i64", &result, &value)?;
+                }
+                result
+            }
+            IrWorkEstimate::Difference(left, right) => {
+                let left = self.emit_work_estimate(left, memo)?;
+                let right = self.emit_work_estimate(right, memo)?;
+                self.emit_work_binary("llvm.usub.sat.i64", &left, &right)?
+            }
+            IrWorkEstimate::Product(left, right) => {
+                let left = self.emit_work_estimate(left, memo)?;
+                let right = self.emit_work_estimate(right, memo)?;
+                self.intrinsics.insert(IntrinsicDeclaration::Overflow {
+                    name: "llvm.umul.with.overflow.i64".to_owned(),
+                    ty: "i64".to_owned(),
+                });
+                let pair = self.next_temporary()?;
+                let product = self.next_temporary()?;
+                let overflow = self.next_temporary()?;
+                let result = format!("%{}", self.next_temporary()?);
+                writeln!(self.output, "  %{pair} = call {{ i64, i1 }} @llvm.umul.with.overflow.i64(i64 {left}, i64 {right})\n  %{product} = extractvalue {{ i64, i1 }} %{pair}, 0\n  %{overflow} = extractvalue {{ i64, i1 }} %{pair}, 1\n  {result} = select i1 %{overflow}, i64 -1, i64 %{product}")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                result
+            }
+            IrWorkEstimate::Quotient(value, divisor) => {
+                if *divisor == 0 {
+                    return Err(BackendFailure::InvalidIr);
+                }
+                let value = self.emit_work_estimate(value, memo)?;
+                let result = format!("%{}", self.next_temporary()?);
+                writeln!(self.output, "  {result} = udiv i64 {value}, {divisor}")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                result
+            }
+        };
+        memo.insert(work.clone(), value.clone());
+        Ok(value)
+    }
+
+    fn emit_work_binary(
+        &mut self,
+        intrinsic: &str,
+        left: &str,
+        right: &str,
+    ) -> Result<String, BackendFailure> {
+        self.intrinsics.insert(IntrinsicDeclaration::Binary {
+            name: intrinsic.to_owned(),
+            ty: "i64".to_owned(),
+        });
+        let result = format!("%{}", self.next_temporary()?);
+        writeln!(
+            self.output,
+            "  {result} = call i64 @{intrinsic}(i64 {left}, i64 {right})"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(result)
     }
 
     fn emit_split_call(

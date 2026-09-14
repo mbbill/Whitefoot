@@ -1065,6 +1065,21 @@ pub enum IrPlaceProjection {
     },
 }
 
+/// A total, nonnegative estimate evaluated only for a parallel split budget.
+/// Its leaves are existing scalar captures or descriptor lengths, never
+/// element reads or user calls. Arithmetic saturates rather than overflowing.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum IrWorkEstimate {
+    Constant(u64),
+    Value(IrValueId),
+    Length(IrValueId),
+    Sum(Vec<Self>),
+    Product(Box<Self>, Box<Self>),
+    Difference(Box<Self>, Box<Self>),
+    /// The divisor is a positive compiler constant.
+    Quotient(Box<Self>, u64),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrOperation {
     Constant(IrConstant),
@@ -1355,6 +1370,8 @@ pub enum IrOperation {
         /// allowance multiplies by the span. A cost over the emitted IR, never
         /// a name, a signature, or a source shape.
         weight: u64,
+        /// An available runtime extent estimate; absence keeps `weight`.
+        work: Option<IrWorkEstimate>,
     },
 }
 
@@ -1696,6 +1713,17 @@ impl IrSourceCall {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct IrCountedRange {
+    /// Blocks built for this counted loop, including its structural exits.
+    pub(crate) blocks: std::ops::Range<usize>,
+    /// The continuation is allocated with the loop but executes after it.
+    pub(crate) continuation: IrBlockId,
+    /// The endpoint values captured before the first header.
+    pub(crate) lower: IrValueId,
+    pub(crate) upper: IrValueId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrFunction {
     name: String,
     parameters: Vec<(IrValueId, IrType)>,
@@ -1708,6 +1736,8 @@ pub struct IrFunction {
     result: IrType,
     values: Vec<IrType>,
     blocks: Vec<IrBlock>,
+    /// Counted extents retained only for the scheduler's work estimate.
+    counted_ranges: Vec<IrCountedRange>,
     overlaps: Vec<IrOverlap>,
     synthesis: Option<IrSynthesis>,
 }
