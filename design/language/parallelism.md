@@ -3,3 +3,6 @@ Decision: Parallel permission derives from checked ownership, effects, dataflow,
 Decision: Permission and actualization are separate judgments, because a permission is a fact about the program while actualization is a lowering and runtime choice, and conflating them would make acceptance depend on a scheduling decision, instead of one combined judgment.
 
 Decision: A counted loop is a parallel-permission site in its own right, because its permission must not depend on rewriting the loop as a pair of sibling calls, instead of loop permission as an amendment to the sibling-call rule.
+
+Rejected:
+- Source staged-loop permission selected by suspension or native-operation classifications: rejected because ordinary calls retain their loans until return and implementation origin cannot authorize additional overlap; the loss of pipeline permission is established, but its separate runtime cost has not been measured.

@@ -2,7 +2,9 @@
 
 The owner selected D6b option A, with `formal` and `actual` as the two group
 keywords, a formal-authoritative effect row, structurally matched contracts,
-and fresh non-copy owned function-formal results. The
+and originally fresh non-copy owned function-formal results. C2 removes that
+fresh-result restriction together with owned-history summaries; ordinary
+ownership applies to source and linked actuals alike. The
 [specification](../../../spec/kernel-spec.md) defines that interface; the
 executable evidence and its cost limits are linked below. D6's protocol/conform design,
 D6b's routing ceiling, and a compile-cost admission prerequisite are not selected.
@@ -237,7 +239,7 @@ prove an asymptotic bound, and no fuel or timeout selects source acceptance.
 exponential in written source size. D7's unchanged cycle restriction proves
 finiteness, not that stronger bound: a finite acyclic graph can duplicate
 specializations at each level. The owner deferred that cost question in D7.
-The combined v0.55 work has not reconciled these decisions and does not claim
+The combined v0.56 work has not reconciled these decisions and does not claim
 the stronger bound is implemented. This remains an owner decision; no timing
 gate, instance fuel or silent restriction resolves it.
 

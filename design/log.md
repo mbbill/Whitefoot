@@ -4,6 +4,18 @@ Newest first. One entry per ruling on the tree, an approved change or a
 refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-13 Preserve continuing view loans and reuse consumed result storage
+
+Nodes: compiler/view-loans, compiler/storage-placement
+
+Summary: The owner accepted both pending implementation amendments in the PR #30 pre-merge assessment handoff. A continuing view loan retains its own identity and protected place through descriptor transport because storage origins alone lose a live child of an incoming view. A consumed aggregate may reuse a whole result or one consuming result field only while preserving complete-parent and sibling interference, because the retained priority helper exposed avoidable whole-run transfers and field reuse must not overwrite live siblings. These choices preserve ordinary source ownership without a language guarantee of same-place calls; the accepted amendment files are removed.
+
+## 2026-09-13 Reconcile container contracts and ordinary host values
+
+Nodes: compiler, compiler/completion-runtime, compiler/parallel-lowering, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/two-worlds, compiler/resource-exhaustion-floor, compiler/target-qualification, language/checks-and-proofs/automatic-facts, language/checks-and-proofs/requires-entry-contract, language/contracts, language/data-model, language/data-model/kernel-minimality, language/effects, language/generics, language/ownership, language/ownership/no-reborrow, language/ownership/slice-result-provenance, language/parallelism, language/parallelism/staged-permission, language/system-interface, language/system-interface/completion-policy, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/handle-factory, language/system-interface/host-string-lease, language/system-interface/opaque-scalar-types, language/system-interface/outcome-typing, language/system-interface/qualification-guarantees, language/system-interface/single-attempt-transfer
+
+Summary: The owner accepted this revision in the PR #30 pre-merge assessment handoff and directed its application. It records the owner's selected D5, D7 and C2 rules in the live tree: exclusive run mutation with entry and exit contracts, explicit formal/actual behavior with authoritative formal rows and ordinary function bindings, owned full arrays, and an ordinary prelude boundary for host values and functions. The ordinary-host-values DESIGN and DECISIONS retain the interface alternatives and grounds; the container investigation retains the transfer and sparse-layout experiments. Retired nodes for staged source permission, completion policies and native qualification lose their implementations under C2 and their refusals move to the surviving ancestors. Dependent records for generic instantiation, kernel minimality, automatic endpoint facts, explicit factory accounting, invocation backing, directory multi-results, empty opaque drop, ordinary entry calls and native call lifetimes follow the same selections. Main's unrelated decisions and native-runtime measurement grounds remain. C2-RESULTS and the backend witnesses supply revision-specific evidence, not a general performance or safety certification. This tree ruling does not settle the recorded acyclic-instantiation cost conflict or certify the remaining performance evidence.
+
 ## 2026-09-13 Clarify child-view origin preservation
 
 Nodes: language/ownership/slice-result-provenance

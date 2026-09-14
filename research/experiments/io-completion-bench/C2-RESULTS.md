@@ -1,7 +1,7 @@
 # C2 ordinary-call workload measurements
 
 The first cohort was measured 2026-09-12, 20:27–20:28 PDT, during the then-named
-v0.58 amendment on PR #30. The combined release is now v0.55 over main v0.54.
+v0.58 amendment on PR #30. The combined release is now v0.56 over main v0.55.
 The worktree was based on `d695f38513a8513eac62b73108517f982435285f` with the
 ongoing C2 changes. These are measurements, not acceptance or speed gates.
 This note and [the 84 raw samples](c2-many-files-samples.csv) are one retained
