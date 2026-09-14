@@ -18,19 +18,6 @@ of them is a decision. Remove an item when its fix and test land.
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
 
-- **Unguarded affine expression nesting depth.** A proof-domain affine
-  expression nesting parentheses about 1400 deep aborts the driver with a
-  stack overflow and no diagnostic (exit 134); 1200 rejects normally and
-  20000 does not finish in twenty seconds. It reaches this from both a `use`
-  premise and an `invariant` target, so it is in the shared affine-expression
-  handling. The repair is the pattern already used for structural limits, the
-  4096-entry `proof_use` capacity and `AffineCheckError::LimitExceeded`,
-  applied to nesting depth where the recursion actually is: the checker's
-  `check_affine_expression` family in `semantic/check/control/proofs.rs`,
-  `AffineExpression`'s derived drop in `semantic/entailment/affine.rs`, and
-  the FN-9 scheduler's Tarjan walk in `semantic/entailment.rs`, all three
-  native recursions the parser's own iterative machinery hands the input to;
-  with a test that pins it.
 - **A runtime-sized `buffer_new` fails with no rule and no location.** At an
   unproved runtime capacity the driver stops four stages after semantic
   checking with `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` and no

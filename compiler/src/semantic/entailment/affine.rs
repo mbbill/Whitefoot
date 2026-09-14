@@ -38,6 +38,40 @@ pub(crate) enum AffineExpression {
     },
 }
 
+impl Drop for AffineExpression {
+    fn drop(&mut self) {
+        fn take_children(expression: &mut AffineExpression, pending: &mut Vec<AffineExpression>) {
+            match expression {
+                AffineExpression::Add(left, right) | AffineExpression::Subtract(left, right) => {
+                    pending.push(std::mem::replace(
+                        left.as_mut(),
+                        AffineExpression::Constant(0),
+                    ));
+                    pending.push(std::mem::replace(
+                        right.as_mut(),
+                        AffineExpression::Constant(0),
+                    ));
+                }
+                AffineExpression::MultiplyByConstant { value, .. } => {
+                    pending.push(std::mem::replace(
+                        value.as_mut(),
+                        AffineExpression::Constant(0),
+                    ));
+                }
+                AffineExpression::Constant(_) | AffineExpression::Term(_) => {}
+            }
+        }
+
+        // Formation may reject an oversized tree; releasing that tree must
+        // not recurse through the very shape whose capacity was exceeded.
+        let mut pending = Vec::new();
+        take_children(self, &mut pending);
+        while let Some(mut expression) = pending.pop() {
+            take_children(&mut expression, &mut pending);
+        }
+    }
+}
+
 /// One nonzero coefficient in a canonical affine left-hand side.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct AffineCoefficient {
@@ -1226,6 +1260,27 @@ mod tests {
             Vec::new(),
             "the one shared factor is skipped without reporting a failure"
         );
+    }
+
+    #[test]
+    fn oversized_expression_cleanup_handles_every_recursive_form() {
+        for shape in 0..3 {
+            let mut expression = term(0);
+            for _ in 0..20_000 {
+                expression = match shape {
+                    0 => AffineExpression::Add(Box::new(expression), Box::new(constant(0))),
+                    1 => AffineExpression::Subtract(Box::new(constant(0)), Box::new(expression)),
+                    _ => multiply(1, expression),
+                };
+            }
+            assert_eq!(
+                normalize_less_equal(&expression, &constant(0), &mut AffineCheckState::new()),
+                Err(AffineCheckError::LimitExceeded(
+                    AffineCheckLimit::ExpressionNodes
+                )),
+            );
+            drop(expression);
+        }
     }
 
     #[test]

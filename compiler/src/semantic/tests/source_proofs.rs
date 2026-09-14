@@ -1013,6 +1013,101 @@ fn deeply_grouped_use_reaches_its_ordinary_redundancy_diagnostic() {
 }
 
 #[test]
+fn affine_expression_capacity_preserves_the_boundary_and_rejects_oversized_trees() {
+    // A sum of 2048 literals has 4095 nodes, and the right-hand literal
+    // brings the relation to INV-1's exact 4096-node capacity.
+    for terms in [2048, 2049, 10_000] {
+        let expression = vec!["0_u64"; terms].join(" + ");
+        for in_use in [false, true] {
+            let relation = format!("{expression} <= 0_u64");
+            let proof = if in_use {
+                format!("invariant upper_bound: 0_u64 <= 0_u64 {{\n    use ({relation});\n  }}")
+            } else {
+                format!("invariant upper_bound: {relation};")
+            };
+            let source = format!(
+                "fn check() -> result: own unit pure {{\n  {proof}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+            );
+            if terms == 2048 && in_use {
+                assert_prf1_issue(
+                    source.as_bytes(),
+                    SourceProofObligation::RedundantUseBlock,
+                    ExpectedProofIssueNode::Invariant,
+                );
+                continue;
+            }
+            with_semantics(source.as_bytes(), |outcome| {
+                if terms == 2048 {
+                    assert!(matches!(outcome, SemanticOutcome::Complete(_)));
+                    return;
+                }
+                let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                    panic!("an oversized affine relation must reject at formation");
+                };
+                assert_eq!(
+                    issue.rule(),
+                    if in_use {
+                        SemanticRule::Prf1
+                    } else {
+                        SemanticRule::Inv1
+                    }
+                );
+                let reason = match issue.kind() {
+                    SemanticIssueKind::InvalidSourceProof { reason, .. }
+                    | SemanticIssueKind::InvalidInvariant { reason, .. } => *reason,
+                    other => panic!("expected a formation-capacity diagnostic, got {other:?}"),
+                };
+                assert_eq!(
+                    reason,
+                    "the affine relation exceeds the checker's fixed formation capacity"
+                );
+                let SemanticLocation::SourceNode(_, coordinate) = issue.location();
+                let start = coordinate.start().value() as usize;
+                let end = coordinate.end().value() as usize;
+                let cited = &source[start..end];
+                assert_eq!(
+                    cited,
+                    if in_use {
+                        format!("({relation})")
+                    } else {
+                        proof.clone()
+                    }
+                );
+            });
+        }
+    }
+}
+
+#[test]
+fn affine_formation_preserves_grouping_source_order_and_literal_factors() {
+    for (expression, result) in [
+        ("9_u64 - 4_u64 - 3_u64", 2),
+        ("9_u64 - (4_u64 - 3_u64)", 8),
+        ("(1_u64 + 2_u64) * 2_u64", 6),
+        ("2_u64 * (1_u64 + 2_u64)", 6),
+    ] {
+        let gap = if expression.starts_with('(') { "" } else { " " };
+        let source = format!(
+            "fn check() -> result: own unit pure {{\n  invariant upper:{gap}{expression} <= {result}_u64;\n  invariant lower:{gap}{expression} >= {result}_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{expression}"
+            );
+        });
+    }
+
+    let source = format!(
+        "fn check() -> result: own unit pure {{\n  invariant upper:(1_u64) * (2_u64) <= 2_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+    );
+    super::assert_rule_kind(source.as_bytes(), SemanticRule::Inv1, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidInvariant { reason, .. }
+            if *reason == "an affine multiplication has no direct integer-literal operand")
+    });
+}
+
+#[test]
 fn use_capacity_cites_the_first_entry_beyond_the_admitted_prefix() {
     let written_use = "    use (value <= limit);\n";
     let uses = written_use.repeat(MAX_CERTIFICATE_PREMISES + 1);
