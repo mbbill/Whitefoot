@@ -255,13 +255,33 @@ $(MODULE_CONTROL): FORCE
 # none of them: `wf` is always this tree's program.
 #
 # This is ONE BUILD PATH, not a second one. The baseline twin is the twin the
-# controls already built, handed different inputs; every rule, link line and
-# assertion below is the same rule, link line and assertion.
+# controls already built, handed different inputs. The entry and native library
+# follow its explicit interface profile; oracle and strong-runtime checks stay.
 WF_B_SCHED_DIR ?= $(SCHED)
 WF_B_FLOOR     ?= $(FLOOR)
 WF_B_WFC       ?= $(WFC)
 WF_B_NATIVE    := $(abspath $(WF_B_SCHED_DIR)/..)
 WF_B_COMPLETION := $(WF_B_NATIVE)/completion
+# Explicit experiment interface, selected from the baseline program's header
+# by the regression workflow. Missing ordinary units never imply legacy mode.
+WF_B_INTERFACE ?= ordinary
+ifneq ($(WF_B_INTERFACE),ordinary)
+ifneq ($(WF_B_INTERFACE),command)
+$(error compute-bench: WF_B_INTERFACE must be exactly ordinary or command)
+endif
+endif
+B_SEQ_SUFFIX := $(if $(filter command,$(WF_B_INTERFACE)),-b,)
+B_RUNTIME_BASE := $(BUILD)/floor-b.o $(BUILD)/sched_core-b.o \
+                  $(BUILD)/sched_prim_host-b.o $(BUILD)/sched_entry-b.o
+B_REQUIRED := $(WF_B_FLOOR) $(WF_B_SCHED_DIR)/core.c \
+              $(WF_B_SCHED_DIR)/prim_host.c $(WF_B_SCHED_DIR)/entry.c
+B_HASH_INPUTS := $(B_REQUIRED) $(wildcard $(WF_B_SCHED_DIR)/*.h $(WF_B_NATIVE)/*.h)
+ifeq ($(WF_B_INTERFACE),ordinary)
+B_REQUIRED += $(addprefix $(WF_B_COMPLETION)/,runtime.c wait_host.c file_adapter.c \
+              file_posix.c bridge.c linux_io_uring.c) \
+              $(WF_B_NATIVE)/ordinary_values.c $(WF_B_NATIVE)/ordinary_values.ll
+B_HASH_INPUTS += $(filter-out $(B_HASH_INPUTS),$(B_REQUIRED)) $(wildcard $(WF_B_COMPLETION)/*.h)
+endif
 
 # What the twin was built from, for manifest.txt: the merge-base revision on a
 # regression run, and the words below when the twin's sources are this tree's.
@@ -284,28 +304,20 @@ BASELINE := $(if $(filter-out $(SCHED),$(WF_B_SCHED_DIR)),1,)$(if $(filter-out $
 # different stamp, re-emitted module and recompiled runtime. Identical bytes
 # under another path rebuild nothing, which is right -- that is the same build.
 #
-# It hashes the scheduler and completion sources and headers, ordinary-value
-# bodies, native headers, floor and compiler. A header is exactly what a rule
-# listing source units alone would miss. Probe and smoke units are hashed too
-# and compile into nothing; the
-# cost of that over-approximation is a twin rebuilt when it need not have been,
-# which is the side of this trade to be wrong on.
+# It hashes every compiled baseline source, its header directories and compiler,
+# plus the interface profile. A header is what source-only dependencies miss.
 BASELINE_STAMP := $(BUILD)/baseline-source.txt
-$(BASELINE_STAMP): FORCE
+$(BASELINE_STAMP): FORCE baseline-check
 	@mkdir -p $(BUILD)
-	@test -f $(WF_B_SCHED_DIR)/core.c && test -f $(WF_B_SCHED_DIR)/prim_host.c \
-	  && test -f $(WF_B_SCHED_DIR)/entry.c && test -f $(WF_B_FLOOR) \
-	  && test -f $(WF_B_NATIVE)/ordinary_values.c && test -f $(WF_B_NATIVE)/ordinary_values.ll \
-	  && test -x $(WF_B_WFC) || { \
-	    echo 'compute-bench: the twin needs a complete ordinary native library beside' >&2; \
-	    echo 'WF_B_SCHED_DIR, plus WF_B_FLOOR and WF_B_WFC; defaults use this tree.' >&2; exit 1; }
-	@$(SHA256) $(WF_B_SCHED_DIR)/*.c $(WF_B_SCHED_DIR)/*.h \
-	  $(WF_B_COMPLETION)/*.c $(WF_B_COMPLETION)/*.h $(WF_B_NATIVE)/*.h \
-	  $(WF_B_NATIVE)/ordinary_values.c $(WF_B_NATIVE)/ordinary_values.ll \
-	  $(WF_B_FLOOR) $(WF_B_WFC) > $@.hashes.new
-	@awk '{ print $$1 }' $@.hashes.new > $@.new
+	@$(SHA256) $(B_HASH_INPUTS) $(WF_B_WFC) > $@.hashes.new
+	@{ printf '%s\n' 'interface=$(WF_B_INTERFACE)'; awk '{ print $$1 }' $@.hashes.new; } > $@.new
 	@cmp -s $@.new $@ || mv -f $@.new $@
 	@rm -f $@.new $@.hashes.new
+
+baseline-check:
+	@for f in $(B_REQUIRED); do test -f "$$f" || { \
+	  echo "compute-bench: missing baseline input $$f ($(WF_B_INTERFACE))" >&2; exit 1; }; done
+	@test -x $(WF_B_WFC) || { echo 'compute-bench: missing baseline compiler' >&2; exit 1; }
 
 # ---------------------------------------------------------------- the twin --
 # The A/B instrument. Either control above answers "what would this be worth
@@ -386,7 +398,7 @@ GAP_ENV := $(if $(strip $(WFB_GAP_US)),WFB_GAP_US=$(strip $(WFB_GAP_US)),)
 CHECK   := $(WORK)/check
 # New-language consumers also run in the untimed gate. Select KERNELS=stencil
 # for its full reference comparison. The default four need no range-loan
-# syntax; their pre-C2 entry/library adaptation remains unresolved in README.
+# syntax; their pre-C2 entry/library adapter preserves the current algorithms.
 CHECKED := $(addprefix $(CHECK)/checked_,$(sort $(KERNELS) stencil range_split))
 JOBS    ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
@@ -408,14 +420,14 @@ RUNTIME_OBJS   := $(BUILD)/floor.o $(BUILD)/sched_core.o $(BUILD)/sched_prim_hos
                   $(BUILD)/completion_file_posix.o $(BUILD)/completion_bridge.o \
                   $(BUILD)/completion_linux_io_uring.o $(BUILD)/ordinary_values_c.o \
                   $(BUILD)/ordinary_values_ll.o
-RUNTIME_OBJS_B := $(patsubst %.o,%-b.o,$(RUNTIME_OBJS))
+RUNTIME_OBJS_B := $(if $(filter ordinary,$(WF_B_INTERFACE)),$(patsubst %.o,%-b.o,$(RUNTIME_OBJS)),$(B_RUNTIME_BASE))
 COMMON_OBJS := $(SHARED_OBJS) $(RUNTIME_OBJS)
 
 LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
              $(DEPS)/rayon/libwf_compute_bench_rayon.a -ldl -lm
 
 .PHONY: all compiler deps build images verify compare programs-check verdict \
-        verdict-test module-symbols-test clean clean-deps FORCE
+        verdict-test module-symbols-test baseline-entry-test baseline-check clean clean-deps FORCE
 all: build
 
 # ---------------------------------------------------------------- compiler --
@@ -489,14 +501,18 @@ $$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll module-symbols.awk $$(WFC) 
 # It is emitted by $(WF_B_WFC), which is this tree's compiler unless a baseline
 # named another one, so a regression run compares this tree's emission against
 # the merge-base's rather than running both arms through one emitter. The
-# source is this tree's either way: a language change that moved a kernel's
-# .wf source has to be measured on the source the branch ships, and the
-# baseline compiler either accepts it or the run says so. $(BASELINE_STAMP)
+# source is this tree's either way. The command profile changes only its exact
+# nullary main header and checks byte-identical reversal; any other source
+# incompatibility remains a build failure. $(BASELINE_STAMP)
 # carries the content hash of that compiler, so a moved baseline re-emits.
-$$(BUILD)/$(1)-par-b.ll: programs/$(1).wf $(1)_host.ll module-symbols.awk $$(WF_B_WFC) $$(PAR_CONTROL) \
+$$(BUILD)/$(1)-baseline.wf: programs/$(1).wf baseline-entry.sh $$(BASELINE_STAMP)
+	@mkdir -p $$(BUILD)
+	sh baseline-entry.sh adapt $$(WF_B_INTERFACE) $$< $$@
+
+$$(BUILD)/$(1)-par-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll module-symbols.awk $$(WF_B_WFC) $$(PAR_CONTROL) \
                          $$(BASELINE_STAMP) | compiler
 	@mkdir -p $$(BUILD)
-	$$(WF_B_WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par-b.ledger
+	$$(WF_B_WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm $$(BUILD)/$(1)-baseline.wf -o $$@.raw > $$(BUILD)/$(1)-par-b.ledger
 	awk -v prefix=wfb_$(1)_par -v api=wf_bench_$(1) -v mode=par \
 	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
 	grep -q 'call void @wf__par_publish(' $$@
@@ -504,6 +520,14 @@ $$(BUILD)/$(1)-par-b.ll: programs/$(1).wf $(1)_host.ll module-symbols.awk $$(WF_
 $$(BUILD)/$(1)-seq.ll: programs/$(1).wf $(1)_host.ll module-symbols.awk $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WFC) --no-overlap --emit-llvm programs/$(1).wf -o $$@.raw
+	awk -v prefix=wfb_$(1)_seq -v api=wf_bench_$(1) -v mode=seq \
+	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
+	! grep -q 'call void @wf__par_publish(' $$@
+
+# A cross-interface image cannot link the current seq object's ordinary imports
+# against the legacy library. Build its untimed seq control with its compiler.
+$$(BUILD)/$(1)-seq-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll module-symbols.awk $$(WF_B_WFC) $$(BASELINE_STAMP) | compiler
+	$$(WF_B_WFC) --no-overlap --emit-llvm $$< -o $$@.raw
 	awk -v prefix=wfb_$(1)_seq -v api=wf_bench_$(1) -v mode=seq \
 	    -f module-symbols.awk $$@.raw $(1)_host.ll > $$@
 	! grep -q 'call void @wf__par_publish(' $$@
@@ -538,6 +562,8 @@ $(BUILD)/%-par.o: $(BUILD)/%-par.ll $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
 $(BUILD)/%-par-b.o: $(BUILD)/%-par-b.ll $(MODULE_CONTROL) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) -c $< -o $@
+$(BUILD)/%-seq-b.o: $(BUILD)/%-seq-b.ll $(WF_FLAGS_STAMP)
+	$(CC) $(WF_FLAGS) -c $< -o $@
 $(BUILD)/%-seq.o: $(BUILD)/%-seq.ll $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
 
@@ -666,21 +692,18 @@ $(BUILD)/$(1): $(BUILD)/$(1)_bench.o $(BUILD)/$(1)-par.o $(BUILD)/$(1)-seq.o \
 endef
 $(foreach k,$(KERNELS),$(eval $(call kernel-image,$(k))))
 
-# The twin image, link line for link line the same as the plain one above --
-# the same object order, the same libraries, the same three assertions -- with
-# the `-b` native-library objects, the `-b` module object and the `-b` kernel
-# object in place of the plain ones. It shares the harness, the references and
-# the sequential control object with the plain image. The assertions apply to
-# it because a twin that silently lost the scheduler would read as a runtime
-# constant that was worth a great deal.
+# The twin keeps the same object order and three assertions, with its native
+# units selected by the explicit interface profile. It shares the harness and
+# references. Same-interface twins share seq.o; a command baseline compiles its
+# own untimed seq control so that current ordinary imports never reach old libs.
 define kernel-image-b
-$(BUILD)/$(1)-b: $(BUILD)/$(1)_bench-b.o $(BUILD)/$(1)-par-b.o $(BUILD)/$(1)-seq.o \
-                $(BUILD)/$(1)-par-b.ll $(BUILD)/$(1)-seq.ll $(BUILD)/b/$(1)_split.h \
+$(BUILD)/$(1)-b: $(BUILD)/$(1)_bench-b.o $(BUILD)/$(1)-par-b.o $(BUILD)/$(1)-seq$$(B_SEQ_SUFFIX).o \
+                $(BUILD)/$(1)-par-b.ll $(BUILD)/$(1)-seq$$(B_SEQ_SUFFIX).ll $(BUILD)/b/$(1)_split.h \
                 $$(SHARED_OBJS) $$(RUNTIME_OBJS_B)
 	$$(CXX) -pthread -fno-lto \
 	    $(BUILD)/$(1)_bench-b.o $$(BUILD)/harness.o $$(BUILD)/backend_serial.o \
 	    $$(BUILD)/backend_static.o $$(BUILD)/backend_tbb.o $$(PARLAY_OBJ) \
-	    $$(BUILD)/backend_rayon.o $(BUILD)/$(1)-par-b.o $(BUILD)/$(1)-seq.o \
+	    $$(BUILD)/backend_rayon.o $(BUILD)/$(1)-par-b.o $(BUILD)/$(1)-seq$$(B_SEQ_SUFFIX).o \
 	    $$(RUNTIME_OBJS_B) $$(LINK_LIBS) -o $$@
 	@$$(call assert-real-runtime,$$@)
 	@$$(call require-strong,$$@,wf__floor_run)
@@ -778,7 +801,7 @@ compare: build
 	    echo 'earlier table. Pass a fresh RESULTS= or run `make clean`.' >&2; exit 1; }
 	@mkdir -p $(RESULTS)/logs
 	@set -e; for k in $(KERNELS); do $(SHA256) $(BUILD)/$$k $(BUILD)/$$k-par.ll $(BUILD)/$$k-seq.ll; \
-	  test -z "$(AB)" || $(SHA256) $(BUILD)/$$k-b $(BUILD)/$$k-par-b.ll; done > $(RESULTS)/hashes-before.txt
+	  test -z "$(AB)" || $(SHA256) $(BUILD)/$$k-b $(BUILD)/$$k-par-b.ll $(BUILD)/$$k-baseline.wf $(BUILD)/$$k-seq$(B_SEQ_SUFFIX).ll; done > $(RESULTS)/hashes-before.txt
 	@set -e; { \
 	  echo "uname: $$(uname -a)"; \
 	  echo "cpus_online: $$(getconf _NPROCESSORS_ONLN)"; \
@@ -816,6 +839,8 @@ compare: build
 	  echo "WF_MODULE_CONTROL_FLAGS: $(WF_MODULE_CONTROL_FLAGS)"; \
 	  echo "WFB_GAP_US: $(WFB_GAP_US)"; \
 	  echo "WF_AB_TWIN: $(if $(AB),yes (the wf-b row; the wf row is plain),no)"; \
+	  echo "WF_B_INTERFACE: $(WF_B_INTERFACE)"; \
+	  echo "WF_B_SEQ: $(if $(B_SEQ_SUFFIX),baseline compiler; untimed control,shared current object)"; \
 	  echo "WF_B_SOURCE: $(if $(strip $(WF_B_SOURCE)),$(strip $(WF_B_SOURCE)),$(if $(BASELINE),unlabelled (WF_B_SOURCE was not set),this tree))"; \
 	  test -z "$(BASELINE)" || echo "WF_B_SCHED_DIR: $(WF_B_SCHED_DIR)"; \
 	  test -z "$(BASELINE)" || echo "WF_B_FLOOR: $(WF_B_FLOOR)"; \
@@ -886,7 +911,7 @@ compare: build
 	    -v pins="oneTBB 3046c8b0 (v2023.1.0)  ParlayLib 51017699  rayon =1.12.0" \
 	    $(RESULTS)/raw.tsv | tee $(RESULTS)/table.txt
 	@set -e; for k in $(KERNELS); do $(SHA256) $(BUILD)/$$k $(BUILD)/$$k-par.ll $(BUILD)/$$k-seq.ll; \
-	  test -z "$(AB)" || $(SHA256) $(BUILD)/$$k-b $(BUILD)/$$k-par-b.ll; done > $(RESULTS)/hashes-after.txt
+	  test -z "$(AB)" || $(SHA256) $(BUILD)/$$k-b $(BUILD)/$$k-par-b.ll $(BUILD)/$$k-baseline.wf $(BUILD)/$$k-seq$(B_SEQ_SUFFIX).ll; done > $(RESULTS)/hashes-after.txt
 	@set -e; { echo "--- after the run ---"; \
 	  cat $(RESULTS)/hashes-after.txt; \
 	} >> $(RESULTS)/manifest.txt
@@ -906,7 +931,7 @@ compare: build
 # asserts is a property of what whitefootc emits, so a rebuilt compiler makes
 # every stamp stale even when no program changed. `programs-check` builds
 # $(WFC) through `compiler` before the sub-make reads it as a prerequisite.
-programs-check: compiler module-symbols-test
+programs-check: compiler module-symbols-test baseline-entry-test
 	@mkdir -p $(CHECK)
 	$(MAKE) -j$(JOBS) $(CHECKED)
 
@@ -935,6 +960,9 @@ $(CHECK)/checked_%: programs/%.wf Makefile $(WFC) $(BUILD)/%-par.o $(BUILD)/%-se
 	$(call require-strong,$(CHECK)/$*-link,wf_bench_$*_seq)
 	$(call assert-real-runtime,$(CHECK)/$*-link)
 	touch $@
+
+baseline-entry-test:
+	MAKE="$(MAKE)" sh baseline-entry-test.sh
 
 module-symbols-test:
 	CC="$(CC)" sh module-symbols-test.sh

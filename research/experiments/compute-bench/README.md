@@ -309,16 +309,28 @@ programs and the other feeds the regression rule crafted table fragments.
 emitting compiler come from, each defaulting to this tree's own. Pointed at a
 worktree of the merge base they make `wf-b` the program the branch started
 from, which is the whole of [the compute regression
-check](#the-compute-regression-check). Nothing about the twin's rules, its link
-line or its assertions changes; only its inputs do.
+check](#the-compute-regression-check). The twin retains the same algorithm, oracle, runtime checks and
+measurement protocol. Its entry and native components follow its interface.
 
-The ordinary-call build requires the complete native library beside
-`WF_B_SCHED_DIR`, including `ordinary_values.c` and `ordinary_values.ll`.
-Same-version control and null twins use that version's library in both arms.
-Comparison with the pre-C2 compiler is unresolved: it requires `command` at
-the entry while C2 forbids that form, and its launcher/library boundary also
-differs. No transition comparison or exemption is implemented; the old
-baseline cannot currently complete the regression build.
+The explicit `WF_B_INTERFACE=ordinary|command` selects only the entry and
+native-link boundary. `ordinary` requires the complete native library beside
+`WF_B_SCHED_DIR`, including `ordinary_values.c` and `ordinary_values.ll`;
+missing units fail instead of selecting another profile. `command` uses the
+baseline floor, scheduler core, primitives and entry units. The workflow reads
+the baseline's exact nullary main header to select the profile and rejects an
+unknown interface. `baseline-entry.sh` adapts the **current** program by
+prefixing only that header with `command`; reversal must be byte-identical.
+Other source incompatibilities still fail the build. Remove this adapter when
+that older interface is no longer a comparison baseline.
+
+Same-interface twins share the sequential control object. A command baseline
+also compiles its own sequential control from the adapted current source,
+because the current object imports ordinary functions absent from the old
+library. That control is not timed as `wf-b`, but it changes image placement;
+the manifest identifies the exception and hashes both modules and adapted
+source. It does not substitute a same-version comparison or exempt a verdict.
+The C references, host kernel adapters, flags, widths, seeds, five alternating
+pairs, strong-runtime assertions and `verdict.awk` are unchanged.
 
 Two link-time assertions make a `wf` row a `wf` row. The emitted module carries
 **weak no-op stubs for every `wf__par_*` symbol**, so a link that loses the
@@ -376,18 +388,19 @@ that was here before:
 | `WF_B_SCHED_DIR` | `../../../compiler/src/backend/sched` | the twin's `core.c`, `prim_host.c`, `entry.c` and their headers |
 | `WF_B_FLOOR` | `../../../compiler/src/backend/wf_floor.c` | the twin's floor translation unit |
 | `WF_B_WFC` | `../../../compiler/target/gate/whitefootc` | the compiler that emits the twin's `--par` module |
+| `WF_B_INTERFACE` | `ordinary` | explicit `ordinary` or legacy `command` entry/library boundary |
 | `WF_B_SOURCE` | `this tree` | a label for `manifest.txt`; the merge-base revision on a gate run |
 
 Naming any of the first three is by itself a request for the twin: a regression
 run sets no control flag and still gets its second image. **This is one build
 path, not a second one** — the baseline twin is the twin the three control
-flags already built, handed different inputs, through the same rules, the same
-link line and the same three post-link assertions. A `.wf` source and the
-harness always come from this tree; only the runtime and the emitter move.
+flags already built, handed different inputs, with the same three post-link
+assertions. A `.wf` algorithm and the harness always come from this tree;
+the entry adapter and native components follow the explicit profile.
 
 The workflow exports the merge-base with the pull request's base branch as a
 git worktree under `$RUNNER_TEMP` — never a path inside the repository — builds
-that revision's `whitefootc` beside it, and sets the four variables at it. The
+that revision's `whitefootc` beside it, and sets the paths, label and interface. The
 merge base rather than the base branch's tip, because a branch is answerable
 for what it changed and not for what landed on `main` while it was open.
 
@@ -491,6 +504,8 @@ export WF_B_SCHED_DIR="$WHITEFOOT_SCRATCH_ROOT/baseline/compiler/src/backend/sch
 export WF_B_FLOOR="$WHITEFOOT_SCRATCH_ROOT/baseline/compiler/src/backend/wf_floor.c"
 export WF_B_WFC="$WHITEFOOT_SCRATCH_ROOT/baseline/compiler/target/gate/whitefootc"
 export WF_B_SOURCE="$base"
+export WF_B_INTERFACE=$(sh baseline-entry.sh profile \
+  "$WHITEFOOT_SCRATCH_ROOT/baseline/research/experiments/compute-bench/programs/quadrature.wf")
 make build && make verify
 make compare PASSES=5 CALLS=5 RESULTS="$WHITEFOOT_SCRATCH_ROOT/regression"
 make verdict RESULTS="$WHITEFOOT_SCRATCH_ROOT/regression"
