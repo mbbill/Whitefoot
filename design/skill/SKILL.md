@@ -56,19 +56,26 @@ prints them against the review base.
 
 ## Amendments
 
-Only the owner's approval of a proposed revision permits changing the live
-tree, including on a work branch. Approval may occur at any point in the work.
-Until then, keep the proposal beside the tree and record autonomous choices
-as amendments while continuing authorized implementation.
+Only the owner's explicit approval of a proposed revision permits changing the
+live tree, including on a work branch. Before editing the live tree or writing
+its approval log entry, show the owner the complete proposed revision, naming
+the affected nodes and the exact decisions to add, replace, or retire, and wait
+for approval of that revision. A request to investigate or perform the work,
+or approval given before that revision was shown, is not approval of the tree
+revision. Until approval follows the proposal, keep it beside the tree and
+record autonomous choices as amendments while continuing authorized
+implementation.
 
 An amendment file starts with `Node: <tree path>`, then a blank line and the
 node form. Identify any decision replaced or retired and explain why. Keep
 amendments current so the owner can review the complete outstanding revision.
 
-When approved, apply that revision, add its log entry, and remove the accepted
-amendment. When rejected, add a log entry naming the node, what was proposed,
-and why it was refused, remove the amendment, and adjust the design and
-implementation to the ruling. Later revisions need their own approval.
+When approved, apply only the revision shown to the owner, make its approval
+the newest log entry with the required `Owner-approved:` field, and remove the
+accepted amendment. When rejected, add a log entry naming the node, what was
+proposed, and why it was refused, remove the amendment, and adjust the design
+and implementation to the ruling. Later revisions, including material changes
+to an approved proposal, must be shown again and receive their own approval.
 
 ## Log format
 
@@ -76,11 +83,16 @@ The log records every ruling on the tree, each approved revision and each
 refused amendment, and anything else a later reader must be able to find.
 Each entry has a `## <date> <title>` heading, a `Nodes:` line listing every
 node touched or ruled on, and a concise `Summary:` paragraph with the
-conclusion, its reasons, and the ruling it records, naming the discussion or
-review that approved or refused it. Cite data, measurements, and evidence at
-their source under the project's research record instead of reproducing
-them. Git supplies the detailed history. When parallel branches add entries,
-retain both, newest first.
+conclusion, its reasons, and the ruling it records. An entry that accompanies
+a live-tree change also has `Owner-approved: <approval>` between `Nodes:` and
+`Summary:`. Its value briefly identifies the owner's explicit approval of the
+proposed revision; the field is an assertion about that approval, not a place
+for the agent to request it or infer it from the task. The approval entry must
+be the newest entry and must name every changed node. Refused amendments do
+not use `Owner-approved:`. Cite data, measurements, and evidence at their
+source under the project's research record instead of reproducing them. Git
+supplies the detailed history. When parallel branches add entries, retain
+both, newest first.
 
 ## Workflow
 
@@ -147,8 +159,9 @@ Use project structural validation. The bundled `lint.py` checks form, not
 design quality. Its layout has one root node file and optional child
 directory per concept, with `amendments/` and `log.md` beside the roots.
 Supply the project's paths, live concept names, and review base; amendments
-may propose new concepts. Tree changes since the base must appear in a new
-log entry; pending amendments need none.
+may propose new concepts. When the live tree differs from the base, the
+newest log entry must itself be new, name every changed node, and contain a
+nonempty `Owner-approved:` field; pending amendments need no log entry.
 
     python3 -B <skill-directory>/lint.py --root <design-directory> --trees <concept-name> --base <review-base>
 

@@ -9,6 +9,7 @@ import sys
 DECISION_MARKERS = (" because ", " instead of ")
 LOG_ENTRY = re.compile(r"^## \d{4}-\d{2}-\d{2} \S")
 LOG_REQUIRED = ("Nodes:", "Summary:")
+OWNER_APPROVED = "Owner-approved:"
 FORBIDDEN_HEADINGS = ("## Facts", "## Moves")
 DATED_LINE = re.compile(r"^- 20\d\d-\d\d-\d\d")
 REJECTED_ITEM = re.compile(r"^- (.+?): rejected because (\S.*)$")
@@ -181,12 +182,12 @@ class Lint:
             if line.startswith("## "):
                 if not LOG_ENTRY.match(line):
                     self.err(f"log.md:{number}", "entry heading must be '## YYYY-MM-DD <title>'")
-                current = {"line": number, "fields": {}}
+                current = {"line": number, "heading": line, "fields": {}}
                 entries.append(current)
                 continue
             if current is None:
                 continue
-            for field in LOG_REQUIRED:
+            for field in LOG_REQUIRED + (OWNER_APPROVED,):
                 if line.startswith(field):
                     current["fields"][field] = line[len(field):].strip()
         for entry in entries:
@@ -201,28 +202,46 @@ class Lint:
                                cwd=self.root, capture_output=True, text=True)
         return probe.returncode == 0
 
-    def check_diff(self, base):
+    def check_diff(self, base, entries):
         names = subprocess.run(["git", "diff", "--name-only", "-z", "--relative", base, "--", "."],
                                cwd=self.root, capture_output=True, text=True,
                                check=True).stdout.split("\0")
-        changed = []
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z", "--", "."],
+            cwd=self.root, capture_output=True, text=True, check=True).stdout.split("\0")
+        names = list(dict.fromkeys(name for name in names + untracked if name))
+        changed = set()
         for rel in names:
             if any(rel == tree + ".md" or rel.startswith(tree + "/") for tree in self.trees):
                 if rel.endswith(".md"):
-                    changed.append(rel[:-3])
+                    changed.add(rel[:-3])
         if not changed:
             return
         log_rel = "log.md"
         if log_rel not in names:
             self.err("log.md", "tree changed since base but the change log did not")
             return
-        diff = subprocess.run(["git", "diff", base, "--", log_rel],
-                              cwd=self.root, capture_output=True, text=True, check=True).stdout
-        added = "\n".join(line[1:] for line in diff.split("\n")
-                          if line.startswith("+") and not line.startswith("+++"))
-        for node in changed:
-            if node not in added:
-                self.err("log.md", f"changed node {node} is not named in a new log entry")
+        if not entries:
+            self.err("log.md", "tree changed since base but the change log has no entry")
+            return
+        newest = entries[0]
+        base_log = subprocess.run(["git", "show", f"{base}:./{log_rel}"],
+                                  cwd=self.root, capture_output=True, text=True)
+        base_headings = set()
+        if base_log.returncode == 0:
+            base_headings = {line for line in base_log.stdout.splitlines()
+                             if line.startswith("## ")}
+        if newest["heading"] in base_headings:
+            self.err("log.md", "tree changed since base but the newest log entry is not new")
+        approval = newest["fields"].get(OWNER_APPROVED)
+        if not approval:
+            self.err(f"log.md:{newest['line']}",
+                     "newest entry for a tree change lacks a nonempty Owner-approved: field")
+        nodes = {node.strip() for node in newest["fields"].get("Nodes:", "").split(",")
+                 if node.strip()}
+        for node in sorted(changed):
+            if node not in nodes:
+                self.err("log.md", f"changed node {node} is not named in the newest log entry")
 
     # ---- metrics -------------------------------------------------------
 
@@ -279,10 +298,10 @@ def main():
     lint.discover()
     lint.check_nodes()
     lint.check_amendments()
-    lint.check_log()
+    entries = lint.check_log()
     if args.base:
         if lint.base_exists(args.base):
-            lint.check_diff(args.base)
+            lint.check_diff(args.base, entries)
             lint.base_metrics = lint.measure_base(args.base)
         else:
             print(f"notice: base {args.base!r} not found; skipping the log-per-change check")
