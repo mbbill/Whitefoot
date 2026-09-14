@@ -28,6 +28,72 @@
 #include <unistd.h>
 #define wf_chdir chdir
 #endif
+#include "sched/prim.h"
+
+#ifndef WF_COMPLETION_SHUTDOWN
+#error "The ordinary-values probe requires its deterministic shutdown observer"
+#endif
+
+#if defined(_WIN32)
+typedef SOCKET wf_probe_socket;
+#define WF_PROBE_SEND SD_SEND
+#define WF_PROBE_RECEIVE SD_RECEIVE
+#else
+typedef int wf_probe_socket;
+#define WF_PROBE_SEND SHUT_WR
+#define WF_PROBE_RECEIVE SHUT_RD
+#endif
+
+static struct {
+    wf_prim_wait wait;
+    wf_probe_socket socket;
+    int direction;
+    int armed;
+    int paused;
+    int resume;
+    int finished;
+} half_close;
+
+/* Pause immediately before one real host shutdown. The other direction then
+ * completes on a different caller: it must neither close the descriptor nor
+ * return its credit while this host operation is still outstanding. */
+int wf_ordinary_test_shutdown(wf_probe_socket socket, int direction) {
+    wf_prim_wait_lock(&half_close.wait);
+    if (half_close.armed && half_close.socket == socket
+        && half_close.direction == direction) {
+        half_close.armed = 0;
+        half_close.paused = 1;
+        wf_prim_wait_signal(&half_close.wait);
+        while (!half_close.resume) wf_prim_wait_sleep(&half_close.wait);
+    }
+    wf_prim_wait_unlock(&half_close.wait);
+    return shutdown(socket, direction);
+}
+
+static wf_probe_socket native_socket(const wf_value *value) {
+#if defined(_WIN32)
+    return (SOCKET)wf__windows_socket_handle((int)value->words[0]);
+#else
+    return (int)value->words[0];
+#endif
+}
+
+typedef struct {
+    wf_value owner;
+    wf_value factory;
+    wf_close_result result;
+    int send;
+} half_close_call;
+
+static void paused_half_close(void *argument) {
+    half_close_call *call = argument;
+    if (call->send) wf_close_send(&call->result, &call->factory, &call->owner);
+    else wf_close_receive(&call->result, &call->factory, &call->owner);
+    wf_prim_wait_lock(&half_close.wait);
+    half_close.finished = 1;
+    wf_prim_wait_signal(&half_close.wait);
+    wf_prim_wait_unlock(&half_close.wait);
+}
 
 static void check_close(wf_close_result *result) { assert(result->tag == 0); }
 
@@ -234,17 +300,100 @@ static void tcp_probe(wf_inputs *inputs) {
     assert(inputs->handles.words[0] + other_factory.words[0] == before);
 }
 
+static void concurrent_half_close_probe(wf_inputs *inputs, int send_first) {
+    wf_value address;
+    wf_open_result listener;
+    wf_connect_result client, replacement;
+    wf_accept_result server, replacement_server;
+    wf_close_result closed;
+    wf_write_result sent;
+    wf_read_result received;
+    wf_prim_thread thread;
+    half_close_call call;
+    uint64_t before = inputs->handles.words[0];
+    uint64_t after_second, descriptor;
+    unsigned char byte = 'q', target = 0;
+    wf_view source = {&byte, 1}, destination = {&target, 1};
+
+    wf_socket_address_v4(&address, 127, 0, 0, 1, 0);
+    wf_tcp_listen(&listener, &inputs->handles, &address);
+    assert(listener.tag == 0);
+    wf_socket_address_v4(&address, 127, 0, 0, 1, listener_port(&listener.value));
+    wf_tcp_connect(&client, &inputs->handles, &address);
+    assert(client.tag == 0);
+    wf_tcp_accept(&server, &inputs->handles, &listener.value);
+    assert(server.tag == 0 && inputs->handles.words[0] == before - 3);
+    descriptor = server.value.connection.send.words[0];
+    memset(&call, 0, sizeof(call));
+    call.send = send_first;
+    call.owner = send_first ? server.value.connection.send : server.value.connection.receive;
+    wf_prim_wait_lock(&half_close.wait);
+    half_close.socket = native_socket(&call.owner);
+    half_close.direction = send_first ? WF_PROBE_SEND : WF_PROBE_RECEIVE;
+    half_close.armed = 1;
+    half_close.paused = 0;
+    half_close.resume = 0;
+    half_close.finished = 0;
+    wf_prim_wait_unlock(&half_close.wait);
+    assert(wf_prim_thread_start(&thread, paused_half_close, &call, 1024u * 1024u) == 0);
+    wf_prim_wait_lock(&half_close.wait);
+    while (!half_close.paused) wf_prim_wait_sleep(&half_close.wait);
+    wf_prim_wait_unlock(&half_close.wait);
+
+    if (send_first) wf_close_receive(&closed, &inputs->handles, &server.value.connection.receive);
+    else wf_close_send(&closed, &inputs->handles, &server.value.connection.send);
+    check_close(&closed);
+    after_second = inputs->handles.words[0];
+    wf_prim_wait_lock(&half_close.wait);
+    half_close.resume = 1;
+    wf_prim_wait_signal(&half_close.wait);
+    while (!half_close.finished) wf_prim_wait_sleep(&half_close.wait);
+    wf_prim_wait_unlock(&half_close.wait);
+    check_close(&call.result);
+    assert(after_second == before - 3);
+    assert(call.factory.words[0] == 1);
+
+    /* The released slot is now reusable. Opening through the credited factory
+     * and transferring in both directions must see a fresh connection. */
+    wf_tcp_connect(&replacement, &call.factory, &address);
+    assert(replacement.tag == 0 && call.factory.words[0] == 0);
+    assert(replacement.value.receive.words[0] == descriptor);
+    wf_tcp_accept(&replacement_server, &inputs->handles, &listener.value);
+    assert(replacement_server.tag == 0);
+    wf__body_send_once(&sent, &replacement.value.send, &source, 0, 1);
+    assert(sent.tag == 0 && sent.value == 1);
+    wf__body_receive_next(&received, &replacement_server.value.connection.receive, &destination, 0, 1);
+    assert(received.tag == 0 && received.value == 1 && target == byte);
+    target = 0;
+    wf__body_send_once(&sent, &replacement_server.value.connection.send, &source, 0, 1);
+    assert(sent.tag == 0 && sent.value == 1);
+    wf__body_receive_next(&received, &replacement.value.receive, &destination, 0, 1);
+    assert(received.tag == 0 && received.value == 1 && target == byte);
+    wf_close_send(&closed, &inputs->handles, &replacement.value.send); check_close(&closed);
+    wf_close_receive(&closed, &inputs->handles, &replacement.value.receive); check_close(&closed);
+    wf_close_receive(&closed, &inputs->handles, &replacement_server.value.connection.receive); check_close(&closed);
+    wf_close_send(&closed, &inputs->handles, &replacement_server.value.connection.send); check_close(&closed);
+    wf_close_receive(&closed, &inputs->handles, &client.value.receive); check_close(&closed);
+    wf_close_send(&closed, &inputs->handles, &client.value.send); check_close(&closed);
+    wf_close_listener(&closed, &inputs->handles, &listener.value); check_close(&closed);
+    assert(inputs->handles.words[0] == before && call.factory.words[0] == 0);
+}
+
 int main(int argc, char **argv) {
     wf_inputs inputs;
     wf_close_result closed;
     assert(argc == 2 && wf_chdir(argv[1]) == 0);
+    assert(wf_prim_wait_init(&half_close.wait) == 0);
     text_probe();
     assert(wf__ordinary_inputs(&inputs, 0, NULL));
     assert(inputs.handles.words[0] >= 8);
     file_probe(&inputs);
     tcp_probe(&inputs);
+    concurrent_half_close_probe(&inputs, 1);
+    concurrent_half_close_probe(&inputs, 0);
     wf_close_directory(&closed, &inputs.handles, &inputs.cwd);
     check_close(&closed);
-    puts("ordinary linked values: text, range, refusal, file, directory, TCP, crossed halves, credit transfer passed");
+    wf_prim_wait_destroy(&half_close.wait);
+    puts("ordinary linked values: text, range, refusal, file, directory, TCP, crossed halves, concurrent close/reuse, credit transfer passed");
     return 0;
 }

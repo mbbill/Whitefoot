@@ -291,7 +291,7 @@ completion-test: completion-core-read-test completion-default-route-test ordinar
 # testing the arm the harness already covers.
 ordinary-values-test:
 	@mkdir -p "$(COMPLETION_TMP)/ordinary-values"
-	$(CC) $(COMPLETION_BASE_CFLAGS) \
+	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_COMPLETION_SHUTDOWN=wf_ordinary_test_shutdown \
 		$(filter-out %/harness.c %/native_contract.c,$(COMPLETION_SOURCES)) \
 		src/backend/ordinary_values.c src/backend/ordinary_values_probe.c \
 		-o "$(COMPLETION_TMP)/ordinary-values-probe"

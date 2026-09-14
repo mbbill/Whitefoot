@@ -100,7 +100,7 @@ int wf_file_request_is_peer_bound(const wf_file_request *request) {
 }
 
 /* The two-count of every connection descriptor, one byte each: zero when
- * neither direction has been released and one when exactly one has.  See
+ * neither direction has completed its shutdown and one when exactly one has. See
  * `wf_file_connection_release` in the header for what it promises and why it
  * is a table rather than something a record could carry.
  *

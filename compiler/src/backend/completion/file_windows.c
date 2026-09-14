@@ -51,6 +51,12 @@
 #include <stdint.h>
 #include <string.h>
 
+#if !defined(WF_COMPLETION_SHUTDOWN)
+#define WF_COMPLETION_SHUTDOWN shutdown
+#else
+extern int WF_COMPLETION_SHUTDOWN(SOCKET, int);
+#endif
+
 /* The kind the request names, refused where this target has no facility. */
 static wf_file_result wf_file_windows_refused(
     const wf_file_request *request,
@@ -567,10 +573,10 @@ static wf_file_result wf_file_windows_socket_transfer(
 /* One direction's half-close, and the close of the target's object when it is
  * the pair's second release (ordinary native library).
  *
- * The count is the shared one in `file_adapter.c` and is taken first, so two
- * directions released on two threads agree on which of them is the second
- * whatever order the two host calls below land in.  `SD_RECEIVE` and `SD_SEND`
- * are this platform's spelling of `SHUT_RD` and `SHUT_WR`. */
+ * Each direction completes shutdown before publishing to the shared count in
+ * `file_adapter.c`, so the second publisher may close the socket only after
+ * both directions have finished using it. `SD_RECEIVE` and `SD_SEND` are this
+ * platform's spelling of `SHUT_RD` and `SHUT_WR`. */
 static wf_file_result wf_file_windows_socket_shutdown(
     const wf_file_request *request
 ) {
@@ -591,8 +597,10 @@ static wf_file_result wf_file_windows_socket_shutdown(
         result.head.error_code = (int)ERROR_INVALID_HANDLE;
         return result;
     }
+    /* Publish completion only after the last use of this native socket, so
+     * the other direction cannot close and recycle it before shutdown. */
+    (void)WF_COMPLETION_SHUTDOWN(connection, direction);
     last = wf_file_connection_release(descriptor);
-    (void)shutdown(connection, direction);
     if (last == 0) {
         result.head.value = 0;
         return result;

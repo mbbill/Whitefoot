@@ -324,6 +324,7 @@ jobs:
           probe_dir="$RUNNER_TEMP/completion/ordinary-values"
           mkdir -p "$probe_dir"
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+            -DWF_COMPLETION_SHUTDOWN=wf_ordinary_test_shutdown \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
             $WINDOWS_UNITS \

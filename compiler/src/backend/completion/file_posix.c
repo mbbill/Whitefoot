@@ -33,6 +33,12 @@
 #include <time.h>
 #include <unistd.h>
 
+#if !defined(WF_COMPLETION_SHUTDOWN)
+#define WF_COMPLETION_SHUTDOWN shutdown
+#else
+extern int WF_COMPLETION_SHUTDOWN(int, int);
+#endif
+
 #if !defined(WF_COMPLETION_POLL)
 #define WF_COMPLETION_POLL poll
 #else
@@ -403,11 +409,11 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
             request->operation.shutdown.direction == WF_SOCKET_DIRECTION_SEND
             ? SHUT_WR
             : SHUT_RD;
-        /* The count is taken first, so two directions released on two threads
-         * agree on which of them is the second whatever order the two host
-         * calls below land in. */
+        /* A published release means this direction has finished using the
+         * descriptor. Otherwise the other direction could close it before
+         * this shutdown and the host could reuse its number. */
+        (void)WF_COMPLETION_SHUTDOWN(descriptor, direction);
         int last = wf_file_connection_release(descriptor);
-        (void)shutdown(descriptor, direction);
         if (last && close(descriptor) < 0) result.head.error_code = errno;
         // A linked close returns the released descriptor credit to its passed
         // factory. Preserve the last-half fact in this private native result.
