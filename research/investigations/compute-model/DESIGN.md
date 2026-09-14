@@ -237,6 +237,51 @@ Use fresh result directories for `small`, `skew`, and `WFB_SCATTER_NATIVE=direct
 already-built compiler and dependencies with `make -o compiler -o deps`;
 that does not remove the image rebuild or before/after hash checks.
 
+### Scatter utilization attribution
+
+This follow-up starts from `277a1844`, after the scatter trial and source-proof
+checking work merged. The retained W8 chain comparison suggests substantially
+lower average occupied CPUs in Whitefoot. It does not identify useful work,
+serial critical-path cost, insufficient task supply, or scheduler delay. The
+next decision is which concrete mechanism to change, while preserving the
+ordinary stable-scatter program, its checked bounds and its representation.
+
+Before measuring, use these discriminating criteria:
+
+- Reestablish the same-chain baseline on the current compiler at W1/W2/W4/W8,
+  starting with the retained large mixed fixture. Keep the independent stable
+  oracle, useful native serial control and native decomposition; native flags
+  and borrowing differences remain comparison limits. Small and skewed inputs
+  protect any proposed change rather than supplying a replacement workload.
+- Inspect the actual loop and call lowering before adding an instrument.
+  Attribute partitioning, count tally, packing and final copy, including the
+  allocation and initialization work around them. Stage wall/CPU measurements
+  and worker/work-supply events must distinguish long serial work, delayed or
+  limited task expansion, and published work not reaching workers. Occupied
+  CPU counts alone cannot choose among these explanations.
+- Reuse the existing benchmark twins and lane trace where they cover the
+  question. Check instrumentation against an unobserved twin; the existing
+  trace's dependent-chain probe and bounded recursive event retention must
+  not silently determine a latency or coverage claim. Keep diagnostic images
+  separate from the ordinary timing images and preserve the original joins.
+- Test a candidate cause by changing one Whitefoot lowering/runtime mechanism
+  with source algorithm and representation fixed. The proposed explanation
+  must predict which stage or work-supply pattern changes and what contrary
+  observation would refute it. Repeat the unobserved comparison, retain every
+  wall/CPU pair and image identity, and distinguish a repeatable effect from
+  placement or host noise. Native comparison alone is not a causal control.
+- A narrow fix must preserve the oracle and required safety checks, explain
+  its wall/CPU tradeoff, and be checked against the existing compute workloads.
+  A diagnostic result can justify a separately scoped representation change;
+  it does not require adopting a new representation in this investigation.
+
+The useful outcome is a located cost and a controlled test of its cause, plus
+a bounded repair if supported. No general scheduling/profile/PGO policy,
+content-summary proof mechanism, I/O change or live-tree revision is selected
+by opening this investigation. Retain evidence here and in the existing
+compute-bench bundle; extend that bundle only for observations this consumer
+needs, with no separate profiling framework.
+
 ## Runtime cost attribution
 
 The [range-loan measurements](../range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
