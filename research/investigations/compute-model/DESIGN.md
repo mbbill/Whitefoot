@@ -282,6 +282,26 @@ by opening this investigation. Retain evidence here and in the existing
 compute-bench bundle; extend that bundle only for observations this consumer
 needs, with no separate profiling framework.
 
+The first coarse-observer run encountered severe external contention (system
+load above 200, another worktree running tests); even the ordinary W8 image
+rose from about 4 ms to 96 ms. It cannot select a performance change. Static
+inspection nevertheless exposes a concrete control: buffer/slice element
+reads and writes expand an owning aggregate through SSA, while other physical
+place transfers already use target-sized `memmove`. The optimized tally and
+packing bodies contain hundreds of scalarized fields around each chunk.
+
+Before testing that control, predict that routing indexed aggregate transfers
+through the existing snapshot-copy path reduces tally and packing CPU, with
+the same source, representation, allocation count, phase joins, loop weight
+and recursive frontier. It need not increase worker occupancy: shortening
+serial work can lower CPU as well as wall. Compare both unobserved images in
+rotated repeated passes, then the coarse observer separately; protect small
+and skewed inputs and the existing compute programs. No material phase gain,
+an altered source/schedule, or an adverse repeatable compute effect refutes
+retaining this as the local repair. Its correctness requirement is the old
+element snapshot surviving the replacement, including owning and nested
+aggregate contents; memory-copy emission cannot weaken that ordering.
+
 ## Runtime cost attribution
 
 The [range-loan measurements](../range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)

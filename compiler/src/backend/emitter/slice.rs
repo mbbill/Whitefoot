@@ -165,18 +165,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let element_pointer = self.next_temporary()?;
         writeln!(
             self.output,
-            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  {} = load {element_type}, ptr %{element_pointer}",
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}",
             self.value_name(slice),
             self.value_name(offset),
-            self.value_name(result),
         )
-        .map_err(|_| BackendFailure::TextEmission)
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.load_place_result(result, ty, &format!("%{element_pointer}"))
     }
 
     /// [SET-1] one element-position store through an exclusive view.
     ///
-    /// The descriptor is {data pointer, length}, so the store is the element
-    /// address the read already computes and one `store` through it.
+    /// Compute the same element address as a read and preserve the source
+    /// snapshot through the ordinary scalar store or aggregate copy path.
     pub(super) fn emit_slice_store(
         &mut self,
         slice: IrValueId,
@@ -201,12 +201,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let element_pointer = self.next_temporary()?;
         writeln!(
             self.output,
-            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  store {element_type} {}, ptr %{element_pointer}",
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}",
             self.value_name(slice),
             self.value_name(index),
-            self.value_name(value),
         )
-        .map_err(|_| BackendFailure::TextEmission)
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.store_value_at(value, &format!("%{element_pointer}"))
     }
 
     pub(super) fn emit_slice_descriptor(

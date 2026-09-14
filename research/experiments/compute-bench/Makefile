@@ -781,6 +781,9 @@ scatter-phases-check: $(BUILD)/radix_scatter-phases.o $(BUILD)/radix_scatter_ben
 	rustfmt --edition=2024 --check radix_scatter_phases.rs
 	! $(BUILD)/radix_scatter_phases /dev/null $(BUILD)/invalid-phases.ll 2> $(BUILD)/invalid-phases.err
 	grep -q 'expected two complete scatter roots' $(BUILD)/invalid-phases.err
+	sed '/ = call i8 @wf__par_split_/d' $(BUILD)/radix_scatter-par.ll.raw > $(BUILD)/missing-phase.ll
+	! $(BUILD)/radix_scatter_phases $(BUILD)/missing-phase.ll $(BUILD)/invalid-phases.ll 2> $(BUILD)/invalid-phases.err
+	grep -q 'unexpected phase 3; expected 2' $(BUILD)/invalid-phases.err
 
 # ------------------------------------------------------------------ verify --
 # Every form the image reports, at every width the harness's width rule emits

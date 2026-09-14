@@ -88,6 +88,22 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } => {
                 self.emit_array_index(result, ty, *root, *offset, *target_domain)?;
             }
+            IrOperation::BufferIndex {
+                buffer,
+                offset,
+                target_domain,
+            } if self.storage.slot(result).is_some() => {
+                self.materialize_operands([*buffer, *offset])?;
+                self.emit_buffer_index(result, ty, *buffer, *offset, *target_domain)?;
+            }
+            IrOperation::SliceIndex {
+                slice,
+                offset,
+                target_domain,
+            } if self.storage.slot(result).is_some() => {
+                self.materialize_operands([*slice, *offset])?;
+                self.emit_slice_index(result, ty, *slice, *offset, *target_domain)?;
+            }
             IrOperation::FullArrayConversion { value } => {
                 self.emit_full_array_conversion(result, ty, *value)?;
             }
