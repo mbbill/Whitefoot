@@ -1,8 +1,6 @@
 #if !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
-/* The online-CPU query the helper budget is checked against is a BSD
- * extension the POSIX macro above hides on Darwin, exactly as in bridge.c. */
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE 1
 #endif

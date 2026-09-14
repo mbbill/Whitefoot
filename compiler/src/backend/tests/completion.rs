@@ -328,19 +328,19 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     assert!(policy.contains("wf__sched_setting(\"WF_IO_HELPERS\""));
     assert!(policy.contains("*initial = (size_t)written;"));
     assert!(policy.contains("*cap = (size_t)written;"));
-    // Unset starts with no helper and lets the operation bound, not the core
-    // count, be the ceiling.
+    // Unset starts with no helper; the fallback uses the implementation's
+    // helper ceiling independently of the core count.
     assert!(
         policy.contains("*initial = 0u;"),
         "an unset setting must start with no helper: {policy}"
     );
     assert!(
         policy.contains("*cap = WF_BRIDGE_MAX_HELPERS;"),
-        "the ceiling is the bridge's operation bound: {policy}"
+        "the fallback ceiling is the bridge's helper limit: {policy}"
     );
     assert!(
         !policy.contains("(size_t)online < WF_BRIDGE_MAX_HELPERS"),
-        "the core count must not cap outstanding I/O: {policy}"
+        "the fallback helper ceiling must be independent of core count: {policy}"
     );
 
     let growth = adapter

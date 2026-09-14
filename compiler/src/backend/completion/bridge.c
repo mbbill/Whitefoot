@@ -143,13 +143,10 @@ static uint64_t wf_bridge_ring_submission_enters(void);
  * fifth, and a program asked for none keeps the zero-helper path where a
  * waiting thread is itself the target engine.
  *
- * Unset asks for demand-driven growth from one. One helper is the right
- * answer for a program with a single operation outstanding, and it was the
- * old fixed default; it is the wrong answer for a program that exposes real
- * width, because the submitting thread then waits on a queue only one
- * thread is draining. On the four-wide many-file workload the fixed default
- * finished 1.6x slower than the same program at four helpers, so growth is
- * bounded by the machine rather than pinned at one. */
+ * Unset selects one of two policies: a ready native ring keeps initial and
+ * cap at zero; otherwise the pool starts empty and may grow on demand within
+ * WF_BRIDGE_MAX_HELPERS. That ceiling is a provisional implementation limit,
+ * not a CPU count or a bound on outstanding operations. */
 static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
     unsigned long written = 0;
     /* One rule for every startup setting this runtime reads (`sched/entry.h`):
@@ -168,37 +165,29 @@ static void wf_bridge_helper_policy(size_t *initial, size_t *cap) {
         wf_bridge_helpers_pinned = 1;
         return;
     }
-    /* A ready ring already carries every transfer without a thread handoff, so
-     * a helper can only serve the operations the ring does not take — today,
-     * open and close. Those are exactly the operations a warm page cache
-     * answers immediately, and handing one to a helper costs a wake and a
-     * publication to save nothing. Measured on the four-wide many-file
-     * workload with a warm cache: 115 ms at zero helpers against 171 ms at
-     * one, two, or four, the whole difference being about 7 us per open. So a
-     * host with a native completion path starts with none, and the waiting
-     * thread runs those operations itself. WF_IO_HELPERS still pins a pool
-     * for a target whose opens really do wait. */
+    /* With a ready native ring, adapter requests run on a waiting caller and
+     * the default pool stays empty. The warm Linux many-file comparison in
+     * research/investigations/io-model/RESULTS.md found helper handoff more
+     * expensive than the adapter work it moved. This is that workload's
+     * selection ground, not a guarantee that every native engine carries
+     * every transfer or that adapter work never waits. WF_IO_HELPERS can
+     * still pin a pool for a different target or workload. */
     if (wf_bridge_ring_ready()) {
         *initial = 0u;
         *cap = 0u;
         return;
     }
-    /* No helper until the adapter has measured an operation that waits.
+    /* The fallback starts empty to avoid a handoff when there is no wait to
+     * overlap. Within the cap, growth requires queued demand beyond the held
+     * helpers and a measured long wait; a peer-bound request bypasses those
+     * two tests so progress need not await a completed blocking operation.
      *
-     * A helper exists to overlap a wait.  Starting with one and growing on
-     * queue depth alone gave every program a thread handoff whether or not it
-     * had anything to overlap, and on a warm page cache — where a read is a
-     * memory copy — that handoff was the whole cost of the completion path.
-     * With none, a waiting thread is the queue's own engine and the path
-     * costs a queue crossing; the adapter's growth rule adds the first helper
-     * as soon as the operations it has executed show a real wait.
-     *
-     * The ceiling is the bridge's own, not the machine's core count.  A helper
-     * inside a host call holds no CPU, so what bounds useful I/O concurrency
-     * here is how many operations a program can have outstanding.  Sizing the
-     * pool by cores capped a three-core host at three outstanding reads for a
-     * program that stated eight, which is a device left idle rather than a
-     * machine kept busy. */
+     * The ceiling is the bridge's own, not the machine's core count. A blocked
+     * helper does not occupy a CPU. The three-CPU macOS comparisons in
+     * research/investigations/io-model/RESULTS.md found useful width at four
+     * and eight helpers. They support going beyond CPU count, not eight as a
+     * universal optimum. Eight remains the provisional helper storage limit;
+     * the queued operation count is not bounded by it. */
     *cap = WF_BRIDGE_MAX_HELPERS;
     *initial = 0u;
 }

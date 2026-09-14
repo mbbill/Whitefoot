@@ -4,6 +4,12 @@ Newest first. One entry per ruling on the tree, an approved change or a
 refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, and `Summary:`; `skill/SKILL.md` owns the form.
 
+## 2026-09-13 Separate the helper startup policies and retain a provisional ceiling
+
+Nodes: compiler/completion-runtime
+
+Summary: The owner accepted the full-PR DCR recommendation to preserve the runtime policy and correct its mixed historical description. A ready native ring has zero initial helpers and a zero default cap; the fallback starts empty and grows on measured wait and demand, or a peer-bound request, within eight helpers. The owner selected eight as a provisional implementation ceiling, not an operation bound or a universally optimal width. The [warm Linux comparison](../research/investigations/io-model/RESULTS.md#workload-1-many-independent-files) supports avoiding helper handoff on that workload, and the [three-CPU macOS comparisons](../research/investigations/io-model/RESULTS.md#darwin-helper-path-cost-batch-0096-2026-08-28) support useful width beyond the CPU count; neither is a new measurement of the ordinary-host runtime or a universal latency claim. The tree and policy/test commentary now distinguish both paths. Runtime constants, branches and the specification are unchanged. This closes the helper-pool correspondence finding rather than changing scheduling policy.
+
 ## 2026-09-13 Reconcile brand spelling and retire the gated source family
 
 Nodes: language/ownership/region-elision, language/gated-family
