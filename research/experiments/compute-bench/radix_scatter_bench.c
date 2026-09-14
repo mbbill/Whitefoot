@@ -144,6 +144,64 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 #else
 #include "backend.h"
 #include "harness.h"
+
+#ifdef WFB_SCATTER_PHASES
+enum { PHASES = 8, PHASE_CALLS = 256 };
+typedef struct { uint64_t start, wall, cpu; unsigned long steals; } phase_sample;
+static phase_sample phase_samples[PHASE_CALLS][PHASES];
+static const char *const phase_names[PHASES] = {
+    "chunk-allocation", "partition", "tally", "digit-allocation",
+    "packing", "result-allocation", "final-copy", "release"
+};
+static const char *phase_form;
+static unsigned phase_width;
+static size_t phase_calls;
+static int phase_next, phase_registered;
+static uint64_t phase_wall, phase_cpu;
+static unsigned long phase_steals;
+static void phase_report(void) {
+    if (phase_next != 0) fail("incomplete phase observation");
+    (void)fprintf(stderr, "scatter-phases form=%s width=%u calls=%zu cpu_clock=%s\n",
+                  phase_form ? phase_form : "none", phase_width, phase_calls,
+                  wfb_cpu_clock_name());
+    for (size_t call_id = 0; call_id < phase_calls; ++call_id)
+        for (size_t phase = 0; phase < PHASES; ++phase) {
+            const phase_sample *s = &phase_samples[call_id][phase];
+            (void)fprintf(stderr, "scatter-phase\t%s\t%u\t%zu\t%s\t%llu\t%llu\t%llu\t%lu\n",
+                          phase_form, phase_width, call_id, phase_names[phase],
+                          (unsigned long long)s->start, (unsigned long long)s->wall,
+                          (unsigned long long)s->cpu, s->steals);
+        }
+}
+/* Only the diagnostic image imports this callback. Coarse boundaries retain
+ * the original joins; no per-element clock or output is on a measured path.
+ * CPU includes idle/spinning workers, and allocation page faults are charged
+ * to the interval in which the memory is actually touched. */
+void wf_scatter_phase(int phase) {
+    if (!phase_registered) {
+        if (atexit(phase_report) != 0) fail("phase report registration");
+        phase_registered = 1;
+    }
+    if (phase != phase_next || phase_calls == PHASE_CALLS)
+        fail("unexpected or excessive phase observation");
+    uint64_t wall = wfb_now_ns(), cpu = wfb_cpu_ns();
+    unsigned long steals = wf__par_grants();
+    if (phase != 0) {
+        if (wall < phase_wall || cpu < phase_cpu || steals < phase_steals)
+            fail("phase clocks or counters moved backwards");
+        phase_samples[phase_calls][phase - 1] =
+            (phase_sample){phase_wall, wall - phase_wall, cpu - phase_cpu,
+                           steals - phase_steals};
+    }
+    phase_wall = wall; phase_cpu = cpu; phase_steals = steals;
+    if (phase == PHASES) { ++phase_calls; phase_next = 0; }
+    else phase_next = phase + 1;
+}
+#define SCATTER_PHASE(n) wf_scatter_phase(n)
+#else
+#define SCATTER_PHASE(n) ((void)0)
+#endif
+
 extern void wf_bench_radix_scatter_par(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *);
 extern void wf_bench_radix_scatter_seq(const uint64_t *, uint64_t, uint32_t, uint64_t **, uint64_t *);
 extern void wf_bench_radix_scatter_par_release(uint64_t *, uint64_t);
@@ -253,21 +311,30 @@ static void native_entry(const uint64_t *input, uint64_t n, uint32_t bit,
         *output = job.output;
         *length = lows + highs;
     } else {
+        SCATTER_PHASE(0);
         job.chunks = allocate(blocks, sizeof(chunk));
+        SCATTER_PHASE(1);
         backend->map(backend, width, blocks, partition_chunk, &job);
+        SCATTER_PHASE(2);
         size_t lows = 0, highs = 0;
         for (size_t b = 0; b < blocks; ++b) {
             lows += job.chunks[b].low_count;
             highs += job.chunks[b].high_count;
         }
+        SCATTER_PHASE(3);
         uint64_t *low = allocate(capacity, sizeof(uint64_t));
         uint64_t *high = allocate(capacity, sizeof(uint64_t));
         pack_job pack = {job.chunks, blocks, low, high, frontier};
+        SCATTER_PHASE(4);
         pack_task(&pack);
+        SCATTER_PHASE(5);
         uint64_t *result = allocate(lows + highs, sizeof(uint64_t));
         copy_job low_copy = {low, result, lows}, high_copy = {high, result + lows, highs};
+        SCATTER_PHASE(6);
         backend->fork2(backend, width, copy_task, &low_copy, copy_task, &high_copy);
+        SCATTER_PHASE(7);
         free(job.chunks); free(low); free(high);
+        SCATTER_PHASE(8);
         *output = result;
         *length = lows + highs;
     }
@@ -304,6 +371,10 @@ static void prepare(unsigned workers) {
                    count, shape, selected_bit, BLOCK, direct ? "direct" : "chain");
 }
 static size_t call(const char *form, unsigned workers) {
+#ifdef WFB_SCATTER_PHASES
+    phase_form = form; phase_width = workers;
+    if (direct) fail("phase image covers the chain representation only");
+#endif
     uint64_t length = UINT64_MAX;
     if (!strcmp(form, "wf")) {
         wf_bench_radix_scatter_par(input, count, selected_bit, &output, &length);
@@ -327,6 +398,10 @@ static size_t check(void) {
     return checked;
 }
 static size_t verify(const char *form, unsigned workers) {
+#ifdef WFB_SCATTER_PHASES
+    phase_form = form; phase_width = workers;
+    if (direct) fail("phase image covers the chain representation only");
+#endif
     if (!strcmp(form, "wf")) return matrix(wf_bench_radix_scatter_par, wf_bench_radix_scatter_par_release);
     if (!strcmp(form, "wf-seq")) return matrix(wf_bench_radix_scatter_seq, wf_bench_radix_scatter_seq_release);
     select_backend(form, workers);
@@ -335,8 +410,17 @@ static size_t verify(const char *form, unsigned workers) {
 static void finish(const char *form) { (void)form; free(input); free(expected); input = expected = NULL; }
 /* The chain needs fork2 as well as map; the static map-only backend cannot
  * execute this decomposition. Keep both native algorithms on the same forms. */
+#ifdef WFB_SCATTER_PHASES
+static const char *const forms[] = {"wf", "tbb", "parlay", "rayon-join", NULL};
+#else
 static const char *const forms[] = {"wf", "wf-seq", "serial", "tbb", "parlay", "rayon-join", NULL};
+#endif
 const wfb_kernel wfb_this_kernel = {
-    "radix_scatter", forms, prepare, call, check, verify, finish, workload, 0, 0, NULL
+#ifdef WFB_SCATTER_PHASES
+    "radix_scatter-phases",
+#else
+    "radix_scatter",
+#endif
+    forms, prepare, call, check, verify, finish, workload, 0, 0, NULL
 };
 #endif

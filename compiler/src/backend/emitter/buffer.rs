@@ -226,12 +226,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let element_pointer = self.next_temporary()?;
         writeln!(
             self.output,
-            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  {} = load {element_type}, ptr %{element_pointer}",
+            "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}",
             self.value_name(buffer),
             self.value_name(offset),
-            self.value_name(result),
         )
-        .map_err(|_| BackendFailure::TextEmission)
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.load_place_result(result, ty, &format!("%{element_pointer}"))
     }
 
     /// Emits a discharged source subscript write [OP-4]: the index is the
@@ -259,13 +259,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let element_type = llvm_type(self.program, element.ty())?;
         writeln!(
             self.output,
-            "  %{pointer} = extractvalue {} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  store {element_type} {}, ptr %{element_pointer}",
+            "  %{pointer} = extractvalue {} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}",
             llvm_type(self.program, buffer_type)?,
             self.value_name(buffer),
             self.value_name(index),
-            self.value_name(value),
         )
-        .map_err(|_| BackendFailure::TextEmission)
+        .map_err(|_| BackendFailure::TextEmission)?;
+        self.store_value_at(value, &format!("%{element_pointer}"))
     }
 
     /// Emits the proof-preserving wide probe: how many upcoming byte-walk
