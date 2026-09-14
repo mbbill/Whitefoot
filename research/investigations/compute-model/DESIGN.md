@@ -29,6 +29,45 @@ Add a partitioned-build consumer only if it exercises an obligation the scan,
 histogram, and irregular consumers do not. Block sizes are data decomposition,
 not a worker count unrolled in source. No writer scheduling API is assumed.
 
+### Data-dependent scatter trial
+
+The next consumer starts from `2b346cf6`, after the nested-affine traversal
+repair. It distributes unsigned input values stably by a radix digit, so
+equal-digit elements retain their input order. This tests a distinct obligation:
+the number of output elements assigned to an input block depends on its data,
+rather than a fixed stride or a pivot search in already sorted inputs.
+
+Try ordinary block counts, prefix offsets, and exclusive destination ranges
+before selecting a language or compiler change. A binary digit is the smallest
+instance; a wider digit is useful only after that instance exposes its proof
+and cost obligations. The digit and block dimensions must not encode the
+worker count. Any missing capability is classified against the active
+specification, with a concrete source witness and the nearest useful
+alternative. A failed direct scatter is not a proof of inexpressibility.
+
+The discriminating criteria, recorded before implementation and measurement,
+are:
+
+- An independent stable distribution checks every output value and unchanged
+  input, including empty input, uneven blocks, repeated digits, skew, and
+  runtime dimensions. Correctness precedes timing.
+- Useful output production must actually execute in parallel. Permission or
+  parallel counting alone does not meet that condition; a mandatory serial
+  element-by-element scatter is a remaining limitation.
+- Account for counting, offsets, output writes, allocation, peak workspace,
+  and span. Repeated full-input scans per input block or worker do not count
+  as an efficient parallel representation. State dependence on radix width
+  explicitly instead of hiding it in a fixed fixture.
+- Compare identical Whitefoot source with and without overlap, a matching
+  native decomposition, and a useful native serial distribution. Retain wall
+  time, process CPU, worker count, input shape, actual grants, source revisions,
+  and build flags. A parallel win alone does not establish competitive cost.
+
+These observations select between using existing proofs, adding a narrowly
+motivated shared foundation, and recording a remaining model cost. They do
+not select a universal grain policy. Broad scheduling/profile/PGO research,
+sparse-graph discovery, and I/O remain separate follow-ups.
+
 ## Runtime cost attribution
 
 The [range-loan measurements](../range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
