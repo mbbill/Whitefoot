@@ -563,6 +563,12 @@ endef
 $(foreach k,$(MODULE_KERNELS),$(eval $(call kernel-modules,$(k))))
 
 # --------------------------------------------------------------- objects ----
+# Keep checked module objects as named targets even outside the timing matrix.
+# Otherwise make deletes them as intermediates after a cold gate and searches
+# implicit chains for the missing objects on the next gate invocation.
+$(addprefix $(BUILD)/,$(addsuffix -par.o,$(MODULE_KERNELS))) \
+$(addprefix $(BUILD)/,$(addsuffix -seq.o,$(MODULE_KERNELS))):
+
 $(BUILD)/%-par.o: $(BUILD)/%-par.ll $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) -c $< -o $@
 $(BUILD)/%-par-b.o: $(BUILD)/%-par-b.ll $(MODULE_CONTROL) $(WF_FLAGS_STAMP)
