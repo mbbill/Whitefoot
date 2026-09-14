@@ -1,5 +1,5 @@
 # Bind compute-bench's ordinary descriptor adapters to the same world that
-# command entry selects. Usage: awk -f host-adapter.awk module.ll adapter.ll
+# the executable launcher selects. Usage: awk -f host-adapter.awk module.ll adapter.ll
 # The module is read only to discover actual clone definitions. This glue
 # belongs to the benchmark until exported user-function entry points replace
 # appending IR; it contains no kernel algorithm or scheduler policy.

@@ -12,6 +12,6 @@ fn changed(count: own u64, divisor: own u64, choose: own Bool) -> result: own u6
   return product;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }

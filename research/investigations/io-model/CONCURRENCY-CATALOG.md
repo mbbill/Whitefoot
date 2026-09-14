@@ -1701,10 +1701,10 @@ source-expanded worker count. It does not establish negligible scheduling cost.
 The [range-loan measurements](../range-loans/DESIGN.md#corrected-native-measurements-2026-09-13)
 reported a one-worker difference and a size-dependent grain cliff. The
 [compute-model follow-up](../compute-model/DESIGN.md#pool-off-measurement-path)
-found that the host adapter entered the parallel body even when ordinary
-command entry would select its sequential clone. The adapter now selects the
-same execution world; the initial control was too noisy to attribute a fixed
-remaining one-worker tax.
+found that the host adapter entered the parallel body even when the then-current
+command entry would select its sequential clone. The adapter selects the same
+execution world; the initial control was too noisy to attribute a fixed remaining
+one-worker tax.
 
 The original static row weight did not multiply by runtime width, although
 two similarly priced outer loops can do very different work per iteration.

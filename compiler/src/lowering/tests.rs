@@ -93,7 +93,7 @@ fn write_work(input: own Slice<u64>) -> result: own buffer<u64> reads(input) con
   return move output;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

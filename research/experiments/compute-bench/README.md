@@ -128,7 +128,8 @@ histogram repeat, including the failed chain-pull control. The
 [interpretation](../../investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
 states why this trial fails its policy criterion despite the mechanism's
 provisional retention. These rows precede the continuation-accounting fix and
-do not measure its performance. Runtime-valued estimates are reported
+the ordinary-callable/container integration and do not measure their
+performance. Runtime-valued estimates are reported
 as `chunks=na` by the harness's static header extraction; `steals` remains the
 actual runtime observation. Retain these rows while the estimate investigation
 or a design decision cites them; subsequent trials do not replace them.

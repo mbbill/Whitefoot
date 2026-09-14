@@ -772,7 +772,7 @@ impl DerivationNode {
 
     fn rank(&self) -> u8 {
         match self {
-            Self::UnsignedDivisionProduct { .. } => 35,
+            Self::UnsignedDivisionProduct { .. } => 36,
             Self::SourceBound { .. } => 0,
             Self::SourceDistinct { .. } => 1,
             Self::SourceGoal { .. } => 2,
@@ -809,7 +809,7 @@ impl DerivationNode {
             Self::IntegerDomain { .. } => 32,
             Self::AffineConsequence { .. } => 33,
             Self::GoalAffineConsequence { .. } => 34,
-            Self::RequirementAffineImage { .. } => 36,
+            Self::RequirementAffineImage { .. } => 37,
         }
     }
 }

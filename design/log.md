@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-13 Retain compute facts and provisional extent pricing
+
+Nodes: language/checks-and-proofs/automatic-facts, compiler/parallel-lowering, compiler/parallel-lowering/parallel-runtime
+
+Owner-approved: The owner's LGTM on the four compute-model amendments and DCR corrections after their explanation in the compute-model conversation.
+
+Summary: After discussing the compute-model PR's implementation, specification, performance and DCR findings, the owner approved the four tree revisions and directed the DCR corrections. Automatic-facts gains captured unsigned quotient/product consequences, immutable measure observations and established affine ordering requirements, for the runtime partition and recursive merge needs documented in the [investigation](../research/investigations/compute-model/DESIGN.md). Parallel-runtime keeps its constants and adds the adverse global-floor evidence with the corrected source anchor. Parallel-lowering retains captured-extent pricing provisionally; the [first trial's protected-case failure and CPU costs](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result) remain grounds against treating it as a broadly suitable policy. The owner deferred that larger policy question, including runtime profiles and PGO, to a dedicated study tracked in `docs/todo.md`. This ruling does not turn the failed trial into a passing performance result. The four accepted amendments are removed.
+
 ## 2026-09-13 Separate the helper startup policies and retain a provisional ceiling
 
 Nodes: compiler/completion-runtime
@@ -34,12 +42,6 @@ Summary: The owner accepted this revision in the PR #30 pre-merge assessment han
 Nodes: language/ownership/slice-result-provenance
 
 Summary: The owner approved the precise wording proposed in the main-integration DCR handoff: direct storage formation creates a singleton, while formation over a parent view preserves every parent origin and appends the child's relative range. The earlier unqualified formation sentence was broader than [OWN-5] and the implemented child-view path, which must preserve both possible origins when a returned view can refer to either input. This corrects the record without changing the specification, compiler or conformance expectations; the separate ordinary-host tree proposal retains the same correction.
-
-## 2026-09-13 Retain compute facts and provisional extent pricing
-
-Nodes: language/checks-and-proofs/automatic-facts, compiler/parallel-lowering, compiler/parallel-lowering/parallel-runtime
-
-Summary: After discussing the compute-model PR's implementation, specification, performance and DCR findings, the owner approved the four tree revisions and directed the DCR corrections. Automatic-facts gains captured unsigned quotient/product consequences, immutable measure observations and established affine ordering requirements, for the runtime partition and recursive merge needs documented in the [investigation](../research/investigations/compute-model/DESIGN.md). Parallel-runtime keeps its constants and adds the adverse global-floor evidence with the corrected source anchor. Parallel-lowering retains captured-extent pricing provisionally; the [first trial's protected-case failure and CPU costs](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result) remain grounds against treating it as a broadly suitable policy. The owner deferred that larger policy question, including runtime profiles and PGO, to a dedicated study tracked in `docs/todo.md`. This ruling does not turn the failed trial into a passing performance result. The four accepted amendments are removed.
 
 ## 2026-09-13 Admit proved compute range loans
 

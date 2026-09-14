@@ -15,7 +15,7 @@ fn fill(first: own Slice<u64>, second: own Slice<u64>, output: own MutSlice<u64>
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let first = buffer_new(3_u64, 0_u64);
   let second = buffer_new(5_u64, 0_u64);
   let output = buffer_new(8_u64, 0_u64);

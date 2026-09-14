@@ -82,7 +82,7 @@ fn release_work(output: own buffer<u64>) -> result: own u64 pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let output = write_work(count: 2_u64, lower: 0_u64, upper: 17_u64);
   return exit_status(code: 0_u8);
 }
@@ -198,7 +198,7 @@ fn write_{extent}_{position}(upper: own u64, repeats: own u64) -> result: own bu
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -1286,7 +1286,7 @@ fn a_returning_loop_with_no_break_has_a_valid_unreachable_continuation() {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let value = count_down(count: 17_u64);
   if value != 7_u64 {
     return exit_status(code: 1_u8);

@@ -1643,7 +1643,7 @@ fn affine_requirements_publish_only_established_non_l0_ordering_leaves() {
     for (requirement, accepted) in cases {
         // Contract definitions precede every requirement in canonical source.
         let source = format!(
-            "fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {{\n{requirement}\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n}} {{\n  let total = a + b;\n  let remaining = limit - total;\n  return remaining;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {{\n{requirement}\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n}} {{\n  let total = a + b;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             if accepted {
@@ -1688,7 +1688,7 @@ fn affine_requirement_images_keep_copies_but_do_not_retarget_replaced_scalars() 
         ("  set a = 32_u64;\n  let total = a + b;", false),
     ] {
         let source = format!(
-            "fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {{\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n  requires a + b <= limit;\n}} {{\n{body}\n  let remaining = limit - total;\n  return remaining;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {{\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n  requires a + b <= limit;\n}} {{\n{body}\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             if accepted {
@@ -1716,7 +1716,7 @@ fn affine_requirement_images_keep_copies_but_do_not_retarget_replaced_scalars() 
 fn affine_requirement_measure_observations_survive_as_values_without_retargeting() {
     for (observed, accepted) in [("old", true), ("current", false)] {
         let source = format!(
-            "fn room(values: own buffer<u64>, extra: own u64, limit: own u64) -> result: own u64 reads(values), writes(values) contract {{\n  requires len_of(values) <= 16_u64;\n  requires extra <= 16_u64;\n  requires len_of(values) + extra <= limit;\n}} {{\n  let old = len_of(values);\n  let replaced = replace values = buffer_new(32_u64, 0_u64);\n  let current = len_of(values);\n  let total = {observed} + extra;\n  let remaining = limit - total;\n  return remaining;\n}}\n\ncommand fn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn room(values: own buffer<u64>, extra: own u64, limit: own u64) -> result: own u64 reads(values), writes(values) contract {{\n  requires len_of(values) <= 16_u64;\n  requires extra <= 16_u64;\n  requires len_of(values) + extra <= limit;\n}} {{\n  let old = len_of(values);\n  let replaced = replace values = buffer_new(32_u64, 0_u64);\n  let current = len_of(values);\n  let total = {observed} + extra;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             if accepted {

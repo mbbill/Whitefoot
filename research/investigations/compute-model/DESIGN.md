@@ -108,9 +108,11 @@ unproved division domains, and branch joins.
 
 The specification amendment changes ENT-3.S7 and DIAG-2, with no new numbered
 rule, token, production, operation spelling, or exception. It archives the
-outgoing v0.55 bytes and declares v0.56. The target-mapping review carries its
-rows forward because these facts erase and change no ABI, runtime operation,
-release action, or target-domain obligation. Six new conformance cases cover
+outgoing v0.56 bytes and declares v0.57 after integration with the ordinary
+container and callable model. The original trial used the earlier branch's
+v0.56; the retained measurements still identify those original compiler bytes.
+These facts erase and change no ABI, runtime operation, release action, or
+target-domain obligation. Six new conformance cases cover
 direct and committed products, surviving aliases, three invalid retargetings,
 and the requirement that a product discharge its own domain first; no old
 normative expectation is weakened.
@@ -154,12 +156,12 @@ parallel initialization loop is not used as evidence for an algorithm stage.
 
 ## Pool-off measurement path
 
-Inspection before the new timing runs found that the compute-bench adapters
-call `wf_<kernel>` directly in a parallel module. The emitted command entry
-instead calls the sequential clone when `wf__par_pool_active()` is false.
-Thus a one-worker table row currently measures a different entry path from
-an ordinary compiled command. The loop splitter returns a zero budget there,
-but the adapter still enters the outlined parallel lowering.
+Inspection before the original timing runs found that the compute-bench
+adapters called `wf_<kernel>` directly in a parallel module. The then-emitted
+command entry instead called the sequential clone when
+`wf__par_pool_active()` was false. A one-worker table row therefore measured a
+different entry path from the compiled program: the loop splitter returned a
+zero budget, but the adapter still entered the outlined parallel lowering.
 
 The discriminating control is the same compiled module, runtime, input, and
 comparison process, with the adapter calling the already-emitted sequential
@@ -178,6 +180,13 @@ split-budget or chunk calls; their block order differs from `--no-overlap`.
 Neither timing nor that inspection establishes a remaining fixed compiler tax.
 The adapter is nevertheless corrected because entering the command's world is
 part of what this measurement claims to measure, independently of a speed win.
+
+The ordinary-function launcher now owns executable entry selection. The
+adapter retains the same pool-dependent world choice and is composed with
+`module-symbols.awk` before linking paired modules, preserving the ordinary
+definitions' linkage and attributes. The compute sources and test fixtures use
+ordinary `fn main` declarations. This integration changes neither the retained
+historical rows nor their attribution to the original compiler revisions.
 
 ## Binary-split merge pressure
 

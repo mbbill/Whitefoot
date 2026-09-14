@@ -73,7 +73,7 @@ fn release_prefix(output: own buffer<u64>) -> result: own u64 pure {
   return 0_u64;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   let input = buffer_new(17_u64, 0_u64);
   for (i in 0_u64..17_u64) {
     set input[i] = i + 1_u64;

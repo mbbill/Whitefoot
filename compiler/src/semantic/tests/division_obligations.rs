@@ -483,7 +483,7 @@ fn runtime_division_publishes_its_quotient_bound_without_a_later_product() {
   return quotient;
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "
@@ -1223,7 +1223,7 @@ fn runtime_unsigned_division_retains_the_checked_product_bound_in_either_order()
   return product;
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "#
@@ -1267,7 +1267,7 @@ fn captured_runtime_division_values_survive_only_in_their_unchanged_aliases() {
   return product;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1300,7 +1300,7 @@ fn changed_runtime_division_operands_cannot_retarget_the_product_bound() {
   return product;
 }}
 
-command fn main() -> status: own ExitStatus pure {{
+fn main() -> status: own ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "#
@@ -1325,7 +1325,7 @@ fn a_quotient_product_consequence_cannot_discharge_its_own_domain() {
   return product;
 }
 
-command fn main() -> status: own ExitStatus pure {
+fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

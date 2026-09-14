@@ -10130,7 +10130,7 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. } => self
                 .checked_measure_term(expression)
-                .map(|term| self.measure_atom(term)),
+                .map(|term| self.measure_atom(term, state)),
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
             | CheckedExpression::NamedConstant {
                 value: CheckedValue::Integer { ty, bits },
@@ -11347,7 +11347,7 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::ContainerMeasure { .. } => self
                 .checked_measure_term(expression)
-                .map(|term| self.measure_atom(term)),
+                .map(|term| self.measure_atom(term, state)),
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
             | CheckedExpression::NamedConstant {
                 value: CheckedValue::Integer { ty, bits },
