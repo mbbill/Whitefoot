@@ -135,6 +135,9 @@ outside this implementation experiment.
 Prediction, before candidate measurement: closure reuse reduces the premise
 stage but not target AUTO; endpoint reuse reduces target AUTO but not repeated
 closure. Both should improve growing-64/128 while leaving fixed-context and
-small cases within the protected criterion. Compare the two isolated changes
-as well as their combination. Keep prefix and histogram as real-program
+small cases within the protected criterion. Compare baseline against closure
+reuse alone, then that build against the combined implementation to isolate
+the endpoint change with closure reuse held constant. Compare the combination
+against baseline for selection; this does not claim the two speedups multiply
+independently. Keep prefix and histogram as real-program
 controls using their ordinary current source and unchanged LLVM emission.

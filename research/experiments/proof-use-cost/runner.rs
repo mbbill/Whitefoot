@@ -120,11 +120,15 @@ fn main() {
     let args = std::env::args().collect::<Vec<_>>();
     assert!(
         args.len() >= 4,
-        "runner COMPILER WORK_ROOT check|bench [SIZES] [REPETITIONS]"
+        "runner COMPILER WORK_ROOT check|bench [SIZES] [REPETITIONS], or compare CANDIDATE SIZES ROUNDS [REAL_SOURCE...]"
     );
     let compiler = Path::new(&args[1]);
     let root = Path::new(&args[2]);
     std::fs::create_dir_all(root).expect("create scratch root");
+    if args[3] == "compare" {
+        compare(compiler, root, &args[4..]);
+        return;
+    }
     let sizes = if args[3] == "check" {
         vec![3, 6]
     } else {
@@ -162,6 +166,13 @@ fn main() {
         }
     }
     if args[3] == "check" {
+        run(
+            compiler,
+            root,
+            "fixed-4096",
+            &source(Family::Fixed, 4096),
+            true,
+        );
         let valid = source(Family::Growing, 3);
         for (label, bad) in [
             (
@@ -175,6 +186,65 @@ fn main() {
         ] {
             run(compiler, root, label, &bad, false);
         }
-        println!("checks: six accepted fixtures and two PRF-1 negative controls");
+        println!(
+            "checks: seven accepted fixtures including the full use ceiling, and two PRF-1 negative controls"
+        );
+    }
+}
+
+fn compare(baseline: &Path, root: &Path, args: &[String]) {
+    assert!(
+        args.len() >= 3,
+        "compare CANDIDATE SIZES ROUNDS [REAL_SOURCE...]"
+    );
+    let candidate = Path::new(&args[0]);
+    let sizes = args[1]
+        .split(',')
+        .map(|n| n.parse::<usize>().expect("integer size"))
+        .collect::<Vec<_>>();
+    let rounds = args[2].parse::<usize>().expect("integer round count");
+    assert!(rounds >= 5, "paired selection uses at least five rounds");
+    for (name, compiler) in [("baseline", baseline), ("candidate", candidate)] {
+        run(
+            compiler,
+            root,
+            &format!("warm-{name}"),
+            &source(Family::Fixed, 3),
+            true,
+        );
+    }
+    let mut fixtures = Vec::new();
+    for count in sizes {
+        for family in [Family::Fixed, Family::Growing, Family::Control] {
+            if count <= 1024 || matches!(family, Family::Fixed) {
+                fixtures.push((format!("{}-{count}", family.name()), source(family, count)));
+            }
+        }
+    }
+    for path in &args[3..] {
+        let path = Path::new(path);
+        let label = format!("real-{}", path.file_stem().unwrap().to_str().unwrap());
+        assert!(fixtures.iter().all(|(existing, _)| existing != &label));
+        fixtures.push((
+            label,
+            std::fs::read_to_string(path).expect("read real source"),
+        ));
+    }
+    println!("fixture\tsource_bytes\tpair\tcompiler\telapsed_us\tverdict");
+    for (label, source) in fixtures {
+        for round in 0..rounds {
+            let mut order = [("baseline", baseline), ("candidate", candidate)];
+            if round % 2 != 0 {
+                order.reverse();
+            }
+            for (name, compiler) in order {
+                let elapsed = run(compiler, root, &label, &source, true);
+                println!(
+                    "{label}\t{}\t{round}\t{name}\t{elapsed}\taccept",
+                    source.len()
+                );
+                std::io::stdout().flush().unwrap();
+            }
+        }
     }
 }

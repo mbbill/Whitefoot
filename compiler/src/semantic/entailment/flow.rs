@@ -530,6 +530,38 @@ impl AffineL0Index {
     }
 }
 
+/// Immutable endpoint information for one atom in a single DIRECT/AUTO
+/// traversal. The endpoint's original L0 witness is retained for diagnostics.
+struct AffineAtomInterval {
+    minimum: i128,
+    maximum: i128,
+    minimum_parent: Option<(TermId, TermId, i128)>,
+    maximum_parent: Option<(TermId, TermId, i128)>,
+}
+
+/// Preparation shared by one fixed candidate traversal, never by different
+/// program points. Only requested atom endpoints are memoized; every residual
+/// still executes the same checked arithmetic and ordered proof rules.
+struct AffineDirectQuery<'a> {
+    l0: &'a AffineL0Index,
+    values: &'a AffineFlowState,
+    closed: &'a ClosedState,
+    intervals: HashMap<AffineTermId, AffineAtomInterval>,
+    measures: Option<HashMap<AffineTermId, Vec<TermId>>>,
+}
+
+impl<'a> AffineDirectQuery<'a> {
+    fn new(l0: &'a AffineL0Index, values: &'a AffineFlowState, closed: &'a ClosedState) -> Self {
+        Self {
+            l0,
+            values,
+            closed,
+            intervals: HashMap::new(),
+            measures: None,
+        }
+    }
+}
+
 struct AutomaticAffinePremise {
     inequality: AffineInequality,
     source: Option<SourceAffineFactRef>,
@@ -12251,8 +12283,9 @@ impl Analyzer<'_, '_> {
         let candidates = self.affine_l0_candidates(values);
         let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
         let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
+        let mut query = AffineDirectQuery::new(&l0, values, &closed);
         Ok(self
-            .affine_candidate_residual_proof(target, sum, &l0, values, &closed, &mut check)
+            .affine_candidate_residual_proof(target, sum, &mut query, &mut check)
             .is_some())
     }
 
@@ -12720,8 +12753,7 @@ impl Analyzer<'_, '_> {
     fn affine_interval_proof(
         &mut self,
         inequality: &AffineInequality,
-        values: &AffineFlowState,
-        closed: &ClosedState,
+        query: &mut AffineDirectQuery<'_>,
         check: &mut AffineCheckState,
     ) -> Result<Option<Vec<DerivationId>>, AffineCheckError> {
         let mut requested = inequality
@@ -12732,15 +12764,29 @@ impl Analyzer<'_, '_> {
         requested.sort_unstable();
         requested.dedup();
 
-        let measure_terms_by_atom = self.measure_terms_by_atom(values);
-        let mut term_intervals = HashMap::new();
+        if query.measures.is_none() {
+            query.measures = Some(self.measure_terms_by_atom(query.values));
+        }
+        let measures = query
+            .measures
+            .as_ref()
+            .expect("measure index prepared above");
         for atom_id in requested {
+            if query.intervals.contains_key(&atom_id) {
+                continue;
+            }
             let atom = *self
                 .affine_atoms
                 .get(atom_id.index() as usize)
                 .ok_or(AffineCheckError::CoefficientMismatch)?;
-            let (minimum, maximum) = (atom.minimum, atom.maximum);
-            let mut bindings = values
+            let mut interval = AffineAtomInterval {
+                minimum: atom.minimum,
+                maximum: atom.maximum,
+                minimum_parent: None,
+                maximum_parent: None,
+            };
+            let mut bindings = query
+                .values
                 .values
                 .iter()
                 .filter_map(|(binding, value)| {
@@ -12764,44 +12810,37 @@ impl Analyzer<'_, '_> {
                     )))
                 })
                 .collect::<Vec<_>>();
-            if let Some(measures) = measure_terms_by_atom.get(&atom_id) {
+            if let Some(measures) = measures.get(&atom_id) {
                 terms.extend(measures.iter().copied());
             }
-            term_intervals.insert(atom_id, (minimum, maximum, terms));
+            for term in terms {
+                if let Some(upper) = query.closed.tight_bound(term, ZERO)
+                    && upper < interval.maximum
+                {
+                    interval.maximum = upper;
+                    interval.maximum_parent = Some((term, ZERO, upper));
+                }
+                if let Some(negative_lower) = query.closed.tight_bound(ZERO, term)
+                    && let Some(lower) = negative_lower.checked_neg()
+                    && lower > interval.minimum
+                {
+                    interval.minimum = lower;
+                    interval.minimum_parent = Some((ZERO, term, negative_lower));
+                }
+            }
+            query.intervals.insert(atom_id, interval);
         }
 
-        if closed.contradictory() {
-            return Ok(closed.contradiction_proof().map(|proof| vec![proof]));
+        if query.closed.contradictory() {
+            return Ok(query.closed.contradiction_proof().map(|proof| vec![proof]));
         }
-        let intervals = term_intervals
-            .into_iter()
-            .map(|(atom, (mut minimum, mut maximum, terms))| {
-                let mut minimum_parent = None;
-                let mut maximum_parent = None;
-                for term in terms {
-                    if let Some(upper) = closed.tight_bound(term, ZERO)
-                        && upper < maximum
-                    {
-                        maximum = upper;
-                        maximum_parent = Some((term, ZERO, upper));
-                    }
-                    if let Some(negative_lower) = closed.tight_bound(ZERO, term)
-                        && let Some(lower) = negative_lower.checked_neg()
-                        && lower > minimum
-                    {
-                        minimum = lower;
-                        minimum_parent = Some((ZERO, term, negative_lower));
-                    }
-                }
-                (atom, (minimum, maximum, minimum_parent, maximum_parent))
-            })
-            .collect::<HashMap<_, _>>();
         let proved = interval_proves(
             inequality,
             |term| {
-                intervals
+                query
+                    .intervals
                     .get(&term)
-                    .map(|(minimum, maximum, _, _)| (*minimum, *maximum))
+                    .map(|interval| (interval.minimum, interval.maximum))
             },
             check,
         )?;
@@ -12810,16 +12849,18 @@ impl Analyzer<'_, '_> {
         }
         let mut parents = Vec::new();
         for coefficient in inequality.terms() {
-            let (_, _, minimum_parent, maximum_parent) = intervals
+            let interval = query
+                .intervals
                 .get(&coefficient.term())
                 .ok_or(AffineCheckError::CoefficientMismatch)?;
             let selected = if coefficient.coefficient() > 0 {
-                maximum_parent
+                interval.maximum_parent
             } else {
-                minimum_parent
+                interval.minimum_parent
             };
-            if let Some((left, right, bound)) = *selected {
-                let parent = closed
+            if let Some((left, right, bound)) = selected {
+                let parent = query
+                    .closed
                     .bound_proof(left, right, bound, &mut self.derivations)
                     .ok_or(AffineCheckError::CoefficientMismatch)?;
                 parents.push(parent);
@@ -12833,18 +12874,16 @@ impl Analyzer<'_, '_> {
     fn affine_residual_proof(
         &mut self,
         inequality: &AffineInequality,
-        l0: &AffineL0Index,
-        values: &AffineFlowState,
-        closed: &ClosedState,
+        query: &mut AffineDirectQuery<'_>,
         check: &mut AffineCheckState,
     ) -> Result<Option<Vec<DerivationId>>, AffineCheckError> {
-        if closed.contradictory() {
-            return Ok(closed.contradiction_proof().map(|proof| vec![proof]));
+        if query.closed.contradictory() {
+            return Ok(query.closed.contradiction_proof().map(|proof| vec![proof]));
         }
-        if let Some(parents) = self.affine_l0_proof(inequality, l0, closed)? {
+        if let Some(parents) = self.affine_l0_proof(inequality, query.l0, query.closed)? {
             return Ok(Some(parents));
         }
-        self.affine_interval_proof(inequality, values, closed, check)
+        self.affine_interval_proof(inequality, query, check)
     }
 
     /// Checks the fixed `DIRECT(T - S)` residual of one accumulated candidate
@@ -12862,9 +12901,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         target: &AffineInequality,
         candidate: &AffineInequality,
-        l0: &AffineL0Index,
-        values: &AffineFlowState,
-        closed: &ClosedState,
+        query: &mut AffineDirectQuery<'_>,
         check: &mut AffineCheckState,
     ) -> Option<Vec<DerivationId>> {
         let tightenings = integer_tightenings(candidate, target, check);
@@ -12872,9 +12909,7 @@ impl Analyzer<'_, '_> {
             let Ok(residual) = AffineInequality::residual_after(target, accumulated, check) else {
                 continue;
             };
-            if let Ok(Some(parents)) =
-                self.affine_residual_proof(&residual, l0, values, closed, check)
-            {
+            if let Ok(Some(parents)) = self.affine_residual_proof(&residual, query, check) {
                 return Some(parents);
             }
         }
@@ -12888,25 +12923,21 @@ impl Analyzer<'_, '_> {
     fn affine_l0_then_direct_proof(
         &mut self,
         target: &AffineInequality,
-        l0: &AffineL0Index,
-        values: &AffineFlowState,
-        closed: &ClosedState,
+        query: &mut AffineDirectQuery<'_>,
         check: &mut AffineCheckState,
     ) -> Option<Vec<DerivationId>> {
-        for entry in &l0.entries {
-            let Some(mut parents) = self.affine_candidate_residual_proof(
-                target,
-                &entry.inequality,
-                l0,
-                values,
-                closed,
-                check,
-            ) else {
+        for entry in &query.l0.entries {
+            let Some(mut parents) =
+                self.affine_candidate_residual_proof(target, &entry.inequality, query, check)
+            else {
                 continue;
             };
-            let Some(parent) =
-                closed.bound_proof(entry.left, entry.right, entry.bound, &mut self.derivations)
-            else {
+            let Some(parent) = query.closed.bound_proof(
+                entry.left,
+                entry.right,
+                entry.bound,
+                &mut self.derivations,
+            ) else {
                 continue;
             };
             parents.push(parent);
@@ -12928,9 +12959,8 @@ impl Analyzer<'_, '_> {
         let candidates = self.affine_l0_candidates(values);
         let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
         let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
-        if let Ok(Some(parents)) =
-            self.affine_residual_proof(target, &l0, values, &closed, &mut check)
-        {
+        let mut query = AffineDirectQuery::new(&l0, values, &closed);
+        if let Ok(Some(parents)) = self.affine_residual_proof(target, &mut query, &mut check) {
             return Some(AffineConsequenceProof {
                 premises: Vec::new(),
                 parents,
@@ -12950,9 +12980,7 @@ impl Analyzer<'_, '_> {
             if let Some(parents) = self.affine_candidate_residual_proof(
                 target,
                 &assumption.inequality,
-                &l0,
-                values,
-                &closed,
+                &mut query,
                 &mut check,
             ) {
                 return Some(Self::affine_consequence_from_residual(
@@ -12969,7 +12997,7 @@ impl Analyzer<'_, '_> {
         // only which successful derivation is retained, never acceptance.
         if let Some((first, second, parents)) =
             first_two_premise_candidate(&automatic, &mut check, |sum, check| {
-                self.affine_candidate_residual_proof(target, sum, &l0, values, &closed, check)
+                self.affine_candidate_residual_proof(target, sum, &mut query, check)
             })
         {
             let selected = if first == second {
@@ -12987,7 +13015,7 @@ impl Analyzer<'_, '_> {
         // strongest indexed L0 image once, then run the ordinary DIRECT check
         // on the residual. DIRECT may itself close an exact L0 image, but the
         // route never publishes or recursively saturates either relation.
-        self.affine_l0_then_direct_proof(target, &l0, values, &closed, &mut check)
+        self.affine_l0_then_direct_proof(target, &mut query, &mut check)
             .map(|parents| AffineConsequenceProof {
                 premises: Vec::new(),
                 parents,
