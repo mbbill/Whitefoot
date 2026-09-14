@@ -3,6 +3,16 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
+- **A field projected after dereferencing a runtime-indexed composite element
+  stops as unsupported.** The specification admits ordinary chained element,
+  dereference, and field selection, but
+  `deref(owners.storage[index]).id` stops in semantic checking as
+  `Unsupported(CompositeValues)` with no rule or source diagnostic. The
+  growable-vector executable currently borrows `owners.storage[index]` into a
+  helper and performs `deref(deref(item)).id` there. Complete the general
+  checked-place and lowering path for a subscript followed by dereference and
+  field projection, add owning and copy-element tests, then remove that helper.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)

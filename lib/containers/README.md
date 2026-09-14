@@ -25,5 +25,12 @@ Every mutating public operation takes `&uniq`; growth replaces only the backing
 inside the borrowed owner. Successful `Result` values report the new length or
 capacity, and contracts publish the corresponding exit state. No mutation
 round-trips the complete container through a value parameter and result.
+After growth transfers the old window, a local zero-length proof lets PROV-6
+release that run's backing without requiring providers for its now-absent
+generic elements; the backing provider and release effect remain explicit.
 
 Run this slice with `make -C lib/containers check`.
+The maintained allocation observer refuses every nonzero allocation request
+and checks the exact release ledger in all three lowering modes. The matched
+native comparison and current limits are recorded in
+[`../../research/experiments/container-representation/vector-library/RESULTS.md`](../../research/experiments/container-representation/vector-library/RESULTS.md).

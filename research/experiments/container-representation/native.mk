@@ -1,6 +1,7 @@
 # The C measurement harnesses link the same ordinary library as whitefootc.
 # Keep this list aligned with compiler/src/bin/whitefootc.rs::runtime_units.
-# This build-only include is owned by dense/, families/ and io-completion-bench/; remove it when
+# This build-only include is owned by dense/, families/, io-completion-bench/
+# and the source container-library observer; remove it when
 # the compiler ships a reusable linked-library artifact for these harnesses.
 NATIVE_ROOT := $(ROOT)/compiler/src/backend
 NATIVE_C := ordinary_values.c sched/core.c sched/entry.c \

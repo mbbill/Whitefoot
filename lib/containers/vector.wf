@@ -59,6 +59,7 @@ fn grow_vector_reallocate<T: linear>['s](values: &uniq GrowVector<'s, T>, store:
           place_back(vector: &uniq built, value: move value);
         }
         let old = replace deref(values).storage = move built;
+        invariant old_empty: len_of(old) <= 0_u64;
         dispose old;
         return Ok<u64, unit>(value: total);
       }
