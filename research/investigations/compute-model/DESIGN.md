@@ -181,6 +181,15 @@ handling, so even that comparison does not isolate a lowering defect. Native
 direct scatter uses an output plus two scalar offsets per block, instead of
 the local element streams and packing chain.
 
+The same-chain W8 comparison also exposes a parallel-utilization gap: dividing
+the process-CPU medians by the wall medians gives roughly 1.78 occupied CPUs
+for Whitefoot and 4.04 for oneTBB. Whitefoot uses about 16 percent more CPU but
+takes 2.62 times the wall time. These ratios include runtime and spinning work;
+they neither measure useful computation alone nor isolate scheduler idleness.
+Both sources have a packing chain and final two-way copy, so those shared
+structures alone do not explain the difference. Serial critical-path costs,
+task expansion, work-supply policy and worker execution remain to be separated.
+
 Skew improves the same-source wall ratio to about 1.56 while increasing CPU
 about 24 percent. Small input is slower with overlap; its microsecond CPU
 values are especially sensitive to clock granularity and scheduling. The
@@ -201,12 +210,17 @@ remain even when tail-call optimization removes recursive frame growth.
 The trial meets stable-result, checked-exclusive-range and useful-parallel-work
 criteria, but fails to establish competitive representation cost. It does not
 justify adopting this chunk chain as the general scatter idiom or changing
-the parallel permission rule. The next discriminating question is whether a
-balanced destination representation can carry the needed lengths while
-avoiding padded element streams and owned count-extraction copies, followed
-by the same independent oracle and native controls. A new content-summary
-proof mechanism is a candidate only if a concrete ordinary formulation still
-cannot express the required bound; no such mechanism is selected here.
+the parallel permission rule. The next experiment should first attribute wall
+time, CPU time, runnable work and worker activity to block partitioning, count
+tally, packing and final copy. Scheduling controls should keep the algorithm
+and representation fixed to distinguish insufficient parallel work or a long
+serial critical path from available work not reaching workers. That evidence
+should select the next optimization. A balanced destination representation
+that avoids padded streams and owned count-extraction copies remains a
+candidate, checked with the same independent oracle and native controls.
+A new content-summary proof mechanism is a candidate only if a concrete
+ordinary formulation still cannot express the required bound; neither it nor
+a general grain/profile/PGO policy is selected here.
 
 Reproduce from the experiment directory with the existing dependency setup:
 
