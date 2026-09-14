@@ -433,7 +433,7 @@ fn an_enumerated_symbolic_link_is_not_followed() {
 /// direct calls. A supplied declaration alone does not establish a call site.
 #[test]
 fn the_search_uses_ordinary_file_and_directory_calls() {
-    let llvm = compile_program("wfgrep.wf");
+    let llvm = wfgrep_module();
     for name in [
         "open_file",
         "open_directory_source",
