@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use crate::syntax::NodeId;
 use crate::{Production, SemanticIssueKind, SemanticRule, TerminalPredicate};
 
-use super::super::model::{CheckedNominalKind, CheckedType, NominalId};
+use super::super::model::{CheckedNominalKind, CheckedReleaseMode, CheckedType, NominalId};
 use super::{CheckStop, Checker};
 
 /// [PROV-6, S37] the linearity class a declaration writes as a bound, and the
@@ -176,6 +176,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(nodes)
     }
 
+    /// [PROV-6] the release graph selected at one release point. Proving a
+    /// direct run empty removes only its element edge; its own backing node
+    /// remains, so provider and effect obligations for that storage survive.
+    pub(in crate::semantic) fn release_graph_nodes_for(
+        &self,
+        ty: CheckedType,
+        release: CheckedReleaseMode,
+    ) -> Result<Vec<CheckedType>, CheckStop> {
+        if release == CheckedReleaseMode::EmptyRun
+            && matches!(
+                ty,
+                CheckedType::FixedVector { .. } | CheckedType::Vector { .. }
+            )
+        {
+            return Ok(vec![ty]);
+        }
+        self.release_graph_nodes(ty)
+    }
+
     /// [PROV-6] whether any node of this type's release graph carries the
     /// `linear` modifier, this type's own node included.
     pub(in crate::semantic) fn owns_modifier_linear_node(
@@ -235,8 +254,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         ty: CheckedType,
     ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
+        self.capability_released_stores_for(ty, CheckedReleaseMode::Full)
+    }
+
+    pub(in crate::semantic) fn capability_released_stores_for(
+        &self,
+        ty: CheckedType,
+        release: CheckedReleaseMode,
+    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
         let mut stores = Vec::new();
-        for node in self.release_graph_nodes(ty)? {
+        for node in self.release_graph_nodes_for(ty, release)? {
             let store = match node {
                 CheckedType::Vector {
                     region,
@@ -262,6 +289,66 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(stores)
+    }
+
+    fn direct_run(&self, ty: CheckedType) -> bool {
+        matches!(
+            ty,
+            CheckedType::FixedVector { .. } | CheckedType::Vector { .. }
+        )
+    }
+
+    fn linear_release_obligation(&self, ty: CheckedType) -> Result<Option<String>, CheckStop> {
+        if let Some(marked) = self.owns_modifier_linear_node(ty)? {
+            return Ok(Some(self.nominal(marked)?.name.clone()));
+        }
+        // A symbolic type parameter carries its class in the written bound,
+        // not on a nominal node, so inspect each graph node explicitly.
+        for node in self.release_graph_nodes(ty)? {
+            if let CheckedType::Generic(declaration) = node
+                && self.generic_parameter_class(declaration)? == LinearityClass::Linear
+            {
+                return Ok(Some(format!(
+                    "the `linear` bound written on {}",
+                    self.declaration_spelling(declaration)?
+                )));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Chooses the graph for a compiler-derived release. A direct run whose
+    /// complete graph is blocked may use the element-free graph only when its
+    /// own backing obligations remain satisfiable; entailment separately
+    /// proves the run empty before the edge removes its facts.
+    pub(in crate::semantic::check) fn scope_release_mode(
+        &self,
+        ty: CheckedType,
+        name: &str,
+        bindings: &std::collections::HashMap<crate::DeclarationId, super::LocalBinding>,
+        node: NodeId,
+    ) -> Result<CheckedReleaseMode, CheckStop> {
+        let linear = self.linear_release_obligation(ty)?;
+        let missing = self
+            .capability_released_stores(ty)?
+            .into_iter()
+            .find(|store| !self.scope_holds_store_capability(bindings, *store));
+        if linear.is_none() && missing.is_none() {
+            return Ok(CheckedReleaseMode::Full);
+        }
+        if self.direct_run(ty)
+            && self
+                .capability_released_stores_for(ty, CheckedReleaseMode::EmptyRun)?
+                .into_iter()
+                .all(|store| self.scope_holds_store_capability(bindings, store))
+        {
+            return Ok(CheckedReleaseMode::EmptyRun);
+        }
+        if linear.is_some() {
+            self.reject_linear_value_not_consumed(ty, name, node)?;
+        }
+        self.reject_release_without_capability(ty, name, bindings, node)?;
+        Ok(CheckedReleaseMode::Full)
     }
 
     /// [PROV-6, D3] whether a live binding of this store's provider type
@@ -329,18 +416,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // under `linear` it must consume the value exactly once and may never
         // drop it. The obligation names the bound rather than a nominal,
         // because at the symbolic instance no nominal carries it.
-        let marked = match self.owns_modifier_linear_node(ty)? {
-            Some(marked) => self.nominal(marked)?.name.clone(),
-            None => {
-                if self.linearity_class(ty)? != LinearityClass::Linear {
-                    return Ok(());
-                }
-                let named = match ty {
-                    CheckedType::Generic(declaration) => self.declaration_spelling(declaration)?,
-                    other => self.checked_type_name(other)?,
-                };
-                format!("the `linear` bound written on {named}")
-            }
+        let Some(marked) = self.linear_release_obligation(ty)? else {
+            return Ok(());
         };
         self.issue_node::<()>(
             SemanticRule::Prov6,
@@ -655,9 +732,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// before the operand's own ownership consume.
     pub(in crate::semantic::check) fn dispose_admission(
         &self,
+        function: &super::FunctionSignature,
         ty: CheckedType,
         node: NodeId,
-    ) -> Result<(), CheckStop> {
+    ) -> Result<CheckedReleaseMode, CheckStop> {
         if self.is_loan_bearing(ty)? {
             return self.issue_node(
                 SemanticRule::Prov6,
@@ -669,16 +747,64 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        if let Some(marked) = self.owns_modifier_linear_node(ty)? {
+        let linear = self.linear_release_obligation(ty)?;
+        let missing = self
+            .capability_released_stores(ty)?
+            .into_iter()
+            .find(|store| {
+                !function.parameters.iter().any(
+                    |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == *store),
+                )
+            });
+        let root_missing = if self.direct_run(ty) {
+            self.capability_released_stores_for(ty, CheckedReleaseMode::EmptyRun)?
+                .into_iter()
+                .find(|store| {
+                    !function.parameters.iter().any(
+                        |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == *store),
+                    )
+                })
+        } else {
+            None
+        };
+        if (linear.is_some() || missing.is_some()) && self.direct_run(ty) {
+            let mut root_has_capability = false;
+            for node_ty in self.release_graph_nodes_for(ty, CheckedReleaseMode::EmptyRun)? {
+                root_has_capability |= self.is_capability_released(node_ty)?;
+            }
+            let root_provider_missing = self
+                .capability_released_stores_for(ty, CheckedReleaseMode::EmptyRun)?
+                .into_iter()
+                .any(|store| {
+                    !function.parameters.iter().any(
+                        |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
+                    )
+                });
+            if root_has_capability && !root_provider_missing {
+                return Ok(CheckedReleaseMode::EmptyRun);
+            }
+        }
+        if root_missing.is_some() {
+            self.reject_dispose_without_provider_for(
+                function,
+                ty,
+                CheckedReleaseMode::EmptyRun,
+                node,
+            )?;
+        }
+        if let Some(marked) = linear {
             return self.issue_node(
                 SemanticRule::Prov6,
                 node,
                 SemanticIssueKind::DisposeOfLinearNode {
-                    nominal: self.nominal(marked)?.name.clone(),
+                    nominal: marked,
                     mechanical_fix: "take the value apart with let N(f: a, ...) = move v; \
                          and discharge the marked component",
                 },
             );
+        }
+        if missing.is_some() {
+            self.reject_dispose_without_provider_for(function, ty, CheckedReleaseMode::Full, node)?;
         }
         let mut capability_leaf = false;
         for node_ty in self.release_graph_nodes(ty)? {
@@ -699,7 +825,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // and a general-store leaf resolves that store's live provider and
         // writes it. The provider write itself is added by the caller, which
         // holds the function signature this resolution reads.
-        Ok(())
+        Ok(CheckedReleaseMode::Full)
     }
 
     /// [PROV-6, D3] the provider place each general store reached by `ty`'s
@@ -714,8 +840,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         function: &super::FunctionSignature,
         ty: CheckedType,
     ) -> Result<Vec<super::super::model::CheckedStatePath>, CheckStop> {
+        self.resolved_provider_writes_for(function, ty, CheckedReleaseMode::Full)
+    }
+
+    pub(in crate::semantic) fn resolved_provider_writes_for(
+        &self,
+        function: &super::FunctionSignature,
+        ty: CheckedType,
+        release: CheckedReleaseMode,
+    ) -> Result<Vec<super::super::model::CheckedStatePath>, CheckStop> {
         let mut writes = Vec::new();
-        for store in self.capability_released_stores(ty)? {
+        for store in self.capability_released_stores_for(ty, release)? {
             if let Some(parameter) = function.parameters.iter().find(
                 |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
             ) {
@@ -730,13 +865,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [PROV-6] `dispose p;` in a scope holding no provider of a store `p`
     /// releases to, rendered with the parameter the scope is missing.
-    pub(in crate::semantic) fn reject_dispose_without_provider(
+    pub(in crate::semantic) fn reject_dispose_without_provider_for(
         &self,
         function: &super::FunctionSignature,
         ty: CheckedType,
+        release: CheckedReleaseMode,
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        for store in self.capability_released_stores(ty)? {
+        for store in self.capability_released_stores_for(ty, release)? {
             if function.parameters.iter().any(
                 |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
             ) {

@@ -261,6 +261,9 @@ impl EntailmentContext<'_> {
 pub(crate) enum ObligationFamily {
     /// A subscript bounds obligation `i < len_of(P)` [OP-4].
     Bounds,
+    /// [PROV-6] a release using the pruned run graph must prove that the
+    /// released run has no live elements at that exact edge.
+    EmptyRunRelease,
     /// One canonical `.defined` goal for a proof-required exact integer
     /// operation [OP-2, ENT-6].
     IntegerDomain,

@@ -2173,12 +2173,25 @@ pub(crate) struct CheckedDrop {
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
+    /// [PROV-6] this release omits the element subtree because the proof
+    /// flow must establish that the direct run is empty at this edge.
+    pub(crate) release: CheckedReleaseMode,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedProjectedDrop {
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
+    pub(crate) release: CheckedReleaseMode,
+}
+
+/// Which release graph one release occurrence walks for static admission.
+/// Lowering emits the same ordinary run release in both cases: a zero-length
+/// run naturally executes no element drop, so this distinction is proof-only.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedReleaseMode {
+    Full,
+    EmptyRun,
 }
 
 /// A SET-1 target whose root, path, copy type, and post-RHS writability have

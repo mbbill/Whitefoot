@@ -28,6 +28,48 @@ fn memory_reclamation_contributes_no_release_row() {
 }
 
 #[test]
+fn proved_empty_run_release_omits_only_the_element_subtree() {
+    assert_complete(
+        br#"fn release<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(run, store) contract {
+  requires len_of(run) <= 0_u64;
+} {
+  dispose run;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    assert_complete(
+        br#"fn release<T: linear, const n: u64>(run: own FixedVector<T, n>) -> result: own unit pure contract {
+  requires len_of(run) <= 0_u64;
+} {
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    assert_rule_kind(
+        br#"fn release<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(run, store) {
+  dispose run;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Prov6,
+        |kind| matches!(kind, SemanticIssueKind::UndischargedEmptyRunRelease { .. }),
+    );
+}
+
+#[test]
 fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     super::assert_parse_rule(
         b"fn probe(file: own ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",

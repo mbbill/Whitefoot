@@ -1127,6 +1127,21 @@ release the value it views. And a value one of whose release-graph nodes
 carries the `linear` modifier must be taken apart with P23 first, so the
 marked component reaches a written statement rather than a silent walk.
 
+A direct run has one additional proved form. After moving all of its elements
+elsewhere, establish its zero length and release the emptied backing:
+
+```whitefoot
+let old = replace deref(values).storage = move replacement;
+invariant old_empty: len_of(old) <= 0_u64;
+dispose old;
+```
+
+PROV-6 then omits the element edge for this release only. The run is consumed
+whole and its backing still resolves and writes its provider. Failure to prove
+`len_of(old) <= 0_u64` rejects; there is no runtime emptiness branch or
+unchecked backing-only operation. The same proof-directed graph is available
+when an empty direct run reaches a compiler-derived scope-exit release.
+
 Do not reach for it by default. The derived release is correct and free; this
 is the statement for the one place where the peak is the point.
 

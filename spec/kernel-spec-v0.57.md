@@ -1,6 +1,6 @@
-# Kernel Specification v0.58
+# Kernel Specification v0.57
 
-Status: ACTIVE v0.58
+Status: ACTIVE v0.57
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
@@ -915,13 +915,9 @@ A cycle in a release graph can arise only where a heap is allowed — an arena-r
 Every judgment of this rule that reads the graph reads each node once, which terminates on a cyclic graph and is exactly the node set this version's release actions need.
 
 `dispose p;` [GRAM-4] is the early release: it runs at the point it is written the same walk the scope exit would run, and it names no capability.
-The full-graph form is admitted when `p`'s release graph contains at least one capability-released leaf, when this scope holds the capability of every such leaf, and when no node of that graph — `p`'s own type included — is linear by the modifier or by the bound of a symbolic type parameter.
-At any release edge, a direct `FixedVector<T, N>` or `Vector<'s, T>` with `len_of(p) <= 0_u64` statically proved at that edge omits its element edge from that release's graph; whole-value consumption, ended-loan requirements, the run's own backing release, its provider resolution, and the effects of those retained actions are unchanged.
-For `dispose`, this empty-run form is admitted only when the retained graph contains a capability-released leaf whose capability the scope holds; a `FixedVector` therefore uses it only for a compiler-derived release, while a store-backed `Vector` may use it for either release kind.
-The proof is the ordinary [ENT-6] obligation `len_of(p) <= 0_u64` at the release edge; an undischarged obligation is a hard error citing PROV-6 at that edge and rendering the residual, with the restructuring `empty the run and establish its zero length at this release point; otherwise consume or release every live element before releasing the backing`.
-This form adds no runtime test or second release operation: the one ordinary run walk already visits exactly its current window, so a proved-zero window executes no element action before the retained backing action.
+It is admitted only when `p`'s release graph contains at least one capability-released leaf, when this scope holds the capability of every such leaf, and when no node of that graph — `p`'s own type included — is linear by the modifier.
 A `p` whose release graph contains no capability-released leaf is a hard error citing PROV-6 at the complete `place`, with the restructuring `this value's release action reclaims no capability; let the scope exit run it`.
-A `p` outside the empty-run form one of whose release-graph nodes is linear is a hard error citing PROV-6 at the complete `place`, naming that node or symbolic bound, with the restructuring `take the value apart with let N(f: a, ...) = move v; and discharge the marked component`; the modifier can be written only on a struct or an enum, which the walk never treats as a leaf, so the condition is stated over nodes and `p`'s own type is one of them.
+A `p` one of whose release-graph nodes carries the `linear` modifier is a hard error citing PROV-6 at the complete `place`, naming that node, with the restructuring `take the value apart with let N(f: a, ...) = move v; and discharge the marked component`; the modifier can be written only on a struct or an enum, which the walk never treats as a leaf, so the condition is stated over nodes and `p`'s own type is one of them.
 For each capability-released leaf, let `'s` be the store region its type names and `P('s)` the provider type of `'s`'s store; the statement resolves the innermost live binding of this function whose type is `P('s)`, reached directly or through a borrow, and writes it.
 No such binding in scope, or only one reached through a shared borrow, is a hard error citing PROV-6 at the complete `place` with the missing parameter rendered.
 A leaf that names the ambient heap resolves no binding and contributes no provider write, its provider not being a value; a leaf that names a general store resolves that store's live `Heap<'s>` binding and contributes `writes` of it, which is what makes an early release of a store-backed run visible in its function's declared row [EFF-2].
@@ -952,7 +948,7 @@ The same check applies on the region axis: a region argument's class is `affine`
 A region argument that names no store — a loan region, or a region introduced by a `region_stmt` that no reserving occurrence names — has no store class and satisfies neither bound; an instantiation supplying one to a bounded region parameter is the same error.
 The bound is a linearity class: it supplies no function-kind argument, selects no behavior, and creates no bound-satisfaction judgment other than this one [FN-2, FN-3].
 
-The checked program retains, before lowering [DIAG-2], each scope's linear set, each release edge's selected full or empty-run graph and discharged empty-run obligation, each `dispose` statement's walk and write, each destructuring consume's binder list, and each declaration bound that was checked.
+The checked program retains, before lowering [DIAG-2], each scope's linear set, each `dispose` statement's walk and the write it exhibits, each destructuring consume's binder list, and each declaration bound that was checked.
 
 [BLK-0] There is exactly one compiler-owned kernel declaration domain, and it is generic.
 The container and store operations are that domain: a third admitted declaration source alongside source declarations and the prelude [PRE-1], admitted by every compilation unit.
