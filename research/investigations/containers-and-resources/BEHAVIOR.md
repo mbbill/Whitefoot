@@ -286,6 +286,114 @@ costs despite zero run transfer. Broad formal rows can also lose parallel
 independence. The linked measurements bound these claims rather than asserting
 universal native parity.
 
+## Acyclic instantiation: measured open boundary
+
+A bounded experiment on 2026-09-13 distinguishes distinct-instance growth
+from repeated calls to one instance. Before measurement its criterion was:
+all three acyclic families must be accepted under unchanged FN-2/FN-6; the
+family with two different type arguments should emit `2^(n+1)-1` generic
+functions, while repeated-identical and single-call controls should emit
+`n+1`. Timing locates cost, not an acceptance bound. This is a synthetic
+structural witness, not an estimate of application frequency.
+
+The complete depth-two distinct witness is:
+
+```wf
+struct Left<T: affine> {
+}
+
+struct Right<T: affine> {
+}
+
+fn step0<T: affine>() -> result: own unit pure {
+  return unit;
+}
+
+fn step1<T: affine>() -> result: own unit pure {
+  step0::<Left<T>>();
+  step0::<Right<T>>();
+  return unit;
+}
+
+fn step2<T: affine>() -> result: own unit pure {
+  step1::<Left<T>>();
+  step1::<Right<T>>();
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  step2::<u64>();
+  return exit_status(code: 0_u8);
+}
+```
+
+For depth `n`, repeat the step declaration up to `stepN`, always calling the
+previous level, and call that final level from main. The same-type control
+replaces `Right<T>` with `Left<T>` in each call; the single-call control omits
+the second call. The two phantom structs have no fields, so runtime payload
+size does not grow. No behavior group, allocation or nontrivial proof is
+needed. Compile with `whitefootc --no-overlap --emit-llvm` and count emitted
+`wf_step` definitions, excluding ordinary/prelude entries and the launcher.
+
+The pinned compiler was gate-profile `6ba8cf52`, source-equivalent to
+`ea69e8eb` in the compiler paths, binary SHA-256
+`b602395f5fba8d970dc85ecf75a259435fa17f776d35b87b66d864d9762adc0d`.
+The host was arm64 macOS 26.6.2, Rust 1.98.1. Depths 0,2,4,6,8,9,10 each had
+one warmup and three interleaved recorded samples per family. All 84
+compilations succeeded. [All 92 observations](generic-cost-samples.jsonl)
+retain those 84 runs, seven separately instrumented stage runs and the later
+paired stock run; keep
+this artifact with this interpretation until superseded by matched evidence.
+
+| Depth | Distinct source bytes | Distinct instances | Same/single instances | Distinct median user CPU ms |
+| ---: | ---: | ---: | ---: | ---: |
+| 6 | 893 | 127 | 7 | 162.6 |
+| 8 | 1117 | 511 | 9 | 863.1 |
+| 9 | 1229 | 1023 | 10 | 3879.8 |
+| 10 | 1343 | 2047 | 11 | 20062.8 |
+
+The initial timing cohort was host-contended. A later paired run of the same
+unchanged binary took 6.475 seconds wall / 6.308 seconds user CPU at depth 10;
+this is not an optimization. Counts are exact: growth is exponential in the
+number of written declarations, or superpolynomial in source bytes including
+growing identifier lengths. Distinct depth 10 IR was 335056 bytes, versus
+6616/6216 in the same/single controls. This does not prove that a sound
+compiler must enumerate this particular family of equivalent unit bodies.
+
+A temporary source archive of the same revision added only `Instant` reads
+and function-count prints around `compile_selected`'s prefix,
+`check_semantics`, `lower_checked`, and `emit_llvm`/launcher result. It changed
+no acceptance call, instance or algorithm; its output was byte-identical to
+the stock module for all seven stage runs. Its binary SHA-256 was
+`06f6099084d956493d4270015c59e3aec30674a0da52ccde49f806ed85615549`.
+The temporary instrumentation does not enter the compiler. The two depth 10
+runs located 3.410/3.278 seconds in semantics, 3.088/3.026 in lowering and
+0.0055/0.0055 in LLVM text generation. Stage samples locate expense, not
+robust asymptotic exponents; RSS and native stack profiling were unavailable.
+
+`semantic/check/generics.rs` deduplicates full substitution keys; the controls
+confirm that repeated identical calls do not multiply instances. Its linear
+key searches and staged symbolic/concrete replay can still repeat work.
+`lowering/builder.rs` builds a full physical type map per function variant;
+`lowering/physical_types.rs` visits executable nominals and scans matching
+instances. These are plausible spec-neutral optimization targets, but their
+individual costs and a repair's speedup have not been measured. Optimizing
+them cannot by itself prove a polynomial bound on distinct-instance count.
+
+Three owner options remain: retain the written-source complexity objective
+and design a provable structural restriction or explicit instance inventory;
+retain current accepted programs and research shared symbolic checking/code
+sharing, whose general bound is unproved; or explicitly replace the objective
+with cost relative to a finite expanded graph, retaining the proof algorithm's
+existing constraints. The first can restrict useful composition, the second
+needs a new argument, and the third permits compact sources with very large
+expansions. No option is selected here. The recommendation is a bounded
+comparison of the first two against real container compositions while keeping
+the current principle; whether PR #30 may merge with this identified open
+item is a separate owner scope ruling. No fuel, cutoff or new rejection has
+been introduced, and no duplicate-cache improvement is presented as closing
+the conflict.
+
 ## Sources
 
 Primary sources checked 2026-09-11; no cross-language timings.
@@ -307,7 +415,7 @@ changed to accommodate a compiler failure.
 The five retired law sources are preserved verbatim in the compiler's
 `retired_closed_law_table_has_no_remaining_acceptance_path` grammar regression;
 their former law-acceptance obligations were removed by D7 and remain absent
-from the combined v0.55 publication.
+from the combined v0.56 publication.
 
 | Previous source ID | Current source ID or disposition | Rule and reason |
 | --- | --- | --- |

@@ -60,7 +60,8 @@ of them is a decision. Remove an item when its fix and test land.
   source. The owner deferred this question in D7, whereas the current language
   design rules out exponential checking work. The
   [behavior investigation](../research/investigations/containers-and-resources/BEHAVIOR.md#shared-semantic-boundary-and-exact-deltas)
-  records this unresolved correspondence finding. No budget, timeout, new
+  records the accepted 1343-byte / 2047-instance witness, same-instance controls,
+  stage measurements and unresolved correspondence finding. No budget, timeout, new
   source refusal, or measured asymptotic guarantee has been selected.
 - **At most eight peers may wait at once on a host without a native ring.**
   On Darwin, and under `WF_IO_NO_NATIVE_RING`, a peer wait beyond the eighth
