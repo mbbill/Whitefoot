@@ -1082,9 +1082,9 @@ fn affine_expression_capacity_preserves_the_boundary_and_rejects_oversized_trees
 fn affine_formation_preserves_grouping_source_order_and_literal_factors() {
     for (expression, result) in [
         ("9_u64 - 4_u64 - 3_u64", 2),
-        ("9_u64 - (4_u64 - 3_u64)", 8),
+        ("9_u64 -(4_u64 - 3_u64)", 8),
         ("(1_u64 + 2_u64) * 2_u64", 6),
-        ("2_u64 * (1_u64 + 2_u64)", 6),
+        ("2_u64 *(1_u64 + 2_u64)", 6),
     ] {
         let gap = if expression.starts_with('(') { "" } else { " " };
         let source = format!(
@@ -1099,7 +1099,7 @@ fn affine_formation_preserves_grouping_source_order_and_literal_factors() {
     }
 
     let source = format!(
-        "fn check() -> result: own unit pure {{\n  invariant upper:(1_u64) * (2_u64) <= 2_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+        "fn check() -> result: own unit pure {{\n  invariant upper:(1_u64) *(2_u64) <= 2_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
     );
     super::assert_rule_kind(source.as_bytes(), SemanticRule::Inv1, |kind| {
         matches!(kind, SemanticIssueKind::InvalidInvariant { reason, .. }
