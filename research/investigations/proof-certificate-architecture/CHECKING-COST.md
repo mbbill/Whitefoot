@@ -207,7 +207,9 @@ Reuse the same three source families at 16, 64, 128 and 256 pairs/uses;
 larger cells are optional measurements, not required acceptance samples.
 Keep fixed-context 4096 uses and the ordinary prefix and histogram programs
 as protected controls. The new scatter source is an additional real-program
-control, not a different proof-checking path.
+control, not a different proof-checking path. A closure implementation change
+also protects `tests/programs/wfgrep.wf`, whose many accepted closure cells
+exercise the maintenance cost a generated mostly-redundant graph can hide.
 
 First reproduce the curve with the ordinary gate-profile compiler, then
 separate complete L0 closure, affine-index construction, candidate traversal,
@@ -227,6 +229,70 @@ changed witness construction also needs direct equivalence or focused
 positive/negative cases; timing alone cannot validate it. No source-language
 amendment, skipped family, budget, or cross-flow cache is selected by this
 follow-up.
+
+### Context baseline, 2026-09-14
+
+The [new raw baseline](../../experiments/proof-use-cost/context-baseline-2026-09-14.tsv)
+uses the unchanged generator and compiler at `277a1844` (the criteria commit
+`fb02cb34` changes only this document), on the same M1 Pro, 8-CPU, 32-GiB
+macOS 26.6.2 host with Rust 1.98.1 and the gate profile. The seven-accept/two-
+PRF-1-negative harness check ran before these three repetitions per cell.
+
+| Size | Fixed context, median | Growing context and uses, median | Growing context, three uses, median |
+|---|---:|---:|---:|
+| 16 | 13.708 ms | 18.923 ms | 17.787 ms |
+| 64 | 16.993 ms | 172.838 ms | 98.753 ms |
+| 128 | 19.055 ms | 1159.210 ms | 571.361 ms |
+| 256 | 26.863 ms | 9848.927 ms | 4216.063 ms |
+
+These are exploratory observations, not candidate-selection evidence. Other
+compiler tests were observed on this interactive workstation during the
+investigation; no uncontended-run claim is made for this curve. Fresh paired
+runs without competing compiler/test jobs are required for selection.
+
+### Row-summary candidate and prediction
+
+A native sample of the 256-pair baseline, taken after process initialization
+for three seconds at one-millisecond intervals, places all 2413 driver-thread
+samples in `close_with_excluded_term`, called by function-entry analysis;
+2328 terminate in that function's own instructions. This identifies that
+phase's transitive loop, not a percentage of whole compilation. Competing
+test jobs were active, so elapsed time from this sampled run is not used for
+selection. Temporary phase marks will distinguish closure from affine-index,
+candidate, and certificate work before attributing the complete invocation.
+
+The proposed candidate summarizes each dense closure row with its populated
+cell count, a lower bound on every cell's numeric bound, an upper bound on
+every cell's numeric bound, and an upper bound on its proof depths. A row's
+maximum and maximum depth may remain conservatively high after improvement;
+every new or stronger cell must maintain all three bounds.
+
+For one fixed `(left, middle)` product, let `a` be its first bound, `m` the
+outgoing row's lower bound, `M` the destination row's upper bound, and `D`
+the destination row's maximum proof depth. Only a completely populated
+destination row is eligible. If `sat_add(a, m) > M`, every candidate is
+numerically worse. If they are equal and `sat_add(depth(first), 1) > D`,
+every candidate is numerically worse or has a strictly deeper proof. These
+are the existing scalar rejection conditions applied conservatively to a
+whole product; equal-depth ties still take the original traversal. Incomplete
+rows and an inconclusive summary retain the original checks. Read the current
+summary for each product so an incident-cell update cannot invalidate it.
+
+This is proposed over scanning every product because the sample identifies
+that traversal and the sufficient rejection condition preserves its accepted
+update sequence. Extending a statement-local closure cache would not address
+the sampled function-entry closure and leaves each closure's growing cost.
+A different shortest-path/witness algorithm would require a larger proof-order
+comparison and is not justified by this initial attribution.
+
+Prediction, recorded before implementing or timing this candidate: it reduces
+closure work in both growing-N and the N-pair/three-use control, but does not
+change affine-index construction or the AUTO candidate families. Large
+independent integer contexts should benefit most; small and already-closed
+states have little to gain and are protected against summary-maintenance
+overhead. Verify skipped products against their scalar rejection conditions
+and compare complete closed facts and derivation selection before relying on
+the paired performance result. No speedup is yet established.
 
 ## Reproduction and correctness boundary
 
