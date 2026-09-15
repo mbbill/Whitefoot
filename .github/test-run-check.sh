@@ -68,4 +68,11 @@ holder=
 test "$status" -eq 143
 test ! -e "$work/lock"
 ! kill -0 "$(cat "$work/signal-child")" 2>/dev/null
-echo 'check runner: status, nesting, exclusion, limits, timeout and cancellation pass'
+
+status=0
+perl "$runner" orphan sh -c 'sleep 30 & echo $! > "$1"' sh "$work/orphan" \
+    > "$work/orphan.log" 2>&1 || status=$?
+test "$status" -eq 1
+test ! -e "$work/lock"
+! kill -0 "$(cat "$work/orphan")" 2>/dev/null
+echo 'check runner: status, nesting, exclusion, limits, timeout, cancellation and orphan cleanup pass'

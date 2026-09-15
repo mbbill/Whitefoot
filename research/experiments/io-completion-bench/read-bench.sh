@@ -45,12 +45,14 @@ CLANG=${CLANG:-/usr/bin/clang}
 HOST=$(uname -s)
 
 cd "$ROOT/compiler"
-cargo build --profile gate --bin whitefootc --locked --offline 2>&1 | tail -1
+echo "phase: Rust compiler construction $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+cargo build --profile gate --bin whitefootc --locked --offline
 WFC=${CARGO_TARGET_DIR:-$ROOT/compiler/target}/gate/whitefootc
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cd "$BUNDLE"
+echo "phase: native reference construction and data generation $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror gen.c -o "$OUT/gen"
 "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread read_baseline.c -o "$OUT/read_baseline"
 "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror runner.c -o "$OUT/runner"
@@ -58,9 +60,12 @@ cd "$BUNDLE"
 
 cd "$BUNDLE/programs"
 for shape in narrow wide8 narrow_4k wide8_4k; do
+    echo "phase: Whitefoot $shape default construction $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     "$WFC" -o "$OUT/$shape" "read_heavy_$shape.wf"
+    echo "phase: Whitefoot $shape sequential construction $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     "$WFC" --no-overlap -o "$OUT/${shape}_seq" "read_heavy_$shape.wf"
 done
+echo "phase: read-heavy output verification $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 # Every line publishes the same bytes with the cache policy off and on before
 # any of them reports a time.

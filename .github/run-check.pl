@@ -73,12 +73,20 @@ if ($child == 0) {
 my $group = $owns_lock ? $child : $ENV{WHITEFOOT_CHECK_PGID};
 setpgid($child, $child) if $owns_lock;
 defined $group && $group =~ /^\d+$/ or die "missing owned check process group\n";
-my $status;
+my ($status, $completed);
 while (1) {
     my $now = clock_gettime(CLOCK_MONOTONIC);
     if (!defined $status) {
         my $waited = waitpid($child, WNOHANG);
-        $status = $? if $waited == $child;
+        if ($waited == $child) {
+            $status = $?;
+            $completed = $now;
+        }
+    }
+    if (defined $status && $owns_lock && kill(0, -$group)
+        && $now - $completed >= 0.5 && !defined $cancelled) {
+        warn "== $label left child processes after command exit ==\n";
+        $cancelled = ($status & 127) ? 128 + ($status & 127) : ($status >> 8) || 1;
     }
     $cancelled //= 124 if $now - $started >= $limit;
     if (defined $cancelled && !defined $stopping) {
@@ -95,7 +103,8 @@ while (1) {
         waitpid($child, 0) if !defined $status;
         last;
     }
-    last if defined $status && !defined $stopping;
+    last if defined $status && !defined $stopping
+        && (!$owns_lock || !kill(0, -$group));
     if ($now >= $next_report) {
         printf "== RUNNING %s: %.0f s, child %d, group %d ==\n", $label, $now - $started, $child, $group;
         $next_report = $now + 30;

@@ -141,7 +141,10 @@ semantic flow checker; 1,229 leaf samples (61.2%) are in
 also visible. This is a sampled window, not a whole-run percentage profile.
 
 The same baseline compiles `tests/programs/wfgrep.wf` to LLVM in 39.49 seconds
-(39.02 user, 0.43 system). The debug comparison is measured separately. Proof
+(39.02 user, 0.43 system). The same source through the prebuilt debug compiler
+takes 535.38 seconds: **13.56 times the elapsed analysis/emission cost**. The
+generated LLVM files compare byte-for-byte equal; neither command includes Rust
+construction, Clang or program execution. Proof
 closure optimization is already being developed in [PR 65](https://github.com/mbbill/Whitefoot/pull/65);
 this PR records attribution without overlapping that algorithm change.
 
@@ -213,6 +216,11 @@ records the material choices. The live tree and specification are unchanged.
 - Completed research instruments retain their tests under an explicit target;
   the active gate no longer downloads/caches their third-party crates in every
   CI job. Full IO timing matrices are dispatched deliberately.
+- IO protocol compiler builds no longer pipe into `tail`, which masked Cargo
+  failure under POSIX `sh` and could continue with an old executable. Injected
+  Cargo failure exits at construction and preserves prior output in the read
+  and many-files scripts. Read-heavy logs now label construction and verification
+  phases before the four timing tables.
 
 Candidate optimized construction and guard tests have passed. Full candidate
 gate, incremental invalidation checks, local protocols and current-branch CI
