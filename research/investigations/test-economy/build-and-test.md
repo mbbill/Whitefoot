@@ -1,10 +1,15 @@
 # Build and test cost
 
-This is the process inventory and timing report for PR #66. It explains what
-constructs Rust artifacts, what executes Rust tests, what compiles Whitefoot
-sources, what links native images, and what executes those images. It owns the
-measurement record and the reasons for the verification changes; update it or
-retire it when a successor measurement supersedes these results.
+Start with the [test system inventory](test-inventory.md) for the classification
+by purpose, source directories, fixture forms, construction recipes, runtime
+resources and local/CI callers. It is the entry point for redesigning this
+system without confusing a test case, a Rust harness, a WF input and a native
+program under test.
+
+This report retains PR #66's dated measurements, attribution methods and the
+reasons for its verification changes. Its target tables describe those measured
+revisions, not an independently maintained inventory of a later test system.
+Update or retire it when a successor measurement supersedes these results.
 
 ## Reading the numbers
 
