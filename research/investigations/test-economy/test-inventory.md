@@ -2,6 +2,9 @@
 
 [中文版](test-inventory.zh-CN.md)
 
+[Selected simplifications and open redesign questions](redesign.md) records
+the subsequent discussion; the implementation described below is unchanged.
+
 This is the source, artifact, resource and execution inventory for redesigning
 the test system measured in PR #66. It describes implementation `f3858780`;
 it does not claim that the existing division into targets is necessary or that
