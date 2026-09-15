@@ -83,6 +83,12 @@ jobs:
       - name: Set the scratch root
         run: echo "WHITEFOOT_SCRATCH_ROOT=$RUNNER_TEMP/whitefoot" >> "$GITHUB_ENV"
 
+      # The desktop default reserves capacity for interactive work. Each CI
+      # job owns its VM, so retain the host-sized test pool there. Compiler
+      # builds and memory-heavy benchmark-source builds remain bounded at two.
+      - name: Set dedicated-runner test parallelism
+        run: echo "RUST_TEST_THREADS=$(getconf _NPROCESSORS_ONLN)" >> "$GITHUB_ENV"
+
       # `spec-append-only` reads `main` as a local ref: no released
       # specification archive may differ from main's. A CI checkout
       # has the remote-tracking ref only, so name it locally here. On a push to

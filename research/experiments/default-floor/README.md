@@ -15,6 +15,11 @@ belong to this completed experiment. They remain available through
 the current compiler gate. Current program tests and independent oracles keep
 their own checks; this retirement changes no Whitefoot case or verdict.
 
+The reproduction target uses Cargo's locked offline mode. Before its first run
+on a fresh host, populate each listed crate's registry with
+`cargo fetch --locked --manifest-path <crate>/Cargo.toml`; the root Makefile
+names those manifests.
+
 Example:
 
 ```sh

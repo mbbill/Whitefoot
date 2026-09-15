@@ -209,6 +209,9 @@ records the material choices. The live tree and specification are unchanged.
   never language rejection. Raw commands bypass it; guidance therefore names
   the wrapper as well as guarded targets. SIGKILL can leave a stale lock that
   must be inspected rather than silently stolen.
+  Dedicated CI VMs retain a host-sized Rust test pool; the two-thread default
+  is for interactive local work. Native oneTBB construction now respects the
+  supplied `JOBS` limit rather than independently consuming every CPU.
 - Test helpers optionally append per-phase TSV timing. They do not cache
   compiler verdicts, alter callbacks or claim to time every custom subprocess.
 - Native object reuse and dependency-tracked container/IO images avoid
@@ -219,9 +222,15 @@ records the material choices. The live tree and specification are unchanged.
 - IO protocol compiler builds no longer pipe into `tail`, which masked Cargo
   failure under POSIX `sh` and could continue with an old executable. Injected
   Cargo failure exits at construction and preserves prior output in the read
-  and many-files scripts. Read-heavy logs now label construction and verification
+  and many-files scripts; the network script passes the same check with a fake
+  Linux port-range lookup. Read-heavy logs now label construction and verification
   phases before the four timing tables.
 
 Candidate optimized construction and guard tests have passed. Full candidate
 gate, incremental invalidation checks, local protocols and current-branch CI
 results will replace this validation status before completion.
+
+A remaining attribution probe compares a trivial native image's first launch
+with repeat launches. A large wall/CPU gap confined to the first launch would
+identify host launch work rather than a long algorithm or an excessive input
+loop. No case or repetition is removed on that hypothesis alone.
