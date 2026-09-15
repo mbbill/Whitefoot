@@ -244,11 +244,15 @@ Can references retain object relationships without reserving exclusive write
 access for their entire lifetime? The
 [access-effects investigation](../research/investigations/access-effects/RESEARCH.md)
 compares association polymorphism, local access permissions, reachability
-types, and resource-state contracts. Its discriminating cases are individually
-reclaimable allocator blocks, reuse of physical storage, stored associations,
-and distinct IO handles connected to common state. The question includes
-alias-aware proof invalidation and deterministic checking cost; it does not
-select a new ownership rule or claim compiler support.
+types, and resource-state contracts. The
+[whole-language proposal](../research/investigations/access-effects/DESIGN.md)
+compares current-state access checking with validity loans whose mutation is
+governed by effects. Discriminating cases include mutable graphs, container
+invalidation, callbacks, stored associations, storage reuse, common IO state,
+and parallel ranges. The
+[bounded model](../research/experiments/access-state/RESULTS.md) tests an
+alias/state fragment; it does not establish a new WF rule, compiler support,
+or whole-language soundness.
 
 ### Wider parallel proof domains
 

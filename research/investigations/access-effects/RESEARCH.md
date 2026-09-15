@@ -14,6 +14,15 @@ investigation replaces its analysis. There is no implementation work queue here.
 
 ## Finding and scope
 
+The [whole-language proposal](DESIGN.md) now gives two concrete alternatives:
+current-state access checking, and validity loans with mutation governed by
+effects. It recommends the first for further development while retaining the
+second as a substantive alternative. A
+[bounded executable model](../../experiments/access-state/RESULTS.md) exercises
+the first-order core, including reused physical slots and fault-injected
+counterexamples. Neither a language decision nor a complete soundness result
+follows from that experiment.
+
 There is substantial precedent for separating a pointer from the permission
 to access its target. There is also precedent for generic, caller-instantiated
 tracking of aliasing and effects. Their combination is a credible alternative
@@ -124,9 +133,9 @@ and performance results were not independently reproduced in this study.
 
 | Source and inspected material | Contribution relevant to WF | Boundary of the evidence |
 |---|---|---|
-| [Alias Types](https://www.cs.princeton.edu/~dpw/papers/alias.pdf), ESOP 2000, abstract and the L3 comparison | Represents sharing explicitly while admitting destructive operations; function interfaces carry store information. A direct ancestor of association-indexed references and state contracts. | A low-level calculus, not a demonstration of ergonomic inference or WF's parallel semantics. The original PDF's extracted body text was unusable in this inspection. |
+| [Alias Types](https://www.cs.cornell.edu/talc/papers/alias.pdf), ESOP 2000, sections 2–3 | Represents copied pointers separately from store constraints; interfaces describe expected storage. Explicitly treats initialization, stored aliases, destructive updates, and erased location/store instantiation. | Its linear store join separates entries; copying that operator does not by itself support unconstrained possibly equal WF formal targets. The Cornell copy made the body inspectable after the first PDF extraction failed. |
 | [Typed Memory Management in a Calculus of Capabilities](https://www.cs.cornell.edu/talc/papers/capabilities.pdf), POPL 1999, sections 1–2 | Static capabilities admit non-lexical region reclamation; bounded quantification tracks capability aliasing. Capabilities erase. | Region-level memory management in a CPS intermediate language; not payload-level effects over WF objects. |
-| [L3: A Linear Language with Locations](https://www.cs.cornell.edu/people/fluet/research/lin-loc/TLCA05/tlca05.pdf), TLCA 2005, section 2 | Freely duplicable location pointers are separate from linear capabilities describing current cell contents. Location polymorphism and existential packaging support abstraction. | Importing explicit capabilities literally would recreate token plumbing. Its strong-update and `thaw` extensions need separate evaluation. |
+| [L3: A Linear Language with Locations](https://www.cs.cornell.edu/people/fluet/research/lin-loc/TLCA05/tlca05.pdf), TLCA 2005, sections 2–3 | Freely duplicable location pointers are separate from linear capabilities describing current cell contents. Location polymorphism and existential packaging support abstraction. Its extended `thaw` relies on evidence and is parameterized by a logic. | Importing explicit capabilities literally would recreate token plumbing. The extension does not supply a complete automatic WF authority, family, or alias-inference algorithm. |
 | [Checking and Inferring Local Non-Aliasing](https://theory.stanford.edu/~aiken/publications/papers/pldi03a.pdf), PLDI 2003, sections 1–4 | Checks local exclusivity among accesses even when aliases exist elsewhere. Gives constraint-based checking and inference algorithms for its `restrict`/`confine` system. | Does not establish complete memory safety for arbitrary C. Ordinary C `restrict` alone is unchecked and is not an acceptable WF mechanism. |
 | [DPJ](https://dpj.cs.illinois.edu/DPJ/Publications_files/DPJ-OOPSLA-2009.pdf), OOPSLA 2009, overview and region/effect system | Hierarchical region names, disjointness, and method effects support modular deterministic parallelism. Regions here describe heap partitions, not Rust borrow lifetimes. | A Java extension; its parallel theorem is not a theorem about WF manual reclamation or exact rows. |
 | [Reachability Types](https://www.cs.purdue.edu/homes/rompf/papers/bao-oopsla21.pdf), OOPSLA 2021, sections 4–5 | Combines tracked aliases with effect summaries and call-site substitution, including read/write and destructive-effect variants. | Its complete framework and proof scope must not be replaced by the slogan that disjoint variable names imply disjoint storage. |
@@ -140,6 +149,9 @@ and performance results were not independently reproduced in this study.
 | [Graph IRs for Impure Higher-Order Languages](https://arxiv.org/abs/2309.08118), OOPSLA 2023 companion report | Describes deriving effect dependencies from reachability and preserving them through optimization. | Useful for the lowering proof obligation; not permission to add new WF runtime dependencies or import its complete scheduling model. |
 | [GhostCell](https://plv.mpi-sws.org/rustbelt/ghostcell/paper.pdf), ICFP 2021 | A Rust library API separates data aliases from a statically checked permission token and has a mechanized soundness argument. | It does not change Rust's compiler. A shared brand and explicit token do not by themselves deliver WF's desired per-payload effect granularity. |
 | [Scala separation checking](https://docs.scala-lang.org/scala3/reference/experimental/capture-checking/separation-checking.html), documentation retrieved 2026-09-15 | Captured relationships are part of interfaces; signatures can explicitly admit aliasing between arguments. | Experimental and explicitly less mature than capture checking. Capture separation and precise field/range effects are different levels of precision. |
+| [The Relationship Between Separation Logic and Implicit Dynamic Frames](https://lmcs.episciences.org/802/pdf), LMCS 2012, sections 1–2 | Relates heap assertions and permission masks; explains modular pre/postcondition checking and why ordinary conjunction differs from adding permissions. | Its tool-oriented first-order verification route is not the proposed SMT-free WF acceptance procedure; its selected object model is not a proof of manual storage reuse here. |
+| [Programming with Permissions in Mezzo](https://cambium.inria.fr/~fpottier/publis/pottier-protzenko-mezzo.pdf), 2013, abstract and permission/adoption discussion | A language-scale comparison for implicit flow of affine/duplicable permissions, stored aliases and typestate. | The core restricts shared mutable structures; dynamic adoption/abandon is not the requested erased static solution. |
+| [LLVM object lifetime](https://llvm.org/docs/LangRef.html#object-lifetime), documentation retrieved 2026-09-15 | Distinguishes accessing dead storage from operations on pointer values and distinguishes old pointers from a replacement allocation. | Backend semantics are a constraint on a future lowering, not evidence that the current prototype performs native lowering. |
 
 The [reachability research repository](https://github.com/TiarkRompf/reachability)
 links the related calculi, proofs, and prototypes. It was inspected for the
@@ -165,7 +177,9 @@ stored references, reuse, or bounded checking would reopen that ranking.
 
 ## A concrete association model to test
 
-All following notation is explanatory, not proposed final WF grammar.
+All following notation is explanatory, not proposed final WF grammar. The
+validity-extent spelling below is the validity-loan variant; candidate A in
+[the design](DESIGN.md) instead places current validity in resource contracts.
 
 ```text
 Ref<'life, P, T>      // locator for T in footprint P, valid under 'life
@@ -262,9 +276,10 @@ The condition is proved at the caller. Caller knowledge cannot retrospectively
 justify an unstated assumption in a supposedly universal definition.
 
 A contract can be parametric in relationships without cloning runtime code.
-Whether WF should infer simple association arguments, require them explicitly,
-or provide constrained overloads is an open interface choice. Existing FN-2
-does not make one of those future choices automatic.
+The concrete proposal uses first-order argument matching for determined
+association arguments and explicit arguments/witnesses otherwise. It does not
+choose acceptance by constrained-body variant search. This is a proposed new
+rule, not a consequence of existing FN-2.
 
 ### Unknown targets, freshness, and packaging
 
@@ -278,7 +293,9 @@ Fresh allocation should introduce an existential resource name together with
 its live-storage and separation facts. Repeated calls do not reuse one static
 identity. A container of many blocks needs an abstract family of payloads and
 its separation/ownership invariant, rather than a compiler enumeration of all
-runtime allocations. This is a central unimplemented part of the hypothesis.
+runtime allocations. The design gives explicit family introduction,
+extraction and recombination rules. Their proof-kernel implementation and
+verification remain outside the finite prototype.
 
 A nominal brand alone is insufficient: it can express a common association,
 but different brands require a checked freshness/separation guarantee before
@@ -377,13 +394,16 @@ Two validity variants should be compared, rather than assuming one is forced:
   value changes, so it needs its own semantic and lowering proof.
 
 Both separate persistent address relationships from ordinary write exclusion.
-The first can preserve more of WF's current lifetime model. The second might
-replace more of it. Neither has been chosen or implemented here.
+The first preserves more of WF's current lifetime model. The second replaces
+it with current-state access premises. The design develops both and recommends
+the second; the executable model tests a fragment of that second route.
+Neither has been adopted as WF semantics.
 
 ## Semantic witnesses and failure cases
 
-These are proposed experiment cases. Outcomes are derived requirements,
-not results from an implemented checker.
+These are the full-language discriminators. Outcomes are requirements derived
+from the proposed rules. The experiment's result record identifies the
+implemented subset explicitly; this table does not claim all these cases run.
 
 | Witness | Required observation | Unsound or inadequate shortcut it detects |
 |---|---|---|
