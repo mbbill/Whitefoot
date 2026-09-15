@@ -434,11 +434,11 @@ jobs:
             echo "::error title=Windows Whitefoot IOCP E2E::${stage} (exit ${status})"
             exit "$status"
           }
-          cargo build --manifest-path compiler/Cargo.toml --locked --bin whitefootc || \
+          cargo build --manifest-path compiler/Cargo.toml --profile gate --locked --bin whitefootc || \
             fail_e2e "building whitefootc failed" "$?"
           mkdir -p "$RUNNER_TEMP/whitefoot-e2e"
           driver_diagnostics="$RUNNER_TEMP/whitefoot-e2e/whitefootc-diagnostics.txt"
-          compiler/target/debug/whitefootc.exe \
+          compiler/target/gate/whitefootc.exe \
             tests/programs/completion_read_boundary.wf \
             -o "$RUNNER_TEMP/whitefoot-e2e/completion-read-boundary.exe" \
             2> "$driver_diagnostics" || {
@@ -492,7 +492,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $directory = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/tcp"
           [void](New-Item -ItemType Directory -Force -Path $directory)
-          $compiler = ".\compiler\target\debug\whitefootc.exe"
+          $compiler = ".\compiler\target\gate\whitefootc.exe"
           $echo = Join-Path $directory "tcp-echo.exe"
           $echoPar = Join-Path $directory "tcp-echo-par.exe"
           $refused = Join-Path $directory "tcp-refused.exe"
@@ -655,7 +655,7 @@ jobs:
           $program = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/host-string-bytes.exe"
           $stdout = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/host-string-bytes.out"
           $stderr = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/host-string-bytes.err"
-          & ".\compiler\target\debug\whitefootc.exe" "tests/programs/host_string_bytes.wf" -o $program
+          & ".\compiler\target\gate\whitefootc.exe" "tests/programs/host_string_bytes.wf" -o $program
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $argument = [string][char]0x4241
           & $program $argument > $stdout 2> $stderr
@@ -690,7 +690,7 @@ jobs:
           $directory = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/windows-component-open"
           [void](New-Item -ItemType Directory -Force -Path $directory)
           $source = "research/experiments/io-completion-bench/programs/windows_component_open.wf"
-          $compiler = ".\compiler\target\debug\whitefootc.exe"
+          $compiler = ".\compiler\target\gate\whitefootc.exe"
           $direct = Join-Path $directory "component-open-direct.exe"
           $completion = Join-Path $directory "component-open-completion.exe"
           & $compiler --no-overlap $source -o $direct
@@ -763,15 +763,15 @@ jobs:
           }
           par_dir="$RUNNER_TEMP/whitefoot-e2e/windows-par"
           mkdir -p "$par_dir"
-          compiler/target/debug/whitefootc.exe \
+          compiler/target/gate/whitefootc.exe \
             tests/programs/par_layout.wf \
             -o "$par_dir/par-layout-reference.exe" || \
             fail_par "the sequential reference did not link" "$?"
-          compiler/target/debug/whitefootc.exe --par \
+          compiler/target/gate/whitefootc.exe --par \
             tests/programs/par_layout.wf \
             -o "$par_dir/par-layout-production.exe" || \
             fail_par "the production --par executable did not link" "$?"
-          compiler/target/debug/whitefootc.exe --par --emit-llvm \
+          compiler/target/gate/whitefootc.exe --par --emit-llvm \
             tests/programs/par_layout.wf \
             -o "$par_dir/par-layout.ll" || \
             fail_par "the observed --par module did not emit" "$?"
@@ -1011,7 +1011,7 @@ jobs:
             }
           }
           WF
-          compiler/target/debug/whitefootc.exe --par \
+          compiler/target/gate/whitefootc.exe --par \
             "$floor_dir/runaway.wf" -o "$floor_dir/runaway.exe" || \
             fail_floor "the runaway recursion did not link" "$?"
           for workers in default 4; do

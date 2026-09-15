@@ -252,7 +252,7 @@ docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --no-deps --locked --offline
 
 spec:
-	$(CARGO) run --bin whitefoot-spec --locked --offline
+	$(CARGO) run --profile gate --bin whitefoot-spec --locked --offline
 
 completion-test: completion-core-read-test completion-default-route-test ordinary-values-test sched-smoke sched-deque-test
 	@mkdir -p "$(COMPLETION_TMP)"

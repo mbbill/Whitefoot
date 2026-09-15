@@ -749,8 +749,12 @@ make -C research/experiments/compute-bench verify
 make -C research/experiments/compute-bench compare PASSES=5 CALLS=5
 ```
 
-The same four commands run in `.github/workflows/compute-bench.yml` on
-`ubuntu-24.04` and `macos-14`.
+Selected pushes run the first three commands in
+`.github/workflows/compute-bench.yml` on `ubuntu-24.04` and `macos-14`, checking
+every form at every emitted width. Manual dispatch also runs `compare` and
+publishes its tables. Automatic performance-regression verdicts remain in
+`compute-regression.yml`; a scoreboard without a regression verdict does not
+belong in automatic CI.
 
 ## The gap between calls
 

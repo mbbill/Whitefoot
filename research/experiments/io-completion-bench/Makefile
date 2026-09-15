@@ -14,8 +14,9 @@
 # run for minutes, and report timings that no build should depend on. The one
 # source target the gate runs is `programs-check`, which compiles every program
 # here with the current compiler, so a language change cannot leave one behind.
-# The gate also runs `uring-check`, a deterministic correctness fixture for the
-# native reference; neither target measures performance.
+# On Linux the gate also runs `uring-check`, a deterministic correctness fixture
+# for the native reference. It needs Linux headers but no live io_uring or
+# network; neither target measures performance.
 #
 #   make -C research/experiments/io-completion-bench verify   correctness only
 #   make -C research/experiments/io-completion-bench bench     the macOS table
@@ -156,7 +157,7 @@ PROGRAMS := $(wildcard programs/*.wf)
 CHECKED := $(PROGRAMS:programs/%.wf=$(BUILD)/checked_%)
 JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
-programs-check: compiler ordinary-check | prepare
+programs-check: compiler ordinary-check $(if $(filter Linux,$(shell uname -s)),uring-check) | prepare
 	$(MAKE) -j$(JOBS) $(CHECKED)
 
 $(BUILD)/checked_%: programs/%.wf $(WFC) Makefile | prepare

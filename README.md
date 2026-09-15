@@ -116,8 +116,11 @@ perl .github/run-check.pl source-proofs cargo test --manifest-path compiler/Carg
 ```
 
 Use a test filter matching the responsibility changed; `source_proofs` above
-is one example. The `gate` profile keeps debug assertions and overflow checks
-while optimizing the compiler's analysis work. The complete gate is still
+is one example. The `gate` profile builds the Rust compiler implementation and
+test harnesses with optimization, debug assertions and overflow checks. It is
+not an optimization switch for WF source. Use a dev build when debugging the
+Rust implementation, rather than constructing it for ordinary verification.
+The complete gate is still
 required on the exact revision merged into main.
 
 The root gate, research/benchmark checks and compiler verification targets use
@@ -140,8 +143,11 @@ subprocess. Nested or parallel rows are not additive suite wall time. See the
 The [gate workflow](.github/workflows/gate.yml) runs those stages on Linux and
 macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
-evidence. Full IO timing matrices run manually; their program checks and
-native host correctness remain automatic. Completed research instruments have
+evidence. Automatic CI checks correctness and performance regressions. Full IO
+matrices and compute scoreboards run manually; program checks, two-host compute
+verification and native host correctness remain automatic. The separate
+[compute regression check](.github/workflows/compute-regression.yml) retains
+its paired performance verdict. Completed research instruments have
 `make historical-tool-tests` for deliberate reproduction; their READMEs state
 that boundary. A green run describes its tested revision and coverage; it is not a
 proof of completeness or the absence of known defects. Conformance reports

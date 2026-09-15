@@ -271,6 +271,9 @@ only reports the same class of mistake earlier.
 
 ## Compiler rules
 
+Automatic CI checks current correctness and performance regressions;
+exploratory timing runs only when requested.
+
 Use the guarded verification targets in README, or wrap other local heavy
 builds, suites and benchmarks with `perl .github/run-check.pl <label> <command> ...`,
 including commands from other worktrees. Inspect an existing owner's PID

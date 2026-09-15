@@ -348,7 +348,8 @@ setup, `io_uring_enter` and the synchronous send result with a deterministic
 fixture: the buffer-loan queue, the receive re-arm after exhaustion and the
 completion handling those traces drive are the ones the measured binary runs.
 It therefore decides a verdict about the reference without a kernel that
-supports io_uring and without a network, and it is built for both send
+supports io_uring and without a network. It still requires Linux headers and
+runs through `programs-check` in the Linux gate. It is built for both send
 policies, because an inline send and a ring send retire a queue prefix along
 different paths.
 

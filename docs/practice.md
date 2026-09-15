@@ -271,5 +271,6 @@ acceptance, cleanup, or output.
 Keep current compiler witnesses and independent oracles in that inventory.
 Completed source-mining or model-trajectory instruments can retain explicit
 reproduction tests outside it, with their retired purpose stated beside the
-instrument. Timing protocols are separate experiments: their repetitions and
-cache preparation need an experimental question, not a place in every gate.
+instrument. Automatic CI checks current correctness and performance regressions.
+Exploratory timing without a regression verdict is a requested experiment;
+its repetitions and cache preparation do not belong in every gate.

@@ -90,17 +90,17 @@ jobs:
       # The one decision this job makes before it spends anything: is this pull
       # request one whose two arms can move apart at all?
       #
-      # The set is `compute-bench.yml`'s own automatic-run list, which is the
-      # repository's existing answer to "what changes what this table
-      # measures", plus this file.
+      # The scope covers backend emission/runtime, lowering, the driver, the
+      # benchmark bundle and this workflow. compute-bench.yml separately
+      # selects pushes for two-host correctness; its timing is manual.
       #
       # `compiler/src/**` wholesale was considered and rejected: the twin
       # differs from the head arm only in the runtime sources and the emitter
       # behind the `--par` module, so a parser, resolver or diagnostics change
       # emits byte-identical modules and the job would spend a quarter of an
       # hour reading this host's own spread on most compiler pull requests. A
-      # path that can move emission and is missing from this list is a defect
-      # in one list, fixed in both.
+      # path that can move emission and is missing from this list is a defect;
+      # check the two-host correctness scope when fixing it too.
       #
       # The matching is git's own: a directory pathspec covers everything under
       # it, and a file pathspec is that file. Nothing here re-implements a glob.

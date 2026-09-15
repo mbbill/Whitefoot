@@ -74,6 +74,8 @@ confidence intervals. The compiler crate has no dependencies.
 | `cargo build --bin whitefootc` | dev | 15.43 | 19.79 | 1.19 | 1.25 |
 | `cargo test --all-targets --no-run`, dev compiler above present | test/debug | 26.73 | 37.53 | 3.27 | 1.90 |
 
+These profiles build the Rust implementation of `whitefootc` and its test
+harnesses. They are not optimization switches for WF programs.
 The optimized compiler plus all optimized test executables therefore cost
 120.13 seconds in this sequential construction experiment; the equivalent
 unoptimized construction costs 42.16 seconds. This is not the time to run the
@@ -166,6 +168,12 @@ construction, Clang or program execution. Proof
 closure optimization is already being developed in [PR 65](https://github.com/mbbill/Whitefoot/pull/65);
 this PR records attribution without overlapping that algorithm change.
 
+Both executables receive the same `--emit-llvm` invocation and WF source.
+The 13.56 ratio describes the execution speed of the compiler's Rust
+implementation during analysis/emission, not a speed difference between two
+generated wfgrep programs. Routine compiler-backed verification uses `gate`;
+dev compiler binaries remain useful when debugging the Rust implementation.
+
 ## CI baseline and scope
 
 These completed GitHub-hosted runs measured revision `70c86e5b`, based on the
@@ -247,6 +255,31 @@ baseline, 41.44 s on candidate with logging off, and 43.01 s with logging on.
 The full-suite corpus slowdown is not reproduced by that isolated comparison;
 its context/concurrency contribution remains unresolved. Do not attribute it
 to a production compiler change or claim that logging explains it.
+
+With the compiler and research artifacts reused and helper timing disabled,
+the complete canonical gate at `e98c673a` passes in **648.54 seconds
+(10m48.54s)**, using 790.62 user and 68.09 system seconds. All Rust construction
+is cached. This is the ordinary warm-worktree measurement, before the later
+Linux reference-check wiring and verification-profile changes.
+
+| Candidate warm stage | Wall s | Work performed |
+|---|---:|---|
+| Invariants / archives / prose / design / corpus structure | 11 / 0 / 0 / 9 / 0 | Repository and corpus checks |
+| Compiler | 475 | Format 2; lint 0; partition 0; unit 197; sampling 29; corpus 240; docs 1; spec 0; completion 6 |
+| Research | 16 | Existing native images; all assertions still execute |
+| Benchmark programs | 1 | Dependency checks reuse current compiler-dependent images |
+| Native conformance adapter | 117 | 803 pass, 1 expected compiler failure, 1 skip; 116.66 s test wall |
+| Recorded-verdict snapshot | 19 | 484 unchanged verdicts; 19.24 s test wall |
+
+The warm program corpus executes all 110 cases in 239.08 s, so this ordinary
+full-suite run also does not reproduce the approximately 430 s cold-run
+execution. Unit and sampling execution take 195.98 / 29.09 s. Artifact state
+and the unresolved cold-run context still prevent a matched whole-gate speedup
+claim. A preceding warm attempt was interrupted after 152.79 s when the
+temporary process sampler decoded arbitrary process-argument bytes as UTF-8;
+the guard cleaned up its group. The sampler now parses those rows as bytes.
+That interrupted observer attempt is not reported as a repository test failure
+or a completed measurement.
 
 The helper trace identifies what to investigate rather than treating every
 slow case as a large runtime loop:
@@ -379,15 +412,24 @@ Sources: [compute](https://github.com/mbbill/Whitefoot/actions/runs/34913902615)
 The first three use `d05ba1cb`; the deliberately dispatched IO matrix uses
 `35227ab3`, before the later build-failure propagation and phase-label fixes.
 
-Windows host correctness deliberately remains a separate platform check. Its
+Windows host correctness remains a separate platform check. The dev-profile
+measurement above is the baseline for the later profile change. Its
 first real-program step includes a 46.92 s dev-profile Rust build and about
 19 s of subsequent source/native construction and execution. The 68 s TCP
 step compiles three images before exercising the two engines; its first echo
 output appears about 58 s into the step, while refused-connection runs each
 take about 4 s. These are not 68 seconds in Cargo or one long echo loop.
-This work does not assume that a cold optimized Windows compiler would pay
-for its extra construction in this smaller source set; that total would need
-a matched profile comparison before changing the workflow's profile.
+The workflow now builds and invokes `gate` throughout, retaining assertions
+and overflow checks while avoiding unoptimized proof analysis. The spec-checker
+target also uses `gate`, reusing the library artifacts that the rest of the
+canonical gate already constructs. Clippy and documentation still perform
+their own development checks; a dev `whitefootc` executable is not constructed
+as an additional routine verification target. A focused spec check takes
+0.64 s, with Cargo reporting 0.00 s construction and all 129 rules checked.
+The changed Windows path's
+validation is recorded against the delivered revision in the PR. The earlier
+Windows times are not relabeled as gate timings or used to claim a matched
+profile speedup.
 
 The unusually long Linux IO job spends 36.70 s building Rust, about 570 s on
 read images/data/verification, 1068 s on the 64 KiB uncached table, 2239 s on
@@ -399,6 +441,25 @@ not an hour-long Rust build or Cargo test. Preserve the full requested protocol
 and its honest labels, but do not run it automatically on unrelated pushes.
 
 ## Selected implementation and validation
+
+Automatic CI admits correctness checks and performance-regression verdicts.
+The compute workflow keeps dependency/image construction and every-form,
+every-width verification on Linux and macOS pushes, while its exploratory
+`compare` step and table publication run only on manual dispatch. The separate
+paired compute-regression rule remains automatic and unchanged. In the
+measured pre-change jobs, the removed automatic table steps cost 131 / 103 s
+on Linux / macOS; this is observed work removed, not a prediction of total
+job speedup on a different VM. The full IO measurement matrix is likewise
+manual, with platform correctness retained automatically.
+
+Review exposed a pre-existing missing caller: the IO Makefile promised that
+the canonical gate ran the current reference's deterministic `uring-check`,
+but `programs-check` did not call it. The Linux gate now executes both send
+policies through that target. The fixture replaces kernel activity and needs
+no live io_uring or network, but includes Linux userspace headers; it is a
+Linux correctness check, not a portable macOS executable. A macOS construction
+probe fails at that missing header in 0.12 s and executes no trace. The Linux
+CI run, not that failed probe, supplies the oracle's execution evidence.
 
 The pending [verification amendment](../../../design/amendments/compiler-verification-cost.md)
 records the material choices. The live tree and specification are unchanged.
