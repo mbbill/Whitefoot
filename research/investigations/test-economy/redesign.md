@@ -65,10 +65,12 @@ individual retirements and the final target layout.
 
 The owner selected the review method: establish this baseline for compiler
 `#[test]` cases and the four corpora first, then consider every remaining
-check one at a time. The following detailed contract is a proposal for that
-discussion, not an implemented gate or an approved replacement of current
-guidance. It extends the selected corpus responsibilities above. It introduces
-no WF language rule, elapsed-time limit or new measurement campaign.
+check one at a time. The owner agrees with the other baseline provisions;
+the remaining discussion is the admission boundary between compiler tests,
+conformance and programs. The admission rules below refine that proposal.
+This is not an implemented gate or a replacement of current guidance while
+execution remains deferred. It introduces no WF language rule, elapsed-time
+limit or new measurement campaign.
 
 ### Responsibilities
 
@@ -78,9 +80,9 @@ that a case is a small unit test or belongs in the compiler library.
 
 | Group | Intended contents and expectation | Inputs, location and execution |
 |---|---|---|
-| Compiler `#[test]` cases | Compiler implementation properties: token/AST construction, name resolution, proof-state transitions, lowering, ABI and diagnostics. Assert specific intermediate results or required behavior. A test that only feeds WF to the public compiler and repeats a language accept/reject verdict belongs in conformance unless it protects an additional implementation property. | Rust fixtures and small WF inputs beside their owning implementation under `compiler/src/`. Run after Rust test construction. Distinguish in-process assertions from any justified native build/probe; using Rust to orchestrate a child does not make it in-process work. |
+| Compiler implementation tests | A named implementation obligation: token/AST structure, proof-state transition or derivation record, lowering choice, calling convention or compiler diagnostic contract. The assertion must observe something beyond an already-covered public language verdict or program result. | Prefer Rust fixtures and small WF inputs beside their owning implementation under `compiler/src/`. An integration module may exercise a compiler obligation across stages; the final target layout remains open. Native construction/execution needs the justification below and must be reported explicitly. |
 | `conformance` | Specification-derived acceptance, rejection and runtime requirements. The active specification selects expected results; current compiler output cannot define them. | WF cases and expectations in `tests/conformance/`, with the current adapter in `compiler/tests/conformance/`. Compile each selected case through the ordinary compiler path; link/run only cases whose requirement needs execution. |
-| `programs` | Whole-program functionality, host interaction and parallel behavior. Expectations come from the program's stated function, concrete expected outputs or an independent reference, consistently with the language specification. Remove assertions shown to be fully covered elsewhere. | WF programs in `tests/programs/` and orchestration in `compiler/tests/programs/`. Arrange real input/files/peers/configuration; compile, link and run as required by the property, then check the result. |
+| `programs` | Whole-program functionality, host interaction and parallel behavior. Expectations come from the program's stated function, concrete expected outputs or an independent reference, consistently with the language specification. Admission needs a concrete program scenario and observable behavior; this is not a catch-all for WF wrapped in Rust. | WF programs in `tests/programs/` and orchestration in `compiler/tests/programs/`. Arrange real input/files/peers/configuration; compile, link and run as required by the property, then check the result. Compilation success is normally a prerequisite to the behavior assertion, not a separate acceptance case. |
 | Canonical batch | Canonical source bytes, parse/render consistency and idempotence, plus the exact normative example. These do not establish semantic acceptance or runtime behavior. | Visit the authoritative WF files already owned by conformance/programs and the specification example; do not duplicate their source collection. Use compiler parsing/rendering functionality. Keep one batch facility within the source-test organization, without a dedicated executable. |
 | Snapshot migration | Historical verdicts are leads to investigate, not another correctness authority. Assess each case against the active specification; move useful unique coverage to the appropriate group and retire demonstrated duplicates or obsolete expectations. | Existing `tests/snapshot/` is migration input. Track each disposition while migrating; do not create a permanent second set of historical acceptance expectations or bulk-delete unexamined cases. |
 
@@ -88,11 +90,57 @@ An intentionally invalid syntax fixture need not pass canonical parsing.
 Canonical collection must account explicitly for such cases and must not
 weaken their negative conformance expectation to make rendering pass.
 
+### Admission by protected property
+
+Identify the main assertion and the contract selecting its expected result
+before choosing its home. Neither the fixture language, `#[test]`, native
+execution nor the present directory selects the category.
+
+| Admission question | Primary home | Boundary and example |
+|---|---|---|
+| Does a focused case verify a language rule's acceptance, rejection or runtime requirement? | `conformance` | Give the normative ground and enough source to exercise the rule through the ordinary compiler path. A rule about executing an operation may need a native run; conformance is not limited to compile-only verdicts. |
+| Does it verify a useful program's stated function or interaction across components/configurations? | `programs` | Name the scenario and expected output/effect, such as matching the right lines across input files or preserving an independently checked result across worker counts. Merely accepting a WF fragment, or executing it without a meaningful result assertion, does not meet this criterion. |
+| Does it verify an additional compiler implementation obligation that those external results do not establish? | Compiler implementation tests | Name that obligation and observe it directly: retained proof dependencies, an IR lowering choice, deterministic instance symbols, or the compiler's concrete native calling convention. Explain the regression the observation distinguishes. Adding an incidental internal assertion does not justify a duplicate end-to-end case. |
+
+For compiler tests that construct or execute a native program, name the
+compiler-specific obligation and why execution at that boundary supplies the
+needed evidence. For example, a WF/C argument-and-return round trip can check
+the implemented calling convention; IR text alone does not establish that
+both compiled sides interoperate. If the actual assertion is only a language
+runtime requirement, use conformance; if it is only application behavior,
+use programs. The same rule applies to existing cases, not only new ones.
+Choose the narrowest test path that adequately exercises the obligation;
+do not require a native build merely because the fixture contains WF.
+
+These are responsibilities, not a requirement for three separate executable
+targets. Existing Rust orchestration may be shared where it fits. A single
+case may check related observations, and a whole-program fixture may expose
+a useful compiler regression. Keep its primary purpose explicit; move an
+independent internal assertion to the implementation group when needed,
+reusing the fixture and construction where valid. Do not force a separate
+case for every assertion or replace a meaningful regression with an arbitrary
+smaller input.
+
+During migration, both directions need inspection. For example,
+`compiler/tests/programs/generics.rs` currently checks generated-symbol
+determinism as well as execution, and `compiler/tests/programs/parallel.rs`
+checks permission-ledger details as well as program results. Their directory
+does not settle which assertions belong together; assess the individual
+properties before moving or merging them. Likewise, an implementation
+`#[test]` that only checks application output should be considered for programs.
+An assertion outside these core responsibilities, such as a direct C runtime
+probe, belongs in the remaining-check review rather than being silently
+assigned to programs.
+
 ### What earns a test its place
 
 - Be able to name the property, concrete input, expected observation and kind
   of defect the assertion distinguishes. Use an existing test name, fixture,
   manifest or short comment; do not add a mandatory metadata form to every case.
+  Before adding it, identify its primary home under the admission rules and
+  what useful observation is missing from existing coverage. Extend an existing
+  case when that adequately covers the regression; a new WF file or Rust
+  wrapper is not evidence of a new requirement.
 - Prefer one primary home for a given assertion. The same WF file may be used
   to observe proof state, runtime behavior and canonical rendering when those
   are different properties; a shared filename alone proves no redundancy.
