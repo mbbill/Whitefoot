@@ -243,10 +243,10 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The owner agreed to R01 and R02's dispositions; implementation remains
-deferred. The current item is the TCP lifecycle part of
-`compiler/src/backend/completion/bridge_default_probe.c`, considered separately
-from its file-read responsibility.
+The owner agreed to R01, R02 and R03's dispositions; implementation remains
+deferred. The current item is `text_probe` in
+`compiler/src/backend/ordinary_values_probe.c`, considered separately from
+that file's file/directory, TCP-value and concurrent-close responsibilities.
 The next item is presented only after the current owner ruling; none of these
 recommendations has been implemented.
 
@@ -254,7 +254,8 @@ recommendations has been implemented.
 |---|---|---|---|
 | R01 | Completion core/read probe and its build/run variants | Keep useful C adapter assertions; retire unsupported repeat/TSan claims and redundant boundary guards; details below | Agreed; implementation deferred |
 | R02 | Default-policy file reads in the bridge probe | Keep the real-default concurrent C runtime check, reuse deterministic policy cases and tighten route assertions; details below | Agreed; implementation deferred |
-| R03 | TCP lifecycle in the default bridge probe | Merge overlapping bridge lifecycle logic, preserve distinct runtime/host configurations and correct the transfer, endpoint and timeout checks; details below | Pending |
+| R03 | TCP lifecycle in the default bridge probe | Merge overlapping bridge lifecycle logic, preserve distinct runtime/host configurations and correct the transfer, endpoint and timeout checks; details below | Agreed; implementation deferred |
+| R04 | Text values in the ordinary linked-library probe | Keep focused C encoding/value assertions, strengthen existing buffer observations and stop repeating text for helper settings that it does not use; details below | Pending |
 
 ### R01 — Completion core/read probe
 
@@ -510,7 +511,8 @@ early-return failures also bypass socket cleanup.
 | `ordinary_values_probe.c::tcp_probe` and concurrent half-close probes | Exercise ordinary linked values, crossed receive/send components, factory-credit accounting and close races. Their additional representation/lifetime properties are not supplied by a basic bridge lifecycle. |
 | `compiler/tests/programs/network.rs` with `tests/programs/tcp_echo.wf` and related programs | Checks compiled WF programs interacting with Rust peers, including payload echo, end-of-stream and reset outcomes. It includes compiler and ordinary-call integration that this C-only test does not establish. Do not retire it just because both use TCP. |
 
-**Recommendation, pending owner ruling.**
+**Selected disposition.** The owner agreed to the following recommendations;
+implementation remains deferred.
 
 - Retain one maintained C bridge lifecycle case by combining the common logic
   with `test_socket_lifecycle_and_the_pair_two_count`. Preserve the stronger
@@ -552,6 +554,119 @@ The related C value, native-adapter and WF program cases retain their own
 review scope. This recommendation selects neither their wholesale deletion
 nor a new test-target layout. No implementation, execution or new measurement
 has accompanied this review.
+
+### R04 — Text values in the ordinary linked-library probe
+
+**Identity and construction.** `text_probe` in
+`compiler/src/backend/ordinary_values_probe.c` directly calls the C ordinary
+library in `ordinary_values.c`, using native `wf_value` and `wf_view` records.
+It uses C `assert`, explicitly enabled even if `NDEBUG` was defined. It is
+neither a Rust `#[test]` nor a WF program. View copies enter the private
+pointer-parameter C body; they do not validate the compiler's emitted LLVM
+calling convention.
+
+The current POSIX `ordinary-values-test` Make target builds one
+`$(COMPLETION_TMP)/ordinary-values-probe` with C11, `-O2 -g`, warnings as
+errors and pthread support, from eleven C translation units under
+`compiler/src/backend/`:
+
+- `sched/{core,prim_host,entry}.c`;
+- `completion/{runtime,wait_host,file_adapter,file_posix,bridge,linux_io_uring}.c`;
+- `ordinary_values.c` and `ordinary_values_probe.c`.
+
+The whole executable also tests files/directories, TCP values and concurrent
+half-closes. Its shutdown-observer macro is needed by that last group, not
+by text conversion. The Windows IO job links its ten `WINDOWS_UNITS` plus
+the two ordinary-value sources, producing
+`windows-ordinary-values-probe.exe` with Winsock and shell32. These are C
+builds; neither constructs the WF compiler or a WF program.
+
+**Inputs and actual assertions.** The function constructs four arguments in
+memory: `abc`, U+1F600, an invalid encoding and an empty string. POSIX uses
+byte strings; its invalid bytes are `ed a0 80`, an encoded surrogate which
+UTF-8 must reject. Windows uses UTF-16 code units: `d83d de00` for the valid
+pair and a lone `d800` for the invalid input. A sixteen-byte stack array is
+the copy destination.
+
+| Operation | Current observation and limit |
+|---|---|
+| Argument access | Require count four, successful index zero and refusal at index four. The intermediate `arg_get` calls are not separately checked before using their returned values. |
+| Too-small UTF-8 copy | Copy `abc` into `[2,3)`. Require an error, required length three and destination byte two still equal to its sentinel. It does not check the error's variant tag or the other fifteen destination bytes. |
+| Successful UTF-8 copy | Copy `abc` into `[2,5)`. Require success, returned endpoint five and those three bytes equal to `abc`. This distinguishes an absolute endpoint from length three; bytes outside the copy window are not asserted. |
+| Non-ASCII encoding | Require U+1F600 to have UTF-8 length four. It never copies that value, so it does not observe the four encoded bytes or exercise the Windows four-byte encoder stores. |
+| Invalid encoding | Require `Utf8CopyInvalid` from copying the invalid argument into `[0,16)`. It does not assert that the destination remains unchanged. |
+| Empty relative path | Convert the empty host string to a relative path and require success with length zero, reusing the value/result storage. This is not general path validation or filesystem access. |
+
+**Resources, callers and repeated work.** These particular functions only
+inspect or copy memory; the Windows UTF-16 measurement/encoding helpers also
+perform no host IO. They do not consult the completion bridge or
+`WF_IO_HELPERS`. The current combined `main`, however, requires a scratch
+directory and changes into it, initializes the close observer's wait object,
+then calls `text_probe` before creating ordinary inputs and running the other
+groups. Those startup requirements belong to the combined driver, not to
+the text assertions.
+
+The Make target runs the same executable once with `WF_IO_HELPERS=0` and once
+with `WF_IO_HELPERS=2`. It is reached by `completion-test`, compiler `check`
+and `static`, root `make check`, Linux/macOS static gate jobs and the Linux
+IO completion job. Windows IO CI repeats the same two helper settings. For
+the text group alone, both runs use identical inputs, implementation paths
+and observations; the setting supplies no additional coverage. The host
+distinction does supply different encoding implementations. The current
+ordinary-values target has no dedicated sanitizer variant; this description
+does not count the completion harness's sanitizer runs as text coverage.
+
+**Overlap and ownership.** Existing conformance cases already exercise
+ordinary argument access, invalid UTF-8 length, invalid-copy refusal and
+too-small-copy refusal through compiled WF. In particular,
+`run-syshost-copyutf8-invalid-unchanged` and
+`run-syshost-copyutf8-toosmall-unchanged` check the exact error variant and the
+entire destination. The former arranges `61 ff 62`, a different validator
+failure from this C fixture's encoded surrogate. The case named
+`run-syshost-nontext-argv-utf8-invalid` actually calls `host_utf8_len`, despite
+its current copy-oriented description. `v033-run-system-nonzero-next` checks
+a nonzero endpoint for `host_copy_bytes`, not the UTF-8-copy C body here.
+This comparison supports a focused native encoding/representation check,
+not another complete copy of the normative corpus.
+
+`backend/tests/system.rs::run_arguments` also reads conformance WF files,
+compiles and runs them, and checks success with empty stdout/stderr. Several
+argument/text tests use that wrapper without additional internal assertions.
+Flag them for the agreed compiler/corpus audit; this R04 ruling does not
+retire those separate Rust cases. Other tests in that module compare ABI
+plans or emitted calls, and `system_io.rs` runs a larger ordinary IO chain.
+Neither additional compiler observation nor real-program composition is
+established by this direct C function.
+
+**Recommendation, pending owner ruling.**
+
+- Keep a focused ordinary-library C unit group in the existing backend test
+  source area, protecting native text representation, encoding branches and
+  destination boundaries. Run it in the common runtime unit-test phase of
+  the local full gate and supported host CI. Normative WF outcomes remain in
+  conformance; explicit compiler ABI assertions retain their separate purpose.
+- Select text once per host/build configuration that changes its code or
+  observations. Stop repeating it merely for helper counts zero and two,
+  and let text selection run without the other groups' directory, ordinary
+  inputs or close-observer startup. Reuse the C test construction/runner;
+  neither a new executable, a production-library split nor a WF wrapper is
+  justified just to obtain this logical selection. The IO/concurrency
+  groups' helper requirements are not decided by this item.
+- Strengthen the current small fixtures: assert the argument and copy error
+  tags, compare the whole destination after each refusal, check bytes outside
+  a successful copy window and actually copy U+1F600 to its known four UTF-8
+  bytes. Keep the nonzero endpoint observation. These check concrete encoding
+  and write-boundary defects without new WF compilation, a large encoding
+  matrix or repeated process runs. Keep the related argument/empty-value
+  assertions together; no separate test executable per assertion is needed.
+- Preserve POSIX byte-input and Windows UTF-16 coverage. Helper variation and
+  TSan would not add a concurrency observation to these memory-only calls;
+  any shared memory/undefined-behavior sanitizer phase may run them under
+  that distinct instrumentation. Its overall organization remains later work.
+
+No source, corpus verdict, caller or build recipe has changed. This is source
+inspection with no fresh execution, timing or savings claim. The remaining
+groups in `ordinary_values_probe.c` will be considered separately.
 
 ## Affected material and evidence
 
