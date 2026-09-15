@@ -243,10 +243,10 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The owner agreed to R01 through R05's dispositions; implementation remains
-deferred. The current item is directory enumeration and independent cursors
-in `ordinary_values_probe.c::file_probe`. The TCP-value and concurrent-close
-groups in the same source file remain to be reviewed.
+The owner agreed to R01 through R06's dispositions; implementation remains
+deferred. The current item is `ordinary_values_probe.c::tcp_probe`, covering
+crossed TCP values and factory accounting. The concurrent-close group in the
+same source file remains the next separate item.
 The next item is presented only after the current owner ruling; none of these
 recommendations has been implemented.
 
@@ -257,7 +257,8 @@ recommendations has been implemented.
 | R03 | TCP lifecycle in the default bridge probe | Merge overlapping bridge lifecycle logic, preserve distinct runtime/host configurations and correct the transfer, endpoint and timeout checks; details below | Agreed; implementation deferred |
 | R04 | Text values in the ordinary linked-library probe | Keep focused C encoding/value assertions, strengthen existing buffer observations and stop repeating text for helper settings that it does not use; details below | Agreed; implementation deferred |
 | R05 | Ordinary file acquisition, reads, close and factory accounting | Keep focused C library integration assertions for exact credits and result construction, tighten refusal/buffer observations and correct overstated overlap claims; details below | Agreed; implementation deferred |
-| R06 | Ordinary directory enumeration and independent cursors | Keep the real-directory C integration case; observe known entries and cursor independence, require progress and bounded completion, and check the actual writable window; details below | Pending |
+| R06 | Ordinary directory enumeration and independent cursors | Keep the real-directory C integration case; observe known entries and cursor independence, require progress and bounded completion, and check the actual writable window; details below | Agreed; implementation deferred |
+| R07 | Crossed ordinary TCP halves and factory accounting | Keep precise native per-resource credit observations, retarget the existing transfer fixture to the surviving halves and share TCP setup/guards without adding a WF case; details below | Pending |
 
 ### R01 — Completion core/read probe
 
@@ -871,7 +872,8 @@ library implementation observation, not a new source-language rule.
 | Conformance `sys14-entry-kind-closed` | Checks kind range, name-length structure and announced record count for a returned batch, but does not require the fixture's names; an immediate `ListEnd` with zero records can pass. It cannot supply the missing real-entry observation here. |
 | `compiler/tests/programs/traversal.rs` and `tests/programs/dir_walk.wf` | Compare a real recursive tree walk's sorted kind/path output, plus empty-tree and refused-descent behavior. This protects compiled program composition and real record use, not specifically draining two sources opened on the same directory. The module also contains compile-only ownership/type/exhaustiveness rejections and emitted-call assertions; their homes must follow the already selected contract during the corpus audit. |
 
-**Recommendation, pending owner ruling.**
+**Selected disposition.** The owner agreed to the following recommendations;
+implementation remains deferred.
 
 - Keep one small C ordinary-library integration case for real enumeration,
   independent cursor state and result/buffer observations. Put it in the
@@ -912,6 +914,120 @@ library implementation observation, not a new source-language rule.
 The TCP-value and concurrent-close groups remain separate upcoming items.
 No implementation, test retirement, specification change, execution or timing
 measurement accompanies this record.
+
+### R07 — Crossed ordinary TCP halves and factory accounting
+
+**Identity, construction and resources.**
+`compiler/src/backend/ordinary_values_probe.c::tcp_probe` is a C
+ordinary-library integration case using `wf_value`, `wf_connection` and C
+`assert`. It shares R04-R06's ordinary-values executable, eleven-source POSIX
+or twelve-source Windows `-O2 -g` construction, and local full-gate/host-CI
+callers. It does not compile WF or check the compiler's emitted struct/view
+ABI. The current caller runs the whole executable with helpers zero and two.
+
+The fixture is one IPv4 loopback listener bound to port zero, with its port
+queried by the existing Windows/POSIX `listener_port` helper, and two local
+connections. Both ends live in the same process: one listener plus four
+connection endpoints consume five descriptor credits. No remote service,
+large payload or stress loop is involved. The normal sequence makes sixteen
+ordinary IO calls: one listen, two connects, two accepts, one send, one
+receive, eight directional closes and one listener close. Address construction
+and the host port query are separate from those calls.
+
+Each operation submits and joins before the next one. The driver deliberately
+overlaps no half-close calls; helpers may execute operations, but the
+shutdown observer linked for the following race tests is unarmed here. The
+combined executable still requires its scratch-directory/ordinary-input and
+wait-object startup, although this function uses no file or directory fixture.
+
+**Actual values and observations.** Call the two accepted server endpoints
+S1 and S2. The function constructs these native aggregates:
+
+| Value | Receive member | Send member |
+|---|---|---|
+| Original server S1 | R1 | S1-send |
+| Original server S2 | R2 | S2-send |
+| `crossed_a` | R1 | S2-send |
+| `crossed_b` | R2 | S1-send |
+
+Let M be the initial input-factory capacity and B the separate initially
+empty `other_factory`.
+
+| Phase | Current assertion |
+|---|---|
+| Acquire the listener and both connection pairs | Each call succeeds; after all five acquisitions the input factory equals M-5. Individual acquisition deltas are not checked. The two returned peer-address values are unused. |
+| One-byte transfer before crossing/closing | First client sends `x` to the first server. Require both returned endpoints to be one and the received byte to equal `x`. It does not observe survival after a half-close. |
+| Close both members of `crossed_a` | Close R1, then S2-send, both successfully. The input factory must still equal M-5: each underlying server socket has lost only its first direction. The count is checked after the pair, not after each close. |
+| Close S1-send from `crossed_b` into B | Require successful close and B == 1. S1's second direction releases that socket and credits the supplied factory. |
+| Close R2 from `crossed_b` into the input factory | Require successful close and input capacity M-4. This releases S2's second direction in the opposite direction order. |
+| Close client endpoints and listener | First client closes receive then send; second client closes send then receive; close listener. All succeed and the two factories' final capacities sum to M. The intended final distribution is input M-1, B == 1; the test does not restore the transferred credit to its caller's factory. |
+
+This is a concrete counter observation, not host resource exhaustion. It does
+not inspect native descriptor liveness after the first crossed pair closes,
+exchange data through the surviving crossed pair, validate peer fields,
+exercise IPv6/acquisition refusal, or intentionally race releases. It has no
+per-case timeout. Blocking connect/accept/receive/join failures rely on outer
+guards or CI limits rather than a bound in this function.
+
+**Ground and overlap.** Active `PRE-1` gives `TcpConnection` ordinary public
+receive/send fields and explicitly imposes no relation between fields merely
+because a struct was constructed. The native implementation's resource
+identity therefore remains attached to each endpoint. In
+`completion/file_adapter.c`, `wf_file_connection_release` tracks completed
+directions by descriptor; the POSIX/Windows host leaf publishes its last-half
+result after shutdown. `ordinary_values.c::wf_close` returns a credit to its
+supplied factory only for the final directional release. The capacity design
+ground is the current resource-exhaustion-floor decision discussed in R05.
+
+| Existing evidence | Relationship |
+|---|---|
+| R03 / `harness.c::test_socket_lifecycle_and_the_pair_two_count` | Checks raw bridge first/last release values, descriptor lifetime, both direction orders and a basic transfer. It does not construct crossed ordinary values or observe actual factory counters. Share suitable setup/guards, not a claim that the bridge-level case covers the ordinary library's accounting. |
+| R05 file-credit case | Covers acquisition/close credit movement for one-owner files. TCP must delay credit until both original directions close, so returning a file credit does not establish this two-direction rule. |
+| `programs/network.rs::crossed_ordinary_tcp_halves_keep_the_other_directions_live` | Compiles WF that constructs crossed values, closes one cross, receives through the surviving second-connection half and sends through the first-connection half. Rust peers observe the bytes and both EOFs while a later checkpoint connection keeps the WF process alive; process teardown cannot supply the EOF evidence. It protects real WF construction/call/close behavior but does not inspect native factory counters. |
+| Following `concurrent_half_close_probe` | Pauses a real shutdown while the other direction closes, then observes descriptor reuse and credits. That deliberate interleaving is absent from this sequential case and retains its own review. |
+| Conformance `systcp-*` cases | Check ordinary types, ownership/effects and accepted call paths. Cases named `*-permit-returned` have accept verdicts, not runtime credit measurements. They do not establish this native counter sequence. |
+
+The existing WF crossed case uses three compiler driver configurations and
+two process configurations per built program. Its `native_ring = true` arm
+allows the shipped default; it does not independently require a native engine
+to have carried the calls. `false` disables the native engine. That matrix
+retains its separate review scope; this item does not add another WF case,
+change its configurations or equate an allowed default with observed routing.
+
+**Recommendation, pending owner ruling.**
+
+- Keep this focused C ordinary-library integration group in the existing
+  backend test area and common runtime verification stage of local and host
+  CI checks. Its reason to exist is exact per-resource/receiving-factory
+  accounting for crossed halves. Share compatible C construction, port-zero
+  setup, selection/reporting and timeout helpers with the other TCP checks;
+  preserve distinct macro/link needs and do not add another executable.
+- Observe each acquisition and directional release at its existing call
+  site, including both factories where credit can move. Require no credit
+  on a first release, exactly one on the original socket's final release,
+  the correct recipient and the final distribution. Do not rely solely on
+  a total that can hide offsetting errors. Keep the existing two original
+  direction orders and arrange reusable fixture state explicitly; a local
+  receiving factory going out of scope is not a returned caller credit.
+- Replace the pre-close smoke transfer with one-byte exchanges through the
+  two surviving directions after `crossed_a` closes. Reuse the current
+  listener, clients, two server endpoints and byte buffers: the two
+  send/receive pairs require two additional native calls over the current
+  single pair, no extra connection, source compilation or test executable.
+  This ties data observation to the crossed-lifetime property while retaining
+  the exact counter checks. A successful positive transfer of a one-byte
+  request is already complete; no large payload or retry-count experiment is
+  needed. Keep the existing WF case for the compiler/ordinary-call boundary
+  and its process-alive EOF observation.
+- Apply the shared TCP process deadline, phase reporting and cleanup to the
+  complete case. Keep useful host/helper coverage in the common runtime
+  configuration organization, without calling this sequential driver a
+  close-race test or using its helper settings as proof of native routing.
+  The next deliberate concurrency case and the overall sanitizer/configuration
+  review decide their own required observations.
+
+No implementation, test retirement, specification revision, construction,
+execution or timing measurement accompanies this record.
 
 ## Affected material and evidence
 
