@@ -243,10 +243,11 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The owner agreed to R01, R02 and R03's dispositions; implementation remains
-deferred. The current item is `text_probe` in
-`compiler/src/backend/ordinary_values_probe.c`, considered separately from
-that file's file/directory, TCP-value and concurrent-close responsibilities.
+The owner agreed to R01 through R04's dispositions; implementation remains
+deferred. The current item is the file acquisition/read/close and factory
+accounting portion of `ordinary_values_probe.c::file_probe`. Directory
+enumeration in the same function is the next separate responsibility; the
+TCP-value and concurrent-close groups also remain to be reviewed.
 The next item is presented only after the current owner ruling; none of these
 recommendations has been implemented.
 
@@ -255,7 +256,8 @@ recommendations has been implemented.
 | R01 | Completion core/read probe and its build/run variants | Keep useful C adapter assertions; retire unsupported repeat/TSan claims and redundant boundary guards; details below | Agreed; implementation deferred |
 | R02 | Default-policy file reads in the bridge probe | Keep the real-default concurrent C runtime check, reuse deterministic policy cases and tighten route assertions; details below | Agreed; implementation deferred |
 | R03 | TCP lifecycle in the default bridge probe | Merge overlapping bridge lifecycle logic, preserve distinct runtime/host configurations and correct the transfer, endpoint and timeout checks; details below | Agreed; implementation deferred |
-| R04 | Text values in the ordinary linked-library probe | Keep focused C encoding/value assertions, strengthen existing buffer observations and stop repeating text for helper settings that it does not use; details below | Pending |
+| R04 | Text values in the ordinary linked-library probe | Keep focused C encoding/value assertions, strengthen existing buffer observations and stop repeating text for helper settings that it does not use; details below | Agreed; implementation deferred |
+| R05 | Ordinary file acquisition, reads, close and factory accounting | Keep focused C library integration assertions for exact credits and result construction, tighten refusal/buffer observations and correct overstated overlap claims; details below | Pending |
 
 ### R01 — Completion core/read probe
 
@@ -638,7 +640,8 @@ plans or emitted calls, and `system_io.rs` runs a larger ordinary IO chain.
 Neither additional compiler observation nor real-program composition is
 established by this direct C function.
 
-**Recommendation, pending owner ruling.**
+**Selected disposition.** The owner agreed to the following recommendations;
+implementation remains deferred.
 
 - Keep a focused ordinary-library C unit group in the existing backend test
   source area, protecting native text representation, encoding branches and
@@ -667,6 +670,134 @@ established by this direct C function.
 No source, corpus verdict, caller or build recipe has changed. This is source
 inspection with no fresh execution, timing or savings claim. The remaining
 groups in `ordinary_values_probe.c` will be considered separately.
+
+### R05 — Ordinary file operations and factory accounting
+
+**Scope and construction.** This item covers the first part of
+`compiler/src/backend/ordinary_values_probe.c::file_probe`, through closing
+the read file into a different factory, and the purpose of the final credit
+transfer back. Directory enumeration between those portions is a separate
+item: sharing one C function does not make cursor behavior the same property
+as file-result construction or credit accounting.
+
+The code directly calls `ordinary_values.c` using C values and `assert`.
+Its private pointer-parameter view bodies do not check emitted LLVM ABI.
+It shares R04's executable, eleven-source POSIX or twelve-source Windows C
+construction, `-O2 -g` flags and local/CI callers. There is no separate file
+test executable, Rust `#[test]`, WF source or WF compiler invocation.
+
+**Fixture and work.** C stdio creates `ordinary-values.data` containing five
+bytes, `hello`, in the scratch working directory. `fopen`/`fwrite`/`fclose`
+arrange the input; they are not tests of the WF write library. The name view
+contains POSIX component bytes or Windows UTF-16 component bytes. File reads
+reuse a 4,096-byte buffer needed by the later directory batch, but their
+nonempty request is only seven bytes, not 4 KiB. The file sequence makes
+four ordinary open attempts, three read calls and two closes, with no stress
+loop. One open is rejected by zero factory capacity before submitting work;
+the other eight calls submit bridge requests on the intended path. These
+counts are library calls/requests, not a count of host system calls.
+
+| Step | Current assertion and its purpose |
+|---|---|
+| Failure with one credit | Start a native factory at one. Try to open the regular file as a directory. Require failure other than error tag 21 and credit still one. The following successful file open consumes that credit, and closing restores it. This checks failure/success/close accounting on a deliberately constrained factory. |
+| Refusal with zero credits | Temporarily set the input factory's credit word to zero. A file open must fail with tag 21 (`ResourceExhausted`) and leave zero. The test does not check that error's code/origin fields. Restore the saved capacity afterward. |
+| Successful acquisition | Open the file from the input factory. Require success and exactly one fewer credit. |
+| Short read and absolute endpoint | From file offset zero, read into destination `[2,9)`. Require `Ok(7)`, bytes `[2,7)` equal to `hello`, and bytes one and seven still equal to the sentinel. The returned value is destination endpoint seven, not byte count five. |
+| End of file | Read at file offset five into the same nonempty range. Require `ReadEnd` and compare the entire buffer with its saved value. |
+| Empty destination range | Read into `[9,9)`. Require `Ok(9)`, distinguishing an empty successful transfer from nonempty EOF even though both bridge results have amount zero. The buffer is not compared again after this call. |
+| Close into another factory | Close the acquired file into an initially empty receiving factory. Require the acquiring factory to remain one credit down and the receiving factory to become one. The later directory-source open spends that received credit, and its close into the original factory restores the original total. This is a real owner transfer, not a direct addition to balance the fixture. |
+
+The native counter is `wf_value.words[0]`, not a WF-visible field. The
+current [resource-exhaustion-floor decision](../../../design/compiler/resource-exhaustion-floor.md)
+places acquisition/close accounting in the ordinary exclusively borrowed
+factory. `wf_open` returns a taken credit on acquisition failure; `wf_close`
+returns it to its supplied factory. These are concrete implementation
+properties that cannot be inferred merely from successful high-capacity
+opens. This probe does not examine close-error consumption, all host error
+classes, descriptor leakage after every refusal, or arbitrary factory states.
+
+**Weak observations.** The first refusal accepts any class other than
+`ResourceExhausted`; an unrelated path-validation failure would satisfy that
+assertion without establishing the intended host/kind refusal. Tightening it
+must respect the actual host path: the POSIX component operation supplies
+`O_DIRECTORY`, whereas the Windows leaf can open and then reject a nonmatching
+kind as `WF_WINDOWS_OPEN_OTHER_KIND`, which the ordinary library maps to
+`Unsupported`. Do not impose a single guessed host error on both. No fresh
+host execution or newly observed runtime failure is claimed here.
+
+The successful read only observes two guard bytes outside its returned range.
+Its final empty read does not check that the buffer stayed unchanged. These
+are gaps in observation, not proof that the implementation currently corrupts
+memory. The driver is sequential; runtime helper threads may execute work.
+It needs ordinary local files, an opened directory value and the linked
+completion runtime. The full executable additionally needs the later groups'
+network and close-race facilities.
+
+**Overlap and actual coverage.** R01 checks low-level adapter amounts,
+errors and destination bytes; it neither constructs ordinary `ReadStop`
+variants/absolute endpoints nor owns a `HandleFactory`. The completion
+harness checks bridge open/status/close results and rejected descriptor
+cleanup, likewise without ordinary factory accounting. Keep those distinct
+observations; a full copy of their host-operation matrix is not needed here.
+
+Conformance's `run-sysfile-{empty,short,exact,multichunk}` cases and the
+`backend/tests/system_io.rs` read tests cover compiled WF behavior. The latter
+include nonzero destination bounds, short reads and zero-length reads. Their
+normative observations belong in the agreed corpus audit; a C-only call does
+not replace the WF call boundary.
+
+Two particularly overstated claims are
+`run-sysfile-close-returns-permit` and
+`run-sysfile-failed-open-returns-permit`. Their WF source uses the ordinary
+startup factory, does not constrain it to one credit and only checks that a
+subsequent open/read succeeds. It never compares the read byte despite the
+first case's description claiming the original byte. Therefore a missing
+single-credit return need not make either case fail. They also have Rust
+`#[test]` wrappers in `system_io.rs` which compile the same corpus source and
+check successful process exit with equivalent small fixtures; those wrappers
+add no exact-credit observation. Record this limitation for their later
+case-by-case migration/retirement. This item does not change their verdicts
+or retire either the WF cases or their Rust wrappers.
+
+**Recommendation, pending owner ruling.**
+
+- Keep a focused C ordinary-library integration group for exact factory
+  accounting and bridge-to-library result construction, in the existing
+  backend test area and common runtime verification stage of the local full
+  gate and supported host CI. Reuse the current C construction and small file
+  fixture. Give file operations and directory enumeration distinct selection
+  and failure reporting without requiring separate executables or WF cases.
+- Retain the zero/one-credit setup, successful decrement, failure restoration
+  and cross-factory close/reuse observations. They exercise the actual state
+  without exhausting the host's descriptor table. Check the quota refusal's
+  library code/origin as well as its class, and replace the wrong-kind
+  `tag != 21` oracle with the intended, source-grounded host outcome. Protect
+  final accounting rather than requiring a particular temporary decrement
+  order inside acquisition.
+- Retain short-read endpoint construction and the distinction between EOF
+  and an empty successful transfer. Compare all bytes outside the successful
+  returned range and the whole buffer after the empty call, reusing the
+  existing input and observations. Do not duplicate R01's entire adapter
+  matrix or add a WF program for internal counters.
+- Unlike R04's text calls, these operations reach the bridge. Written helper
+  counts pin adapter policy; zero versus two can change who executes queued
+  adapter work. A native engine may instead take the operation in both runs,
+  and this probe currently has no route assertions or forced-adapter run.
+  Preserve demonstrably distinct runtime execution coverage in the common C
+  configuration organization; do not label helper zero/two as native/adapter
+  evidence or multiply every assertion across an unexamined matrix. No
+  deletion of this group's helper variants is selected by this item; complete
+  configuration/sanitizer organization remains a later review.
+- Correct the corpus descriptions' unsupported accounting/payload claims
+  during the agreed corpus audit. Keep or merge WF cases for the language
+  behavior they actually distinguish, and retire redundant Rust wrappers only
+  after preserving any distinct assertion or construction mode. Do not add
+  WF-visible counter APIs, huge exhaustion loops or extra WF compilations
+  merely to turn this C implementation observation into a language test.
+
+The directory-source iteration loop and independent cursors will be reviewed
+next. No implementation, test retirement, specification revision, execution
+or timing measurement accompanies this record.
 
 ## Affected material and evidence
 
