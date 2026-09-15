@@ -54,29 +54,139 @@ and the replacement integration-target layout are outside that amendment.
 
 ## Selected corpus responsibilities
 
-The four current integration executables do not establish four necessary
-physical test boundaries. The owner also selected the following four changes
-on 2026-09-15 and explicitly deferred execution while discussion continues:
+On 2026-09-15 the owner selected the four corpus responsibilities in the
+table below: normative requirements in conformance, whole-program behavior
+in programs, canonical checks without a dedicated executable, and individual
+snapshot migration or retirement. Execution remains deferred while discussion
+continues. This does not authorize deleting all 484 snapshot cases or settle
+individual retirements and the final target layout.
 
-- `conformance`: concentrate specification-derived acceptance, rejection
-  and runtime requirements here, with the specification determining the
-  expected result.
-- `programs`: keep whole-program functionality, host interaction and
-  parallel behavior here; remove checks demonstrated to be fully covered
-  elsewhere.
-- `canonical_corpus`: retain batch canonical rendering/idempotence and exact
-  normative-example checks without a dedicated test executable; rendering
-  checks still need compiler functionality.
-- `snapshot`: review each historical verdict against the active spec.
-  Migrate unique useful cases with justified expectations; retire proven
-  duplicates or obsolete historical expectations. Do not assume an old
-  verdict is correct or delete all 484 cases as one unexamined group.
+## Basic test contract — discussion draft
 
-Compare input, property, failure mode and oracle before declaring coverage
-redundant. Consolidating Rust targets is packaging; it does not itself remove
-duplicate assertions or WF compilations. The selected direction is not
-blanket case-retirement approval: individual migrations and retirements still
-need that examination, and the final target layout remains to be worked out.
+The owner selected the review method: establish this baseline for compiler
+`#[test]` cases and the four corpora first, then consider every remaining
+check one at a time. The following detailed contract is a proposal for that
+discussion, not an implemented gate or an approved replacement of current
+guidance. It extends the selected corpus responsibilities above. It introduces
+no WF language rule, elapsed-time limit or new measurement campaign.
+
+### Responsibilities
+
+Classify an assertion by the property it protects and the source of its
+expected result. `#[test]` is a Rust execution mechanism, not a guarantee
+that a case is a small unit test or belongs in the compiler library.
+
+| Group | Intended contents and expectation | Inputs, location and execution |
+|---|---|---|
+| Compiler `#[test]` cases | Compiler implementation properties: token/AST construction, name resolution, proof-state transitions, lowering, ABI and diagnostics. Assert specific intermediate results or required behavior. A test that only feeds WF to the public compiler and repeats a language accept/reject verdict belongs in conformance unless it protects an additional implementation property. | Rust fixtures and small WF inputs beside their owning implementation under `compiler/src/`. Run after Rust test construction. Distinguish in-process assertions from any justified native build/probe; using Rust to orchestrate a child does not make it in-process work. |
+| `conformance` | Specification-derived acceptance, rejection and runtime requirements. The active specification selects expected results; current compiler output cannot define them. | WF cases and expectations in `tests/conformance/`, with the current adapter in `compiler/tests/conformance/`. Compile each selected case through the ordinary compiler path; link/run only cases whose requirement needs execution. |
+| `programs` | Whole-program functionality, host interaction and parallel behavior. Expectations come from the program's stated function, concrete expected outputs or an independent reference, consistently with the language specification. Remove assertions shown to be fully covered elsewhere. | WF programs in `tests/programs/` and orchestration in `compiler/tests/programs/`. Arrange real input/files/peers/configuration; compile, link and run as required by the property, then check the result. |
+| Canonical batch | Canonical source bytes, parse/render consistency and idempotence, plus the exact normative example. These do not establish semantic acceptance or runtime behavior. | Visit the authoritative WF files already owned by conformance/programs and the specification example; do not duplicate their source collection. Use compiler parsing/rendering functionality. Keep one batch facility within the source-test organization, without a dedicated executable. |
+| Snapshot migration | Historical verdicts are leads to investigate, not another correctness authority. Assess each case against the active specification; move useful unique coverage to the appropriate group and retire demonstrated duplicates or obsolete expectations. | Existing `tests/snapshot/` is migration input. Track each disposition while migrating; do not create a permanent second set of historical acceptance expectations or bulk-delete unexamined cases. |
+
+An intentionally invalid syntax fixture need not pass canonical parsing.
+Canonical collection must account explicitly for such cases and must not
+weaken their negative conformance expectation to make rendering pass.
+
+### What earns a test its place
+
+- Be able to name the property, concrete input, expected observation and kind
+  of defect the assertion distinguishes. Use an existing test name, fixture,
+  manifest or short comment; do not add a mandatory metadata form to every case.
+- Prefer one primary home for a given assertion. The same WF file may be used
+  to observe proof state, runtime behavior and canonical rendering when those
+  are different properties; a shared filename alone proves no redundancy.
+- Compare the property, input, failure mode, configuration and oracle before
+  merging checks. A compiler-private regression may coexist with a public
+  conformance case when it checks something the latter cannot observe.
+- Cover the relevant valid, invalid and boundary behavior. Repetitions and
+  worker/policy/platform axes need a stated fault or observation to exercise;
+  neither a large matrix nor an arbitrary repeat count is coverage by itself.
+  Required isolation or repetition is not removed merely because it repeats work.
+- Do not preserve tests whose only job is keeping an unnecessary manual copy
+  synchronized with its automatic source. Remove that copy and its policing
+  test together. A parser algorithm still needs correctness evidence after
+  grammar-table generation becomes automatic.
+- Compiler crashes, unsupported capabilities, timeouts, missing resources and
+  build/launch failures must remain distinct from normative source rejection.
+  A tracked expected failure records the correct expectation and the current
+  defect; it does not redefine success or hide a newly fixed/changed outcome.
+- Share fixture preparation and immutable construction where the dependency
+  and isolation requirements allow it. Do not share a previously obtained
+  semantic verdict in place of a required current compiler call.
+- Retire or move a case with its technical reason and receiving coverage, if
+  any. An unexplained deletion, ignored case or updated golden file is not a
+  deduplication result. Preserve applicable conformance-evidence obligations.
+
+### Execution and reporting
+
+Keep construction separate from assertion execution. Cargo constructs the
+compiler and selected Rust test executables, including generated parser data.
+The compiler-test group then calls implementation functions; source checks
+use parsing, semantic compilation and native construction/execution only as
+their respective properties require. A compile/link success is not a claim
+that a runtime workload passed.
+
+The normal full verification entry point must explicitly select every retained
+check. A retained ordinary case must not depend on a developer remembering a
+special ignored-test opt-in outside that entry point. The intended native
+conformance run remains part of full verification. Platform-only cases have
+a named host job and explicit unsupported-host reporting; absence of a host
+is not a passing execution.
+
+Each source-case failure should identify the group, case/source, expected
+result, actual result and failing phase. Report construction failures,
+assertion failures, skips and tracked defects separately. Count Rust cases
+and WF cases as different objects. Collection integrity must make omissions
+visible without maintaining redundant hand-copied counts.
+
+Logical categories do not each require a new binary, crate, script, directory
+or CI job. Only introduce a separate execution boundary for a concrete need
+such as private access, a different host/toolchain or process isolation.
+The exact target layout will follow the remaining-check review, not precede it.
+Current resource guards remain; new timing optimization is deferred.
+
+## Review of the remaining checks
+
+Proceed after discussing the basic contract. Present one independent check
+at a time, or one inseparable group of build variants whose differences are
+explained. Do not use a whole-directory label to hide unrelated assertions.
+Read its sources and current callers before recommending a disposition.
+
+For each item, show the following in the conversation in Chinese:
+
+1. **Identity and inputs:** name, source path, current caller, fixture form and
+   resources. Identify whether it uses Rust `#[test]`, WF, C, Python or shell.
+2. **Actual work:** what is constructed, what executable/function runs, what
+   it observes and asserts, and what real defect a failure would reveal.
+3. **Need:** should this check exist? Separate a current correctness or
+   performance-regression check from historical reproduction or exploratory
+   measurement. Do not decide from elapsed time.
+4. **Home and stage:** the proposed owning group/location and execution phase,
+   including any host-specific requirement.
+5. **Overlap and recommendation:** identify actual receiving checks when
+   proposing a merge; explain distinct coverage that must survive. Recommend
+   keep, move/merge, retire, or explicit experiment-only use with reasons.
+6. **Owner decision:** record the ruling and any remaining uncertainty, then
+   present the next item. Do not advance through multiple unresolved items or
+   implement changes while the owner's execution deferral remains in force.
+
+Use the inventory's remaining runtime probes, platform/sanitizer checks,
+research models/oracles, benchmark construction/correctness checks,
+repository/tooling checks, performance protocols and historical/explicit
+experiment runners as the traversal scope. Previously selected changes
+remain selected; only a newly discovered conflict or changed premise reopens
+one. Audit individual compiler/corpus cases under the baseline as needed
+during their migration, rather than assuming their current classification is correct.
+
+The initial cursor is the first direct C runtime check:
+`compiler/src/backend/completion/core_read_probe.c`. It has not yet been
+presented under this process. The table below records this review as it
+proceeds; the next item is selected only after the current ruling.
+
+| Item | Check | Recommendation | Owner ruling |
+|---|---|---|---|
+| R01 | Completion core/read probe | Not yet presented | Pending |
 
 ## Affected material and evidence
 
