@@ -120,6 +120,18 @@ each is resolved by a discussion and a tree change.
   Defer bulk cleanup of the repeated per-call region wrappers in migrated
   tests until this question is settled, preserving each case's intended
   behavior or rejection reason when the selected spelling is applied.
+- **Last-use endpoints for ordinary borrow holders.** Investigate ending a
+  `let`-bound shared or unique borrow after its last required use instead of
+  retaining it to region-block exit under [OWN-4]. Keep loan liveness separate
+  from region selection and type validity: this need not introduce inference
+  of region arguments from expected result types or later uses. Shared
+  `Slice` values already have last-use endpoints under [OWN-5]/[VIEW-1] in the
+  [current specification](../spec/kernel-spec.md). Cover reference copies,
+  returned borrows, surviving child loans and unique-parent suspension,
+  branches, loops, and statement-scoped temporaries. Compare the current
+  lexical endpoints with deterministic, terminating last-use analysis while
+  preserving storage validity, exclusivity, and signature-only call checking.
+  No change to the ordinary borrow rules is selected.
 - **A view-valued match or if.** [OWN-5] rejects a `match` or `if` expression
   whose value is a view, rather than joining the arms' origin sets, which the
   origin machinery could represent. If the join can be admitted it should be;
