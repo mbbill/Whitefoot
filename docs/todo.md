@@ -44,16 +44,15 @@ of them is a decision. Remove an item when its fix and test land.
   item is removed with `buffer_new` and `buffer_vacant`, not repaired
   separately.
 - **Large entering proof contexts still have substantial checking cost.**
-  In the [pinned source-certificate experiment](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#paired-selection-2026-09-14),
-  128 independent inequality pairs with 128 uses take a median 1.15 s;
-  the same context with only three uses takes 0.55 s. This is not a cost of
-  certificate length alone: a fixed three-pair context admits all 4096 uses
-  in 286 ms. Reusing repeated closure and interval preparation reduced the
-  128-use case from 21.48 s. The
-  [entering-context follow-up](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-candidate-and-prediction)
-  extends measurement through 256 pairs and separately attributes five L0
-  closures and the long-target AUTO candidate traversal; index construction
-  and written accumulation are smaller in those probes.
+  In the [pinned row-summary comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-selection-2026-09-15),
+  256 independent inequality pairs with 256 uses still take a median 5.50 s;
+  the same context with only three uses takes 0.626 s. Query-preparation reuse
+  and conservative closure-product pruning remove repeated and non-improving
+  work, but complete matrix/index construction and long-target AUTO traversal
+  remain. This is not certificate-length cost alone: a fixed three-pair
+  context admits all 4096 uses in 295 ms. Larger growing contexts remain
+  unmeasured; these results establish neither linear total cost nor a
+  universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
 - **Pre-kill L0 closure has an unresolved compilation cost.** Before an
   [ENT-5] invalidation batch, `materialize_before_event_kill` in

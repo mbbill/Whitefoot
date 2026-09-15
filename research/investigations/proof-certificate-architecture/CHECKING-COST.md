@@ -190,10 +190,10 @@ alternating pairs per fixture. Together with the stage attribution, these
 comparisons distinguish the two sources of repeated preparation without
 assuming their effects are independent.
 
-The candidate is selected as an implementation improvement, not a new language
-boundary. The residual growing-context cost is still substantial:
-128 independent pairs take about 1.15 s even after reuse, and three uses in
-that context take about 0.55 s. Larger growing-context cells were not started;
+That candidate was selected as an implementation improvement, not a new language
+boundary. Its residual growing-context cost was still substantial:
+128 independent pairs took about 1.15 s even after reuse, and three uses in
+that context took about 0.55 s. Larger growing-context cells were not started in that comparison;
 no verdict or practicality claim is inferred for them. The real-program
 controls establish no regression on these two programs, not a general
 compiler or runtime speedup.
@@ -317,7 +317,110 @@ independent integer contexts should benefit most; small and already-closed
 states have little to gain and are protected against summary-maintenance
 overhead. Verify skipped products against their scalar rejection conditions
 and compare complete closed facts and derivation selection before relying on
-the paired performance result. No speedup is yet established.
+the paired performance result. The measurements below decide whether this
+prediction holds.
+
+### Row-summary selection, 2026-09-15
+
+The [five-pair comparison](../../experiments/proof-use-cost/paired-rows-2026-09-15.tsv)
+uses baseline compiler source `277a1844` and candidate `8ace3242`, on the
+same M1 Pro/macOS 26.6.2/Rust 1.98.1 host and gate profile recorded above.
+The mechanism and native tests were introduced at `931b2274`; the candidate's
+subsequent commits change only a TODO entry and a scratch-index comment.
+The source generator remains the one at `8881833d`. The measured binaries'
+SHA-256 identities are:
+
+```text
+baseline  600455248020312193f5a682886a1f5c2799ee7b1a975202f81ced916f8bf037
+candidate 1ea937c8caebbe777cee37ccc04ed81290b407994c60ee0bf1f39b5e870009a7
+```
+
+These fresh comparisons ran after the competing compiler/test jobs finished.
+Both binaries were warmed once, each fixture alternated baseline/candidate
+order for five pairs, and every invocation completed. No build or profiler
+ran alongside the comparison; process checks before, during and after it
+found no competing compiler/test job. Times include startup and LLVM emission,
+not input generation, host linking, program execution or the earlier
+instrumentation.
+
+| Fixture | Baseline median | Candidate median | Speedup |
+|---|---:|---:|---:|
+| Fixed context, 16 uses | 13.412 ms | 13.272 ms | 1.01x |
+| Growing context, 16 uses | 17.904 ms | 17.026 ms | 1.05x |
+| 16-pair context, three uses | 15.949 ms | 14.827 ms | 1.08x |
+| Fixed context, 64 uses | 15.558 ms | 15.394 ms | 1.01x |
+| Growing context, 64 uses | 174.417 ms | 119.032 ms | 1.47x |
+| 64-pair context, three uses | 96.878 ms | 42.499 ms | 2.28x |
+| Fixed context, 128 uses | 19.137 ms | 19.393 ms | 0.99x |
+| Growing context, 128 uses | 1150.888 ms | 730.642 ms | 1.58x |
+| 128-pair context, three uses | 558.589 ms | 134.278 ms | 4.16x |
+| Fixed context, 256 uses | 25.923 ms | 25.439 ms | 1.02x |
+| Growing context, 256 uses | 8988.148 ms | 5501.185 ms | 1.63x |
+| 256-pair context, three uses | 4155.557 ms | 626.201 ms | 6.64x |
+| Fixed context, 4096 uses | 293.719 ms | 294.587 ms | 1.00x |
+| Prefix program | 174.620 ms | 176.433 ms | 0.99x |
+| Histogram program | 177.264 ms | 179.131 ms | 0.99x |
+| Stable scatter program | 980.749 ms | 998.660 ms | 0.98x |
+| wfgrep program | 40366.798 ms | 40361.663 ms | 1.00x |
+
+All 170 timed invocations accepted. The candidate meets the recorded 2x
+criterion at the 64-, 128- and 256-pair three-use controls. No protected
+control regresses by both 10 percent and 1 ms: the largest relative increase
+among the real programs is scatter's 1.83 percent, and wfgrep is essentially
+unchanged. The fixed 4096-use fixture also remains essentially unchanged.
+The 256-pair control ranges are 4.104–4.222 s before and 0.598–0.660 s after;
+growing-256 ranges are 8.956–9.077 s before and 5.439–5.537 s after.
+These are checking-cost results for these sources, not runtime speedups or
+a universal scaling guarantee.
+
+Select the row-summary implementation. It removes provably non-improving
+transitive products without changing the accepted candidate sequence, and
+the matched-context gains support the attributed closure cost. This is an
+addition to query-preparation reuse, not a replacement for it: preparation
+reuse still prevents repeated premise closures, while row summaries reduce
+work inside each remaining closure. The pending
+[closure-row-dominance amendment](../../../design/amendments/closure-row-dominance.md)
+records the proposed decision; the live tree has not changed.
+
+The native state tests check the sufficient rejection condition against
+individual scalar comparisons at `i128`/depth saturation boundaries, retain
+equal-depth ties and incomplete rows, and check summary updates after a
+stronger bound acquires a deeper proof. Another test instantiates the same
+engine with pruning disabled and compares all closed facts, selected proof
+handles and the complete derivation ledger across 256 finite graphs, each
+with and without an excluded term. The 512 comparisons include varied
+source order, equal paths and disequality strengthening. This is regression
+evidence for the optimization, not an independent proof of the whole closure
+engine. All 15 state tests and the seven-accept/two-PRF-1-negative probe pass,
+including the full 4096-use ceiling. No specification, conformance verdict,
+candidate-family, diagnostic-selection or erasure rule changes.
+
+The remaining cost is material: growing-256 still takes 5.50 s, and even
+three uses in its context take 0.626 s. Complete matrix/index construction
+and the unchanged long-target AUTO traversal remain work; this candidate
+does not make them linear or universally cheap. Larger cells were not
+started. The generated sources did not exercise non-fast pre-kill
+materialization, so that separate TODO is neither measured nor claimed fixed.
+
+To reproduce this follow-up, build the two pinned ordinary compilers before
+starting the comparison:
+
+```sh
+context_cost_root=$(mktemp -d)
+context_cost_checkout=$PWD
+git worktree add --detach "$context_cost_root/baseline" 277a1844
+git worktree add --detach "$context_cost_root/candidate" 8ace3242
+cargo build --manifest-path "$context_cost_root/baseline/compiler/Cargo.toml" \
+  --profile gate --bin whitefootc --locked --offline
+cargo build --manifest-path "$context_cost_root/candidate/compiler/Cargo.toml" \
+  --profile gate --bin whitefootc --locked --offline
+make -C research/experiments/proof-use-cost compare \
+  WORK_ROOT="$context_cost_root/probe" \
+  BASELINE="$context_cost_root/baseline/compiler/target/gate/whitefootc" \
+  CANDIDATE="$context_cost_root/candidate/compiler/target/gate/whitefootc" \
+  SIZES=16,64,128,256,4096 \
+  REAL_SOURCES="$context_cost_checkout/research/experiments/compute-bench/programs/prefix.wf $context_cost_checkout/research/experiments/compute-bench/programs/histogram.wf $context_cost_checkout/research/experiments/compute-bench/programs/radix_scatter.wf $context_cost_checkout/tests/programs/wfgrep.wf"
+```
 
 ## Reproduction and correctness boundary
 
