@@ -3780,9 +3780,11 @@ struct ClosedBoundCandidate {
 ///
 /// `TermId` is a dense function-local identity.  The closed result remains in
 /// the long-lived maps above, but using tuple-key hash tables for every probe
-/// in the transitivity cube repeatedly hashes the same two integers. This index preserves the existing
-/// TermId traversal and proof-selection order; it is updated only alongside
-/// the authoritative maps and is discarded when this one closure finishes.
+/// in the transitivity cube repeatedly hashes the same two integers. This
+/// index owns the evolving bounds while preserving TermId traversal and
+/// proof-selection order; the settled maps are rebuilt once before the index
+/// is discarded. Row summaries only reject dominated products, never supply
+/// facts or proofs.
 struct DenseClosureBounds {
     dimension: usize,
     cells: Vec<Option<ClosedCell>>,
