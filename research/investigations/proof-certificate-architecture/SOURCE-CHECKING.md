@@ -72,7 +72,8 @@ The historical 2026-09-05 report of 389 ms, 3.0 s and 26.8 s for 64, 128 and
 256 entries did not pin a reproducible source/toolchain bundle or isolate the
 stages. The [checking-cost experiment](CHECKING-COST.md) supersedes it as the
 current cost evidence, separating certificate length from entering-context
-size and attributing repeated L0 closure and interval preparation. It is not
+size and distinguishing query preparation, closure traversal and long-target
+AUTO candidate work. It is not
 a reconstruction of those old inputs. Absence of a large certificate in the
 existing corpus does not justify its cost, demonstrate general expressiveness,
 or make it a constitutional tradeoff already accepted by the owner.
@@ -83,8 +84,9 @@ queries the target for redundancy, checks relation-form premises against the
 entering context, checks named-premise availability, accumulates the written
 sum and checks its residual. Thus the old argument that explicit steps alone
 make total checking proportional to their count is unsupported. Reusing
-unchanged query preparation removes measured repetition without removing any
-of these checks; it establishes neither linear total cost nor that the
+unchanged query preparation and conservatively skipping dominated closure
+products remove measured work without removing any of these checks; they
+establish neither linear total cost nor that the
 selected proof-authoring contract is optimal.
 
 ## Affected set and reopening conditions
