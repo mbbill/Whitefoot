@@ -1,5 +1,7 @@
 # Test system inventory
 
+[中文版](test-inventory.zh-CN.md)
+
 This is the source, artifact, resource and execution inventory for redesigning
 the test system measured in PR #66. It describes implementation `f3858780`;
 it does not claim that the existing division into targets is necessary or that
