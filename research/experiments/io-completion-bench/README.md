@@ -480,7 +480,8 @@ runner. Only paths and the host's own capabilities differ -- `ROOT`, `OUT`,
 `CLANG` and `CARGO_TARGET_DIR` name the paths, and `uname -s` decides whether
 the io_uring lines are in the plan. The `io-bench` workflow's
 `bench-linux-read` and `bench-macos-read` jobs run exactly those bytes; that
-workflow runs on demand and when the runtime or this bundle changes. Those
+workflow runs on demand. Benchmark-program compilation and native host
+correctness remain automatic; full storage timing matrices are experiments. Those
 Linux, macOS and Windows tables report performance; none selects acceptance
 by a speed ratio.
 

@@ -267,3 +267,9 @@ substantive: every source proof is checked in its current control-flow context
 and erased before lowering, every partial operation is lowered only after
 machine proof of its domain, and optional optimization facts may not change
 acceptance, cleanup, or output.
+
+Keep current compiler witnesses and independent oracles in that inventory.
+Completed source-mining or model-trajectory instruments can retain explicit
+reproduction tests outside it, with their retired purpose stated beside the
+instrument. Timing protocols are separate experiments: their repetitions and
+cache preparation need an experimental question, not a place in every gate.

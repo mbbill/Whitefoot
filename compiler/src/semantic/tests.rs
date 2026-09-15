@@ -215,7 +215,8 @@ fn with_semantics_inputs<ResultValue>(
     let ResolutionOutcome::Complete(resolved) = outcome else {
         panic!("semantic test source must resolve: {outcome:?}");
     };
-    run(check_semantics(resolved))
+    let checked = crate::native_test_support::timed("semantic-check", || check_semantics(resolved));
+    crate::native_test_support::timed("semantic-test-assertions", || run(checked))
 }
 
 /// [`with_semantics`] through the test-only dark checker, which retains every

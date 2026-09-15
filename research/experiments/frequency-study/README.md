@@ -2,6 +2,12 @@
 
 Status: **complete directional pilot; stop after this run**
 
+Its source/IR miners and their self-tests reproduce this completed study; they
+are no longer an active compiler check. Run `make historical-tool-tests` at the
+repository root when revisiting these instruments. The current gate retains
+compiler rules and current-program evidence rather than rebuilding this miner
+on every change.
+
 This directory answers one practical question: do ordinary, popular Rust
 projects contain enough optimization shapes relevant to current Whitefoot to
 justify moving on? It is disposable research tooling, not a general Rust

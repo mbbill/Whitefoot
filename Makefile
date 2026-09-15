@@ -5,6 +5,7 @@
 # file.
 
 PY := python3 -B
+CHECK_RUN := perl $(CURDIR)/.github/run-check.pl
 # Everything built or measured outside the checkout is written under this
 # root, and no path any developer's machine happens to have is encoded in it:
 # the default is the system temporary directory, which every supported host
@@ -35,11 +36,14 @@ STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 NO_CORE_DUMPS := ulimit -c 0;
 
 check:
+	@$(CHECK_RUN) gate $(MAKE) --no-print-directory _check
+
+_check:
 	@mkdir -p "$(STAGE_DIR)"
 	@: > "$(STAGE_DIR)/summary"
 	@for stage in $(CHECK_STAGES); do \
 		started=$$(date +%s); \
-		$(MAKE) --no-print-directory "$$stage" || exit 1; \
+		$(CHECK_RUN) "$$stage" $(MAKE) --no-print-directory "$$stage" || exit 1; \
 		printf '%-28s %6d s\n' "$$stage" "$$(( $$(date +%s) - started ))" \
 			>> "$(STAGE_DIR)/summary"; \
 	done
@@ -63,6 +67,7 @@ design-lint:
 	@$(PY) design/skill/lint.py --trees language compiler --base "$(DESIGN_REVIEW_BASE)"
 
 repository-invariants:
+	@sh .github/test-run-check.sh
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
 	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
 	@mac_home="$$(printf '/%s/' Users)"; \
@@ -141,21 +146,18 @@ conformance:
 compiler:
 	$(MAKE) -C compiler check
 
-# Maintained executable tests under research/. Self-described deferred archive
-# prototypes that require a removed historical compiler are evidence artifacts,
-# not current tests; their directory README states that boundary explicitly.
+# Active compiler experiments and independent oracles. Completed research
+# instruments have an explicit reproduction target below; their READMEs explain
+# why they no longer belong to the current compiler's gate.
 research-tests:
-	@mkdir -p "$(RESEARCH_TEST_TMP)/frequency" "$(RESEARCH_TEST_TMP)/ripgrep" "$(RESEARCH_CARGO_TARGET)"
-	$(MAKE) -C research/experiments/proof-use-cost check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
-	$(MAKE) -C research/experiments/container-representation check
-	TMPDIR="$(RESEARCH_TEST_TMP)/frequency" $(MAKE) -C research/experiments/frequency-study check PYTHON=python3 CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/frequency"
-	$(MAKE) -C research/experiments/ripgrep test PYTHON=python3 SCRATCH_ROOT="$(RESEARCH_TEST_TMP)/ripgrep"
-	cd research/experiments/default-floor && TMPDIR="$(RESEARCH_TEST_TMP)" $(PY) -m unittest discover -s tests -p 'test_*.py' -v
-	cd research/experiments/raw-deflate-default-shape && TMPDIR="$(RESEARCH_TEST_TMP)" $(PY) test_oracle.py
-	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/rust-baseline/Cargo.toml
-	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/harness/Cargo.toml
-	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
-	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
+	@$(CHECK_RUN) research-tests $(MAKE) --no-print-directory _research-tests
+
+_research-tests:
+	@mkdir -p "$(RESEARCH_TEST_TMP)/ripgrep" "$(RESEARCH_CARGO_TARGET)"
+	$(CHECK_RUN) research/proof-use-cost $(MAKE) -C research/experiments/proof-use-cost check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
+	$(CHECK_RUN) research/containers $(MAKE) -C research/experiments/container-representation check
+	$(CHECK_RUN) research/ripgrep $(MAKE) -C research/experiments/ripgrep test PYTHON=python3 SCRATCH_ROOT="$(RESEARCH_TEST_TMP)/ripgrep"
+	cd research/experiments/raw-deflate-default-shape && TMPDIR="$(RESEARCH_TEST_TMP)" $(CHECK_RUN) research/deflate $(PY) test_oracle.py
 # The compute regression rule, over crafted table fragments. The check it
 # decides -- `.github/workflows/compute-regression.yml`, which times two
 # builds against each other -- is deliberately not a stage of this gate. This
@@ -164,11 +166,28 @@ research-tests:
 # `make check`.
 	TMPDIR="$(RESEARCH_TEST_TMP)" $(MAKE) -C research/experiments/compute-bench verdict-test
 
+# Reproduce the self-tests of completed research instruments when revisiting
+# their dated results. This is deliberately outside the active compiler gate.
+historical-tool-tests:
+	@$(CHECK_RUN) historical-tool-tests $(MAKE) --no-print-directory _historical-tool-tests
+
+_historical-tool-tests:
+	@mkdir -p "$(RESEARCH_TEST_TMP)/frequency" "$(RESEARCH_CARGO_TARGET)"
+	TMPDIR="$(RESEARCH_TEST_TMP)/frequency" $(MAKE) -C research/experiments/frequency-study check PYTHON=python3 CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/frequency"
+	cd research/experiments/default-floor && TMPDIR="$(RESEARCH_TEST_TMP)" $(PY) -m unittest discover -s tests -p 'test_*.py' -v
+	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/rust-baseline/Cargo.toml
+	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/harness/Cargo.toml
+	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
+	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
+
 # The programs of the I/O measurement bundle compile with the current
 # compiler. The bundle's protocols are measurements and stay out of the gate;
 # this only compiles, so a language change that leaves a bench program behind
 # fails here instead of emptying a table on the bench runner.
 bench-programs:
+	@$(CHECK_RUN) bench-programs $(MAKE) --no-print-directory _bench-programs
+
+_bench-programs:
 	$(MAKE) -C research/experiments/io-completion-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 	$(MAKE) -C research/experiments/compute-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 
@@ -185,7 +204,7 @@ bench-programs:
 # every debug assertion and overflow check. Left at the default profile it was
 # both a second unoptimized build of the crate and an unoptimized run of it.
 conformance-run:
-	$(NO_CORE_DUMPS) cd compiler && cargo test --profile gate --test conformance --locked --offline -- --ignored --nocapture
+	$(NO_CORE_DUMPS) cd compiler && $(CHECK_RUN) conformance-run cargo test --profile gate --test conformance --locked --offline -- --ignored --nocapture
 
 # Recompile every program in `tests/snapshot` and compare the accept/reject
 # verdict each row records. Compile only: no link, no execution. The corpus is
@@ -194,11 +213,11 @@ conformance-run:
 # `tests/snapshot/README.md`. `--profile gate` for the same reason that target
 # gives: this is compute-bound front-end analysis over hundreds of programs.
 snapshot-run:
-	cd compiler && cargo test --profile gate --test snapshot --locked --offline -- --ignored --nocapture
+	cd compiler && $(CHECK_RUN) snapshot-run cargo test --profile gate --test snapshot --locked --offline -- --ignored --nocapture
 
 # one-time: point git at the tracked hooks (pre-commit and pre-merge-commit)
 install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler research-tests bench-programs conformance-run snapshot-run install-hooks
+.PHONY: historical-tool-tests _historical-tool-tests check _check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler research-tests _research-tests bench-programs _bench-programs conformance-run snapshot-run install-hooks

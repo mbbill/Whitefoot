@@ -9,6 +9,12 @@ claim and its limits, then `percent-decode/RESULTS.md` and
 `utf8parse/RESULTS.md` for the authoritative target-specific measurements and
 artifacts.
 
+The model-runner, evaluator harnesses and pinned reference-crate self-tests
+belong to this completed experiment. They remain available through
+`make historical-tool-tests` at the repository root for reproduction, outside
+the current compiler gate. Current program tests and independent oracles keep
+their own checks; this retirement changes no Whitefoot case or verdict.
+
 Example:
 
 ```sh
