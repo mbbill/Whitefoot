@@ -296,7 +296,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let (values, read_outs) = self.check_commit_values(
             function,
             &targets,
-            &index_conflicts,
             &index_conflict_targets,
             &value_nodes,
             bindings,
@@ -462,13 +461,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         function: &FunctionSignature,
         targets: &[FormedTarget],
-        index_conflicts: &[CheckedCommitConflict],
         index_conflict_targets: &[(usize, usize)],
         value_nodes: &[NodeId],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<(Vec<super::super::TypedExpression>, Vec<bool>), CheckStop> {
-        debug_assert_eq!(index_conflicts.len(), index_conflict_targets.len());
         self.commit_separation_targets.borrow_mut().clear();
         for (left, right) in index_conflict_targets {
             self.commit_separation_targets
