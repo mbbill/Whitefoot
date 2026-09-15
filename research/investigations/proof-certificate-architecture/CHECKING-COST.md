@@ -378,9 +378,9 @@ transitive products without changing the accepted candidate sequence, and
 the matched-context gains support the attributed closure cost. This is an
 addition to query-preparation reuse, not a replacement for it: preparation
 reuse still prevents repeated premise closures, while row summaries reduce
-work inside each remaining closure. The pending
-[closure-row-dominance amendment](../../../design/amendments/closure-row-dominance.md)
-records the proposed decision; the live tree has not changed.
+work inside each remaining closure. The
+[closure-row-dominance decision](../../../design/compiler/closure-row-dominance.md)
+records this choice.
 
 The native state tests check the sufficient rejection condition against
 individual scalar comparisons at `i128`/depth saturation boundaries, retain
