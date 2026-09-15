@@ -243,17 +243,18 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The owner agreed to R01's disposition; implementation remains deferred.
-The current item is the default-policy file-read part of
-`compiler/src/backend/completion/bridge_default_probe.c`. Its TCP portion is
-a separate responsibility and will receive its own item after this ruling.
+The owner agreed to R01 and R02's dispositions; implementation remains
+deferred. The current item is the TCP lifecycle part of
+`compiler/src/backend/completion/bridge_default_probe.c`, considered separately
+from its file-read responsibility.
 The next item is presented only after the current owner ruling; none of these
 recommendations has been implemented.
 
 | Item | Check | Recommendation | Owner ruling |
 |---|---|---|---|
 | R01 | Completion core/read probe and its build/run variants | Keep useful C adapter assertions; retire unsupported repeat/TSan claims and redundant boundary guards; details below | Agreed; implementation deferred |
-| R02 | Default-policy file reads in the bridge probe | Keep the real-default concurrent C runtime check, reuse deterministic policy cases and tighten route assertions; details below | Pending |
+| R02 | Default-policy file reads in the bridge probe | Keep the real-default concurrent C runtime check, reuse deterministic policy cases and tighten route assertions; details below | Agreed; implementation deferred |
+| R03 | TCP lifecycle in the default bridge probe | Merge overlapping bridge lifecycle logic, preserve distinct runtime/host configurations and correct the transfer, endpoint and timeout checks; details below | Pending |
 
 ### R01 — Completion core/read probe
 
@@ -268,8 +269,8 @@ as errors and pthread support. It constructs
 - `compiler/src/backend/completion/{runtime,wait_host,file_adapter,file_posix,core_read_probe}.c`.
 
 The probe supplies a local `wf_completion_record_complete` that publishes
-directly to the record; it does not link `bridge.c` or exercise generated-code
-ABI calls. `WF_COMPLETION_PREAD=wf_completion_test_pread` interposes a call
+directly to the record; it does not link `bridge.c` or exercise its submit/join
+calls. `WF_COMPLETION_PREAD=wf_completion_test_pread` interposes a call
 counter which forwards nonempty reads to the real host `pread`. It does not
 script fake read results. Each test creates a scratch file containing
 `abcdef` and removes it afterward. Resources are a POSIX C toolchain, writable
@@ -346,11 +347,14 @@ checks are still to be reviewed.
 **Scope and inputs.** The file-read portion of
 `compiler/src/backend/completion/bridge_default_probe.c` exercises the real
 completion bridge with `WF_IO_HELPERS` unset. The probe refuses a set value.
-It calls the same C submit/join ABI that generated code calls, using opaque
-aligned record storage, but compiles no WF and contains no Rust `#[test]`.
+It calls the bridge's C submit/join ABI using opaque aligned record storage,
+but compiles no WF and contains no Rust `#[test]`. Current WF code calls
+ordinary linked functions; their native definitions in `ordinary_values.c`
+use this bridge. The probe does not validate that preceding compiler/call
+boundary, despite its older comment about standing in for emitted code.
 It also currently runs `probe_loopback_round_trip` after the read phase; TCP
-assertions and that portion's resource/timeout handling are the next review
-item, not part of this disposition.
+assertions and that portion's resource/timeout handling belong to R03, not
+this disposition.
 
 `completion-default-route-test` compiles the POSIX executable with C11,
 `-O2 -g`, warnings as errors and pthread support. Its eleven C inputs are
@@ -411,7 +415,8 @@ needs loopback sockets because TCP is still attached. Startup settings are
 process-wide and initialized once, so different route configurations require
 fresh processes, though they can reuse the same executable.
 
-**Overlap and recommendation, pending owner ruling.**
+**Selected disposition and overlap.** The owner agreed to the following
+recommendations; implementation remains deferred.
 
 - Keep this as a C runtime integration check under the existing completion
   source owner, called from the common runtime verification stage and the
@@ -447,11 +452,106 @@ fresh processes, though they can reuse the same executable.
   organization; this need not introduce another executable. Preserve the
   real-default link/clock configuration and fresh-process startup boundary
   when considering a shared runner, instead of putting this behind the
-  main harness's unconditional helper pinning. TCP's own disposition remains
-  for the next item.
+  main harness's unconditional helper pinning. TCP's own disposition is R03.
 
 No fresh construction, execution, timing result or retirement accompanies
 this source-based recommendation.
+
+### R03 — TCP lifecycle in the default bridge probe
+
+**Identity, construction and resources.** The function
+`probe_loopback_round_trip` in
+`compiler/src/backend/completion/bridge_default_probe.c` is C code called by
+that probe's `main` after the file-read phase. It shares R02's eleven-source
+runtime link and its `bridge-default-probe` output, including the real bridge
+and host leaves; it has no separate build, WF source, compiler invocation or
+Rust `#[test]`. Windows uses the same function with its native link leaves and
+Winsock. It needs a permitted IPv4 loopback listener and two connection ends
+in the same process, not an Internet service or another WF program. The test
+driver submits and joins each step sequentially; runtime helpers may still
+execute work. The combined executable currently also requires R02's file
+fixture and threads.
+
+**Actual work.** This is a connection lifecycle with an eight-byte transfer
+from client to accepted connection, not an echo or bidirectional payload
+exchange. In the ordinary successful path it makes ten bridge submissions:
+
+| Phase | Current action and assertion |
+|---|---|
+| Listen | Try IPv4 loopback ports starting at 45,231, up to 64 candidates. Any failed listen moves to the next candidate, not just address-in-use. Keep the first nonnegative descriptor. |
+| Connect and accept | Connect to that listener, accept the pending connection, and require nonnegative descriptors. Check the accepted peer's address words equal IPv4 loopback and its low port bits are nonzero. Unlike the main harness, this function does not separately check the family flag. |
+| Transfer | Send `{3,1,4,1,5,9,2,6}` in one call, require eight bytes, then receive in one call and require all eight bytes with an exact content match. |
+| Close | Close each connection's two directions, four operations total, then close the listener. The helper accepts any nonnegative joined value and does not assert a zero error field or the first/last release values. It does not observe handle lifetime. |
+
+The TCP ring-submission delta is printed separately, but is not asserted.
+The final `route=native-ring` label and the Windows caller's check of that
+label come from the earlier file reads, so they do not establish that a
+particular TCP operation used the native engine. An allowed immediate socket
+transfer also need not submit to a ring; that fast path is not a failure.
+There is no timing or throughput verdict.
+
+**Current invocation and effectiveness.** The function runs whenever R02's
+combined executable runs: local `completion-default-route-test` through the
+full gate, Linux/macOS gate jobs, Linux IO default/forced-adapter runs and
+sanitizer variants, Windows IOCP/forced-adapter runs, and explicit cross/Wine
+development paths. It runs once per invocation, not once per file-read round.
+The file phase stores `probe_finished = 1` before this function is called.
+Consequently its 180-second watchdog no longer covers TCP; outer guarded
+commands or CI job limits may eventually stop a hang, but a direct executable
+or the direct Make target has no active TCP-specific deadline here. Several
+early-return failures also bypass socket cleanup.
+
+**Existing receiving coverage.**
+
+| Existing check | Relationship to this function |
+|---|---|
+| `completion/harness.c::test_socket_lifecycle_and_the_pair_two_count` | The same bridge listen/connect/accept/transfer/close sequence, under pinned helper configurations. It additionally checks IPv4 family, zero-length receive results, first-close value zero with the descriptor still open, last-close value one with the descriptor closed, both direction orders, and a refused connection after the listener is closed. This is the primary receiving case for the duplicated lifecycle logic. Its single-call transfer assumption also needs correction. |
+| `completion/native_adapter_probe.c::probe_loopback_round_trip` | Submits records directly to the native adapter, bypassing the bridge. It protects the engine's request/publication path and cannot be replaced merely by a bridge exchange; its individual disposition remains later work. |
+| `ordinary_values_probe.c::tcp_probe` and concurrent half-close probes | Exercise ordinary linked values, crossed receive/send components, factory-credit accounting and close races. Their additional representation/lifetime properties are not supplied by a basic bridge lifecycle. |
+| `compiler/tests/programs/network.rs` with `tests/programs/tcp_echo.wf` and related programs | Checks compiled WF programs interacting with Rust peers, including payload echo, end-of-stream and reset outcomes. It includes compiler and ordinary-call integration that this C-only test does not establish. Do not retire it just because both use TCP. |
+
+**Recommendation, pending owner ruling.**
+
+- Retain one maintained C bridge lifecycle case by combining the common logic
+  with `test_socket_lifecycle_and_the_pair_two_count`. Preserve the stronger
+  existing observations and expose the same case to default-policy and pinned
+  configurations, native and adapter modes, and the supported host jobs.
+  Use small host helpers for endpoint and handle observations. Share code
+  without forcing distinct macro/link configurations into one build or
+  silently dropping Windows/default-policy coverage. Logical selection and
+  reporting need not add a binary, Rust wrapper or WF case.
+- Replace fixed-port scanning with a port-zero listener and a host-side
+  query of the bound address, retaining the listener until the connection is
+  made. The main C harness already does this; `ordinary_values_probe.c` has a
+  Windows/POSIX `listener_port` helper. This is test fixture setup, so the
+  absence of a WF port-query function is not a restriction and warrants no
+  language addition. Adapt/reuse those host operations instead of keeping
+  another retry policy that can obscure unrelated listen failures.
+- Allow valid short transfers: advance by the actual successful count,
+  retain the original buffers and check the complete received payload when
+  assembled. The active `PRE-1` send/receive contracts do not promise that
+  one call reaches the requested end, and the runtime uses ordinary
+  `send`/`recv` or equivalent native operations. Require consistent success
+  and error fields and preserve the bridge's distinct first/last close
+  values from `bridge.h`; do not substitute a blanket value-zero assertion
+  for a last close that legitimately returns one. Unexpected EOF, errors or
+  lack of progress must fail visibly rather than spin or be relabeled success.
+- Cover the entire selected TCP case with the common C test timeout and
+  failure cleanup, keeping the current guard active through it when invoked
+  in the combined process. Failure reports should identify the socket phase.
+  The self-contained peer sequence does not make blocking or implementation
+  bugs impossible. Reuse existing guard machinery, with no new timing campaign
+  or arbitrary deadline choice in this review.
+- Keep route assertions about the TCP work they name. A file-read route label
+  is not TCP engine evidence, and permitted immediate completion is not
+  evidence of failed routing. Reuse the existing native-adapter tests for
+  direct engine coverage and preserve any distinct bridge-routing observation
+  when consolidating callers; do not simply count printed counters as tests.
+
+The related C value, native-adapter and WF program cases retain their own
+review scope. This recommendation selects neither their wholesale deletion
+nor a new test-target layout. No implementation, execution or new measurement
+has accompanied this review.
 
 ## Affected material and evidence
 
