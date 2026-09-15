@@ -238,6 +238,18 @@ ordinary representation under the same workload; stop if the benefit does
 not justify the extra proof boundary. No general privileged proof system or
 sealed container catalog is selected by this question.
 
+### Association parameters and access effects
+
+Can references retain object relationships without reserving exclusive write
+access for their entire lifetime? The
+[access-effects investigation](../research/investigations/access-effects/RESEARCH.md)
+compares association polymorphism, local access permissions, reachability
+types, and resource-state contracts. Its discriminating cases are individually
+reclaimable allocator blocks, reuse of physical storage, stored associations,
+and distinct IO handles connected to common state. The question includes
+alias-aware proof invalidation and deterministic checking cost; it does not
+select a new ownership rule or claim compiler support.
+
 ### Wider parallel proof domains
 
 A useful extension starts with a real loop whose required independent work
