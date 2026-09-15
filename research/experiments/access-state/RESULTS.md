@@ -123,6 +123,13 @@ The independence tests check footprint judgments, not concurrent executions.
 Calls in the generic body verifier are not modeled; the nested-read witness
 is a direct signature-checked call in a partially initialized caller context.
 
+Allocation and physical occupancy management are interpreter primitives. The
+shared control cell is an ordinary reference-field witness; it is not a
+verified implementation of that first-fit allocator. Allocation effects,
+capacity contracts and an allocator representation proof are not checked by
+this prototype. In particular, no allocation-overlap permission is inferred
+from the model's fresh-name creation step.
+
 The collection/family and full-language rules are proposals in the linked
 design, not results of this experiment. The two alternative language systems
 are compared by their stated rules, not by running competing compilers.
