@@ -11,6 +11,14 @@ by `../../archive/governance/decision-log.md`; current design decisions live in
 compiler defects in [todo](../../docs/todo.md). Research notes do not grant or
 withhold branch permission.
 
+## Language design models
+
+- [access-state/](access-state/RESULTS.md) — symbolic access/state checking
+  compared with reusable physical storage, including stored aliases, shared
+  control state, generic contracts, and fault-injected counterexamples. This
+  is a language-design model, not a WF source compiler or a soundness proof;
+  its executable checks run in `make check`.
+
 ## Current flagship experiment evidence
 
 The owner's ruling for the flagship: ripgrep is the umbrella target with a
