@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-15 Admit proof-directed dynamic target separation
+
+Nodes: language/ownership, language/ownership/linearity
+
+Owner-approved: The owner reviewed the complete proof-directed index-overlap revision after its candidate-fact soundness repair and explicitly approved it; the branch's accompanying language/ownership/linearity revision retains the owner's separate 2026-09-14 PROV-6 approval recorded immediately below.
+
+Summary: Within one LIV-2 target list, corresponding runtime integer indices separate complete target paths only when the fixed ENT-6 family proves one strict order in the state after target formation. The permission does not extend to candidate index pairs, cross-combined paths, loans, whole-place accesses, or later statements; an undischarged pair remains overlapping. This lets generic container algorithms exchange runtime-selected elements without an uninitialized hole, extra run mutation, allocation, or a container-specific kernel swap. The accepted amendment is removed. The separately approved proved-empty-run decision under language/ownership/linearity is unchanged; it is named here because this newest entry covers every live-tree node changed by the branch relative to main.
+
 ## 2026-09-14 Admit proved-empty run release
 
 Nodes: language/ownership/linearity

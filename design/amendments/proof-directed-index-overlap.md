@@ -1,7 +1,0 @@
-Node: language/ownership
-
-Decision: Overlap is judged conservatively over complete resolved paths. In one LIV-2 target list, corresponding integer indices additionally separate paths when the ProofContext after target formation completes either strict-order proof; the fixed family tries `left < right` and `right < left` for each corresponding pair. This target-list permission exists because generic container algorithms must exchange two runtime-selected slots without introducing a temporary uninitialized hole. It replaces unequal-written-literals as the only way one commit can separate two subscripts; whole-place accesses, loans, and accesses outside that commit remain conservative, and an undischarged family still overlaps. Equal compile-time integer values, the same const generic, and repeated uses of the same live binding denote the same captured target offset for read-out; a right-hand-side unique borrow that could change it conflicts under OWN-5.
-
-Rejected:
-- Keep all non-literal indices overlapping: rejected because insert, remove, heap adjustment, and partition algorithms then need extra run mutations or allocation to exchange two elements already proved to occupy different slots.
-- Add a kernel swap operation for runs: rejected because the multi-target commit already defines the required atomic ownership transfer and a container-specific operation would duplicate its semantics.
