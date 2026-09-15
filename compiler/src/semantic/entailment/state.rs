@@ -833,6 +833,7 @@ pub(crate) struct DerivationMetrics {
 pub(crate) enum DerivationRootKind {
     BodyEntryContradiction,
     BoundsObligation(u32),
+    EmptyRunRelease(u32),
     /// A tighter numeric ceiling projected for one discharged OP-9
     /// obligation. Present only when its derivation differs from the
     /// obligation's admission root.

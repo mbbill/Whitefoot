@@ -709,8 +709,18 @@ set (pair.low, pair.high) = split(bound: 4_u64);
 set (p, q) = move q, move p;
 ```
 
-Two subscripts of one run are refused at [LIV-2]'s second condition, because
-the commit order would decide the result; write them as two statements.
+Two subscripts of one run form one commit when the facts available after target
+formation prove a corresponding pair of indices different. A branch or helper
+contract commonly supplies one strict order:
+
+```whitefoot
+if left < right {
+  set (values[left], values[right]) = move values[right], move values[left];
+}
+```
+
+Without a completed proof of either `left < right` or `right < left`, [LIV-2]
+refuses the second target because the commit order could decide the result.
 
 The subtotal return is still the right shape when the callee does not consume
 the value being committed, and the per-field fold is still ordinary: the fields
@@ -1127,6 +1137,21 @@ release the value it views. And a value one of whose release-graph nodes
 carries the `linear` modifier must be taken apart with P23 first, so the
 marked component reaches a written statement rather than a silent walk.
 
+A direct run has one additional proved form. After moving all of its elements
+elsewhere, establish its zero length and release the emptied backing:
+
+```whitefoot
+let old = replace deref(values).storage = move replacement;
+invariant old_empty: len_of(old) <= 0_u64;
+dispose old;
+```
+
+PROV-6 then omits the element edge for this release only. The run is consumed
+whole and its backing still resolves and writes its provider. Failure to prove
+`len_of(old) <= 0_u64` rejects; there is no runtime emptiness branch or
+unchecked backing-only operation. The same proof-directed graph is available
+when an empty direct run reaches a compiler-derived scope-exit release.
+
 Do not reach for it by default. The derived release is correct and free; this
 is the statement for the one place where the peak is the point.
 
@@ -1483,13 +1508,20 @@ Each `move` is the read-out of the target whose offset it names, so the affine
 element leaves its slot and the same statement's one commit fills it again; no
 program point between them sees a slot empty.
 
-The offsets must be **written literals with unequal values**. That is the whole
-of what the rule can decide: two targets whose offsets it cannot tell apart
-overlap and are refused, and a `move v[i]` whose offset does not provably match
-its target's reads nothing out, which leaves the live affine target its ordinary
-refusal. For an offset a loop computes, take the elements out with `take_back`
-and put them back (P28), or exchange one at a time with
-`let old = replace v[i] = e;`.
+Unequal written literals decide the simple case. Runtime offsets also work when
+the current ProofContext after target formation completes one of the fixed
+strict-order goals:
+
+```whitefoot
+if left < right {
+  set (v[left], v[right]) = move v[right], move v[left];
+}
+```
+
+Repeating the same live index binding on the right identifies the target value
+that is read out. A unique right-hand-side borrow that could change that index
+conflicts under OWN-5 before it can retarget the read-out. When neither strict
+order is proved, the targets remain overlapping and LIV-2 refuses the second.
 
 Two targets of a run of runs are compared over their **complete paths**, first
 step first, so `grid[0][1]` and `grid[1][1]` are two storages even though their
@@ -1503,8 +1535,9 @@ Write the offset that distinguishes them as early in the path as you can: two
 targets that agree at every decidable step overlap, however their later steps
 read.
 
-Replaces: `take_back` / `replace` / `place_back` for a swap of two known
-positions, and an `Option<T>` slot standing in for a temporarily empty one.
+Replaces: `take_back` / `replace` / `place_back` for a swap of two proved
+different positions, and an `Option<T>` slot standing in for a temporarily
+empty one.
 
 ## P31. Write through a view with `mut_slice_of`, read with `slice_of`
 

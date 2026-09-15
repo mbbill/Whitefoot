@@ -13,7 +13,8 @@ use crate::syntax::NodeId;
 use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
 use super::super::super::model::{
-    CheckedCommitValues, CheckedSetTarget, CheckedStatement, CheckedWritablePlace,
+    CheckedCommitConflict, CheckedCommitValues, CheckedExpression, CheckedPlaceStep,
+    CheckedSetTarget, CheckedStatement, CheckedWritablePlace,
 };
 use super::super::super::places::{PlaceOffset, PlaceProjection, PlaceStep, paths_diverge};
 use super::super::borrows::{ResolvedPlace, places_overlap};
@@ -33,6 +34,8 @@ const VIEW4_NEW_BINDING: &str =
 /// One target of the commit being checked, with the state the three admission
 /// conditions read at the commit.
 struct FormedTarget {
+    /// Source ordinal in this commit, retained across declaring-target insertion.
+    ordinal: usize,
     /// The written `place`, where every rejection about this target is located.
     node: NodeId,
     mutation: MutationTarget,
@@ -43,6 +46,11 @@ struct FormedTarget {
     read_out: bool,
 }
 
+enum CommitTargetStep<'expression> {
+    Field,
+    Subscript(&'expression CheckedExpression),
+}
+
 /// [LIV-2] one target place of the commit whose right-hand side is being
 /// checked, and whether that right-hand side has read it out.
 ///
@@ -51,6 +59,8 @@ struct FormedTarget {
 /// liveness use this path; the conservative `place.path` still serves the
 /// existing overlap and loan relations.
 pub(in crate::semantic::check) struct CommitReadOut {
+    /// Source ordinal of this target in the enclosing commit.
+    ordinal: usize,
     place: ResolvedPlace,
     /// Whether read-out owes the affine-element judgment, including literal
     /// offset equality. A measured place can itself carry a subscript
@@ -71,7 +81,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         descriptor: bool,
     ) -> Result<(), CheckStop> {
-        let spent = self.commit_read_outs.borrow().iter().any(|target| {
+        let targets = self.commit_read_outs.borrow();
+        let spent = targets.iter().any(|target| {
             target.read_out
                 && target.place.root == place.root
                 && !target
@@ -89,6 +100,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         (PlaceProjection::Deref, PlaceProjection::Deref) => false,
                         _ => true,
                     })
+                && !self.commit_target_access_is_deferred_separate(target.ordinal, place, &targets)
                 && (!descriptor || target.place.storage_path.len() <= place.storage_path.len())
         });
         if spent {
@@ -140,7 +152,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if target.read_out
                 || target.element != element
                 || target.place.root != place.root
-                || !Self::storage_path_prefix(&target.place.storage_path, &place.storage_path)
+                || !self.storage_path_prefix(&target.place.storage_path, &place.storage_path)
             {
                 continue;
             }
@@ -150,7 +162,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         false
     }
 
-    fn storage_path_prefix(target: &[PlaceProjection], read: &[PlaceProjection]) -> bool {
+    /// A pending index-separation obligation belongs to two complete targets,
+    /// never to each candidate subscript pair it may prove. During RHS
+    /// checking this admits access only through the other complete target;
+    /// entailment must later discharge that target pair before the statement
+    /// is accepted. A cross-combination of their offsets is no target and
+    /// receives no provisional separation.
+    fn commit_target_access_is_deferred_separate(
+        &self,
+        spent: usize,
+        access: &ResolvedPlace,
+        targets: &[CommitReadOut],
+    ) -> bool {
+        let pairs = self.commit_separation_targets.borrow();
+        targets.iter().any(|target| {
+            pairs.contains(&(spent, target.ordinal))
+                && target.place.root == access.root
+                && self.storage_path_prefix(&target.place.storage_path, &access.storage_path)
+        })
+    }
+
+    fn storage_path_prefix(&self, target: &[PlaceProjection], read: &[PlaceProjection]) -> bool {
         target.len() <= read.len()
             && target
                 .iter()
@@ -178,7 +210,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 !target.read_out
                     && target.place.root == place.root
                     && target.place.storage_path.len() < place.storage_path.len()
-                    && Self::storage_path_prefix(&target.place.storage_path, &place.storage_path)
+                    && self.storage_path_prefix(&target.place.storage_path, &place.storage_path)
             })
     }
 
@@ -203,6 +235,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // nothing to resolve and nothing to read out: it is formed below,
         // once its ordinal has fixed its type.
         let mut targets: Vec<FormedTarget> = Vec::with_capacity(target_nodes.len());
+        let mut index_conflicts = Vec::new();
+        let mut index_conflict_targets = Vec::new();
         let mut declaring: Vec<(usize, NodeId, DeclarationId)> = Vec::new();
         let mut effects = EffectSet::NONE;
         for (ordinal, target_node) in target_nodes.iter().enumerate() {
@@ -223,6 +257,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             for earlier in &targets {
                 if self.commit_targets_overlap(&earlier.mutation, &mutation) {
+                    let alternatives =
+                        Self::commit_index_alternatives(&earlier.mutation.target, &mutation.target);
+                    if !alternatives.is_empty() {
+                        index_conflict_targets.push((earlier.ordinal, ordinal));
+                        index_conflicts.push(CheckedCommitConflict {
+                            site: self.tree.path(*target_node)?.clone(),
+                            first: self.place_spelling(earlier.node)?,
+                            second: self.place_spelling(*target_node)?,
+                            alternatives,
+                        });
+                        continue;
+                    }
                     return self.issue_node(
                         SemanticRule::Liv2,
                         *target_node,
@@ -237,6 +283,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             effects = effects.union(mutation.effects.clone());
             targets.push(FormedTarget {
+                ordinal,
                 node: *target_node,
                 mutation,
                 revives,
@@ -249,6 +296,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let (values, read_outs) = self.check_commit_values(
             function,
             &targets,
+            &index_conflict_targets,
             &value_nodes,
             bindings,
             scope.loops.len(),
@@ -326,6 +374,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             targets.insert(
                 ordinal.min(targets.len()),
                 FormedTarget {
+                    ordinal,
                     node: target_node,
                     mutation,
                     revives: true,
@@ -397,6 +446,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .map(|target| target.mutation.target)
                     .collect(),
                 values: commit_values,
+                index_conflicts,
             }
         };
         Ok(Self::continuing_statement(statement, effects))
@@ -411,10 +461,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         function: &FunctionSignature,
         targets: &[FormedTarget],
+        index_conflict_targets: &[(usize, usize)],
         value_nodes: &[NodeId],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<(Vec<super::super::TypedExpression>, Vec<bool>), CheckStop> {
+        self.commit_separation_targets.borrow_mut().clear();
+        for (left, right) in index_conflict_targets {
+            self.commit_separation_targets
+                .borrow_mut()
+                .insert((*left, *right));
+            self.commit_separation_targets
+                .borrow_mut()
+                .insert((*right, *left));
+        }
         self.commit_read_outs.replace(
             targets
                 .iter()
@@ -432,6 +492,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ));
                     }
                     CommitReadOut {
+                        ordinal: target.ordinal,
                         place,
                         element: target.mutation.element,
                         read_out: false,
@@ -456,6 +517,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .into_iter()
             .map(|target| target.read_out)
             .collect();
+        self.commit_separation_targets.borrow_mut().clear();
         outcome?;
         Ok((values, read_outs))
     }
@@ -666,6 +728,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         true
+    }
+
+    fn commit_target_proof_path(target: &CheckedSetTarget) -> Vec<CommitTargetStep<'_>> {
+        let mut path = Vec::new();
+        match target {
+            CheckedSetTarget::Place(target) => {
+                path.extend(target.fields.iter().map(|_| CommitTargetStep::Field));
+            }
+            CheckedSetTarget::ArrayIndex(target) => {
+                path.extend(target.fields.iter().map(|_| CommitTargetStep::Field));
+                path.push(CommitTargetStep::Subscript(&target.offset));
+            }
+            CheckedSetTarget::BufferIndex(target) => {
+                path.extend(target.root.fields.iter().map(|_| CommitTargetStep::Field));
+                path.push(CommitTargetStep::Subscript(&target.offset));
+            }
+            CheckedSetTarget::Storage(target) => {
+                for step in &target.path {
+                    match step {
+                        CheckedPlaceStep::Field(_) => {
+                            path.push(CommitTargetStep::Field);
+                        }
+                        CheckedPlaceStep::BoxReferent(_) => {}
+                        CheckedPlaceStep::Subscript(index) => {
+                            path.push(CommitTargetStep::Subscript(&index.offset));
+                        }
+                    }
+                }
+            }
+            CheckedSetTarget::SliceIndex(target) => {
+                path.push(CommitTargetStep::Subscript(&target.offset));
+            }
+        }
+        path
+    }
+
+    /// Every corresponding index pair that could establish separation of two
+    /// otherwise-overlapping target paths. The entailment walk tries this
+    /// finite list at target-formation state; one proved disequality suffices.
+    fn commit_index_alternatives(
+        first: &CheckedSetTarget,
+        second: &CheckedSetTarget,
+    ) -> Vec<(CheckedExpression, CheckedExpression)> {
+        Self::commit_target_proof_path(first)
+            .into_iter()
+            .zip(Self::commit_target_proof_path(second))
+            .filter_map(|(first, second)| match (first, second) {
+                (CommitTargetStep::Subscript(first), CommitTargetStep::Subscript(second)) => {
+                    Some((first.clone(), second.clone()))
+                }
+                (CommitTargetStep::Field, CommitTargetStep::Field) => None,
+                _ => None,
+            })
+            .collect()
     }
 
     /// The complete path one element target writes below its root: the

@@ -1650,8 +1650,9 @@ view",
     /// One admitted offset as the place relations read it [OWN-7, ENT-5].
     ///
     /// The classification is over the checked operand and never over its
-    /// spelling: a literal is its own value, a binding read is that binding,
-    /// and a const generic is fixed at instantiation [FN-2].
+    /// spelling: a literal or named integer const is its mathematical value,
+    /// a binding read is that binding, and a const generic is fixed at
+    /// instantiation [FN-2].
     pub(in crate::semantic::check) fn place_offset_of(
         offset: &CheckedExpression,
     ) -> Option<PlaceOffset> {
@@ -1660,6 +1661,10 @@ view",
                 bits,
                 ..
             }) => Some(PlaceOffset::Literal(*bits)),
+            CheckedExpression::NamedConstant {
+                value: super::super::super::model::CheckedValue::Integer { bits, .. },
+                ..
+            } => Some(PlaceOffset::Literal(*bits)),
             CheckedExpression::Constant(
                 super::super::super::model::CheckedValue::ConstGeneric { declaration, .. },
             ) => Some(PlaceOffset::Const(*declaration)),

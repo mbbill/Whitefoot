@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-14 Admit proved-empty run release
+
+Nodes: language/ownership/linearity
+
+Owner-approved: The owner reaffirmed the previously approved PROV-6 direction after reviewing the exact empty-run revision and authorized updating the specification, tree, and log.
+
+Summary: A direct FixedVector or Vector proved empty at a release edge omits its element edge for that release while retaining consumption, loan, backing, provider, and effect obligations. This lets a source-defined growable container reclaim its emptied old backing without requiring providers for elements that do not exist. The ordinary release walk remains the only runtime mechanism; an unchecked backing-only operation remains rejected.
+
 ## 2026-09-14 Reuse proof-query preparation within one entering context
 
 Nodes: compiler/proof-query-context
