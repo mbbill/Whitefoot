@@ -52,19 +52,21 @@ The proposed `design/compiler/build-inputs.md` is a new child of the
 compiler root and replaces no existing live node. Corpus case retirement
 and the replacement integration-target layout are outside that amendment.
 
-## Corpus responsibilities still being examined
+## Selected corpus responsibilities
 
 The four current integration executables do not establish four necessary
-physical test boundaries. The following is the proposed review direction,
-not approval to remove their cases or a settled replacement target layout:
+physical test boundaries. The owner also selected the following four changes
+on 2026-09-15 and explicitly deferred execution while discussion continues:
 
-- `conformance`: specification-derived acceptance, rejection and runtime
-  requirements, with the specification determining the expected result.
-- `programs`: whole-program functionality, host interaction and parallel
-  behavior; examine assertions already fully covered elsewhere.
-- `canonical_corpus`: batch canonical rendering/idempotence and exact
-  normative-example checks. Useful checks do not require a separate binary;
-  rendering checks still need compiler functionality.
+- `conformance`: concentrate specification-derived acceptance, rejection
+  and runtime requirements here, with the specification determining the
+  expected result.
+- `programs`: keep whole-program functionality, host interaction and
+  parallel behavior here; remove checks demonstrated to be fully covered
+  elsewhere.
+- `canonical_corpus`: retain batch canonical rendering/idempotence and exact
+  normative-example checks without a dedicated test executable; rendering
+  checks still need compiler functionality.
 - `snapshot`: review each historical verdict against the active spec.
   Migrate unique useful cases with justified expectations; retire proven
   duplicates or obsolete historical expectations. Do not assume an old
@@ -72,8 +74,9 @@ not approval to remove their cases or a settled replacement target layout:
 
 Compare input, property, failure mode and oracle before declaring coverage
 redundant. Consolidating Rust targets is packaging; it does not itself remove
-duplicate assertions or WF compilations. Case-level retirement and the final
-target layout remain to be decided.
+duplicate assertions or WF compilations. The selected direction is not
+blanket case-retirement approval: individual migrations and retirements still
+need that examination, and the final target layout remains to be worked out.
 
 ## Affected material and evidence
 
