@@ -243,11 +243,10 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The owner agreed to R01 through R04's dispositions; implementation remains
-deferred. The current item is the file acquisition/read/close and factory
-accounting portion of `ordinary_values_probe.c::file_probe`. Directory
-enumeration in the same function is the next separate responsibility; the
-TCP-value and concurrent-close groups also remain to be reviewed.
+The owner agreed to R01 through R05's dispositions; implementation remains
+deferred. The current item is directory enumeration and independent cursors
+in `ordinary_values_probe.c::file_probe`. The TCP-value and concurrent-close
+groups in the same source file remain to be reviewed.
 The next item is presented only after the current owner ruling; none of these
 recommendations has been implemented.
 
@@ -257,7 +256,8 @@ recommendations has been implemented.
 | R02 | Default-policy file reads in the bridge probe | Keep the real-default concurrent C runtime check, reuse deterministic policy cases and tighten route assertions; details below | Agreed; implementation deferred |
 | R03 | TCP lifecycle in the default bridge probe | Merge overlapping bridge lifecycle logic, preserve distinct runtime/host configurations and correct the transfer, endpoint and timeout checks; details below | Agreed; implementation deferred |
 | R04 | Text values in the ordinary linked-library probe | Keep focused C encoding/value assertions, strengthen existing buffer observations and stop repeating text for helper settings that it does not use; details below | Agreed; implementation deferred |
-| R05 | Ordinary file acquisition, reads, close and factory accounting | Keep focused C library integration assertions for exact credits and result construction, tighten refusal/buffer observations and correct overstated overlap claims; details below | Pending |
+| R05 | Ordinary file acquisition, reads, close and factory accounting | Keep focused C library integration assertions for exact credits and result construction, tighten refusal/buffer observations and correct overstated overlap claims; details below | Agreed; implementation deferred |
+| R06 | Ordinary directory enumeration and independent cursors | Keep the real-directory C integration case; observe known entries and cursor independence, require progress and bounded completion, and check the actual writable window; details below | Pending |
 
 ### R01 — Completion core/read probe
 
@@ -759,7 +759,8 @@ add no exact-credit observation. Record this limitation for their later
 case-by-case migration/retirement. This item does not change their verdicts
 or retire either the WF cases or their Rust wrappers.
 
-**Recommendation, pending owner ruling.**
+**Selected disposition.** The owner agreed to the following recommendations;
+implementation remains deferred.
 
 - Keep a focused C ordinary-library integration group for exact factory
   accounting and bridge-to-library result construction, in the existing
@@ -798,6 +799,119 @@ or retire either the WF cases or their Rust wrappers.
 The directory-source iteration loop and independent cursors will be reviewed
 next. No implementation, test retirement, specification revision, execution
 or timing measurement accompanies this record.
+
+### R06 — Directory enumeration and independent cursors
+
+**Scope and construction.** The directory portion of
+`compiler/src/backend/ordinary_values_probe.c::file_probe` directly calls
+`wf_open_directory_source`, `wf__body_directory_next` and
+`wf_close_directory_source`. It uses C `assert`, the same ordinary-values
+executable and eleven-source POSIX/twelve-source Windows C build as R04/R05,
+and the same local full-gate and host-CI callers. No Rust `#[test]`, WF
+compiler construction, WF compilation or additional executable belongs to
+this portion. The native pointer-parameter body does not validate the
+compiler's emitted three-result/view calling convention.
+
+It enumerates the real scratch working directory while R05's five-byte
+`ordinary-values.data` fixture still exists. The Make/Windows callers create
+that directory with `mkdir -p`; the probe neither creates a private fresh
+directory per item nor verifies all of its contents. It reuses a 4,096-byte
+stack buffer and opens two directory sources before reading either. The
+final third open/close transfers R05's received credit back; it is not a third
+cursor-independence case.
+
+**Actual work and assertions.**
+
+| Step | Current observation |
+|---|---|
+| Open cursors A and B | Both opens of the same directory succeed. POSIX reopens `.` relative to the supplied directory; Windows reopens it using the empty relative native name. The implementation deliberately opens a new enumeration cursor rather than duplicating one shared cursor. |
+| Empty range on A | Call with `[11,11)`. Require success, `next == 11` and zero entries. The buffer is not compared, nor is the exact unconsumed entry set observed. |
+| First nonempty batch on A | Call with `[3,4096)`. Require success, `next > 3` and at least one entry. No filename, record bytes or relation between decoded records and the entry count is checked. This first call also lacks the upper-end assertion used in the loop. |
+| Drain A | A `do/while` repeatedly calls with `[3,4096)`, checking only that each returned endpoint lies within that range, until status is no longer success. Intermediate successful calls need not report positive bytes/entries or new records to pass the current assertions. |
+| End of A | Require `ListEnd`, `next == 3`, zero entries and the entire buffer unchanged from just before the final call. A `ListFailed` result fails rather than being treated as normal end. |
+| First batch on B | After A is exhausted, require B's first read to succeed with positive endpoint/entry count. This catches a shared EOF cursor, but B is neither decoded nor drained and the known fixture name is never required. |
+| Close | Both directory-source closes succeed. Aggregate credit restoration is observed later by R05's final transfer. |
+
+There are at least four `directory_next` calls: one empty call, A's first
+batch, at least one drain/terminal call and B's first batch. Additional drain
+calls depend on the directory contents and host batching; this is not a fixed
+stress-repeat count. No per-item deadline or iteration bound appears in the
+probe. A repeated successful empty result, or repeated positive batch with a
+stuck cursor, can keep the loop running. Outer guarded commands/CI limits may
+eventually terminate it; this inspection does not attribute the earlier long
+machine stall to this function.
+
+**What executes underneath.** Linux uses `getdents64`; macOS uses
+`__getdirentries64`; the Windows host leaf obtains a native directory batch
+and converts its UTF-16 records to the intermediate representation consumed
+by `ordinary_values.c`. The current `wf_linux_io_uring_carries` and
+`wf_windows_iocp_carries` do not carry directory-enumeration requests. Nonempty
+enumeration therefore reaches the blocking adapter even when a native engine
+is present; the empty request completes in the bridge without a host read.
+Helper zero/two can change adapter execution, not turn enumeration into an
+io_uring or IOCP operation. Open/close requests have their own routing.
+
+The ordinary body compacts native records in place into a kind byte, a
+little-endian two-byte name length and the name bytes. POSIX name bytes and
+Windows UTF-16 name bytes differ. It returns the compacted endpoint and
+entry count. A host read may already have written the larger native batch
+past that compacted endpoint within the supplied window. The active `PRE-1`
+declaration states endpoint bounds; it does not promise that `[next,end)`
+remains untouched. Any success guard must protect outside `[start,end)`,
+not introduce that stronger tail guarantee. This representation is a native
+library implementation observation, not a new source-language rule.
+
+**Overlap and limits of existing evidence.**
+
+| Existing check | Relationship |
+|---|---|
+| `completion/harness.c::test_directory_progress_is_internal` | Scripts interruption, readiness refusal and eventual progress, checking three host attempts, one poll and the platform position-cell behavior. It does not enumerate a real directory or compare two cursors. Preserve that separate retry/progress boundary. |
+| `backend/tests/enumeration_records.rs` | Five Rust tests feed hand-built native records through a substituted host facility, run a WF publisher and check decoded bytes or process termination for contradictory records. They cover selected name lengths, kind mapping, a full batch, empty input and malformed layout. Real files cannot arrange those malformed native records. Its future construction/ownership review must retain the useful decoder observations; this real-directory item is not their replacement. Its emitted-shim wording is stale because the current decoder lives in the ordinary C library. |
+| Conformance `sys14-list-zero-range` | Checks one empty call and immediately closes the cursor. Despite its source/manifest description, it does not make a later nonempty read, so it does not establish that enumeration was preserved. |
+| Conformance `sys14-entry-kind-closed` | Checks kind range, name-length structure and announced record count for a returned batch, but does not require the fixture's names; an immediate `ListEnd` with zero records can pass. It cannot supply the missing real-entry observation here. |
+| `compiler/tests/programs/traversal.rs` and `tests/programs/dir_walk.wf` | Compare a real recursive tree walk's sorted kind/path output, plus empty-tree and refused-descent behavior. This protects compiled program composition and real record use, not specifically draining two sources opened on the same directory. The module also contains compile-only ownership/type/exhaustiveness rejections and emitted-call assertions; their homes must follow the already selected contract during the corpus audit. |
+
+**Recommendation, pending owner ruling.**
+
+- Keep one small C ordinary-library integration case for real enumeration,
+  independent cursor state and result/buffer observations. Put it in the
+  common runtime verification stage of the local full gate and supported host
+  CI, sharing R05's C construction and controlled fixture while reporting
+  directory failures separately. No additional WF program, executable or
+  recursive tree fixture is needed.
+- Use a known, unchanging test-owned directory. After the empty call on A,
+  drain both independently opened cursors and require the known fixture name
+  in each. Compare the complete entry collections without depending on host
+  order or batch boundaries; account for whatever self/parent entries that
+  host supplies rather than hardcoding a portable count. Decode enough of
+  each returned batch to verify record bounds, exact name bytes and the
+  reported count. This supports the cursor assertion without duplicating the
+  scripted decoder's full length/kind/malformed-input matrix.
+- Require each successful nonempty call to report a valid progressing batch
+  and reject duplicate/unexpected entries in the fixed fixture. Bound the
+  walk by that fixture's entries and the terminal observation, not an
+  arbitrary stress count. Use the common test-process deadline for a blocked
+  host/join, with phase-specific failure reporting and fixture cleanup. Do
+  not let a success status alone keep a no-progress loop alive indefinitely.
+- Check the entire buffer after the empty call and after EOF. Check both
+  endpoint bounds on every call and reserve guard bytes outside the supplied
+  success window in the existing buffer. Do not assert that its compacted
+  tail `[next,end)` is unchanged: the current in-place native-record conversion
+  legitimately uses that space.
+- Preserve useful adapter/helper and native-host coverage through the common
+  C configuration organization. Do not create a separate native-enumeration
+  matrix for request kinds neither current native engine carries, or count
+  open/close routing as proof of enumeration routing. Full configuration and
+  sanitizer organization remains a later item.
+- Correct the conformance coverage descriptions and handle the traversal
+  module's mixed assertion ownership in the agreed case audit. Keep the
+  actual normative calls and real program observations where required;
+  this ruling neither retires their cases nor adds new WF runs to duplicate
+  the focused C observations.
+
+The TCP-value and concurrent-close groups remain separate upcoming items.
+No implementation, test retirement, specification change, execution or timing
+measurement accompanies this record.
 
 ## Affected material and evidence
 
