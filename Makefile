@@ -180,10 +180,10 @@ _historical-tool-tests:
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
 
-# The programs of the I/O measurement bundle compile with the current
-# compiler. The bundle's protocols are measurements and stay out of the gate;
-# this only compiles, so a language change that leaves a bench program behind
-# fails here instead of emptying a table on the bench runner.
+# Compile the IO and compute benchmark programs with the current compiler and
+# run their bounded construction/correctness checks. Full timing protocols
+# stay outside the gate; a broken source or lowering fails here before a
+# requested experiment tries to produce its tables.
 bench-programs:
 	@$(CHECK_RUN) bench-programs $(MAKE) --no-print-directory _bench-programs
 

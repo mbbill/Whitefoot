@@ -7,9 +7,8 @@
 # `completion-linux` requires io_uring, and `completion-windows` exercises both
 # IOCP and the native compute pool through the production compiler, reporting
 # exact backend failures instead of marking them expected-to-fail. The bench
-# jobs that record performance live in `io-bench.yml`: they run on demand and
-# when the runtime or the bench bundle changes, so a push is never waiting on a
-# fifteen-minute measurement that judges nothing.
+# jobs that record performance live in `io-bench.yml` and run on demand;
+# ordinary pushes retain these platform correctness checks.
 name: io-hosts
 
 on:

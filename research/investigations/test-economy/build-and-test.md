@@ -12,6 +12,14 @@ The interrupted scatter investigation spent 8 minutes building an optimized
 compiler and over 21 minutes in a filtered Cargo test command without starting a
 test. Part of the latter waited for a same-target build lock. Other-worktree
 tests and extreme host load make those times unsuitable as a normal baseline.
+The recovered 21m27s command includes an estimated 7m16s lock wait; its log
+never reaches `Running unittests`. A saved process snapshot also shows another
+worktree's optimized library tests, and recorded load averages reach roughly
+200–240. This establishes overlapping work, not which agent owned it or the
+fraction attributable to memory, thermal state, disk or scheduling. Starting
+additional heavy commands in that state and leaving them without a bounded
+stop were orchestration defects. The controls below address those defects;
+the isolated measurements establish the normal construction cost separately.
 
 Before changing build settings, classify elapsed and CPU time separately for:
 
@@ -81,6 +89,16 @@ Rust compilation speedup. Cargo timings identify units, not rustc's internal
 optimization passes. The observed minute-scale optimized build is normal;
 the interrupted multi-worktree build and build-lock wait were not a cold-build
 baseline.
+
+For scale, the candidate has 130,777 lines in 139 non-test-named Rust files
+and 82,626 lines in 117 test-named files under `compiler/src` and
+`compiler/tests` (a path-based inventory, including comments/generated code,
+not a compiler cost model). The compiler crate has no external crates to
+build. A Cargo test-name filter selects execution only after the containing
+test binary is compiled; it does not turn that large optimized unit into a
+small construction task. Internal rustc pass-level attribution was not
+measured, so neither source size nor Cargo unit timings establish which LLVM
+optimization pass is expensive.
 
 With both profiles constructed above but fresh experiment/native artifacts,
 the unchanged `make check` passes in **1127.30 seconds (18m47.30s)**, using
@@ -197,7 +215,190 @@ Each call makes 32,768 reads. The uncached tables are substantial real device
 work, not a slow Cargo test. Dropping them from automatic pushes changes when
 an experiment is requested, not the repetitions inside that experiment.
 
-## Selected implementation and remaining validation
+## Candidate local results
+
+With fresh compiler and research artifacts, candidate `15cab3f5` completes the
+canonical `make check` in **1353.25 seconds (22m33.25s)**, using 1812.16 user
+seconds and 97.09 system seconds. Optional helper timing is enabled for this
+attribution run. The later `d05ba1cb` changes dedicated-CI thread selection,
+native dependency build limits and reproduction guidance, not this local gate's
+compiler or test payload. The stage counters below round to seconds.
+
+| Candidate cold stage | Wall s | Construction versus execution |
+|---|---:|---|
+| Invariants / archive / prose / design / corpus structure | 11 / 0 / 0 / 6 / 0 | Includes the new guard's cancellation and exclusion falsifiers |
+| Compiler format / lint | 2 / 11 | Rust formatting and dev Clippy |
+| Compiler partition | 79 | Cold optimized library-test construction, then collection checks |
+| Compiler unit | 219 | 1,588 cases execute in 218.16 s |
+| Compiler sampling | 33 | 74 cases execute in 32.64 s |
+| Compiler corpus | 482 | 51.08 s Cargo construction; approximately 430 s in program/integration cases |
+| Compiler docs / spec / completion | 9 / 20 / 6 | Rust docs, cold dev checker, C construction and execution |
+| Research | 145 | Containers 142.19 s; proof-use-cost 1.56 s; ripgrep 0.21 s; DEFLATE oracle 0.31 s |
+| Benchmark programs | 161 | Whitefoot/native construction and bounded checks, not full timing protocols |
+| Native conformance adapter | 150 | 803 pass, 1 expected compiler failure, 1 skip; test wall 149.46 s |
+| Recorded-verdict snapshot | 19 | 484 unchanged verdicts; test wall 19.57 s |
+
+The baseline's prebuilt-Rust 18m47s and the candidate's cold 22m33s are different
+artifact states; they do **not** establish an overall speedup or regression.
+Unit and sampling execution improved in these single passes, but the corpus
+was slower. The baseline and candidate `whitefootc` executables compare
+byte-for-byte equal. An isolated prebuilt wfgrep corpus case takes 41.32 s on
+baseline, 41.44 s on candidate with logging off, and 43.01 s with logging on.
+The full-suite corpus slowdown is not reproduced by that isolated comparison;
+its context/concurrency contribution remains unresolved. Do not attribute it
+to a production compiler change or claim that logging explains it.
+
+The helper trace identifies what to investigate rather than treating every
+slow case as a large runtime loop:
+
+| Observed helper work | Calls | Aggregate helper wall s | Interpretation |
+|---|---:|---:|---|
+| Unit semantic checks / assertions | 1368 / 1368 | 64.639 / 0.065 | Removing proof metadata assertions would save almost nothing |
+| Unit Whitefoot compile / native build / native run | 221 / 390 / 330 | 55.631 / 52.815 / 123.799 | Repeated compile/link and launch work inside `cargo test` |
+| Sampling native build / native run | 110 / 28 | 11.308 / 8.370 | Shared helpers only; custom schedule subprocesses are outside this trace |
+| Corpus default compile / parallel compile | 53 / 41 | 578.527 / 185.872 | Whole-program proof and emission dominate the measured helpers |
+| Corpus native build / native run | 97 / 101 | 13.862 / 55.522 | Small fraction of traced program work is Clang linking |
+
+These rows overlap across threads and can nest; their sum is **not** suite
+elapsed time. The frozen-real-source test spends 1.460 / 15.139 / 39.745 s
+analyzing UTF-8 / DEFLATE / wfgrep. The corpus's fixed-run library source is
+375 lines with a four-element runtime capacity, yet one compile takes
+215.576 s in the cold full-suite context. That is compiler work, not an
+unbounded generated-program workload.
+
+Before the native launch probe, the criterion was a large first-launch-only
+wall/CPU gap for an otherwise trivial executable. Three fresh `int main(void)
+{ return 0; }` images take 1.29 / 0.29 / 0.28 s on first launch; each of their
+two subsequent launches prints 0.00 s at `/usr/bin/time -p` resolution. User and
+system time also print 0.00 s. This isolates host first-launch overhead from
+test input/algorithm work; it does not identify the responsible host service.
+
+With existing example artifacts, the unchanged container-family check takes
+81.86 s and the candidate 1.89 s, a **97.7% reduction**. Both execute all 45
+source/mode pairs and the observer checks. Changed-source rejection, a changed
+compiler that deliberately fails, and all-three-mode invalidation are verified;
+the IO program target also invokes the changed compiler rather than a stale
+executable. Completed research instruments still pass through
+`make historical-tool-tests` in 8.16 s with their Rust artifacts already built.
+
+## Local performance protocols
+
+The complete local compute protocol uses five kernels, every available
+implementation and emitted width, five passes and `CALLS=5` warm calls plus
+the separately recorded first call per process. These
+commands run one at a time at `nice -n 10`, with `JOBS=2`,
+`CARGO_BUILD_JOBS=2` and `RUST_TEST_THREADS=2`; benchmark worker widths are
+unchanged. They measure workflow cost, not a scheduler improvement.
+The retained cell lists contain 139 combinations across the five kernels:
+695 timed process invocations and 4,170 recorded first/warm calls. This
+explains why the protocol can take minutes after image construction has
+finished.
+
+| Compute command | Wall s | User s | System s | Work performed |
+|---|---:|---:|---:|---|
+| `make deps`, sources cached, fresh build outputs | 13.78 | 17.14 | 3.40 | Verify pinned sources; build oneTBB, Rayon and the Parlay availability probe |
+| `make build`, optimized compiler already present | 9.45 | 7.00 | 1.83 | Whitefoot modules, native objects and five kernel images |
+| `make verify` | 70.07 | 409.84 | 4.14 | Every form at every selected width against the independent kernel oracle |
+| `make compare` | 229.62 | 1231.91 | 15.31 | Full requested timed passes, reduction and tables |
+
+An initial fresh-source dependency fetch was stopped after 459.41 s with only
+0.19 user and 0.08 system seconds: it was waiting in Git's oneTBB download,
+before any build. The subsequent run uses existing clean checkouts verified at
+the exact oneTBB and Parlay pins, with Cargo offline. The interrupted download
+is not included in the construction times or reported as a successful fetch.
+
+The local many-files sequence exposes another duplicate: `build` takes about
+129 s, then `verify` takes about 142 s and recompiles the same Whitefoot images.
+Those images depend directly on the phony `compiler` target. Before changing
+this dependency, the criterion is that Cargo must still refresh the compiler
+before image freshness is considered, unchanged images must skip construction,
+and source/compiler/Makefile changes must invalidate default and sequential
+images. Verification and timing keep the same programs, bytes and repetitions.
+
+| Local IO command, before the many-files dependency fix | Wall s | User s | System s | Work performed |
+|---|---:|---:|---:|---|
+| Full read-heavy script, 7 rounds + 2 warmups | 1288.52 | 367.06 | 142.07 | Eight Whitefoot/native images, verification and all four storage tables |
+| Many-files `make build` | 128.95 | 125.79 | 2.95 | Native tools and ten default/sequential Whitefoot images |
+| Many-files `make verify` after that build | 141.51 | 128.37 | 4.91 | Repeated image construction, generated input and output checks |
+| Many-files `make bench`, 7 rounds + 2 warmups | 200.86 | 152.28 | 67.28 | Repeated construction, verification and full requested native timing passes |
+
+All commands pass. The read-heavy script's prebuilt Rust compiler is a no-op;
+native references/data take about 4 s, and its eight Whitefoot/native builds
+take 349 s (38–58 s each). The remaining time is output verification and
+repeated reads. All four local table labels are confirmed before and after
+measurement. Linux-only engines/sanitizers and native Windows routes are
+measured on their real CI hosts, not emulated on this Mac.
+
+After inserting the real compiler file between Cargo's phony refresh and the
+image dependencies, an unchanged many-files `build` takes **0.22 s** and
+`verify` takes **6.46 s**, versus 128.95 / 141.51 s above. Cargo still checks
+the compiler first. The required rebuild after the Makefile edit takes
+128.19 s, then the same images and output oracles are reused. Source,
+compiler and Makefile invalidation apply to default, sequential, read-heavy
+and checked images; the real-file dependency also orders a parallel Make
+correctly when the compiler file does not yet exist.
+The complete seven-round/two-warmup many-files protocol subsequently takes
+70.62 s (27.18 user, 64.07 system), versus 200.86 s before the fix, a 64.8%
+elapsed reduction. Its input generation, output checks and timing calls are
+unchanged. This comparison measures the command's removed build work, not a
+faster IO runtime.
+
+## Candidate CI results
+
+All 14 jobs of [gate run 34913902582](https://github.com/mbbill/Whitefoot/actions/runs/34913902582)
+pass at `d05ba1cb`. Each VM uses its host-sized Rust test pool; local verification
+defaults to two test threads. Job times include setup and are not CPU seconds.
+
+| Gate job | Linux s | macOS s | Construction / execution inside the job, Linux then macOS |
+|---|---:|---:|---|
+| Static | 97 | 90 | Dev Clippy 22.64 / 20.43 s, docs 7.93 / 8.95 s, dev spec checker 19.04 / 22.28 s; C runtime harnesses also build and run |
+| Unit | 273 | 335 | Gate test construction 90 / 126 s; 1,588 cases 148.80 / 190.44 s |
+| Sampling | 152 | 149 | Gate test construction 100 / 121 s; 74 cases 25.86 / 12.92 s |
+| Corpus | 428 | 351 | Gate construction 79 / 73 s; 110 real-program cases 318.54 / 258.69 s |
+| Conformance and snapshot | 169 | 150 | Adapter construction 58.37 / 68 s; adapter execution 58.96 / 41.28 s; snapshot execution 28.76 / 22.87 s |
+| Active research | 275 | 223 | Compiler construction 50.78 / 63 s; container construction and checks 202.45 / 139.02 s |
+| Benchmark programs | 291 | 324 | Compiler construction 52.01 / 75 s; complete target 258.90 / 308.49 s, remainder mostly Whitefoot/native source construction |
+
+These are successful current-branch readings, not controlled speed ratios
+against the older scatter branch or different hosted machines.
+
+| Other current-branch job | Wall s | Main components | Result |
+|---|---:|---|---|
+| Compute, Linux / macOS | 274 / 223 | Dependency builds 31 / 19; kernel images 55 / 65; verification 25 / 16; timed passes 131 / 103 | Pass |
+| Compute regression, Linux | 354 | Merge-base compiler 45; dependencies 29; both arms 63; verification 27; timed passes 155 | Pass |
+| IO host correctness, Linux / Windows | 72 / 259 | Native adapter/sanitizer probes; Windows includes Whitefoot compilation and IOCP/TCP execution | Pass |
+| Manual IO file/network, Linux | 355 | File protocol 293; network protocol 30 | Pass |
+| Manual read-heavy, Linux | 3995 | Read protocol 3965, including construction | Pass; one cache label refused |
+| Manual read + many-files, macOS | 1146 | Read protocol 929; many-files protocol 199 | Pass |
+| Manual IO, Windows | 463 | Native measurement protocol 418 | Pass |
+
+Sources: [compute](https://github.com/mbbill/Whitefoot/actions/runs/34913902615),
+[regression](https://github.com/mbbill/Whitefoot/actions/runs/34913903615),
+[IO hosts](https://github.com/mbbill/Whitefoot/actions/runs/34913902627),
+[manual IO](https://github.com/mbbill/Whitefoot/actions/runs/34912406944).
+The first three use `d05ba1cb`; the deliberately dispatched IO matrix uses
+`35227ab3`, before the later build-failure propagation and phase-label fixes.
+
+Windows host correctness deliberately remains a separate platform check. Its
+first real-program step includes a 46.92 s dev-profile Rust build and about
+19 s of subsequent source/native construction and execution. The 68 s TCP
+step compiles three images before exercising the two engines; its first echo
+output appears about 58 s into the step, while refused-connection runs each
+take about 4 s. These are not 68 seconds in Cargo or one long echo loop.
+This work does not assume that a cold optimized Windows compiler would pay
+for its extra construction in this smaller source set; that total would need
+a matched profile comparison before changing the workflow's profile.
+
+The unusually long Linux IO job spends 36.70 s building Rust, about 570 s on
+read images/data/verification, 1068 s on the 64 KiB uncached table, 2239 s on
+the 4 KiB uncached table, and 46 / 5 s on the warm tables. The 64 KiB probe
+confirms uncached before the table but refuses that label afterward; a green
+workflow does not turn that table into valid uncached performance evidence.
+The 4 KiB uncached probes both pass. This is storage-protocol variability,
+not an hour-long Rust build or Cargo test. Preserve the full requested protocol
+and its honest labels, but do not run it automatically on unrelated pushes.
+
+## Selected implementation and validation
 
 The pending [verification amendment](../../../design/amendments/compiler-verification-cost.md)
 records the material choices. The live tree and specification are unchanged.
@@ -226,11 +427,15 @@ records the material choices. The live tree and specification are unchanged.
   Linux port-range lookup. Read-heavy logs now label construction and verification
   phases before the four timing tables.
 
-Candidate optimized construction and guard tests have passed. Full candidate
-gate, incremental invalidation checks, local protocols and current-branch CI
-results will replace this validation status before completion.
+Candidate optimized construction, the cold canonical gate, incremental
+invalidation, retained historical-tool reproduction and the CI runs above pass.
+Guard falsifiers cover original exit status, nested ownership, competing
+invocations, parallelism defaults, timeout, signal cancellation and orphan
+cleanup on macOS and Linux. No specification, normative case, verdict,
+schedule count or proof assertion is changed.
 
-A remaining attribution probe compares a trivial native image's first launch
-with repeat launches. A large wall/CPU gap confined to the first launch would
-identify host launch work rather than a long algorithm or an excessive input
-loop. No case or repetition is removed on that hypothesis alone.
+Conformance invocation wiring now passes through the guard. It retains the
+same Cargo adapter command, ignored-case opt-in, full source inventory and
+verdict interpretation. A wrapper deadline or child failure is a failed or
+incomplete verification command, never a normative source rejection. This
+distinction is the selection ground for the wiring change.
