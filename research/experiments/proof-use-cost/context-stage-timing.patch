@@ -17,7 +17,7 @@ index be74bb91..0e368dfd 100644
 +        eprintln!("context-cost\tindex\t{}\t{}\t{}", candidates.len(), index.entries.len(), context_cost_started.elapsed().as_micros());
          index
      }
- 
+
 @@ -12960,6 +12962,7 @@ impl Analyzer<'_, '_> {
          let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
          let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
@@ -42,7 +42,7 @@ index be74bb91..0e368dfd 100644
 +        eprintln!("context-cost\tauto-l0\t{}\t{}\t{}", target.terms().len(), l0.entries.len(), context_cost_l0_started.elapsed().as_micros());
 +        proof
      }
- 
+
      fn affine_event_kills_binding(binding: BindingId, event: &KillEvent) -> bool {
 @@ -13831,6 +13838,7 @@ impl Analyzer<'_, '_> {
                  true
@@ -55,7 +55,7 @@ index be74bb91..0e368dfd 100644
 @@ -13930,6 +13938,7 @@ impl Analyzer<'_, '_> {
                      .map(|(premise, multiplicity)| premise.clone().zip(multiplicity.clone()))
                      .collect::<Option<Vec<_>>>();
- 
+
 +                eprintln!("context-cost\tproof-formed\t{}\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
                  // AUTO is exactly the unified zero-, one-, and exhaustive
                  // unordered two-premise route for this specification version.
@@ -71,7 +71,7 @@ index be74bb91..0e368dfd 100644
 @@ -13953,6 +13963,7 @@ impl Analyzer<'_, '_> {
                      ))
                  };
- 
+
 +                eprintln!("context-cost\tproof-sum\t{}\t{}", proof.uses.len(), proof_cost_started.elapsed().as_micros());
                  // Every written `use` is proved against the same pre-proof
                  // program point. No premise established by this statement can
@@ -106,7 +106,7 @@ index 510a936f..fca2754a 100644
 +    eprintln!("context-cost\tclosure\t{}\t{}\t{}", terms.ids().count(), state.bounds.len(), context_cost_started.elapsed().as_micros());
 +    closed
  }
- 
+
  /// Emits every [ENT-2] implicit bound carried by one term: the reflexive
 @@ -3919,8 +3922,10 @@ pub(crate) fn materialize_closure_before_kill(
      if state.bounds.is_empty() && state.distinct.is_empty() && state.opaque.is_empty() {
@@ -117,5 +117,5 @@ index 510a936f..fca2754a 100644
      *state = materialize_closure_at(state, terms, goals, ledger, event);
 +    eprintln!("context-cost\tpre-kill\t{}\t{}", term_count, context_cost_started.elapsed().as_micros());
  }
- 
+
  /// The proof one snapshot files for one closed bound.
