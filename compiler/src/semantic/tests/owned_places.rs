@@ -446,6 +446,38 @@ fn a_rhs_cannot_mutate_an_index_captured_by_dynamic_commit_targets() {
 }
 
 #[test]
+fn an_unproved_candidate_index_pair_does_not_separate_a_cross_path() {
+    let source = br#"struct Cell {
+  payload: box<u64>;
+  tag: u64;
+}
+
+fn retag(taken: own Cell, tag: own u64) -> result: own Cell pure {
+  let Cell(payload: payload, tag: unused_tag) = move taken;
+  return Cell(payload: move payload, tag: tag);
+}
+
+fn invalid(values: &uniq FixedVector<array<Cell, 2>, 2>, i: own u64, j: own u64, k: own u64, l: own u64) -> result: own unit reads(values), writes(values) contract {
+  requires i < len_of(deref(values));
+  requires k < len_of(deref(values));
+  requires j < 2_u64;
+  requires l < 2_u64;
+  requires i < k;
+} {
+  set (deref(values)[i][j], deref(values)[k][l]) = move deref(values)[i][j], retag(taken: move deref(values)[k][l], tag: deref(values)[i][l].tag);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
+}
+
+#[test]
 fn scalar_element_field_selection_keeps_its_type_error_on_legacy_storage() {
     for body in [
         "  let value = values[0_u64].missing;\n",

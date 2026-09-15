@@ -34,6 +34,8 @@ const VIEW4_NEW_BINDING: &str =
 /// One target of the commit being checked, with the state the three admission
 /// conditions read at the commit.
 struct FormedTarget {
+    /// Source ordinal in this commit, retained across declaring-target insertion.
+    ordinal: usize,
     /// The written `place`, where every rejection about this target is located.
     node: NodeId,
     mutation: MutationTarget,
@@ -57,6 +59,8 @@ enum CommitTargetStep<'expression> {
 /// liveness use this path; the conservative `place.path` still serves the
 /// existing overlap and loan relations.
 pub(in crate::semantic::check) struct CommitReadOut {
+    /// Source ordinal of this target in the enclosing commit.
+    ordinal: usize,
     place: ResolvedPlace,
     /// Whether read-out owes the affine-element judgment, including literal
     /// offset equality. A measured place can itself carry a subscript
@@ -77,7 +81,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         descriptor: bool,
     ) -> Result<(), CheckStop> {
-        let spent = self.commit_read_outs.borrow().iter().any(|target| {
+        let targets = self.commit_read_outs.borrow();
+        let spent = targets.iter().any(|target| {
             target.read_out
                 && target.place.root == place.root
                 && !target
@@ -91,11 +96,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         (PlaceProjection::Subscript(left), PlaceProjection::Subscript(right)) => {
                             left.provably_distinct(*right)
-                                || self.commit_offsets_separated(*left, *right)
                         }
                         (PlaceProjection::Deref, PlaceProjection::Deref) => false,
                         _ => true,
                     })
+                && !self.commit_target_access_is_deferred_separate(target.ordinal, place, &targets)
                 && (!descriptor || target.place.storage_path.len() <= place.storage_path.len())
         });
         if spent {
@@ -157,10 +162,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         false
     }
 
-    fn commit_offsets_separated(&self, left: PlaceOffset, right: PlaceOffset) -> bool {
-        self.commit_separation_pairs
-            .borrow()
-            .contains(&(left, right))
+    /// A pending index-separation obligation belongs to two complete targets,
+    /// never to each candidate subscript pair it may prove. During RHS
+    /// checking this admits access only through the other complete target;
+    /// entailment must later discharge that target pair before the statement
+    /// is accepted. A cross-combination of their offsets is no target and
+    /// receives no provisional separation.
+    fn commit_target_access_is_deferred_separate(
+        &self,
+        spent: usize,
+        access: &ResolvedPlace,
+        targets: &[CommitReadOut],
+    ) -> bool {
+        let pairs = self.commit_separation_targets.borrow();
+        targets.iter().any(|target| {
+            pairs.contains(&(spent, target.ordinal))
+                && target.place.root == access.root
+                && self.storage_path_prefix(&target.place.storage_path, &access.storage_path)
+        })
     }
 
     fn storage_path_prefix(&self, target: &[PlaceProjection], read: &[PlaceProjection]) -> bool {
@@ -217,6 +236,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // once its ordinal has fixed its type.
         let mut targets: Vec<FormedTarget> = Vec::with_capacity(target_nodes.len());
         let mut index_conflicts = Vec::new();
+        let mut index_conflict_targets = Vec::new();
         let mut declaring: Vec<(usize, NodeId, DeclarationId)> = Vec::new();
         let mut effects = EffectSet::NONE;
         for (ordinal, target_node) in target_nodes.iter().enumerate() {
@@ -240,6 +260,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let alternatives =
                         Self::commit_index_alternatives(&earlier.mutation.target, &mutation.target);
                     if !alternatives.is_empty() {
+                        index_conflict_targets.push((earlier.ordinal, ordinal));
                         index_conflicts.push(CheckedCommitConflict {
                             site: self.tree.path(*target_node)?.clone(),
                             first: self.place_spelling(earlier.node)?,
@@ -262,6 +283,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             effects = effects.union(mutation.effects.clone());
             targets.push(FormedTarget {
+                ordinal,
                 node: *target_node,
                 mutation,
                 revives,
@@ -275,6 +297,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             function,
             &targets,
             &index_conflicts,
+            &index_conflict_targets,
             &value_nodes,
             bindings,
             scope.loops.len(),
@@ -352,6 +375,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             targets.insert(
                 ordinal.min(targets.len()),
                 FormedTarget {
+                    ordinal,
                     node: target_node,
                     mutation,
                     revives: true,
@@ -439,24 +463,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         function: &FunctionSignature,
         targets: &[FormedTarget],
         index_conflicts: &[CheckedCommitConflict],
+        index_conflict_targets: &[(usize, usize)],
         value_nodes: &[NodeId],
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
     ) -> Result<(Vec<super::super::TypedExpression>, Vec<bool>), CheckStop> {
-        self.commit_separation_pairs.borrow_mut().clear();
-        for conflict in index_conflicts {
-            for (left, right) in &conflict.alternatives {
-                let left = Self::place_offset_of(left).unwrap_or(PlaceOffset::Opaque);
-                let right = Self::place_offset_of(right).unwrap_or(PlaceOffset::Opaque);
-                if !matches!(left, PlaceOffset::Opaque) && !matches!(right, PlaceOffset::Opaque) {
-                    self.commit_separation_pairs
-                        .borrow_mut()
-                        .insert((left, right));
-                    self.commit_separation_pairs
-                        .borrow_mut()
-                        .insert((right, left));
-                }
-            }
+        debug_assert_eq!(index_conflicts.len(), index_conflict_targets.len());
+        self.commit_separation_targets.borrow_mut().clear();
+        for (left, right) in index_conflict_targets {
+            self.commit_separation_targets
+                .borrow_mut()
+                .insert((*left, *right));
+            self.commit_separation_targets
+                .borrow_mut()
+                .insert((*right, *left));
         }
         self.commit_read_outs.replace(
             targets
@@ -475,6 +495,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ));
                     }
                     CommitReadOut {
+                        ordinal: target.ordinal,
                         place,
                         element: target.mutation.element,
                         read_out: false,
@@ -499,7 +520,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .into_iter()
             .map(|target| target.read_out)
             .collect();
-        self.commit_separation_pairs.borrow_mut().clear();
+        self.commit_separation_targets.borrow_mut().clear();
         outcome?;
         Ok((values, read_outs))
     }

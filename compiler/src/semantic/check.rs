@@ -702,11 +702,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Empty everywhere else: `check_commit` installs it around exactly that
     /// one expression and removes it before any rejection leaves.
     commit_read_outs: RefCell<Vec<control::CommitReadOut>>,
-    /// Index-identity pairs for commit targets whose distinctness is deferred
-    /// to the statement's entailment obligation.
-    commit_separation_pairs: RefCell<
-        std::collections::HashSet<(super::places::PlaceOffset, super::places::PlaceOffset)>,
-    >,
+    /// Complete target-ordinal pairs whose distinctness is deferred to the
+    /// statement's index-separation entailment obligation. Candidate index
+    /// pairs are never facts in the RHS ownership check.
+    commit_separation_targets: RefCell<std::collections::HashSet<(usize, usize)>>,
     /// Explicit argument loans survive their call until the enclosing statement
     /// or non-escaping control header ends [OWN-6]. Nested checking retains
     /// loans created before its own evaluation boundary.
@@ -1176,7 +1175,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             elided_store_brand: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
-            commit_separation_pairs: RefCell::new(std::collections::HashSet::new()),
+            commit_separation_targets: RefCell::new(std::collections::HashSet::new()),
             statement_loans: RefCell::new(Vec::new()),
             range_conflicts: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
