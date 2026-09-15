@@ -573,7 +573,7 @@ callbacks live in the probe sources; there is no separate WF corpus here.
 
 | Probe source -> executable | What executes and what it checks |
 |---|---|
-| `completion/core_read_probe.c` -> `core-read-probe` | Isolated completion core/read protocol; scripted read/fault behavior; `nm` also checks that it did not acquire a bridge dependency |
+| `completion/core_read_probe.c` -> `core-read-probe` | Isolated completion core/read protocol; real positioned-read boundaries and forced reverse completion, with a forwarding hook that counts host reads; `nm` also checks that it did not acquire a bridge dependency |
 | `completion/bridge_default_probe.c` -> `bridge-default-probe` | File/TCP behavior under the shipped helper policy; Linux additionally forces the non-ring route |
 | `ordinary_values_probe.c` plus `ordinary_values.c` -> `ordinary-values-probe` | Text/ranges/files/directories/TCP, close/reuse and credit transfer; runs with helpers 0 and 2 |
 | `sched/smoke.c` -> `sched-smoke` | Seven startup/failure/lifetime modes at four workers, then one-worker execution |

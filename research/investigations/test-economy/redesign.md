@@ -46,8 +46,9 @@ existing execution guards remain in force.
 
 The [proposed build-input decisions](../../../design/amendments/compiler-build-inputs.md)
 record the corresponding tree amendment. The live tree has not changed and
-the exact tree revision has not received an owner ruling. The earlier
-verification-cost amendment remains separate and unchanged.
+the exact tree revision has not received an owner ruling. The separate
+verification-cost amendment now also proposes the selected test responsibility
+and admission principles; its original four decisions remain unchanged.
 The proposed `design/compiler/build-inputs.md` is a new child of the
 compiler root and replaces no existing live node. Corpus case retirement
 and the replacement integration-target layout are outside that amendment.
@@ -61,16 +62,18 @@ snapshot migration or retirement. Execution remains deferred while discussion
 continues. This does not authorize deleting all 484 snapshot cases or settle
 individual retirements and the final target layout.
 
-## Basic test contract — discussion draft
+## Basic test contract
 
 The owner selected the review method: establish this baseline for compiler
 `#[test]` cases and the four corpora first, then consider every remaining
-check one at a time. The owner agrees with the other baseline provisions;
-the remaining discussion is the admission boundary between compiler tests,
-conformance and programs. The admission rules below refine that proposal.
-This is not an implemented gate or a replacement of current guidance while
-execution remains deferred. It introduces no WF language rule, elapsed-time
-limit or new measurement campaign.
+check one at a time. The owner selected the baseline, including admission by
+protected property, and added caution about the cumulative cost of new cases
+that compile and run WF. These choices are recorded for later implementation;
+execution remains deferred. They introduce no WF language rule, elapsed-time
+limit or new measurement campaign. The corresponding additions to the pending
+[verification amendment](../../../design/amendments/compiler-verification-cost.md)
+propose tree wording; selection of these principles is not a ruling on that
+exact wording or a live-tree change.
 
 ### Responsibilities
 
@@ -111,6 +114,18 @@ runtime requirement, use conformance; if it is only application behavior,
 use programs. The same rule applies to existing cases, not only new ones.
 Choose the narrowest test path that adequately exercises the obligation;
 do not require a native build merely because the fixture contains WF.
+
+Adding a case that compiles WF or builds/runs its native output needs care:
+the repeated construction and execution can accumulate across the suite.
+Name the missing coverage before adding another such path. Prefer extending
+an existing case or using a focused implementation assertion when it provides
+the required evidence; reuse valid immutable construction where appropriate.
+Identify any additional compiler pass, native build/run, configuration or
+repeat the new case requires, without demanding a new timing experiment or
+per-case approval form. Preserve ordinary compiler calls for normative
+conformance and native execution when the protected behavior needs it.
+This admission discipline does not justify retiring a required check merely
+because it is slow; timing optimization remains later work.
 
 These are responsibilities, not a requirement for three separate executable
 targets. Existing Rust orchestration may be shared where it fits. A single
@@ -209,7 +224,8 @@ For each item, show the following in the conversation in Chinese:
    it observes and asserts, and what real defect a failure would reveal.
 3. **Need:** should this check exist? Separate a current correctness or
    performance-regression check from historical reproduction or exploratory
-   measurement. Do not decide from elapsed time.
+   measurement. Do not retire required coverage merely because it is slow;
+   apply the admission discipline to unnecessary construction and execution.
 4. **Home and stage:** the proposed owning group/location and execution phase,
    including any host-specific requirement.
 5. **Overlap and recommendation:** identify actual receiving checks when
@@ -227,14 +243,99 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The initial cursor is the first direct C runtime check:
-`compiler/src/backend/completion/core_read_probe.c`. It has not yet been
-presented under this process. The table below records this review as it
-proceeds; the next item is selected only after the current ruling.
+The current item is the first direct C runtime check:
+`compiler/src/backend/completion/core_read_probe.c`. Its source-based review
+and recommendation follow. The next item is selected only after the current
+owner ruling; none of these recommendations has been implemented.
 
 | Item | Check | Recommendation | Owner ruling |
 |---|---|---|---|
-| R01 | Completion core/read probe | Not yet presented | Pending |
+| R01 | Completion core/read probe and its build/run variants | Keep useful C adapter assertions; retire unsupported repeat/TSan claims and redundant boundary guards; details below | Pending |
+
+### R01 — Completion core/read probe
+
+**Inputs and construction.** `compiler/src/backend/completion/core_read_probe.c`
+is a C executable with two test functions and a `CHECK` macro, not a Rust
+`#[test]` wrapper or a WF corpus. `completion-core-read-test` in
+`compiler/Makefile` invokes the host C compiler with C11, `-O2 -g`, warnings
+as errors and pthread support. It constructs
+`$(COMPLETION_TMP)/core-read-probe` from these eight C translation units:
+
+- `compiler/src/backend/sched/{core,prim_host,entry}.c`;
+- `compiler/src/backend/completion/{runtime,wait_host,file_adapter,file_posix,core_read_probe}.c`.
+
+The probe supplies a local `wf_completion_record_complete` that publishes
+directly to the record; it does not link `bridge.c` or exercise generated-code
+ABI calls. `WF_COMPLETION_PREAD=wf_completion_test_pread` interposes a call
+counter which forwards nonempty reads to the real host `pread`. It does not
+script fake read results. Each test creates a scratch file containing
+`abcdef` and removes it afterward. Resources are a POSIX C toolchain, writable
+executable scratch storage, ordinary local file operations and `nm` for the
+current extra symbol guard. The scheduler units are linked, but this probe
+starts no worker or helper thread: both adapter initializations pass capacity
+and helper count zero, and progress runs on the calling thread.
+
+**Actual assertions.** Every adapter read checks submission ownership,
+completion/progress and the result attached to the submitted record.
+
+| Test function | Cases and observations |
+|---|---|
+| `test_positioned_read_result_boundaries` | Six unconditional cases: empty read succeeds without a host call even with invalid descriptor/offset; full read returns `abc`; a four-byte request at offset four returns only `ef` and leaves the remaining destination bytes unchanged; EOF returns zero without changing the destination; invalid descriptor returns `EBADF`; negative offset reaches the host once and reports `EINVAL`, leaving the destination unchanged. A seventh case applies only where `off_t` cannot represent `INT64_MAX`: refusal precedes the host call and leaves the destination unchanged. That branch is not exercised on the supported 64-bit POSIX hosts. |
+| `test_independent_reads_complete_in_reverse_order` | Submit reads for offsets zero and five before progressing. The current zero-helper path completes the newer request first. Check that it receives `f`, the first request remains pending with its buffer untouched, then the first receives `a`. This observes completion/result association in an explicit reverse order, not a concurrent execution. |
+
+**Current callers and variants.** Root `make check` reaches the ordinary
+probe through `compiler` -> compiler `check` -> `completion-test`.
+Compiler `static` also calls `completion-test`, so Linux/macOS gate static
+jobs and the Linux `io-hosts` completion job run it. The ordinary target also
+compares the source list against a separately copied allowed list, explicitly
+forbids `bridge.c`, and checks a bridge symbol with `nm` after execution.
+`completion-core-read-sanitize`, reached from the Linux `completion-sanitize`
+job, rebuilds the same input with `-O1 -fsanitize=address,undefined` and runs
+it once. The Linux IO job also builds/runs `completion-core-read-tsan` with
+`-fsanitize=thread`. The explicit, non-gate `completion-core-read-stress`
+target runs the ordinary target and then repeats its executable 200 times.
+The Makefile's statement that those repeats exercise sleep/publication races
+does not describe the current two test functions.
+
+**Overlap.** `harness.c::test_single_thread_file_progress` already checks a
+normal adapter positioned read in an open/write/read/status/close sequence;
+`harness.c::test_bridge_independent_positioned_reads` checks two requests
+through real bridge submit/join calls. These overlap in successful reads but
+exercise different boundaries. Neither cited test supplies the probe's
+empty-read host-call observation, short-read destination checks and forced
+intermediate reverse-completion observation. This comparison does not settle
+all other runtime probes. The probe's local completion function and the real
+bridge define the same strong symbol, so their link requirements differ.
+
+**Recommendation, pending owner ruling.**
+
+- Keep the useful assertions as C runtime adapter unit tests in the existing
+  completion source area, selected by the common runtime-test stage of the
+  local full gate and POSIX CI. Keep their isolated link configuration;
+  there is no reason to compile WF or add a Rust wrapper for these properties.
+  Other C unit cases with compatible link/hooks may share a runner later;
+  do not merge this file into the real-bridge harness without addressing its
+  different completion hook and retaining the useful observations.
+- Retain reverse-completion/result association as the protected property.
+  The current LIFO progress behavior arranges the case; it is not a new
+  language or permanent adapter ordering requirement. If queue policy changes,
+  arrange the needed order deliberately and reassess the fixture.
+- Remove this probe's 200-repeat stress target and standalone TSan variant:
+  the former has no varied input or concurrent schedule, and the latter has
+  no concurrent execution to observe. This recommendation concerns only this
+  probe, not the real-thread bridge/default-route/deque tests. Retain its
+  memory/undefined-behavior checks in the shared C sanitizer phase, whose
+  complete organization will be reviewed later.
+- Remove the copied allowed-source list, redundant explicit bridge exclusion
+  and `nm` bridge-symbol guard. The explicit minimal link inputs and the
+  incompatible strong completion definitions already establish the current
+  link separation; duplicated lists and symbol policing add no behavior
+  observation. Keep any genuinely required link boundary explicit in the
+  eventual common runner. Update stale race comments and callers together.
+
+This is source inspection, not a fresh execution or a savings measurement.
+The exact shared runtime target layout and the remaining sanitizer/platform
+checks are still to be reviewed.
 
 ## Affected material and evidence
 

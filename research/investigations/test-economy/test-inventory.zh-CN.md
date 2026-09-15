@@ -310,7 +310,7 @@ cargo test --profile gate --all-targets --no-run --locked --offline
 
 | 探针源码 -> 可执行文件 | 执行和检查什么 |
 |---|---|
-| `completion/core_read_probe.c` -> `core-read-probe` | 隔离的 completion core/read 协议；脚本化读取/故障行为；还用 `nm` 检查是否意外引入 bridge 依赖 |
+| `completion/core_read_probe.c` -> `core-read-probe` | 隔离的 completion core/read 协议；真实定位读取的边界和受控逆序完成，用转发钩子统计宿主读取次数；还用 `nm` 检查是否意外引入 bridge 依赖 |
 | `completion/bridge_default_probe.c` -> `bridge-default-probe` | 已交付 helper 策略下的文件/TCP 行为；Linux 额外强制测试非 ring 路径 |
 | `ordinary_values_probe.c` 加 `ordinary_values.c` -> `ordinary-values-probe` | 文本、范围、文件、目录、TCP、关闭/复用及 credit 转移；分别用 0 和 2 个 helper 运行 |
 | `sched/smoke.c` -> `sched-smoke` | 4 个 worker 下的 7 种启动/失败/生命周期模式，随后单 worker 执行 |
