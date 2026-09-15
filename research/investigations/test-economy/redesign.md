@@ -243,14 +243,17 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The current item is the first direct C runtime check:
-`compiler/src/backend/completion/core_read_probe.c`. Its source-based review
-and recommendation follow. The next item is selected only after the current
-owner ruling; none of these recommendations has been implemented.
+The owner agreed to R01's disposition; implementation remains deferred.
+The current item is the default-policy file-read part of
+`compiler/src/backend/completion/bridge_default_probe.c`. Its TCP portion is
+a separate responsibility and will receive its own item after this ruling.
+The next item is presented only after the current owner ruling; none of these
+recommendations has been implemented.
 
 | Item | Check | Recommendation | Owner ruling |
 |---|---|---|---|
-| R01 | Completion core/read probe and its build/run variants | Keep useful C adapter assertions; retire unsupported repeat/TSan claims and redundant boundary guards; details below | Pending |
+| R01 | Completion core/read probe and its build/run variants | Keep useful C adapter assertions; retire unsupported repeat/TSan claims and redundant boundary guards; details below | Agreed; implementation deferred |
+| R02 | Default-policy file reads in the bridge probe | Keep the real-default concurrent C runtime check, reuse deterministic policy cases and tighten route assertions; details below | Pending |
 
 ### R01 — Completion core/read probe
 
@@ -307,7 +310,8 @@ intermediate reverse-completion observation. This comparison does not settle
 all other runtime probes. The probe's local completion function and the real
 bridge define the same strong symbol, so their link requirements differ.
 
-**Recommendation, pending owner ruling.**
+**Selected disposition.** The owner agreed to the following recommendations.
+Implementation remains deferred; this ruling does not change the live tree.
 
 - Keep the useful assertions as C runtime adapter unit tests in the existing
   completion source area, selected by the common runtime-test stage of the
@@ -336,6 +340,118 @@ bridge define the same strong symbol, so their link requirements differ.
 This is source inspection, not a fresh execution or a savings measurement.
 The exact shared runtime target layout and the remaining sanitizer/platform
 checks are still to be reviewed.
+
+### R02 — Default-policy file reads
+
+**Scope and inputs.** The file-read portion of
+`compiler/src/backend/completion/bridge_default_probe.c` exercises the real
+completion bridge with `WF_IO_HELPERS` unset. The probe refuses a set value.
+It calls the same C submit/join ABI that generated code calls, using opaque
+aligned record storage, but compiles no WF and contains no Rust `#[test]`.
+It also currently runs `probe_loopback_round_trip` after the read phase; TCP
+assertions and that portion's resource/timeout handling are the next review
+item, not part of this disposition.
+
+`completion-default-route-test` compiles the POSIX executable with C11,
+`-O2 -g`, warnings as errors and pthread support. Its eleven C inputs are
+`sched/{core,prim_host,entry}.c` and
+`completion/{runtime,wait_host,file_adapter,file_posix,bridge,linux_io_uring,native_contract,bridge_default_probe}.c`,
+all under `compiler/src/backend/`. The output is
+`$(COMPLETION_TMP)/bridge-default-probe`. It uses the real host calls and
+clock, without the main harness's macro-interposed host/clock configuration.
+The Windows CI build uses the same probe, Windows scheduler/wait/file leaves,
+`windows_iocp.c` and `windows_runtime.c` in its eleven-source link, with
+Winsock. Neither build constructs the compiler.
+
+**Work and assertions.** The read phase creates a 4,096-byte file whose byte
+at offset `n` is `n % 251`. Four real runtime primitive threads each perform
+4,000 submit/join rounds, with a changing offset and one byte per positioned
+read: 16,000 such requests in a successful invocation. Each lane additionally
+submits one non-positioned read every 64 rounds, including round zero, for
+252 additional requests. Those requests disturb the queued-versus-inline
+precondition; they are not 252 distinct language cases. A separate watchdog
+thread fails a stuck read phase after 180 seconds. That is a failure bound,
+not a measurement or a reason for the round count.
+
+| Observation | Current assertion and limit |
+|---|---|
+| Positioned read results | Every join must return one byte, no error and the independently computed byte for its requested offset. A lane failure fails the process. Concurrent publication, result association and progress are exercised through the real bridge. |
+| Non-positioned reads | Each response is either nonnegative/no-error or negative/with-error; the invocation must not mix these two categories. This watches completion and route consistency, not full stream-read semantics: it checks neither returned bytes nor a specific refusal code. |
+| Native versus adapter | Read-phase ring, adapter, inline and helper counts are captured before TCP. Explicit `WF_IO_NO_NATIVE_RING=1` must leave the ring submission count zero. A normal local invocation may legitimately use an available ring or fall back. |
+| Adaptive policy | With no ring submissions, at least one operation must have run inline or at least one helper must have started. This requires an observed policy branch, not both branches or all transitions on every host. |
+| Native helper policy | The helper count is reported, but a native-ring run does not currently assert that it stays zero, as `bridge.c::wf_bridge_helper_policy` and the live completion-runtime decision require when helpers are unset. This is a missing observation, not evidence of an implementation failure. |
+
+The non-positioned branch still describes a target that may have no stream
+read, although the current Windows leaf implements `WF_FILE_READ`. Its fixture
+opens an overlapped Windows handle for positioned reads and also passes it to
+the stream-read path, whose `file_windows.c` implementation uses a null
+`OVERLAPPED` for synchronous stream handles. The current accept-either-result
+check does not establish the right result for that fixture. No fresh Windows
+execution or particular observed error is claimed here.
+
+These are repeated native-thread operations exercising current correctness;
+there is no throughput/latency regression verdict. The sources inspected do
+not derive 4,000 as a minimum useful round count. This review neither declares
+the repetitions redundant nor chooses an arbitrary smaller count.
+
+**Callers and resources.** Root `make check`, compiler `static` and the
+Linux/macOS static gate reach this through `completion-test`. The ordinary
+Linux target runs the executable once under default routing and once with
+the ring explicitly disabled; macOS runs it once. Linux IO CI calls that
+same target, then rebuilds/runs ASan+UBSan and TSan variants with `-O1`.
+Those sanitizer targets currently do not explicitly repeat the forced-adapter
+configuration. Real Windows CI compiles the native executable and runs both
+IOCP and forced-adapter modes, checking the reported route. Explicit Windows
+cross-build/Wine targets are development paths, not substitutes for that host.
+
+The file portion needs writable executable scratch storage, ordinary file
+access, native threads and the host C runtime; native-engine coverage needs
+the corresponding host facility. The current combined executable additionally
+needs loopback sockets because TCP is still attached. Startup settings are
+process-wide and initialized once, so different route configurations require
+fresh processes, though they can reuse the same executable.
+
+**Overlap and recommendation, pending owner ruling.**
+
+- Keep this as a C runtime integration check under the existing completion
+  source owner, called from the common runtime verification stage and the
+  appropriate native host jobs. It validates the real default selection and
+  concurrent bridge path without paying for WF compilation. R01 bypasses
+  the bridge and starts no threads, so it cannot replace this check.
+- Reuse the main harness's existing deterministic policy cases:
+  `test_pool_stays_empty_when_operations_do_not_wait`,
+  `test_pool_grows_when_operations_wait` and
+  `test_helper_growth_stops_at_the_declared_bound`. They provide controlled
+  short/long wait and cap evidence; the real-clock probe should not claim that
+  every branch happened or reproduce those cases with another driver. The
+  main harness pins the bridge's helper setting, so its ordinary bridge tests
+  do not replace the unset-policy observation.
+- Add the missing zero-helper assertion to the existing native-ring read
+  run. Keep forced-adapter routing verifiable, and require native execution
+  when a host job claims native-route coverage rather than accepting fallback
+  under that label. Reuse the observed counters; no new WF case is needed.
+- Give the non-positioned queue-disturbance requests an input with a clear
+  host contract, such as a suitable synchronous stream handle, and check its
+  defined result. Do not retain success-or-any-error as an oracle or use the
+  same handle for incompatible fixture purposes merely to share setup. Keep
+  the queue-disturbance purpose explicit and update the stale capability
+  comments; this need not add a WF program or another test executable.
+- Retain meaningful concurrent sampling and TSan as well as ASan/UBSan.
+  Unlike R01, real threads contend here. Make sanitizer route scope explicit:
+  a native-only run cannot stand for default adapter growth, and even a
+  forced-adapter run does not guarantee growth under the real clock.
+  Deterministic growth cases own that guarantee. Any later reduction in the
+  sample needs preserved relevant race coverage and a stated ground; no
+  timing or loop-count change is selected now.
+- Give file reads and TCP distinct selection/reporting in the common C test
+  organization; this need not introduce another executable. Preserve the
+  real-default link/clock configuration and fresh-process startup boundary
+  when considering a shared runner, instead of putting this behind the
+  main harness's unconditional helper pinning. TCP's own disposition remains
+  for the next item.
+
+No fresh construction, execution, timing result or retirement accompanies
+this source-based recommendation.
 
 ## Affected material and evidence
 
