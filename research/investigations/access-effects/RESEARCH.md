@@ -4,9 +4,10 @@ Research date: 2026-09-15. This is a language-design investigation, not an
 amendment to the active specification or a claim of compiler support.
 The specification baseline is `277a184473875e28da2e1aa9461c9cc99fc9d63f`.
 
-This investigation serves the experiment of expressing independently usable
-allocator blocks, individual reclamation and reuse, and shared external state
-through one static mechanism. It records literature, semantic witnesses,
+This investigation concerns a replacement ownership and borrowing system for
+the whole language. Allocator blocks, mutable graphs, stored references,
+container invalidation, callbacks, shared external state, and parallel array
+access are discriminating clients of one mechanism. It records literature, semantic witnesses,
 candidate rules, and the questions a compiler experiment must discriminate.
 Maintain it as that question evolves; supersede it in place if a subsequent
 investigation replaces its analysis. There is no implementation work queue here.
@@ -42,9 +43,10 @@ Three clarifications from the initiating discussion constrain the research:
   spent accessing a resource is illustrative, not a request for temporal
   annotations, phase contracts, or runtime scheduling protocols.
 
-The delivery is a research analysis. The examples below are pseudocode and
-deductions under candidate rules, not WF conformance results. No implementation,
-new source acceptance rule, or performance improvement is claimed.
+The delivery is a research proposal. The examples below are pseudocode and
+deductions under candidate rules, not WF conformance results. Research models
+do not implement a new WF source acceptance rule or establish a performance
+improvement.
 
 ## Requirements and discriminating criteria
 
