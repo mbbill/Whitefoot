@@ -1347,19 +1347,23 @@ fn main() -> status: own ExitStatus pure {
   return 1_u8, 2_u8;
 }
 
+fn unproved(values: &uniq FixedVector<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) contract {
+  requires i < len_of(deref(values));
+  requires j < len_of(deref(values));
+} {
+  set (deref(values)[i], deref(values)[j]) = two_bytes(bound: 4_u64);
+  return unit;
+}
+
 fn main() -> status: own ExitStatus pure {
-  let v = buffer_new(4_u64, 0_u8);
-  let i = 0_u64;
-  let j = 1_u64;
-  set (v[i], v[j]) = two_bytes(bound: 4_u64);
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "LIV-2",
         sentences: &[
-            r#"first: "v[i]""#,
-            r#"second: "v[j]""#,
-            "one commit writes pairwise non-overlapping places; write the overlapping target in a statement of its own",
+            r#"first: "deref(values)[i]""#,
+            r#"second: "deref(values)[j]""#,
+            "prove that a corresponding pair of target indices differs before this statement, or write the overlapping target in a statement of its own",
         ],
     },
     Probe {
