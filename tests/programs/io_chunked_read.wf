@@ -1,0 +1,82 @@
+fn exercise(args: &Args, cwd: &DirectoryRead, files: &uniq HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(files) {
+  region {
+    match arg_get(args: args, position: 1_u64) {
+      Ok(value: text) => {
+        match relative_path(value: move text) {
+          Ok(value: path) => {
+            region {
+              region {
+                match open_read(factory: &uniq deref(files), root: cwd, path: &path) {
+                  Ok(value: file) => {
+                    let bytes = buffer_new(3_u64, 0_u8);
+                    let total = 0_u64;
+                    let chunks = 0_u64;
+                    let failed = False();
+                    loop @drain {
+                      let native_window_4 = mut_slice_of(&uniq bytes);
+                      region {
+                        match read_at(factory: &uniq deref(files), file: &uniq file, destination: &uniq native_window_4, file_offset: total, start: 0_u64, end: 3_u64) {
+                          Ok(value: n) => {
+                            set total = total +wrap n;
+                            set chunks = chunks +wrap 1_u64;
+                          }
+                          Err(error: read_stop_3) => {
+                            match read_stop_3 {
+                              ReadEnd() => {
+                                break @drain;
+                              }
+                              ReadFailed(error: problem) => {
+                                set failed = True();
+                                break @drain;
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    if failed {
+                      close_read(factory: &uniq deref(files), file: move file);
+                      return exit_status(code: 202_u8);
+                    }
+                    let scaled = total *wrap 10_u64;
+                    let mixed = scaled +wrap chunks;
+                    let narrowed = cvt::<u64, u8>(mixed);
+                    match narrowed {
+                      Ok(value: code) => {
+                        close_read(factory: &uniq deref(files), file: move file);
+                        return exit_status(code: code);
+                      }
+                      Err(error: overflowed) => {
+                        close_read(factory: &uniq deref(files), file: move file);
+                        return exit_status(code: 200_u8);
+                      }
+                    }
+                  }
+                  Err(error: problem) => {
+                    return exit_status(code: 203_u8);
+                  }
+                }
+              }
+            }
+          }
+          Err(error: rejected) => {
+            return exit_status(code: 204_u8);
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 205_u8);
+      }
+    }
+  }
+}
+
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
+  region {
+    let outcome = exercise(args: &args, cwd: &cwd, files: &uniq files);
+    close_directory(factory: &uniq files, directory: move cwd);
+    return move outcome;
+  }
+}

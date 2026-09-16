@@ -4,12 +4,14 @@
  * selects how much of an already admitted program is actualized in parallel,
  * so the probe asserts the answer for a configured pool width and nothing
  * about acceptance. Keep this test while the core owns that answer. */
+#if !defined(WF_SCHED_POLICY_COLLECTION)
 #include "core.c"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
 
-int main(int argc, char **argv) {
+static int wf_probe_recursion_budget(int argc, char **argv) {
     char *end = NULL;
     unsigned long expected;
     uint64_t budget;
@@ -44,3 +46,7 @@ int main(int argc, char **argv) {
     (void)printf("recursion budget probe: PASS\n");
     return 0;
 }
+
+#if !defined(WF_SCHED_POLICY_COLLECTION)
+int main(int argc, char **argv) { return wf_probe_recursion_budget(argc, argv); }
+#endif

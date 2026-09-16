@@ -1,0 +1,32 @@
+enum Packet {
+  Data(bytes: buffer<u8>);
+  Empty();
+}
+
+struct Envelope {
+  packet: Packet;
+}
+
+fn inspect(envelope: &Envelope) -> result: own u64 reads(envelope.packet) {
+  match deref(envelope).packet {
+    Data(bytes: payload) => {
+      return len_of(deref(payload));
+    }
+    Empty() => {
+      return 0_u64;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  let bytes = buffer_new(3_u64, 7_u8);
+  let packet = Data(bytes: move bytes);
+  let envelope = Envelope(packet: move packet);
+  region {
+    let observed = inspect(envelope: &envelope);
+    if observed != 3_u64 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

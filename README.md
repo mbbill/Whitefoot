@@ -54,8 +54,8 @@ requirements. The reading and authority rules are in
 - [lib/](lib/): reusable Whitefoot source libraries, each bundled with
   gate-executed caller programs.
 - [spec/](spec/): the active language and its immutable version archives.
-- [tests/](tests/): normative conformance evidence, recorded-verdict snapshots,
-  executable programs, and code-generation evidence.
+- [tests/](tests/): normative conformance evidence, executable programs,
+  code-generation evidence, and the separate performance regression suite.
 - [docs/](docs/): principles, writer guidance, engineering practice, and
   reference material.
 - [research/](research/README.md): investigations and experiments with their
@@ -104,29 +104,59 @@ make check
 make install-hooks   # optional: catch immutable-spec edits earlier
 ```
 
-`make check` is the canonical complete gate and prints stage timings. Its
-stage inventory is defined in the root [Makefile](Makefile) and
-[compiler Makefile](compiler/Makefile). For a shorter development feedback
-loop:
+`make check` is the canonical complete gate and prints group and phase timings.
+The root [Makefile](Makefile) owns its group inventory and recipes; ordinary CI
+reads that same inventory with `make check-groups` and invokes the same
+`make check-group GROUP=<name>` entry. For a shorter development feedback loop:
 
 ```sh
 make static
 make -C compiler format lint
-make -C compiler test-unit
-cargo test --manifest-path compiler/Cargo.toml --profile gate --locked --offline --lib semantic::tests::source_proofs
+make -C compiler build        # optimized compiler only
+make -C compiler test-build   # construct test executables without running cases
+perl .github/run-check.pl source-proofs cargo test --manifest-path compiler/Cargo.toml --profile gate --locked --offline --lib semantic::tests::source_proofs
 ```
 
 Use a test filter matching the responsibility changed; `source_proofs` above
-is one example. The `gate` profile keeps debug assertions and overflow checks
-while optimizing the compiler's analysis work. The complete gate is still
+is one example. The `gate` profile builds the Rust compiler implementation and
+test harnesses with optimization, debug assertions and overflow checks. It is
+not an optimization switch for WF source. Use a dev build when debugging the
+Rust implementation, rather than constructing it for ordinary verification.
+Formatting and API documentation have explicit `format` and `docs` commands;
+they are not extra correctness-test stages. The complete gate is still
 required on the exact revision merged into main.
 
-The [gate workflow](.github/workflows/gate.yml) runs those stages on Linux and
+The root gate, research/benchmark checks and compiler verification targets use
+one host-wide owner across worktrees, with two Cargo jobs and two test threads
+by default. Wrap other heavy commands as in the filtered example above. The
+wrapper prints wall/user/system time and a heartbeat every 30 seconds; a
+competing invocation reports the owner and exits. Its 30-minute command limit
+terminates the owned process group, including nested commands. Set
+`WHITEFOOT_CHECK_TIMEOUT` in seconds for an intentionally longer protocol.
+Explicit job/thread settings remain available. After an uncatchable stop,
+inspect the recorded PID and command before removing a stale lock.
+
+For a slow compiler test, set `WHITEFOOT_TEST_TIMINGS` to a scratch TSV path.
+The shared semantic/backend/program helpers record test name and phase:
+Whitefoot compilation, native construction, native execution and semantic
+assertions. This is diagnostic coverage of those helpers, not every custom
+subprocess. Nested or parallel rows are not additive suite wall time. See the
+[measured build/test investigation](research/investigations/test-economy/build-and-test.md).
+
+The [gate workflow](.github/workflows/gate.yml) runs those groups on Linux and
 macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
-evidence. A green run describes its tested revision and coverage; it is not a
-proof of completeness or the absence of known defects. Conformance reports
-distinguish passing cases, expected compiler failures, and pending support.
+evidence. Automatic CI checks correctness and performance regressions under
+the [test boundary](docs/practice.md#test-boundary): useful research cases and
+their dependencies belong in formal tests, while research runs on explicit
+request. Full IO matrices and compute scoreboards are experiments; the separate
+[compute regression check](.github/workflows/compute-regression.yml) supplies
+a paired performance verdict using the [formal runner](tests/performance/README.md).
+Routine correctness CI and local `make check`
+do not build a baseline compiler or run that comparison. A green run describes its tested revision and
+coverage; it is not a proof of completeness or the absence of known defects.
+Conformance reports distinguish passing cases, expected compiler failures,
+and pending support.
 
 Specification identity is derived from the active file's bytes by
 [compiler/build.rs](compiler/build.rs). The work-branch and specification

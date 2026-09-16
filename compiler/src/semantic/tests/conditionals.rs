@@ -8,15 +8,6 @@ use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 use super::{assert_rule, assert_rule_at, assert_rule_kind, with_semantics};
 use crate::semantic::model::{CheckedStatement, ValueInitializerKind};
 
-fn assert_checks(source: &[u8]) {
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("conditional must check: {outcome:?}");
-        };
-        assert_eq!(checked.entry_function_name(), "main");
-    });
-}
-
 #[test]
 fn a_bool_scrutinee_match_is_a_gram6_rejection_at_the_scrutinee() {
     // The Bool `match` is this test's whole subject: any mechanical rewrite
@@ -35,28 +26,6 @@ fn a_bool_scrutinee_match_is_a_gram6_rejection_at_the_scrutinee() {
 }
 "#;
     assert_rule_at(source, SemanticRule::Gram6, "flag");
-}
-
-#[test]
-fn an_enum_scrutinee_still_takes_match() {
-    let source = br#"enum Signal {
-  Stop();
-  Go();
-}
-
-fn main() -> status: own ExitStatus pure {
-  let signal = Go();
-  match signal {
-    Stop() => {
-      return exit_status(code: 0_u8);
-    }
-    Go() => {
-      return exit_status(code: 0_u8);
-    }
-  }
-}
-"#;
-    assert_checks(source);
 }
 
 #[test]
@@ -100,49 +69,6 @@ fn an_unflattened_else_if_is_a_gram6_rejection_at_the_nested_if() {
 }
 
 #[test]
-fn a_flattened_else_if_chain_checks() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let flag = True();
-  if flag {
-    return exit_status(code: 0_u8);
-  } else if flag {
-    return exit_status(code: 0_u8);
-  } else {
-    return exit_status(code: 0_u8);
-  }
-}
-"#;
-    assert_checks(source);
-}
-
-#[test]
-fn an_else_free_if_is_the_empty_alternative_form() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let flag = True();
-  if flag {
-    return exit_status(code: 0_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_checks(source);
-}
-
-#[test]
-fn an_empty_then_block_is_admitted_where_an_empty_else_is_not() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let flag = True();
-  if flag {
-  } else {
-    return exit_status(code: 0_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_checks(source);
-}
-
-#[test]
 fn a_non_bool_condition_is_a_gram6_rejection_at_the_condition() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   let count = 3_u64;
@@ -153,21 +79,6 @@ fn a_non_bool_condition_is_a_gram6_rejection_at_the_condition() {
 }
 "#;
     assert_rule_at(source, SemanticRule::Gram6, "count");
-}
-
-#[test]
-fn a_value_if_derives_its_binder_from_the_delivery_set() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let flag = True();
-  let picked = if flag {
-    give 1_i32;
-  } else {
-    give 2_i32;
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    assert_checks(source);
 }
 
 #[test]

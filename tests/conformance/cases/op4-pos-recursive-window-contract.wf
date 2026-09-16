@@ -1,0 +1,33 @@
+fn bsearch(table: own FixedVector<u32, 8>, spare: own u64, target: own u32, lo: own u64, hi: own u64) -> found: own Option<u64> reads(table) contract {
+  define length = len_of(table);
+  requires spare == length;
+  requires lo <= hi;
+  requires hi <= spare;
+} {
+  let has_more = lo < hi;
+  if has_more {
+  } else {
+    return None<u64>();
+  }
+  let span = hi - lo;
+  let half = span / 2_u64;
+  let mid = lo + half;
+  invariant inside: mid + 1_u64 <= hi {
+    use (lo < hi);
+    use (2_u64 * half <= span);
+  }
+  let candidate = table[mid];
+  if candidate == target {
+    return Some<u64>(value: mid);
+  }
+  if candidate < target {
+    let next_lo = mid + 1_u64;
+    return bsearch(table: move table, spare: spare, target: target, lo: next_lo, hi: hi);
+  } else {
+    return bsearch(table: move table, spare: spare, target: target, lo: lo, hi: mid);
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

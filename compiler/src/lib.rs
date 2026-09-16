@@ -25,6 +25,14 @@ pub mod spec_identity {
 }
 mod syntax;
 
+// Unit and integration tests use the same immutable native-object builder.
+// This alias lets the shared test module name the existing exported inputs.
+#[cfg(test)]
+extern crate self as whitefoot;
+#[cfg(test)]
+#[path = "../tests/support/mod.rs"]
+mod native_test_support;
+
 /// The parallel runtime a module that hands work out must be linked against,
 /// and the predicate that decides whether one must.
 pub use backend::{

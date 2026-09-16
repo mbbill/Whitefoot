@@ -1,0 +1,37 @@
+fn overwrite(value: &uniq u64) -> result: own unit writes(value) {
+  set deref(value) = 9_u64;
+  return unit;
+}
+
+fn read_if_valid(index: own u64) -> result: own unit pure {
+  let no_indices = fixed_vector::<u64, 2>();
+  region {
+    place_back(vector: &uniq no_indices, value: index);
+  }
+  let prefix = move no_indices;
+  region {
+    place_back(vector: &uniq prefix, value: 9_u64);
+  }
+  let indices = move prefix;
+  let no_data = fixed_vector::<u8, 1>();
+  region {
+    place_back(vector: &uniq no_data, value: 7_u8);
+  }
+  let data = move no_data;
+  region {
+    let guarded = &uniq indices[0_u64];
+    let valid = deref(guarded) < 1_u64;
+    if valid {
+      region {
+        overwrite(value: &uniq deref(guarded));
+      }
+      let observed = data[deref(guarded)];
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  read_if_valid(index: 0_u64);
+  return exit_status(code: 0_u8);
+}

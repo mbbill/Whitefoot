@@ -1,0 +1,10 @@
+struct Dimensions {
+  width: u64;
+  height: u64;
+}
+
+const frame: Dimensions = Dimensions(width: 3_u64, height: 2_u64);
+
+fn width() -> result: own u64 pure {
+  return frame.width;
+}

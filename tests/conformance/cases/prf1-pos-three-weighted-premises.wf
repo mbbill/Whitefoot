@@ -1,0 +1,19 @@
+fn combined_ports(p: own u32, p_cap: own u32, q: own u32, q_cap: own u32, r: own u32, r_cap: own u32) -> result: own unit pure contract {
+  requires p <= p_cap;
+  requires q <= q_cap;
+  requires r <= r_cap;
+} {
+  invariant base_p: p <= p_cap;
+  invariant base_q: q <= q_cap;
+  invariant base_r: r <= r_cap;
+  invariant combined: 2_u32 * p + 3_u32 * q + 4_u32 * r <= 2_u32 * p_cap + 3_u32 * q_cap + 4_u32 * r_cap {
+    use 2 times base_p;
+    use 3 times base_q;
+    use 4 times base_r;
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

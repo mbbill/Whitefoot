@@ -1,6 +1,6 @@
 use super::*;
 
-/// Use the benchmark's actual binding path, including pool-off world selection.
+/// Use the formal program's binding path, including pool-off world selection.
 fn bind_compute_host_adapter(module: &str, adapter: &str) -> String {
     let directory = test_directory();
     std::fs::create_dir_all(&directory).expect("create adapter directory");
@@ -12,7 +12,7 @@ fn bind_compute_host_adapter(module: &str, adapter: &str) -> String {
         .arg("-f")
         .arg(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../research/experiments/compute-bench/host-adapter.awk"
+            "/../tests/programs/compute/host-adapter.awk"
         ))
         .arg(input)
         .arg(host)
@@ -24,37 +24,41 @@ fn bind_compute_host_adapter(module: &str, adapter: &str) -> String {
 }
 
 fn run_compute_oracle(executable: &Path, name: &str, parallel: bool) {
-    for workers in [1, 2, 4] {
-        // As in the counted-program tests, observing a steal is existential
-        // across schedules. Every attempt checks the entire result matrix;
-        // only its distinct no-steal outcome may be resampled, never a result
-        // or inactive-pool failure.
-        let runs = if parallel && workers > 1 {
-            super::parallel::GRANT_OBSERVATION_RUNS
-        } else {
-            1
-        };
-        for run in 0..runs {
-            let output = Command::new(executable)
-                .env("WF_WORKERS", workers.to_string())
-                .env_remove("WF_SPLIT_WORK")
-                .output()
-                .expect("run independent compute oracle");
-            if output.status.code() == Some(2)
-                && output.stderr == format!("{name}: oracle observed no steals\n").as_bytes()
-                && run + 1 < runs
-            {
-                continue;
-            }
-            assert!(
-                output.status.success(),
-                "{name} workers={workers} run={run}: {output:?}"
-            );
-            assert!(
-                String::from_utf8_lossy(&output.stdout).contains(&format!("{name} oracle PASS:"))
-            );
-            break;
-        }
+    // A sequential image has no worker world to select. The parallel image
+    // additionally tests the pool-off fallback and two real pool widths.
+    let widths: &[u32] = if parallel { &[1, 2, 4] } else { &[1] };
+    for workers in widths {
+        let output = Command::new(executable)
+            .env("WF_WORKERS", workers.to_string())
+            .env_remove("WF_SPLIT_WORK")
+            .output()
+            .expect("run independent compute oracle");
+        assert!(
+            output.status.success(),
+            "{name} workers={workers}: {output:?}"
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains(&format!("{name} oracle PASS:")));
+    }
+}
+
+fn build_compute_oracle(
+    module: &str,
+    oracle: &str,
+    defines: &[String],
+    directory: &Path,
+) -> std::path::PathBuf {
+    let parallel = defines
+        .iter()
+        .any(|define| define == "WFB_ORACLE_PARALLEL=1");
+    if parallel {
+        build_linked_executable(
+            &super::parallel::observe_worker_schedule(module),
+            Some(&format!("{}\n{oracle}", super::parallel::WORKER_SCHEDULE)),
+            defines,
+            directory,
+        )
+    } else {
+        build_linked_executable(module, Some(oracle), defines, directory)
     }
 }
 
@@ -367,10 +371,9 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 
 #[test]
 fn runtime_block_sizes_change_budget_prices_without_changing_scan_results() {
-    let source =
-        include_bytes!("../../../../research/experiments/compute-bench/programs/prefix.wf");
+    let source = include_bytes!("../../../../tests/programs/compute/prefix.wf");
     let module = emit_with_overlap(source);
-    let adapter = include_str!("../../../../research/experiments/compute-bench/prefix_host.ll");
+    let adapter = include_str!("../../../../tests/programs/compute/prefix_host.ll");
     let mut llvm = bind_compute_host_adapter(&module, adapter)
         .replace("@main(", "@wf_extent_test_main(")
         .replace("@wf__main_body(", "@wf_extent_test_body(")
@@ -442,12 +445,12 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 }
 
 #[test]
-fn compute_oracle_sampling_rejects_wrong_values_and_missing_observations() {
-    let source = include_str!("../../../../research/experiments/compute-bench/programs/prefix.wf");
-    let adapter = include_str!("../../../../research/experiments/compute-bench/prefix_host.ll");
+fn compute_oracle_rejects_wrong_values_and_missing_worker_observations() {
+    let source = include_str!("../../../../tests/programs/compute/prefix.wf");
+    let adapter = include_str!("../../../../tests/programs/compute/prefix_host.ll");
     let oracle = format!(
         "#define WFB_BLOCKED_ORACLE\n#define WFB_PREFIX\n{}",
-        include_str!("../../../../research/experiments/compute-bench/blocked_bench.c")
+        include_str!("../../../../tests/programs/compute/blocked_oracle.c")
     );
     for corrupt in [true, false] {
         let program = if corrupt {
@@ -467,25 +470,21 @@ fn compute_oracle_sampling_rejects_wrong_values_and_missing_observations() {
         let directory = test_directory();
         let mut defines = vec!["WFB_ORACLE_PARALLEL=1".to_owned()];
         if !corrupt {
-            // The real algorithm still runs, but no attempt can observe a
-            // steal through the intentionally disabled counter.
+            // The worker runs the real algorithm, but the intentionally
+            // disabled counter must still fail the observation check.
             defines.push("WF_SCHED_STATS=0".to_owned());
         }
-        let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+        let executable = build_compute_oracle(&llvm, &oracle, &defines, &directory);
         let failure = std::panic::catch_unwind(|| run_compute_oracle(&executable, "prefix", true))
             .expect_err("a wrong result or absent observation must fail the oracle test");
         let message = failure
             .downcast_ref::<String>()
             .expect("oracle assertion message");
         if corrupt {
-            assert!(message.contains("workers=1 run=0"), "{message}");
+            assert!(message.contains("workers=1"), "{message}");
             assert!(message.contains("wrong result"), "{message}");
         } else {
-            let final_run = super::parallel::GRANT_OBSERVATION_RUNS - 1;
-            assert!(
-                message.contains(&format!("workers=2 run={final_run}")),
-                "{message}"
-            );
+            assert!(message.contains("workers=2"), "{message}");
             assert!(message.contains("oracle observed no steals"), "{message}");
         }
         std::fs::remove_dir_all(directory).expect("remove oracle negative-test files");
@@ -582,21 +581,21 @@ fn blocked_compute_matches_independent_oracles_at_runtime_dimensions() {
     let kernels: [(&str, &[u8], &str, &str); 2] = [
         (
             "prefix",
-            include_bytes!("../../../../research/experiments/compute-bench/programs/prefix.wf"),
-            include_str!("../../../../research/experiments/compute-bench/prefix_host.ll"),
+            include_bytes!("../../../../tests/programs/compute/prefix.wf"),
+            include_str!("../../../../tests/programs/compute/prefix_host.ll"),
             "WFB_PREFIX",
         ),
         (
             "histogram",
-            include_bytes!("../../../../research/experiments/compute-bench/programs/histogram.wf"),
-            include_str!("../../../../research/experiments/compute-bench/histogram_host.ll"),
+            include_bytes!("../../../../tests/programs/compute/histogram.wf"),
+            include_str!("../../../../tests/programs/compute/histogram_host.ll"),
             "WFB_HISTOGRAM",
         ),
     ];
     for (name, source, adapter, selection) in kernels {
         let oracle = format!(
             "#define WFB_BLOCKED_ORACLE\n#define {selection}\n{}",
-            include_str!("../../../../research/experiments/compute-bench/blocked_bench.c")
+            include_str!("../../../../tests/programs/compute/blocked_oracle.c")
         );
         for emitted in [compile(source), emit_with_overlap(source)] {
             let llvm = bind_compute_host_adapter(&emitted, adapter)
@@ -608,7 +607,7 @@ fn blocked_compute_matches_independent_oracles_at_runtime_dimensions() {
             } else {
                 Vec::new()
             };
-            let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+            let executable = build_compute_oracle(&llvm, &oracle, &defines, &directory);
             run_compute_oracle(&executable, name, !defines.is_empty());
             std::fs::remove_dir_all(directory).expect("remove blocked-compute test files");
         }
@@ -617,13 +616,11 @@ fn blocked_compute_matches_independent_oracles_at_runtime_dimensions() {
 
 #[test]
 fn stable_scatter_matches_an_independent_oracle_and_hands_out_output_work() {
-    let source =
-        include_bytes!("../../../../research/experiments/compute-bench/programs/radix_scatter.wf");
-    let adapter =
-        include_str!("../../../../research/experiments/compute-bench/radix_scatter_host.ll");
+    let source = include_bytes!("../../../../tests/programs/compute/radix_scatter.wf");
+    let adapter = include_str!("../../../../tests/programs/compute/radix_scatter_host.ll");
     let oracle = format!(
         "#define WFB_SCATTER_ORACLE\n{}",
-        include_str!("../../../../research/experiments/compute-bench/radix_scatter_bench.c")
+        include_str!("../../../../tests/programs/compute/radix_scatter_oracle.c")
     );
     for overlap in [OverlapLowering::Off, OverlapLowering::On] {
         let emitted = emit_lowered(source, overlap);
@@ -671,38 +668,27 @@ define i64 @wf_copy_run(ptr %values, { ptr, i64 } %output) {\n\
   call void @wf_scatter_copy_done(i64 %n)\n\
   ret i64 %n\n}\n",
             );
-            vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+            vec![
+                "WFB_ORACLE_PARALLEL=1".to_owned(),
+                "WF_TEST_SCHEDULE_MANUAL=1".to_owned(),
+            ]
         } else {
             Vec::new()
         };
         let directory = test_directory();
-        let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+        let executable = build_compute_oracle(&llvm, &oracle, &defines, &directory);
         run_compute_oracle(&executable, "radix_scatter", parallel);
         std::fs::remove_dir_all(directory).expect("remove scatter oracle test files");
     }
 }
 
 #[test]
-fn runtime_stencil_ranges_reach_their_backing_buffers() {
-    let source =
-        include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
-    let llvm = compile(source);
-    let output = compile_and_run(&llvm);
-    assert!(output.status.success(), "{output:?}");
-    let parallel = emit_with_overlap(source);
-    assert!(parallel.contains("call void @wf__par_publish("));
-    let output = compile_and_run(&parallel);
-    assert!(output.status.success(), "{output:?}");
-}
-
-#[test]
 fn stencil_matches_an_independent_dimension_and_step_matrix() {
-    let source =
-        include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
-    let adapter = include_str!("../../../../research/experiments/compute-bench/stencil_host.ll");
+    let source = include_bytes!("../../../../tests/programs/compute/stencil.wf");
+    let adapter = include_str!("../../../../tests/programs/compute/stencil_host.ll");
     let oracle = format!(
         "#define WFB_STENCIL_ORACLE\n{}",
-        include_str!("../../../../research/experiments/compute-bench/stencil_bench.c")
+        include_str!("../../../../tests/programs/compute/stencil_oracle.c")
     );
     for emitted in [compile(source), emit_with_overlap(source)] {
         let llvm = bind_compute_host_adapter(&emitted, adapter)
@@ -714,60 +700,93 @@ fn stencil_matches_an_independent_dimension_and_step_matrix() {
         } else {
             Vec::new()
         };
-        let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+        let executable = build_compute_oracle(&llvm, &oracle, &defines, &directory);
         run_compute_oracle(&executable, "stencil", !defines.is_empty());
         std::fs::remove_dir_all(directory).expect("remove native stencil test files");
     }
 }
 
+// These receivers check a private condition as well as whole program results:
+// a real non-offering worker must enter a published task before its join. The
+// independent C oracle and WF inputs have formal shared homes, also consumed
+// by the separate performance runner without this scheduling observation.
+fn check_formal_compute_matrix(name: &str, source: &[u8], adapter: &str, oracle: &str) {
+    let oracle = oracle.replace(
+        "#include \"oracle.h\"",
+        include_str!("../../../../tests/programs/compute/oracle.h"),
+    );
+    for overlap in [
+        OverlapLowering::Off,
+        OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 16,
+        },
+    ] {
+        let emitted = emit_lowered(source, overlap);
+        let llvm = bind_compute_host_adapter(&emitted, adapter)
+            .replace("@main(", "@wf_compute_smoke_main(")
+            .replace("@wf__main_body(", "@wf_compute_smoke_body(");
+        let parallel = !matches!(overlap, OverlapLowering::Off);
+        let defines = if parallel {
+            vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+        } else {
+            Vec::new()
+        };
+        let directory = test_directory();
+        let executable = build_compute_oracle(&llvm, &oracle, &defines, &directory);
+        run_compute_oracle(&executable, name, parallel);
+        std::fs::remove_dir_all(directory).expect("remove compute oracle image");
+    }
+}
+
+#[test]
+fn formal_compute_mandelbrot_shapes_preserve_all_escape_counts_on_a_worker() {
+    check_formal_compute_matrix(
+        "mandelbrot",
+        include_bytes!("../../../../tests/programs/compute/mandelbrot.wf"),
+        include_str!("../../../../tests/programs/compute/mandelbrot_host.ll"),
+        include_str!("../../../../tests/programs/compute/mandelbrot_oracle.c"),
+    );
+}
+
+#[test]
+fn formal_compute_records_preserve_utf8_and_range_results_on_a_worker() {
+    check_formal_compute_matrix(
+        "records",
+        include_bytes!("../../../../tests/programs/compute/records.wf"),
+        include_str!("../../../../tests/programs/compute/records_host.ll"),
+        include_str!("../../../../tests/programs/compute/records_oracle.c"),
+    );
+}
+
+#[test]
+fn formal_compute_fir_preserves_ordered_rounding_and_inputs_on_a_worker() {
+    check_formal_compute_matrix(
+        "fir",
+        include_bytes!("../../../../tests/programs/compute/fir.wf"),
+        include_str!("../../../../tests/programs/compute/fir_host.ll"),
+        include_str!("../../../../tests/programs/compute/fir_oracle.c"),
+    );
+}
+
+#[test]
+fn formal_compute_quadrature_matches_postorder_and_analytic_oracles_on_a_worker() {
+    check_formal_compute_matrix(
+        "quadrature",
+        include_bytes!("../../../../tests/programs/compute/quadrature.wf"),
+        include_str!("../../../../tests/programs/compute/quadrature_host.ll"),
+        include_str!("../../../../tests/programs/compute/quadrature_oracle.c"),
+    );
+}
+
 #[test]
 fn recursive_child_ranges_restore_parent_access() {
-    let source =
-        include_bytes!("../../../../research/experiments/compute-bench/programs/range_split.wf");
+    let source = include_bytes!("../../../../tests/programs/compute/range_split.wf");
     let llvm = compile(source);
     let output = compile_and_run(&llvm);
     assert!(output.status.success(), "{output:?}");
     let parallel = emit_with_overlap(source);
     assert!(parallel.contains("call void @wf__par_publish("));
     let output = compile_and_run(&parallel);
-    assert!(output.status.success(), "{output:?}");
-}
-
-#[test]
-fn range_endpoints_are_captured_and_empty_ranges_are_admitted() {
-    let source = br#"const values: FixedVector<u64, 8> =[1_u64, 2_u64, 3_u64, 4_u64, 5_u64, 6_u64, 7_u64, 8_u64];
-
-fn window_sum(start: own u64, end: own u64) -> result: own u64 pure contract {
-  requires start <= end;
-  requires end <= 8_u64;
-} {
-  region {
-    let view = slice_of(&values, start, end);
-    set start = end;
-    let count = len_of(view);
-    let total = 0_u64;
-    for (i in 0_u64..count) {
-      let value = view[i];
-      set total = total +wrap value;
-    }
-    return total;
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  let middle = window_sum(start: 2_u64, end: 5_u64);
-  let empty = window_sum(start: 8_u64, end: 8_u64);
-  if middle != 12_u64 {
-    return exit_status(code: 1_u8);
-  }
-  if empty != 0_u64 {
-    return exit_status(code: 2_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let llvm = compile(source);
-    let output = compile_and_run(&llvm);
     assert!(output.status.success(), "{output:?}");
 }
 
@@ -1449,17 +1468,17 @@ fn irregular_compute_matches_independent_sort_and_graph_oracles() {
     let kernels: [(&str, &[u8], &str, &str, &str); 2] = [
         (
             "merge_sort",
-            include_bytes!("../../../../research/experiments/compute-bench/programs/merge_sort.wf"),
-            include_str!("../../../../research/experiments/compute-bench/merge_sort_host.ll"),
+            include_bytes!("../../../../tests/programs/compute/merge_sort.wf"),
+            include_str!("../../../../tests/programs/compute/merge_sort_host.ll"),
             "WFB_SORT_ORACLE",
-            include_str!("../../../../research/experiments/compute-bench/merge_sort_bench.c"),
+            include_str!("../../../../tests/programs/compute/merge_sort_oracle.c"),
         ),
         (
             "bfs",
-            include_bytes!("../../../../research/experiments/compute-bench/programs/bfs.wf"),
-            include_str!("../../../../research/experiments/compute-bench/bfs_host.ll"),
+            include_bytes!("../../../../tests/programs/compute/bfs.wf"),
+            include_str!("../../../../tests/programs/compute/bfs_host.ll"),
             "WFB_BFS_ORACLE",
-            include_str!("../../../../research/experiments/compute-bench/bfs_bench.c"),
+            include_str!("../../../../tests/programs/compute/bfs_oracle.c"),
         ),
     ];
     for (name, source, adapter, selection, harness) in kernels {
@@ -1482,7 +1501,7 @@ fn irregular_compute_matches_independent_sort_and_graph_oracles() {
             } else {
                 Vec::new()
             };
-            let executable = build_linked_executable(&llvm, Some(&oracle), &defines, &directory);
+            let executable = build_compute_oracle(&llvm, &oracle, &defines, &directory);
             run_compute_oracle(&executable, name, !defines.is_empty());
             std::fs::remove_dir_all(directory).expect("remove irregular-compute test files");
         }

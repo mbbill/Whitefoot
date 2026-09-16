@@ -1,0 +1,17 @@
+fn weighted_sum(weights: own Slice<u8>) -> result: own u32 reads(weights) {
+  let sum = 0_u32;
+  let length = len_of(weights);
+  for (
+    i in 0_u64..length,
+    invariant per_byte: sum <= 255_u32 * i
+  ) {
+    let w = weights[i];
+    let wide = cvt::<u8, u32>(w);
+    set sum = sum + wide;
+  }
+  return sum;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

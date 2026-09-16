@@ -1,0 +1,24 @@
+fn bounded(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 pure contract {
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
+  requires first_limit <= 80_u8;
+  requires second_limit <= 80_u8;
+  requires third_limit <= 93_u8;
+  ensures result <= 254_u8;
+} {
+  invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {
+    use (first <= first_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
+  }
+  invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
+  invariant total_bound: first + second + third <= 254_u8;
+  let first_two = first + second;
+  let result = first_two + third;
+  return result;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

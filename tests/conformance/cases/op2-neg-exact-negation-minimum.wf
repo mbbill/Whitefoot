@@ -1,0 +1,8 @@
+fn main() -> status: own ExitStatus pure {
+  let bad = ineg(-128_i8);
+  if bad == -128_i8 {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

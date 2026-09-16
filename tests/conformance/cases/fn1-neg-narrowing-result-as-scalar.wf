@@ -1,0 +1,8 @@
+fn narrow_direct(x: own i32) -> result: own i8 pure {
+  let narrowed = cvt::<i32, i8>(x);
+  return move narrowed;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

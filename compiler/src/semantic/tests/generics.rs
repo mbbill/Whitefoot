@@ -7,92 +7,6 @@ use super::super::model::{CheckedConst, CheckedNominalKind, CheckedType, Integer
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 
 #[test]
-fn brand_parameters_include_phantom_and_every_nested_name_position() {
-    let source = br#"struct Phantom['a, 'b] {
-  tag: u64;
-}
-
-struct Wrapped['a, 'b] {
-  value: Phantom<'a, 'b>;
-}
-
-fn read['a, 'b](value: &Wrapped<'a, 'b>) -> result: own u64 reads(value.value.tag) {
-  return deref(value).value.tag;
-}
-
-fn main() -> status: own ExitStatus pure {
-  region 'outer {
-    region 'inner {
-      let value = Phantom<'inner, 'outer>(tag: 17_u64);
-      let wrapped = Wrapped(value: move value);
-      region {
-        let observed = read(value: &wrapped);
-        if observed == 17_u64 {
-          return exit_status(code: 0_u8);
-        }
-      }
-    }
-  }
-  return exit_status(code: 1_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        )
-    });
-}
-
-#[test]
-fn brand_parameters_follow_explicit_nested_container_arguments() {
-    let source = br#"fn read['a, 'b](values: &FixedVector<Vector<'a, Box<'b, u8>>, 2>) -> result: own u64 reads(values) {
-  return len_of(deref(values));
-}
-
-fn relay['x, 'y](values: &FixedVector<Vector<'x, Box<'y, u8>>, 2>) -> result: own u64 reads(values) {
-  return read(values: values);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        )
-    });
-}
-
-#[test]
-fn brand_parameters_preserve_resolved_elided_store_positions() {
-    let source = br#"struct Wrap['s] {
-  value: Vector<u8>;
-}
-
-fn package['s](value: own Vector<'s, u8>) -> result: own Wrap<'s> pure {
-  return Wrap(value: move value);
-}
-
-fn reader['s](value: &Vector<'s, u8>) -> result: own u64 reads(value) {
-  return len_of(deref(value));
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        )
-    });
-}
-
-#[test]
 fn brand_parameters_do_not_change_single_loan_spelling_or_legacy_arena_support() {
     assert_rule_kind(
         br#"fn read['r](value: &'r u64) -> result: own u64 pure {
@@ -217,71 +131,6 @@ fn brand_parameters_cannot_be_shortened_by_a_mode_loan_in_either_order() {
             matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. })
         });
     }
-}
-
-#[test]
-fn brand_parameters_allow_longer_mode_loans_in_either_order() {
-    for reversed in [false, true] {
-        let (parameters, arguments) = if reversed {
-            (
-                "loan: &'s u64, marker: own Mark<'s>",
-                "loan: &'outer number, marker: move marker",
-            )
-        } else {
-            (
-                "marker: own Mark<'s>, loan: &'s u64",
-                "marker: move marker, loan: &'outer number",
-            )
-        };
-        let source = format!(
-            "struct Mark['s] {{\n  value: u64;\n}}\n\nfn carry['s]({parameters}) -> result: own Mark<'s> pure {{\n  return move marker;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  let number = 9_u64;\n  region 'outer {{\n    region 'inner {{\n      let marker = Mark<'inner>(value: 7_u64);\n      let result = carry({arguments});\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        with_semantics(source.as_bytes(), |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "{outcome:?}"
-            )
-        });
-    }
-}
-
-#[test]
-fn brand_parameters_do_not_infer_input_brands_from_a_result() {
-    let source = br#"struct Mark['s] {
-  value: u64;
-}
-
-fn make['r](loan: &'r u64) -> result: own Mark<'r> reads(loan) {
-  return Mark<'r>(value: deref(loan));
-}
-
-fn add['r](left: &'r u64, right: &'r u64) -> result: own u64 reads(left, right) {
-  let first = deref(left);
-  let second = deref(right);
-  return first +wrap second;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let first = 7_u64;
-  region 'outer {
-    let second = 9_u64;
-    region {
-      let marker = make(loan: &second);
-      let sum = add(left: &'outer first, right: &second);
-      if sum == 16_u64 {
-        return exit_status(code: 0_u8);
-      }
-    }
-  }
-  return exit_status(code: 1_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        )
-    });
 }
 
 #[test]
@@ -928,83 +777,6 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// [FN-2] substitutes a callee's actual region through every result position,
-/// including a nominal stored as one flat element of a run and the
-/// compiler-owned result-list nominal around a multi-result return. The two
-/// types in the `replace_one` call must therefore name `compose`'s `'s`, even
-/// though the printed formal spelling is identical either way.
-#[test]
-fn call_results_substitute_regions_inside_flat_run_elements() {
-    let source = br#"struct Entry['s] {
-  payload: Box<'s, u64>;
-}
-
-fn build['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (slots: own FixedVector<Option<Entry<'s>>, 1>, returned: own Box<'s, u64>) pure contract {
-  ensures len_of(slots) == 1_u64;
-} {
-  let stored_entry = Entry(payload: move first);
-  let occupied = Some<Entry<'s>>(value: move stored_entry);
-  let slots = fixed_vector::<Option<Entry<'s>>, 1>();
-  region {
-    place_back(vector: &uniq slots, value: move occupied);
-  }
-  return move slots, move replacement;
-}
-
-fn replace_one['s](slots: &uniq FixedVector<Option<Entry<'s>>, 1>, replacement: own Entry<'s>) -> previous: own Option<Entry<'s>> reads(slots), writes(slots) contract {
-  requires 1_u64 <= len_of(deref(slots));
-  ensures len_of(deref(slots)) == len_of(deref(entry(slots)));
-} {
-  let occupied = Some<Entry<'s>>(value: move replacement);
-  let previous = replace deref(slots)[0_u64] = move occupied;
-  return move previous;
-}
-
-fn compose['s](first: own Box<'s, u64>, replacement: own Box<'s, u64>) -> (updated: own FixedVector<Option<Entry<'s>>, 1>, previous: own Option<Entry<'s>>) pure {
-  let (slots, returned) = build(first: move first, replacement: move replacement);
-  let stored_entry = Entry(payload: move returned);
-  region {
-    let previous = replace_one(slots: &uniq slots, replacement: move stored_entry);
-    return move slots, move previous;
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("nested result-region substitution must check: {outcome:?}");
-        };
-    });
-}
-
-/// [FORM-8] reads every result ordinal as an output position. Each region in
-/// this swapped pair occurs first at an input and again at the opposite result
-/// ordinal; in particular, `'left` receives its required second occurrence
-/// only from ordinal one.
-#[test]
-fn multi_result_region_spelling_reads_every_ordinal() {
-    let source = br#"struct Holder['s] {
-  cell: Box<'s, u64>;
-}
-
-fn reverse['left, 'right](left: own Holder<'left>, right: own Holder<'right>) -> (first: own Holder<'right>, second: own Holder<'left>) pure {
-  return move right, move left;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("every result ordinal must participate in FORM-8: {outcome:?}");
-        };
-    });
-}
-
 /// The same declaration still writes its region-parameter list in first-use
 /// order. Swapping the list is a FORM-8 rejection even though the result
 /// ordinals themselves intentionally reverse the value flow.
@@ -1053,80 +825,6 @@ fn main() -> status: own ExitStatus pure {
         SemanticRule::Form8,
         |kind| matches!(kind, SemanticIssueKind::RegionSpelling { .. }),
     );
-}
-
-/// The inferred store region is substituted through the complete parameter
-/// type before TYPE-5 compares it with each actual. Reusing one helper at
-/// different indexed places must not depend on the first nominal occurrence.
-#[test]
-fn nested_borrowed_parameter_regions_are_inferred_at_each_call_position() {
-    let source = br#"struct Entry['s] {
-  payload: Box<'s, u64>;
-}
-
-fn inspect['s](stored_entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>) -> result: own u64 pure {
-  return 0_u64;
-}
-
-fn inspect_positions['s](entries: own FixedVector<Option<Entry<'s>>, 4>) -> result: own FixedVector<Option<Entry<'s>>, 4> pure contract {
-  requires 3_u64 <= len_of(entries);
-} {
-  region {
-    let first = inspect(stored_entry: &entries[0_u64], same: &entries[0_u64]);
-    let later = inspect(stored_entry: &entries[2_u64], same: &entries[2_u64]);
-  }
-  return move entries;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("nested borrowed parameter regions must check at every call: {outcome:?}");
-        };
-    });
-}
-
-/// Two distinct store regions survive the same nested result substitution in
-/// declaration order. Every explicit brand position of the nested nominal
-/// determines its formal, so neither region is written at the call.
-#[test]
-fn nested_results_preserve_two_distinct_region_arguments() {
-    let source = br#"struct Pair['left, 'right] {
-  left: Box<'left, u64>;
-  right: Box<'right, u64>;
-}
-
-fn build['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
-  let pair = Pair(left: move left, right: move right);
-  let occupied = Some<Pair<'left, 'right>>(value: move pair);
-  let slots = fixed_vector::<Option<Pair<'left, 'right>>, 1>();
-  region {
-    place_back(vector: &uniq slots, value: move occupied);
-  }
-  return move slots;
-}
-
-fn pass['left, 'right](slots: own FixedVector<Option<Pair<'left, 'right>>, 1>) -> result: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
-  return move slots;
-}
-
-fn compose['left, 'right](left: own Box<'left, u64>, right: own Box<'right, u64>) -> slots: own FixedVector<Option<Pair<'left, 'right>>, 1> pure {
-  let slots = build(left: move left, right: move right);
-  return pass(slots: move slots);
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("both nested result regions must retain their positions: {outcome:?}");
-        };
-    });
 }
 
 /// An independent anchor fixes the relationship between the nested brands.
@@ -1214,28 +912,6 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// TYPE-2 admits a symbolic owning array element under its declared bound.
-/// The former flat-only rejection is superseded by the full-array amendment.
-#[test]
-fn unused_generic_array_members_admit_their_declared_owning_bound() {
-    with_semantics(
-        br#"struct Holder<T: affine> {
-  values: array<T, 2>;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "generic owning array: {outcome:?}"
-            )
-        },
-    );
-}
-
 #[test]
 fn recursive_generic_nominal_layouts_stop_before_concrete_enumeration() {
     assert_unsupported(
@@ -1249,23 +925,6 @@ fn main() -> status: own ExitStatus pure {
 "#,
         UnsupportedSemanticFeature::RecursiveNominalLayout,
     );
-}
-
-#[test]
-fn generic_nominals_may_contain_symbolic_prelude_instances() {
-    let source = br#"struct Wrapped<T: Int> {
-  value: Option<T>;
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("symbolic prelude fields must receive template coverage: {outcome:?}");
-        };
-    });
 }
 
 #[test]

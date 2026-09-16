@@ -1,0 +1,11 @@
+fn wrapped_negate(value: own i32) -> result: own i32 pure contract {
+  requires value == -2147483648_i32;
+  ensures result >= 0_i32;
+} {
+  let wrapped = ineg.wrap(value);
+  return wrapped;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

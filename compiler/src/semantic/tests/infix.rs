@@ -271,26 +271,6 @@ fn main() -> status: own ExitStatus pure {
 const AGREEING_OPERAND: &str = "let b = 7_u64;";
 const DISAGREEING_OPERAND: &str = "let b = 7_i32;";
 
-/// Every [GRAM-5] expression position checks a well-typed infix source to
-/// completion.
-///
-/// The `return_stmt` entry is the regression: two `return`-position structural
-/// queries read the `expr` node with `only_child`, and `expr := atom
-/// infix_tail?` is the one alternative with two children, so every infix
-/// return reported `InvalidCanonicalTree` — an internal compiler failure where
-/// a source rejection or an accepted program is required.
-#[test]
-fn infix_is_checked_at_every_accepted_expression_position() {
-    for (position, source) in EXPRESSION_POSITIONS {
-        with_semantics(source.as_bytes(), |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "infix in {position} position must check: {outcome:?}",
-            );
-        });
-    }
-}
-
 /// [OP-2]'s operand judgment runs at every position, not only in the `let`
 /// initializer.
 ///

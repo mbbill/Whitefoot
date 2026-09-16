@@ -1,0 +1,17 @@
+fn write(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) {
+  let spare = len_of(deref(out));
+  let ok = 0_u64 < spare;
+  if ok {
+    set deref(out)[0_u64] = 1_u8;
+  }
+  return unit;
+}
+
+fn proxy(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) {
+  write(out: move out);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

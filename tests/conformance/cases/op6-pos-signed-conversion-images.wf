@@ -1,0 +1,26 @@
+fn widen_ok(x: own u16) -> result: own i32 pure {
+  return cvt::<u16, i32>(x);
+}
+
+fn to_unsigned(x: own i32) -> result: own u32 pure {
+  match cvt::<i32, u32>(x) {
+    Ok(value: v) => {
+      return v;
+    }
+    Err(error: e) => {
+      return 0_u32;
+    }
+  }
+}
+
+fn widen_preserved(value: own u8) -> result: own i16 pure contract {
+  requires value == 200_u8;
+  ensures result == 200_i16;
+} {
+  let wide = cvt::<u8, i16>(value);
+  return wide;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

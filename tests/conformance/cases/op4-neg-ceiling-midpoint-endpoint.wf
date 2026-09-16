@@ -1,0 +1,15 @@
+fn probe<const n: u64>(table: own FixedVector<u8, n>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+  define spare = len_of(table);
+  requires lo < hi;
+  requires hi <= spare;
+} {
+  let span = hi - lo;
+  let half = span / 2_u64;
+  let mid = hi - half;
+  let byte = table[mid];
+  return byte;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

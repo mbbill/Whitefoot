@@ -1,0 +1,41 @@
+fn main() -> status: own ExitStatus pure {
+  let flag = True();
+  let other = False();
+  let seen = False();
+  if flag {
+    set seen = True();
+  }
+  if seen {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let untouched = True();
+  if other {
+    set untouched = False();
+  }
+  if untouched {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let taken = if flag {
+    give True();
+  } else {
+    give False();
+  }
+  if taken {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let chained = if other {
+    give False();
+  } else if flag {
+    give True();
+  } else {
+    give False();
+  }
+  if chained {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}

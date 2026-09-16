@@ -1,0 +1,39 @@
+struct Pair {
+  left: i32;
+  right: i32;
+}
+
+enum Packet {
+  Data(item: Pair);
+  Empty();
+}
+
+fn inspect(packet: &Packet) -> result: own i32 reads(packet) {
+  match deref(packet) {
+    Data(item: payload) => {
+      return deref(payload).left;
+    }
+    Empty() => {
+      return 0_i32;
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  let pair = Pair(left: 41_i32, right: 1_i32);
+  let packet = Data(item: move pair);
+  let fallback = Empty();
+  region {
+    let held = &packet;
+    let read = inspect(packet: held);
+    if read != 41_i32 {
+      return exit_status(code: 1_u8);
+    }
+    let hollow = &fallback;
+    let zero = inspect(packet: hollow);
+    if zero != 0_i32 {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

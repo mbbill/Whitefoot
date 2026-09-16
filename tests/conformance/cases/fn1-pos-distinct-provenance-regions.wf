@@ -1,0 +1,16 @@
+fn pick['r](a: &uniq 'r i32, b: &uniq i32) -> result: &uniq 'r i32 pure {
+  return &uniq 'r deref(a);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let x = 1_i32;
+  let y = 2_i32;
+  region 'a {
+    region {
+      let r = pick(a: &uniq 'a x, b: &uniq y);
+      set deref(r) = 9_i32;
+      let w = deref(r);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

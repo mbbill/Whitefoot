@@ -1,0 +1,11 @@
+fn read['a, 'b](values: &FixedVector<Vector<'a, Box<'b, u8>>, 2>) -> result: own u64 reads(values) {
+  return len_of(deref(values));
+}
+
+fn relay['x, 'y](values: &FixedVector<Vector<'x, Box<'y, u8>>, 2>) -> result: own u64 reads(values) {
+  return read(values: values);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

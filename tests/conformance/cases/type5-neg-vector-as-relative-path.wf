@@ -1,0 +1,10 @@
+fn make_path['heap](name: own Vector<'heap, u8>) -> result: own unit pure {
+  doc "Attempts to construct a path from run bytes rather than the declared HostString parameter.";
+  match relative_path(value: move name) {
+    Ok(value: path) => {
+    }
+    Err(error: problem) => {
+    }
+  }
+  return unit;
+}

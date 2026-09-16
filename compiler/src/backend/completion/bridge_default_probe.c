@@ -13,6 +13,7 @@
 /* The threads this probe's lanes run on are the runtime's own, so that one
  * probe runs on every platform the runtime does. */
 #include "../sched/prim.h"
+#include "../runtime_test_guard.h"
 
 #include <stdatomic.h>
 #include <stdint.h>
@@ -42,10 +43,6 @@
 
 static unsigned long probe_process_id(void) {
     return (unsigned long)GetCurrentProcessId();
-}
-
-static void probe_sleep_tick(void) {
-    Sleep(100u);
 }
 
 /* The fixture is opened for overlapped I/O, which is what this target's own
@@ -87,6 +84,14 @@ static int probe_open_fixture(const char *path, const unsigned char *bytes, unsi
     return _open_osfhandle((intptr_t)reader, _O_RDONLY | _O_BINARY);
 }
 
+static int probe_open_stream(const char *path) {
+    HANDLE handle = CreateFileA(path, GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (handle == INVALID_HANDLE_VALUE) return -1;
+    return _open_osfhandle((intptr_t)handle, _O_RDONLY | _O_BINARY);
+}
+
 static void probe_close_fixture(int descriptor, const char *path) {
     (void)_close(descriptor);
     (void)DeleteFileA(path);
@@ -102,11 +107,6 @@ static unsigned long probe_process_id(void) {
     return (unsigned long)getpid();
 }
 
-static void probe_sleep_tick(void) {
-    struct timespec tick = {.tv_sec = 0, .tv_nsec = 100000000};
-    (void)nanosleep(&tick, NULL);
-}
-
 static int probe_open_fixture(const char *path, const unsigned char *bytes, unsigned length) {
     int descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
     if (descriptor < 0
@@ -116,12 +116,16 @@ static int probe_open_fixture(const char *path, const unsigned char *bytes, unsi
     return descriptor;
 }
 
+static int probe_open_stream(const char *path) { return open(path, O_RDONLY); }
+
 static void probe_close_fixture(int descriptor, const char *path) {
     (void)close(descriptor);
     (void)unlink(path);
 }
 
 #endif
+
+#include "socket_test.h"
 
 /*
  * The bridge on its shipped default helper policy, which nothing else runs.
@@ -163,50 +167,20 @@ static void probe_close_fixture(int descriptor, const char *path) {
 #define FILE_BYTES 4096
 #define WATCHDOG_SECONDS 180
 
-static _Atomic int probe_finished;
 static _Atomic unsigned submitted_route;
 static _Atomic unsigned nonpositioned_route;
-/* Non-positioned reads that transferred, and those the target published as a
- * refusal because its qualified row has no stream read.  A target either has
- * the shape or does not, so a run in which both counts are nonzero is the
- * defect this pair is here to catch. */
+/* Synchronous streams have a defined cursor and successful one-byte result. */
 static _Atomic unsigned nonpositioned_transferred;
-static _Atomic unsigned nonpositioned_refused;
 static _Atomic unsigned lanes_finished;
 /* The entry records the lanes and the watchdog are started with. They are the
  * probe's own storage because `wf_prim_thread_start` takes the pair from the
  * caller and reads it after the creating call has returned (`../sched/prim.h`,
  * P1); statics are the simplest thing here that outlives every thread. */
-static wf_prim_thread watchdog_thread;
 static wf_prim_thread lane_threads[LANES];
-
-/* A stuck run is the failure this probe most needs to report, and a test that
- * hangs reports nothing.  The bound is far above any honest run of this size;
- * the tick is short so that joining this thread costs the finished run almost
- * nothing. */
-static void watchdog_main(void *context) {
-    unsigned ticks = *(unsigned *)context * 10u;
-    unsigned elapsed = 0;
-    while (elapsed < ticks) {
-        if (atomic_load_explicit(&probe_finished, memory_order_acquire) != 0) {
-            return;
-        }
-        probe_sleep_tick();
-        elapsed += 1;
-    }
-    if (atomic_load_explicit(&probe_finished, memory_order_acquire) == 0) {
-        (void)fprintf(
-            stderr,
-            "bridge default probe: STUCK after %u s\n",
-            ticks / 10u
-        );
-        (void)fflush(stderr);
-        _Exit(9);
-    }
-}
 
 typedef struct {
     int descriptor;
+    int stream_descriptor;
     unsigned lane;
     int failed;
 } lane_context;
@@ -216,210 +190,9 @@ static unsigned char expected_byte(uint64_t offset) {
     return (unsigned char)(offset % 251u);
 }
 
-/* One loopback round trip through the bridge's own ABI: listen, connect,
- * accept, send, receive, and the four releases that end the two connections
- * and the listener (ordinary native library).
- *
- * It is one text on every platform, which is the point: the same six request
- * kinds reach the Linux ring's four opcodes, the Windows completion port's
- * `ConnectEx`, `WSARecv` and `WSASend`, and the shared file adapter's own
- * blocking calls, and every one of them owes this same sequence the same
- * answers.  It is the only TCP evidence a cross-built run under wine can
- * produce, and on POSIX it runs in `completion-default-route-test` beside the
- * reads.
- *
- * Every step is submitted and joined before the next is submitted, and the
- * order is chosen so that no step waits on a peer that has not acted yet: the
- * connect completes against the listener's backlog, the accept takes a
- * connection that is already waiting, and the receive reads bytes the send has
- * already handed over.  So this probe needs no second thread and no timeout of
- * its own.
- *
- * The specification declares no operation reporting a listener's own local
- * address ((ordinary native library)), so the port is chosen the only way a program can choose
- * one: bind a candidate and take the host's answer.  A port another process
- * holds answers `AddressInUse` and the next candidate is tried, which is that
- * outcome being the program's own (ordinary native library). */
-#define PROBE_TCP_PORT_FIRST 45231u
-#define PROBE_TCP_PORT_TRIES 64u
-/* 127.0.0.1 in the portable layout `contract.h` fixes: byte `i` occupies bits
- * `8 * (i % 8)` of word `i / 8`, so 127, 0, 0, 1 is this word. */
-#define PROBE_LOOPBACK_WORD UINT64_C(0x0100007f)
-
-static int probe_socket_step(
-    const char *what,
-    void *record,
-    int64_t *value
-) {
-    int error = 0;
-    wf__completion_file_join(record, value, &error);
-    if (*value < 0) {
-        (void)fprintf(
-            stderr,
-            "bridge default probe: loopback %s refused: value %lld error %d\n",
-            what,
-            (long long)*value,
-            error
-        );
-        return 1;
-    }
-    return 0;
-}
-
-static int probe_loopback_round_trip(unsigned *chosen_port) {
-    _Alignas(WF_COMPLETION_RECORD_ALIGN)
-        unsigned char record[WF_COMPLETION_RECORD_BYTES];
-    static const unsigned char sent[8] = {3u, 1u, 4u, 1u, 5u, 9u, 2u, 6u};
-    unsigned char received[8];
-    unsigned port;
-    int64_t listener = -1;
-    int64_t client = -1;
-    int64_t served = -1;
-    int64_t value = 0;
-    int error = 0;
-    uint64_t peer_low = 0;
-    uint64_t peer_high = 0;
-    uint32_t peer_tag = 0;
-    unsigned index;
-    int last_error = 0;
-
-    *chosen_port = 0;
-    for (index = 0; index < PROBE_TCP_PORT_TRIES; ++index) {
-        port = PROBE_TCP_PORT_FIRST + index;
-        wf__completion_socket_listen_submit(
-            PROBE_LOOPBACK_WORD,
-            0,
-            (uint32_t)port,
-            record
-        );
-        wf__completion_file_join(record, &listener, &error);
-        if (listener >= 0) {
-            break;
-        }
-        last_error = error;
-    }
-    if (listener < 0) {
-        (void)fprintf(
-            stderr,
-            "bridge default probe: no loopback port in %u candidates from "
-            "%u accepted a listen; the last refusal was %d\n",
-            PROBE_TCP_PORT_TRIES,
-            PROBE_TCP_PORT_FIRST,
-            last_error
-        );
-        return 1;
-    }
-    *chosen_port = port;
-
-    wf__completion_socket_connect_submit(
-        PROBE_LOOPBACK_WORD,
-        0,
-        (uint32_t)port,
-        record
-    );
-    if (probe_socket_step("connect", record, &client) != 0) {
-        return 1;
-    }
-
-    wf__completion_socket_accept_submit((int)listener, record);
-    wf__completion_socket_accept_join(
-        record,
-        &served,
-        &error,
-        &peer_low,
-        &peer_high,
-        &peer_tag
-    );
-    if (served < 0) {
-        (void)fprintf(
-            stderr,
-            "bridge default probe: loopback accept refused: value %lld "
-            "error %d\n",
-            (long long)served,
-            error
-        );
-        return 1;
-    }
-    /* The peer of a loopback connection is 127.0.0.1 on a port the host chose,
-     * in the same portable form on every engine: this is the one place the
-     * accept join's three scalars are read, and a target whose rewrite of the
-     * host record went wrong answers the all-zero address here. */
-    if (peer_low != PROBE_LOOPBACK_WORD || peer_high != 0
-        || (peer_tag & 0xffffu) == 0u) {
-        (void)fprintf(
-            stderr,
-            "bridge default probe: the accepted peer is not a loopback "
-            "address: low %llu high %llu tag %lu\n",
-            (unsigned long long)peer_low,
-            (unsigned long long)peer_high,
-            (unsigned long)peer_tag
-        );
-        return 1;
-    }
-
-    wf__completion_socket_send_submit(
-        (int)client,
-        sent,
-        (uint64_t)sizeof(sent),
-        record
-    );
-    if (probe_socket_step("send", record, &value) != 0) {
-        return 1;
-    }
-    if (value != (int64_t)sizeof(sent)) {
-        (void)fprintf(
-            stderr,
-            "bridge default probe: the loopback send accepted %lld of %u "
-            "bytes\n",
-            (long long)value,
-            (unsigned)sizeof(sent)
-        );
-        return 1;
-    }
-    memset(received, 0, sizeof(received));
-    wf__completion_socket_receive_submit(
-        (int)served,
-        received,
-        (uint64_t)sizeof(received),
-        record
-    );
-    if (probe_socket_step("receive", record, &value) != 0) {
-        return 1;
-    }
-    if (value != (int64_t)sizeof(received)
-        || memcmp(received, sent, sizeof(sent)) != 0) {
-        (void)fprintf(
-            stderr,
-            "bridge default probe: the loopback receive answered %lld bytes "
-            "and they are not the ones sent\n",
-            (long long)value
-        );
-        return 1;
-    }
-
-    /* Two releases per connection, which is what a `close_connection` lowers
-     * to: the first half-closes that direction and the second releases the
-     * target's object (ordinary native library).  The listener's close is the ordinary one. */
-    for (index = 0; index < 2u; ++index) {
-        wf__completion_socket_shutdown_submit((int)client, index, record);
-        if (probe_socket_step("client half-close", record, &value) != 0) {
-            return 1;
-        }
-        wf__completion_socket_shutdown_submit((int)served, index, record);
-        if (probe_socket_step("served half-close", record, &value) != 0) {
-            return 1;
-        }
-    }
-    wf__completion_file_close_submit((int)listener, record);
-    if (probe_socket_step("listener close", record, &value) != 0) {
-        return 1;
-    }
-    return 0;
-}
-
 static void lane_main(void *context) {
     lane_context *self = context;
-    unsigned round;
+    unsigned round, stream_offset = 0;
     for (round = 0; round < ROUNDS; ++round) {
         _Alignas(WF_COMPLETION_RECORD_ALIGN)
             unsigned char record[WF_COMPLETION_RECORD_BYTES];
@@ -461,7 +234,7 @@ static void lane_main(void *context) {
                 unsigned char other_record[WF_COMPLETION_RECORD_BYTES];
             unsigned char other = 0;
             wf__completion_file_read_submit(
-                self->descriptor,
+                self->stream_descriptor,
                 &other,
                 1,
                 other_record
@@ -472,34 +245,14 @@ static void lane_main(void *context) {
                 memory_order_relaxed
             );
             wf__completion_file_join(other_record, &value, &error);
-            /* Either the target has this shape and transferred, or it has none
-             * and published the refusal as an outcome.  What is never right is
-             * a shape the runtime answers by ending the process, which is the
-             * property this arm exists to hold, so both answers are accepted
-             * here and the run is failed below if it produced both. */
-            if (value >= 0 && error == 0) {
-                atomic_fetch_add_explicit(
-                    &nonpositioned_transferred,
-                    1,
-                    memory_order_relaxed
-                );
-            } else if (value < 0 && error != 0) {
-                atomic_fetch_add_explicit(
-                    &nonpositioned_refused,
-                    1,
-                    memory_order_relaxed
-                );
-            } else {
-                (void)fprintf(
-                    stderr,
-                    "bridge default probe: non-positioned read %lld "
-                    "error %d\n",
-                    (long long)value,
-                    error
-                );
+            if (value != 1 || error != 0 || other != expected_byte(stream_offset)) {
+                fprintf(stderr, "bridge default probe: stream lane=%u offset=%u value=%lld error=%d byte=%u\n",
+                        self->lane, stream_offset, (long long)value, error, (unsigned)other);
                 self->failed = 1;
                 break;
             }
+            ++stream_offset;
+            atomic_fetch_add_explicit(&nonpositioned_transferred, 1, memory_order_relaxed);
         }
     }
     atomic_fetch_add_explicit(&lanes_finished, 1, memory_order_release);
@@ -510,7 +263,6 @@ int main(int argc, char **argv) {
     unsigned char fixture[FILE_BYTES];
     int descriptor;
     lane_context lanes[LANES];
-    unsigned seconds = WATCHDOG_SECONDS;
     size_t index;
     int failed = 0;
     uint64_t ring_submissions;
@@ -537,6 +289,8 @@ int main(int argc, char **argv) {
         );
         return 2;
     }
+    wf_test_guard_start(WATCHDOG_SECONDS);
+    wf_test_guard_phase("default-policy file fixture");
     for (index = 0; index < FILE_BYTES; ++index) {
         fixture[index] = expected_byte((uint64_t)index);
     }
@@ -554,12 +308,27 @@ int main(int argc, char **argv) {
         (void)fprintf(stderr, "bridge default probe: fixture failed\n");
         return 2;
     }
-    if (wf_prim_thread_start(&watchdog_thread, watchdog_main, &seconds, 0)
-        != 0) {
-        return 2;
+    wf_test_guard_phase("default-policy positioned/stream reads");
+    /* Observe the native positioned-read route before queue-disturbance
+     * stream requests can legitimately create adapter helpers. */
+    {
+        _Alignas(WF_COMPLETION_RECORD_ALIGN) unsigned char record[WF_COMPLETION_RECORD_BYTES];
+        unsigned char byte = 0;
+        int64_t value = -1;
+        int error = 0;
+        wf__completion_file_pread_submit(descriptor, &byte, 1, 0, record);
+        wf__completion_file_join(record, &value, &error);
+        if (value != 1 || error || byte != expected_byte(0)) return 1;
+        if (wf__completion_native_ring_submissions() > 0 &&
+            wf__completion_target_helper_count() != 0) {
+            fputs("bridge default probe: native positioned read created adapter helpers\n", stderr);
+            return 1;
+        }
     }
     for (index = 0; index < LANES; ++index) {
         lanes[index].descriptor = descriptor;
+        lanes[index].stream_descriptor = probe_open_stream(path);
+        if (lanes[index].stream_descriptor < 0) return 2;
         lanes[index].lane = (unsigned)index;
         lanes[index].failed = 0;
         if (wf_prim_thread_start(
@@ -577,9 +346,13 @@ int main(int argc, char **argv) {
            < (unsigned)LANES) {
         wf_prim_yield();
     }
-    atomic_store_explicit(&probe_finished, 1, memory_order_release);
     for (index = 0; index < LANES; ++index) {
         failed |= lanes[index].failed;
+#if defined(_WIN32)
+        (void)_close(lanes[index].stream_descriptor);
+#else
+        (void)close(lanes[index].stream_descriptor);
+#endif
     }
     probe_close_fixture(descriptor, path);
 
@@ -623,7 +396,8 @@ int main(int argc, char **argv) {
      * else.  Its own share of the ring is the delta reported beside it. */
     {
         uint64_t before = ring_submissions;
-        failed |= probe_loopback_round_trip(&tcp_port);
+        wf_test_guard_phase("default-policy bridge TCP lifecycle");
+        failed |= wf_test_socket_lifecycle(&tcp_port);
         tcp_ring_submissions =
             wf__completion_native_ring_submissions() - before;
     }
@@ -655,18 +429,9 @@ int main(int argc, char **argv) {
         );
         failed = 1;
     }
-    /* A target either has a stream read or has none, and either answer is a
-     * published outcome.  A run that produced both took two different arms for
-     * one shape, which is the drift this pair catches. */
     if (atomic_load_explicit(&nonpositioned_transferred, memory_order_relaxed)
-            != 0
-        && atomic_load_explicit(&nonpositioned_refused, memory_order_relaxed)
-            != 0) {
-        (void)fprintf(
-            stderr,
-            "bridge default probe: the non-positioned read was both "
-            "transferred and refused in one run\n"
-        );
+        != (unsigned)(LANES * ((ROUNDS + 63) / 64))) {
+        fputs("bridge default probe: missing successful stream disturbances\n", stderr);
         failed = 1;
     }
     if (ring_submissions == 0 && inline_executions == 0 && helpers == 0) {
@@ -680,6 +445,7 @@ int main(int argc, char **argv) {
         failed = 1;
     }
 
+    wf_test_guard_finish();
     if (failed != 0) {
         fprintf(
             stderr,

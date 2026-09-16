@@ -1,10 +1,11 @@
 # Whitefoot's canonical all-tests entry point: compiler checks and tests, the
 # complete native conformance adapter, conformance structure and coverage,
-# specification/archive identity, and the recorded-verdict snapshot corpus.
+# and specification/archive identity.
 # The adapter prints its current tally rather than baking a count into this
 # file.
 
 PY := python3 -B
+CHECK_RUN := perl $(CURDIR)/.github/run-check.pl
 # Everything built or measured outside the checkout is written under this
 # root, and no path any developer's machine happens to have is encoded in it:
 # the default is the system temporary directory, which every supported host
@@ -16,13 +17,13 @@ WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitef
 RESEARCH_TEST_TMP := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-tmp
 RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-target
 
-# The stages `check` runs, in order. Each is a target of its own, so the CI
-# jobs that run the gate in parallel run exactly these targets and nothing
-# beside them: what a job checks is what this list says it checks.
-# `approval-history-integrity` and `spec-archive-integrity` were retired with
-# the approval ledger they both read.
-CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	design-lint conformance compiler library-tests research-tests bench-programs conformance-run snapshot-run
+# One group inventory for local execution and the hosted correctness matrix.
+# The _check-<group> recipes below own the commands on both paths. CI reads
+# check-groups and invokes check-group; it keeps no second command inventory.
+CHECK_GROUPS := static unit corpus runtime libraries
+ifeq ($(strip $(CHECK_GROUPS)),)
+$(error the correctness group inventory must not be empty)
+endif
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -35,12 +36,16 @@ STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 NO_CORE_DUMPS := ulimit -c 0;
 
 check:
+	@$(CHECK_RUN) gate $(MAKE) --no-print-directory _check
+
+_check:
 	@mkdir -p "$(STAGE_DIR)"
 	@: > "$(STAGE_DIR)/summary"
-	@for stage in $(CHECK_STAGES); do \
+	@echo "correctness groups: $(CHECK_GROUPS)"
+	@for group in $(CHECK_GROUPS); do \
 		started=$$(date +%s); \
-		$(MAKE) --no-print-directory "$$stage" || exit 1; \
-		printf '%-28s %6d s\n' "$$stage" "$$(( $$(date +%s) - started ))" \
+		$(MAKE) --no-print-directory check-group GROUP="$$group" || exit 1; \
+		printf '%-28s %6d s\n' "$$group" "$$(( $$(date +%s) - started ))" \
 			>> "$(STAGE_DIR)/summary"; \
 	done
 	@echo ""
@@ -48,12 +53,55 @@ check:
 	@cat "$(STAGE_DIR)/summary"
 	@echo "== WHITEFOOT ALL TESTS GREEN =="
 
+# JSON is consumed directly by the GitHub Actions matrix. This is a view of
+# CHECK_GROUPS, not generated source or another list to maintain.
+check-groups:
+	@printf '['; separator=''; \
+	for group in $(CHECK_GROUPS); do \
+		printf '%s"%s"' "$$separator" "$$group"; separator=,; \
+	done; printf ']\n'
+
+check-group:
+	@$(if $(and $(filter 1,$(words $(GROUP))),$(filter $(CHECK_GROUPS),$(GROUP))),:,$(error GROUP must name one correctness group from: $(CHECK_GROUPS)))
+	@$(CHECK_RUN) "check/$(GROUP)" $(MAKE) --no-print-directory "_check-$(GROUP)"
+
+.PHONY: _check-static
+_check-static:
+	@$(MAKE) static
+	@for stage in conformance performance-instrument; do \
+		$(CHECK_RUN) "$$stage" $(MAKE) --no-print-directory "$$stage" || exit 1; \
+	done
+	@$(MAKE) -C compiler lint
+
+.PHONY: _check-unit
+_check-unit:
+	@$(MAKE) -C compiler build
+	@$(MAKE) -C compiler test-build-unit
+	@$(MAKE) -C compiler test-unit
+
+.PHONY: _check-corpus
+_check-corpus:
+	@$(MAKE) -C compiler test-build-corpus
+	@$(MAKE) -C compiler test-corpus
+
+.PHONY: _check-runtime
+_check-runtime:
+	@$(MAKE) -C compiler completion-test
+
+.PHONY: _check-libraries
+_check-libraries:
+	@$(MAKE) -C compiler build
+	@$(MAKE) library-tests
+
 # Both supported agent entry points carry exactly the same project rules.
 # The repository-level stages that read the tree without running a compiled
 # program. CI's `static` job runs this instead of restating their names: a
 # second copy of the list is a copy that goes stale, and did — retiring two
 # stages left the workflow naming targets that no longer exist.
-static: repository-invariants spec-append-only spec-prose-integrity design-lint
+static:
+	@for stage in repository-invariants spec-append-only spec-prose-integrity design-lint; do \
+		$(CHECK_RUN) "$$stage" $(MAKE) --no-print-directory "$$stage" || exit 1; \
+	done
 
 # Structural lint for the design tree; form only, see design/skill/lint.py.
 # CI pins the event's review base instead of comparing main with its own tip.
@@ -63,6 +111,9 @@ design-lint:
 	@$(PY) design/skill/lint.py --trees language compiler --base "$(DESIGN_REVIEW_BASE)"
 
 repository-invariants:
+	@$(PY) .github/check-research-inputs.py --self-test
+	@$(PY) .github/check-research-inputs.py
+	@sh .github/test-run-check.sh
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
 	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
 	@mac_home="$$(printf '/%s/' Users)"; \
@@ -147,64 +198,35 @@ compiler:
 library-tests:
 	$(MAKE) -C lib/containers check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
 
-# Maintained executable tests under research/. Self-described deferred archive
-# prototypes that require a removed historical compiler are evidence artifacts,
-# not current tests; their directory README states that boundary explicitly.
-research-tests:
-	@mkdir -p "$(RESEARCH_TEST_TMP)/frequency" "$(RESEARCH_TEST_TMP)/ripgrep" "$(RESEARCH_CARGO_TARGET)"
-	$(MAKE) -C research/experiments/proof-use-cost check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
-	$(MAKE) -C research/experiments/container-representation check
+# Test the separate paired runner's result integrity with synthetic data only.
+# No compiler, native image or timing campaign is part of this gate stage.
+performance-instrument:
+	@sh tests/performance/test-verdict.sh
+
+# Reproduce the self-tests of completed research instruments when revisiting
+# their dated results. This is deliberately outside the active compiler gate.
+# research-boundary: manual-only
+historical-tool-tests:
+	@$(CHECK_RUN) historical-tool-tests $(MAKE) --no-print-directory _historical-tool-tests
+
+# research-boundary: manual-only
+_historical-tool-tests:
+	@mkdir -p "$(RESEARCH_TEST_TMP)/frequency" "$(RESEARCH_CARGO_TARGET)"
 	TMPDIR="$(RESEARCH_TEST_TMP)/frequency" $(MAKE) -C research/experiments/frequency-study check PYTHON=python3 CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/frequency"
-	$(MAKE) -C research/experiments/ripgrep test PYTHON=python3 SCRATCH_ROOT="$(RESEARCH_TEST_TMP)/ripgrep"
 	cd research/experiments/default-floor && TMPDIR="$(RESEARCH_TEST_TMP)" $(PY) -m unittest discover -s tests -p 'test_*.py' -v
-	cd research/experiments/raw-deflate-default-shape && TMPDIR="$(RESEARCH_TEST_TMP)" $(PY) test_oracle.py
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/harness/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
-# The compute regression rule, over crafted table fragments. The check it
-# decides -- `.github/workflows/compute-regression.yml`, which times two
-# builds against each other -- is deliberately not a stage of this gate. This
-# target measures nothing, links nothing and needs no compiler, so the rule
-# that fails a required pull-request check is itself checked on every run of
-# `make check`.
-	TMPDIR="$(RESEARCH_TEST_TMP)" $(MAKE) -C research/experiments/compute-bench verdict-test
 
-# The programs of the I/O measurement bundle compile with the current
-# compiler. The bundle's protocols are measurements and stay out of the gate;
-# this only compiles, so a language change that leaves a bench program behind
-# fails here instead of emptying a table on the bench runner.
-bench-programs:
-	$(MAKE) -C research/experiments/io-completion-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
-	$(MAKE) -C research/experiments/compute-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
-
-# Enumerate every declared case through the native adapter. Every non-pending
-# case reaches an actual compiler verdict; run cases are linked and
-# executed, while the declared pending case is reported as Skip. `check`
-# depends on this target.
-# `NO_CORE_DUMPS` only limits harness artifacts if an executable stops
-# unexpectedly; the corpus contains no abnormal-termination expectation.
-#
-# `--profile gate` for the reason `compiler/Cargo.toml` states: this adapter
-# runs the whole compiler over five hundred cases, which is exactly the
-# compute-bound front-end analysis the gate profile exists for, and it kept
-# every debug assertion and overflow check. Left at the default profile it was
-# both a second unoptimized build of the crate and an unoptimized run of it.
+# Focused conformance invocation. The full gate already reaches this ordinary
+# test through the shared corpus executable and must not run it twice.
 conformance-run:
-	$(NO_CORE_DUMPS) cd compiler && cargo test --profile gate --test conformance --locked --offline -- --ignored --nocapture
-
-# Recompile every program in `tests/snapshot` and compare the accept/reject
-# verdict each row records. Compile only: no link, no execution. The corpus is
-# a snapshot of this compiler and carries no specification authority, which is
-# why it is a stage of its own rather than part of `conformance-run`; see
-# `tests/snapshot/README.md`. `--profile gate` for the same reason that target
-# gives: this is compute-bound front-end analysis over hundreds of programs.
-snapshot-run:
-	cd compiler && cargo test --profile gate --test snapshot --locked --offline -- --ignored --nocapture
+	$(NO_CORE_DUMPS) cd compiler && $(CHECK_RUN) conformance-run cargo test --profile gate --test corpus --locked --offline -- conformance::adapter:: --nocapture
 
 # one-time: point git at the tracked hooks (pre-commit and pre-merge-commit)
 install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests research-tests bench-programs conformance-run snapshot-run install-hooks
+.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests performance-instrument conformance-run install-hooks

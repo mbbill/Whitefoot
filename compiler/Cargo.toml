@@ -8,14 +8,6 @@ publish = false
 doctest = false
 
 [[bin]]
-name = "whitefoot-spec"
-path = "src/bin/spec.rs"
-
-[[bin]]
-name = "whitefoot-grammar-tables"
-path = "src/bin/grammar_tables/main.rs"
-
-[[bin]]
 name = "whitefootc"
 path = "src/bin/whitefootc.rs"
 

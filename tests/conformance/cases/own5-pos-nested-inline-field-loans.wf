@@ -1,0 +1,24 @@
+struct Row {
+  left: u64;
+  right: u64;
+}
+
+struct Table {
+  rows: FixedVector<Row, 1>;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let empty = fixed_vector::<Row, 1>();
+  let item = Row(left: 3_u64, right: 4_u64);
+  region {
+    place_back(vector: &uniq empty, value: move item);
+  }
+  let rows = move empty;
+  let table = Table(rows: move rows);
+  region {
+    let left = &table.rows[0_u64].left;
+    let right = &uniq table.rows[0_u64].right;
+    set deref(right) = deref(left);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -55,17 +55,6 @@ void wf__completion_file_open_at_submit(
     void *record
 );
 
-/* A submitted status names the storage its bytes go to, because the record
- * carries a size and never the bytes: the destination is the submitter's and
- * the engine writes it there, so a frame that can hold any operation does not
- * pay 192 bytes for a facility one direct call uses (design §7). */
-void wf__completion_file_status_submit(
-    int descriptor,
-    void *status,
-    uint64_t status_capacity,
-    void *record
-);
-
 void wf__completion_file_close_submit(
     int descriptor,
     void *record
@@ -172,15 +161,6 @@ void wf__completion_file_join(
     const void *record,
     int64_t *value,
     int *error_code
-);
-
-void wf__completion_file_status_join(
-    const void *record,
-    int64_t *value,
-    int *error_code,
-    void *status,
-    uint64_t status_capacity,
-    uint64_t *status_size
 );
 
 uint64_t wf__completion_file_submissions(void);

@@ -1,5 +1,4 @@
-//! Derives the active specification's identity from its own bytes at build
-//! time.
+//! Derives the active specification's identity and grammar tables at build time.
 //!
 //! The identity used to be a generated module committed beside the source,
 //! with a test proving the committed copy matched a fresh generation. That is
@@ -15,6 +14,9 @@
 
 use std::{env, fs, path::Path};
 
+#[path = "src/syntax/grammar/generator.rs"]
+mod grammar_generator;
+
 mod sha256 {
     include!("src/spec/sha256.rs");
 }
@@ -25,6 +27,9 @@ const TITLE: &str = "# Kernel Specification ";
 fn main() {
     println!("cargo::rerun-if-changed={SPEC}");
     println!("cargo::rerun-if-changed=src/spec/sha256.rs");
+    println!("cargo::rerun-if-changed=src/syntax/grammar/generator.rs");
+    println!("cargo::rerun-if-changed=src/syntax/grammar/generator/ebnf.rs");
+    println!("cargo::rerun-if-changed=src/syntax/grammar/generator/model.rs");
 
     let bytes = fs::read(SPEC).unwrap_or_else(|error| panic!("read {SPEC}: {error}"));
     let text = std::str::from_utf8(&bytes).expect("the specification is UTF-8");
@@ -49,13 +54,16 @@ pub const SPEC_VERSION: &str = "{version}";
 ///
 /// Decoded rather than recomputed by consumers: a constant is re-evaluated in
 /// every crate that reads it, and hashing the whole specification in the
-/// constant evaluator costs seconds per crate. `computed_active_spec_hash`
-/// hashes the same bytes at runtime and the `whitefoot-spec` gate rejects any
-/// disagreement.
+/// constant evaluator costs seconds per crate. Cargo regenerates this module
+/// whenever the active specification changes.
 pub const SPEC_SHA256_HEX: &str = "{hex}";
 "#
     );
 
     let out = Path::new(&env::var("OUT_DIR").expect("OUT_DIR")).join("spec_identity.rs");
     fs::write(&out, module).unwrap_or_else(|error| panic!("write {}: {error}", out.display()));
+
+    let tables = grammar_generator::generate("spec/kernel-spec.md", text);
+    let out = out.with_file_name("grammar_tables.rs");
+    fs::write(&out, tables).unwrap_or_else(|error| panic!("write {}: {error}", out.display()));
 }

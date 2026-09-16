@@ -267,3 +267,27 @@ substantive: every source proof is checked in its current control-flow context
 and erased before lowering, every partial operation is lowered only after
 machine proof of its domain, and optional optimization facts may not change
 acceptance, cleanup, or output.
+
+Automatic CI checks maintained correctness and performance regressions in
+separate workflows. Routine correctness CI and local `make check` do not build
+or time baseline/candidate WF pairs. Formatting and Rust API documentation
+generation remain explicit authoring commands, outside the correctness gate.
+The root Makefile owns the ordinary correctness groups and their recipes.
+Local `make check` walks them in order; CI reads `make check-groups` to build
+its matrix and invokes `make check-group GROUP=<name>`. Keep host setup and
+scheduling in the workflow, not another test command list. Platform-specific
+qualification and paired performance remain explicitly separate coverage.
+`research/` is outside daily CI and `make check`, including indirect
+dependencies on its scripts, programs, fixtures and datasets. Extract useful
+observations and the inputs/oracles needed to check them into the formal test
+system. Research may consume formal fixtures; formal checks do not import
+research. Leave models, comparison tools and exploratory timing as explicitly
+requested experiments, without requiring their modernization for the gate.
+
+A case earns its place by a missing observation and a meaningful failure
+criterion. Specification-derived requirements belong in conformance, complete
+program behavior in programs, and additional implementation obligations in
+compiler/runtime tests. Reuse an existing case when it covers the obligation.
+Identify added compiler passes, native builds/runs, configurations and repeats;
+each must serve the protected property. Review these boundaries and actual
+callers under T4–T7 of the [completion checklist](review-checklist.md).

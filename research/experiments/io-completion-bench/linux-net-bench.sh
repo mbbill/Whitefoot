@@ -202,7 +202,7 @@ ratio_of() {
 
 if [ "$MODE" = bench ]; then
     cd "$ROOT/compiler"
-    cargo build --profile gate --bin whitefootc --locked --offline 2>&1 | tail -1
+    cargo build --profile gate --bin whitefootc --locked --offline
     WFC=${CARGO_TARGET_DIR:-$ROOT/compiler/target}/gate/whitefootc
 
     rm -rf "$OUT"

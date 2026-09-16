@@ -160,23 +160,28 @@ What the four rules mean exactly:
   changes after approval or after its successful test run, rules 2 and 3 apply
   to the new revision.
 - **All repository tests** is the root `make check` target: the compiler build,
-  format and lint, every maintained executable test target in the compiler and
-  the active research experiments, the specification checks, conformance
-  structure and coverage, and the full native conformance adapter including the
-  case ordinary Cargo runs mark ignored. A file retained as a deferred or
-  historical artifact that cannot run against the current toolchain is
-  evidence, not a test target.
+  Rust type/lint checks, maintained compiler/runtime/program tests, specification
+  checks, conformance structure and coverage, and the full native conformance
+  adapter through the ordinary source-corpus tests. Formatting and Rust API
+  documentation generation are explicit authoring commands, not extra
+  correctness-test stages. Performance comparisons have their own workflow;
+  neither local `make check` nor routine correctness CI builds a baseline.
+  `research/` owns investigations and explicitly requested experiments, never
+  daily CI or gate dependencies. Extract useful regression cases and their
+  required fixtures/oracles into the formal test system; leave the remaining
+  research outside it. Check test admission, placement, construction/execution
+  and indirect research dependencies in the completion checklist, including
+  correspondence between local and hosted correctness selection.
 - **Conformance evidence** is `tests/conformance` case source and manifest
   content, its runner and adapter, and any collection or invocation wiring that
   can change which cases run or how their results are read.
 
-A specification amendment lands as one change: the active file retitled and
-redeclared vN+1, and the outgoing vN bytes archived as
+A specification amendment lands as one change: the active file retitled vN+1, and the outgoing vN bytes archived as
 `spec/kernel-spec-vN.md`. Its identity follows its bytes without being
 recorded anywhere — `compiler/build.rs` derives it. The version number is
 claimed on the branch and settled at merge: two branches archive the same
 outgoing bytes under the same name, so only the new number collides, and the
-second to merge retitles two lines and rebuilds. There is no candidate state;
+second to merge updates the title and rebuilds. There is no candidate state;
 a branch carrying an amendment is merge-ready when its gate is green.
 
 No plan status, branch charter, batch record, worktree arrangement, audit,
@@ -267,6 +272,16 @@ only reports the same class of mistake earlier.
   expectations.
 
 ## Compiler rules
+
+Automatic CI checks current correctness and performance regressions;
+exploratory timing runs only when requested.
+
+Use the guarded verification targets in README, or wrap other local heavy
+builds, suites and benchmarks with `perl .github/run-check.pl <label> <command> ...`,
+including commands from other worktrees. Inspect an existing owner's PID
+instead of starting another heavy command. Separate build time from test/program
+execution, investigate a stage that exceeds its observed cost, and preserve
+the full gate before merge.
 
 The compiler's implementation rules are its design decisions and live in
 `design/compiler`, each with its reason. Before changing the compiler, read

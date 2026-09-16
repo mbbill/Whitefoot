@@ -1,68 +1,6 @@
 use super::{compile, compile_and_run};
 
 #[test]
-fn executes_width_sensitive_integer_edges_for_every_unsigned_width() {
-    let template = r#"fn main() -> status: own ExitStatus pure {
-  let shifted = ishl.wrap(1_$TYPE, $AMOUNT_u32);
-  if shifted == 2_$TYPE {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let rotated = irotl(1_$TYPE, $AMOUNT_u32);
-  if rotated == 2_$TYPE {
-  } else {
-    return exit_status(code: 2_u8);
-  }
-  let population = ipopcount($MAX_$TYPE);
-  if population == $WIDTH_u32 {
-  } else {
-    return exit_status(code: 3_u8);
-  }
-  let leading = iclz(0_$TYPE);
-  if leading == $WIDTH_u32 {
-  } else {
-    return exit_status(code: 4_u8);
-  }
-  let trailing = ictz(0_$TYPE);
-  if trailing == $WIDTH_u32 {
-  } else {
-    return exit_status(code: 5_u8);
-  }
-  let saturated = $MAX_$TYPE *sat 2_$TYPE;
-  if saturated == $MAX_$TYPE {
-  } else {
-    return exit_status(code: 6_u8);
-  }
-$BSWAP  return exit_status(code: 0_u8);
-}
-"#;
-    for (ty, width, maximum, swapped) in [
-        ("u8", 8, "255", None),
-        ("u16", 16, "65535", Some("256")),
-        ("u32", 32, "4294967295", Some("16777216")),
-        ("u64", 64, "18446744073709551615", Some("72057594037927936")),
-    ] {
-        let bswap = swapped.map_or_else(String::new, |expected| {
-            format!(
-                "  let swapped = ibswap(1_{ty});\n  if swapped == {expected}_{ty} {{\n  }} else {{\n    return exit_status(code: 7_u8);\n  }}\n"
-            )
-        });
-        let source = template
-            .replace("$TYPE", ty)
-            .replace("$WIDTH", &width.to_string())
-            .replace("$AMOUNT", &(width + 1).to_string())
-            .replace("$MAX", maximum)
-            .replace("$BSWAP", &bswap);
-        let output = compile_and_run(&compile(source.as_bytes()));
-        assert!(
-            output.status.success(),
-            "width-sensitive program failed for {ty}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-}
-
-#[test]
 fn executes_the_remaining_integer_family_and_defined_edges() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   let anded = iand(240_u8, 15_u8);

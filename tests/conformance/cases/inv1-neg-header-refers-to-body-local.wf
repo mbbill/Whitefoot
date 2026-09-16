@@ -1,0 +1,16 @@
+fn sum_weighted(count: own u64) -> total: own u64 pure {
+  let total = 0_u64;
+  for (
+    i in 0_u64..count,
+    invariant bound: scratch <= i
+  ) {
+    let scratch = total;
+    set total = total + 1_u64;
+  }
+  return total;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let total = sum_weighted(count: 5_u64);
+  return exit_status(code: 0_u8);
+}

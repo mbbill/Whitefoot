@@ -1,0 +1,22 @@
+struct Pair {
+  left: u64;
+  right: u64;
+}
+
+formal Touch {
+  fn touch(value: &uniq Pair) -> result: own unit reads(value.left), writes(value.right);
+}
+
+fn apply(input: &uniq Pair) -> result: own unit reads(input.left), writes(input.left) {
+  let observed = deref(input).left;
+  set deref(input).left = observed;
+  return unit;
+}
+
+actual PairTouch : Touch {
+  touch = apply;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,17 @@
+fn main() -> status: own ExitStatus pure {
+  let flag = True();
+  region 'r {
+    let picked = if flag {
+      let a = arena_new::<'r, i32>(11_i32);
+      give move a;
+    } else {
+      let b = arena_new::<'r, i32>(22_i32);
+      give move b;
+    }
+    let v = deref(picked);
+    if v != 11_i32 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

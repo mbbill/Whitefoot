@@ -1,0 +1,55 @@
+fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  region {
+    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
+  }
+  let bytes = buffer_new(4_u64, 119_u8);
+  set bytes[1_u64] = 120_u8;
+  set bytes[2_u64] = 121_u8;
+  set bytes[3_u64] = 122_u8;
+  region {
+    region {
+      region {
+        let native_window_11 = slice_of(&bytes);
+        region {
+          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_11, start: 0_u64, end: 0_u64) {
+            Ok(value: written) => {
+              if written == 0_u64 {
+              } else {
+                return exit_status(code: 210_u8);
+              }
+            }
+            Err(error: problem) => {
+              return exit_status(code: 211_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+  region {
+    region {
+      region {
+        let native_window_12 = slice_of(&bytes);
+        region {
+          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_12, start: 1_u64, end: 3_u64) {
+            Ok(value: written) => {
+              let narrowed = cvt::<u64, u8>(written);
+              match narrowed {
+                Ok(value: code) => {
+                  return exit_status(code: code);
+                }
+                Err(error: overflowed) => {
+                  return exit_status(code: 200_u8);
+                }
+              }
+            }
+            Err(error: problem) => {
+              return exit_status(code: 212_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+}

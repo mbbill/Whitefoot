@@ -1,0 +1,35 @@
+struct Holder {
+  payload: FixedVector<u8, 4>;
+  count: u64;
+}
+
+fn consume(h: own Holder) -> result: own unit pure {
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let first = fixed_vector::<u8, 4>();
+  for @fill_first (
+    at in 0_u64..2_u64,
+    invariant grown: len_of(first) >= at,
+    invariant spare: room_of(first) + at >= 2_u64,
+    invariant flat: head_of(first) <= 0_u64
+  ) {
+    place_back(vector: &uniq first, value: 1_u8);
+  }
+  let holder = Holder(payload: move first, count: 0_u64);
+  let second = fixed_vector::<u8, 4>();
+  for @fill_second (
+    at in 0_u64..3_u64,
+    invariant grown: len_of(second) >= at,
+    invariant spare: room_of(second) + at >= 3_u64,
+    invariant flat: head_of(second) <= 0_u64
+  ) {
+    place_back(vector: &uniq second, value: 2_u8);
+  }
+  let old = replace holder.payload = move second;
+  set holder.count = 1_u64;
+  let observed = holder.count;
+  let done = consume(h: move holder);
+  return exit_status(code: 0_u8);
+}

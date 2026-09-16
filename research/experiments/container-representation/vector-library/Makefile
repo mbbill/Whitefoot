@@ -7,7 +7,7 @@ BUILD := .build
 SOURCES := $(ROOT)/lib/containers/vector.wf vector-library.wf
 .DELETE_ON_ERROR:
 
-include ../native.mk
+include ../../../../compiler/runtime.mk
 
 .PHONY: check measure clean
 

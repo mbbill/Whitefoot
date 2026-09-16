@@ -184,84 +184,6 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
 }
 
 #[test]
-fn the_same_subscript_discharges_without_the_replace() {
-    // The control for the kill test: identical program minus the commit.
-    // Rejection above plus acceptance here attributes the kill to SET-2.
-    let source = with_holder(
-        br#"fn main() -> status: own ExitStatus pure {
-  let first = fixed_vector::<u8, 4>();
-  for @fill_first (
-    at in 0_u64..4_u64,
-    invariant grown: len_of(first) >= at,
-    invariant spare: room_of(first) + at >= 4_u64,
-    invariant flat: head_of(first) <= 0_u64
-  ) {
-    place_back(vector: &uniq first, value: 7_u8);
-  }
-  let holder = Holder(payload: move first, count: 0_u64);
-  let size = len_of(holder.payload);
-  let allocated_length = size == 4_u64;
-  if allocated_length {
-    set holder.payload[3_u64] = 5_u8;
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-    );
-    with_semantics(&source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "the control must accept: {outcome:?}"
-        );
-    });
-}
-
-#[test]
-fn replace_leaves_the_target_root_live() {
-    // The commit is not a consuming use [SET-2, OWN-1]: the root is read,
-    // written, and finally moved after the replace.
-    let source = with_holder(
-        br#"fn consume(h: own Holder) -> result: own unit pure {
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let first = fixed_vector::<u8, 4>();
-  for @fill_first (
-    at in 0_u64..2_u64,
-    invariant grown: len_of(first) >= at,
-    invariant spare: room_of(first) + at >= 2_u64,
-    invariant flat: head_of(first) <= 0_u64
-  ) {
-    place_back(vector: &uniq first, value: 1_u8);
-  }
-  let holder = Holder(payload: move first, count: 0_u64);
-  let second = fixed_vector::<u8, 4>();
-  for @fill_second (
-    at in 0_u64..3_u64,
-    invariant grown: len_of(second) >= at,
-    invariant spare: room_of(second) + at >= 3_u64,
-    invariant flat: head_of(second) <= 0_u64
-  ) {
-    place_back(vector: &uniq second, value: 2_u8);
-  }
-  let old = replace holder.payload = move second;
-  set holder.count = 1_u64;
-  let observed = holder.count;
-  let done = consume(h: move holder);
-  return exit_status(code: 0_u8);
-}
-"#,
-    );
-    with_semantics(&source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "the root must stay live after a replace: {outcome:?}"
-        );
-    });
-}
-
-#[test]
 fn replace_of_a_dead_root_rejects_citing_own1() {
     let source = with_holder(
         br#"fn sink(h: own Holder) -> result: own unit pure {
@@ -390,46 +312,6 @@ fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_oblig
                 ..
             }
         ));
-    });
-}
-
-/// A legacy buffer element exchange retains [SET-2]'s ownership and bounds
-/// judgments through a unique holder; run referents use the same rule.
-#[test]
-fn element_position_replace_through_a_unique_holder_accepts() {
-    // The DESIGN walkthrough shape: the commit through a live usable `&uniq`
-    // holder is [SET-2]'s sole admitted move of content reached through a
-    // borrow, and the OP-4 obligation discharges against the held buffer's
-    // length fact.
-    let source = br#"struct OptVec {
-  buf: buffer<Option<u32>>;
-  fill: u64;
-}
-
-fn push(v: &uniq OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf) {
-  let count = deref(v).fill;
-  let limit = len_of(deref(v).buf);
-  let has_room = count < limit;
-  if has_room {
-    let filled = Some<u32>(value: x);
-    let vacant = replace deref(v).buf[count] = move filled;
-  }
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let empty = buffer_vacant::<u32>(2_u64);
-  let v = OptVec(buf: move empty, fill: 0_u64);
-  region {
-    push(v: &uniq v, x: 5_u32);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("a held element replace must check: {outcome:?}");
-        };
     });
 }
 

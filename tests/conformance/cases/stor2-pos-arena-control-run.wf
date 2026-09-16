@@ -1,0 +1,47 @@
+fn early() -> result: own i32 pure {
+  region 'e {
+    let a = arena_new::<'e, i32>(5_i32);
+    let v = deref(a);
+    return v;
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  for @turns (i in 0_u64..200_u64) {
+    region 'r {
+      let a = arena_new::<'r, i32>(1_i32);
+      let b = arena_new::<'r, i32>(2_i32);
+      let first = deref(a);
+      let second = deref(b);
+      if first != 1_i32 {
+        return exit_status(code: 1_u8);
+      }
+      if second != 2_i32 {
+        return exit_status(code: 2_u8);
+      }
+    }
+  }
+  let got = early();
+  if got != 5_i32 {
+    return exit_status(code: 3_u8);
+  }
+  region 'outer {
+    let base = arena_new::<'outer, i32>(7_i32);
+    region 'inner {
+      let extra = arena_new::<'inner, i32>(30_i32);
+      let left = deref(base);
+      let right = deref(extra);
+      if left != 7_i32 {
+        return exit_status(code: 4_u8);
+      }
+      if right != 30_i32 {
+        return exit_status(code: 5_u8);
+      }
+    }
+    let after = deref(base);
+    if after != 7_i32 {
+      return exit_status(code: 6_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
