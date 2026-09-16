@@ -3,9 +3,9 @@
 # Whitefoot program built with plain `--par` the fastest thing in the row? --
 # answered on a real Linux host and on an ordinary Apple M1.
 #
-# Selected pushes build and verify every form on both hosts. Full exploratory
-# timing runs only on manual dispatch; automatic performance-regression verdicts
-# belong to compute-regression.yml.
+# research-boundary: manual-only
+# Explicitly requested framework comparison; no push or pull-request trigger.
+# Formal correctness and paired regression use the maintained test system.
 #
 # FAILURE POLICY. The job fails on a `deps`, `build` or `verify` failure and on
 # nothing else. The manual `compare` step's exit status is the reducer's, and the
@@ -25,8 +25,7 @@ on:
     # An A/B twin on a quiet runner: a non-empty control value builds the second
     # image and adds the wf-b rows (README, "The A/B twin"); such a table is
     # never a recorded plain table. `gap_us` is not a control and builds
-    # nothing, but marks its table the same way. Pushes verify the plain image
-    # without timed passes or a twin.
+    # nothing, but marks its table the same way.
     inputs:
       par_control_flags:
         description: WF_PAR_CONTROL_FLAGS for the B image (emission)
@@ -50,16 +49,6 @@ on:
         description: WFB_GAP_US, microseconds waited between consecutive timed calls (every form)
         default: ""
         type: string
-  push:
-    paths:
-      - 'research/experiments/compute-bench/**'
-      - 'compiler/src/backend/sched/**'
-      - 'compiler/src/backend/wf_floor.c'
-      - 'compiler/src/backend/emitter/**'
-      - 'compiler/src/lowering/**'
-      - 'compiler/src/driver.rs'
-      - 'compiler/src/bin/whitefootc.rs'
-      - '.github/workflows/compute-bench.yml'
 
 # Every shell step runs under `bash -eo pipefail`, so a step that fails behind
 # a pipe fails the step. io-bench.yml carries the same default and records the

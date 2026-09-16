@@ -706,6 +706,78 @@ fn stencil_matches_an_independent_dimension_and_step_matrix() {
     }
 }
 
+// These receivers check a private condition as well as whole program results:
+// a real non-offering worker must enter a published task before its join. The
+// independent C oracle and WF inputs have formal shared homes, also consumed
+// by the separate performance runner without this scheduling observation.
+fn check_formal_compute_matrix(name: &str, source: &[u8], adapter: &str, oracle: &str) {
+    let oracle = oracle.replace(
+        "#include \"oracle.h\"",
+        include_str!("../../../../tests/programs/compute/oracle.h"),
+    );
+    for overlap in [
+        OverlapLowering::Off,
+        OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 16,
+        },
+    ] {
+        let emitted = emit_lowered(source, overlap);
+        let llvm = bind_compute_host_adapter(&emitted, adapter)
+            .replace("@main(", "@wf_compute_smoke_main(")
+            .replace("@wf__main_body(", "@wf_compute_smoke_body(");
+        let parallel = !matches!(overlap, OverlapLowering::Off);
+        let defines = if parallel {
+            vec!["WFB_ORACLE_PARALLEL=1".to_owned()]
+        } else {
+            Vec::new()
+        };
+        let directory = test_directory();
+        let executable = build_compute_oracle(&llvm, &oracle, &defines, &directory);
+        run_compute_oracle(&executable, name, parallel);
+        std::fs::remove_dir_all(directory).expect("remove compute oracle image");
+    }
+}
+
+#[test]
+fn formal_compute_mandelbrot_shapes_preserve_all_escape_counts_on_a_worker() {
+    check_formal_compute_matrix(
+        "mandelbrot",
+        include_bytes!("../../../../tests/programs/compute/mandelbrot.wf"),
+        include_str!("../../../../tests/programs/compute/mandelbrot_host.ll"),
+        include_str!("../../../../tests/programs/compute/mandelbrot_oracle.c"),
+    );
+}
+
+#[test]
+fn formal_compute_records_preserve_utf8_and_range_results_on_a_worker() {
+    check_formal_compute_matrix(
+        "records",
+        include_bytes!("../../../../tests/programs/compute/records.wf"),
+        include_str!("../../../../tests/programs/compute/records_host.ll"),
+        include_str!("../../../../tests/programs/compute/records_oracle.c"),
+    );
+}
+
+#[test]
+fn formal_compute_fir_preserves_ordered_rounding_and_inputs_on_a_worker() {
+    check_formal_compute_matrix(
+        "fir",
+        include_bytes!("../../../../tests/programs/compute/fir.wf"),
+        include_str!("../../../../tests/programs/compute/fir_host.ll"),
+        include_str!("../../../../tests/programs/compute/fir_oracle.c"),
+    );
+}
+
+#[test]
+fn formal_compute_quadrature_matches_postorder_and_analytic_oracles_on_a_worker() {
+    check_formal_compute_matrix(
+        "quadrature",
+        include_bytes!("../../../../tests/programs/compute/quadrature.wf"),
+        include_str!("../../../../tests/programs/compute/quadrature_host.ll"),
+        include_str!("../../../../tests/programs/compute/quadrature_oracle.c"),
+    );
+}
+
 #[test]
 fn recursive_child_ranges_restore_parent_access() {
     let source = include_bytes!("../../../../tests/programs/compute/range_split.wf");

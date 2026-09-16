@@ -15,12 +15,10 @@
 # no band, no threshold, no timeout and no heuristic anywhere selects a row, a
 # ranking or a ratio, and `compare` fails only on a missing or malformed row.
 #
-# The ONE number in this bundle that decides a pass/fail is `verdict`, and it
-# is not part of the repository's `make check`: it reads the A/B lines of a
-# BASELINE-TWIN run -- this tree's `wf` against the merge-base's `wf-b` -- and
-# `.github/workflows/compute-regression.yml` runs it as a separate required
-# pull-request check. `make check` runs `programs-check` and `verdict-test`,
-# and neither of those times anything.
+# `verdict` and `verdict-test` reproduce this bundle's historical table rule.
+# Automatic regression now uses tests/performance and does not invoke any target
+# here. `programs-check`, correctness matrices and framework measurements are
+# available only when this research experiment is explicitly requested.
 #
 # Generated trees, binaries and raw output stay in the scratch root. Nothing
 # is written inside the repository.
@@ -995,16 +993,9 @@ module-symbols-test:
 	CC="$(CC)" sh module-symbols-test.sh
 
 # ---------------------------------------------------------------- verdict ---
-# The one target in this bundle whose exit status is decided by a measured
-# number, and it is NOT part of the repository's `make check`: it reads the
-# `A/B  wf-b/wf` lines of a table produced by a baseline-twin run and fails
-# when the merge-base was faster at two of a kernel's widths -- one width alone
-# is reported as a `suspect` and fails nothing, because one width does not
-# separate a slower program from a differently placed one, and verdict.awk's
-# own comment carries the two runs that showed it.
-# `.github/workflows/compute-regression.yml` runs it as a required PR check;
-# `make check` runs `programs-check` and `verdict-test` and neither of those
-# times anything.
+# Legacy verdict for manually reproducing the historical table protocol.
+# Automatic performance regression uses tests/performance instead. Neither
+# this verdict nor this directory's other targets is called by make check.
 #
 # RESULTS is expanded once per make invocation and defaults to a timestamped
 # directory, so `make compare && make verdict` as two invocations would look
@@ -1026,11 +1017,7 @@ verdict:
 	    -v cpu=$(VERDICT_CPU) -v lower=$(VERDICT_LOWER) -v pairs=$(VERDICT_PAIRS) \
 	    "$(VERDICT_TABLE)"
 
-# The verdict rule's own test, and the reason the rule can be in `make check`
-# while the gate cannot: it feeds verdict.awk crafted table fragments and
-# asserts the exit status and the verdict line, so the logic that decides a
-# required check is itself checked on every gate run, on a host that measures
-# nothing.
+# Self-test for reproducing that legacy rule, invoked only explicitly.
 verdict-test:
 	sh verdict-test.sh
 

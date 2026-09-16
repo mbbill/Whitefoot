@@ -151,7 +151,8 @@ the [test boundary](docs/practice.md#test-boundary): useful research cases and
 their dependencies belong in formal tests, while research runs on explicit
 request. Full IO matrices and compute scoreboards are experiments; the separate
 [compute regression check](.github/workflows/compute-regression.yml) supplies
-a paired performance verdict. Routine correctness CI and local `make check`
+a paired performance verdict using the [formal runner](tests/performance/README.md).
+Routine correctness CI and local `make check`
 do not build a baseline compiler or run that comparison. A green run describes its tested revision and
 coverage; it is not a proof of completeness or the absence of known defects.
 Conformance reports distinguish passing cases, expected compiler failures,

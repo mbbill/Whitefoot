@@ -1,10 +1,5 @@
-; Serves compute-bench: the FIR host adapter. It is LLVM IR rather than C
-; so it also works when @wf_filter and @wf_release_samples have internal linkage.
-; It builds the two buffer descriptors -- the history-prefixed input and the
-; taps -- and forwards; it computes nothing. The Makefile appends this file to
-; each emitted module and isolates definitions with the -par or -seq adapter
-; spellings, so one text serves both. Eighteen lines of IR, the ceiling
-; section 2 of the specification records.
+; Scalar/pointer host ABI for the formal fir fixture.
+; The shared adapter binder selects the entry-equivalent execution world.
 define void @wf_bench_fir(ptr %input, i64 %input_len, ptr %taps, i64 %tap_len, i64 %first, i64 %end, i64 %last_tap, ptr %out, ptr %out_len) {
   %a = insertvalue { ptr, i64 } poison, ptr %input, 0
   %b = insertvalue { ptr, i64 } %a, i64 %input_len, 1

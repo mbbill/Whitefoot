@@ -1,13 +1,3 @@
-<!-- Serves compute-bench: the reader's entry point. It states the one question
-     the bundle answers, how to run it, how to read the table it prints, what
-     each reference's grain policy is and what it is not, the three A/B
-     handles and the baseline twin a fourth builds, the call cadence and the
-     gap mode, the two flag sets and the asymmetry between them, the one
-     compiled-Whitefoot standing the old research bundle left behind, where a
-     table that matters is recorded, and the one rule here that decides a
-     pass/fail: the compute regression check, a separate pull-request check
-     that is not part of `make check`. -->
-
 # compute-bench
 
 One question, one table per host:
@@ -21,14 +11,10 @@ fails a build or a check**: there is no band, no threshold, no timeout, no
 budget and no heuristic anywhere that selects a row, a ranking or a ratio, and
 `compare` fails only on a missing or malformed row.
 
-One rule here does decide a pass/fail, and it is deliberately kept to one
-place, one input and one job: [the compute regression
-check](#the-compute-regression-check) compares this tree against the tree a
-branch started from, using the A/B twin below, and fails a pull request that
-made the compiled Whitefoot program slower. It reads the twin lines of one
-table and nothing else, it is a separate required check rather than a stage of
-the repository's `make check`, and it changes nothing the recorded scoreboard
-measures.
+Automatic compiler performance regression is maintained separately in
+[`tests/performance`](../../../tests/performance/README.md). This framework
+scoreboard is manually invoked; its legacy `verdict` reproduces historical
+A/B tables and does not decide a pull-request check.
 
 ## What "WF" means here, and what it does not
 
@@ -404,14 +390,11 @@ a result: the tables copied into `RESULTS.md` as the record of what this tree
 produces are taken with all three controls empty and `WF_AB` unset, which builds no
 twin, runs no extra process and leaves the bundle exactly as it was. An A/B run
 is recorded as the *arms of an experiment*, with the control flags in its
-heading and the `A/B` lines quoted in its reading. A push to the hosted
-workflow sets none of the three and therefore builds no twin; a manual dispatch
-of `.github/workflows/compute-bench.yml` takes the three as inputs, beside the
-call cadence of the section below, which is how an A/B pair is read on a quiet
-runner (its table is an experiment, never a recorded plain one). The two
-targets the repository's `make check` runs — `programs-check` and
-`verdict-test` — read none of these handles nor the cadence: one compiles
-programs and the other feeds the regression rule crafted table fragments.
+heading and the `A/B` lines quoted in its reading. A manual dispatch of
+`.github/workflows/compute-bench.yml` takes the three controls and call cadence
+as inputs. A control pair is an experiment, not a recorded plain table.
+The optional `programs-check` and legacy `verdict-test` commands read none
+of these handles; neither is invoked by the repository gate.
 
 **A fourth handle hands the same twin a different tree.** `WF_B_SCHED_DIR`,
 `WF_B_FLOOR` and `WF_B_WFC` name where the twin's Whitefoot runtime and its
@@ -453,153 +436,21 @@ also calls for the `note` column's chunk count, *does* have a weak stub, so it
 is that post-link strong-binding assertion and not the reference that keeps the
 count from being a stub's zero.
 
-## The compute regression check
+## Formal performance regression
 
-The twin above answers "what would this flag be worth here" from one tree. Hand
-it a different tree and it answers the question a regression check asks:
+The automatic WF baseline/candidate comparison is owned by
+[`tests/performance`](../../../tests/performance/README.md) and
+`.github/workflows/compute-regression.yml`. It uses formal current fixtures,
+independent result oracles and each arm's own compiler/runtime, without this
+bundle or comparison frameworks. Its crafted-data integrity checks belong to
+the ordinary gate; its compiler pair and measurements do not.
 
-> **Is the Whitefoot program this branch produces slower than the one the
-> branch started from?**
+This bundle remains an explicitly requested framework comparison. Its legacy
+`verdict` and `verdict-test` commands reproduce the older table protocol; they
+are not the automatic regression verdict or part of `make check`. Historical
+measurements retain their recorded flags, workloads and limitations.
 
-That is `.github/workflows/compute-regression.yml`, a **required** check on
-pull requests. It runs on every one of them and carries no `paths:` filter,
-which is a consequence of being required rather than a change of mind about
-what is worth measuring: a workflow filtered on paths does not run at all on a
-pull request touching none of them, so it never reports, and a required check
-that never reports leaves that pull request waiting forever on a run nobody
-will start.
-
-The path decision moved inside the job instead. Its first step, after a
-full-history checkout, diffs the merge base with the base branch against `HEAD`
-and matches the result against the set that can move the two arms apart — the
-scheduler runtime, the floor, the emitter, the lowering, the driver, this
-bundle, and the workflow file itself. A pull request that touches none of them
-prints one line saying the measurement was skipped, and the job ends green in
-seconds: no dependencies, no cache, no build. A pull request that touches one
-of them is measured exactly as before. Either way it is one job and one check
-name, and it reports. A manual `workflow_dispatch` always measures.
-
-It is **not** a stage of the repository's `make check` and never will be:
-`make check` is the merge gate and has to be a property of the tree rather
-than of a runner's load. The rule's own unit test is in `make check` —
-`verdict-test.sh`, through the root `research-tests` stage — so the logic that
-fails a pull request is itself checked on every gate run, on a host that
-measures nothing.
-
-### What it builds
-
-Three variables point the twin's Whitefoot side at another checkout. Each
-defaults to this tree's own, so a bundle that sets none of them is the bundle
-that was here before:
-
-| variable | default | what it names |
-|---|---|---|
-| `WF_B_SCHED_DIR` | `../../../compiler/src/backend/sched` | the twin's `core.c`, `prim_host.c`, `entry.c` and their headers |
-| `WF_B_FLOOR` | `../../../compiler/src/backend/wf_floor.c` | the twin's floor translation unit |
-| `WF_B_WFC` | `../../../compiler/target/gate/whitefootc` | the compiler that emits the twin's `--par` module |
-| `WF_B_INTERFACE` | `ordinary` | explicit `ordinary` or legacy `command` entry/library boundary |
-| `WF_B_SOURCE` | `this tree` | a label for `manifest.txt`; the merge-base revision on a gate run |
-
-Naming any of the first three is by itself a request for the twin: a regression
-run sets no control flag and still gets its second image. **This is one build
-path, not a second one** — the baseline twin is the twin the three control
-flags already built, handed different inputs, with the same three post-link
-assertions. A `.wf` algorithm and the harness always come from this tree;
-the entry adapter and native components follow the explicit profile.
-
-The workflow exports the merge-base with the pull request's base branch as a
-git worktree under `$RUNNER_TEMP` — never a path inside the repository — builds
-that revision's `whitefootc` beside it, and sets the paths, label and interface. The
-merge base rather than the base branch's tip, because a branch is answerable
-for what it changed and not for what landed on `main` while it was open.
-
-`manifest.txt` records `WF_B_SOURCE`, the three paths and the SHA-256 of every
-baseline source the twin was built from, and the table header carries a
-`WF A/B twin source=` line, so a table from a regression run says in its own
-first lines that its `wf-b` rows are another tree's program. The same hashes
-are what make a changed baseline rebuild the twin: they are kept in a stamp the
-twin's module and its native-library objects depend on, so a moved merge base
-re-emits and recompiles the `-b` side and nothing else, while the same bytes
-under another path rebuild nothing.
-
-### The rule
-
-```
-A block is ADVERSE when its  A/B  wf-b/wf  wall  median is below 0.97
-     and the baseline was the faster arm in at least 4 of the 5 pairs,
-     at W in {1, 2, 4}, oversubscribed blocks excluded.
-
-A kernel FAILs on TWO adverse blocks.
-One adverse block alone is a `suspect`: printed, and it fails nothing.
-```
-
-Both halves of *adverse* are required. A median can sit under the band on one
-adverse pair, and a count of adverse pairs says nothing about their size; the
-twin exists because this host class cannot resolve a single reading.
-
-**And two widths are required, because one width does not separate a slower
-program from a differently placed one.** The two arms are two images linked
-from two sets of objects under two sets of names, so their functions do not
-land at the same offsets even when their sources are byte-identical, and this
-bundle's largest confound is exactly that. Two runs are on the record. Pull
-request #50's first attempt read `records W=1 wall 0.938` with five of five
-pairs lower on a branch that changes no translation unit the compute path
-compiles on Linux — both arms built from byte-identical runtime sources and
-the same emission — and run `34671025894` read `records` at 0.912 at W=1 where
-the code that pull request added is present in neither arm. Each was one block
-and each would have failed the rule as it stood.
-
-A regression in the scheduler runtime or the emission does not confine itself
-to one width; placement does exactly that, because the offsets that matter at
-width one are not the ones that matter at width four. So a lone adverse block
-is reported as `suspect` on its row and again under the table, on a passing run
-and a failing one alike, and two adverse blocks **in one kernel** are the
-verdict. The count is per kernel and is not pooled: one adverse block in each
-of two kernels is two suspects.
-
-This is the half of the problem a rule can answer. The other half is answered
-in the build — `WF_ALIGN` gives both arms `-falign-functions=64
--falign-loops=32` on x86_64, so the internal alignment of their **Whitefoot
-translation units** is identical by construction (see "The two flag sets"
-below). Neither measure is sufficient alone, and the record is explicit that
-alignment is not a cure: with both arms aligned and one deliberately shifted by
-a 587-byte pad, the twin lines read no closer to 1.000 than unaligned.
-
-**CPU is a report and never a failure.** A paired `cpu` ratio below 0.90 under
-the same count is printed under the table, marked `*` on its row, and changes
-no exit status. It borrows the wall `lower` count because the reducer prints
-only that one; a CPU signal read against a wall-pair count is worth looking at
-and is not worth failing a branch over.
-
-**What it excludes, and why.**
-
-- **W=8 and above.** The hosted Linux runners have four CPUs, so those blocks
-  are oversubscribed, and oversubscription rewards schedulers that yield —
-  it changes which implementation wins rather than measuring one. The reducer
-  already refuses to name a winner there, and the rule skips any block it
-  marked oversubscribed even at a recorded width, which is what a two-CPU
-  runner's `W=4` would be.
-- **macOS.** That runner cannot resolve below about twenty percent, which is
-  wider than anything this rule is looking for. The check runs on
-  `ubuntu-24.04` alone.
-- **Runner heterogeneity.** The `ubuntu-24.04` pool is several machine
-  classes, so a comparison across two jobs measures the pool. Everything the
-  rule reads is a within-run, within-pass pairing of two processes on one
-  machine, which resolves about one percent at W=2 and W=4.
-
-**It refuses rather than passing vacuously.** A table with no `A/B` line means
-no twin was built; a table whose only `A/B` lines are at unrecorded widths
-means nothing the rule reads; a line backed by fewer than five pairs is not the
-rule; and a table where **no kernel has two readable blocks** — one width asked
-for, or a host that oversubscribed all but one — is a table the two-block rule
-cannot fail whatever it says, which is the same defect wearing the new rule's
-clothes. Each of those exits non-zero with `REFUSED`, because a gate that reads
-absent evidence as good news is a gate that switches itself off.
-
-There is **no automatic re-run**. A re-run is a person's decision: a job that
-retried until it agreed would be selecting its own result.
-
-### Running it locally
+## Running it locally
 
 ```sh
 export WHITEFOOT_SCRATCH_ROOT=${TMPDIR:-/tmp}/whitefoot
@@ -674,8 +525,8 @@ happens, because a disagreement would silently compare two different widths.
 `WFB_GAP_US` is the other variable the table sets and is optional: unset is the
 back-to-back cadence, and "The gap between calls" below is what a value does.
 
-`make programs-check` and `make verdict-test` are the two targets the
-repository's `make check` runs, and neither times anything. `programs-check`
+`make programs-check` and `make verdict-test` are optional manual checks;
+neither times anything. `programs-check`
 compiles each program in exactly the two modes the table uses and asserts that
 `--par` emits a publish site and `--no-overlap` emits none. For timed kernels,
 including stencil, it also links both emissions with the complete ordinary
@@ -749,12 +600,10 @@ make -C research/experiments/compute-bench verify
 make -C research/experiments/compute-bench compare PASSES=5 CALLS=5
 ```
 
-Selected pushes run the first three commands in
-`.github/workflows/compute-bench.yml` on `ubuntu-24.04` and `macos-14`, checking
-every form at every emitted width. Manual dispatch also runs `compare` and
-publishes its tables. Automatic performance-regression verdicts remain in
-`compute-regression.yml`; a scoreboard without a regression verdict does not
-belong in automatic CI.
+Manual dispatch runs these commands in `.github/workflows/compute-bench.yml`
+on `ubuntu-24.04` and `macos-14` and publishes the requested tables. There is
+no push trigger. Automatic performance verdicts use the formal paired runner
+in `compute-regression.yml`.
 
 ## The gap between calls
 
@@ -832,8 +681,7 @@ check nothing. What `verify` does with it is read it, report it in its
 reads the three controls: it performs untimed emission and link checks.
 
 A hosted run takes the gap as the `gap_us` input of
-`.github/workflows/compute-bench.yml`, beside the three control inputs, and a
-push sets none of the four.
+`.github/workflows/compute-bench.yml`, beside the three control inputs.
 
 ## The lane trace
 
@@ -1083,7 +931,7 @@ affordable count below the cap. The size constants therefore stand on the two
 window bounds alone, and they are unchanged.
 
 **`max_length` is 255, not 256, and that is a contract bound rather than a
-transcription slip.** `summarize_records` in `programs/records.wf` carries
+transcription slip.** `summarize_records` in `tests/programs/compute/records.wf` carries
 `requires input_count <= 16777216` on the byte buffer, which is proof-only
 source evidence erased before lowering, so the C caller is what has to
 establish it. At 131,072 records seeded 812381 a limit of 256 generates
@@ -1345,7 +1193,7 @@ which the compiled program is asked the question at all, and the shipped 131,072
 is the first at which it is asked it at the width the table records. The old
 bundle has no other compiled-Whitefoot records standing.
 
-**fir** — data-parallel loop, small tasks. `programs/fir.wf` is the one
+**fir** — data-parallel loop, small tasks. `tests/programs/compute/fir.wf` is the one
 Whitefoot source here that is not carried verbatim: the old bundle's
 `fir.wf`/`fir_direct.wf` pair parallelizes by recursive tile halving into a
 `box<FirTiles>` tree whose every sample is read through an accessor call, and

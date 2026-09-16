@@ -1,10 +1,5 @@
-; Serves compute-bench: the records host adapter. It is LLVM IR rather than C
-; so it also works when @wf_summarize_records and @wf_record_result_release
-; have internal linkage. It builds the two buffer descriptors -- the input
-; bytes and the record offsets -- and forwards; it computes nothing.
-; The Makefile appends this file to each emitted module and isolates its
-; definitions with the -par or -seq adapter spellings, so one text serves both.
-; Eighteen lines of IR, the ceiling section 2 of the specification records.
+; Scalar/pointer host ABI for the formal records fixture.
+; The shared adapter binder selects the entry-equivalent execution world.
 define void @wf_bench_records(ptr %data, i64 %data_len, ptr %offsets, i64 %offsets_len, i64 %first, i64 %end, ptr %out, ptr %out_len) {
   %a = insertvalue { ptr, i64 } poison, ptr %data, 0
   %b = insertvalue { ptr, i64 } %a, i64 %data_len, 1

@@ -116,15 +116,19 @@ static size_t verify_matrix(stencil_entry entry, stencil_release release) {
     return compared;
 }
 
-#ifndef WF_ORACLE_NO_MAIN
+#if !defined(WF_ORACLE_NO_MAIN) || defined(WF_ORACLE_PERFORMANCE)
 extern void wf_bench_stencil(uint64_t, uint64_t, uint64_t, double **, uint64_t *);
 extern void wf_bench_stencil_release(double *, uint64_t);
+#endif
 
+#ifndef WF_ORACLE_NO_MAIN
 extern int wf__floor_run(int, char **);
 #ifdef WFB_ORACLE_PARALLEL
 extern int wf__par_pool_active(void);
 extern unsigned long wf__par_grants(void);
 #endif
+
+
 int wf__main_body(int argc, char **argv) {
     (void)argc; (void)argv;
     size_t compared = verify_matrix(wf_bench_stencil, wf_bench_stencil_release);
@@ -142,4 +146,29 @@ int wf__main_body(int argc, char **argv) {
 }
 int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 
+#endif
+
+#ifdef WF_ORACLE_PERFORMANCE
+/* The separate paired workflow owns timing. Ordinary verification does not
+ * allocate this 4M-cell fixture or compute its sixteen-step reference. */
+const char *const wf_oracle_name = "stencil";
+const char *const wf_oracle_fixture = "width=1024 height=4096 steps=16 initial=squared-position";
+static double *timed_expected, *timed_output;
+size_t wf_oracle_verify(void) {
+    return verify_matrix(wf_bench_stencil, wf_bench_stencil_release);
+}
+void wf_oracle_prepare(void) { timed_expected = oracle(1024, 4096, 16); }
+size_t wf_oracle_call(void) {
+    uint64_t length = UINT64_MAX;
+    wf_bench_stencil(1024, 4096, 16, &timed_output, &length);
+    if (length != 1024 * 4096) fail("timed output extent");
+    return (size_t)length;
+}
+size_t wf_oracle_check(void) {
+    size_t compared = compare(timed_expected, timed_output, 1024 * 4096);
+    wf_bench_stencil_release(timed_output, compared);
+    timed_output = NULL;
+    return compared;
+}
+void wf_oracle_finish(void) { free(timed_expected); timed_expected = NULL; }
 #endif

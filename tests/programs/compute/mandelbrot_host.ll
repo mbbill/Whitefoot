@@ -1,9 +1,5 @@
-; Serves compute-bench: the Mandelbrot host adapter. It is LLVM IR rather than
-; C so it also works when @wf_render_points and @wf_release_points have internal linkage.
-; It builds the two buffer descriptors and forwards; it computes nothing.
-; The Makefile appends this file to each emitted module and isolates its
-; definitions with the -par or -seq adapter spellings, so one text serves both.
-; host-adapter.awk supplies entry-equivalent execution-world selection.
+; Scalar/pointer host ABI for the formal mandelbrot fixture.
+; The shared adapter binder selects the entry-equivalent execution world.
 define void @wf_bench_mandelbrot(ptr %real, ptr %imaginary, i64 %count, i64 %limit, ptr %out, ptr %out_len) {
   %a = insertvalue { ptr, i64 } poison, ptr %real, 0
   %b = insertvalue { ptr, i64 } %a, i64 %count, 1

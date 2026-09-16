@@ -41,10 +41,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-14]
-        stage: [static, unit, corpus, runtime, libraries, research, bench-programs]
+        stage: [static, unit, corpus, runtime, libraries]
         include:
           - stage: static
-            run: make static conformance && make -C compiler lint
+            run: make static conformance performance-instrument && make -C compiler lint
           - stage: unit
             run: make -C compiler test-unit
           - stage: corpus
@@ -53,11 +53,6 @@ jobs:
             run: make -C compiler completion-test
           - stage: libraries
             run: make -C compiler build && make library-tests
-          # These two callers retire as their selected formal receivers land.
-          - stage: research
-            run: make research-tests
-          - stage: bench-programs
-            run: make bench-programs
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,7 +67,7 @@ jobs:
 
       # The desktop default reserves capacity for interactive work. Each CI
       # job owns its VM, so retain the host-sized test pool there. Compiler
-      # builds and memory-heavy benchmark-source builds remain bounded at two.
+      # builds remain bounded at two.
       - name: Set dedicated-runner test parallelism
         run: echo "RUST_TEST_THREADS=$(getconf _NPROCESSORS_ONLN)" >> "$GITHUB_ENV"
 
@@ -117,9 +112,8 @@ jobs:
           rustup component add clippy rustfmt
           cargo --version
 
-      # The active gate needs only the dependency-free compiler crate and
-      # standalone research probes. Completed research instruments fetch their
-      # third-party crates only when their reproduction target is requested.
+      # The active gate uses the dependency-free compiler crate and formal
+      # fixtures. Research instruments run only when explicitly requested.
 
       # A gate that proves programs die is a gate that makes the kernel run
       # `kernel.core_pattern` a few hundred times. On `ubuntu-24.04` that

@@ -23,7 +23,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # `approval-history-integrity` and `spec-archive-integrity` were retired with
 # the approval ledger they both read.
 CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	design-lint conformance compiler library-tests research-tests bench-programs snapshot-run
+	design-lint conformance compiler library-tests performance-instrument snapshot-run
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -154,25 +154,10 @@ compiler:
 library-tests:
 	$(MAKE) -C lib/containers check WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)"
 
-# Active compiler experiments and independent oracles. Completed research
-# instruments have an explicit reproduction target below; their READMEs explain
-# why they no longer belong to the current compiler's gate.
-research-tests:
-	@$(CHECK_RUN) research-tests $(MAKE) --no-print-directory _research-tests
-
-_research-tests:
-	@mkdir -p "$(RESEARCH_TEST_TMP)/ripgrep" "$(RESEARCH_CARGO_TARGET)"
-	$(CHECK_RUN) research/proof-use-cost $(MAKE) -C research/experiments/proof-use-cost check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
-	$(CHECK_RUN) research/containers $(MAKE) -C research/experiments/container-representation check
-	$(CHECK_RUN) research/ripgrep $(MAKE) -C research/experiments/ripgrep test PYTHON=python3 SCRATCH_ROOT="$(RESEARCH_TEST_TMP)/ripgrep"
-	cd research/experiments/raw-deflate-default-shape && TMPDIR="$(RESEARCH_TEST_TMP)" $(CHECK_RUN) research/deflate $(PY) test_oracle.py
-# The compute regression rule, over crafted table fragments. The check it
-# decides -- `.github/workflows/compute-regression.yml`, which times two
-# builds against each other -- is deliberately not a stage of this gate. This
-# target measures nothing, links nothing and needs no compiler, so the rule
-# that fails a required pull-request check is itself checked on every run of
-# `make check`.
-	TMPDIR="$(RESEARCH_TEST_TMP)" $(MAKE) -C research/experiments/compute-bench verdict-test
+# Test the separate paired runner's result integrity with synthetic data only.
+# No compiler, native image or timing campaign is part of this gate stage.
+performance-instrument:
+	@sh tests/performance/test-verdict.sh
 
 # Reproduce the self-tests of completed research instruments when revisiting
 # their dated results. This is deliberately outside the active compiler gate.
@@ -189,17 +174,6 @@ _historical-tool-tests:
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/utf8-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/utf8parse/harness/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-baseline" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/rust-baseline/Cargo.toml
 	TMPDIR="$(RESEARCH_TEST_TMP)" CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/percent-harness" cargo test --locked --offline --manifest-path research/experiments/default-floor/percent-decode/harness/Cargo.toml
-
-# Compile the IO and compute benchmark programs with the current compiler and
-# run their bounded construction/correctness checks. Full timing protocols
-# stay outside the gate; a broken source or lowering fails here before a
-# requested experiment tries to produce its tables.
-bench-programs:
-	@$(CHECK_RUN) bench-programs $(MAKE) --no-print-directory _bench-programs
-
-_bench-programs:
-	$(MAKE) -C research/experiments/io-completion-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
-	$(MAKE) -C research/experiments/compute-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 
 # Focused conformance invocation. The full gate already reaches this ordinary
 # test through the shared corpus executable and must not run it twice.
@@ -220,4 +194,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: historical-tool-tests _historical-tool-tests check _check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests research-tests _research-tests bench-programs _bench-programs conformance-run snapshot-run install-hooks
+.PHONY: historical-tool-tests _historical-tool-tests check _check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests performance-instrument conformance-run snapshot-run install-hooks

@@ -73,7 +73,8 @@ The [proposed build-input decisions](../../../design/amendments/compiler-build-i
 record the corresponding tree amendment. The live tree has not changed and
 the exact tree revision has not received an owner ruling. The separate
 verification-cost amendment now also proposes the selected test responsibility
-and admission principles; its original four decisions remain unchanged.
+and admission principles, research/performance separation, and paired-result
+integrity and qualification. All proposed wording remains pending.
 The proposed `design/compiler/build-inputs.md` is a new child of the
 compiler root and replaces no existing live node. Corpus case retirement
 and the replacement integration-target layout are outside that amendment.
@@ -3871,3 +3872,88 @@ and fatal UndefinedBehaviorSanitizer image passes all 30 cases in 2.59 s total.
 The decoder's 52 input/capacity rows pass in one image and process, 7.07 s test
 execution / 11.48 s including incremental Rust construction. Windows execution
 of this newly linked boundary remains a hosted check, not a local claim.
+
+### B06b extraction criterion: remaining compute programs
+
+Mandelbrot, records, FIR and quadrature join the formal compute fixtures. Each
+kernel gets one ordinary and one parallel native image; its input matrix runs
+within the image, not by recompiling per row. Keep complete output comparison
+and input immutability. Drop C-framework-only leaf sweeps, grain axes that never
+change WF input, private scheduler forms and their unused preparation. The
+receiving oracles retain independent algorithms and their discriminating
+rounding/analytic witnesses. Performance preparation is an explicit separate
+API, called only by the paired workflow's runner; ordinary verification never
+prepares a large timing fixture as an incidental side effect.
+
+The retained matrices are 196 Mandelbrot rows, 65 records rows plus ten malformed
+or adjacent-record boundaries, 99 FIR rows, and ten named quadrature shapes plus
+64 independently checked translated intervals. Three actual-WF FIR witness
+calls additionally receive the known output, unfused-rounding and tap-order
+examples previously checked only between C oracle variants. The larger loop
+fixtures must exercise a real worker, using the existing forwarding observer;
+successful parallel emission alone does not meet that condition. These native
+compiler checks include that private scheduler observation and publish all
+compared values through the formal independent oracle. Their fixtures/oracles
+are also the performance job's inputs; no research-side source discovery is
+needed. Retire these support files if neither formal consumer remains.
+
+The extracted four receivers pass: eight native images, with ordinary width one
+and parallel widths one/two/four, run their full matrices in 3.59 s. Total Cargo
+time is 80.30 s, including roughly 76 s rebuilding the library test executable.
+The shared forwarding observer and nonzero grant condition establish an actual
+non-offering worker at each parallel multi-worker setting. No timing fixture is
+prepared by the loop-kernel correctness entries.
+
+### B06c instrument qualification criterion
+
+The formal Linux runner retains five paired passes, one warmup and five measured
+calls per process. Before trusting this extracted instrument, run one complete
+identical-source campaign using separately built images: it must produce no
+failing kernel. Also run a complete explicit slowdown control using the same
+images: its candidate repeats the actual WF call with intermediate result
+checking/release inside the measured interval, and all five kernels must fail
+at two eligible widths. This control tests measurement, pairing and decisions;
+it is not a model of a subtle compiler regression. Neither result estimates a
+long-run false-alarm rate or validates every 3% slowdown. Preserve raw results
+and do not retry a failed control to select a pass.
+
+Qualification runs on the hosted performance job when its instrument/fixtures
+change or when explicitly dispatched. No paired campaign runs locally. The
+0.97 wall band, four-of-five pair count and two-width rule are carried forward,
+not retuned after reading the results. The unchanged limitation is explicit:
+a real one-width regression can be a nonblocking suspect, and CPU regression
+is report-only. Both arms use current formal fixtures and their own compiler
+and ordinary runtime sources at the shipped `-O2`/host link policy, without
+research alignment flags or comparison-framework objects. Historical command-
+entry compiler compatibility is retired from the automatic runner; an
+unsupported baseline must fail construction, not borrow candidate runtime
+inputs or read a baseline research fixture to guess its interface.
+
+### B06 delivery: automatic callers and focused validation
+
+Root `make check` and the Linux/macOS correctness matrix no longer invoke any
+research target. Their useful receivers are the formal compiler/program/runtime
+cases documented above. The old two research CI job types are removed.
+`performance-instrument` is a small ordinary-gate stage for 27 crafted-data
+controls, including the previous fourteen verdict situations plus missing
+kernels/arms/samples, duplicate widths, precision boundaries and reducer failure
+propagation. The actual paired workflow builds only five WF images per arm and
+uses no research source, baseline profile detector, external framework or
+alignment override. The framework scoreboard has only manual dispatch.
+
+The supported-reference guard now passes for the complete current tree, as do
+its six self-tests. This is positive evidence for its supported forms, not a
+claim that textual inspection proves all dynamic dependencies absent. The final
+completion review still must trace both arms' unresolved/dynamic inputs.
+All-target Clippy passes in 8.53 s; canonical rendering's two assertions pass in
+1.17 s execution / 1.31 s total. The formal performance Makefile constructs all
+five candidate native images in 2.05 s locally; invoking only their correctness
+entry at width four checks 123,144 escape counts, 23,159 record results, 54,104
+FIR samples, 74 integrals and 3,387,721 stencil cells in 1.42 s total. This does
+not time a kernel or build a baseline. The strict C compiler accepts every
+oracle's performance build and the driver. Hosted qualification and the actual
+merge-base performance result remain pending publication of this increment.
+
+The public IO ABI increment `8c6426f3` passed hosted `io-hosts` run 35109720032
+on Linux and Windows. Snapshot migration, remaining ordinary Rust/corpus case
+admission, the final complete gate and independent completion/DCR remain open.

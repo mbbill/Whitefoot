@@ -173,7 +173,7 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
 
 - [ ] **T1 — Language evidence.** For a specification amendment, the outgoing
   active bytes are archived unchanged, released archives are untouched, and
-  the new declaration and title agree. The change declares the [META-5] delta
+  the active title advances the version. The change declares the [META-5] delta
   (rules, tokens, spellings, exceptions) and evidence/minimality selection
   ground. Affected cases/verdicts, generated syntax, compiler and documentation
   follow the amendment. For changed rules or constitutional premises, apply
