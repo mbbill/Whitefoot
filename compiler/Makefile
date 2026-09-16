@@ -229,9 +229,11 @@ completion-test: $(COMPLETION_TMP)/harness completion-core-read-test completion-
 	WF_IO_NOCACHE=1 WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" cache
 # Build once and execute once. A native probe's 77 is observable locally and
 # fatal in qualification CI; fallback success never substitutes for it.
+ifeq ($(shell uname -s),Linux)
+completion-native-test: $(COMPLETION_TMP)/linux-native-probe
+endif
 completion-native-test:
 	@if [ "$$(uname -s)" = Linux ]; then \
-		$(MAKE) --no-print-directory "$(COMPLETION_TMP)/linux-native-probe" || exit $$?; \
 		$(NO_CORE_DUMPS) "$(COMPLETION_TMP)/linux-native-probe" "$(COMPLETION_TMP)/linux-native-probe.data"; \
 		status=$$?; \
 		if [ $$status -eq 77 ] && [ "$(REQUIRE_NATIVE)" != 1 ]; then \

@@ -3322,7 +3322,22 @@ Windows stopped during construction because the ordinary probe's shutdown
 observer definition had not accompanied its separate object. That object
 now receives the same required definition as its observed host leaf; this
 was a construction defect, not a failed program result or native-route pass.
-The corrected revision still needs actual Windows validation.
+At `a732719b`, Windows construction, scheduler cases, both default bridge
+routes and the direct IOCP probe passed. The ordinary file receiver then
+exposed a platform-specific kind-refusal premise: POSIX `O_DIRECTORY` returns
+host `ENOTDIR`, while the Windows open omits `FILE_DIRECTORY_FILE` and the
+production post-open kind check returns `Unsupported` with zero native code
+and origin. The test now names those exact respective implementation outcomes
+and still requires restoration and reuse of the sole handle credit. PRE-1
+does not prescribe one cross-platform host-error mapping; this changes no
+language rule or production outcome.
+
+The same hosted revision exposed concurrent parent/child Make updates of the
+same native configuration stamp. The Linux probe construction is now a
+normal prerequisite in the one Make graph instead of a recursive Make from
+an already parallel recipe. This preserves one build/run and removes the
+duplicate writer. These corrections still need confirmation on the affected
+hosts; previous passed steps are not a claim that the whole workflow passed.
 
 ## Affected material and evidence
 

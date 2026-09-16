@@ -194,13 +194,20 @@ static void file_probe(wf_inputs *inputs) {
      * fails after taking the sole credit, not at the quota refusal above the
      * host call. The next successful open must consume that same credit. */
     wf__body_open_directory(&listing, &limited_factory, &inputs->cwd, &name, 0, name.length);
-    assert(listing.tag == 1 && listing.error.tag == 3);
 #if defined(_WIN32)
-    assert(listing.error.detail[3].code == ERROR_DIRECTORY);
+    /* NtCreateFile opens without FILE_DIRECTORY_FILE; the production kind
+     * check then refuses this regular object as Unsupported, with no host
+     * error code. POSIX O_DIRECTORY instead fails in the host call below. */
+    if (listing.tag != 1 || listing.error.tag != 10)
+        fprintf(stderr, "directory kind refusal: result=%u error=%u\n",
+                (unsigned)listing.tag, (unsigned)listing.error.tag);
+    assert(listing.tag == 1 && listing.error.tag == 10);
+    assert(listing.error.detail[10].code == 0 && listing.error.detail[10].origin == 0);
 #else
-    assert(listing.error.detail[3].code == ENOTDIR);
+    assert(listing.tag == 1 && listing.error.tag == 3);
+    assert(listing.error.detail[3].code == ENOTDIR && listing.error.detail[3].origin == 1);
 #endif
-    assert(listing.error.detail[3].origin == 1 && limited_factory.words[0] == 1);
+    assert(limited_factory.words[0] == 1);
     wf__body_open_file(&opened, &limited_factory, &inputs->cwd, &name, 0, name.length);
     assert(opened.tag == 0 && limited_factory.words[0] == 0);
     wf_close_read(&closed, &limited_factory, &opened.value);
