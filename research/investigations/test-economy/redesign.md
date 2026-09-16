@@ -4101,3 +4101,21 @@ therefore fail the unchanged rule; CPU ratios were 0.697705, 0.933396 and
 This newer failure supersedes any claim of an all-green performance result;
 the earlier passing run remains dated evidence, not a selected final verdict.
 The cause is not yet isolated and no threshold or retry policy was changed.
+
+### Snapshot retirement completed
+
+All 484 original sources now have a source-specific disposition in
+[snapshot-disposition.md](snapshot-disposition.md): 120 migrate, 362 are
+covered by identified existing or co-migrated obligations, and two retire for
+explained technical reasons. The final 153 indexing, accumulator and signed
+sources contributed 31 focused conformance cases. Accept/reject cases are
+canonicalized and checked through the ordinary compiler, with the named rule
+required on rejection. All 120 migrations pass (2.54 seconds execution,
+2.59 seconds bounded wrapper on this host); this check performs WF-to-LLVM
+compilation, not native construction or program execution.
+
+The old snapshot executable, source collection, index and gate/CI invocation
+are removed. No historical compiler verdict remains an independent expected
+result. The live region-design question now cites the maintained conformance
+buffer example rather than a deleted snapshot. Historical inventories remain
+records of the previous system, not descriptions of the delivered layout.

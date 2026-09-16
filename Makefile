@@ -1,6 +1,6 @@
 # Whitefoot's canonical all-tests entry point: compiler checks and tests, the
 # complete native conformance adapter, conformance structure and coverage,
-# specification/archive identity, and the recorded-verdict snapshot corpus.
+# and specification/archive identity.
 # The adapter prints its current tally rather than baking a count into this
 # file.
 
@@ -23,7 +23,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # `approval-history-integrity` and `spec-archive-integrity` were retired with
 # the approval ledger they both read.
 CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	design-lint conformance compiler library-tests performance-instrument snapshot-run
+	design-lint conformance compiler library-tests performance-instrument
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -180,18 +180,9 @@ _historical-tool-tests:
 conformance-run:
 	$(NO_CORE_DUMPS) cd compiler && $(CHECK_RUN) conformance-run cargo test --profile gate --test corpus --locked --offline -- conformance::adapter:: --nocapture
 
-# Recompile every program in `tests/snapshot` and compare the accept/reject
-# verdict each row records. Compile only: no link, no execution. The corpus is
-# a snapshot of this compiler and carries no specification authority, which is
-# why it is a stage of its own rather than part of `conformance-run`; see
-# `tests/snapshot/README.md`. `--profile gate` for the same reason that target
-# gives: this is compute-bound front-end analysis over hundreds of programs.
-snapshot-run:
-	cd compiler && $(CHECK_RUN) snapshot-run cargo test --profile gate --test snapshot --locked --offline -- --ignored --nocapture
-
 # one-time: point git at the tracked hooks (pre-commit and pre-merge-commit)
 install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: historical-tool-tests _historical-tool-tests check _check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests performance-instrument conformance-run snapshot-run install-hooks
+.PHONY: historical-tool-tests _historical-tool-tests check _check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests performance-instrument conformance-run install-hooks

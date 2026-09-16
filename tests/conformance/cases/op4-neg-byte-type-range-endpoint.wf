@@ -1,0 +1,14 @@
+fn selected(data: own Slice<u8>, table: own array<u8, 255>) -> result: own u8 reads(data, table) {
+  let peak = 0_u8;
+  let length = len_of(data);
+  for (i in 0_u64..length) {
+    let byte = data[i];
+    set peak = imax(peak, byte);
+  }
+  let index = cvt::<u8, u64>(peak);
+  return table[index];
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

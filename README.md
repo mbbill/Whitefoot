@@ -54,8 +54,8 @@ requirements. The reading and authority rules are in
 - [lib/](lib/): reusable Whitefoot source libraries, each bundled with
   gate-executed caller programs.
 - [spec/](spec/): the active language and its immutable version archives.
-- [tests/](tests/): normative conformance evidence, recorded-verdict snapshots,
-  executable programs, and code-generation evidence.
+- [tests/](tests/): normative conformance evidence, executable programs,
+  code-generation evidence, and the separate performance regression suite.
 - [docs/](docs/): principles, writer guidance, engineering practice, and
   reference material.
 - [research/](research/README.md): investigations and experiments with their

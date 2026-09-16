@@ -48,7 +48,7 @@ jobs:
           - stage: unit
             run: make -C compiler test-unit
           - stage: corpus
-            run: make -C compiler test-corpus && make snapshot-run
+            run: make -C compiler test-corpus
           - stage: runtime
             run: make -C compiler completion-test
           - stage: libraries

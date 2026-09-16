@@ -1,0 +1,96 @@
+fn window_sum<const n: u64>(buf: own FixedVector<u8, n>, offset: own u64, length: own u64) -> total: own u64 reads(buf) {
+  let spare = len_of(buf);
+  let end = offset +wrap length;
+  let fits = end <= spare;
+  let sum = 0_u64;
+  if fits {
+    for (
+      i in offset..end,
+      invariant within: end <= spare
+    ) {
+      let byte = buf[i];
+      let widened = cvt::<u8, u64>(byte);
+      set sum = sum +wrap widened;
+    }
+  }
+  return sum;
+}
+
+fn copy_window(src: own Slice<u8>, dst: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own unit reads(src), writes(dst) contract {
+  define spare = len_of(src);
+  define out_room = len_of(deref(dst));
+  requires start < end;
+  requires end <= spare;
+  requires end <= out_room;
+} {
+  for (i in start..end) {
+    let byte = src[i];
+    set deref(dst)[i] = byte;
+  }
+  return unit;
+}
+
+fn reverse_bytes<const n: u64>(buf: own FixedVector<u8, n>) -> out: own FixedVector<u8, n> pure {
+  let work = move buf;
+  let capacity = len_of(work);
+  let lo = 0_u64;
+  let hi = capacity;
+  loop @rev (
+    invariant lo_bound: lo <= capacity,
+    invariant hi_bound: hi <= capacity
+  ) {
+    let has_more = lo < hi;
+    if has_more {
+    } else {
+      break @rev;
+    }
+    let mirror = hi - 1_u64;
+    let left = work[lo];
+    let right = work[mirror];
+    set work[lo] = right;
+    set work[mirror] = left;
+    set lo = lo + 1_u64;
+    set hi = mirror;
+  }
+  return move work;
+}
+
+fn copy_checked_window(src: own Slice<u8>, start: own u64, width: own u64, dst: &uniq MutSlice<u8>) -> written: own u64 reads(src, dst), writes(dst) {
+  let capacity = len_of(src);
+  let spare = len_of(deref(dst));
+  let count = 0_u64;
+  loop @copy (
+    invariant progress: count <= width
+  ) {
+    let has_more = count < width;
+    if has_more {
+    } else {
+      break @copy;
+    }
+    match start +checked count {
+      Ok(value: source_at) => {
+        let in_src = source_at < capacity;
+        let in_dst = count < spare;
+        if in_src {
+        } else {
+          break @copy;
+        }
+        if in_dst {
+        } else {
+          break @copy;
+        }
+        let byte = src[source_at];
+        set deref(dst)[count] = byte;
+      }
+      Err(error: overflow) => {
+        break @copy;
+      }
+    }
+    set count = count +wrap 1_u64;
+  }
+  return count;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

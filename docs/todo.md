@@ -132,9 +132,8 @@ each is resolved by a discussion and a tree change.
 - **Local region introduction and explicit region blocks.** Revisit whether
   an ordinary function body should introduce a local region, and which
   borrows need a writer-spelled `region` block. In the
-  [weighted-sum example](../tests/snapshot/cases/accumulators/accumulators__adversary-r1__p12_per_byte_widened_checked_sum.wf),
-  the four `place_back(vector: &uniq weights, ...)` calls can share one region
-  after the `weights` binding, but removing that region rejects under FORM-8.
+  [buffer checksum case](../tests/conformance/cases/x-buffer-mutable-checksum-run.wf),
+  a region encloses allocation and the `place_back` calls that fill the vector.
   The temporary loans already end at their statement boundaries under OWN-6;
   their region's formation and storage-validity extent is a different matter
   under OWN-3 and OWN-10. Compare explicit blocks, function-body regions and
