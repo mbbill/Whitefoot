@@ -1,8 +1,9 @@
 # Incremental ownership design cases
 
 These cases preserve the local ownership discussion through branch joins,
-conditional cleanup, and fixed-object loops on 2026-09-15. They are hand-derived
-expectations under candidate semantics, not WF source, compiler tests, measured results, or an
+conditional cleanup, and fixed-object loops with early exits, recorded on
+2026-09-15 and 2026-09-16. They are hand-derived expectations under candidate
+semantics, not WF source, compiler tests, measured results, or an
 adopted language decision. The consumer is the [ownership investigation](RESEARCH.md).
 Keep this catalog current while it guides discussion and later experiments;
 supersede individual cases with linked executable witnesses when those preserve
@@ -21,7 +22,8 @@ fixed objects of known origin. Their contents are ordinary copy integers. Local
 locators can be copied and rebound. The branch layer adds Boolean conditions,
 Boolean assignment/negation, and `if`/`else`. The loop layer adds the explanatory
 form `repeat n times`, where n is a finite nonnegative runtime count evaluated
-at loop entry. Objects are created before the loop; ordinary scalar and locator
+at loop entry, and `break` for leaving the enclosing loop. Objects are created
+before the loop; ordinary scalar and locator
 temporaries inside its body do not create abstract allocations. There are no
 calls, callbacks, fields, containers, later allocations, storage reuse, or concurrency.
 Conditions may be unknown at compile time. No unknown incoming reference is
@@ -474,6 +476,89 @@ be justified for arbitrary n. `release(p); release(q)` accepts and consumes both
 obligations, including the empty slot's obligation. The copied integer old_b is
 independent of B's later contents.
 
+### L04: A release on a break edge need not preserve the loop-head state
+
+```text
+a = object(10)
+p = ref(a)
+repeat n times {
+    if stop {
+        release(p)
+        break
+    }
+    read(p)               // ACCEPT: the release path cannot reach this read
+}
+```
+
+The body is safe: every reachable backedge retains live initialized A and its
+unconsumed disposal obligation. The break edge instead carries dead A and the
+consumed obligation. Requiring the loop-head invariant on that break edge would
+unnecessarily reject the fragment.
+
+The zero-iteration and normal-completion exits retain live full A; the break
+exit has dead A. An unconditional post-loop `read(p)` or `release(p)` rejects
+when both kinds of exit are possible. The safe fragment's pending obligations
+on some exits are distinct from an illegal access; exit cleanup policy is B13.
+
+### L05: A checked Boolean relation can guard later iterations after release
+
+```text
+a = object(10)
+p = ref(a)
+active = true
+repeat n times {
+    if active {
+        read(p)
+        if stop {
+            release(p)
+            active = false
+        }
+    }
+}
+if active {
+    release(p)
+}
+```
+
+Accept, with exactly one completed release including the zero-iteration case.
+At the loop head, active implies live initialized A and a pending obligation;
+not active implies dead A and a consumed obligation. Later iterations may
+continue with a dead locator because they no longer access its target.
+
+active is an ordinary source Boolean, not intrinsic evidence or a permission
+token. Removing `active = false` makes later iterations or final cleanup unsafe
+on the release path. Inserting `read(p)` between `release(p)` and the assignment
+also rejects, although active is still true there: release has invalidated the
+old state implication. The loop-head relation need not hold between those two
+instructions, and it cannot be used as a timeless fact.
+
+The Boolean branch is explicitly written runtime control, whose connection to
+resource state must be proved. The checker does not insert a liveness test,
+assume the variable name proves anything, or require every locator to carry
+such a flag. This is an optional source form rather than a selected lowering.
+
+### L06: A hole may leave through break when the continuation only releases it
+
+```text
+a = object(10)
+p = ref(a)
+repeat n times {
+    v = take(p)
+    if stop {
+        break
+    }
+    put(p, move v)
+}
+release(p)                // ACCEPT: A is live on every exit
+```
+
+Normal completion and zero iterations leave A full; break leaves A empty.
+All exits retain live A and its one disposal obligation, so release accepts.
+Inserting an unconditional `read(p)` before release rejects because the break
+exit is empty. There is no obligation to fill the hole merely to execute break.
+The taken value v is a discardable integer in this layer; non-copy value cleanup
+would require its own accounting and is not established by this example.
+
 ## Working conclusions and unresolved boundaries
 
 - In the known-origin straight-line fragment, target/state propagation can be
@@ -485,8 +570,8 @@ independent of B's later contents.
   Stored current-value facts depend on state; obligations cannot be discarded
   simply because they differ between predecessors.
 - Exact finite sets of resource states are a semantic reference for these
-  examples, not a selected compiler representation, a general cost bound, or permission to use
-  an SMT solver for WF acceptance. Compact representations and supported
+  examples, not a selected compiler representation, a general cost bound, or
+  permission to use an SMT solver for WF acceptance. Compact representations and supported
   deterministic derivations remain research questions.
 - Read/write access modes are not needed for alias exclusion in this sequential
   fragment. The analysis still distinguishes operations and their state changes.
@@ -500,8 +585,13 @@ independent of B's later contents.
   holes. L03 preserves a relation while changing each named object's state.
   These hand-derived invariants are not yet a selected inference algorithm or
   writer-facing invariant syntax.
-- Conditional release and early loop exits are the next boundary to examine.
-  Calls, dynamic allocation, relocation/reuse, structs, arrays, general object
+- Backedges must reestablish the next iteration's premises. Break edges carry
+  their actual state to the continuation instead. Subsequent operations must
+  cover all reachable exits, including zero iterations; there need not be one
+  common initialization or liveness state for every exit.
+- The next discussion compares source forms that expose these states and
+  transitions, before adding more semantic features. Calls, dynamic allocation,
+  relocation/reuse, structs, arrays, general object
   invariants, callbacks and concurrency remain outside these cases. Later
   features must replay the applicable cases and name any premise or expected
   result they change.
