@@ -1,0 +1,11 @@
+fn main() -> status: own ExitStatus pure {
+  let total = 0_u64;
+  for (i in 0_u64..5_u64) {
+    set total = total + i;
+  }
+  if total == 10_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

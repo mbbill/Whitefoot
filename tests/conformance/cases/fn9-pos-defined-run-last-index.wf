@@ -1,0 +1,27 @@
+fn last_index(values: own FixedVector<u8, 12>) -> index: own u64 reads(values) contract {
+  define capacity = len_of(values);
+  requires capacity > 0_u64;
+  ensures index < capacity;
+} {
+  let capacity = len_of(values);
+  let index = capacity - 1_u64;
+  return index;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = fixed_vector::<u8, 12>();
+  for (
+    at_values in 0_u64..12_u64,
+    invariant grown_values: len_of(values) >= at_values,
+    invariant spare_values: room_of(values) + at_values >= 12_u64,
+    invariant flat_values: head_of(values) <= 0_u64
+  ) {
+    place_back(vector: &uniq values, value: 0_u8);
+  }
+  let index = last_index(values: move values);
+  if index == 11_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

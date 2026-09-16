@@ -4040,3 +4040,30 @@ local runtime target passes in 5.08 s including construction; Linux and Windows
 confirmation remains the hosted job's responsibility. The corpus failure was
 the retired blanket directory-membership assertion described above, not a
 failed program output. None of these failures changes a language expectation.
+
+### Snapshot disposition: diagnostics, certificates, contracts, headers and examples
+
+The [source-by-source disposition](snapshot-disposition.md) covers the first
+131 of the 484 historical cases. Thirty-nine focused accept/reject cases enter
+conformance; 91 observations are covered by existing or co-migrated receivers;
+one mislabeled syntax trial is retired for its unrelated type errors. Remove
+those 131 historical rows/sources together with this evidence. The other 353
+remain wired while their source/specification audit continues.
+
+Selection follows actual obligations, not the old verdict or finder comment.
+Examples include the missing loop-carried index relation, immutable named proof
+images after replacement, coefficient-vector mismatch, duplicate named/relation
+premises, header-name scope versus binder-free exhaustion facts, and distinct
+objects at repeated length-requirement calls. The old copy-capacity example
+still lacks a caller relation between two descriptor lengths; its ACCEPT
+comment does not establish a compiler defect. Misleading names claiming boxed
+values, struct fields, or executed algorithms are corrected in the disposition.
+The fourteen so-called real programs were only compiled by snapshot. Their
+unexecuted assertions do not establish program-output coverage; retain the
+independent mirrored-index and bounded-byte-sum obligations as small normative
+cases, and use maintained actual programs for the already covered operations.
+
+All 39 new cases pass through the existing CLI's ordinary WF-to-LLVM path in
+0.92 s (1.06 s wrapper total), after canonical rendering. No Rust target build,
+native WF image build, baseline compiler or native execution is included in
+that measurement. Full corpus validation remains a later gate requirement.
