@@ -113,19 +113,28 @@ jobs:
           WHITEFOOT_CHECK_TIMEOUT=180 perl .github/run-check.pl performance-baseline-images \
             make -j2 -C tests/performance build BUILD="$RUNNER_TEMP/performance-baseline" \
             ROOT="$RUNNER_TEMP/baseline" WFC="$RUNNER_TEMP/baseline-target/gate/whitefootc"
-      # Criteria are fixed before seeing results. A failed control stays failed;
-      # there is no retry-until-green loop or post-hoc threshold adjustment.
-      - name: Qualify identical-source and known-slowdown controls
+      # Every host invocation needs a null observation: qualification on an
+      # earlier runner cannot establish this runner's measurement conditions.
+      # Reusing exactly the candidate images also removes construction/layout
+      # differences from the null. Failure means inconclusive evidence, and
+      # stops the comparison; no retry or threshold change selects a pass.
+      - name: Check this host with identical images
+        if: steps.scope.outputs.measure == 'true'
+        run: |
+          status=0
+          WHITEFOOT_CHECK_TIMEOUT=300 perl .github/run-check.pl performance-null \
+            bash tests/performance/compare.sh "$RUNNER_TEMP/performance-candidate" \
+            "$RUNNER_TEMP/performance-candidate" "$RUNNER_TEMP/performance-results/null" || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo 'INCONCLUSIVE: identical-image control failed; no compiler regression verdict is available.' | tee "$RUNNER_TEMP/performance-results/inconclusive.txt"
+            exit "$status"
+          fi
+      - name: Qualify explicit slowdown sensitivity
         if: steps.scope.outputs.measure == 'true' && steps.scope.outputs.qualify == 'true'
         run: |
-          WHITEFOOT_CHECK_TIMEOUT=180 perl .github/run-check.pl performance-null-images \
-            make -j2 -C tests/performance build BUILD="$RUNNER_TEMP/performance-null"
-          WHITEFOOT_CHECK_TIMEOUT=300 perl .github/run-check.pl performance-null \
-            bash tests/performance/compare.sh "$RUNNER_TEMP/performance-null" \
-            "$RUNNER_TEMP/performance-candidate" "$RUNNER_TEMP/performance-results/null"
           status=0
           WHITEFOOT_CHECK_TIMEOUT=300 perl .github/run-check.pl performance-slow-control \
-            bash tests/performance/compare.sh "$RUNNER_TEMP/performance-null" \
+            bash tests/performance/compare.sh "$RUNNER_TEMP/performance-candidate" \
             "$RUNNER_TEMP/performance-candidate" "$RUNNER_TEMP/performance-results/slow" slow || status=$?
           test "$status" -eq 1
           grep -F -q 'VERDICT: FAIL -- 5 kernel(s) adverse at two widths' \
@@ -139,6 +148,9 @@ jobs:
       - name: Publish decisions and visible suspects
         if: always() && steps.scope.outputs.measure == 'true'
         run: |
+          if [ -f "$RUNNER_TEMP/performance-results/inconclusive.txt" ]; then
+            cat "$RUNNER_TEMP/performance-results/inconclusive.txt" >> "$GITHUB_STEP_SUMMARY"
+          fi
           for run in null slow comparison; do
             file="$RUNNER_TEMP/performance-results/$run/verdict.txt"
             if [ -f "$file" ]; then

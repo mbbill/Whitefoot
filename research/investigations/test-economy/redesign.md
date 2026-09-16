@@ -7,6 +7,45 @@ before this redesign; this document records the selected redesign and its implem
 Keep it current during that work and retire it when the replacement system's
 guidance and design decisions cover these choices and no questions remain.
 
+## Delivered test map
+
+This is the replacement's ownership and execution map. The older bilingual
+inventory remains a dated measurement baseline. Counts below describe the
+macOS collection after the admission moves; Windows selects its native host
+cases in the same corpus executable. The current PR reports the final tested
+revision and result. Times explicitly labeled `39bebbc4` are the first local
+validation attempt, which failed host setup in eight corpus cases; they are
+not a successful full-gate total or a cold-build benchmark.
+
+| Stage and caller | Builds and inputs | Runs and observation | Available wall evidence |
+|---|---|---|---|
+| Root `make static`: `repository-invariants` | No Rust or WF build. `.github/check-research-inputs.py`, `.github/test-run-check.sh`, tracked paths and the two agent entry files. | Six forbidden-reference controls, supported reference scan, owned-process cancellation/exclusion controls, matching agent files and repository path hygiene. | Root stage log distinguishes this from compiler work; process-control tests deliberately reach short deadlines. |
+| Root `make static`: `spec-append-only`, `spec-prose-integrity`, `design-lint` | No compiler. Git outgoing archives/current Markdown and design nodes/amendments. | Immutable released archives, live guidance's identity boundaries, design-tree shape and owner-ruling log constraints. | Printed separately by `make check`. |
+| Root `make conformance` | No compiler. `tests/conformance/runner.py`, its `test_runner.py`, active spec and JSONL manifest. | 29 Python controls including duplicate/dangling spec rules; corpus structure and coverage of all 129 rules. This does not execute WF. | 0.32 s focused current invocation. |
+| `compiler/build` | One Rust crate, `whitefoot`, under `gate`; Cargo runs `build.rs`, embeds spec identity and derives grammar tables into `OUT_DIR`. Produces the library and `target/gate/whitefootc`. | No Rust tests or WF programs run. | `39bebbc4`: 0.10 s with the compiler already current. The old cold measurements are not a current cold-build estimate. |
+| `compiler/lint` | `cargo clippy --all-targets`, reading every maintained Rust target. Its default `dev` label describes type/lint metadata construction; it does not build a second runnable dev compiler. | Rust type checks, Clippy lints and the crate's `forbid(unsafe_code)` constraint. | `39bebbc4`: 3.76 s. |
+| `compiler/test-build` | `cargo test --profile gate --all-targets --no-run`; constructs `deps/whitefoot-<hash>`, `deps/whitefootc-<hash>` and `deps/corpus-<hash>`. Reuses the ordinary compiler/library artifacts where Cargo can. | No test cases execute. There are three Rust test executables, not one executable per case; the removed spec/grammar tools have no binaries or test targets. | `39bebbc4`: 76.40 s after the compiler was built. This includes all three test harnesses; it is not an additional cost after separately building the library tests. |
+| `compiler/test-unit`: library | Runs the already built `deps/whitefoot-<hash>`; Rust fixtures and small/shared WF source inputs under `compiler/src/`. Native ABI/emission tests also invoke Clang and child programs through named helpers. | 1,495 cases: semantic 947, backend 274, syntax 88, resolution 71, driver 38, lexer 33, lowering 28, source 12, spec digest 3 and prelude 1. Assertions inspect internal structures, retained proofs, precise diagnostics, lowering, ABI or controlled runtime behavior. | `39bebbc4`: all pass in 195.77 s, excluding Rust construction. WF analysis and native build/run components are available in the helper TSV, not conflated with Rust compilation. |
+| `compiler/test-unit`: CLI | Runs `deps/whitefootc-<hash>` from `compiler/src/bin/whitefootc.rs`. | 14 Rust argument/option/output-path cases; no extra compiler profile. | `39bebbc4`: all pass, displayed execution 0.00 s. |
+| `compiler/test-corpus` | Runs the single `deps/corpus-<hash>` from `compiler/tests/corpus.rs`; its modules share native construction support. | 72 Rust cases: 69 program/harness cases, two canonical batches and one full native conformance driver. | `39bebbc4`: 186.22 s execution, 64 pass and eight host/setup failures explained below; not a successful result. |
+| Corpus: canonical batch | Active spec example and WF sources under `tests/conformance/cases/` and `tests/programs/`; compiler parser/rendering APIs. | Canonical bytes, round-trip/idempotence and exact normative-example bytes; deliberately invalid syntax follows explicit manifest exceptions. No native image. | Included in corpus execution; no standalone canonical executable. |
+| Corpus: native conformance | `compiler/tests/conformance/adapter.rs` drives all maintained JSONL cases through the ordinary compiler; only `run` cases invoke Clang and execute a native image. Runtime objects are reused, verdicts are never cached. | 1,133 declared cases: 1,131 runnable (538 reject, 237 accept, 356 run), one explicit unsupported pending accept and one tracked expected failure. Rejections require their named rule. The driver is ordinary, not ignored. | Included in corpus execution; `39bebbc4` driver passes with the declared pending/xfail distinctions. |
+| Corpus: programs | `compiler/tests/programs/` orchestration over `tests/programs/`; filesystem trees, byte streams, loopback peers, source-selected worker/lowering configurations and independent reference computations. | Full outputs/statuses, function results and host/parallel behavior. One image can serve many inputs. Compiler-only generic/cleanup observations now have backend ownership; file location does not force another program run. | Included in corpus execution; WF compilation, native construction and native execution are separate helper phases. Local host must allow loopback listeners. |
+| `compiler/completion-test` | C/LLVM runtime fixtures under `compiler/src/backend/`, compiled through dependency/flag-tracked Make rules. Separate images remain for distinct interposition, statistics and platform configurations. | Shared ordinary-value/IO/bridge harness, default route, isolated core-read boundary, scheduler startup/deque/policy and stack-floor cases. No WF compiler or timing comparison. | Prior focused complete target: 5.08 s including construction. Final gate records its own actual result. |
+| Root `library-tests` | `lib/containers/vector.wf` plus `tests/vector_program.wf`; two WF emissions (ordinary and parallel), each linked normally and with an allocation observer: four native images. | Program values plus allocation/release/refusal ledgers; dependency-current images are reused but all observations rerun. | Printed as its own root stage, separate from the Rust tests. |
+| Root `performance-instrument` | No Rust/WF/native build. `tests/performance/test-verdict.sh` invokes the AWK reducer/verdict on crafted tables. | 27 result-integrity controls: complete matrices, precision, missing/duplicate data, decision boundaries and error propagation. No timings are collected. | Printed as its own root stage. |
+| Hosted `gate` | Linux/macOS jobs call the same static, unit, corpus, runtime and library targets; target construction happens in the job that needs it. | The ordinary correctness responsibilities above, with job/phase logs; no research target or paired compiler comparison. | Job time includes checkout/toolchain/cache overhead and is not local test execution time. |
+| Hosted `io-hosts` | Linux C/LLVM builds and ASan/fatal-UBSan/TSan variants; Windows native fixtures plus the Rust compiler/corpus target. | Required real io_uring/IOCP evidence, production namespace/network/handle behavior, compute pool/stack and sanitizer observations. Forced fallback and native evidence remain distinct. | Current host runs are linked from the PR; a local macOS pass is not Linux/Windows evidence. |
+| Hosted `compute-regression` | Candidate and merge-base Rust compilers, five formal WF kernels and each arm's own ordinary runtime: ten native images. Identical-image host control reuses the candidate images; no third construction. | Complete-result checks, per-invocation null control, instrument-change slowdown control, then paired CPU/wall samples and the fixed verdict. Inconclusive calibration stops the comparison and remains a failure. | Historical control/actual campaign times and ratios are recorded below. No paired campaign is run locally. |
+| Explicit authoring/research | `format`, `docs`, manual research/benchmark workflows and `historical-tool-tests`. | Formatting, API documentation and explicitly requested experiments; not automatic correctness or performance-regression inputs. | Not included in `make check`. |
+
+Historical snapshots have no remaining executable, collection or alternative
+verdict authority. The 484 dispositions below identify what each supplied or
+why it was retired. New cases must meet the ownership/construction obligations
+in `docs/practice.md` and checklist T4–T6; executable packaging alone never
+justifies a case. The map is maintained with these callers while this
+investigation supplies the redesign's comparative evidence.
+
 ## Execution resumed on 2026-09-16
 
 The owner authorized implementing all previously selected changes and asked
@@ -4356,3 +4395,52 @@ This later pass does not invalidate the recorded failure at 2bd74ae0 or identify
 its cause. No compiler optimization, threshold tuning or retry-until-pass is
 part of this work. The comparison now exposes the suspect instead of concealing
 it behind the aggregate verdict; its attribution remains a separate question.
+
+### Identical-image host-control failure
+
+[Run 35124129784](https://github.com/mbbill/Whitefoot/actions/runs/35124129784)
+at `39bebbc4` failed the null control; the positive control and actual compiler
+comparison were not executed. Artifact `10458596038` contains matching SHA-256
+identities for every image in the two arms, including stencil
+`c63c2656c9a49d5b03c4d79a0d1f7b0abd6c01e4f2513d36abf6234be3bae67b`.
+Nevertheless stencil wall ratios were 0.968726/0.959755/0.969869 at W=1/2/4;
+W=1/4 were lower in 4/5 pairs and failed the unchanged rule. The control took
+33.45 s. This is direct evidence of an adverse verdict without a binary change,
+not evidence that the candidate compiler regressed or that earlier records
+observations were harmless. No false-alarm rate can be inferred from this one
+failure or from the preceding successful controls.
+
+Selection criterion before the next run: every paired invocation must first
+pass an identical-image host control using the existing full matrix and rule.
+A failure is explicitly inconclusive, stops the actual comparison and retains
+its raw data; no automatic retry or threshold relaxation is allowed. The
+control uses the candidate image paths for both arms, avoiding a third build
+and ensuring artifact equality by construction. Instrument changes still need
+the existing deliberate slowdown control. This makes the evidence boundary
+honest without claiming that one passing null predicts the whole distribution
+of future observations. Statistical calibration and the actual records cost
+remain open in docs/todo.md rather than being hidden by an aggregate pass.
+
+### Full-gate fixture findings before final validation
+
+The first local complete invocation at `39bebbc4` constructed the Rust test
+harnesses in 76.40 s, then passed all 1,495 library tests in 195.77 s and all
+14 CLI tests. Corpus execution passed 64 of 72 tests in 186.22 s; the command
+failed at that stage after 483.25 s total. Seven TCP cases failed before any
+connection because the execution sandbox refused a local listener
+(`PermissionDenied`, OS error 1). Their rerun requires an ordinary host with
+loopback binding available, not a changed expectation.
+
+The other failure was the search reference exhausting a 256-descriptor soft
+limit during its 300-level tree. `DirEntry` values retained directory handles
+through recursive descent; collecting only the name/path/type values releases
+those handles before recursion. The WF program itself intentionally retains
+one directory handle per level, so a 300-level success fixture also assumed an
+undeclared larger host limit. The regression it protects is the old silent
+sixteen-level cutoff, not a 300-level source rule, descriptor ceiling or stack
+boundary. Keep both expected hits and use seventeen descents, the first depth
+that distinguishes that defect. Retire the arbitrary deeper stress and its
+stale stack/path cost narrative; raising every test process's descriptor limit
+would preserve an unrelated stress requirement rather than that regression.
+The ordinary runtime's resource-boundary tests remain separate. No failed
+source judgment is reclassified and no TCP test is disabled.

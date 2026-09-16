@@ -2,15 +2,16 @@
 
 [中文版](test-inventory.zh-CN.md)
 
-[Selected simplifications and open redesign questions](redesign.md) records
-the subsequent discussion; the implementation described below is unchanged.
+[The redesign and delivered test map](redesign.md#delivered-test-map) describe
+the replacement. The counts, paths and times below are the dated pre-redesign
+baseline, not current commands or target inventory.
 
 This is the source, artifact, resource and execution inventory for redesigning
 the test system measured in PR #66. It describes implementation `f3858780`;
 it does not claim that the existing division into targets is necessary or that
 every existing assertion is valuable. Paths are relative to the repository
-root. Update the affected entries when their runners are replaced, and retire
-this inventory when the replacement system has its own complete inventory.
+root. Retain this dated inventory with its measurements for before/after attribution;
+current responsibilities and commands belong to the delivered map.
 
 [Build and test cost](build-and-test.md) retains the dated measurements,
 attribution methods, implementation changes and limitations.

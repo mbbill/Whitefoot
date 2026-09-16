@@ -45,6 +45,17 @@ of them is a decision. Remove an item when its fix and test land.
   the cause is established and the trial's work, space and measured-cost
   criteria are met, or its remaining tradeoffs are accepted.
 
+- **The formal compute comparison has unresolved attribution and measurement costs.**
+  [Hosted observations](../research/investigations/test-economy/redesign.md#identical-image-host-control-failure)
+  include an identical-image stencil control failing the unchanged three-percent
+  band, and a separate actual records comparison failing at two widths while
+  later runs retain a one-width suspect. A null failure supplies no compiler
+  regression verdict, and a later pass does not explain an earlier failure.
+  Attribute host/sample variability separately from emitted code, linked layout
+  and runtime changes before changing a policy or declaring the suspect noise.
+  Close this item when the source of both observations and the resulting
+  measurement/detection tradeoff are established.
+
 - **A runtime-sized `buffer_new` fails with no rule and no location.** At an
   unproved runtime capacity the driver stops four stages after semantic
   checking with `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` and no

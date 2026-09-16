@@ -33,13 +33,17 @@ visible suspect. This can miss a real regression confined to one width.
 CPU ratios below 0.90 are reported using the wall pair count and never fail.
 These thresholds are a noise/detection tradeoff, not a universal guarantee.
 
-An instrument or fixture change also runs identical-source and explicit
-slowdown controls on the hosted job. The former must produce no failing
-kernel; the latter repeats real WF work and intermediate checking/release
+Every hosted comparison first runs the identical candidate images as both
+arms. This control must produce no failing kernel; otherwise the job fails
+with inconclusive measurement evidence and does not run the compiler
+comparison. A previous runner's qualification cannot validate a new host
+invocation. Instrument or fixture changes additionally run an explicit
+slowdown control, which repeats real WF work and intermediate checking/release
 inside the candidate interval and must fail all five kernels. These controls
-check this instrument and do not establish a statistical false-alarm rate or
-sensitivity to every small regression. Failed controls retain their raw data;
-there is no automatic retry or threshold adjustment.
+do not establish a statistical false-alarm rate or sensitivity to every small
+regression. Failed controls retain their raw data; there is no automatic retry
+or threshold adjustment. The identical-image control needs no third native
+build.
 
 `compare.sh BASELINE_IMAGES CANDIDATE_IMAGES FRESH_RESULTS` is the explicit
 measurement entry. Each child has a 60-second deadline, and the workflow bounds
