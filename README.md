@@ -143,15 +143,15 @@ subprocess. Nested or parallel rows are not additive suite wall time. See the
 The [gate workflow](.github/workflows/gate.yml) runs those stages on Linux and
 macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
-evidence. Automatic CI checks correctness and performance regressions. Full IO
-matrices and compute scoreboards run manually; program checks, two-host compute
-verification and native host correctness remain automatic. The separate
-[compute regression check](.github/workflows/compute-regression.yml) retains
-its paired performance verdict. Completed research instruments have
-`make historical-tool-tests` for deliberate reproduction; their READMEs state
-that boundary. A green run describes its tested revision and coverage; it is not a
-proof of completeness or the absence of known defects. Conformance reports
-distinguish passing cases, expected compiler failures, and pending support.
+evidence. Automatic CI checks correctness and performance regressions under
+the [test boundary](docs/practice.md#test-boundary): useful research cases and
+their dependencies belong in formal tests, while research runs on explicit
+request. Full IO matrices and compute scoreboards are experiments; the separate
+[compute regression check](.github/workflows/compute-regression.yml) supplies
+a paired performance verdict. A green run describes its tested revision and
+coverage; it is not a proof of completeness or the absence of known defects.
+Conformance reports distinguish passing cases, expected compiler failures,
+and pending support.
 
 Specification identity is derived from the active file's bytes by
 [compiler/build.rs](compiler/build.rs). The work-branch and specification

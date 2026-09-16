@@ -71,7 +71,7 @@ or self-description merely to satisfy this table.
 | `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
 | `AGENTS.md` / `CLAUDE.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
 | `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
-| `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule |
+| `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule, daily test implementations or inputs retained in research |
 | `docs/ideas.md`; `docs/why-whitefoot.md` | Candidate mechanisms, open questions and experiment sketches; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
 | `design/` | Live design decisions with their reasons and refused alternatives, one log entry per approved tree change, and the procedure that maintains them | Module inventories, implementation transcripts, task progress, history |
 | PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
@@ -190,6 +190,24 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   machinery demonstrates that a representative wrong result or missing input
   is detected. Reusing established machinery needs no new mutation campaign.
   Active build/test/tool paths do not depend on `archive/`.
+- [ ] **T4 — Case admission and home.** Identify each added or changed case's
+  protected property, meaningful failure and owning group. Additions or expanded
+  coverage identify the observation missing from existing cases. The home
+  follows the property: normative requirements in conformance,
+  complete program behavior in programs, additional implementation obligations
+  in compiler/runtime tests. A WF fragment wrapped in `#[test]` or a new
+  executable does not justify another case. Merge checks with the same observations.
+- [ ] **T5 — Construction and execution.** Identify what each selected path
+  builds and runs: compiler/profile, Rust/C test executable, WF compilation,
+  native program, or other tool. Additional native builds/runs, configurations
+  and repetitions protect a named observation; compatible construction is
+  shared. A correctness invocation contains no exploratory timing protocol.
+- [ ] **T6 — Research boundary.** Daily CI and the canonical gate have no
+  direct or indirect dependency on research programs, scripts, fixtures or
+  datasets. Inspect callers, imports, generated inputs and shared helpers,
+  not only job names. Useful cases and necessary oracles are extracted into
+  formal test ownership; the remaining research stays explicitly invoked.
+  Moving a wrapper or copying a whole experiment is not sufficient.
 
 ## R. Decisions — changed choices, premises or relevant evidence
 

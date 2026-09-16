@@ -160,15 +160,14 @@ What the four rules mean exactly:
   changes after approval or after its successful test run, rules 2 and 3 apply
   to the new revision.
 - **All repository tests** is the root `make check` target: the compiler build,
-  format and lint, every maintained executable test target in the compiler and
-  the active research experiments, the specification checks, conformance
-  structure and coverage, and the full native conformance adapter including the
-  case ordinary Cargo runs mark ignored. A file retained as a deferred or
-  historical artifact that cannot run against the current toolchain is
-  evidence, not a test target.
-  Completed research instruments may retain an explicit reproduction-test
-  target outside the active gate; document their retired purpose and preserve
-  any independent oracle still used by current compiler work.
+  format and lint, maintained compiler/runtime/program tests, specification
+  checks, conformance structure and coverage, and the full native conformance
+  adapter including the case ordinary Cargo runs mark ignored.
+  `research/` owns investigations and explicitly requested experiments, never
+  daily CI or gate dependencies. Extract useful regression cases and their
+  required fixtures/oracles into the formal test system; leave the remaining
+  research outside it. Check test admission, placement, construction/execution
+  and indirect research dependencies in the completion checklist.
 - **Conformance evidence** is `tests/conformance` case source and manifest
   content, its runner and adapter, and any collection or invocation wiring that
   can change which cases run or how their results are read.

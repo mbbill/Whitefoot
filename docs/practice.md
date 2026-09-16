@@ -268,9 +268,18 @@ and erased before lowering, every partial operation is lowered only after
 machine proof of its domain, and optional optimization facts may not change
 acceptance, cleanup, or output.
 
-Keep current compiler witnesses and independent oracles in that inventory.
-Completed source-mining or model-trajectory instruments can retain explicit
-reproduction tests outside it, with their retired purpose stated beside the
-instrument. Automatic CI checks current correctness and performance regressions.
-Exploratory timing without a regression verdict is a requested experiment;
-its repetitions and cache preparation do not belong in every gate.
+Automatic CI checks maintained correctness and performance regressions.
+`research/` is outside daily CI and `make check`, including indirect
+dependencies on its scripts, programs, fixtures and datasets. Extract useful
+observations and the inputs/oracles needed to check them into the formal test
+system. Research may consume formal fixtures; formal checks do not import
+research. Leave models, comparison tools and exploratory timing as explicitly
+requested experiments, without requiring their modernization for the gate.
+
+A case earns its place by a missing observation and a meaningful failure
+criterion. Specification-derived requirements belong in conformance, complete
+program behavior in programs, and additional implementation obligations in
+compiler/runtime tests. Reuse an existing case when it covers the obligation.
+Identify added compiler passes, native builds/runs, configurations and repeats;
+each must serve the protected property. Review these boundaries and actual
+callers under T4–T6 of the [completion checklist](review-checklist.md).

@@ -11,6 +11,11 @@ by `../../archive/governance/decision-log.md`; current design decisions live in
 compiler defects in [todo](../../docs/todo.md). Research notes do not grant or
 withhold branch permission.
 
+These bundles follow the [research boundary](../README.md): execution is
+explicitly requested, and useful daily regression checks are extracted into
+formal test ownership with their required inputs and oracles. Existing caller
+descriptions do not grant an exception to that boundary.
+
 ## Current flagship experiment evidence
 
 The owner's ruling for the flagship: ripgrep is the umbrella target with a
@@ -190,8 +195,8 @@ These results used the now-archived democ implementation. They remain measured
 evidence rather than current-compiler benchmark requirements. Historical
 benchmark runners are not active compiler gates. Self-tests of the completed
 frequency and model-trajectory instruments remain available through
-`make historical-tool-tests`; current compiler witnesses and independent
-oracles remain in `make check`.
+`make historical-tool-tests`. Useful current-compiler observations and
+independent oracles require a formal test home outside this directory.
 
 - `effect-attrs-channel/` — channel 2: effect rows -> LLVM fn attributes.
   O(n)->O(1) at opaque boundaries; ties fat LTO at per-file build cost.

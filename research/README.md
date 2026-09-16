@@ -43,11 +43,19 @@ established; they are not descriptions of current compiler capabilities.
 Historical approval or phase language in evidence does not add current
 workflow requirements.
 
-The root `make check` owns the maintained research test inventory. A deferred
-prototype that depends on a retired compiler is evidence, not an executable
-test target; its local README identifies that boundary. Active tools do not
-import archived code. Keep experiments useful to an identifiable compiler
-question and remove superseded material when it no longer carries evidence.
+Research runs only on explicit request. Neither daily CI nor the canonical
+`make check` may compile, execute or import research tools, or depend on their
+programs, fixtures or datasets. Useful regression observations are extracted,
+with their necessary inputs and oracles, into the formal compiler, program,
+conformance or performance test system. Research may reuse those maintained
+fixtures; formal tests do not reach back into research. A useful experiment
+does not become a permanent test suite merely because it runs.
+
+Keep the remaining models, comparisons and measurements here for their stated
+questions and dated evidence. No cleanup or modernization is required merely
+to preserve that evidence. A deferred prototype that needs a retired compiler
+states that limitation; active tools do not import archived code. Remove
+superseded material when it no longer carries useful evidence.
 
 Retained records use role placeholders such as `<repository-root>` and
 `<scratch-root>` instead of personal filesystem paths. When a reproducibility

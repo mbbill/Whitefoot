@@ -148,6 +148,44 @@ An assertion outside these core responsibilities, such as a direct C runtime
 probe, belongs in the remaining-check review rather than being silently
 assigned to programs.
 
+### Research boundary and extraction
+
+The owner clarified that nothing under `research/` belongs in daily CI or
+`make check`. This applies to every research subdirectory, active or historical,
+and to indirect dependencies: a Rust test importing a research WF source,
+LLVM adapter or C oracle is still dependent on research. Calling the current
+compiler or printing timing data does not admit an experiment to the gate.
+
+Review research content only for observations worth extracting. Give each
+retained case a formal compiler/runtime, programs, conformance or performance
+test home, with the minimal inputs, oracle and support it actually needs.
+Research may then reuse those formal fixtures. Do not move an entire bundle,
+keep a research dependency behind a new wrapper, or duplicate an existing case
+merely to retain its old gate entry. Unneeded research stays outside daily
+verification; this cleanup does not require repairing or refactoring its models,
+reporters or measurement tools. Useful dated evidence is retained in place.
+
+This supersedes the earlier exception for current research witnesses and
+independent oracles. A useful oracle remains in daily verification only after
+it and its required inputs have formal test ownership. The existing paired
+performance-regression obligation remains, but its daily implementation and
+inputs must also be extracted; renaming the workflow is insufficient.
+Explicitly requested research jobs may continue to use research inputs.
+
+The relevant standing wording has been corrected in both agent entry files,
+the research index and engineering practice. Completion-review T4-T6 now check
+case admission/home, necessary construction/execution, and direct/indirect
+research dependencies. The fourth decision in the pending verification
+amendment is revised accordingly; the other five decisions and the build-input
+amendment are unchanged. No live-tree revision or spec change is made.
+
+Actual Make/Cargo/CI migration remains part of the deferred implementation.
+Current invocation tables describe the pre-migration code, not exceptions to
+this boundary. Before retiring each caller, account for useful observations
+in the formal suite; experimental self-checks need no replacement merely to
+preserve their count. This discussion does not claim the current gate has
+already stopped reaching research.
+
 ### What earns a test its place
 
 - Be able to name the property, concrete input, expected observation and kind
@@ -255,8 +293,9 @@ The owner also agreed to B03a-ah: the scheduler C probes, Rust parallel
 lowering, loop splitting, resource exhaustion, derived cleanup and all four
 adjacent stack-ledger tests. Both parts of B04 (a-r), covering native adapters,
 platform wiring and Windows namespace/compiled programs, are also agreed.
-Implementation remains deferred. The current proposal is B05a-g: container
-research models, native controls and their adjacent WF wide-result witness;
+Implementation remains deferred. B05a-g have been screened under the owner's
+research-extraction boundary: the models/controls stay outside daily checks,
+and the useful WF behavior has a proposed formal receiving home;
 the timing loop retains its explicit B06 review home.
 The remaining inventory is grouped below; these are review scopes, not eight
 new test targets or a promise that every scope fits one conversation. Individual
@@ -268,7 +307,7 @@ compiler/corpus migration audits still apply under the accepted baseline.
 | B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed; B04a's consumer audit and orphaned-operation retirement also agreed; implementation deferred |
 | B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | All five reviewed parts agreed; implementation deferred |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Both reviewed parts agreed; implementation deferred |
-| B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Authority/foundation recommendations pending; remaining compiler witnesses and oracles not yet reviewed |
+| B05 | Extract useful observations from research models, compiler witnesses and oracles into formal tests; leave the remaining research outside daily checks | Authority/foundation screened under the owner boundary; remaining case-level extraction review continues |
 | B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
 | B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
 | B08 | Historical or explicit experiment/instrument runners outside the default gate | Not yet reviewed |
@@ -2226,39 +2265,30 @@ Only the last row needs `whitefootc`, its ordinary runtime and native linking.
 Foundation also runs rustfmt over its three Rust sources. These standalone
 Rust builds do not use Cargo's gate profile.
 
-**Recommendations below are pending the owner's ruling.**
+**Owner direction: research is outside daily verification.** The six model
+and native-control rows below stay in research; the actual WF behavior is an
+extraction candidate. No refactoring of their research-only runners is required
+by this cleanup. Test migration and gate rewiring remain deferred.
 
 | Row | Actual evidence and gap | Recommendation, home and stage |
 |---|---|---|
-| B05a: finite range authority (`authority/model.rs`) | A private range-token checker is compared with a separately maintained per-slot occupancy/conservation oracle. It constructs all 510 live sets for capacities 1–8; exactly 184 fit one circular window. It checks stale/split/join/raw/live/borrow errors, sparse middle reuse, two wrapped loans and 560 prefix/failure traces for capacities 1–32. Main repeats the 510-set, sparse and wrapped checks and six prefix reports at capacities 4/16/256. The two capacity-256 prefix traces are not in the test loop. This is finite candidate-protocol evidence, not production acceptance or runtime coverage. | Keep as an explicitly invoked research model in its current directory; remove its construction/execution from root correctness CI. Use the test build as the ordinary self-check, accounting for the two larger prefix traces before retiring the extra main invocation. Build a report executable only for a requested report that needs it. Do not put this private checker into compiler unit tests or conformance. If it later becomes an independent oracle for current compiler results, that concrete comparison can earn a gate home. |
-| B05b: identity and membership (`authority/membership.rs`) | The private one-slot store compares weak versus retained membership through two indexes, checks wrong-store access-ticket return, stale handles after reuse, access retirement and finite generations 0/1/2. One fixed trace has 31 observations and a separate ledger requires each of nine payloads to drop exactly once; main and the first test repeat it. A second test separately checks generation non-repetition/exhaustion. The access ticket is only a logical deletion guard; it supplies neither backing lifetime nor a real store-ID uniqueness authority. There are no real threads or WF handles. | Keep the two research self-tests on explicit invocation and retire the duplicate ordinary-main check run. Keep its independent drop/trace evidence and stated limitations; do not replace current host-handle, borrow or concurrent lifetime tests with it. Leave the source beside its contract comparison, outside per-change compiler CI. No production case is retired as a consequence. |
-| B05c: construction/retirement state machine (`foundation/model.rs`) | A private world enumerates 165 construction/failure/helper-split traces, 42 allocation-first relocations and nine loan-retirement traces. Per-slot IDs and observers detect lost/duplicated values and backing changes. Main executes all 216 traces, and the first of five tests executes them again; the other four tests deliberately weaken full initialization, accounting, identity or retirement to check the oracle. Published/Done/Joined/Consumed are simulated enum states, not actual completion-runtime transitions or worker interleavings. | Preserve all five tests as explicit research self-checks, with one execution of the normal trace collection. Remove both products from automatic compiler verification rather than moving this historical candidate state machine into the common runtime runner. Actual production lifetime/progress obligations remain with B01–B04's real mechanisms. |
-| B05d: whole-result versus result-tree model (`foundation/construction.rs`) | Seven finite producer/consumer cases run through two private lowering strategies. A separate map/set evaluator checks values, effects, release order and destination; exact modeled whole-slot/transfer counts, six mutated event streams, five invalid-source controls, name independence and direct-placement eligibility are also checked. Both main and the sole Rust test call the same `run_suite`, differing only in printing. Neither strategy invokes the production backend. Source validation is shared by the two model paths, so their agreement is not an independent validation of that shared function or the language rules. The 4,096-byte size is a model label, not measured machine traffic. | Keep one explicit model self-check and optional report output in the existing research home; remove the duplicate run/build requirement from the gate. Do not treat its event-count table as a compiler performance-regression check or copy the candidate's direct-placement policy into conformance. Real storage-placement/ABI checks in `compiler/src/backend/tests/owned_places.rs` remain; this ruling does not claim their coverage is equivalent to every model state. |
-| B05e: safe Rust reusable backing (`foundation/rust-baseline.rs`) | Real Rust Vec/Box conversions at extents 0 and 8 exercise every construction stop point, clear/reuse the backing, and perform three complete checkouts per extent. Per-value IDs/order/drop ledgers check exactly-once destruction; the nonzero trace creates/drops 60 values. Main repeats the same two extent traces that the two tests run. Pointer observations concern the Rust implementation and allocator; the zero extent has no allocated payload and this probe neither injects allocator refusal nor counts allocator calls. | Keep as an explicit comparative research control, using its two tests without a duplicate main run. It currently compares no WF result, so remove it from compiler CI instead of reclassifying it as a WF pool test. Preserve conditional pointer claims and the dated comparison; a future matched WF experiment can reuse it without automatically making every experiment run a gate requirement. |
-| B05f: C layout/copy control (`foundation/layout.c`) | Private C full/prefix/wrapped-ring and bitmap/tagged nullable layouts check complete payload copies, zero/empty/partial/wrapped cases and three nullable occupancy patterns. They never call WF code or the shipped C runtime. Main then unconditionally benchmarks nine cohorts: 4,096 warmup copies per cohort and nine samples of 1,200 copies each, yielding 36,864 warmup plus 97,200 measured copy calls, beyond correctness setup. Timings and sizes are printed without a regression verdict. Foundation `measure` currently runs layout through its `check` prerequisite and then runs layout again. | Keep the control for explicit representation research, outside root correctness CI and outside the production-runtime C runner. Separate its correctness-only mode from its timing mode in the existing source/Makefile; validate the control before an explicitly requested measurement, then measure once. No new script or benchmark executable is needed. Preserve the distinction between actual C byte/count comparisons and the absence of a WF/compiler comparison or performance verdict. |
+| B05a: finite range authority (`authority/model.rs`) | A private range-token checker is compared with a separately maintained per-slot occupancy/conservation oracle. It constructs all 510 live sets for capacities 1–8; exactly 184 fit one circular window. It checks stale/split/join/raw/live/borrow errors, sparse middle reuse, two wrapped loans and 560 prefix/failure traces for capacities 1–32. Main repeats the 510-set, sparse and wrapped checks and six prefix reports at capacities 4/16/256. The two capacity-256 prefix traces are not in the test loop. This is finite candidate-protocol evidence, not production acceptance or runtime coverage. | Leave this finite candidate checker and its reports in research, outside daily CI and the canonical gate. No current compiler observation needs extraction from this row. The duplicate main and two larger prefix traces matter only if the model is revisited; do not spend this cleanup consolidating its research self-tests. A future production comparison needs a formal test owner and extracted inputs/oracle, not an exception allowing research back into CI. |
+| B05b: identity and membership (`authority/membership.rs`) | The private one-slot store compares weak versus retained membership through two indexes, checks wrong-store access-ticket return, stale handles after reuse, access retirement and finite generations 0/1/2. One fixed trace has 31 observations and a separate ledger requires each of nine payloads to drop exactly once; main and the first test repeat it. A second test separately checks generation non-repetition/exhaustion. The access ticket is only a logical deletion guard; it supplies neither backing lifetime nor a real store-ID uniqueness authority. There are no real threads or WF handles. | Leave the model and its two self-tests for explicit research use. It is not evidence about current WF/host handles and no distinct formal regression case has been identified here. Preserve its dated contract/drop observations and limitations without requiring duplicate-run cleanup. Current production handle and concurrent lifetime checks remain with their existing owners. |
+| B05c: construction/retirement state machine (`foundation/model.rs`) | A private world enumerates 165 construction/failure/helper-split traces, 42 allocation-first relocations and nine loan-retirement traces. Per-slot IDs and observers detect lost/duplicated values and backing changes. Main executes all 216 traces, and the first of five tests executes them again; the other four tests deliberately weaken full initialization, accounting, identity or retirement to check the oracle. Published/Done/Joined/Consumed are simulated enum states, not actual completion-runtime transitions or worker interleavings. | Leave the five private-model tests and reports in research. The simulated state transitions do not replace B01–B04 production lifetime/progress checks. Removing this research invocation requires no replacement of its 216 trajectories in the compiler/runtime suite and no modernization of the model. |
+| B05d: whole-result versus result-tree model (`foundation/construction.rs`) | Seven finite producer/consumer cases run through two private lowering strategies. A separate map/set evaluator checks values, effects, release order and destination; exact modeled whole-slot/transfer counts, six mutated event streams, five invalid-source controls, name independence and direct-placement eligibility are also checked. Both main and the sole Rust test call the same `run_suite`, differing only in printing. Neither strategy invokes the production backend. Source validation is shared by the two model paths, so their agreement is not an independent validation of that shared function or the language rules. The 4,096-byte size is a model label, not measured machine traffic. | Leave the model, event-cost table and self-tests in research. They do not test current backend output or establish a performance-regression verdict. Keep actual production storage-placement/ABI obligations with their compiler owner; do not migrate the private lowerers or copy their candidate direct-placement policy into conformance merely to retain a test count. |
+| B05e: safe Rust reusable backing (`foundation/rust-baseline.rs`) | Real Rust Vec/Box conversions at extents 0 and 8 exercise every construction stop point, clear/reuse the backing, and perform three complete checkouts per extent. Per-value IDs/order/drop ledgers check exactly-once destruction; the nonzero trace creates/drops 60 values. Main repeats the same two extent traces that the two tests run. Pointer observations concern the Rust implementation and allocator; the zero extent has no allocated payload and this probe neither injects allocator refusal nor counts allocator calls. | Leave this Rust comparison in research. It currently compares no WF result, so neither its two test cases nor its repeated main need a formal test home. Preserve useful dated pointer/drop observations; do not refactor or maintain this comparison as part of routine compiler verification. |
+| B05f: C layout/copy control (`foundation/layout.c`) | Private C full/prefix/wrapped-ring and bitmap/tagged nullable layouts check complete payload copies, zero/empty/partial/wrapped cases and three nullable occupancy patterns. They never call WF code or the shipped C runtime. Main then unconditionally benchmarks nine cohorts: 4,096 warmup copies per cohort and nine samples of 1,200 copies each, yielding 36,864 warmup plus 97,200 measured copy calls, beyond correctness setup. Timings and sizes are printed without a regression verdict. Foundation `measure` currently runs layout through its `check` prerequisite and then runs layout again. | Leave the C control and its timing modes in research, outside daily checks. It compares private C representations, not the shipped runtime or WF output. The duplicate timing reached through measure/check is relevant when this experiment is next requested, but repairing it is not part of extracting formal regression tests. Do not merge the tool into the production-runtime C runner. |
 | B05g: actual WF wide-result behavior (`foundation/large-result.wf`) | The current compiler builds a producer returning either Err or a record with 4,096 bytes, then a helper inserts it into `FixedVector<Record, 2>`. Main requires length one, checks every successful byte equals nine, and requires the error path to return an empty run. This can catch actual compilation/output regressions. The nearby compiler `wide_result_returns_preserve_success_refusal_and_owned_children` instead uses 512 u64 words plus owning children, a heap-backed one-slot run, retained calls and an allocation observer, and inspects only the first/last words. It is related, not demonstrated to subsume this byte-array/fixed-run/all-elements case. | Keep the complete external behavior in the existing programs run/container group (`compiler/tests/programs/runs.rs`), with the WF fixture owned under `tests/programs/` and one shared source for the explicit research inspection. Reuse the existing Rust test executable and native construction support; do not add an integration executable for this category. Preserve all-byte success and empty-refusal observations until a concrete receiving case supplies them; do not delete the compiler's distinct owned-child/ABI observation. Remove the uninspected extra LLVM construction from routine check. Generate retained/optimized inspection products only when the experiment requests them, using the same fixture. |
 
-**Why models leave the gate while oracles may remain.** These five Rust
-sources and this C control check implementations local to their experiment.
-They have no current production-data comparison or shared production routine,
-and none decides a required performance regression. Keeping them runnable is
-useful for revisiting their architecture questions; running them on every
-compiler change supplies no direct evidence about that change. This is not a
-blanket rule against tests written in Rust/C or independent oracles: an oracle
-or runner that determines a maintained compiler/performance result needs its
-own correctness checks. The remaining B05 oracle consumers still require their
-individual review. Do not relabel unresolved research as completed solely to
-use the existing historical-instrument target.
-
-**Consolidation and authority boundaries.** Keep explicit research self-check
-commands within the existing authority/foundation Makefiles, after removing
-their inherited invocation from the automatic container check. A self-check
-should not build both ordinary and test forms merely to execute the same
-assertions; preserve genuinely additional parameters before dropping a run.
-Reports can request the existing normal entry points when their printed data
-are useful. No new framework, script or per-model Cargo crate is selected.
-Keeping different private models independently checkable does not justify
-adding them to the compiler library or the shared production-runtime binary.
+**Extraction, not experiment maintenance.** The six model/control rows
+supply no current production-data comparison or required regression verdict.
+They stay available for their stated research questions, without new gate
+obligations and without refactoring their duplicate executables in this work.
+The actual WF witness has useful external behavior to retain in programs.
+Independent oracle self-tests also need a concrete formal consumer before
+promotion; being independent alone does not earn automatic CI admission.
+There is no blanket permission to retain a research suite or its inputs behind
+a formal-test wrapper. The boundary above governs all remaining B05/B06 items.
 
 The current `large-result.wf` executable supplies behavior evidence, not a
 machine-code shape or copy-cost verdict. `retained-result.ll` and
@@ -2281,17 +2311,36 @@ are bounded model executions, not scheduler schedules. Model counts and
 copy-loop counts above describe source work, not elapsed-time measurements or
 implemented savings. This audit does not implement any retirement.
 
-B05a-g await the owner. Next are proof-use-cost and the actual compiler-backed
-container witnesses in lifecycle/dense/families, the separate native map
-controls in costs, then the maintained external oracles. B06 owns benchmark
-regression protocols; B07/B08 keep their repository-tooling and explicit
-instrument scopes.
+The remaining B05 review selects individual useful observations from
+proof-use-cost, lifecycle/dense/families, native map controls and external
+oracles. B06's performance-regression work follows the same extraction
+boundary; B07/B08 retain their repository-tooling and explicit-instrument
+scopes. Selection of a formal owner does not require a new executable or an
+entire experimental bundle's migration.
 
-Only the B04j-r ruling and this pending B05a-g proposal are added in this
-discussion revision. Test implementation/callers, the specification,
-conformance evidence, both pending amendments and the live tree are unchanged.
-No build, executable test, timing campaign or new completion/DCR result is
-claimed.
+**Additional current dependency map.** These source-level findings define
+extraction work, not completed migrations or an audit of every assertion:
+
+| Current path into research | Observation and next disposition |
+|---|---|
+| Root `research-tests`: proof-use-cost and container checks | The proof-use runner invokes the compiler for seven accepted fixtures and two PRF-1 negative controls; its check has no native WF execution or performance verdict. Formal PRF-1 conformance and source-proof cases already exist, so compare properties before extracting any additional ceiling/context case. Container lifecycle currently compiles/runs seven accepted programs and checks eight rejected inputs. Normative expectations require the active specification, not the recipe's current-outcome labels; extract missing conformance/program/implementation observations, not both directories wholesale. |
+| Root `research-tests`: ripgrep and raw-DEFLATE Python self-tests | The 22 ripgrep tests check a research runner, output normalization, frozen workload selection and statistics. The 19 DEFLATE tests check the research decoder oracle. Existing formal `programs/wfgrep.rs` uses its own Rust reference/system grep, and `programs/raw_deflate.rs` contains wire-byte fixtures and expected payloads; a research citation in a comment is not a runtime import. Do not promote these complete research self-test suites without a demonstrated missing formal consumer. Any useful additional wire vector or output property must first be compared with formal coverage. |
+| `compiler/src/lowering/tests.rs`, `semantic/tests/slices.rs`, `backend/tests/slices.rs` | Formal Rust tests already import research WF sources, LLVM host adapters, C oracles and invoke `compute-bench/host-adapter.awk`. Their observations include runtime-extent work estimates, range rejection/loan use, complete compute outputs, wrong-output/missing-observation controls and native path evidence. Retain the useful observations while extracting the necessary inputs and helper logic to formal test ownership. Review redundant builds, benchmark-only code and probabilistic repeats under the previously selected rules rather than copying the entire compute bundle. |
+| Root `bench-programs`, Windows IO-host component step | Root checks reach both IO and compute research Makefiles. The Windows step reads `io-completion-bench/programs/windows_component_open.wf`. B04o already selects a programs receiver for its real argument/component observations. Apply the same property-based extraction to other useful inputs and remove experimental construction/measurement machinery from daily callers. |
+| Automatic `compute-bench.yml` pushes and `compute-regression.yml` PRs | The first constructs/verifies the research scoreboard; the second decides paired performance regressions using research programs, harnesses and verdict machinery. Its rule self-test is also called from root research-tests. Preserve required performance detection in a formal performance-test owner after extracting the minimal same-workload comparison and its verdict tests; leave exploratory comparators/scoreboards and explicit measurement workflows in research. B06 still owns the detailed comparison/coverage review. |
+
+The dependency map includes indirect compiler imports, not just root Make or
+workflow names. Source/document citations to dated evidence remain legitimate;
+the prohibited dependency is on executable research machinery and test inputs.
+A complete migration audit must follow remaining generated and transitive
+inputs too. No broad textual ban or new gate script is added by this discussion.
+
+This revision corrects the research boundary in standing guidance and adds
+completion-checklist T4-T6. The fourth pending verification decision is updated;
+its five other decisions, the build-input amendment and the live tree remain
+unchanged. Existing test code, Make/CI callers, specification and conformance
+evidence are unchanged. No build, executable test, timing campaign or new
+completion/DCR result is claimed.
 
 ## Affected material and evidence
 
