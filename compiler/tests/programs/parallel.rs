@@ -1,9 +1,7 @@
 //! Program results and host-visible parallel behavior. Compiler permissions,
 //! private IR and controlled worker observations live in backend tests.
 
-use super::support::{
-    build_program, compile_program, compile_program_with_overlap, compile_program_without_overlap,
-};
+use super::support::{build_program, compile_program, compile_program_with_overlap};
 use whitefoot::module_requires_parallel_runtime;
 
 /// The recursive corpus program publishes one byte sequence whatever the
@@ -19,74 +17,93 @@ use whitefoot::module_requires_parallel_runtime;
 /// source-order result, so none of that may move a bit, and the reference here
 /// is the `--no-overlap` build, the lowering that actualizes nothing at all.
 #[test]
-fn the_quadrature_program_publishes_one_byte_sequence_at_every_recursion_budget() {
+fn the_quadrature_program_publishes_the_analytic_integral_under_each_policy() {
     use whitefoot::{
-        CompilerLimits, OverlapLowering, RecursionBudget, SourceInput, compile_with_overlap,
+        CompilerLimits, OverlapLowering, RecursionBudget, SourceInput,
+        compile_with_permission_ledger,
     };
 
-    let source = std::fs::read(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../tests/programs/adaptive_quadrature.wf"
-    ))
-    .expect("the corpus holds the quadrature program");
-    let sequential = compile_program_without_overlap("adaptive_quadrature.wf");
-    assert!(
-        !module_requires_parallel_runtime(&sequential),
-        "the `--no-overlap` reference must name no part of the runtime"
-    );
-    let reference = build_program(&sequential).run_with_workers(None);
-    assert!(
-        reference.status.success(),
-        "the sequential reference must succeed: {}",
-        String::from_utf8_lossy(&reference.stderr)
-    );
-    assert_eq!(reference.stdout.len(), 64);
-
-    // The command line's own `--par`, scalar-leaf limit and all, and the same
-    // build with the family withheld by the control.
-    for budget in [None, Some(RecursionBudget::Off)] {
-        let overlap = match budget {
-            None => OverlapLowering::OnWithoutSmallScalarLeaves {
+    let source = include_bytes!("../../../tests/programs/adaptive_quadrature.wf");
+    // Analytic Lorentz integral, independent of the program's Simpson walk.
+    let exact: f64 = (0..2048)
+        .map(|sample| {
+            let center = 0.25 + f64::from(sample) / 4096.0;
+            let width = 1.0 / 64.0;
+            width * (((1.0 - center) / width).atan() - (-center / width).atan())
+        })
+        .sum();
+    let mut reference = None;
+    for (mode, omitted_leaves, workers) in [
+        (OverlapLowering::Off, 0, [None].as_slice()),
+        (OverlapLowering::On, 0, [None].as_slice()),
+        (
+            OverlapLowering::OnWithoutSmallScalarLeaves {
                 maximum_operations: 16,
             },
-            Some(budget) => OverlapLowering::OnWithRecursionBudget {
-                budget,
+            2,
+            [Some("1"), Some("2"), Some("4")].as_slice(),
+        ),
+        (
+            OverlapLowering::OnWithRecursionBudget {
+                budget: RecursionBudget::Off,
                 maximum_scalar_leaf_operations: Some(16),
                 sequential_refusal: false,
             },
-        };
-        let overlapped = compile_with_overlap(
-            &[SourceInput::new("adaptive_quadrature.wf", &source)],
+            2,
+            [Some("1"), Some("2"), Some("4")].as_slice(),
+        ),
+    ] {
+        let (module, ledger) = compile_with_permission_ledger(
+            &[SourceInput::new("adaptive_quadrature.wf", source)],
             CompilerLimits::default(),
-            overlap,
+            mode,
         )
-        .expect("the quadrature program compiles under `--par`");
+        .expect("the quadrature program compiles under each execution policy");
+        // These observations validate that the requested controls actually
+        // differ; they share the compilation needed for the program result.
         assert_eq!(
-            overlapped.lines().any(|line| {
-                line.starts_with("define ") && line.contains(" double @wf__par_budget_adaptive(")
-            }),
-            budget.is_none(),
-            "the default emits a budget-carrying family and `off` withholds it"
+            ledger
+                .iter()
+                .filter(|line| line.contains("scalar leaf limit"))
+                .count(),
+            omitted_leaves
+        );
+        let has_budget = matches!(
+            mode,
+            OverlapLowering::On | OverlapLowering::OnWithoutSmallScalarLeaves { .. }
         );
         assert_eq!(
-            overlapped.contains("call i64 @wf__par_recursion_budget()"),
-            budget.is_none(),
-            "only a budget-carrying family asks the runtime for its entry budget"
+            module.lines().any(|line| line.starts_with("define ")
+                && line.contains(" double @wf__par_budget_adaptive(")),
+            has_budget
         );
-
-        let program = build_program(&overlapped);
-        for workers in ["1", "2", "4"] {
-            let output = program.run_with_workers(Some(workers));
+        assert_eq!(
+            module.contains("call i64 @wf__par_recursion_budget()"),
+            has_budget
+        );
+        if mode == OverlapLowering::Off {
+            assert!(!module_requires_parallel_runtime(&module));
+        }
+        let program = build_program(&module);
+        for &width in workers {
+            let output = program.run_with_workers(width);
+            assert!(output.status.success(), "{mode:?}/{width:?}: {output:?}");
+            assert!(output.stderr.is_empty(), "{mode:?}/{width:?}: {output:?}");
+            assert_eq!(output.stdout.len(), 64);
+            let bits = std::str::from_utf8(&output.stdout).unwrap();
+            let observed = f64::from_bits(u64::from_str_radix(bits, 2).unwrap());
             assert!(
-                output.status.success(),
-                "WF_WORKERS={workers} must succeed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                (observed - exact).abs() <= 1e-8,
+                "{mode:?}/{width:?}: {observed} vs {exact}"
             );
-            assert_eq!(
-                output.stdout, reference.stdout,
-                "WF_WORKERS={workers} moved a byte of the integral"
-            );
-            assert!(output.stderr.is_empty(), "WF_WORKERS={workers}");
+            if let Some(bytes) = &reference {
+                assert_eq!(
+                    &output.stdout, bytes,
+                    "{mode:?}/{width:?} moved a result bit"
+                );
+            } else {
+                reference = Some(output.stdout);
+            }
         }
     }
 }

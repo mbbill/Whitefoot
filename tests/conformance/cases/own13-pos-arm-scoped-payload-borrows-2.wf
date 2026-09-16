@@ -1,0 +1,26 @@
+enum Packet {
+  Data(value: i32);
+  Idle();
+}
+
+fn main() -> status: own ExitStatus pure {
+  let packet = Data(value: 4_i32);
+  region {
+    let holder = &packet;
+    match deref(holder) {
+      Data(value: payload) => {
+        let saved = deref(payload);
+      }
+      Idle() => {
+      }
+    }
+    match deref(holder) {
+      Data(value: payload) => {
+        let again = deref(payload);
+      }
+      Idle() => {
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

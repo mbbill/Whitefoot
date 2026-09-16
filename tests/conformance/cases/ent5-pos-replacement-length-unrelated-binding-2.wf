@@ -1,0 +1,45 @@
+fn main() -> status: own ExitStatus pure {
+  let arr_empty = fixed_vector::<u32, 4>();
+  region {
+    place_back(vector: &uniq arr_empty, value: 1_u32);
+  }
+  let arr_one = move arr_empty;
+  region {
+    place_back(vector: &uniq arr_one, value: 1_u32);
+  }
+  let arr_two = move arr_one;
+  region {
+    place_back(vector: &uniq arr_two, value: 1_u32);
+  }
+  let arr_three = move arr_two;
+  region {
+    place_back(vector: &uniq arr_three, value: 1_u32);
+  }
+  let arr = move arr_three;
+  let novel = 123456_u64;
+  let before = arr[0_u64];
+  let ok = before == 1_u32;
+  if ok {
+    return exit_status(code: 1_u8);
+  }
+  let fresh_empty = fixed_vector::<u32, 4>();
+  region {
+    place_back(vector: &uniq fresh_empty, value: 9_u32);
+  }
+  let fresh_one = move fresh_empty;
+  region {
+    place_back(vector: &uniq fresh_one, value: 9_u32);
+  }
+  let fresh_two = move fresh_one;
+  region {
+    place_back(vector: &uniq fresh_two, value: 9_u32);
+  }
+  let fresh_three = move fresh_two;
+  region {
+    place_back(vector: &uniq fresh_three, value: 9_u32);
+  }
+  let fresh = move fresh_three;
+  let old = replace arr = move fresh;
+  let after = arr[0_u64];
+  return exit_status(code: 0_u8);
+}

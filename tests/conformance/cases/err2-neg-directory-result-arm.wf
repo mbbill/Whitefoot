@@ -1,0 +1,11 @@
+fn partial(source: &uniq DirectorySource, destination: &uniq MutSlice<u8>) -> result: own unit reads(source, destination), writes(source, destination) {
+  doc "Omits the error arm of the ordinary enumeration status result.";
+  region {
+    let (outcome, endpoint, reported) = directory_next(source: &uniq deref(source), destination: &uniq deref(destination), start: 0_u64, end: 0_u64);
+    match outcome {
+      Ok(value: completed) => {
+      }
+    }
+  }
+  return unit;
+}

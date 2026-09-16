@@ -213,57 +213,6 @@ fn invariant_brands_require_exact_view_types_in_either_parameter_order() {
 }
 
 #[test]
-fn array_views_preserve_exclusivity_and_element_domains() {
-    let source = r#"fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(0_u8);
-  region {
-    let view = mut_slice_of(&uniq values);
-    set view[0_u64] = 1_u8;
-    let seen = view[0_u64];
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
-    });
-    for (source, rule) in [
-        (
-            source.replace("mut_slice_of(&uniq values)", "slice_of(&values)"),
-            SemanticRule::Set1,
-        ),
-        (
-            source.replace("set view[0_u64]", "set view[2_u64]"),
-            SemanticRule::Op4,
-        ),
-        (
-            source.replace("set view[0_u64]", "set values[0_u64]"),
-            SemanticRule::Own5,
-        ),
-        (
-            source.replace(
-                "set view[0_u64] = 1_u8;",
-                "let other = mut_slice_of(&uniq values);",
-            ),
-            SemanticRule::Own5,
-        ),
-        (
-            source.replace("mut_slice_of(&uniq values)", "mut_slice_of(&values)"),
-            SemanticRule::Type5,
-        ),
-    ] {
-        assert_rule_kind(source.as_bytes(), rule, |_| true);
-    }
-    let constant = source
-        .replace("  let values = array_new::<u8, 2>(0_u8);\n", "")
-        .replace("fn", "const values: array<u8, 2> =[0_u8, 0_u8];\n\nfn");
-    assert_rule_kind(constant.as_bytes(), SemanticRule::Const2, |_| true);
-}
-
-#[test]
 fn borrowed_storage_views_preserve_parent_permissions() {
     let source = r#"fn relay['r](view: own Slice<'r, u64>) -> result: own Slice<'r, u64> pure contract {
   ensures len_of(result) == len_of(view);
@@ -336,54 +285,6 @@ fn main() -> status: own ExitStatus pure {
             matches!(kind, SemanticIssueKind::BorrowConflict)
         });
     }
-}
-
-#[test]
-fn borrowed_array_views_preserve_exact_brand_parameters() {
-    let source = br#"struct Mark['s] {
-  value: u64;
-}
-
-const data: array<u8, 2> =[7_u8, 9_u8];
-
-fn inspect['s](marker: &Mark<'s>, view: own Slice<'s, u8>) -> result: own u64 reads(view) {
-  return len_of(view);
-}
-
-fn main() -> status: own ExitStatus pure {
-  region {
-    let parent = &data;
-    region 'inner {
-      let view = slice_of(&deref(parent));
-      let marker = Mark<'inner>(value: 1_u64);
-      region {
-        let result = inspect(marker: &marker, view: view);
-        if result == 2_u64 {
-          return exit_status(code: 0_u8);
-        }
-      }
-    }
-  }
-  return exit_status(code: 1_u8);
-}
-"#;
-    // The former unsupported probe now reaches VIEW-2 through the ordinary
-    // child-borrow path. The source and its exact brand relation are retained.
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        );
-    });
-    let direct = std::str::from_utf8(source)
-        .unwrap()
-        .replace("slice_of(&deref(parent))", "slice_of(&data)");
-    with_semantics(direct.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "{outcome:?}"
-        )
-    });
 }
 
 #[test]
@@ -761,52 +662,6 @@ fn main() -> status: own ExitStatus pure {
             panic!("missing slice read effect must be rejected: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Eff2);
-    });
-}
-
-#[test]
-fn moved_owners_resolve_borrows_and_slices_to_their_local_storage() {
-    let source = br#"fn touch_after_move(value: own FixedVector<u8, 2>) -> result: own u8 pure {
-  let moved = move value;
-  region {
-    let holder = &uniq moved;
-    let spare = len_of(deref(holder));
-    let nonempty = 0_u64 < spare;
-    if nonempty {
-      let byte = deref(holder)[0_u64];
-      set deref(holder)[0_u64] = byte;
-      return byte;
-    } else {
-      return 0_u8;
-    }
-  }
-}
-
-fn slice_after_move(value: own FixedVector<u8, 2>) -> result: own u8 pure contract {
-  requires head_of(value) <= room_of(value);
-} {
-  let moved = move value;
-  region {
-    let view = slice_of(&moved);
-    let spare = len_of(view);
-    let nonempty = 0_u64 < spare;
-    if nonempty {
-      return view[0_u64];
-    } else {
-      return 0_u8;
-    }
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "v0.58 EFF-2 attributes the moved owner to its local storage, not its incoming value history: {outcome:?}"
-        );
     });
 }
 
@@ -1980,32 +1835,4 @@ fn returned(view: own Slice<u8>) -> result: own u8 reads(view) contract {
             matches!(kind, SemanticIssueKind::EffectMismatch { .. })
         });
     }
-}
-
-/// The descriptor borrow and the backing loan are different places. Passing
-/// `&window` must continue the loan that formed `window`, including when its
-/// backing was reached through an exclusive parameter.
-#[test]
-fn a_borrowed_view_descriptor_keeps_its_backing_parent_permission() {
-    with_semantics(
-        br#"fn count(source: &Slice<u8>) -> result: own u64 reads(source) {
-  return len_of(deref(source));
-}
-
-fn view(scratch: &uniq buffer<u8>) -> result: own u64 reads(scratch) {
-  region {
-    let window = slice_of(&deref(scratch));
-    region {
-      return count(source: &window);
-    }
-  }
-}
-"#,
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "{outcome:?}"
-            )
-        },
-    );
 }

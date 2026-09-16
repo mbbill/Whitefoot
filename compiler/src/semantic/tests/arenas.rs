@@ -65,20 +65,6 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// v0.58 FN-7 leaves launcher selection to the build: a library needs no main.
-#[test]
-fn a_library_without_main_is_accepted() {
-    with_semantics(
-        b"fn quiet() -> result: own unit pure {\n  return unit;\n}\n",
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "{outcome:?}"
-            )
-        },
-    );
-}
-
 /// Removing FN-7's missing-main rejection exposes the existing explicit
 /// legacy representation limitation; it does not reclassify that as source.
 #[test]

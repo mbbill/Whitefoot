@@ -19,8 +19,6 @@ mod programs {
     #[cfg(unix)]
     mod containers;
     #[cfg(unix)]
-    mod generics;
-    #[cfg(unix)]
     mod hashing;
     #[cfg(unix)]
     mod heap;
@@ -29,6 +27,8 @@ mod programs {
     mod network;
     #[cfg(unix)]
     mod numerics;
+    #[cfg(unix)]
+    mod ordinary_io;
     #[cfg(unix)]
     mod parallel;
     #[cfg(unix)]

@@ -1,0 +1,32 @@
+struct Pair {
+  left: u64;
+  right: u64;
+}
+
+formal Inspect<T: affine> {
+  fn read(value: &T) -> result: own u64 reads(value);
+}
+
+fn left(input: &Pair) -> result: own u64 reads(input.left) {
+  return deref(input).left;
+}
+
+actual Left : Inspect<Pair> {
+  read = left;
+}
+
+fn outer<Inspect<T>>(value: &T) -> result: own u64 reads(value) {
+  return Inspect::read(value: value);
+}
+
+fn wrapper(value: &Pair) -> result: own u64 reads(value.left) {
+  return outer::<Left>(value: value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let pair = Pair(left: 3_u64, right: 5_u64);
+  region {
+    let observed = wrapper(value: &pair);
+  }
+  return exit_status(code: 0_u8);
+}

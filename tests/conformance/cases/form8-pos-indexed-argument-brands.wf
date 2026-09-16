@@ -1,0 +1,21 @@
+struct Entry['s] {
+  payload: Box<'s, u64>;
+}
+
+fn inspect['s](stored_entry: &Option<Entry<'s>>, same: &Option<Entry<'s>>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+fn inspect_positions['s](entries: own FixedVector<Option<Entry<'s>>, 4>) -> result: own FixedVector<Option<Entry<'s>>, 4> pure contract {
+  requires 3_u64 <= len_of(entries);
+} {
+  region {
+    let first = inspect(stored_entry: &entries[0_u64], same: &entries[0_u64]);
+    let later = inspect(stored_entry: &entries[2_u64], same: &entries[2_u64]);
+  }
+  return move entries;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

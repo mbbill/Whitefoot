@@ -1,0 +1,21 @@
+fn identity<T: affine>(value: own T) -> result: own T pure {
+  return move value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  region 'a {
+    let store = arena_frame::<256, 16, 'a>();
+    region {
+      match arena_vector::<u64>(store: &uniq store, count: 4_u64) {
+        Some(value: run) => {
+          let kept = identity::<Vector<'a, u64>>(value: move run);
+          let size = room_of(kept);
+          return exit_status(code: 0_u8);
+        }
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}

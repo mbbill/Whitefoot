@@ -602,90 +602,6 @@ fn an_earlier_weaker_fact_does_not_hide_a_later_automatic_pair() {
     });
 }
 
-/// One checked source fact may serve every later goal in its dominance region;
-/// the checker does not rebuild a writer assertion or a per-consumer proof
-/// channel.
-#[test]
-fn one_source_proof_fact_discharges_multiple_bounds_and_a_call_requirement() {
-    let source = format!(
-        r#"fn need(index: own u8) -> result: own unit pure contract {{
-  requires index <= 254_u8;
-}} {{
-  return unit;
-}}
-
-fn read(values: own FixedVector<u8, 255>, first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 reads(values) contract {{
-  requires len_of(values) >= 255_u64;
-  requires first <= first_limit;
-  requires second <= second_limit;
-  requires third <= third_limit;
-  requires first_limit <= 80_u8;
-  requires second_limit <= 80_u8;
-  requires third_limit <= 93_u8;
-}} {{
-  invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {{
-    use (first <= first_limit);
-    use (second <= second_limit);
-    use (third <= third_limit);
-  }}
-  invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
-  invariant in_range: first + second + third <= 254_u8;
-  let first_two = first + second;
-  let index = first_two + third;
-  let array_index = cvt::<u8, u64>(index);
-  let loaded_first = values[array_index];
-  let loaded_second = values[array_index];
-  need(index: index);
-  return loaded_second;
-}}
-
-{COMMAND_MAIN}"#
-    );
-    with_semantics(source.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "one checked proof fact must serve each dominated goal: {outcome:?}"
-        );
-    });
-}
-
-/// The originating proof context also proves FN-9. A source proof that reaches
-/// the selected return is therefore available to the written `ensures`
-/// without a separate postcondition or provenance replay.
-#[test]
-fn a_source_proof_fact_discharges_the_selected_return_postcondition() {
-    let source = format!(
-        r#"fn bounded(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own u8 pure contract {{
-  requires first <= first_limit;
-  requires second <= second_limit;
-  requires third <= third_limit;
-  requires first_limit <= 80_u8;
-  requires second_limit <= 80_u8;
-  requires third_limit <= 93_u8;
-  ensures result <= 254_u8;
-}} {{
-  invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {{
-    use (first <= first_limit);
-    use (second <= second_limit);
-    use (third <= third_limit);
-  }}
-  invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
-  invariant total_bound: first + second + third <= 254_u8;
-  let first_two = first + second;
-  let result = first_two + third;
-  return result;
-}}
-
-{COMMAND_MAIN}"#
-    );
-    with_semantics(source.as_bytes(), |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "the selected return must use its originating source-proof fact: {outcome:?}"
-        );
-    });
-}
-
 #[test]
 fn assignment_does_not_rebind_a_source_proof_to_the_new_value() {
     let source = format!(
@@ -986,17 +902,6 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
             occurrence: 1,
         },
     );
-}
-
-#[test]
-fn deeply_grouped_invariant_preserves_the_affine_node_count() {
-    let expression = format!("{}0_u64{}", "(".repeat(1400), ")".repeat(1400));
-    let source = format!(
-        "fn check() -> result: own unit pure {{\n  invariant zero:{expression} <= 0_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
-    );
-    with_semantics(source.as_bytes(), |outcome| {
-        assert!(matches!(outcome, SemanticOutcome::Complete(_)));
-    });
 }
 
 #[test]

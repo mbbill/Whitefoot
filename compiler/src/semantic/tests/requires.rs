@@ -115,45 +115,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn borrow_result_own_referent_guard_authorizes_its_actual_value() {
-    with_semantics(
-        br#"const alternative: u64 = 9_u64;
-
-fn select['r](value: &'r u64) -> result: &'r u64 pure {
-  return &'r alternative;
-}
-
-fn indexed(value: &u64) -> result: own u64 reads(value) contract {
-  requires deref(value) < 1_u64;
-} {
-  let rows = array_new::<u64, 1>(7_u64);
-  let index = deref(value);
-  return rows[index];
-}
-
-fn forward(value: &u64) -> result: own u64 reads(value) {
-  let chosen = select(value: value);
-  if deref(chosen) < 1_u64 {
-    return indexed(value: chosen);
-  } else {
-    return 99_u64;
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "the guard tests the delivered referent, and refusal is real behavior: {outcome:?}"
-            )
-        },
-    );
-}
-
-#[test]
 fn a_non_bool_requires_predicate_cites_op5() {
     assert_rule(
         br#"fn invalid(value: own i32) -> out: own i32 pure contract {

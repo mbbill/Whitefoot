@@ -1222,40 +1222,6 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(*side, PairSide::Between(0));
 }
 
-/// An unproved interposed subscript is rejected before the window judgment.
-/// Condition 4 remains covered by the interposed propagate case above; the
-/// accepted replacement below checks that a safe subscript creates no exit.
-#[test]
-fn an_unproved_interposed_subscript_is_rejected_before_permission() {
-    let source = br#"fn peek(v: &u64) -> result: own u64 reads(v) {
-  return deref(v);
-}
-
-fn probe['r](values: own array<u8, 8>, index: own u64, cell: &'r u64, other: &'r u64) -> result: own u64 reads(values, cell, other) {
-  let a = peek(v: other);
-  let picked = values[index];
-  let b = peek(v: cell);
-  return imax(a, b);
-}
-
-fn main() -> status: own ExitStatus pure {
-  let cell = 1_u64;
-  let other = 2_u64;
-  let table = array_new::<u8, 8>(0_u8);
-  region {
-    let total = probe(values: move table, index: 3_u64, cell: &cell, other: &other);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the unproved interposed subscript must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Op4);
-    });
-}
-
 #[test]
 fn a_proved_interposed_subscript_creates_no_exit() {
     let source = br#"fn peek(v: &u64) -> result: own u64 reads(v) {

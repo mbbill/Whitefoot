@@ -1,0 +1,16 @@
+fn ratio<T: Int>(n: own T, d: own T) -> result: own T pure contract {
+  requires n /defined d;
+} {
+  let q = n / d;
+  return q;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let a = 10_i32;
+  let b = 3_i32;
+  let signed = ratio::<i32>(n: a, d: b);
+  let x = 10_u32;
+  let y = 3_u32;
+  let unsigned = ratio::<u32>(n: x, d: y);
+  return exit_status(code: 0_u8);
+}

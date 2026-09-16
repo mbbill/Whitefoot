@@ -1,0 +1,20 @@
+fn main() -> status: own ExitStatus pure {
+  let outer = 0_i32;
+  loop @outer_loop {
+    set outer = outer +wrap 1_i32;
+    let inner = 0_i32;
+    loop @inner_loop {
+      if outer >= 3_i32 {
+        break @outer_loop;
+      }
+      if inner >= 2_i32 {
+        break @inner_loop;
+      }
+      set inner = inner +wrap 1_i32;
+    }
+  }
+  if outer != 3_i32 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

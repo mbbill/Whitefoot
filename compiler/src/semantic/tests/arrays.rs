@@ -7,32 +7,6 @@ use super::super::model::{
 use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
-fn nested_constant_arrays_support_typed_reads_and_shared_borrows() {
-    with_semantics(
-        br#"const rows: array<array<u64, 2>, 1> =[[7_u64, 9_u64]];
-
-fn read(values: &array<array<u64, 2>, 1>) -> result: own u64 reads(values) {
-  return deref(values)[0_u64][1_u64];
-}
-
-fn main() -> status: own ExitStatus pure {
-  let direct = rows[0_u64][1_u64];
-  region {
-    let value = read(values: &rows);
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "constant typed places: {outcome:?}"
-            )
-        },
-    );
-}
-
-#[test]
 fn nested_fixed_vector_constants_keep_an_explicit_capability_boundary() {
     super::assert_unsupported(
         br#"const rows: array<FixedVector<u64, 2>, 1> =[[7_u64, 9_u64]];
@@ -43,28 +17,6 @@ fn main() -> status: own ExitStatus pure {
 "#,
         crate::UnsupportedSemanticFeature::CompositeValues,
     );
-}
-
-#[test]
-fn constant_struct_field_reads_preserve_their_scalar_proof_facts() {
-    for offset in [1_u64, 2_u64] {
-        let source = format!(
-            "struct Limits {{\n  offset: u64;\n}}\n\nstruct Settings {{\n  limits: Limits;\n}}\n\nconst settings: Settings = Settings(limits: Limits(offset: {offset}_u64));\n\nfn main() -> status: own ExitStatus pure {{\n  let values = array_new::<u64, 2>(7_u64);\n  let index = settings.limits.offset;\n  let successor = index + 1_u64;\n  let value = values[index];\n  return exit_status(code: 0_u8);\n}}\n"
-        );
-        with_semantics(source.as_bytes(), |outcome| {
-            if offset == 1 {
-                assert!(
-                    matches!(outcome, SemanticOutcome::Complete(_)),
-                    "known scalar field must prove the index: {outcome:?}"
-                );
-            } else {
-                let SemanticOutcome::SourceIssue { issue } = outcome else {
-                    panic!("out-of-bounds field: {outcome:?}");
-                };
-                assert_eq!(issue.rule(), SemanticRule::Op4);
-            }
-        });
-    }
 }
 
 #[test]

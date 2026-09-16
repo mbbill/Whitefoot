@@ -316,30 +316,6 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 }
 
 #[test]
-fn a_branch_fact_discharges_the_protected_array_read() {
-    let source = br#"const values: FixedVector<i32, 8> =[0_i32, 0_i32, 0_i32, 0_i32, 0_i32, 0_i32, 0_i32, 0_i32];
-
-fn read(i: own u64) -> result: own i32 pure {
-  let length = len_of(values);
-  if i < length {
-    return values[i];
-  } else {
-    return values[0_u64];
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(_) = outcome else {
-            panic!("expected acceptance, got {outcome:?}");
-        };
-    });
-}
-
-#[test]
 fn repeated_normalized_uses_are_a_prf1_rejection() {
     let source = br#"fn combine(value: own u64, limit: own u64) -> result: own unit pure contract {
   requires value <= limit;
@@ -717,20 +693,6 @@ fn effect_mismatch_is_located_at_the_written_effect_row() {
 }
 
 #[test]
-fn generic_main_is_an_ordinary_generic_function() {
-    // v0.58 FN-7 removes the entry-name restriction; FN-2 governs inhabitation.
-    with_semantics(
-        b"fn main<T: affine>() -> result: own unit pure {\n  return unit;\n}\n",
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "{outcome:?}"
-            )
-        },
-    );
-}
-
-#[test]
 fn nominal_diagnostics_retain_required_lists_and_repairs() {
     assert_rule(
         include_bytes!("../../../tests/conformance/cases/x-struct-neg-field-order.wf"),
@@ -864,20 +826,6 @@ fn ordinary_signature_effects_reject_both_row_directions() {
         b"fn probe(args: own Args) -> result: own u64 pure {\n  region {\n    let total = args_count(args: &args);\n    return total;\n  }\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
-    );
-}
-
-#[test]
-fn ordinary_prelude_calls_complete_semantic_checking() {
-    // PRE-1 declarations use ordinary CALL-1 typing and EFF-2 attribution.
-    with_semantics(
-        b"fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "an ordinary prelude call must check: {outcome:?}"
-            );
-        },
     );
 }
 

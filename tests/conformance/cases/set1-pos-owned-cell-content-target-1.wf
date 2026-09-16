@@ -1,0 +1,17 @@
+fn hold['heap](store: &uniq Heap<'heap>) -> result: own unit reads(store), writes(store), allocates(store) {
+  region {
+    match heap_box(store: &uniq deref(store), value: 4_i32) {
+      Ok(value: b) => {
+        set deref(b) = 7_i32;
+        return unit;
+      }
+      Err(error: back) => {
+        return unit;
+      }
+    }
+  }
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

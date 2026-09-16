@@ -1,0 +1,26 @@
+struct Mark['s] {
+  value: u64;
+}
+
+const data: array<u8, 2> =[7_u8, 9_u8];
+
+fn inspect['s](marker: &Mark<'s>, view: own Slice<'s, u8>) -> result: own u64 reads(view) {
+  return len_of(view);
+}
+
+fn main() -> status: own ExitStatus pure {
+  region {
+    let parent = &data;
+    region 'inner {
+      let view = slice_of(&data);
+      let marker = Mark<'inner>(value: 1_u64);
+      region {
+        let result = inspect(marker: &marker, view: view);
+        if result == 2_u64 {
+          return exit_status(code: 0_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}

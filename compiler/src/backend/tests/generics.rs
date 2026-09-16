@@ -1,4 +1,18 @@
-use super::support::{compile_and_run, compile_program, compile_sources};
+//! Generic instance identity, deterministic emission and cross-record lowering.
+//! These are compiler implementation observations, using shared corpus sources.
+use super::{compile, compile_and_run, compile_sources};
+
+fn compile_program(name: &str) -> String {
+    match name {
+        "generic_instances.wf" => compile(include_bytes!(
+            "../../../../tests/programs/generic_instances.wf"
+        )),
+        "generic_nominals.wf" => compile(include_bytes!(
+            "../../../../tests/programs/generic_nominals.wf"
+        )),
+        _ => unreachable!("named generic fixture"),
+    }
+}
 
 const GENERIC_LIBRARY: &[u8] = br#"struct Pair<T: Int> {
   value: T;
@@ -32,6 +46,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn concrete_type_and_const_instances_have_distinct_symbols_and_execute() {
     let llvm = compile_program("generic_instances.wf");
+    assert_eq!(
+        llvm,
+        compile_program("generic_instances.wf"),
+        "instance emission is deterministic"
+    );
     for name in ["maximum", "forward", "preserve"] {
         let symbol = format!("@wf_{name}$instance$");
         let definitions = llvm
@@ -65,16 +84,13 @@ fn concrete_type_and_const_instances_have_distinct_symbols_and_execute() {
 }
 
 #[test]
-fn concrete_generic_symbol_order_is_deterministic() {
-    assert_eq!(
-        compile_program("generic_instances.wf"),
-        compile_program("generic_instances.wf")
-    );
-}
-
-#[test]
 fn concrete_generic_struct_enum_and_const_nominal_instances_execute() {
     let llvm = compile_program("generic_nominals.wf");
+    assert_eq!(
+        llvm,
+        compile_program("generic_nominals.wf"),
+        "instance emission is deterministic"
+    );
     for name in ["duplicate", "present", "checked_sum"] {
         let symbol = format!("@wf_{name}$instance$");
         assert_eq!(
@@ -90,14 +106,6 @@ fn concrete_generic_struct_enum_and_const_nominal_instances_execute() {
     assert!(output.status.success(), "{output:?}");
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
-}
-
-#[test]
-fn concrete_generic_nominal_order_is_deterministic() {
-    assert_eq!(
-        compile_program("generic_nominals.wf"),
-        compile_program("generic_nominals.wf")
-    );
 }
 
 #[test]

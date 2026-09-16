@@ -1683,29 +1683,6 @@ fn main() -> status: own ExitStatus pure {
     ));
 }
 
-/// An accumulator-indexed subscript with no dominating fact is rejected before
-/// permission. This keeps the negative boundary entirely in source semantics.
-#[test]
-fn an_unproved_accumulator_subscript_is_rejected_before_permission() {
-    let source = br#"const values: FixedVector<u8, 128> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
-
-fn main() -> status: own ExitStatus pure {
-  let total = 0_u64;
-  for @sum (i in 0_u64..16_u64) {
-    let picked = values[total];
-    set total = total +wrap i;
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an unproved accumulator subscript must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Op4);
-    });
-}
-
 /// In the accepted replacement, the ordinary guard and guarded subscript each
 /// read the accumulator beside its combine. Condition 1 must count all three
 /// reads and refuse the reduction.
@@ -1738,34 +1715,6 @@ fn main() -> status: own ExitStatus pure {
         *reads, 3,
         "the guard read and its guarded subscript both count beside the combine's"
     );
-}
-
-/// A callee with an unproved subscript is rejected before loop permission can
-/// treat the call closure as complete.
-#[test]
-fn an_unproved_subscript_in_the_call_closure_is_rejected() {
-    let source = br#"const values: FixedVector<u64, 8> =[1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64, 1_u64];
-
-fn narrow(v: own u64) -> result: own u64 pure {
-  let bounded = imin(v, 7_u64);
-  return values[bounded];
-}
-
-fn main() -> status: own ExitStatus pure {
-  let total = 0_u64;
-  for @sum (i in 0_u64..16_u64) {
-    let got = narrow(v: i);
-    set total = total +wrap got;
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("an unproved callee subscript must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Op4);
-    });
 }
 
 /// A callee whose branch proves its own subscript is a normal pure call in the

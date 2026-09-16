@@ -1,0 +1,11 @@
+struct Holder['s] {
+  cell: Box<'s, u64>;
+}
+
+fn reverse['left, 'right](left: own Holder<'left>, right: own Holder<'right>) -> (first: own Holder<'right>, second: own Holder<'left>) pure {
+  return move right, move left;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

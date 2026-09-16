@@ -11,7 +11,44 @@ use std::fmt::Write as _;
 use crate::backend::target::{TargetLayout, TargetLayoutFailure};
 
 // The same programs run against real descriptors and scripted linked bodies.
-use super::system_io::{CHUNKED_READ, WRITE_PREFIX, class_arms};
+const CHUNKED_READ: &[u8] = include_bytes!("../../../../tests/programs/io_chunked_read.wf");
+const WRITE_PREFIX: &[u8] = include_bytes!("../../../../tests/programs/io_write_prefix.wf");
+
+fn io_error_classes() -> Vec<&'static str> {
+    let declaration = crate::prelude::DECLARATIONS
+        .iter()
+        .find_map(|(_, _, source)| {
+            source
+                .split_once("enum IoError {\n")
+                .and_then(|(_, rest)| rest.split_once("\n}").map(|(body, _)| body))
+        })
+        .expect("the ordinary library declares IoError");
+    declaration
+        .lines()
+        .filter_map(|line| line.trim().split_once('(').map(|(name, _)| name))
+        .collect()
+}
+
+fn class_arms(indent: usize, named: &[(&str, &str)], default: &str) -> String {
+    let pad = " ".repeat(indent);
+    let inner = " ".repeat(indent + 2);
+    let mut arms = String::new();
+    for class in io_error_classes() {
+        let body = named
+            .iter()
+            .find(|(spelling, _)| *spelling == class)
+            .map_or(default, |(_, body)| body);
+        let body: String = body
+            .lines()
+            .map(|line| format!("{inner}{line}\n"))
+            .collect();
+        arms.push_str(&format!(
+            "{pad}{class}(code: c, origin: o) => {{\n{body}{pad}}}\n"
+        ));
+    }
+    arms
+}
+
 use super::{build_linked_executable_with_library_defines, host_optimized_module, test_directory};
 use std::os::unix::ffi::OsStrExt;
 use std::process::Command;

@@ -102,26 +102,6 @@ fn classifies_every_distinct_pair_with_a_float_endpoint() {
 }
 
 #[test]
-fn partial_float_conversion_result_is_available_without_an_annotation() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  match cvt::<f32, u8>(1.0_f32) {
-    Ok(value: byte) => {
-    }
-    Err(error: narrow_error) => {
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        assert!(
-            matches!(outcome, SemanticOutcome::Complete(_)),
-            "a directly matched partial float conversion must check: {outcome:?}"
-        );
-    });
-}
-
-#[test]
 fn float_conversion_operand_failures_keep_their_rule_owners() {
     assert_rule(
         b"fn main() -> status: own ExitStatus pure {\n  let value = cvt::<f32, f32>(1.0_f32);\n  return exit_status(code: 0_u8);\n}\n",

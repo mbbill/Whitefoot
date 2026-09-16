@@ -433,21 +433,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn counted_range_forwards_breaks_to_an_enclosing_loop() {
-    assert_checks(
-        br#"fn main() -> status: own ExitStatus pure {
-  loop @outer {
-    for (i in 0_u64..1_u64) {
-      break @outer;
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#,
-    );
-}
-
-#[test]
 fn optional_labels_preserve_structural_break_targets_and_invariant_parentage() {
     let source = br#"fn main() -> status: own ExitStatus pure {
   loop @outer {

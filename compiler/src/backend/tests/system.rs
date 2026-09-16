@@ -83,13 +83,6 @@ pub(super) fn corpus_source(name: &str) -> Vec<u8> {
     .expect("retained ordinary corpus source")
 }
 
-fn run_arguments(name: &str, arguments: &[&[u8]]) {
-    let output = compile_and_run_with(&compile(&corpus_source(name)), arguments);
-    assert!(output.status.success(), "{name}: {output:?}");
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
 #[test]
 fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
     with_ir(
@@ -118,11 +111,6 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
             );
         },
     );
-}
-
-#[test]
-fn a_non_utf8_argument_round_trips_its_exact_bytes() {
-    run_arguments("run-syshost-nontext-argv-bytes-roundtrip", &[b"a\xffb"]);
 }
 
 const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &uniq MutSlice<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination) contract {
@@ -257,52 +245,6 @@ fn behavior_actuals_preserve_ordinary_view_calls_rows_and_contracts() {
 }
 
 #[test]
-fn args_count_reports_the_complete_invocation_vector() {
-    run_arguments("run-sysarg-count-and-get", &[b"alpha", b"beta"]);
-}
-
-#[test]
-fn relative_path_admits_by_construction_and_never_normalizes() {
-    run_arguments("run-syspath-relative-basic", &[b"fixture.txt"]);
-    run_arguments(
-        "run-syspath-dotdot-preserved",
-        &[b"./inner/../inner/fixture.txt"],
-    );
-    run_arguments("run-syspath-absolute-rejected", &[b"/absent"]);
-}
-
-#[test]
-fn the_text_route_validates_completely_and_preserves_a_refused_destination() {
-    run_arguments("run-syshost-nontext-argv-utf8-invalid", &[b"a\xffb"]);
-    run_arguments("run-syshost-copyutf8-invalid-unchanged", &[b"a\xffb"]);
-}
-
-#[test]
-fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
-    run_arguments("run-syshost-copybytes-toosmall-unchanged", &[b"abcdef"]);
-    run_arguments("run-syshost-copyutf8-toosmall-unchanged", &[b"abcdef"]);
-}
-
-#[test]
-fn an_out_of_range_copy_is_an_ordinary_requirement_rejection() {
-    for name in [
-        "reject-syshost-copybytes-start-after-end",
-        "reject-syshost-copybytes-end-beyond-buffer",
-        "reject-syshost-copybytes-start-beyond-buffer",
-    ] {
-        assert_eq!(
-            compile_rejection(&corpus_source(name)).rule_id(),
-            Some("FN-8")
-        );
-    }
-}
-
-#[test]
-fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
-    run_arguments("v033-run-system-nonzero-next", &[b"AB"]);
-}
-
-#[test]
 fn an_entry_selecting_no_input_starts_and_returns_its_status() {
     let llvm = compile(
         br#"fn main() -> status: own ExitStatus pure {
@@ -310,7 +252,10 @@ fn an_entry_selecting_no_input_starts_and_returns_its_status() {
 }
 "#,
     );
-    assert_eq!(compile_and_run(&llvm).status.code(), Some(37));
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(37));
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
 }
 
 #[test]

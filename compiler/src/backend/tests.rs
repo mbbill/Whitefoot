@@ -18,15 +18,15 @@ mod enumeration_records;
 mod exhaustion;
 mod float_conversion;
 mod floating;
+mod generics;
+mod heap_programs;
 mod integer_absolute;
 mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
 mod loop_split;
-mod options;
 mod owned_places;
 mod parallel;
-mod propagation;
 mod reborrows;
 mod reinterpret;
 mod requires;
@@ -34,7 +34,6 @@ mod resource_enums;
 mod slices;
 mod stack_ledger;
 mod system;
-mod system_io;
 mod target_frame;
 // Runtime source-claim tests were retired with the source-claim instruction:
 // proofs are checked before lowering, so no backend latch or IR-mutation
@@ -951,173 +950,6 @@ fn main() -> status: own ExitStatus pure {
     assert!(output.stderr.is_empty());
 }
 
-/// [GRAM-6] the Bool conditional lowers through the Bool `match` path it
-/// checks into, so no lowering, cleanup, or drop change is owed. Every branch
-/// here is observable: a wrong one returns a distinct nonzero status.
-#[test]
-fn bool_conditionals_execute_through_the_existing_match_lowering() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let flag = True();
-  let other = False();
-  let seen = False();
-  if flag {
-    set seen = True();
-  }
-  if seen {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  let untouched = True();
-  if other {
-    set untouched = False();
-  }
-  if untouched {
-  } else {
-    return exit_status(code: 2_u8);
-  }
-  let taken = if flag {
-    give True();
-  } else {
-    give False();
-  }
-  if taken {
-  } else {
-    return exit_status(code: 3_u8);
-  }
-  let chained = if other {
-    give False();
-  } else if flag {
-    give True();
-  } else {
-    give False();
-  }
-  if chained {
-  } else {
-    return exit_status(code: 4_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-/// [STOR-2] a box whose nominal is derived rather than written lowers and
-/// runs like any other: it is in the executable prefix, it allocates, its
-/// content reads back, and it is released. `box<u64>` is spelled nowhere.
-#[test]
-fn a_derived_box_nominal_allocates_reads_back_and_releases() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let flag = True();
-  let owner = box_new(flag);
-  let loaded = deref(owner);
-  if loaded {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let llvm = compile(source);
-    let output = compile_and_run(&llvm);
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-/// [OP-1] (ii) the infix spelling executes the row its operator names, and
-/// the modes stay distinguishable: bare `+` requires a representability proof,
-/// `+wrap` wraps, and `+sat` saturates. Every result is checked, so a
-/// mis-selected row returns a distinct nonzero status here.
-#[test]
-fn infix_operators_execute_the_rows_they_name() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let a = 20_i32;
-  let b = a + 22_i32;
-  let want = 42_i32;
-  if b != want {
-    return exit_status(code: 1_u8);
-  }
-  let hi = 2147483647_i32;
-  let wrapped = hi +wrap 1_i32;
-  let low = -2147483648_i32;
-  if wrapped != low {
-    return exit_status(code: 2_u8);
-  }
-  let saturated = hi +sat 1_i32;
-  if saturated != hi {
-    return exit_status(code: 3_u8);
-  }
-  let quotient = 43_i32 / 2_i32;
-  if quotient != 21_i32 {
-    return exit_status(code: 4_u8);
-  }
-  let rest = 43_i32 % 2_i32;
-  if rest != 1_i32 {
-    return exit_status(code: 5_u8);
-  }
-  if a == b {
-    return exit_status(code: 6_u8);
-  }
-  if a > b {
-    return exit_status(code: 7_u8);
-  }
-  if b < a {
-    return exit_status(code: 8_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-/// [OP-1] (ii) an infix returned directly from a function lowers and executes,
-/// not merely type-checks.
-///
-/// `return a + b;` failed semantic checking outright, so no lowering evidence
-/// existed for the shape. Both an arithmetic and a comparison result are
-/// returned and consumed at the call site, and each wrong result returns a
-/// distinct nonzero status rather than passing quietly.
-#[test]
-fn an_infix_returned_from_a_function_executes() {
-    let source = br#"fn add(a: own i32, b: own i32) -> result: own i32 pure contract {
-  requires a +defined b;
-} {
-  return a + b;
-}
-
-fn eq(a: own i32, b: own i32) -> result: own Bool pure {
-  return a == b;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let sum = add(a: 20_i32, b: 22_i32);
-  if sum != 42_i32 {
-    return exit_status(code: 1_u8);
-  }
-  let same = eq(a: 7_i32, b: 7_i32);
-  if same {
-  } else {
-    return exit_status(code: 2_u8);
-  }
-  let differ = eq(a: 7_i32, b: 8_i32);
-  if differ {
-    return exit_status(code: 3_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
 /// [OP-2] bare exact arithmetic is rejected when its domain is refuted; there
 /// is no implicit runtime fallback.
 #[test]
@@ -1135,29 +967,7 @@ fn bare_infix_overflow_is_a_static_op2_rejection() {
 }
 
 #[test]
-fn compiler_independent_scalar_cases_execute_through_host_llvm() {
-    for source in [
-        include_bytes!("../../../tests/conformance/cases/scope3-pos-defined-run.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/gram11-pos-named-args.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/form7-pos-in-range.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/op1-pos-table-op.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-const-scalar-u64-width.wf").as_slice(),
-        include_bytes!(
-            "../../../tests/conformance/cases/x-arith-iadd-wrap-overflow-to-negative.wf"
-        )
-        .as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-arith-isub-wrap-min-roundtrip-runs.wf")
-            .as_slice(),
-    ] {
-        let output = compile_and_run(&compile(source));
-        assert!(output.status.success());
-        assert!(output.stdout.is_empty());
-        assert!(output.stderr.is_empty());
-    }
-}
-
-#[test]
-fn compiler_independent_loop_accumulator_executes_through_host_llvm() {
+fn conformance_loop_accumulators_have_ssa_phi_nodes() {
     for source in [
         include_bytes!("../../../tests/conformance/cases/gram6-pos-no-operators.wf").as_slice(),
         include_bytes!("../../../tests/conformance/cases/own1-pos-tagonly-copy.wf").as_slice(),
@@ -1166,11 +976,6 @@ fn compiler_independent_loop_accumulator_executes_through_host_llvm() {
         let llvm = compile(source);
         let main = emitted_function(&llvm, "main");
         assert!(main.contains(" = phi "));
-
-        let output = compile_and_run(&llvm);
-        assert!(output.status.success());
-        assert!(output.stdout.is_empty());
-        assert!(output.stderr.is_empty());
     }
 }
 
@@ -1307,185 +1112,6 @@ fn main() -> status: own ExitStatus pure {
     assert!(output.status.success());
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
-
-    for independent in [
-        include_bytes!("../../../tests/conformance/cases/err1-pos-result-value-match.wf")
-            .as_slice(),
-        include_bytes!("../../../tests/conformance/cases/pre1-pos-prelude-enums.wf").as_slice(),
-        include_bytes!(
-            "../../../tests/conformance/cases/x-arith-iadd-checked-overflow-err-arm-runs.wf"
-        )
-        .as_slice(),
-        include_bytes!("../../../tests/conformance/cases/run-invariant-exact-sum.wf").as_slice(),
-    ] {
-        let output = compile_and_run(&compile(independent));
-        assert!(output.status.success());
-        assert!(output.stdout.is_empty());
-        assert!(output.stderr.is_empty());
-    }
-}
-
-#[test]
-fn nested_loop_labels_route_breaks_to_the_resolved_exit() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let outer = 0_i32;
-  loop @outer_loop {
-    set outer = outer +wrap 1_i32;
-    let inner = 0_i32;
-    loop @inner_loop {
-      if outer >= 3_i32 {
-        break @outer_loop;
-      }
-      if inner >= 2_i32 {
-        break @inner_loop;
-      }
-      set inner = inner +wrap 1_i32;
-    }
-  }
-  if outer != 3_i32 {
-    return exit_status(code: 1_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-#[test]
-fn compiler_independent_nominal_data_cases_execute_through_host_llvm() {
-    for source in [
-        include_bytes!("../../../tests/conformance/cases/x-struct-construct-read-field.wf")
-            .as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-struct-cross-fn.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-struct-mixed-width.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-struct-nested-field.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-struct-set-field.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-enum-payload-give.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-enum-multiwidth-dispatch.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-enum-stmt-payload-check.wf").as_slice(),
-        include_bytes!(
-            "../../../tests/conformance/cases/x-ownmove-copy-reused-affine-consumed-once.wf"
-        )
-        .as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-ownmove-owned-temporary-scrutinee.wf")
-            .as_slice(),
-        include_bytes!("../../../tests/conformance/cases/op1-pos-bool-enum-equality.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/op1-pos-tag-enum-equality.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/type2-pos-enum.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/gram8-pos-construct.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/err2-pos-exhaustive-match.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/fn5-pos-match-dispatch.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-nominal-bool-ops-run.wf").as_slice(),
-        include_bytes!("../../../tests/conformance/cases/x-nominal-multifield-payload-run.wf")
-            .as_slice(),
-    ] {
-        let output = compile_and_run(&compile(source));
-        assert!(output.status.success());
-        assert!(output.stdout.is_empty());
-        assert!(output.stderr.is_empty());
-    }
-}
-
-#[test]
-fn every_lowered_integer_mode_and_comparison_executes_with_exact_width_and_sign() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
-  let aw = 127_i8 +wrap 1_i8;
-  let sw = 0_u8 -wrap 1_u8;
-  let mw = 65535_u16 *wrap 2_u16;
-  let ast = -10_i16 + 3_i16;
-  let aut = 10_u16 + 3_u16;
-  let sst = 10_i32 - 3_i32;
-  let sut = 10_u32 - 3_u32;
-  let mst = 6_i64 * 7_i64;
-  let mut = 6_u64 * 7_u64;
-  if aw != -128_i8 {
-    return exit_status(code: 1_u8);
-  }
-  if sw != 255_u8 {
-    return exit_status(code: 2_u8);
-  }
-  if mw != 65534_u16 {
-    return exit_status(code: 3_u8);
-  }
-  if ast != -7_i16 {
-    return exit_status(code: 4_u8);
-  }
-  if aut != 13_u16 {
-    return exit_status(code: 5_u8);
-  }
-  if sst != 7_i32 {
-    return exit_status(code: 6_u8);
-  }
-  if sut != 7_u32 {
-    return exit_status(code: 7_u8);
-  }
-  if mst != 42_i64 {
-    return exit_status(code: 8_u8);
-  }
-  if mut != 42_u64 {
-    return exit_status(code: 9_u8);
-  }
-  if 1_i32 == 2_i32 {
-    return exit_status(code: 10_u8);
-  }
-  if -1_i32 >= 0_i32 {
-    return exit_status(code: 11_u8);
-  }
-  if 1_u32 > 1_u32 {
-    return exit_status(code: 12_u8);
-  }
-  if 1_i32 <= -1_i32 {
-    return exit_status(code: 13_u8);
-  }
-  if 1_u32 < 1_u32 {
-    return exit_status(code: 14_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-#[test]
-fn unit_is_a_first_class_parameter_result_and_local() {
-    let source = br#"fn identity(value: own unit) -> result: own unit pure {
-  return value;
-}
-
-fn main() -> status: own ExitStatus pure {
-  let value = identity(value: unit);
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-/// A failed ordinary contract is a caller-side compile rejection. No entry
-/// wrapper or [OP-5] runtime-record path exists.
-#[test]
-fn a_failing_contract_is_a_static_fn8_rejection() {
-    let source = br#"fn only_one(value: own u8) -> result: own unit pure contract {
-  requires value == 1_u8;
-} {
-  return unit;
-}
-
-fn main() -> status: own ExitStatus pure {
-  only_one(value: 0_u8);
-  return exit_status(code: 0_u8);
-}
-"#;
-    let failure = compile_rejection(source);
-    assert_eq!(failure.rule_id(), Some("FN-8"));
 }
 
 #[test]

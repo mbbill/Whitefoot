@@ -1,0 +1,76 @@
+struct Columns {
+  left: buffer<u64>;
+  right: buffer<u64>;
+}
+
+fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads(left, right) {
+  let left_room = len_of(deref(left));
+  let right_room = len_of(deref(right));
+  let index_value = 0_u64;
+  loop @fill {
+    let done = index_value == length;
+    if done {
+      break @fill;
+    } else {
+      let in_left = index_value < left_room;
+      if in_left {
+        set deref(left)[index_value] = index_value;
+      }
+      let shifted = index_value +wrap 10_u64;
+      let in_right = index_value < right_room;
+      if in_right {
+        set deref(right)[index_value] = shifted;
+      }
+      set index_value = index_value +wrap 1_u64;
+    }
+  }
+  return unit;
+}
+
+fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right) {
+  let left_room = len_of(deref(left));
+  let right_room = len_of(deref(right));
+  let index_value = 0_u64;
+  let total = 0_u64;
+  loop @fold {
+    let done = index_value == length;
+    if done {
+      break @fold;
+    } else {
+      let in_left = index_value < left_room;
+      let left_value = if in_left {
+        give deref(left)[index_value];
+      } else {
+        give 0_u64;
+      }
+      let in_right = index_value < right_room;
+      let right_value = if in_right {
+        give deref(right)[index_value];
+      } else {
+        give 0_u64;
+      }
+      set total = total +wrap left_value;
+      set total = total +wrap right_value;
+      set index_value = index_value +wrap 1_u64;
+    }
+  }
+  return total;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let length = 4_u64;
+  let left = buffer_new(length, 0_u64);
+  let right = buffer_new(length, 0_u64);
+  let columns = Columns(left: move left, right: move right);
+  region {
+    let left_out = &uniq columns.left;
+    let right_out = &uniq columns.right;
+    fill(left: move left_out, right: move right_out, length: length);
+  }
+  region {
+    let left_in = &columns.left;
+    let right_in = &columns.right;
+    let total = fold(left: left_in, right: right_in, length: length);
+  }
+  return exit_status(code: 0_u8);
+}

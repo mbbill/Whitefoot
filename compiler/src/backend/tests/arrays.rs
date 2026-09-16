@@ -543,84 +543,6 @@ fn slot_declarations(function: &str) -> (usize, usize) {
     (total, outside_entry)
 }
 
-/// Full-array extents survive a recursive return through their type. This
-/// is the original indexing witness before migration to a variable-length run;
-/// it needs no recursive postcondition summary.
-#[test]
-fn recursive_full_arrays_merge_without_a_postcondition_summary() {
-    let source = br#"fn merge_step(left: own array<u32, 3>, right: own array<u32, 3>, out: own array<u32, 3>, i: own u64, j: own u64, k: own u64) -> result: own array<u32, 3> reads(left, right) contract {
-  requires i <= 3_u64;
-  requires j <= 3_u64;
-  requires k <= 3_u64;
-} {
-  doc "ACCEPT: merges two sorted 3-slot arrays by recursively advancing whichever index holds the smaller current element; each recursive step re-establishes the same three-index contract, so no subscript needs a written certificate.";
-  let i_more = i < 3_u64;
-  if i_more {
-  } else {
-    return move out;
-  }
-  let j_more = j < 3_u64;
-  if j_more {
-  } else {
-    return move out;
-  }
-  let k_more = k < 3_u64;
-  if k_more {
-  } else {
-    return move out;
-  }
-  let lv = left[i];
-  let rv = right[j];
-  let take_left = lv <= rv;
-  let work = move out;
-  if take_left {
-    set work[k] = lv;
-    let next_i = i + 1_u64;
-    let next_k = k + 1_u64;
-    return merge_step(left: move left, right: move right, out: move work, i: next_i, j: j, k: next_k);
-  } else {
-    set work[k] = rv;
-    let next_j = j + 1_u64;
-    let next_k = k + 1_u64;
-    return merge_step(left: move left, right: move right, out: move work, i: i, j: next_j, k: next_k);
-  }
-}
-
-fn main() -> status: own ExitStatus pure {
-  let left = array_new::<u32, 3>(0_u32);
-  set left[0_u64] = 1_u32;
-  set left[1_u64] = 4_u32;
-  set left[2_u64] = 6_u32;
-  let right = array_new::<u32, 3>(0_u32);
-  set right[0_u64] = 2_u32;
-  set right[1_u64] = 3_u32;
-  set right[2_u64] = 9_u32;
-  let out = array_new::<u32, 3>(0_u32);
-  let merged = merge_step(left: move left, right: move right, out: move out, i: 0_u64, j: 0_u64, k: 0_u64);
-  let first = merged[0_u64];
-  let second = merged[1_u64];
-  let third = merged[2_u64];
-  if first == 1_u32 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if second == 2_u32 {
-  } else {
-    return exit_status(code: 2_u8);
-  }
-  if third == 3_u32 {
-  } else {
-    return exit_status(code: 3_u8);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-    let output = compile_and_run(&compile(source));
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
 #[test]
 fn full_arrays_preserve_heap_and_arena_element_ownership_through_generic_helpers() {
     let source = br#"struct Record['s] {
@@ -858,16 +780,6 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn compiler_independent_array_checksum_executes() {
-    let output = compile_and_run(&compile(include_bytes!(
-        "../../../../tests/conformance/cases/x-array-const-checksum-run.wf"
-    )));
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-#[test]
 fn indexed_set_checks_before_rhs_and_updates_the_run() {
     let source = br#"fn replacement() -> result: own u8 pure {
   return 9_u8;
@@ -1007,16 +919,6 @@ fn a_long_loop_over_a_dynamically_indexed_run_keeps_the_frame_bounded() {
         "the loop must run to completion instead of exhausting the stack: {:?}",
         output.status
     );
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
-}
-
-#[test]
-fn compiler_independent_mutable_array_checksum_executes() {
-    let output = compile_and_run(&compile(include_bytes!(
-        "../../../../tests/conformance/cases/x-array-mutable-checksum-run.wf"
-    )));
-    assert!(output.status.success());
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
 }

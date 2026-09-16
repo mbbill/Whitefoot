@@ -1,0 +1,7 @@
+formal Invalid {
+  fn inspect['r](left: &'r u64, right: &'r u64) -> result: &'r u64 pure;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
