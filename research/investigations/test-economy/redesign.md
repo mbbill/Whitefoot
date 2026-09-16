@@ -4017,3 +4017,26 @@ Hosted stage wall times: candidate Rust compiler 55.47 s; baseline Rust compiler
 Linux measurements, separate from the local candidate-only correctness checks.
 Raw paired rows, image identities and verdicts are in the run's artifact.
 The same revision passed Linux/Windows `io-hosts` run 35112446201.
+
+### Hosted correctness findings after the formal extraction
+
+The first full hosted unit run at 966c2433 reached 1,647 passing cases and one
+failure on both Linux and macOS. The failing proof-ledger case still assumed
+that the decoder's fixed-distance payload was assigned directly to its output.
+The RFC 1951 repair instead reverses five wire bits in a counted loop. Keep the
+fourteen direct-match clauses, add that one counted derivation, and require
+thirteen selected-receiver transfers: the reversed value must not inherit the
+original payload's identity. This is a source-derived expectation update, not
+removal of the proof-root check. The focused case passes in 55.42 s execution /
+132.83 s total after rebuilding the Rust library test target. Its substantial
+execution cost is frontend proof construction/inspection over three real source
+bundles, not native WF execution.
+
+The Linux runtime job also exposed an incorrect build-tool assumption: `cc`
+means GCC there and cannot consume LLVM IR. C sources retain `CC`; LLVM sources
+use explicit `LLVM_CC` (Clang), and Windows has a corresponding target-specific
+LLVM compiler. Both tool identities enter the reuse configuration. The complete
+local runtime target passes in 5.08 s including construction; Linux and Windows
+confirmation remains the hosted job's responsibility. The corpus failure was
+the retired blanket directory-membership assertion described above, not a
+failed program output. None of these failures changes a language expectation.

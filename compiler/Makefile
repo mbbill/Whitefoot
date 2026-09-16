@@ -2,7 +2,9 @@ CARGO := cargo
 .DELETE_ON_ERROR:
 CHECK_RUN := perl $(abspath ../.github/run-check.pl)
 CC ?= cc
+LLVM_CC ?= clang
 WINDOWS_CC ?= x86_64-w64-mingw32-gcc
+WINDOWS_LLVM_CC ?= clang --target=x86_64-w64-windows-gnu
 WINE ?= /usr/lib/wine/wine64
 WINEPREFIX ?= $(WHITEFOOT_SCRATCH_ROOT)/wineprefix
 WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
@@ -181,7 +183,7 @@ completion-configuration-force:
 
 $(COMPLETION_CONFIG): completion-configuration-force
 	@mkdir -p "$(COMPLETION_TMP)"
-	@{ printf '%s\n' "$(CURDIR)" "$(CC)" "$(COMPLETION_BASE_CFLAGS)" "$(COMPLETION_HARNESS_CFLAGS)" "$(COMPLETION_CORE_READ_DEFINES)" "$(COMPLETION_SANITIZE_FLAGS)" "$(COMPLETION_TSAN_FLAGS)"; $(CC) --version; } > "$@.new"
+	@{ printf '%s\n' "$(CURDIR)" "$(CC)" "$(LLVM_CC)" "$(COMPLETION_BASE_CFLAGS)" "$(COMPLETION_HARNESS_CFLAGS)" "$(COMPLETION_CORE_READ_DEFINES)" "$(COMPLETION_SANITIZE_FLAGS)" "$(COMPLETION_TSAN_FLAGS)"; $(CC) --version; $(LLVM_CC) --version; } > "$@.new"
 	@cmp -s "$@.new" "$@" || mv -f "$@.new" "$@"
 	@rm -f "$@.new"
 
@@ -193,7 +195,7 @@ $(COMPLETION_TMP)/objects/$(1)/%.o: src/backend/%.c $(COMPLETION_HEADERS) Makefi
 	$$(CC) $(3) -c "$$<" -o "$$@"
 $(COMPLETION_TMP)/objects/$(1)/%_ir.o: src/backend/%.ll Makefile $(COMPLETION_CONFIG)
 	@mkdir -p "$$(dir $$@)"
-	$$(CC) $(filter-out -std=c11 -pthread -D%,$(3)) -Wno-override-module -Wno-unused-command-line-argument -x ir -c "$$<" -o "$$@"
+	$$(LLVM_CC) $(filter-out -std=c11 -pthread -D%,$(3)) -Wno-override-module -Wno-unused-command-line-argument -x ir -c "$$<" -o "$$@"
 .SECONDARY: $(patsubst src/backend/%.ll,$(COMPLETION_TMP)/objects/$(1)/%_ir.o,$(patsubst src/backend/%.c,$(COMPLETION_TMP)/objects/$(1)/%.o,$(2)))
 endef
 
@@ -476,7 +478,7 @@ WINDOWS_NATIVE_OBJECTS := $(patsubst src/backend/%.c,$(WINDOWS_OBJECT_DIR)/%.o,$
 
 $(WINDOWS_CONFIG): completion-configuration-force
 	@mkdir -p "$(dir $@)"
-	@{ printf '%s\n' "$(CURDIR)" "$(WINDOWS_CC)" "$(WINDOWS_CFLAGS)" "$(WINDOWS_LINK_LIBRARIES)"; $(WINDOWS_CC) --version; } > "$@.new"
+	@{ printf '%s\n' "$(CURDIR)" "$(WINDOWS_CC)" "$(WINDOWS_LLVM_CC)" "$(WINDOWS_CFLAGS)" "$(WINDOWS_LINK_LIBRARIES)"; $(WINDOWS_CC) --version; $(WINDOWS_LLVM_CC) --version; } > "$@.new"
 	@cmp -s "$@.new" "$@" || mv -f "$@.new" "$@"
 	@rm -f "$@.new"
 
@@ -486,7 +488,7 @@ $(WINDOWS_OBJECT_DIR)/%.o: src/backend/%.c $(COMPLETION_HEADERS) Makefile $(WIND
 
 $(WINDOWS_OBJECT_DIR)/%_ir.o: src/backend/%.ll Makefile $(WINDOWS_CONFIG)
 	@mkdir -p "$(dir $@)"
-	$(WINDOWS_CC) $(filter-out -std=c11 -D%,$(WINDOWS_CFLAGS)) -Wno-override-module -Wno-unused-command-line-argument -x ir -c "$<" -o "$@"
+	$(WINDOWS_LLVM_CC) $(filter-out -std=c11 -D%,$(WINDOWS_CFLAGS)) -Wno-override-module -Wno-unused-command-line-argument -x ir -c "$<" -o "$@"
 
 $(WINDOWS_OBJECT_DIR)/file-windows-observed.o: $(COMPLETION_DIR)/file_windows.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_COMPLETION_SHUTDOWN=wf_ordinary_test_shutdown -c "$<" -o "$@"

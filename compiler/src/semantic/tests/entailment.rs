@@ -8303,7 +8303,7 @@ fn counted_sha256_discharges_all_nine_indices_from_counted_facts() {
 }
 
 #[test]
-fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positives() {
+fn real_sources_retain_complete_proof_roots_without_counted_false_positives() {
     let bundles: [&[SourceInput<'_>]; 3] = [
         &[SourceInput::new(
             "utf8parse.wf",
@@ -8340,7 +8340,7 @@ fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positiv
     for (bundle, inputs) in bundles.into_iter().enumerate() {
         super::with_semantics_inputs(inputs, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
-                panic!("frozen real source bundle must remain accepted: {outcome:?}");
+                panic!("real source bundle must remain accepted: {outcome:?}");
             };
             for function in &program.data.functions {
                 validate_derivations(&function.entailment);
@@ -8358,6 +8358,9 @@ fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positiv
                     // from that unchanged four-loop operation chain.
                     (1, "build_huffman_table") => 5,
                     (1, "decode_dynamic") => 3,
+                    // RFC 1951's fixed distance symbol is reconstructed from
+                    // five wire bits by one counted bit-reversal loop.
+                    (1, "decode_fixed") => 1,
                     (1, "exercise") => 4,
                     (1, "main") => 0,
                     // `wfgrep.wf`'s two fill helpers, which carry the zero
@@ -8369,7 +8372,7 @@ fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positiv
                 assert_eq!(
                     function.entailment.counted_derivations.len(),
                     expected_counted,
-                    "the frozen source keeps its exact counted induction groups in {}",
+                    "the source keeps its exact counted induction groups in {}",
                     function.name,
                 );
             }
@@ -8547,16 +8550,21 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             .collect::<Vec<_>>();
         assert_eq!(
             selected.len(),
-            1,
+            usize::from(ordinal != 1),
             "read_bits row {ordinal} SelectedReceiver route"
         );
-        selected_rows.push((
-            call.caller,
-            call.path.clone(),
-            selected[0].0,
-            selected[0].1.clone(),
-            selected[0].2,
-        ));
+        // The five fixed-distance wire bits now feed a bit-reversal loop,
+        // not a direct assignment of the selected payload to distance_symbol.
+        // Its direct-match fact must not become a false receiver identity.
+        selected_rows.push(selected.first().map(|selected| {
+            (
+                call.caller,
+                call.path.clone(),
+                selected.0,
+                selected.1.clone(),
+                selected.2,
+            )
+        }));
         assert!(summary.derivations.nodes.iter().all(|node| {
             let DerivationNode::PostconditionDirectReceiver { parent, .. } = node else {
                 return true;
@@ -8573,7 +8581,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
 
     // PRE-1 supplies ordinary signatures: write_once and read_at each publish
     // their two endpoint clauses through the same CALL-6 direct-match route.
-    // The original fourteen read_bits sites above remain unchanged.
+    // The fourteen read_bits calls remain; thirteen directly assign payloads.
     for (caller_name, callee_name) in [("publish_all", "write_once"), ("exercise", "read_at")] {
         let caller = program
             .functions
@@ -8636,7 +8644,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                 DerivationRootKind::PostconditionSelectedReceiver { .. }
             ))
             .count(),
-        14
+        13
     );
     // The boundary driver's `assemble_reason` publishes `result <= capacity`
     // over its own declared result, which is the direct-result route. It came
@@ -8705,7 +8713,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         .collect::<Vec<_>>();
     receiver_events.sort_unstable_by_key(|(owner, event)| (*owner, event.0));
     receiver_events.dedup();
-    assert_eq!(receiver_events.len(), 14);
+    assert_eq!(receiver_events.len(), 13);
     for (owner, event) in receiver_events {
         assert_eq!(
             retained_event(&program.functions[owner].entailment, event).kind,
@@ -8713,8 +8721,8 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         );
     }
 
-    let short = &selected_rows[12];
-    let long = &selected_rows[13];
+    let short = selected_rows[12].as_ref().expect("short repeat assignment");
+    let long = selected_rows[13].as_ref().expect("long repeat assignment");
     assert_eq!(short.0, long.0);
     assert_eq!(
         short.2, long.2,
