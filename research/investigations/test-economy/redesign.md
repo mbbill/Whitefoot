@@ -3694,3 +3694,56 @@ name CRLF, preserving the complete message, the non-success status and exact AB
 result. The old PowerShell caller stripped carriage returns; no production
 runtime behavior is changed to satisfy the new assertion. That hosted run took
 24.18 s to execute the seven cases. Hosted Linux io-hosts passed at this revision.
+
+### Implementation evidence — proof ceiling and lifecycle receivers
+
+B05g/h/i now have formal receivers. The valid 4,096-use PRF-1 certificate is a
+single accept-only conformance case; its three entering bounds and distinct
+weakenings sum to the declared coefficients/slack. Its unused proof helper is
+still checked, but there is no native image or timed-regression verdict. The
+existing duplicate/unproved-use negatives and the compiler's 4,097th-entry
+location/bookkeeping test retain their different observations. This new case
+passed ordinary CLI acceptance in 0.88 s total.
+
+The foundation's `large-result.wf` moves to
+`tests/programs/containers/large_result.wf`; its manual research recipes and
+current navigation use the same source. One programs case checks all 4,096
+successful result bytes after fixed-run transfer and the empty failure result.
+The compiler's owning-child and retained-call allocation case remains distinct.
+The six candidate models and native controls require no production receiver.
+Their eventual removal from the automatic caller is not a claim that those
+research models are production tests.
+
+The lifecycle entry on the integrated main has **nine accepted and six rejected
+inputs**, not the earlier audit's seven/eight. The active PROV-6 already permits
+a proved-empty direct run to omit its element edge on derived release. Therefore
+`linear_pop_empty` and `linear_failure_run` must not be copied as rejects. The
+new accepted case covers that empty-run obligation on both acquisition arms,
+next to consumption of an already-held linear ticket on both arms. A paired
+negative leaves the first ticket live only on refusal. No language or existing
+conformance verdict is changed to accommodate this extraction.
+
+| Research observation | Formal receiver / disposition |
+|---|---|
+| Measures through two replacements, verified return, nominal field and Some | `msr5-pos-measures-through-owned-transfers`; acceptance only. |
+| A returned dynamic run's capacity is not an exported helper fact | `inv1-neg-unpublished-element-capacity`; INV-1. |
+| Static capacity through an inline nominal helper and a generic boxed helper | `ent2-pos-pool-static-and-boxed-capacity`; both helpers remain instantiated. |
+| Capacity does not establish initialized length after an unsummarized return | `inv1-neg-static-capacity-is-not-initialized-length`; INV-1. |
+| A nominal result field is not an FN-9 selector | `fn9-neg-aggregate-field-result-selector`; also receives families' equivalent rejected-wrapper observation. |
+| A take cannot truthfully promise unchanged initialized length | `fn9-neg-take-does-not-preserve-length`; FN-9. |
+| Linear consumption on both outcomes and proved-empty drained-run release | `prov6-pos-consume-and-drain-on-every-result-arm`; PROV-6/BLK-3/ENT-6. |
+| Prior linear ticket leaked only on the refusal outcome | `prov6-neg-prior-ticket-leaked-on-refusal`; PROV-6. |
+| Actual pool counts, helper conservation and inline/boxed mutable round trips | Extended existing `block_pool.wf` and its existing program execution. Both complete four-byte updates still require sum 14; no extra program image. |
+| Wrapped values returned across a helper, indexed and drained in order | Extended `run_queue.wf` with the forwarding helper and its existing stronger full ordered-drain oracle; no separate sum-only image. |
+| A contiguous view cannot cover a wrapped window | Existing `blk0-neg-a-view-over-a-wrapped-run`; the second research rejection wrapper adds no distinct obligation. |
+
+All eight new lifecycle source cases reached their specified accept/reject rule
+through the ordinary CLI. During receiving-program construction an invariant
+was initially written with equality, which INV-1 correctly refuses; the two
+ordered bounds now express that consequence of the unchanged FN-9 equality
+postcondition. This was a fixture correction, not a compiler change or verdict
+rewrite. The final three affected program cases plus two canonical assertions
+passed: 4.82 s execution / 8.88 s including incremental Rust construction.
+Conformance structure/129-rule coverage, all-target Clippy and formatting pass.
+The full native conformance run and automatic research-caller removal remain
+part of the outstanding combined work, as do dense/families/decoder receivers.

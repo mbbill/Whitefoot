@@ -28,6 +28,13 @@ fn append(vector: &uniq FixedVector<u8, 4>, value: own u8) -> result: own unit r
   return unit;
 }
 
+fn pass_window(values: own FixedVector<u8, 4>) -> result: own FixedVector<u8, 4> pure contract {
+  ensures len_of(result) == len_of(values);
+  ensures head_of(result) == head_of(values);
+} {
+  return move values;
+}
+
 fn main() -> status: own ExitStatus pure {
   doc "Runs a queue over one four-slot run: the window wraps, and every element comes back in the order it went in.";
   let built = pair();
@@ -79,7 +86,7 @@ fn main() -> status: own ExitStatus pure {
       region {
         place_back(vector: &uniq four, value: 5_u8);
       }
-      let five = move four;
+      let five = pass_window(values: move four);
       let wrapped = five[1_u64];
       if wrapped == 4_u8 {
       } else {

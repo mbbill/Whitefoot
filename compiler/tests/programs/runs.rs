@@ -161,3 +161,14 @@ fn a_run_of_store_backed_runs_is_a_block_pool() {
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
 }
+
+/// One successful 4,096-byte result enters a fixed run; every byte survives
+/// the transfer, while the rejected producer leaves the result run empty.
+/// The distinct compiler owned-child/retained-call case is not replaced here.
+#[test]
+fn a_wide_result_preserves_every_byte_and_leaves_refusal_empty() {
+    let output = compile_and_run(&compile_program("containers/large_result.wf"));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
