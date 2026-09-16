@@ -12,9 +12,373 @@ void *wf_observe_allocate(uint64_t bytes);
 void wf_observe_release(void *pointer);
 #define malloc wf_observe_allocate
 #define free wf_observe_release
-#define main retained_sparse_main
-#include "../costs/sparse-owned.c"
-#undef main
+#include <assert.h>
+#include <stdbool.h>
+#include <inttypes.h>
+#define MAX_RESOURCES 16384u
+#define EMPTY 0x80u
+#define DELETED 0xfeu
+#define MAX_FULL 0x7fu
+
+
+typedef struct Resource {
+    uint64_t id;
+    uint64_t data[4];
+} Resource;
+
+typedef struct Cell {
+    uint64_t key;
+    Resource *resource;
+} Cell;
+
+typedef struct Ledger {
+    bool created[MAX_RESOURCES];
+    bool dropped[MAX_RESOURCES];
+    Resource *live[MAX_RESOURCES];
+    size_t created_count;
+    size_t dropped_count;
+} Ledger;
+
+static Ledger ledger;
+static size_t backing_live_bytes;
+static size_t backing_peak_bytes;
+static size_t backing_live_allocations;
+static size_t backing_peak_allocations;
+static size_t control_bytes_initialized;
+
+static void reset_ledger(void) {
+    memset(&ledger, 0, sizeof(ledger));
+}
+static void resource_drop(Resource *resource) {
+    assert(resource != NULL);
+    const uint64_t id = resource->id;
+    assert(id < MAX_RESOURCES && ledger.created[id] && !ledger.dropped[id]);
+    assert(ledger.live[id] == resource);
+    ledger.dropped[id] = true;
+    ledger.live[id] = NULL;
+    ++ledger.dropped_count;
+    free(resource);
+}
+
+static void *backing_allocate(size_t bytes, bool force_failure) {
+    if (force_failure) {
+        return NULL;
+    }
+    void *memory = malloc(bytes == 0 ? 1 : bytes);
+    if (memory != NULL) {
+        backing_live_bytes += bytes;
+        ++backing_live_allocations;
+        if (backing_live_bytes > backing_peak_bytes) {
+            backing_peak_bytes = backing_live_bytes;
+        }
+        if (backing_live_allocations > backing_peak_allocations) {
+            backing_peak_allocations = backing_live_allocations;
+        }
+    }
+    return memory;
+}
+
+static void backing_release(void *memory, size_t bytes) {
+    if (memory == NULL) {
+        return;
+    }
+    assert(backing_live_bytes >= bytes && backing_live_allocations > 0);
+    backing_live_bytes -= bytes;
+    --backing_live_allocations;
+    free(memory);
+}
+
+static bool checked_mul(size_t a, size_t b, size_t *out) {
+    if (a != 0 && b > SIZE_MAX / a) {
+        return false;
+    }
+    *out = a * b;
+    return true;
+}
+static uint8_t fingerprint(uint64_t key) {
+    return (uint8_t)(key & MAX_FULL);
+}
+
+static size_t bucket(uint64_t key, size_t capacity) {
+    assert(capacity > 0);
+    return (size_t)(key % capacity);
+}
+
+static size_t probe_index(size_t start, size_t probe, size_t capacity) {
+    assert(start < capacity && probe < capacity);
+    return probe >= capacity - start ? probe - (capacity - start) : start + probe;
+}
+
+static bool is_full(uint8_t control) {
+    return control <= MAX_FULL;
+}
+
+static bool is_vacant(uint8_t control) {
+    return control == EMPTY || control == DELETED;
+}
+
+typedef struct ISlot {
+    uint8_t control;
+    Cell cell;
+} ISlot;
+
+typedef struct ITable {
+    size_t capacity;
+    size_t bytes;
+    ISlot *slots;
+} ITable;
+
+
+static bool i_init(ITable *table, size_t capacity, bool force_failure) {
+    size_t bytes;
+    if (capacity == 0 || !checked_mul(capacity, sizeof(ISlot), &bytes)) {
+        return false;
+    }
+    ISlot *slots = backing_allocate(bytes, force_failure);
+    if (slots == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < capacity; ++i) {
+        slots[i].control = EMPTY;
+    }
+    assert(control_bytes_initialized <= SIZE_MAX - capacity);
+    control_bytes_initialized += capacity;
+    *table = (ITable){.capacity = capacity, .bytes = bytes, .slots = slots};
+    return true;
+}
+
+static void i_release_backing(ITable *table) {
+    backing_release(table->slots, table->bytes);
+    *table = (ITable){0};
+}
+
+static uint8_t *i_ctl(ITable *table, size_t index) {
+    assert(index < table->capacity);
+    return &table->slots[index].control;
+}
+
+static Cell *i_cell(ITable *table, size_t index) {
+    assert(index < table->capacity);
+    return &table->slots[index].cell;
+}
+typedef enum PutResult { PUT_INSERTED, PUT_REPLACED, PUT_FULL } PutResult;
+typedef enum StepResult { STEP_PAUSED, STEP_DONE, STEP_BLOCKED_FULL } StepResult;
+typedef enum Phase { PHASE_SCAN, PHASE_PROBE, PHASE_BLOCKED, PHASE_DONE } Phase;
+
+    typedef struct iRehash {
+        ITable source;
+        ITable target;
+        Phase phase;
+        size_t source_next;
+        Cell held;
+        bool held_valid;
+        size_t probe_start;
+        size_t next_probe;
+    } iRehash;
+    static PutResult i_put(ITable *table, uint64_t key, Resource *offered,
+                             Resource **old, size_t *placed_index) {
+        assert(table->capacity > 0 && offered != NULL);
+        *old = NULL;
+        size_t first_deleted = SIZE_MAX;
+        const size_t start = bucket(key, table->capacity);
+        for (size_t probe = 0; probe < table->capacity; ++probe) {
+            const size_t index = probe_index(start, probe, table->capacity);
+            const uint8_t control = *i_ctl(table, index);
+            if (control == DELETED) {
+                if (first_deleted == SIZE_MAX) {
+                    first_deleted = index;
+                }
+                continue;
+            }
+            if (control == EMPTY) {
+                const size_t destination =
+                    first_deleted == SIZE_MAX ? index : first_deleted;
+                Cell *cell = i_cell(table, destination);
+                cell->key = key;
+                cell->resource = offered;
+                *i_ctl(table, destination) = fingerprint(key);
+                *placed_index = destination;
+                return PUT_INSERTED;
+            }
+            assert(is_full(control));
+            Cell *cell = i_cell(table, index);
+            if (cell->key == key) {
+                *old = cell->resource;
+                cell->resource = offered;
+                *i_ctl(table, index) = fingerprint(key);
+                *placed_index = index;
+                return PUT_REPLACED;
+            }
+        }
+        if (first_deleted != SIZE_MAX) {
+            Cell *cell = i_cell(table, first_deleted);
+            cell->key = key;
+            cell->resource = offered;
+            *i_ctl(table, first_deleted) = fingerprint(key);
+            *placed_index = first_deleted;
+            return PUT_INSERTED;
+        }
+        return PUT_FULL;
+    }
+
+    static Resource *i_find(ITable *table, uint64_t key, size_t *examined) {
+        const size_t start = bucket(key, table->capacity);
+        *examined = 0;
+        for (size_t probe = 0; probe < table->capacity; ++probe) {
+            const size_t index = probe_index(start, probe, table->capacity);
+            const uint8_t control = *i_ctl(table, index);
+            ++*examined;
+            if (control == EMPTY) {
+                return NULL;
+            }
+            if (is_full(control)) {
+                Cell *cell = i_cell(table, index);
+                if (control == fingerprint(key) && cell->key == key) {
+                    return cell->resource;
+                }
+            }
+        }
+        return NULL;
+    }
+
+    static Resource *i_remove(ITable *table, uint64_t key) {
+        const size_t start = bucket(key, table->capacity);
+        for (size_t probe = 0; probe < table->capacity; ++probe) {
+            const size_t index = probe_index(start, probe, table->capacity);
+            const uint8_t control = *i_ctl(table, index);
+            if (control == EMPTY) {
+                return NULL;
+            }
+            if (is_full(control)) {
+                Cell *cell = i_cell(table, index);
+                if (control == fingerprint(key) && cell->key == key) {
+                    Resource *resource = cell->resource;
+                    *i_ctl(table, index) = DELETED;
+                    return resource;
+                }
+            }
+        }
+        return NULL;
+    }
+
+    static uint64_t i_digest(ITable *table) {
+        uint64_t digest = UINT64_C(1469598103934665603);
+        digest ^= table->capacity;
+        digest *= UINT64_C(1099511628211);
+        for (size_t i = 0; i < table->capacity; ++i) {
+            const uint8_t control = *i_ctl(table, i);
+            digest ^= control;
+            digest *= UINT64_C(1099511628211);
+            if (is_full(control)) {
+                Cell *cell = i_cell(table, i);
+                digest ^= cell->key;
+                digest *= UINT64_C(1099511628211);
+                digest ^= cell->resource->id;
+                digest *= UINT64_C(1099511628211);
+            }
+        }
+        return digest;
+    }
+
+    static void i_drop_contents(ITable *table) {
+        for (size_t i = 0; i < table->capacity; ++i) {
+            if (is_full(*i_ctl(table, i))) {
+                resource_drop(i_cell(table, i)->resource);
+                *i_ctl(table, i) = EMPTY;
+            }
+        }
+    }
+
+    static bool i_begin(ITable *source, size_t target_capacity, bool force_failure,
+                          iRehash *rehash) {
+        ITable target = {0};
+        if (!i_init(&target, target_capacity, force_failure)) {
+            return false;
+        }
+        *rehash = (iRehash){
+            .source = *source, .target = target, .phase = PHASE_SCAN, .source_next = 0,
+        };
+        *source = (ITable){0};
+        return true;
+    }
+
+    static void i_begin_into(ITable *source, ITable *target, iRehash *rehash) {
+        assert(source->capacity > 0 && target->capacity > 0);
+        *rehash = (iRehash){
+            .source = *source, .target = *target, .phase = PHASE_SCAN, .source_next = 0,
+        };
+        *source = (ITable){0};
+        *target = (ITable){0};
+    }
+
+    static StepResult i_step(iRehash *rehash, size_t budget, size_t *examined,
+                               size_t *moved) {
+        *examined = 0;
+        *moved = 0;
+        if (rehash->phase == PHASE_BLOCKED) {
+            return STEP_BLOCKED_FULL;
+        }
+        if (rehash->phase == PHASE_DONE) {
+            return STEP_DONE;
+        }
+        while (*examined < budget) {
+            if (rehash->phase == PHASE_SCAN) {
+                if (rehash->source_next == rehash->source.capacity) {
+                    rehash->phase = PHASE_DONE;
+                    return STEP_DONE;
+                }
+                const size_t index = rehash->source_next++;
+                const uint8_t control = *i_ctl(&rehash->source, index);
+                ++*examined;
+                if (is_full(control)) {
+                    rehash->held = *i_cell(&rehash->source, index);
+                    rehash->held_valid = true;
+                    *i_ctl(&rehash->source, index) = DELETED;
+                    rehash->probe_start = bucket(rehash->held.key, rehash->target.capacity);
+                    rehash->next_probe = 0;
+                    rehash->phase = PHASE_PROBE;
+                }
+            } else {
+                assert(rehash->phase == PHASE_PROBE && rehash->held_valid);
+                if (rehash->next_probe == rehash->target.capacity) {
+                    rehash->phase = PHASE_BLOCKED;
+                    return STEP_BLOCKED_FULL;
+                }
+                const size_t index = probe_index(
+                    rehash->probe_start, rehash->next_probe, rehash->target.capacity);
+                ++rehash->next_probe;
+                const uint8_t control = *i_ctl(&rehash->target, index);
+                ++*examined;
+                if (is_vacant(control)) {
+                    *i_cell(&rehash->target, index) = rehash->held;
+                    *i_ctl(&rehash->target, index) = fingerprint(rehash->held.key);
+                    rehash->held_valid = false;
+                    ++*moved;
+                    rehash->phase = PHASE_SCAN;
+                }
+            }
+        }
+        if (rehash->phase == PHASE_SCAN &&
+            rehash->source_next == rehash->source.capacity) {
+            rehash->phase = PHASE_DONE;
+            return STEP_DONE;
+        }
+        return STEP_PAUSED;
+    }
+
+    static void i_cleanup_rehash(iRehash *rehash) {
+        if (rehash->held_valid) {
+            resource_drop(rehash->held.resource);
+            rehash->held_valid = false;
+        }
+        i_drop_contents(&rehash->source);
+        i_drop_contents(&rehash->target);
+        i_release_backing(&rehash->source);
+        i_release_backing(&rehash->target);
+        rehash->phase = PHASE_DONE;
+    }
+
+
 #undef free
 #undef malloc
 
@@ -312,7 +676,8 @@ static void check_behavior_demos(void) {
 }
 #endif
 
-int main(void) {
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
     for (uint64_t seed = 0; seed < 16; ++seed) {
         for (uint64_t scenario = 0; scenario < 5; ++scenario) {
             size_t stops = scenario == 1 ? 15 : 1;
@@ -333,3 +698,6 @@ int main(void) {
 #endif
     return 0;
 }
+
+extern int wf__floor_run(int, char **);
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }

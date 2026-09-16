@@ -17,6 +17,8 @@ mod programs {
     #[cfg(unix)]
     mod binary;
     #[cfg(unix)]
+    mod containers;
+    #[cfg(unix)]
     mod generics;
     #[cfg(unix)]
     mod hashing;
@@ -31,6 +33,8 @@ mod programs {
     mod parallel;
     #[cfg(unix)]
     mod raw_deflate;
+    #[cfg(unix)]
+    mod raw_deflate_vectors;
     #[cfg(unix)]
     mod runs;
     #[cfg(unix)]

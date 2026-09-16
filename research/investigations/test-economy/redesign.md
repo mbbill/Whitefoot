@@ -3747,3 +3747,103 @@ passed: 4.82 s execution / 8.88 s including incremental Rust construction.
 Conformance structure/129-rule coverage, all-target Clippy and formatting pass.
 The full native conformance run and automatic research-caller removal remain
 part of the outstanding combined work, as do dense/families/decoder receivers.
+
+### B05j receiver criterion: dense updates
+
+The automatic receiver keeps scalar runs of 16 and 256 elements and a run of
+16 four-word owning records. They distinguish scalar update, a longer extent,
+and a borrowed record read followed by affine replacement. One formal source
+and one native image accept all five original round counts and twelve seeds;
+a Rust flat-word oracle independently computes each complete sequence digest.
+The host driver enters the ordinary runtime floor and does no timing.
+The 4,096-element size-only arm, private C strategies, retained C boundary
+controls and timing preparation remain manual research. The old unasserted IR
+text was an inspection artifact, not a regression condition. Existing formal
+view and transfer checks retain their independent obligations.
+
+### B05l receiver selection: container programs and ownership
+
+The interleaved C map and its resource accounting are extracted into the
+compiler's migration observer, without its second layout, independent C-only
+self-tests, timing loops, statistics, or research main. The direct and generic
+WF migration sources become formal program fixtures. Two ordinary-lowering
+observer images preserve all five state/refusal scenarios, all fifteen stopping
+budgets and sixteen seeds; no timing or duplicate Off/no-overlap image remains.
+The generic observer additionally checks every allocation refusal in the three
+stateful/branded/hostile behavior demonstrations. These are allocation-slot
+identity ledgers, not claims about a total release-event order.
+
+The owning-map observer keeps all 193 success/refusal executions. Its sixteen
+seeds traverse all eight starting buckets and wrap positions twice with changed
+keys. Reducing this already bounded execution is not needed to remove
+its three redundant construction modes. The formal source and observer replace
+the research input, and the manual experiment refers back to them.
+
+Hash-map values, leaf splits, packed-page edits, priority ordering/duplicates/
+reuse and the three compact ownership triggers enter the existing programs
+executable. Boxed migration extends `option_slots.wf`; its displaced owner,
+vacated slot, rebucketed keys and payloads replace an old `boxed_slots` helper
+that returned `unit` on both success and every failed observation. Growth
+preservation, limit refusal and unchanged capacity extend `growable_vec.wf`.
+These add observations to existing images instead of a second set of smoke
+programs. The generic priority demo already has a normative run case; private
+borrowed/direct layouts remain research unless needed by the retained-call
+storage-transfer receiver.
+
+### B05n decoder receiver and findings
+
+A single native image calls the formal decoder with a batch of wire buffers,
+using its `Slice`/`MutSlice` API and ordinary runtime floor. A 70,000-byte
+fixture buffer admits the maximum stored block and 32 KiB history while the
+real command-line program keeps its 4,096-byte input limit. The native driver
+checks the destination's outside canaries and transmits status and complete
+successful output; Rust checks independently supplied plaintext and error
+variants. The driver does not adopt the research oracle's atomic-output or
+consumed-bit metadata, which the WF API does not expose.
+
+Expectations follow [RFC 1951 sections 3.2.4-7](https://www.rfc-editor.org/rfc/rfc1951).
+Literal/stored data, every length/distance endpoint, overlap/capacity edges,
+dynamic tree degeneracies, truncation, reserved codes and padding/trailing
+bytes are data inputs, not recompilations. The compact dynamic wire constants
+were separately checked with zlib against their independently stated plaintext;
+zlib and the research encoder are not runtime dependencies of the receiver.
+
+The new matrix exposed two real defects in the existing WF decoder. Fixed
+Huffman distance codes were treated as little-endian integer fields rather
+than most-significant-bit-first Huffman codes; non-palindromic distance symbols
+therefore selected wrong extra-bit widths and desynchronized the stream. The
+full endpoint stream returned 32,824 bytes instead of its 32,936 expected bytes.
+Reversing that five-bit code before table lookup fixes the full result. The
+second defect rejected an empty distance alphabet when more than one unused
+symbol was declared. Zero code lengths denote unused symbols; the alphabet is
+empty regardless of that declaration count. The supplied two-zero-distance
+stream has an EOB and no matches and independently decompresses to empty bytes.
+The empty-distance exception now tests actual used symbols, while empty
+literal/code-length trees and invalid single-symbol lengths stay rejected.
+These are program fixes, not compiler or language-specification changes, and
+neither expected result was weakened to match the implementation.
+
+Receiver validation on the local two-job/two-thread gate profile:
+
+- Six compiler container checks PASS: native scenarios/inspection execute in
+  3.12 s; total Cargo construction plus execution is 80.82 s, with 77 s spent
+  rebuilding the library test executable. Growth uses 108 focused traces;
+  retained priority helpers use both the exclusive and generic formal sources.
+  Both inspectors assert no aggregate copy traffic and no allocator call at
+  the retained, actually called helper boundary; a synthetic positive control
+  validates copy/vector accounting.
+- Six affected container-program/canonical checks PASS, 22.84 s execution /
+  23.00 s total on the already-built corpus executable. The seven standalone
+  value/compact programs share one Rust test executable and runtime objects.
+- Seven decoder/canonical checks PASS, 22.87 s execution / 23.02 s total. The
+  new decoder receiver runs 52 wire/capacity cases, including whole endpoint
+  tables, through one native image and one process. Existing decoder vectors
+  and real file/stdout failure cases pass with both fixes.
+- All-target Clippy, formatting and diff checks PASS after correcting a test
+  initializer style finding. The first retained-helper inspection also exposed
+  the old helper reader's lack of quoted-symbol support; the receiving check
+  now recognizes both emitted spellings and passed its real generic case.
+
+These are focused results, not a full gate or performance verdict. Final
+research caller removal, snapshot disposition and the independent completion
+review remain pending. No final DCR has been repeated for this increment.

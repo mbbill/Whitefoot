@@ -109,6 +109,15 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     let mut command = Command::new(CLANG);
     command.arg("-x").arg("ir").arg(module);
     command.args(COMPILE_ARGUMENTS);
+    let driver = directory.join("driver.c");
+    if driver.exists() {
+        command
+            .arg("-x")
+            .arg("c")
+            .arg(&driver)
+            .arg("-x")
+            .arg("none");
+    }
     let (sources, objects) = append_runtime_objects(&mut command, directory, None, None);
     let compilation = run_command(
         command
@@ -298,6 +307,13 @@ pub struct CompiledProgram {
 }
 
 pub fn build_program(llvm: &str) -> CompiledProgram {
+    build_program_with_driver(llvm, None)
+}
+
+/// The host driver calls exported WF kernels with runtime inputs. Its output
+/// is checked by the program case's independent oracle; it shares the ordinary
+/// runtime and the same bounded child handling as source-entry programs.
+pub fn build_program_with_driver(llvm: &str, driver: Option<&str>) -> CompiledProgram {
     let sequence = NEXT_EXECUTION.fetch_add(1, Ordering::Relaxed);
     let directory = std::env::temp_dir().join(format!(
         "whitefoot-program-{}-{sequence}",
@@ -307,6 +323,9 @@ pub fn build_program(llvm: &str) -> CompiledProgram {
     let module = directory.join("program.ll");
     let executable = directory.join(format!("program{}", std::env::consts::EXE_SUFFIX));
     std::fs::write(&module, llvm).expect("write program module");
+    if let Some(driver) = driver {
+        std::fs::write(directory.join("driver.c"), driver).expect("write program host driver");
+    }
     crate::support::timed("native-build", || {
         link_module(&module, &executable, llvm, &directory);
     });

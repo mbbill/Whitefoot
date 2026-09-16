@@ -7,6 +7,7 @@ mod base64;
 mod buffers;
 mod checked_division;
 mod completion;
+mod containers;
 /// The §9.1 cost census, every case of which compiles `wfgrep`.
 mod cost_shape;
 mod counted_ranges;
