@@ -589,7 +589,7 @@ clean:
 
 # Matched public/body callers use the existing ordinary-library object list.
 # Correctness is gated; the optional table uses the original runner and seeds.
-include ../container-representation/native.mk
+include $(ROOT)/compiler/runtime.mk
 .PHONY: ordinary-build ordinary-check ordinary-bench
 ordinary-build: prepare $(BUILD)/ordinary-public $(BUILD)/ordinary-body $(BUILD)/gen $(BUILD)/runner
 

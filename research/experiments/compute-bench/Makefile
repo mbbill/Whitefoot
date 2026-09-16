@@ -26,6 +26,10 @@
 # is written inside the repository.
 
 ROOT   := $(abspath ../../..)
+# Formal fixtures take precedence; experiment-only sources remain local.
+vpath %.wf $(ROOT)/tests/programs/compute programs
+vpath %_host.ll $(ROOT)/tests/programs/compute .
+HOST_ADAPTER := $(ROOT)/tests/programs/compute/host-adapter.awk
 WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 WORK   := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-compute-bench
 BUILD  := $(WORK)/build
@@ -487,10 +491,10 @@ deps:
 # research/investigations/compute-runtime/RESULTS.md timed quadrature on a
 # module emitted at 33ed2c00; the fresh emission is the table that replaced it).
 define kernel-modules
-$$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll host-adapter.awk module-symbols.awk $$(WFC) | compiler
+$$(BUILD)/$(1)-par.ll: $(1).wf $(1)_host.ll $(HOST_ADAPTER) module-symbols.awk $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
-	$$(WFC) --par --par-ledger --emit-llvm programs/$(1).wf -o $$@.raw > $$(BUILD)/$(1)-par.ledger
-	awk -f host-adapter.awk $$@.raw $(1)_host.ll > $$@.bound
+	$$(WFC) --par --par-ledger --emit-llvm $$< -o $$@.raw > $$(BUILD)/$(1)-par.ledger
+	awk -f $(HOST_ADAPTER) $$@.raw $$(filter %_host.ll,$$^) > $$@.bound
 	awk -v prefix=wfb_$(1)_par -v api=wf_bench_$(1) -v mode=par \
 	    -f module-symbols.awk $$@.bound > $$@
 	grep -q 'call void @wf__par_publish(' $$@
@@ -507,32 +511,32 @@ $$(BUILD)/$(1)-par.ll: programs/$(1).wf $(1)_host.ll host-adapter.awk module-sym
 # nullary main header and checks byte-identical reversal; any other source
 # incompatibility remains a build failure. $(BASELINE_STAMP)
 # carries the content hash of that compiler, so a moved baseline re-emits.
-$$(BUILD)/$(1)-baseline.wf: programs/$(1).wf baseline-entry.sh $$(BASELINE_STAMP)
+$$(BUILD)/$(1)-baseline.wf: $(1).wf baseline-entry.sh $$(BASELINE_STAMP)
 	@mkdir -p $$(BUILD)
 	sh baseline-entry.sh adapt $$(WF_B_INTERFACE) $$< $$@
 
-$$(BUILD)/$(1)-par-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll host-adapter.awk module-symbols.awk $$(WF_B_WFC) $$(PAR_CONTROL) \
+$$(BUILD)/$(1)-par-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll $(HOST_ADAPTER) module-symbols.awk $$(WF_B_WFC) $$(PAR_CONTROL) \
                          $$(BASELINE_STAMP) | compiler
 	@mkdir -p $$(BUILD)
 	$$(WF_B_WFC) --par --par-ledger $$(WF_PAR_CONTROL_FLAGS) --emit-llvm $$(BUILD)/$(1)-baseline.wf -o $$@.raw > $$(BUILD)/$(1)-par-b.ledger
-	awk -f host-adapter.awk $$@.raw $(1)_host.ll > $$@.bound
+	awk -f $(HOST_ADAPTER) $$@.raw $$(filter %_host.ll,$$^) > $$@.bound
 	awk -v prefix=wfb_$(1)_par -v api=wf_bench_$(1) -v mode=par \
 	    -f module-symbols.awk $$@.bound > $$@
 	grep -q 'call void @wf__par_publish(' $$@
 
-$$(BUILD)/$(1)-seq.ll: programs/$(1).wf $(1)_host.ll host-adapter.awk module-symbols.awk $$(WFC) | compiler
+$$(BUILD)/$(1)-seq.ll: $(1).wf $(1)_host.ll $(HOST_ADAPTER) module-symbols.awk $$(WFC) | compiler
 	@mkdir -p $$(BUILD)
-	$$(WFC) --no-overlap --emit-llvm programs/$(1).wf -o $$@.raw
-	awk -f host-adapter.awk $$@.raw $(1)_host.ll > $$@.bound
+	$$(WFC) --no-overlap --emit-llvm $$< -o $$@.raw
+	awk -f $(HOST_ADAPTER) $$@.raw $$(filter %_host.ll,$$^) > $$@.bound
 	awk -v prefix=wfb_$(1)_seq -v api=wf_bench_$(1) -v mode=seq \
 	    -f module-symbols.awk $$@.bound > $$@
 	! grep -q 'call void @wf__par_publish(' $$@
 
 # A cross-interface image cannot link the current seq object's ordinary imports
 # against the legacy library. Build its untimed seq control with its compiler.
-$$(BUILD)/$(1)-seq-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll host-adapter.awk module-symbols.awk $$(WF_B_WFC) $$(BASELINE_STAMP) | compiler
+$$(BUILD)/$(1)-seq-b.ll: $$(BUILD)/$(1)-baseline.wf $(1)_host.ll $(HOST_ADAPTER) module-symbols.awk $$(WF_B_WFC) $$(BASELINE_STAMP) | compiler
 	$$(WF_B_WFC) --no-overlap --emit-llvm $$< -o $$@.raw
-	awk -f host-adapter.awk $$@.raw $(1)_host.ll > $$@.bound
+	awk -f $(HOST_ADAPTER) $$@.raw $$(filter %_host.ll,$$^) > $$@.bound
 	awk -v prefix=wfb_$(1)_seq -v api=wf_bench_$(1) -v mode=seq \
 	    -f module-symbols.awk $$@.bound > $$@
 	! grep -q 'call void @wf__par_publish(' $$@
@@ -620,17 +624,17 @@ $(BUILD)/ordinary_values_c-b.o: $(WF_B_NATIVE)/ordinary_values.c $(RUNTIME_CONTR
 $(BUILD)/ordinary_values_ll-b.o: $(WF_B_NATIVE)/ordinary_values.ll $(RUNTIME_CONTROL) $(MODULE_CONTROL) $(BASELINE_STAMP) $(WF_FLAGS_STAMP)
 	$(CC) $(WF_FLAGS) $(WF_MODULE_CONTROL_FLAGS) $(WF_RUNTIME_CONTROL_FLAGS) -c $< -o $@
 
-$(BUILD)/%_bench.o: %_bench.c harness.h backend.h $(BUILD)/%_split.h
+$(BUILD)/%_bench.o: %_bench.c $(wildcard $(ROOT)/tests/programs/compute/*_oracle.c) harness.h backend.h $(BUILD)/%_split.h
 	$(CC) $(CFLAGS) -I$(BUILD) -c $< -o $@
-$(BUILD)/%_bench-b.o: %_bench.c harness.h backend.h $(BUILD)/b/%_split.h
+$(BUILD)/%_bench-b.o: %_bench.c $(wildcard $(ROOT)/tests/programs/compute/*_oracle.c) harness.h backend.h $(BUILD)/b/%_split.h
 	$(CC) $(CFLAGS) -I$(BUILD)/b -I$(BUILD) -c $< -o $@
 
 # Both blocked kernels share input generation and the one-pass oracles.
 # Selection chooses the consumer, identically for the plain and twin objects.
 define blocked-kernel
-$$(BUILD)/$(1)_bench.o: blocked_bench.c harness.h backend.h $$(BUILD)/$(1)_split.h
+$$(BUILD)/$(1)_bench.o: blocked_bench.c $$(ROOT)/tests/programs/compute/blocked_oracle.c harness.h backend.h $$(BUILD)/$(1)_split.h
 	$$(CC) $$(CFLAGS) -DWFB_$(2) -I$$(BUILD) -c $$< -o $$@
-$$(BUILD)/$(1)_bench-b.o: blocked_bench.c harness.h backend.h $$(BUILD)/b/$(1)_split.h
+$$(BUILD)/$(1)_bench-b.o: blocked_bench.c $$(ROOT)/tests/programs/compute/blocked_oracle.c harness.h backend.h $$(BUILD)/b/$(1)_split.h
 	$$(CC) $$(CFLAGS) -DWFB_$(2) -I$$(BUILD)/b -I$$(BUILD) -c $$< -o $$@
 endef
 $(eval $(call blocked-kernel,prefix,PREFIX))
@@ -961,7 +965,7 @@ programs-check: compiler module-symbols-test baseline-entry-test
 # This gate-only witness exposes an ordinary executable entry, not a timed
 # kernel ABI. Keep both permission checks and exercise the native driver and
 # its strong runtime link without inventing a benchmark adapter for it.
-$(CHECK)/checked_range_split: programs/range_split.wf Makefile $(WFC)
+$(CHECK)/checked_range_split: range_split.wf Makefile $(WFC)
 	$(WFC) --par --emit-llvm $< -o $(CHECK)/range_split-par.ll
 	$(WFC) --no-overlap --emit-llvm $< -o $(CHECK)/range_split-seq.ll
 	grep -q 'call void @wf__par_publish(' $(CHECK)/range_split-par.ll
@@ -973,7 +977,7 @@ $(CHECK)/checked_range_split: programs/range_split.wf Makefile $(WFC)
 	$(CHECK)/range_split-seq
 	touch $@
 
-$(CHECK)/checked_%: programs/%.wf Makefile $(WFC) $(BUILD)/%-par.o $(BUILD)/%-seq.o $(RUNTIME_OBJS)
+$(CHECK)/checked_%: %.wf Makefile $(WFC) $(BUILD)/%-par.o $(BUILD)/%-seq.o $(RUNTIME_OBJS)
 	grep -q 'call void @wf__par_publish(' $(BUILD)/$*-par.ll
 	! grep -q 'call void @wf__par_publish(' $(BUILD)/$*-seq.ll
 	printf '%s\n' 'int wf__main_body(int argc, char **argv) { (void)argc; (void)argv; return 0; }' \

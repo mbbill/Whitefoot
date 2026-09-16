@@ -3010,6 +3010,72 @@ own validation. Patch whitespace, identical AGENTS/CLAUDE and design lint
 against latest origin/main pass (58 live nodes, depth 3, net change zero; two
 pending amendments). No DCR or completion is claimed.
 
+### Implementation evidence: formal compute inputs and selected worker schedules
+
+The seven previously imported compute WF sources, six LLVM call adapters,
+shared adapter binder and five independent C oracles now live under
+`tests/programs/compute/`. Research consumers include these formal inputs;
+formal consumers no longer include the research copies. The negative direct
+scatter source is a runnable OP-4 rejection in the conformance manifest. Its
+compiler-private assertion remains because it additionally checks the exact
+undischarged `high < len_of(output)` obligation. Canonical rendering visits
+nested formal program directories as well as the conformance collection.
+
+The shared native construction include is now `compiler/runtime.mk`, used by
+the source-library check and optional research consumers. Its object identity
+includes the source checkout, compiler/version, native compile/link flags and
+build rules; it caches construction, not assertions. Experimental comparison
+engines, reporters and dependency installers were not copied into formal tests.
+Latest main's source-vector caller now constructs one sequential and one
+parallel LLVM module and links each normally and with its allocation observer.
+The duplicate `--no-overlap` arm is retired because it selects the same lowering
+as the default; CLI option parsing retains its own cases. Normal images still
+exercise real allocation/release, while the observer separately checks every
+refusal and exact release ledger. Native objects are explicitly retained rather
+than accidentally deleted as Make intermediates.
+
+Compute matrices and counted parallel tests now select a real worker entry
+with a test-only publish/join wrapper. The real acquisition, frame, thunk,
+queue, execution and join remain in use. The offering thread withholds its
+first observed join until another thread enters the task, with a five-second
+observation deadline. Missing worker execution is an incomplete/failed test,
+never a language verdict. This replaces up to 32 complete matrix executions
+and removes the machine-core-count exemption from counted worker assertions.
+Scatter selects that schedule inside each fully joined output-packing call,
+so its additional nonempty helper-copy observation cannot be supplied by an
+earlier counting/partition stage. Sequential images run once; parallel images
+retain pool-off and real widths 2 and 4. The two negative controls still reject
+wrong result bytes and deliberately absent grant counters on their first run.
+
+The separate stencil smoke executable is retired after adding its 5-by-5,
+two-step known result to the full WF/oracle matrix. This retains the actual
+WF execution rather than only checking the C oracle against itself. Other
+B03 per-row and native-case consolidations remain in progress; aggregate
+worker evidence is not claimed to settle those remaining observations.
+
+Bounded focused validation after this increment:
+
+| Phase | Wall time | Observed result |
+|---|---:|---|
+| Construct changed Rust library test executable | 75.66 s | Gate profile, two build jobs; no tests executed |
+| Execute the slices/native-compute group | 19.38 s command; 18.68 s harness | 20 cases passed, including six independent algorithm matrices, runtime work-price observations and two intentional failure controls |
+| Execute parallel/loop-splitting groups | 24.92 s command; 24.77 s harness | 51 cases passed after replacement of probabilistic grant sampling |
+| Source-vector native construction/execution after consolidation | 2.28 s | Two lowering modules, four native images; value checks and all allocation/refusal ledgers passed (incremental runtime objects) |
+| Repeat the source-vector check with unchanged inputs | 0.10 s command; 0.05 s Make | Reused all construction; both ordinary programs and both refusal/cleanup observers executed again |
+| Dependency-reference checker self-tests | 0.002 s | Six Python cases cover direct/helper/relative inputs, symlinks, allowed citations and mixed automatic/manual callers; no compiler or WF construction |
+
+The new lightweight checker is wired into `repository-invariants`. It currently
+reports the remaining enabled research callers, so the full static gate is not
+yet green. Those findings are the outstanding extraction work, not exceptions
+or a warning-only allowance. Manual-only Make targets are explicitly marked;
+a daily caller cannot invoke one while retaining that exemption. Ordinary
+complete checkouts are retained. This check recognizes supported literal and
+resolvable paths; completion review T6 still owns dynamic and indirect inputs.
+The promoted scatter input was also compiled directly through the gate CLI and
+rejected under OP-4 with the expected residual. No language expectation was
+selected from a changed snapshot or updated to accommodate a compiler failure.
+No full-gate, platform, paired timing or completion-review result is claimed.
+
 ## Affected material and evidence
 
 - Specification identity: `compiler/build.rs`, `compiler/src/spec.rs`,

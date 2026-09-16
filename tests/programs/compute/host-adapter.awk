@@ -1,8 +1,6 @@
-# Bind compute-bench's ordinary descriptor adapters to the same world that
-# the executable launcher selects. Usage: awk -f host-adapter.awk module.ll adapter.ll
-# The module is read only to discover actual clone definitions. This glue
-# belongs to the benchmark until exported user-function entry points replace
-# appending IR; it contains no kernel algorithm or scheduler policy.
+# Bind formal program adapters to the world selected by the real runtime.
+# Compiler/program tests and explicit experiments share this binding path.
+# Remove it when exported function entries replace appended LLVM adapters.
 NR == FNR {
     if ($0 ~ /^define .* @wf__par_seq_/) {
         name = $0

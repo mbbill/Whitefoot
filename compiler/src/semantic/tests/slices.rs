@@ -68,8 +68,9 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_scalar_count_bound_does_not_authorize_data_dependent_scatter() {
-    let source =
-        include_bytes!("../../../../research/investigations/compute-model/direct-scatter.wf");
+    let source = include_bytes!(
+        "../../../../tests/conformance/cases/op4-neg-unproved-data-dependent-scatter.wf"
+    );
     assert_rule_kind(source, SemanticRule::Op4, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { residual, .. }
             if residual == "high < len_of(output)")
@@ -109,8 +110,7 @@ fn bounded_view_formation_proves_both_domain_conjuncts() {
 
 #[test]
 fn recursive_range_overlap_and_parent_misuse_are_rejected() {
-    let source =
-        include_str!("../../../../research/experiments/compute-bench/programs/range_split.wf");
+    let source = include_str!("../../../../tests/programs/compute/range_split.wf");
     let overlap = source.replace("&uniq output, middle, count", "&uniq output, 0_u64, count");
     assert_rule_kind(overlap.as_bytes(), SemanticRule::Own5, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedRangeSeparation { .. })

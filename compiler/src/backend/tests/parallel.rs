@@ -1485,17 +1485,7 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
         parallel.stdout, sequential.stdout,
         "granting lanes must not move one byte of the result"
     );
-    if a_steal_is_observable(4) {
-        let observed_grants = if granted == 0 {
-            counted.grants_over_runs(Some("4"), GRANT_OBSERVATION_RUNS)
-        } else {
-            granted
-        };
-        assert!(
-            observed_grants > 0,
-            "the runtime granted no lane, so nothing was overlapped"
-        );
-    }
+    assert!(granted > 0, "the controlled task must run on a worker");
 
     // The explicit opt-out is the reference run above: one lane of execution
     // is the calling thread alone, so no hand-out is made and nothing is
@@ -1532,20 +1522,8 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
 
-    // "The pool started" is read from the core's own count of the pool
-    // threads it started, which the observer prints on the `compute:` line
-    // after the grant line. It is not read from the grant count: a grant is a
-    // steal, and a steal is a scheduling event that needs a pool thread to be
-    // given a CPU while the offering lane still holds the work. The
-    // three-core macOS gate runner, saturated by the sibling cases of this
-    // suite, ran this program to its end before either of its two started
-    // workers was scheduled at all (`workers_started=2 parks=0 steals=0
-    // inline_runs=63`), and that is the default doing exactly what it should
-    // with the CPU it was given, not the path being off. That the default
-    // build CAN be granted lanes is the WF_WORKERS=4 case above, which makes
-    // that existential observation over [`GRANT_OBSERVATION_RUNS`] runs; this
-    // case is about which world an absent setting selects, and the started
-    // count states that directly. The opt-out runs below stay exact.
+    // Startup accounting distinguishes the default worker world from the
+    // pool-off world. The separate controlled task assertion checks entry.
     let counted = CountedProgram::link(&module, &directory);
     let (_, published) = counted.run(None);
     assert_eq!(published.status.code(), Some(0));
@@ -1854,49 +1832,24 @@ pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether this host can tell "the runtime granted no lane" apart from "no
-/// worker was scheduled inside the window".
-///
-/// A steal is only observable if a worker reaches the offer before the
-/// offering thread has already finished the work itself, which needs a core
-/// that is not already carrying a lane. Measured in batch 0090 on GitHub's
-/// runners: the four-lane observations reach zero over their whole sample on
-/// the three-core macOS runner and are non-zero on every four-core host run,
-/// so a zero there is a fact about the host rather than about the lowering.
-/// Where the host has the cores, the observation is enforced exactly as it
-/// always was; where it does not, the case says so on standard error rather
-/// than reporting a lowering regression it cannot see.
-pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
-    let cores = std::thread::available_parallelism().map_or(0, std::num::NonZero::get);
-    if cores < lanes {
-        eprintln!(
-            "host-limited: {cores} schedulable cores cannot show a steal across {lanes} lanes, \
-             so the grant observation is not made on this host"
-        );
-        return false;
-    }
-    true
+/// Select a real worker execution without changing the runtime's code. Only
+/// call sites are wrapped; declarations and the actual queue/join stay intact.
+pub(super) fn observe_worker_schedule(module: &str) -> String {
+    format!(
+        "{}\ndeclare void @wf_test_worker_publish(ptr, ptr)\ndeclare void @wf_test_worker_join(ptr)\n",
+        module
+            .replace(
+                "call void @wf__par_publish(",
+                "call void @wf_test_worker_publish("
+            )
+            .replace(
+                "call void @wf__par_join(",
+                "call void @wf_test_worker_join("
+            )
+    )
 }
 
-/// The upper bound on the runs an existential grant observation makes before
-/// it reports that the runtime granted nothing.
-///
-/// A steal is a scheduling event, so one run samples the host's schedule
-/// rather than the lowering: the offering thread can finish the work itself
-/// before any pool thread reaches the offer, and on a busy machine it often
-/// does. Measured in batch 0090 on the three-core `macos-14` runner, where the
-/// default-pool observation totalled zero over five runs in one gate run and
-/// was granted on the first run of the next — five runs were sampling that
-/// host's luck. Thirty-two runs of a fixture that finishes in milliseconds
-/// cost one link and a fraction of a second, and a runtime that grants nothing
-/// still totals zero over all of them.
-///
-/// [`CountedProgram::grants_over_runs`] stops at the first granted lane, so
-/// this is what the *negative* direction pays and not what a healthy host
-/// pays: the property these runs support is existential — some run was granted a
-/// lane — and one grant settles it. A runtime that grants nothing still makes
-/// every one of the thirty-two runs and still totals zero.
-pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
+pub(super) const WORKER_SCHEDULE: &str = include_str!("worker_schedule.c");
 
 /// The observer linked beside a counted program: one destructor that reports
 /// the runtime's own grant count on standard error at process exit.
@@ -1932,7 +1885,11 @@ impl CountedProgram {
     /// done with the fixture.
     pub(super) fn link(module: &str, directory: &Path) -> Self {
         Self {
-            executable: link_counting_grants(module, directory, GRANT_OBSERVER),
+            executable: link_counting_grants(
+                &observe_worker_schedule(module),
+                directory,
+                &format!("{WORKER_SCHEDULE}\n{GRANT_OBSERVER}"),
+            ),
         }
     }
 
@@ -1945,40 +1902,17 @@ impl CountedProgram {
         counted_run(&self.executable, workers)
     }
 
-    /// What the runtime granted over at most `runs` runs, stopping at the
-    /// first run that was granted a lane.
-    ///
-    /// A steal is a race, so one run's count samples the schedule rather than
-    /// stating a property of the lowering. A fixture whose whole range is
-    /// worth only a few dozen offers can lose nearly all of them to the
-    /// offering thread on a saturated machine — measured down to three grants
-    /// at `WF_WORKERS=4` — which would fail a per-run `granted > 0` for a
-    /// reason that has nothing to do with the code under test. A total keeps
-    /// exactly what those assertions are for: a runtime that grants nothing
-    /// totals zero and still fails.
-    ///
-    /// Every caller asserts `> 0`, which is an existential observation: the first
-    /// grant is the whole observation, and the runs after it re-observe
-    /// something already seen. Stopping there changes neither direction of the
-    /// result — the total is positive exactly when some run of the sample was
-    /// granted a lane, and a runtime that grants nothing still makes all
-    /// `runs` runs and still returns zero.
-    pub(super) fn grants_over_runs(&self, workers: Option<&str>, runs: usize) -> u64 {
-        let mut total = 0;
-        for run in 0..runs {
-            let (granted, output) = self.run(workers);
-            assert_eq!(
-                output.status.code(),
-                Some(0),
-                "run {run} of the counted program must succeed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            total += granted;
-            if total > 0 {
-                break;
-            }
-        }
-        total
+    /// One selected schedule must both compute the answer and execute a task
+    /// on a real worker. Missing publication or disabled counters fail once.
+    pub(super) fn granted_by_worker(&self, workers: Option<&str>) -> u64 {
+        let (granted, output) = self.run(workers);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "the counted program must succeed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        granted
     }
 }
 

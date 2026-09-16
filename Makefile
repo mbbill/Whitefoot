@@ -67,6 +67,8 @@ design-lint:
 	@$(PY) design/skill/lint.py --trees language compiler --base "$(DESIGN_REVIEW_BASE)"
 
 repository-invariants:
+	@$(PY) .github/check-research-inputs.py --self-test
+	@$(PY) .github/check-research-inputs.py
 	@sh .github/test-run-check.sh
 	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
 	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
@@ -174,9 +176,11 @@ _research-tests:
 
 # Reproduce the self-tests of completed research instruments when revisiting
 # their dated results. This is deliberately outside the active compiler gate.
+# research-boundary: manual-only
 historical-tool-tests:
 	@$(CHECK_RUN) historical-tool-tests $(MAKE) --no-print-directory _historical-tool-tests
 
+# research-boundary: manual-only
 _historical-tool-tests:
 	@mkdir -p "$(RESEARCH_TEST_TMP)/frequency" "$(RESEARCH_CARGO_TARGET)"
 	TMPDIR="$(RESEARCH_TEST_TMP)/frequency" $(MAKE) -C research/experiments/frequency-study check PYTHON=python3 CARGO_TARGET_DIR="$(RESEARCH_CARGO_TARGET)/frequency"

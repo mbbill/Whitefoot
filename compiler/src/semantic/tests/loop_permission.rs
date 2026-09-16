@@ -87,7 +87,7 @@ fn permitted(source: &[u8], function: &str) -> LoopPermission {
 
 #[test]
 fn bfs_pull_is_permitted_while_sparse_discovery_remains_source_ordered() {
-    let source = include_bytes!("../../../../research/experiments/compute-bench/programs/bfs.wf");
+    let source = include_bytes!("../../../../tests/programs/compute/bfs.wf");
     let table = permission_of(source);
     assert_eq!(
         only_loop(&table, "pull_level").verdict,
@@ -239,8 +239,7 @@ fn a_stride_computed_from_the_current_index_is_not_loop_invariant() {
 
 #[test]
 fn runtime_stencil_rows_retain_adjacent_range_permission() {
-    let source =
-        include_bytes!("../../../../research/experiments/compute-bench/programs/stencil.wf");
+    let source = include_bytes!("../../../../tests/programs/compute/stencil.wf");
     let table = permission_of(source);
     let rows = loops(&table, "stencil");
     assert_eq!(rows.len(), 4);
@@ -254,7 +253,7 @@ fn runtime_stencil_rows_retain_adjacent_range_permission() {
 #[test]
 fn blocked_compute_helpers_retain_partition_permission_around_local_recurrences() {
     let prefix = permission_of(include_bytes!(
-        "../../../../research/experiments/compute-bench/programs/prefix.wf"
+        "../../../../tests/programs/compute/prefix.wf"
     ));
     let stages = loops(&prefix, "prefix");
     assert_eq!(stages.len(), 3);
@@ -269,7 +268,7 @@ fn blocked_compute_helpers_retain_partition_permission_around_local_recurrences(
     ));
 
     let histogram = permission_of(include_bytes!(
-        "../../../../research/experiments/compute-bench/programs/histogram.wf"
+        "../../../../tests/programs/compute/histogram.wf"
     ));
     let stages = loops(&histogram, "histogram");
     assert_eq!(stages.len(), 2);

@@ -11,7 +11,7 @@ case_flags = -DSIZE=$(call case_size,$(1)) -DLANES=$(call case_lanes,$(1))
 CFLAGS := -O2 -std=c17 -Wall -Wextra -Werror
 IRFLAGS := -O2 -Wno-override-module
 
-include ../native.mk
+include $(ROOT)/compiler/runtime.mk
 
 .PHONY: all check measure shape clean
 .PRECIOUS: $(BUILD)/dense%.wf $(BUILD)/raw%.ll $(BUILD)/linked%.ll \

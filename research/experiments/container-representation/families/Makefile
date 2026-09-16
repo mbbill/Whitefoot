@@ -7,7 +7,7 @@ EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 BUILD := .build
 .DELETE_ON_ERROR:
 
-include ../native.mk
+include $(ROOT)/compiler/runtime.mk
 
 .PHONY: check check-interface measure measure-interface reproduce-runtime-gap reproduce-region-gap clean
 

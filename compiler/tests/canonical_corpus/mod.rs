@@ -41,14 +41,17 @@ fn corpus_roots() -> [PathBuf; 2] {
 /// Every corpus `.wf` file, in one stable order.
 fn corpus_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
-    for root in corpus_roots() {
+    let mut directories = Vec::from(corpus_roots());
+    while let Some(root) = directories.pop() {
         let entries = std::fs::read_dir(&root)
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", root.display()));
         for entry in entries {
             let path = entry
                 .unwrap_or_else(|error| panic!("cannot read {}: {error}", root.display()))
                 .path();
-            if path.extension().is_some_and(|extension| extension == "wf") {
+            if path.is_dir() {
+                directories.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "wf") {
                 files.push(path);
             }
         }
