@@ -251,12 +251,11 @@ during their migration, rather than assuming their current classification is cor
 The owner agreed to R01 through R07, B01 and B02, and selected the common C
 runner direction described below. B02b retains its conditional retirement
 pending the current-consumer audit; agreement does not resolve that premise.
-The owner also agreed to B03a-u: the five scheduler C-probe groups, eight
-Rust parallel-lowering groups and eight loop-splitting groups. Implementation
-remains deferred. The current proposal is B03v-ad: all 23 resource-exhaustion
-and derived-cleanup tests, grouped into nine rows. The adjacent four-test
-stack-ledger group remains for the next B03 supplement. The platform inventory
-and timing loop retain their explicit B04/B06 review homes.
+The owner also agreed to B03a-ad: the scheduler C probes, Rust parallel
+lowering, loop splitting, resource exhaustion and derived cleanup.
+Implementation remains deferred. The current proposal is B03ae-ah: the four
+adjacent stack-ledger tests. The actual-platform inventory is next in B04;
+the timing loop retains its explicit B06 review home.
 The remaining inventory is grouped below; these are review scopes, not eight
 new test targets or a promise that every scope fits one conversation. Individual
 compiler/corpus migration audits still apply under the accepted baseline.
@@ -265,7 +264,7 @@ compiler/corpus migration audits still apply under the accepted baseline.
 |---|---|---|
 | B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Agreed; implementation deferred |
 | B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed, including conditional consumer audit; implementation deferred |
-| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | C probes, Rust parallel lowering and loop splitting agreed; exhaustion recommendations pending; four stack-ledger tests next |
+| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | C probes, Rust parallel lowering, loop splitting and exhaustion agreed; four stack-ledger recommendations pending |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Organization and remaining assertions not yet reviewed; preserve earlier selected host distinctions |
 | B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
 | B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
@@ -1690,12 +1689,12 @@ size for compute workers. Reservation alone is not resident usage, but
 descending until exhaustion is not merely reserving unused address space.
 These are source-derived facts, not new timings or memory measurements.
 
-**Recommendations below are pending the owner's ruling.** The nine rows are
-property groups, not nine proposed executables. Keep the accepted common C
+**The owner agreed to B03v-ad, with implementation deferred.** The nine rows
+are property groups, not nine proposed executables. Keep the accepted common C
 runner and compiler/program/conformance ownership rules; combine construction
 only when its inputs and observation requirements agree.
 
-| Row and current count | Actual operations and observations | Recommendation and home |
+| Row and current count | Actual operations and observations | Selected disposition and home |
 |---|---|---|
 | B03v: stack-probe completeness, ordinary cost and large-frame containment (3) | Compile a mixed ownership/recursion fixture with and without parallel lowering and require every emitted definition to carry the probe attribute. Separately link the ordinary fixture, run `nm`, and require no `chkstk` string, without checking `nm` success. The large-frame case exposes a generated function with a 7,168-u64 array, calls its base case once on a controlled 32 KiB stack above 16 MiB of protected reservation, and compares probed versus exactly-one-definition-ablated images: resource record/abort versus the host protection signal. | Keep compiler emission and real machine-code containment evidence; preserve the bounded positive/negative large-frame fixture. Share the ordinary fixture's emission. Attribute completeness is only over definitions actually reached: verify relevant thunk/clone/chunk/drop families using already retained fixtures, not a claim that two emissions necessarily produce every kind. Replace the whole-executable symbol-name assertion with a checked, target-appropriate observation of the small WF function's machine prologue, sharing existing assembly construction where possible. The Linux target uses inline probing, so absence of `chkstk` alone proves no absence of probing cost. Do not substitute IR text for the actual containment check. |
 | B03w: entry and compute-worker stack provisioning (2) | Run a two-million-level sequential recursion under a 1 MiB shell stack limit. Separately run the same depth with parallel lowering at workers 0/1/2/4/8/16 and unset, three times each: 21 executions. Only returned status is checked; the fixture does not establish which recursive segment ran on a worker or measure that thread's stack. | Keep the real provisioning regression, with direct host stack-bound observations on the actual floor entry and an observed compute-worker callback in the native runtime group. Verify the shipped reservation independently from a controlled small-stack WF recursion success/failure fixture; retain a generated-code integration observation rather than replacing all WF execution with C arithmetic. Replace the two-million-depth/repeat matrix only after these receiving checks detect the original undersized-worker defect. Select startup settings by their distinct paths, sharing B03 startup coverage. Treat the documented protected original-thread fallback separately from successful entry-thread creation; neither stack reservation nor these samples proves schedule-independent remaining depth under nested helping. |
@@ -1812,7 +1811,142 @@ produces a core. No new timing measurement selects any recommendation.
 - `a_deep_cleanup_cycle_through_a_buffer_is_reclaimed_without_a_record`
 - `a_buffer_block_outlives_the_elements_the_traversal_takes_from_it`
 
-Only the B03n-u owner ruling and this pending B03v-ad proposal are added in
+The owner subsequently accepted B03v-ad. No implementation is claimed.
+
+### B03 — Stack-ledger evidence, fifth part
+
+**Scope and construction.** The four `#[test]` functions in
+`compiler/src/backend/tests/stack_ledger.rs` share the same compiler library
+test executable as the previous modules. Two run only Rust over supplied
+strings/constants; one compiles a WF ownership fixture to assembly and reads
+a machine stack report without executing a program; one obtains reports for
+two recursion shapes and builds/runs their predicted depth boundaries.
+They all currently run in `test-unit`, locally through `make check` and in
+Linux/macOS CI's unit job, because this module is outside
+`SAMPLING_MODULES`. That stage name does not mean there is no Clang
+construction or child-process execution.
+
+The boundary case imports the narrow `exhaustion::spine_source` and defines
+`wide_frame_source`, whose nonuniform `FixedVector<u64, 256>` stays live
+across recursion and whose recursive result selects a later element. Those
+features matter: an optimized-away wide frame would remove the intended
+second geometry. The cleanup fixture `RECURSIVE_VALUE` uses ordinary
+`Heap<'s>` and `Box<'s, Tree<'s>>`; it is not the legacy lowercase
+`box<T>` fixture in the preceding group.
+
+`ledger_lines` writes LLVM, invokes Clang
+`-S -fstack-usage -O2`, and reads the resulting `.s` and `.su` from that
+same invocation. The Rust `stack_ledger` function parses the frames and
+post-optimization call graph, adds the target's return-address correction,
+then renders frame, cycle and bounded-chain rows using a supplied stack
+capacity. The report is developer output, not a source proof or acceptance
+condition.
+
+**Current construction counts, not timings.**
+
+| Current case kind | WF library compilations | Clang assembly/report constructions | Native executable constructions | Executions of those programs |
+|---|---:|---:|---:|---:|
+| Two Rust-only checks | 0 | 0 | 0 | 0 |
+| Depth boundary at two frame widths | 6 | 2 | 4 | 4 |
+| Derived-cleanup report | 1 | 1 | 0 | 0 |
+| Total for these four tests | 7 | 3 | 4 | 4 |
+
+Counts describe a normal passing traversal of the source. They do not count
+the already-built Rust test binary, the first construction of shared runtime
+objects, or work in other test modules. The boundary case obtains its report
+at source depth 1,000, then emits two new source modules per shape with the
+predicted inside/outside depths embedded as different constants. Its header's
+four-program description counts executable builds, not all WF compilations.
+
+**Recommendations below are pending the owner's ruling.**
+
+| Row and current count | Actual operations and observations | Recommendation and home |
+|---|---|---|
+| B03ae: per-activation arithmetic (1) | Supply one synthetic 64-byte static frame and a self-call assembly string to the real ledger. At a 4,096-byte stack, require 72 bytes/activation and 56 levels for x86-64, versus 64 bytes and 64 levels for Arm64. Check both the frame row and cycle calculation. No WF, Clang or program process is involved. | Keep this direct regression for the return address omitted by x86-64's stack-usage figure. Place it with the existing six Rust-only ledger tests in `backend/stack_ledger.rs::tests`, preserving both architectures on every test host. Their world labels, graph parsing and chain boundaries do not fully replace this two-architecture arithmetic check. It needs no new executable or native run. |
+| B03af: selected architecture (1) | Compare `Architecture::HOST` with a match on `std::env::consts::ARCH`. Both are facts about the Rust compiler's build target; this does not query the physical CPU or independently inspect the emitted machine ABI. | Retain as a small mapping assertion in that same Rust group, and correct the independent-machine-oracle wording. It can catch a wrong enum mapping without being an independent hardware measurement. Actual host codegen/ABI evidence remains with the native tests and B04. Moving it is organization within the existing library executable, not a saved native build. |
+| B03ag: reported depth versus real exhaustion (1) | For narrow and wide frames, obtain a report at source depth 1,000 and calculate levels from the full shipped 1 GiB capacity. Recompile new sources at 99.9% and just over 100.1% of that reported level count, link four executables and run them. Inside must return zero; outside must emit the exact stack record. The helper does not require the expected abort signal, and success does not inspect the record channel. The reported machine code is not the code executed: changed depth literals create separate optimizer inputs without checking that frame size stayed the same. | Keep the quantitative report-to-machine regression in compiler native checks. Make depth a runtime input and use the same compiled WF machine code for report and both boundary executions, retaining the two genuinely different frame geometries. Obtain `.s`/`.su` together and link the measured code rather than silently reoptimizing a different module. Use a controlled smaller stack with independently established usable bounds and fixed entry overhead; preserve the shipped reservation check in B03w. Define the error allowance from that geometry before choosing outcomes, sufficiently discriminating to catch wrong per-level cost; do not copy the 1 GiB test's 0.1% tolerance blindly or widen it until a run passes. Require normal success with no resource record on the inside and the exact stack record/abort on the outside, plus a bounded process guard. Share the receiving entry-exhaustion fixture with B03w/x where equivalent, while retaining their distinct real-worker observation. |
+| B03ah: compiler-derived cleanup appears in the machine report (1) | Compile a small store-backed recursive tree, obtain one assembly/stack-usage pair, and require some `wf.drop.` frame row and some `wf.drop.` cycle row. The program is never linked or executed. Its source has no written recursion; the recursion belongs to generated release. | Keep this compiler machine-report integration. Tie the expected cycle/frame to the relevant generated cleanup functions rather than accepting any unrelated matching substring. Preserve the store-backed type/cleanup path and one assembly construction. B03ac's LLVM graph assertion does not establish that the post-optimization machine report still contains that cycle, and B03ad's release trace proves a different property. Share construction only when the complete module and host options agree, not because two fixtures both contain a function named `wf_spine` or a recursive tree. |
+
+**Why the boundary change is needed.** The current comparison assumes that
+changing a depth literal does not change native optimization, although the
+test's own rationale says unrelated source changes can alter frame width.
+A failure can therefore mix a wrong ledger with a different emitted frame;
+a passing pair does not establish that the measured frame belongs to either
+executed image. One runtime-parameterized module per frame shape removes
+that uncontrolled difference and allows one native image to serve both
+executions. The intended reduction is in repeated construction; both sides
+of the boundary and both frame geometries remain necessary observations.
+
+A smaller controlled stack also changes how important fixed caller frames,
+thread setup, alignment and guard pages are. The replacement must account
+for them explicitly and establish that its recursive machine frame survives
+optimization with the stated static cost. It must retain sensitivity to
+the actual model defect, including a missing return-address contribution,
+rather than declaring a smaller workload equivalent solely because it ends
+with the same signal. No concrete stack size, tolerance or measured speedup
+is selected by this source-only discussion. The current report excludes
+runtime C frames; the narrow/wide self-recursions do not prove an arbitrary
+call graph's whole-thread stack bound.
+
+**Existing adjacent evidence and shared helpers.** The six Rust-only cases
+in `compiler/src/backend/stack_ledger.rs::tests` cover separate sequential/
+parallel cycles, budget variants, absence of cycles on acyclic functions,
+bounded-chain termination at recursion, frame-row coverage and ELF PLT call
+resolution. They are compatible with the two pure checks above and require
+no WF compilation. Their embedded strings are data, not executed assembly;
+keep their distinct observations without adding native copies.
+
+B03h already selected one ordinary and one parallel stack report for clone
+equality and budget-frame overhead. Those callers use this module's
+`ledger_lines`/`reported_frame_bytes`; put shared construction under the
+existing compiler test support and preserve their exact module/option
+identity. The current `emitter/floor.rs` Rust/C stack-constant agreement
+check and the B03w actual-thread observations retain the separate default
+capacity boundary. None of these makes the measured-depth comparison
+redundant.
+
+The CLI's `whitefootc.rs::print_stack_ledger` likewise collects `.s` and
+`.su` together, but its ordinary native link is a separate operation on the
+same LLVM text. The current library tests exercise the ledger function,
+not CLI option parsing, stdout/channel selection or its error paths. Those
+existing CLI/tool checks retain their B07 review home; this audit creates
+neither a new command-line option nor another CLI integration executable.
+
+**Placement and authority.** Keep pure Rust ledger checks in the compiler's
+Rust unit group. Report generation and actual depth probes remain compiler
+native checks with construction and execution explicit in the eventual
+caller map. Retain them in the automatic correctness gate: this is checking
+developer-report accuracy and a resource regression, not printing an
+exploratory timing score. All can remain in the existing library executable;
+no test-target split follows from these four property groups.
+
+The grounds are `design/compiler/resource-exhaustion-floor.md`'s completed
+host-codegen ledger decision, `cleanup-traversal.md`'s derived release and
+`parallel-lowering/two-worlds.md`'s separate frame costs. SCOPE-3 and STOR-6
+keep available stack outside acceptance and distinguish it from mandatory
+target representability. No language rule or runtime default is changed.
+B04's actual-platform adapters, host callers and instrumentation are next.
+
+**Complete function mapping.** All four current tests in
+`compiler/src/backend/tests/stack_ledger.rs` appear once below.
+
+**B03ae (1 current test)**
+
+- `a_row_is_what_one_activation_costs`
+
+**B03af (1 current test)**
+
+- `the_hosts_architecture_is_the_one_the_machine_reports`
+
+**B03ag (1 current test)**
+
+- `the_reported_ceiling_is_the_measured_one`
+
+**B03ah (1 current test)**
+
+- `the_compilers_own_drop_glue_has_rows_and_reports_its_cycle`
+
+Only the B03v-ad owner ruling and this pending B03ae-ah proposal are added in
 this discussion revision. No test implementation, caller, specification,
 conformance evidence, amendment text or live-tree decision changes. No
 build, execution, timing campaign or new completion/DCR checkpoint is claimed.
