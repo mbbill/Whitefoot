@@ -1770,3 +1770,47 @@ fn rebuild['s](values: own Vector<'s, u8>) -> result: own Vector<'s, u8> pure {
         );
     });
 }
+
+fn generic_validation_callee_source(publish: &str) -> String {
+    format!(
+        "const lookup: FixedVector<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];\n\nfn clamp(value: own u64) -> result: own u64 pure contract {{\n  {publish}\n}} {{\n  if value <= 7_u64 {{\n    return value;\n  }}\n  return 7_u64;\n}}\n\nfn relay(value: own u64) -> result: own u64 pure contract {{\n  ensures result <= 7_u64;\n}} {{\n  let clamped = clamp(value: value);\n  return clamped;\n}}\n\nfn select<T: Int>(value: own T, index: own u64) -> result: own u8 pure {{\n  let bounded = relay(value: index);\n  return lookup[bounded];\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+    )
+}
+
+/// Symbolic validation judges an uninstantiated generic body through the
+/// postcondition summaries of every function its calls reach. Here the
+/// subscript holds only through `relay`, whose own postcondition holds only
+/// through `clamp`: omitting either callee from validation would leave the
+/// read unproved. Weakening `clamp`'s postcondition leaves `relay`'s
+/// unpublished, so the generic body is refused at its read [OP-4] even though
+/// no concrete instance of it exists; validation reports it before the
+/// concrete phase could reach `relay` itself.
+#[test]
+fn generic_validation_reads_postconditions_of_every_reached_callee() {
+    with_semantics(
+        generic_validation_callee_source("ensures result <= 7_u64;").as_bytes(),
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            );
+        },
+    );
+    with_semantics(
+        generic_validation_callee_source("ensures result <= 8_u64;").as_bytes(),
+        |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("the unpublished relay postcondition must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Op4, "{issue:?}");
+            assert!(
+                matches!(
+                    issue.kind(),
+                    SemanticIssueKind::UndischargedBoundsObligation { residual, .. }
+                        if residual == "bounded < len_of(lookup)"
+                ),
+                "{issue:?}"
+            );
+        },
+    );
+}
