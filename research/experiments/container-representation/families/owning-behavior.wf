@@ -63,7 +63,7 @@ enum Begin<K: linear>['s] {
   Started(state: Rehash<'s, K>);
 }
 
-formal Key<K: linear, E: linear> {
+formal Key<K: affine, E: linear> {
   fn hash(env: &E, key: &K) -> hash: own u64 reads(env, key);
   fn equal(env: &E, left: &K, right: &K) -> equal: own Bool reads(env, left, right);
 }

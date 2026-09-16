@@ -3,6 +3,16 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
+- **A field projected after dereferencing a runtime-indexed composite element
+  stops as unsupported.** The specification admits ordinary chained element,
+  dereference, and field selection, but
+  `deref(owners.storage[index]).id` stops in semantic checking as
+  `Unsupported(CompositeValues)` with no rule or source diagnostic. The
+  growable-vector executable currently borrows `owners.storage[index]` into a
+  helper and performs `deref(deref(item)).id` there. Complete the general
+  checked-place and lowering path for a subscript followed by dereference and
+  field projection, add owning and copy-element tests, then remove that helper.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
@@ -101,6 +111,19 @@ of them is a decision. Remove an item when its fix and test land.
 
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
+
+- **Sparse containers over must-consume linear elements need ownership-visible
+  slot state.** The behavior-map growth witness previously wrote
+  `formal Key<K: linear, ...>` while replacing `progress.held` and disposing
+  the returned `Slot<K>`. That depended on a compiler defect which failed to
+  apply PROV-6 to a symbolic linear bound. The current checker correctly
+  rejects `dispose previous_held`: a numeric phase does not prove that the
+  returned enum is `Vacant`, and an `Occupied` value contains a `K` that must
+  be consumed. The maintained witness is narrowed to `K: affine`, which still
+  covers its scalar and store-branded owning instances. Investigate a state
+  encoding or checked variant-state relation that lets rehash move every
+  must-consume key without an impossible cleanup branch; do not add a discard
+  behavior merely to satisfy the checker.
 
 - **Local region introduction and explicit region blocks.** Revisit whether
   an ordinary function body should introduce a local region, and which

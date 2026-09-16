@@ -15,9 +15,11 @@ check: compiler
 	$(MAKE) -C dense check WHITEFOOTC="$(WHITEFOOTC)"
 	$(MAKE) -C costs check
 	$(MAKE) -C families check WHITEFOOTC="$(WHITEFOOTC)"
+	$(MAKE) -C vector-library check WHITEFOOTC="$(WHITEFOOTC)"
 
 measure: check
 	$(MAKE) -C foundation measure
 	$(MAKE) -C dense measure WHITEFOOTC="$(WHITEFOOTC)"
 	$(MAKE) -C costs measure
 	$(MAKE) -C families measure WHITEFOOTC="$(WHITEFOOTC)"
+	$(MAKE) -C vector-library measure WHITEFOOTC="$(WHITEFOOTC)"

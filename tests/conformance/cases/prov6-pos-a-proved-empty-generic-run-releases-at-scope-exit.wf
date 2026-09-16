@@ -1,0 +1,22 @@
+fn release_empty<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(store) contract {
+  requires len_of(run) <= 0_u64;
+} {
+  doc "PROV-6: the same proved-empty element-edge omission applies to a compiler-derived release. The run remains live until return, then its backing release spends store while no element instance exists to visit.";
+  return unit;
+}
+
+fn main['heap](heap: own Heap<'heap>) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<u64>(store: &uniq heap, count: 1_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: empty) => {
+        region {
+          let done = release_empty::<u64>(run: move empty, store: &uniq heap);
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

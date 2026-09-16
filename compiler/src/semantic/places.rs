@@ -70,9 +70,11 @@ impl PlaceOffset {
 
     /// [LIV-2] whether the two offsets name one element on every execution,
     /// which is what a read-out of an element target needs.
-    pub(crate) const fn provably_same(self, other: Self) -> bool {
+    pub(crate) fn provably_same(self, other: Self) -> bool {
         match (self, other) {
             (Self::Literal(left), Self::Literal(right)) => left == right,
+            (Self::Binding(left), Self::Binding(right)) => left.0 == right.0,
+            (Self::Const(left), Self::Const(right)) => left == right,
             _ => false,
         }
     }
@@ -98,7 +100,7 @@ pub(crate) enum PlaceStep {
 
 impl PlaceStep {
     /// [LIV-2] whether the two steps select one storage on every execution.
-    pub(crate) const fn provably_same(self, other: Self) -> bool {
+    pub(crate) fn provably_same(self, other: Self) -> bool {
         match (self, other) {
             (Self::Subscript(left), Self::Subscript(right)) => left.provably_same(right),
             (Self::Field(left), Self::Field(right)) => left == right,

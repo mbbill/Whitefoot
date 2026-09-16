@@ -2173,12 +2173,25 @@ pub(crate) struct CheckedDrop {
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
+    /// [PROV-6] this release omits the element subtree because the proof
+    /// flow must establish that the direct run is empty at this edge.
+    pub(crate) release: CheckedReleaseMode,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedProjectedDrop {
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
+    pub(crate) release: CheckedReleaseMode,
+}
+
+/// Which release graph one release occurrence walks for static admission.
+/// Lowering emits the same ordinary run release in both cases: a zero-length
+/// run naturally executes no element drop, so this distinction is proof-only.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedReleaseMode {
+    Full,
+    EmptyRun,
 }
 
 /// A SET-1 target whose root, path, copy type, and post-RHS writability have
@@ -2288,6 +2301,18 @@ pub(crate) enum CheckedCommitValues {
     Written(Vec<CheckedExpression>),
 }
 
+/// One [LIV-2] target pair whose structural paths can be separated only by
+/// proving that at least one corresponding pair of subscript values differs.
+/// The expressions are the values evaluated while targets are formed, before
+/// any right-hand-side effect of the commit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedCommitConflict {
+    pub(crate) site: NodePath,
+    pub(crate) first: String,
+    pub(crate) second: String,
+    pub(crate) alternatives: Vec<(CheckedExpression, CheckedExpression)>,
+}
+
 impl CheckedCommitValues {
     /// Every ordinal value, in written order. A result list holds its one
     /// call value; a value list holds one expression per target.
@@ -2340,6 +2365,7 @@ pub(crate) enum CheckedStatement {
         node_path: NodePath,
         targets: Vec<CheckedSetTarget>,
         values: CheckedCommitValues,
+        index_conflicts: Vec<CheckedCommitConflict>,
     },
     PropagateLet {
         /// Complete owning `let_stmt`, shared by Ok delivery and Err return.

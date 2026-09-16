@@ -13,8 +13,8 @@ use crate::{
 
 use super::super::model::{
     CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedMode, CheckedNominalKind,
-    CheckedProjectedDrop, CheckedSetTarget, CheckedType, CheckedValue, CheckedWritablePlace,
-    FloatType, IntegerType,
+    CheckedProjectedDrop, CheckedReleaseMode, CheckedSetTarget, CheckedType, CheckedValue,
+    CheckedWritablePlace, FloatType, IntegerType,
 };
 use super::borrows::{AccessKind, OwnedContent, ReborrowPosition, ResolvedPlace};
 use super::{
@@ -1430,7 +1430,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // is a partial consume: the residual leaf is abandoned in a
                 // scope that has no derived release to reclaim it.
                 if !copy && !read_out && !fields.is_empty() {
-                    self.reject_partial_consume(local.ty, &fields, use_node)?;
+                    self.reject_partial_consume(local.ty, &fields, bindings, use_node)?;
                 }
                 let residual_drops = if copy || read_out || fields.is_empty() {
                     Vec::new()
@@ -1438,7 +1438,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let paths = self.residual_drop_paths(local.ty, &fields)?;
                     paths
                         .into_iter()
-                        .map(|(fields, ty)| CheckedProjectedDrop { fields, ty })
+                        .map(|(fields, ty)| CheckedProjectedDrop {
+                            fields,
+                            ty,
+                            release: CheckedReleaseMode::Full,
+                        })
                         .collect()
                 };
                 // [LIV-2] after its read-out the target is dead for the

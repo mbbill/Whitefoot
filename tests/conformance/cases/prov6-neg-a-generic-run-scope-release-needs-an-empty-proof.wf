@@ -1,0 +1,8 @@
+fn release_unproved<T: linear>['s](run: own Vector<'s, T>, store: &uniq Heap<'s>) -> result: own unit writes(store) {
+  doc "PROV-6: a compiler-derived release uses the same proof-directed empty-run graph. The symbolic linear element prevents the full graph, and no fact proves this run's current length zero at return.";
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

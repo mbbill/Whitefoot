@@ -1,0 +1,11 @@
+fn dispose_without_store<T: linear>['s](run: own Vector<'s, T>) -> result: own unit pure contract {
+  requires len_of(run) <= 0_u64;
+} {
+  doc "PROV-6: proving the run empty removes only its element edge. The direct Vector node still releases its backing to the general store, and this function has no Heap provider for that retained action.";
+  dispose run;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
