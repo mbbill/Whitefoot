@@ -27,6 +27,7 @@ struct Access {
 enum Op {
     New(Reg, i32),
     Alias(Reg, Reg),
+    Rebind(Reg, Reg),
     Move(Reg, Reg),
     Read(Reg),
     Store(Reg, i32),
@@ -88,7 +89,9 @@ struct Checker {
 enum Error {
     MissingBinding,
     OccupiedBinding,
+    OwnerOverwrite,
     MissingOwner,
+    RemainingOwners,
     NotLive,
     NotInitialized,
     UnknownLink,
@@ -233,6 +236,14 @@ impl Checker {
                 binding.owner = false;
                 self.bind(*dst, binding)?;
             }
+            Op::Rebind(dst, src) => {
+                let mut binding = self.binding(*src)?;
+                if self.binding(*dst)?.owner {
+                    return Err(Error::OwnerOverwrite);
+                }
+                binding.owner = false;
+                self.bindings.insert(*dst, binding);
+            }
             Op::Move(dst, src) => {
                 let binding = self.binding(*src)?;
                 if !binding.owner {
@@ -312,6 +323,14 @@ impl Checker {
             self.step(op, library)?;
         }
         Ok(())
+    }
+
+    fn finish(&self) -> Checked<()> {
+        if self.bindings.values().any(|binding| binding.owner) {
+            Err(Error::RemainingOwners)
+        } else {
+            Ok(())
+        }
     }
 
     fn independent(&mut self, a: &BTreeSet<Access>, b: &BTreeSet<Access>) -> bool {
@@ -500,7 +519,7 @@ fn verify(function: &Function, fault: Fault) -> Checked<usize> {
             return Err(Error::InvalidSummary);
         }
     }
-    if checker.bindings.values().any(|binding| binding.owner) {
+    if checker.finish().is_err() {
         return Err(Error::InvalidSummary);
     }
     Ok(checker.queries)
@@ -613,7 +632,7 @@ impl<P: Pointer> Machine<P> {
                 self.bindings.insert(*dst, pointer);
                 self.allocations.push(slot);
             }
-            Op::Alias(dst, src) => {
+            Op::Alias(dst, src) | Op::Rebind(dst, src) => {
                 self.bindings.insert(*dst, self.pointer(*src)?);
             }
             Op::Move(dst, src) => {
@@ -917,8 +936,17 @@ fn main() {
     );
     let mut access_state = Checker::new(Fault::None);
     access_state
-        .run(&[Op::New(0, 1), Op::New(1, 2)], &[])
+        .run(
+            &[
+                Op::New(0, 1),
+                Op::New(1, 2),
+                Op::Alias(2, 0),
+                Op::Rebind(2, 1),
+            ],
+            &[],
+        )
         .unwrap();
+    assert_eq!(access_state.binding(2).unwrap().target, 1);
     assert!(access_state.independent(
         &effects(&[(0, Part::Data, true)]),
         &effects(&[(1, Part::Data, true)]),
@@ -935,6 +963,9 @@ fn main() {
         println!("symbolic parameters {count}: {queries} may-alias queries");
     }
 }
+
+#[cfg(test)]
+mod local;
 
 #[cfg(test)]
 mod tests {
