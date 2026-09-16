@@ -1,0 +1,1270 @@
+# Test-system simplification
+
+This investigation records the selected changes and remaining questions for
+replacing redundant verification machinery. The [inventory](test-inventory.md)
+and its [Chinese translation](test-inventory.zh-CN.md) describe the existing
+system; this document describes subsequent work, not implemented behavior.
+Keep it current during that work and retire it when the replacement system's
+guidance and design decisions cover these choices and no questions remain.
+
+## Selected direction
+
+The discussion on 2026-09-15 selected these changes for later implementation.
+First remove redundant assertions, derived copies and unnecessary test/tool
+boundaries while retaining useful correctness and performance-regression
+checks. Defer timing optimization and new timing campaigns until those
+responsibilities are clear. Required correctness validation still applies;
+existing execution guards remain in force.
+
+1. **Remove the Rust specification tool.** Delete `whitefoot-spec`, its
+   Cargo binary/test target and its gate invocation. Fold useful document
+   checks into the existing compiler-independent Python conformance tooling:
+   duplicate rule definitions and unresolved rule references, with the
+   necessary malformed-input tests. That tooling already reads the active
+   Markdown and extracts rule IDs. Remove redundant same-source identity
+   comparisons rather than translating them. Keep the build-derived identity
+   and specification embedding used by the compiler. Do not automatically
+   reproduce `--index`/`--counts`; no automatic caller was found, and a
+   retained query needs a concrete consumer.
+2. **Remove the specification's Status line.** The active path already names
+   the active specification and the title already names its version.
+   Delete `Status: ACTIVE vN` and the checks for that duplicate field.
+   `build.rs` already reads the version from the title. Update the
+   `AGENTS.md`/`CLAUDE.md` wording about changing two version lines and
+   affected fixtures/comments. This changes specification bytes, so use the
+   normal version/archive procedure against the then-current main; preserve
+   existing archives. No WF syntax or semantic change is intended.
+3. **Generate parser tables during the build.** Retain the Rust EBNF/table
+   derivation logic, invoke it from `build.rs`, write the generated table to
+   Cargo's `OUT_DIR`, and include that output in the compiler. Remove the
+   independent `whitefoot-grammar-tables` binary/test target, committed
+   `compiler/src/syntax/grammar/generated.rs` copy and the test that merely
+   regenerates and compares that copy. Preserve tests of actual parsing and
+   diagnostics. Track generation inputs and keep generation independent of
+   the compiler library it produces data for. Automatic derivation removes
+   stale-copy maintenance; it does not prove the generator algorithm correct.
+
+The [proposed build-input decisions](../../../design/amendments/compiler-build-inputs.md)
+record the corresponding tree amendment. The live tree has not changed and
+the exact tree revision has not received an owner ruling. The separate
+verification-cost amendment now also proposes the selected test responsibility
+and admission principles; its original four decisions remain unchanged.
+The proposed `design/compiler/build-inputs.md` is a new child of the
+compiler root and replaces no existing live node. Corpus case retirement
+and the replacement integration-target layout are outside that amendment.
+
+## Selected corpus responsibilities
+
+On 2026-09-15 the owner selected the four corpus responsibilities in the
+table below: normative requirements in conformance, whole-program behavior
+in programs, canonical checks without a dedicated executable, and individual
+snapshot migration or retirement. Execution remains deferred while discussion
+continues. This does not authorize deleting all 484 snapshot cases or settle
+individual retirements and the final target layout.
+
+## Basic test contract
+
+The owner selected the review method: establish this baseline for compiler
+`#[test]` cases and the four corpora first, then consider the remaining
+checks. The discussion now uses the related batches below. The owner selected
+the baseline, including admission by protected property, and added caution
+about the cumulative cost of new cases
+that compile and run WF. These choices are recorded for later implementation;
+execution remains deferred. They introduce no WF language rule, elapsed-time
+limit or new measurement campaign. The corresponding additions to the pending
+[verification amendment](../../../design/amendments/compiler-verification-cost.md)
+propose tree wording; selection of these principles is not a ruling on that
+exact wording or a live-tree change.
+
+### Responsibilities
+
+Classify an assertion by the property it protects and the source of its
+expected result. `#[test]` is a Rust execution mechanism, not a guarantee
+that a case is a small unit test or belongs in the compiler library.
+
+| Group | Intended contents and expectation | Inputs, location and execution |
+|---|---|---|
+| Compiler implementation tests | A named implementation obligation: token/AST structure, proof-state transition or derivation record, lowering choice, calling convention or compiler diagnostic contract. The assertion must observe something beyond an already-covered public language verdict or program result. | Prefer Rust fixtures and small WF inputs beside their owning implementation under `compiler/src/`. An integration module may exercise a compiler obligation across stages; the final target layout remains open. Native construction/execution needs the justification below and must be reported explicitly. |
+| `conformance` | Specification-derived acceptance, rejection and runtime requirements. The active specification selects expected results; current compiler output cannot define them. | WF cases and expectations in `tests/conformance/`, with the current adapter in `compiler/tests/conformance/`. Compile each selected case through the ordinary compiler path; link/run only cases whose requirement needs execution. |
+| `programs` | Whole-program functionality, host interaction and parallel behavior. Expectations come from the program's stated function, concrete expected outputs or an independent reference, consistently with the language specification. Admission needs a concrete program scenario and observable behavior; this is not a catch-all for WF wrapped in Rust. | WF programs in `tests/programs/` and orchestration in `compiler/tests/programs/`. Arrange real input/files/peers/configuration; compile, link and run as required by the property, then check the result. Compilation success is normally a prerequisite to the behavior assertion, not a separate acceptance case. |
+| Canonical batch | Canonical source bytes, parse/render consistency and idempotence, plus the exact normative example. These do not establish semantic acceptance or runtime behavior. | Visit the authoritative WF files already owned by conformance/programs and the specification example; do not duplicate their source collection. Use compiler parsing/rendering functionality. Keep one batch facility within the source-test organization, without a dedicated executable. |
+| Snapshot migration | Historical verdicts are leads to investigate, not another correctness authority. Assess each case against the active specification; move useful unique coverage to the appropriate group and retire demonstrated duplicates or obsolete expectations. | Existing `tests/snapshot/` is migration input. Track each disposition while migrating; do not create a permanent second set of historical acceptance expectations or bulk-delete unexamined cases. |
+
+An intentionally invalid syntax fixture need not pass canonical parsing.
+Canonical collection must account explicitly for such cases and must not
+weaken their negative conformance expectation to make rendering pass.
+
+### Admission by protected property
+
+Identify the main assertion and the contract selecting its expected result
+before choosing its home. Neither the fixture language, `#[test]`, native
+execution nor the present directory selects the category.
+
+| Admission question | Primary home | Boundary and example |
+|---|---|---|
+| Does a focused case verify a language rule's acceptance, rejection or runtime requirement? | `conformance` | Give the normative ground and enough source to exercise the rule through the ordinary compiler path. A rule about executing an operation may need a native run; conformance is not limited to compile-only verdicts. |
+| Does it verify a useful program's stated function or interaction across components/configurations? | `programs` | Name the scenario and expected output/effect, such as matching the right lines across input files or preserving an independently checked result across worker counts. Merely accepting a WF fragment, or executing it without a meaningful result assertion, does not meet this criterion. |
+| Does it verify an additional compiler implementation obligation that those external results do not establish? | Compiler implementation tests | Name that obligation and observe it directly: retained proof dependencies, an IR lowering choice, deterministic instance symbols, or the compiler's concrete native calling convention. Explain the regression the observation distinguishes. Adding an incidental internal assertion does not justify a duplicate end-to-end case. |
+
+For compiler tests that construct or execute a native program, name the
+compiler-specific obligation and why execution at that boundary supplies the
+needed evidence. For example, a WF/C argument-and-return round trip can check
+the implemented calling convention; IR text alone does not establish that
+both compiled sides interoperate. If the actual assertion is only a language
+runtime requirement, use conformance; if it is only application behavior,
+use programs. The same rule applies to existing cases, not only new ones.
+Choose the narrowest test path that adequately exercises the obligation;
+do not require a native build merely because the fixture contains WF.
+
+Adding a case that compiles WF or builds/runs its native output needs care:
+the repeated construction and execution can accumulate across the suite.
+Name the missing coverage before adding another such path. Prefer extending
+an existing case or using a focused implementation assertion when it provides
+the required evidence; reuse valid immutable construction where appropriate.
+Identify any additional compiler pass, native build/run, configuration or
+repeat the new case requires, without demanding a new timing experiment or
+per-case approval form. Preserve ordinary compiler calls for normative
+conformance and native execution when the protected behavior needs it.
+This admission discipline does not justify retiring a required check merely
+because it is slow; timing optimization remains later work.
+
+These are responsibilities, not a requirement for three separate executable
+targets. Existing Rust orchestration may be shared where it fits. A single
+case may check related observations, and a whole-program fixture may expose
+a useful compiler regression. Keep its primary purpose explicit; move an
+independent internal assertion to the implementation group when needed,
+reusing the fixture and construction where valid. Do not force a separate
+case for every assertion or replace a meaningful regression with an arbitrary
+smaller input.
+
+During migration, both directions need inspection. For example,
+`compiler/tests/programs/generics.rs` currently checks generated-symbol
+determinism as well as execution, and `compiler/tests/programs/parallel.rs`
+checks permission-ledger details as well as program results. Their directory
+does not settle which assertions belong together; assess the individual
+properties before moving or merging them. Likewise, an implementation
+`#[test]` that only checks application output should be considered for programs.
+An assertion outside these core responsibilities, such as a direct C runtime
+probe, belongs in the remaining-check review rather than being silently
+assigned to programs.
+
+### What earns a test its place
+
+- Be able to name the property, concrete input, expected observation and kind
+  of defect the assertion distinguishes. Use an existing test name, fixture,
+  manifest or short comment; do not add a mandatory metadata form to every case.
+  Before adding it, identify its primary home under the admission rules and
+  what useful observation is missing from existing coverage. Extend an existing
+  case when that adequately covers the regression; a new WF file or Rust
+  wrapper is not evidence of a new requirement.
+- Prefer one primary home for a given assertion. The same WF file may be used
+  to observe proof state, runtime behavior and canonical rendering when those
+  are different properties; a shared filename alone proves no redundancy.
+- Compare the property, input, failure mode, configuration and oracle before
+  merging checks. A compiler-private regression may coexist with a public
+  conformance case when it checks something the latter cannot observe.
+- Cover the relevant valid, invalid and boundary behavior. Repetitions and
+  worker/policy/platform axes need a stated fault or observation to exercise;
+  neither a large matrix nor an arbitrary repeat count is coverage by itself.
+  Required isolation or repetition is not removed merely because it repeats work.
+- Do not preserve tests whose only job is keeping an unnecessary manual copy
+  synchronized with its automatic source. Remove that copy and its policing
+  test together. A parser algorithm still needs correctness evidence after
+  grammar-table generation becomes automatic.
+- Compiler crashes, unsupported capabilities, timeouts, missing resources and
+  build/launch failures must remain distinct from normative source rejection.
+  A tracked expected failure records the correct expectation and the current
+  defect; it does not redefine success or hide a newly fixed/changed outcome.
+- Share fixture preparation and immutable construction where the dependency
+  and isolation requirements allow it. Do not share a previously obtained
+  semantic verdict in place of a required current compiler call.
+- Retire or move a case with its technical reason and receiving coverage, if
+  any. An unexplained deletion, ignored case or updated golden file is not a
+  deduplication result. Preserve applicable conformance-evidence obligations.
+
+### Execution and reporting
+
+Keep construction separate from assertion execution. Cargo constructs the
+compiler and selected Rust test executables, including generated parser data.
+The compiler-test group then calls implementation functions; source checks
+use parsing, semantic compilation and native construction/execution only as
+their respective properties require. A compile/link success is not a claim
+that a runtime workload passed.
+
+The normal full verification entry point must explicitly select every retained
+check. A retained ordinary case must not depend on a developer remembering a
+special ignored-test opt-in outside that entry point. The intended native
+conformance run remains part of full verification. Platform-only cases have
+a named host job and explicit unsupported-host reporting; absence of a host
+is not a passing execution.
+
+Each source-case failure should identify the group, case/source, expected
+result, actual result and failing phase. Report construction failures,
+assertion failures, skips and tracked defects separately. Count Rust cases
+and WF cases as different objects. Collection integrity must make omissions
+visible without maintaining redundant hand-copied counts.
+
+Logical categories do not each require a new binary, crate, script, directory
+or CI job. Only introduce a separate execution boundary for a concrete need
+such as private access, a different host/toolchain or process isolation.
+The exact target layout will follow the remaining-check review, not precede it.
+Current resource guards remain; new timing optimization is deferred.
+
+## Review of the remaining checks
+
+After accepting R07, the owner changed the discussion unit from individual
+checks to batches of related checks. Group by the protected property and
+shared resources, explain construction and callers once, and give a separate
+row for each materially different observation or disposition. A batch is a
+discussion unit, not a requirement to merge its executables. Do not use a
+whole-directory label to hide unrelated assertions. Read the sources and
+current callers before recommending dispositions.
+
+For each item, show the following in the conversation in Chinese:
+
+1. **Identity and inputs:** name, source path, current caller, fixture form and
+   resources. Identify whether it uses Rust `#[test]`, WF, C, Python or shell.
+2. **Actual work:** what is constructed, what executable/function runs, what
+   it observes and asserts, and what real defect a failure would reveal.
+3. **Need:** should this check exist? Separate a current correctness or
+   performance-regression check from historical reproduction or exploratory
+   measurement. Do not retire required coverage merely because it is slow;
+   apply the admission discipline to unnecessary construction and execution.
+4. **Home and stage:** the proposed owning group/location and execution phase,
+   including any host-specific requirement.
+5. **Overlap and recommendation:** identify actual receiving checks when
+   proposing a merge; explain distinct coverage that must survive. Recommend
+   keep, move/merge, retire, or explicit experiment-only use with reasons.
+6. **Owner decision:** accept a ruling on the whole batch or specified rows,
+   record exceptions and remaining uncertainty, then present the next batch.
+   Do not treat grouping as approval of its recommendations or implement
+   changes while the owner's execution deferral remains in force.
+
+Use the inventory's remaining runtime probes, platform/sanitizer checks,
+research models/oracles, benchmark construction/correctness checks,
+repository/tooling checks, performance protocols and historical/explicit
+experiment runners as the traversal scope. Previously selected changes
+remain selected; only a newly discovered conflict or changed premise reopens
+one. Audit individual compiler/corpus cases under the baseline as needed
+during their migration, rather than assuming their current classification is correct.
+
+The owner agreed to R01 through R07 and B01, and selected the common C runner
+direction described below. Implementation remains deferred. The current batch
+is B02: twenty-two remaining completion adapter/bridge behavior functions,
+grouped into nine related rows. The adjacent platform inventory and timing
+loop retain their explicit B04/B06 review homes.
+The remaining inventory is grouped below; these are review scopes, not eight
+new test targets or a promise that every scope fits one conversation. Individual
+compiler/corpus migration audits still apply under the accepted baseline.
+
+| Batch | Related checks and existing homes | Status |
+|---|---|---|
+| B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Agreed; implementation deferred |
+| B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Current; recommendations pending |
+| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | Not yet reviewed |
+| B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Organization and remaining assertions not yet reviewed; preserve earlier selected host distinctions |
+| B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
+| B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
+| B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
+| B08 | Historical or explicit experiment/instrument runners outside the default gate | Not yet reviewed |
+
+**Selected C runner organization.** The owner agreed to consolidate compatible
+C cases into one main runtime test executable, with logical case groups rather
+than a binary per category. Scope scripted directory/clock/other hooks to the
+case that needs them and forward ordinary host calls elsewhere. Preserve the
+small number of justified construction variants: the isolated core/read
+publication implementation conflicts with the real bridge's strong symbol,
+the uninstrumented default-policy probe needs its actual shipped-call build,
+and sanitizer instrumentation changes the artifact. Share compatible native
+objects with correct dependencies across those variants.
+
+One executable can still need several fresh processes: helper count and native
+engine selection are initialized once per process. Select only the cases that
+observe each setting rather than rerunning the entire suite for every setting.
+Compatible cases run together under one configuration, through a common entry
+point. This is not authorization to merge incompatible hooks, reset live
+runtime singletons, remove required host observations or start implementation.
+
+| Item | Check | Recommendation | Owner ruling |
+|---|---|---|---|
+| R01 | Completion core/read probe and its build/run variants | Keep useful C adapter assertions; retire unsupported repeat/TSan claims and redundant boundary guards; details below | Agreed; implementation deferred |
+| R02 | Default-policy file reads in the bridge probe | Keep the real-default concurrent C runtime check, reuse deterministic policy cases and tighten route assertions; details below | Agreed; implementation deferred |
+| R03 | TCP lifecycle in the default bridge probe | Merge overlapping bridge lifecycle logic, preserve distinct runtime/host configurations and correct the transfer, endpoint and timeout checks; details below | Agreed; implementation deferred |
+| R04 | Text values in the ordinary linked-library probe | Keep focused C encoding/value assertions, strengthen existing buffer observations and stop repeating text for helper settings that it does not use; details below | Agreed; implementation deferred |
+| R05 | Ordinary file acquisition, reads, close and factory accounting | Keep focused C library integration assertions for exact credits and result construction, tighten refusal/buffer observations and correct overstated overlap claims; details below | Agreed; implementation deferred |
+| R06 | Ordinary directory enumeration and independent cursors | Keep the real-directory C integration case; observe known entries and cursor independence, require progress and bounded completion, and check the actual writable window; details below | Agreed; implementation deferred |
+| R07 | Crossed ordinary TCP halves and factory accounting | Keep precise native per-resource credit observations, retarget the existing transfer fixture to the surviving halves and share TCP setup/guards without adding a WF case; details below | Agreed; implementation deferred |
+
+### R01 — Completion core/read probe
+
+**Inputs and construction.** `compiler/src/backend/completion/core_read_probe.c`
+is a C executable with two test functions and a `CHECK` macro, not a Rust
+`#[test]` wrapper or a WF corpus. `completion-core-read-test` in
+`compiler/Makefile` invokes the host C compiler with C11, `-O2 -g`, warnings
+as errors and pthread support. It constructs
+`$(COMPLETION_TMP)/core-read-probe` from these eight C translation units:
+
+- `compiler/src/backend/sched/{core,prim_host,entry}.c`;
+- `compiler/src/backend/completion/{runtime,wait_host,file_adapter,file_posix,core_read_probe}.c`.
+
+The probe supplies a local `wf_completion_record_complete` that publishes
+directly to the record; it does not link `bridge.c` or exercise its submit/join
+calls. `WF_COMPLETION_PREAD=wf_completion_test_pread` interposes a call
+counter which forwards nonempty reads to the real host `pread`. It does not
+script fake read results. Each test creates a scratch file containing
+`abcdef` and removes it afterward. Resources are a POSIX C toolchain, writable
+executable scratch storage, ordinary local file operations and `nm` for the
+current extra symbol guard. The scheduler units are linked, but this probe
+starts no worker or helper thread: both adapter initializations pass capacity
+and helper count zero, and progress runs on the calling thread.
+
+**Actual assertions.** Every adapter read checks submission ownership,
+completion/progress and the result attached to the submitted record.
+
+| Test function | Cases and observations |
+|---|---|
+| `test_positioned_read_result_boundaries` | Six unconditional cases: empty read succeeds without a host call even with invalid descriptor/offset; full read returns `abc`; a four-byte request at offset four returns only `ef` and leaves the remaining destination bytes unchanged; EOF returns zero without changing the destination; invalid descriptor returns `EBADF`; negative offset reaches the host once and reports `EINVAL`, leaving the destination unchanged. A seventh case applies only where `off_t` cannot represent `INT64_MAX`: refusal precedes the host call and leaves the destination unchanged. That branch is not exercised on the supported 64-bit POSIX hosts. |
+| `test_independent_reads_complete_in_reverse_order` | Submit reads for offsets zero and five before progressing. The current zero-helper path completes the newer request first. Check that it receives `f`, the first request remains pending with its buffer untouched, then the first receives `a`. This observes completion/result association in an explicit reverse order, not a concurrent execution. |
+
+**Current callers and variants.** Root `make check` reaches the ordinary
+probe through `compiler` -> compiler `check` -> `completion-test`.
+Compiler `static` also calls `completion-test`, so Linux/macOS gate static
+jobs and the Linux `io-hosts` completion job run it. The ordinary target also
+compares the source list against a separately copied allowed list, explicitly
+forbids `bridge.c`, and checks a bridge symbol with `nm` after execution.
+`completion-core-read-sanitize`, reached from the Linux `completion-sanitize`
+job, rebuilds the same input with `-O1 -fsanitize=address,undefined` and runs
+it once. The Linux IO job also builds/runs `completion-core-read-tsan` with
+`-fsanitize=thread`. The explicit, non-gate `completion-core-read-stress`
+target runs the ordinary target and then repeats its executable 200 times.
+The Makefile's statement that those repeats exercise sleep/publication races
+does not describe the current two test functions.
+
+**Overlap.** `harness.c::test_single_thread_file_progress` already checks a
+normal adapter positioned read in an open/write/read/status/close sequence;
+`harness.c::test_bridge_independent_positioned_reads` checks two requests
+through real bridge submit/join calls. These overlap in successful reads but
+exercise different boundaries. Neither cited test supplies the probe's
+empty-read host-call observation, short-read destination checks and forced
+intermediate reverse-completion observation. This comparison does not settle
+all other runtime probes. The probe's local completion function and the real
+bridge define the same strong symbol, so their link requirements differ.
+
+**Selected disposition.** The owner agreed to the following recommendations.
+Implementation remains deferred; this ruling does not change the live tree.
+
+- Keep the useful assertions as C runtime adapter unit tests in the existing
+  completion source area, selected by the common runtime-test stage of the
+  local full gate and POSIX CI. Keep their isolated link configuration;
+  there is no reason to compile WF or add a Rust wrapper for these properties.
+  Other C unit cases with compatible link/hooks may share a runner later;
+  do not merge this file into the real-bridge harness without addressing its
+  different completion hook and retaining the useful observations.
+- Retain reverse-completion/result association as the protected property.
+  The current LIFO progress behavior arranges the case; it is not a new
+  language or permanent adapter ordering requirement. If queue policy changes,
+  arrange the needed order deliberately and reassess the fixture.
+- Remove this probe's 200-repeat stress target and standalone TSan variant:
+  the former has no varied input or concurrent schedule, and the latter has
+  no concurrent execution to observe. This recommendation concerns only this
+  probe, not the real-thread bridge/default-route/deque tests. Retain its
+  memory/undefined-behavior checks in the shared C sanitizer phase, whose
+  complete organization will be reviewed later.
+- Remove the copied allowed-source list, redundant explicit bridge exclusion
+  and `nm` bridge-symbol guard. The explicit minimal link inputs and the
+  incompatible strong completion definitions already establish the current
+  link separation; duplicated lists and symbol policing add no behavior
+  observation. Keep any genuinely required link boundary explicit in the
+  eventual common runner. Update stale race comments and callers together.
+
+This is source inspection, not a fresh execution or a savings measurement.
+The exact shared runtime target layout and the remaining sanitizer/platform
+checks are still to be reviewed.
+
+### R02 — Default-policy file reads
+
+**Scope and inputs.** The file-read portion of
+`compiler/src/backend/completion/bridge_default_probe.c` exercises the real
+completion bridge with `WF_IO_HELPERS` unset. The probe refuses a set value.
+It calls the bridge's C submit/join ABI using opaque aligned record storage,
+but compiles no WF and contains no Rust `#[test]`. Current WF code calls
+ordinary linked functions; their native definitions in `ordinary_values.c`
+use this bridge. The probe does not validate that preceding compiler/call
+boundary, despite its older comment about standing in for emitted code.
+It also currently runs `probe_loopback_round_trip` after the read phase; TCP
+assertions and that portion's resource/timeout handling belong to R03, not
+this disposition.
+
+`completion-default-route-test` compiles the POSIX executable with C11,
+`-O2 -g`, warnings as errors and pthread support. Its eleven C inputs are
+`sched/{core,prim_host,entry}.c` and
+`completion/{runtime,wait_host,file_adapter,file_posix,bridge,linux_io_uring,native_contract,bridge_default_probe}.c`,
+all under `compiler/src/backend/`. The output is
+`$(COMPLETION_TMP)/bridge-default-probe`. It uses the real host calls and
+clock, without the main harness's macro-interposed host/clock configuration.
+The Windows CI build uses the same probe, Windows scheduler/wait/file leaves,
+`windows_iocp.c` and `windows_runtime.c` in its eleven-source link, with
+Winsock. Neither build constructs the compiler.
+
+**Work and assertions.** The read phase creates a 4,096-byte file whose byte
+at offset `n` is `n % 251`. Four real runtime primitive threads each perform
+4,000 submit/join rounds, with a changing offset and one byte per positioned
+read: 16,000 such requests in a successful invocation. Each lane additionally
+submits one non-positioned read every 64 rounds, including round zero, for
+252 additional requests. Those requests disturb the queued-versus-inline
+precondition; they are not 252 distinct language cases. A separate watchdog
+thread fails a stuck read phase after 180 seconds. That is a failure bound,
+not a measurement or a reason for the round count.
+
+| Observation | Current assertion and limit |
+|---|---|
+| Positioned read results | Every join must return one byte, no error and the independently computed byte for its requested offset. A lane failure fails the process. Concurrent publication, result association and progress are exercised through the real bridge. |
+| Non-positioned reads | Each response is either nonnegative/no-error or negative/with-error; the invocation must not mix these two categories. This watches completion and route consistency, not full stream-read semantics: it checks neither returned bytes nor a specific refusal code. |
+| Native versus adapter | Read-phase ring, adapter, inline and helper counts are captured before TCP. Explicit `WF_IO_NO_NATIVE_RING=1` must leave the ring submission count zero. A normal local invocation may legitimately use an available ring or fall back. |
+| Adaptive policy | With no ring submissions, at least one operation must have run inline or at least one helper must have started. This requires an observed policy branch, not both branches or all transitions on every host. |
+| Native helper policy | The helper count is reported, but a native-ring run does not currently assert that it stays zero, as `bridge.c::wf_bridge_helper_policy` and the live completion-runtime decision require when helpers are unset. This is a missing observation, not evidence of an implementation failure. |
+
+The non-positioned branch still describes a target that may have no stream
+read, although the current Windows leaf implements `WF_FILE_READ`. Its fixture
+opens an overlapped Windows handle for positioned reads and also passes it to
+the stream-read path, whose `file_windows.c` implementation uses a null
+`OVERLAPPED` for synchronous stream handles. The current accept-either-result
+check does not establish the right result for that fixture. No fresh Windows
+execution or particular observed error is claimed here.
+
+These are repeated native-thread operations exercising current correctness;
+there is no throughput/latency regression verdict. The sources inspected do
+not derive 4,000 as a minimum useful round count. This review neither declares
+the repetitions redundant nor chooses an arbitrary smaller count.
+
+**Callers and resources.** Root `make check`, compiler `static` and the
+Linux/macOS static gate reach this through `completion-test`. The ordinary
+Linux target runs the executable once under default routing and once with
+the ring explicitly disabled; macOS runs it once. Linux IO CI calls that
+same target, then rebuilds/runs ASan+UBSan and TSan variants with `-O1`.
+Those sanitizer targets currently do not explicitly repeat the forced-adapter
+configuration. Real Windows CI compiles the native executable and runs both
+IOCP and forced-adapter modes, checking the reported route. Explicit Windows
+cross-build/Wine targets are development paths, not substitutes for that host.
+
+The file portion needs writable executable scratch storage, ordinary file
+access, native threads and the host C runtime; native-engine coverage needs
+the corresponding host facility. The current combined executable additionally
+needs loopback sockets because TCP is still attached. Startup settings are
+process-wide and initialized once, so different route configurations require
+fresh processes, though they can reuse the same executable.
+
+**Selected disposition and overlap.** The owner agreed to the following
+recommendations; implementation remains deferred.
+
+- Keep this as a C runtime integration check under the existing completion
+  source owner, called from the common runtime verification stage and the
+  appropriate native host jobs. It validates the real default selection and
+  concurrent bridge path without paying for WF compilation. R01 bypasses
+  the bridge and starts no threads, so it cannot replace this check.
+- Reuse the main harness's existing deterministic policy cases:
+  `test_pool_stays_empty_when_operations_do_not_wait`,
+  `test_pool_grows_when_operations_wait` and
+  `test_helper_growth_stops_at_the_declared_bound`. They provide controlled
+  short/long wait and cap evidence; the real-clock probe should not claim that
+  every branch happened or reproduce those cases with another driver. The
+  main harness pins the bridge's helper setting, so its ordinary bridge tests
+  do not replace the unset-policy observation.
+- Add the missing zero-helper assertion to the existing native-ring read
+  run. Keep forced-adapter routing verifiable, and require native execution
+  when a host job claims native-route coverage rather than accepting fallback
+  under that label. Reuse the observed counters; no new WF case is needed.
+- Give the non-positioned queue-disturbance requests an input with a clear
+  host contract, such as a suitable synchronous stream handle, and check its
+  defined result. Do not retain success-or-any-error as an oracle or use the
+  same handle for incompatible fixture purposes merely to share setup. Keep
+  the queue-disturbance purpose explicit and update the stale capability
+  comments; this need not add a WF program or another test executable.
+- Retain meaningful concurrent sampling and TSan as well as ASan/UBSan.
+  Unlike R01, real threads contend here. Make sanitizer route scope explicit:
+  a native-only run cannot stand for default adapter growth, and even a
+  forced-adapter run does not guarantee growth under the real clock.
+  Deterministic growth cases own that guarantee. Any later reduction in the
+  sample needs preserved relevant race coverage and a stated ground; no
+  timing or loop-count change is selected now.
+- Give file reads and TCP distinct selection/reporting in the common C test
+  organization; this need not introduce another executable. Preserve the
+  real-default link/clock configuration and fresh-process startup boundary
+  when considering a shared runner, instead of putting this behind the
+  main harness's unconditional helper pinning. TCP's own disposition is R03.
+
+No fresh construction, execution, timing result or retirement accompanies
+this source-based recommendation.
+
+### R03 — TCP lifecycle in the default bridge probe
+
+**Identity, construction and resources.** The function
+`probe_loopback_round_trip` in
+`compiler/src/backend/completion/bridge_default_probe.c` is C code called by
+that probe's `main` after the file-read phase. It shares R02's eleven-source
+runtime link and its `bridge-default-probe` output, including the real bridge
+and host leaves; it has no separate build, WF source, compiler invocation or
+Rust `#[test]`. Windows uses the same function with its native link leaves and
+Winsock. It needs a permitted IPv4 loopback listener and two connection ends
+in the same process, not an Internet service or another WF program. The test
+driver submits and joins each step sequentially; runtime helpers may still
+execute work. The combined executable currently also requires R02's file
+fixture and threads.
+
+**Actual work.** This is a connection lifecycle with an eight-byte transfer
+from client to accepted connection, not an echo or bidirectional payload
+exchange. In the ordinary successful path it makes ten bridge submissions:
+
+| Phase | Current action and assertion |
+|---|---|
+| Listen | Try IPv4 loopback ports starting at 45,231, up to 64 candidates. Any failed listen moves to the next candidate, not just address-in-use. Keep the first nonnegative descriptor. |
+| Connect and accept | Connect to that listener, accept the pending connection, and require nonnegative descriptors. Check the accepted peer's address words equal IPv4 loopback and its low port bits are nonzero. Unlike the main harness, this function does not separately check the family flag. |
+| Transfer | Send `{3,1,4,1,5,9,2,6}` in one call, require eight bytes, then receive in one call and require all eight bytes with an exact content match. |
+| Close | Close each connection's two directions, four operations total, then close the listener. The helper accepts any nonnegative joined value and does not assert a zero error field or the first/last release values. It does not observe handle lifetime. |
+
+The TCP ring-submission delta is printed separately, but is not asserted.
+The final `route=native-ring` label and the Windows caller's check of that
+label come from the earlier file reads, so they do not establish that a
+particular TCP operation used the native engine. An allowed immediate socket
+transfer also need not submit to a ring; that fast path is not a failure.
+There is no timing or throughput verdict.
+
+**Current invocation and effectiveness.** The function runs whenever R02's
+combined executable runs: local `completion-default-route-test` through the
+full gate, Linux/macOS gate jobs, Linux IO default/forced-adapter runs and
+sanitizer variants, Windows IOCP/forced-adapter runs, and explicit cross/Wine
+development paths. It runs once per invocation, not once per file-read round.
+The file phase stores `probe_finished = 1` before this function is called.
+Consequently its 180-second watchdog no longer covers TCP; outer guarded
+commands or CI job limits may eventually stop a hang, but a direct executable
+or the direct Make target has no active TCP-specific deadline here. Several
+early-return failures also bypass socket cleanup.
+
+**Existing receiving coverage.**
+
+| Existing check | Relationship to this function |
+|---|---|
+| `completion/harness.c::test_socket_lifecycle_and_the_pair_two_count` | The same bridge listen/connect/accept/transfer/close sequence, under pinned helper configurations. It additionally checks IPv4 family, zero-length receive results, first-close value zero with the descriptor still open, last-close value one with the descriptor closed, both direction orders, and a refused connection after the listener is closed. This is the primary receiving case for the duplicated lifecycle logic. Its single-call transfer assumption also needs correction. |
+| `completion/native_adapter_probe.c::probe_loopback_round_trip` | Submits records directly to the native adapter, bypassing the bridge. It protects the engine's request/publication path and cannot be replaced merely by a bridge exchange; its individual disposition remains later work. |
+| `ordinary_values_probe.c::tcp_probe` and concurrent half-close probes | Exercise ordinary linked values, crossed receive/send components, factory-credit accounting and close races. Their additional representation/lifetime properties are not supplied by a basic bridge lifecycle. |
+| `compiler/tests/programs/network.rs` with `tests/programs/tcp_echo.wf` and related programs | Checks compiled WF programs interacting with Rust peers, including payload echo, end-of-stream and reset outcomes. It includes compiler and ordinary-call integration that this C-only test does not establish. Do not retire it just because both use TCP. |
+
+**Selected disposition.** The owner agreed to the following recommendations;
+implementation remains deferred.
+
+- Retain one maintained C bridge lifecycle case by combining the common logic
+  with `test_socket_lifecycle_and_the_pair_two_count`. Preserve the stronger
+  existing observations and expose the same case to default-policy and pinned
+  configurations, native and adapter modes, and the supported host jobs.
+  Use small host helpers for endpoint and handle observations. Share code
+  without forcing distinct macro/link configurations into one build or
+  silently dropping Windows/default-policy coverage. Logical selection and
+  reporting need not add a binary, Rust wrapper or WF case.
+- Replace fixed-port scanning with a port-zero listener and a host-side
+  query of the bound address, retaining the listener until the connection is
+  made. The main C harness already does this; `ordinary_values_probe.c` has a
+  Windows/POSIX `listener_port` helper. This is test fixture setup, so the
+  absence of a WF port-query function is not a restriction and warrants no
+  language addition. Adapt/reuse those host operations instead of keeping
+  another retry policy that can obscure unrelated listen failures.
+- Allow valid short transfers: advance by the actual successful count,
+  retain the original buffers and check the complete received payload when
+  assembled. The active `PRE-1` send/receive contracts do not promise that
+  one call reaches the requested end, and the runtime uses ordinary
+  `send`/`recv` or equivalent native operations. Require consistent success
+  and error fields and preserve the bridge's distinct first/last close
+  values from `bridge.h`; do not substitute a blanket value-zero assertion
+  for a last close that legitimately returns one. Unexpected EOF, errors or
+  lack of progress must fail visibly rather than spin or be relabeled success.
+- Cover the entire selected TCP case with the common C test timeout and
+  failure cleanup, keeping the current guard active through it when invoked
+  in the combined process. Failure reports should identify the socket phase.
+  The self-contained peer sequence does not make blocking or implementation
+  bugs impossible. Reuse existing guard machinery, with no new timing campaign
+  or arbitrary deadline choice in this review.
+- Keep route assertions about the TCP work they name. A file-read route label
+  is not TCP engine evidence, and permitted immediate completion is not
+  evidence of failed routing. Reuse the existing native-adapter tests for
+  direct engine coverage and preserve any distinct bridge-routing observation
+  when consolidating callers; do not simply count printed counters as tests.
+
+The related C value, native-adapter and WF program cases retain their own
+review scope. This recommendation selects neither their wholesale deletion
+nor a new test-target layout. No implementation, execution or new measurement
+has accompanied this review.
+
+### R04 — Text values in the ordinary linked-library probe
+
+**Identity and construction.** `text_probe` in
+`compiler/src/backend/ordinary_values_probe.c` directly calls the C ordinary
+library in `ordinary_values.c`, using native `wf_value` and `wf_view` records.
+It uses C `assert`, explicitly enabled even if `NDEBUG` was defined. It is
+neither a Rust `#[test]` nor a WF program. View copies enter the private
+pointer-parameter C body; they do not validate the compiler's emitted LLVM
+calling convention.
+
+The current POSIX `ordinary-values-test` Make target builds one
+`$(COMPLETION_TMP)/ordinary-values-probe` with C11, `-O2 -g`, warnings as
+errors and pthread support, from eleven C translation units under
+`compiler/src/backend/`:
+
+- `sched/{core,prim_host,entry}.c`;
+- `completion/{runtime,wait_host,file_adapter,file_posix,bridge,linux_io_uring}.c`;
+- `ordinary_values.c` and `ordinary_values_probe.c`.
+
+The whole executable also tests files/directories, TCP values and concurrent
+half-closes. Its shutdown-observer macro is needed by that last group, not
+by text conversion. The Windows IO job links its ten `WINDOWS_UNITS` plus
+the two ordinary-value sources, producing
+`windows-ordinary-values-probe.exe` with Winsock and shell32. These are C
+builds; neither constructs the WF compiler or a WF program.
+
+**Inputs and actual assertions.** The function constructs four arguments in
+memory: `abc`, U+1F600, an invalid encoding and an empty string. POSIX uses
+byte strings; its invalid bytes are `ed a0 80`, an encoded surrogate which
+UTF-8 must reject. Windows uses UTF-16 code units: `d83d de00` for the valid
+pair and a lone `d800` for the invalid input. A sixteen-byte stack array is
+the copy destination.
+
+| Operation | Current observation and limit |
+|---|---|
+| Argument access | Require count four, successful index zero and refusal at index four. The intermediate `arg_get` calls are not separately checked before using their returned values. |
+| Too-small UTF-8 copy | Copy `abc` into `[2,3)`. Require an error, required length three and destination byte two still equal to its sentinel. It does not check the error's variant tag or the other fifteen destination bytes. |
+| Successful UTF-8 copy | Copy `abc` into `[2,5)`. Require success, returned endpoint five and those three bytes equal to `abc`. This distinguishes an absolute endpoint from length three; bytes outside the copy window are not asserted. |
+| Non-ASCII encoding | Require U+1F600 to have UTF-8 length four. It never copies that value, so it does not observe the four encoded bytes or exercise the Windows four-byte encoder stores. |
+| Invalid encoding | Require `Utf8CopyInvalid` from copying the invalid argument into `[0,16)`. It does not assert that the destination remains unchanged. |
+| Empty relative path | Convert the empty host string to a relative path and require success with length zero, reusing the value/result storage. This is not general path validation or filesystem access. |
+
+**Resources, callers and repeated work.** These particular functions only
+inspect or copy memory; the Windows UTF-16 measurement/encoding helpers also
+perform no host IO. They do not consult the completion bridge or
+`WF_IO_HELPERS`. The current combined `main`, however, requires a scratch
+directory and changes into it, initializes the close observer's wait object,
+then calls `text_probe` before creating ordinary inputs and running the other
+groups. Those startup requirements belong to the combined driver, not to
+the text assertions.
+
+The Make target runs the same executable once with `WF_IO_HELPERS=0` and once
+with `WF_IO_HELPERS=2`. It is reached by `completion-test`, compiler `check`
+and `static`, root `make check`, Linux/macOS static gate jobs and the Linux
+IO completion job. Windows IO CI repeats the same two helper settings. For
+the text group alone, both runs use identical inputs, implementation paths
+and observations; the setting supplies no additional coverage. The host
+distinction does supply different encoding implementations. The current
+ordinary-values target has no dedicated sanitizer variant; this description
+does not count the completion harness's sanitizer runs as text coverage.
+
+**Overlap and ownership.** Existing conformance cases already exercise
+ordinary argument access, invalid UTF-8 length, invalid-copy refusal and
+too-small-copy refusal through compiled WF. In particular,
+`run-syshost-copyutf8-invalid-unchanged` and
+`run-syshost-copyutf8-toosmall-unchanged` check the exact error variant and the
+entire destination. The former arranges `61 ff 62`, a different validator
+failure from this C fixture's encoded surrogate. The case named
+`run-syshost-nontext-argv-utf8-invalid` actually calls `host_utf8_len`, despite
+its current copy-oriented description. `v033-run-system-nonzero-next` checks
+a nonzero endpoint for `host_copy_bytes`, not the UTF-8-copy C body here.
+This comparison supports a focused native encoding/representation check,
+not another complete copy of the normative corpus.
+
+`backend/tests/system.rs::run_arguments` also reads conformance WF files,
+compiles and runs them, and checks success with empty stdout/stderr. Several
+argument/text tests use that wrapper without additional internal assertions.
+Flag them for the agreed compiler/corpus audit; this R04 ruling does not
+retire those separate Rust cases. Other tests in that module compare ABI
+plans or emitted calls, and `system_io.rs` runs a larger ordinary IO chain.
+Neither additional compiler observation nor real-program composition is
+established by this direct C function.
+
+**Selected disposition.** The owner agreed to the following recommendations;
+implementation remains deferred.
+
+- Keep a focused ordinary-library C unit group in the existing backend test
+  source area, protecting native text representation, encoding branches and
+  destination boundaries. Run it in the common runtime unit-test phase of
+  the local full gate and supported host CI. Normative WF outcomes remain in
+  conformance; explicit compiler ABI assertions retain their separate purpose.
+- Select text once per host/build configuration that changes its code or
+  observations. Stop repeating it merely for helper counts zero and two,
+  and let text selection run without the other groups' directory, ordinary
+  inputs or close-observer startup. Reuse the C test construction/runner;
+  neither a new executable, a production-library split nor a WF wrapper is
+  justified just to obtain this logical selection. The IO/concurrency
+  groups' helper requirements are not decided by this item.
+- Strengthen the current small fixtures: assert the argument and copy error
+  tags, compare the whole destination after each refusal, check bytes outside
+  a successful copy window and actually copy U+1F600 to its known four UTF-8
+  bytes. Keep the nonzero endpoint observation. These check concrete encoding
+  and write-boundary defects without new WF compilation, a large encoding
+  matrix or repeated process runs. Keep the related argument/empty-value
+  assertions together; no separate test executable per assertion is needed.
+- Preserve POSIX byte-input and Windows UTF-16 coverage. Helper variation and
+  TSan would not add a concurrency observation to these memory-only calls;
+  any shared memory/undefined-behavior sanitizer phase may run them under
+  that distinct instrumentation. Its overall organization remains later work.
+
+No source, corpus verdict, caller or build recipe has changed. This is source
+inspection with no fresh execution, timing or savings claim. The remaining
+groups in `ordinary_values_probe.c` will be considered separately.
+
+### R05 — Ordinary file operations and factory accounting
+
+**Scope and construction.** This item covers the first part of
+`compiler/src/backend/ordinary_values_probe.c::file_probe`, through closing
+the read file into a different factory, and the purpose of the final credit
+transfer back. Directory enumeration between those portions is a separate
+item: sharing one C function does not make cursor behavior the same property
+as file-result construction or credit accounting.
+
+The code directly calls `ordinary_values.c` using C values and `assert`.
+Its private pointer-parameter view bodies do not check emitted LLVM ABI.
+It shares R04's executable, eleven-source POSIX or twelve-source Windows C
+construction, `-O2 -g` flags and local/CI callers. There is no separate file
+test executable, Rust `#[test]`, WF source or WF compiler invocation.
+
+**Fixture and work.** C stdio creates `ordinary-values.data` containing five
+bytes, `hello`, in the scratch working directory. `fopen`/`fwrite`/`fclose`
+arrange the input; they are not tests of the WF write library. The name view
+contains POSIX component bytes or Windows UTF-16 component bytes. File reads
+reuse a 4,096-byte buffer needed by the later directory batch, but their
+nonempty request is only seven bytes, not 4 KiB. The file sequence makes
+four ordinary open attempts, three read calls and two closes, with no stress
+loop. One open is rejected by zero factory capacity before submitting work;
+the other eight calls submit bridge requests on the intended path. These
+counts are library calls/requests, not a count of host system calls.
+
+| Step | Current assertion and its purpose |
+|---|---|
+| Failure with one credit | Start a native factory at one. Try to open the regular file as a directory. Require failure other than error tag 21 and credit still one. The following successful file open consumes that credit, and closing restores it. This checks failure/success/close accounting on a deliberately constrained factory. |
+| Refusal with zero credits | Temporarily set the input factory's credit word to zero. A file open must fail with tag 21 (`ResourceExhausted`) and leave zero. The test does not check that error's code/origin fields. Restore the saved capacity afterward. |
+| Successful acquisition | Open the file from the input factory. Require success and exactly one fewer credit. |
+| Short read and absolute endpoint | From file offset zero, read into destination `[2,9)`. Require `Ok(7)`, bytes `[2,7)` equal to `hello`, and bytes one and seven still equal to the sentinel. The returned value is destination endpoint seven, not byte count five. |
+| End of file | Read at file offset five into the same nonempty range. Require `ReadEnd` and compare the entire buffer with its saved value. |
+| Empty destination range | Read into `[9,9)`. Require `Ok(9)`, distinguishing an empty successful transfer from nonempty EOF even though both bridge results have amount zero. The buffer is not compared again after this call. |
+| Close into another factory | Close the acquired file into an initially empty receiving factory. Require the acquiring factory to remain one credit down and the receiving factory to become one. The later directory-source open spends that received credit, and its close into the original factory restores the original total. This is a real owner transfer, not a direct addition to balance the fixture. |
+
+The native counter is `wf_value.words[0]`, not a WF-visible field. The
+current [resource-exhaustion-floor decision](../../../design/compiler/resource-exhaustion-floor.md)
+places acquisition/close accounting in the ordinary exclusively borrowed
+factory. `wf_open` returns a taken credit on acquisition failure; `wf_close`
+returns it to its supplied factory. These are concrete implementation
+properties that cannot be inferred merely from successful high-capacity
+opens. This probe does not examine close-error consumption, all host error
+classes, descriptor leakage after every refusal, or arbitrary factory states.
+
+**Weak observations.** The first refusal accepts any class other than
+`ResourceExhausted`; an unrelated path-validation failure would satisfy that
+assertion without establishing the intended host/kind refusal. Tightening it
+must respect the actual host path: the POSIX component operation supplies
+`O_DIRECTORY`, whereas the Windows leaf can open and then reject a nonmatching
+kind as `WF_WINDOWS_OPEN_OTHER_KIND`, which the ordinary library maps to
+`Unsupported`. Do not impose a single guessed host error on both. No fresh
+host execution or newly observed runtime failure is claimed here.
+
+The successful read only observes two guard bytes outside its returned range.
+Its final empty read does not check that the buffer stayed unchanged. These
+are gaps in observation, not proof that the implementation currently corrupts
+memory. The driver is sequential; runtime helper threads may execute work.
+It needs ordinary local files, an opened directory value and the linked
+completion runtime. The full executable additionally needs the later groups'
+network and close-race facilities.
+
+**Overlap and actual coverage.** R01 checks low-level adapter amounts,
+errors and destination bytes; it neither constructs ordinary `ReadStop`
+variants/absolute endpoints nor owns a `HandleFactory`. The completion
+harness checks bridge open/status/close results and rejected descriptor
+cleanup, likewise without ordinary factory accounting. Keep those distinct
+observations; a full copy of their host-operation matrix is not needed here.
+
+Conformance's `run-sysfile-{empty,short,exact,multichunk}` cases and the
+`backend/tests/system_io.rs` read tests cover compiled WF behavior. The latter
+include nonzero destination bounds, short reads and zero-length reads. Their
+normative observations belong in the agreed corpus audit; a C-only call does
+not replace the WF call boundary.
+
+Two particularly overstated claims are
+`run-sysfile-close-returns-permit` and
+`run-sysfile-failed-open-returns-permit`. Their WF source uses the ordinary
+startup factory, does not constrain it to one credit and only checks that a
+subsequent open/read succeeds. It never compares the read byte despite the
+first case's description claiming the original byte. Therefore a missing
+single-credit return need not make either case fail. They also have Rust
+`#[test]` wrappers in `system_io.rs` which compile the same corpus source and
+check successful process exit with equivalent small fixtures; those wrappers
+add no exact-credit observation. Record this limitation for their later
+case-by-case migration/retirement. This item does not change their verdicts
+or retire either the WF cases or their Rust wrappers.
+
+**Selected disposition.** The owner agreed to the following recommendations;
+implementation remains deferred.
+
+- Keep a focused C ordinary-library integration group for exact factory
+  accounting and bridge-to-library result construction, in the existing
+  backend test area and common runtime verification stage of the local full
+  gate and supported host CI. Reuse the current C construction and small file
+  fixture. Give file operations and directory enumeration distinct selection
+  and failure reporting without requiring separate executables or WF cases.
+- Retain the zero/one-credit setup, successful decrement, failure restoration
+  and cross-factory close/reuse observations. They exercise the actual state
+  without exhausting the host's descriptor table. Check the quota refusal's
+  library code/origin as well as its class, and replace the wrong-kind
+  `tag != 21` oracle with the intended, source-grounded host outcome. Protect
+  final accounting rather than requiring a particular temporary decrement
+  order inside acquisition.
+- Retain short-read endpoint construction and the distinction between EOF
+  and an empty successful transfer. Compare all bytes outside the successful
+  returned range and the whole buffer after the empty call, reusing the
+  existing input and observations. Do not duplicate R01's entire adapter
+  matrix or add a WF program for internal counters.
+- Unlike R04's text calls, these operations reach the bridge. Written helper
+  counts pin adapter policy; zero versus two can change who executes queued
+  adapter work. A native engine may instead take the operation in both runs,
+  and this probe currently has no route assertions or forced-adapter run.
+  Preserve demonstrably distinct runtime execution coverage in the common C
+  configuration organization; do not label helper zero/two as native/adapter
+  evidence or multiply every assertion across an unexamined matrix. No
+  deletion of this group's helper variants is selected by this item; complete
+  configuration/sanitizer organization remains a later review.
+- Correct the corpus descriptions' unsupported accounting/payload claims
+  during the agreed corpus audit. Keep or merge WF cases for the language
+  behavior they actually distinguish, and retire redundant Rust wrappers only
+  after preserving any distinct assertion or construction mode. Do not add
+  WF-visible counter APIs, huge exhaustion loops or extra WF compilations
+  merely to turn this C implementation observation into a language test.
+
+The directory-source iteration loop and independent cursors will be reviewed
+next. No implementation, test retirement, specification revision, execution
+or timing measurement accompanies this record.
+
+### R06 — Directory enumeration and independent cursors
+
+**Scope and construction.** The directory portion of
+`compiler/src/backend/ordinary_values_probe.c::file_probe` directly calls
+`wf_open_directory_source`, `wf__body_directory_next` and
+`wf_close_directory_source`. It uses C `assert`, the same ordinary-values
+executable and eleven-source POSIX/twelve-source Windows C build as R04/R05,
+and the same local full-gate and host-CI callers. No Rust `#[test]`, WF
+compiler construction, WF compilation or additional executable belongs to
+this portion. The native pointer-parameter body does not validate the
+compiler's emitted three-result/view calling convention.
+
+It enumerates the real scratch working directory while R05's five-byte
+`ordinary-values.data` fixture still exists. The Make/Windows callers create
+that directory with `mkdir -p`; the probe neither creates a private fresh
+directory per item nor verifies all of its contents. It reuses a 4,096-byte
+stack buffer and opens two directory sources before reading either. The
+final third open/close transfers R05's received credit back; it is not a third
+cursor-independence case.
+
+**Actual work and assertions.**
+
+| Step | Current observation |
+|---|---|
+| Open cursors A and B | Both opens of the same directory succeed. POSIX reopens `.` relative to the supplied directory; Windows reopens it using the empty relative native name. The implementation deliberately opens a new enumeration cursor rather than duplicating one shared cursor. |
+| Empty range on A | Call with `[11,11)`. Require success, `next == 11` and zero entries. The buffer is not compared, nor is the exact unconsumed entry set observed. |
+| First nonempty batch on A | Call with `[3,4096)`. Require success, `next > 3` and at least one entry. No filename, record bytes or relation between decoded records and the entry count is checked. This first call also lacks the upper-end assertion used in the loop. |
+| Drain A | A `do/while` repeatedly calls with `[3,4096)`, checking only that each returned endpoint lies within that range, until status is no longer success. Intermediate successful calls need not report positive bytes/entries or new records to pass the current assertions. |
+| End of A | Require `ListEnd`, `next == 3`, zero entries and the entire buffer unchanged from just before the final call. A `ListFailed` result fails rather than being treated as normal end. |
+| First batch on B | After A is exhausted, require B's first read to succeed with positive endpoint/entry count. This catches a shared EOF cursor, but B is neither decoded nor drained and the known fixture name is never required. |
+| Close | Both directory-source closes succeed. Aggregate credit restoration is observed later by R05's final transfer. |
+
+There are at least four `directory_next` calls: one empty call, A's first
+batch, at least one drain/terminal call and B's first batch. Additional drain
+calls depend on the directory contents and host batching; this is not a fixed
+stress-repeat count. No per-item deadline or iteration bound appears in the
+probe. A repeated successful empty result, or repeated positive batch with a
+stuck cursor, can keep the loop running. Outer guarded commands/CI limits may
+eventually terminate it; this inspection does not attribute the earlier long
+machine stall to this function.
+
+**What executes underneath.** Linux uses `getdents64`; macOS uses
+`__getdirentries64`; the Windows host leaf obtains a native directory batch
+and converts its UTF-16 records to the intermediate representation consumed
+by `ordinary_values.c`. The current `wf_linux_io_uring_carries` and
+`wf_windows_iocp_carries` do not carry directory-enumeration requests. Nonempty
+enumeration therefore reaches the blocking adapter even when a native engine
+is present; the empty request completes in the bridge without a host read.
+Helper zero/two can change adapter execution, not turn enumeration into an
+io_uring or IOCP operation. Open/close requests have their own routing.
+
+The ordinary body compacts native records in place into a kind byte, a
+little-endian two-byte name length and the name bytes. POSIX name bytes and
+Windows UTF-16 name bytes differ. It returns the compacted endpoint and
+entry count. A host read may already have written the larger native batch
+past that compacted endpoint within the supplied window. The active `PRE-1`
+declaration states endpoint bounds; it does not promise that `[next,end)`
+remains untouched. Any success guard must protect outside `[start,end)`,
+not introduce that stronger tail guarantee. This representation is a native
+library implementation observation, not a new source-language rule.
+
+**Overlap and limits of existing evidence.**
+
+| Existing check | Relationship |
+|---|---|
+| `completion/harness.c::test_directory_progress_is_internal` | Scripts interruption, readiness refusal and eventual progress, checking three host attempts, one poll and the platform position-cell behavior. It does not enumerate a real directory or compare two cursors. Preserve that separate retry/progress boundary. |
+| `backend/tests/enumeration_records.rs` | Five Rust tests feed hand-built native records through a substituted host facility, run a WF publisher and check decoded bytes or process termination for contradictory records. They cover selected name lengths, kind mapping, a full batch, empty input and malformed layout. Real files cannot arrange those malformed native records. Its future construction/ownership review must retain the useful decoder observations; this real-directory item is not their replacement. Its emitted-shim wording is stale because the current decoder lives in the ordinary C library. |
+| Conformance `sys14-list-zero-range` | Checks one empty call and immediately closes the cursor. Despite its source/manifest description, it does not make a later nonempty read, so it does not establish that enumeration was preserved. |
+| Conformance `sys14-entry-kind-closed` | Checks kind range, name-length structure and announced record count for a returned batch, but does not require the fixture's names; an immediate `ListEnd` with zero records can pass. It cannot supply the missing real-entry observation here. |
+| `compiler/tests/programs/traversal.rs` and `tests/programs/dir_walk.wf` | Compare a real recursive tree walk's sorted kind/path output, plus empty-tree and refused-descent behavior. This protects compiled program composition and real record use, not specifically draining two sources opened on the same directory. The module also contains compile-only ownership/type/exhaustiveness rejections and emitted-call assertions; their homes must follow the already selected contract during the corpus audit. |
+
+**Selected disposition.** The owner agreed to the following recommendations;
+implementation remains deferred.
+
+- Keep one small C ordinary-library integration case for real enumeration,
+  independent cursor state and result/buffer observations. Put it in the
+  common runtime verification stage of the local full gate and supported host
+  CI, sharing R05's C construction and controlled fixture while reporting
+  directory failures separately. No additional WF program, executable or
+  recursive tree fixture is needed.
+- Use a known, unchanging test-owned directory. After the empty call on A,
+  drain both independently opened cursors and require the known fixture name
+  in each. Compare the complete entry collections without depending on host
+  order or batch boundaries; account for whatever self/parent entries that
+  host supplies rather than hardcoding a portable count. Decode enough of
+  each returned batch to verify record bounds, exact name bytes and the
+  reported count. This supports the cursor assertion without duplicating the
+  scripted decoder's full length/kind/malformed-input matrix.
+- Require each successful nonempty call to report a valid progressing batch
+  and reject duplicate/unexpected entries in the fixed fixture. Bound the
+  walk by that fixture's entries and the terminal observation, not an
+  arbitrary stress count. Use the common test-process deadline for a blocked
+  host/join, with phase-specific failure reporting and fixture cleanup. Do
+  not let a success status alone keep a no-progress loop alive indefinitely.
+- Check the entire buffer after the empty call and after EOF. Check both
+  endpoint bounds on every call and reserve guard bytes outside the supplied
+  success window in the existing buffer. Do not assert that its compacted
+  tail `[next,end)` is unchanged: the current in-place native-record conversion
+  legitimately uses that space.
+- Preserve useful adapter/helper and native-host coverage through the common
+  C configuration organization. Do not create a separate native-enumeration
+  matrix for request kinds neither current native engine carries, or count
+  open/close routing as proof of enumeration routing. Full configuration and
+  sanitizer organization remains a later item.
+- Correct the conformance coverage descriptions and handle the traversal
+  module's mixed assertion ownership in the agreed case audit. Keep the
+  actual normative calls and real program observations where required;
+  this ruling neither retires their cases nor adds new WF runs to duplicate
+  the focused C observations.
+
+The TCP-value and concurrent-close groups are recorded separately below.
+No implementation, test retirement, specification change, execution or timing
+measurement accompanies this record.
+
+### R07 — Crossed ordinary TCP halves and factory accounting
+
+**Identity, construction and resources.**
+`compiler/src/backend/ordinary_values_probe.c::tcp_probe` is a C
+ordinary-library integration case using `wf_value`, `wf_connection` and C
+`assert`. It shares R04-R06's ordinary-values executable, eleven-source POSIX
+or twelve-source Windows `-O2 -g` construction, and local full-gate/host-CI
+callers. It does not compile WF or check the compiler's emitted struct/view
+ABI. The current caller runs the whole executable with helpers zero and two.
+
+The fixture is one IPv4 loopback listener bound to port zero, with its port
+queried by the existing Windows/POSIX `listener_port` helper, and two local
+connections. Both ends live in the same process: one listener plus four
+connection endpoints consume five descriptor credits. No remote service,
+large payload or stress loop is involved. The normal sequence makes sixteen
+ordinary IO calls: one listen, two connects, two accepts, one send, one
+receive, eight directional closes and one listener close. Address construction
+and the host port query are separate from those calls.
+
+Each operation submits and joins before the next one. The driver deliberately
+overlaps no half-close calls; helpers may execute operations, but the
+shutdown observer linked for the following race tests is unarmed here. The
+combined executable still requires its scratch-directory/ordinary-input and
+wait-object startup, although this function uses no file or directory fixture.
+
+**Actual values and observations.** Call the two accepted server endpoints
+S1 and S2. The function constructs these native aggregates:
+
+| Value | Receive member | Send member |
+|---|---|---|
+| Original server S1 | R1 | S1-send |
+| Original server S2 | R2 | S2-send |
+| `crossed_a` | R1 | S2-send |
+| `crossed_b` | R2 | S1-send |
+
+Let M be the initial input-factory capacity and B the separate initially
+empty `other_factory`.
+
+| Phase | Current assertion |
+|---|---|
+| Acquire the listener and both connection pairs | Each call succeeds; after all five acquisitions the input factory equals M-5. Individual acquisition deltas are not checked. The two returned peer-address values are unused. |
+| One-byte transfer before crossing/closing | First client sends `x` to the first server. Require both returned endpoints to be one and the received byte to equal `x`. It does not observe survival after a half-close. |
+| Close both members of `crossed_a` | Close R1, then S2-send, both successfully. The input factory must still equal M-5: each underlying server socket has lost only its first direction. The count is checked after the pair, not after each close. |
+| Close S1-send from `crossed_b` into B | Require successful close and B == 1. S1's second direction releases that socket and credits the supplied factory. |
+| Close R2 from `crossed_b` into the input factory | Require successful close and input capacity M-4. This releases S2's second direction in the opposite direction order. |
+| Close client endpoints and listener | First client closes receive then send; second client closes send then receive; close listener. All succeed and the two factories' final capacities sum to M. The intended final distribution is input M-1, B == 1; the test does not restore the transferred credit to its caller's factory. |
+
+This is a concrete counter observation, not host resource exhaustion. It does
+not inspect native descriptor liveness after the first crossed pair closes,
+exchange data through the surviving crossed pair, validate peer fields,
+exercise IPv6/acquisition refusal, or intentionally race releases. It has no
+per-case timeout. Blocking connect/accept/receive/join failures rely on outer
+guards or CI limits rather than a bound in this function.
+
+**Ground and overlap.** Active `PRE-1` gives `TcpConnection` ordinary public
+receive/send fields and explicitly imposes no relation between fields merely
+because a struct was constructed. The native implementation's resource
+identity therefore remains attached to each endpoint. In
+`completion/file_adapter.c`, `wf_file_connection_release` tracks completed
+directions by descriptor; the POSIX/Windows host leaf publishes its last-half
+result after shutdown. `ordinary_values.c::wf_close` returns a credit to its
+supplied factory only for the final directional release. The capacity design
+ground is the current resource-exhaustion-floor decision discussed in R05.
+
+| Existing evidence | Relationship |
+|---|---|
+| R03 / `harness.c::test_socket_lifecycle_and_the_pair_two_count` | Checks raw bridge first/last release values, descriptor lifetime, both direction orders and a basic transfer. It does not construct crossed ordinary values or observe actual factory counters. Share suitable setup/guards, not a claim that the bridge-level case covers the ordinary library's accounting. |
+| R05 file-credit case | Covers acquisition/close credit movement for one-owner files. TCP must delay credit until both original directions close, so returning a file credit does not establish this two-direction rule. |
+| `programs/network.rs::crossed_ordinary_tcp_halves_keep_the_other_directions_live` | Compiles WF that constructs crossed values, closes one cross, receives through the surviving second-connection half and sends through the first-connection half. Rust peers observe the bytes and both EOFs while a later checkpoint connection keeps the WF process alive; process teardown cannot supply the EOF evidence. It protects real WF construction/call/close behavior but does not inspect native factory counters. |
+| Following `concurrent_half_close_probe` | Pauses a real shutdown while the other direction closes, then observes descriptor reuse and credits. That deliberate interleaving is absent from this sequential case and retains its own review. |
+| Conformance `systcp-*` cases | Check ordinary types, ownership/effects and accepted call paths. Cases named `*-permit-returned` have accept verdicts, not runtime credit measurements. They do not establish this native counter sequence. |
+
+The existing WF crossed case uses three compiler driver configurations and
+two process configurations per built program. Its `native_ring = true` arm
+allows the shipped default; it does not independently require a native engine
+to have carried the calls. `false` disables the native engine. That matrix
+retains its separate review scope; this item does not add another WF case,
+change its configurations or equate an allowed default with observed routing.
+
+**Selected disposition.** The owner agreed to the following recommendations.
+Implementation remains deferred; this ruling does not change the live tree.
+
+- Keep this focused C ordinary-library integration group in the existing
+  backend test area and common runtime verification stage of local and host
+  CI checks. Its reason to exist is exact per-resource/receiving-factory
+  accounting for crossed halves. Share compatible C construction, port-zero
+  setup, selection/reporting and timeout helpers with the other TCP checks;
+  preserve distinct macro/link needs and do not add another executable.
+- Observe each acquisition and directional release at its existing call
+  site, including both factories where credit can move. Require no credit
+  on a first release, exactly one on the original socket's final release,
+  the correct recipient and the final distribution. Do not rely solely on
+  a total that can hide offsetting errors. Keep the existing two original
+  direction orders and arrange reusable fixture state explicitly; a local
+  receiving factory going out of scope is not a returned caller credit.
+- Replace the pre-close smoke transfer with one-byte exchanges through the
+  two surviving directions after `crossed_a` closes. Reuse the current
+  listener, clients, two server endpoints and byte buffers: the two
+  send/receive pairs require two additional native calls over the current
+  single pair, no extra connection, source compilation or test executable.
+  This ties data observation to the crossed-lifetime property while retaining
+  the exact counter checks. A successful positive transfer of a one-byte
+  request is already complete; no large payload or retry-count experiment is
+  needed. Keep the existing WF case for the compiler/ordinary-call boundary
+  and its process-alive EOF observation.
+- Apply the shared TCP process deadline, phase reporting and cleanup to the
+  complete case. Keep useful host/helper coverage in the common runtime
+  configuration organization, without calling this sequential driver a
+  close-race test or using its helper settings as proof of native routing.
+  The next deliberate concurrency case and the overall sanitizer/configuration
+  review decide their own required observations.
+
+No implementation, test retirement, specification revision, construction,
+execution or timing measurement accompanies this record.
+
+### B01 — C runtime publication, wake and lifetime
+
+**Owner ruling.** Agreed, including the common runner direction above;
+implementation remains deferred. No exact live-tree wording was approved.
+
+**Shared boundary and construction.** These eight existing test functions
+check native implementation obligations. They use C assertions and direct
+runtime calls, not Rust `#[test]`, WF compilation or compiler-emitted ABI
+evidence. Seven live in `compiler/src/backend/completion/harness.c`; the
+eighth is `compiler/src/backend/ordinary_values_probe.c::concurrent_half_close_probe`.
+They are grouped for review, not proposed as a new executable.
+
+The completion harness is built from eleven C translation units:
+`sched/{core,prim_host,entry}.c` and
+`completion/{runtime,wait_host,file_adapter,file_posix,bridge,linux_io_uring,native_contract,harness}.c`.
+Compiler `completion-test` uses C11, `-O2 -g`, strict warnings and pthreads,
+with the directory/poll and harness observation macros in `compiler/Makefile`.
+It runs the whole harness with helpers 0, 1 and 4, and again with no-cache
+policy and helpers 1. Root `make check` and compiler `static` reach this
+target; Linux/macOS gate and Linux IO-host CI call it. Linux can additionally
+require the native ring. ASan/UBSan and TSan rebuild this harness with the
+same hooks; TSan runs helpers 0, 1 and 4. These are instrumented executions,
+not WF tests. A required-ring invocation does not mean each pure state test
+uses the ring.
+
+The ordinary-values executable retains R04-R07's eleven-source POSIX or
+twelve-source Windows construction, real host callers and helpers 0/2. Its
+`WF_COMPLETION_SHUTDOWN` observer differs from the completion harness's
+hooks. No current ordinary-values sanitizer caller was found; the other
+harness's sanitizer results do not cover this executable.
+
+Both need a C toolchain and executable scratch storage. Additional resources
+are listed per row. Counts below describe source-defined work, not newly
+measured durations or proof that an observed schedule is exhaustive.
+
+| Row and function in `harness.c` unless qualified | Actual work and failure observation | Selected disposition |
+|---|---|---|
+| B01a `test_exactly_one_completion_per_submission_under_race` | Create an eight-byte file; start 12 pthread callers together. Each submits/joins 64 one-byte positioned reads through its own stack records: 768 requests per invocation. Check every value/error/byte and the aggregate publication delta of 768; join all callers. Detects observed lost/extra publications, result mixups and hangs, not every possible schedule. | Keep the real concurrent bridge test and useful route/helper/sanitizer variants. Do not replace it with a single-thread state test or retire rounds solely from the number 768. Reassess its worker/round matrix with the common configuration review, with a stated failure mechanism for retained dimensions. |
+| B01b `test_a_completion_publishes_results` | Two direct, same-thread record publications with no registered record waiter. The first checks PENDING, then DONE and value 7; the second checks publication of a close record. No file or extra caller thread. | Keep a small record-publication unit check in the common C runner. Do not describe the previously stored value surviving a same-thread call as cross-thread visibility evidence or give it its own helper matrix/executable. |
+| B01c `test_unified_wake_epoch` | On a fresh local runtime, notify with no sleeper: epoch advances, no host wake. Parking against the old epoch returns immediately. Then arrange one real sleeping pthread, notify compute and require a wake plus exact callback/statistic deltas. | Keep the distinct no-sleeper, changed-epoch and one-sleeper branches as a wake-protocol unit group. It does not use file helpers or native IO routing. |
+| B01d `test_equal_epoch_notification_rearms_before_resleep` | With one real sleeper, deliver a delayed notification's reset/broadcast tail without advancing its captured epoch. A wait-return hook and mutex handshake observe that it really wakes and rearms before sleeping again. A subsequent notification must wake it and leave no parked thread. | Keep this controlled lost-wakeup regression. It observes an interleaving absent from ordinary one-wake success; do not replace the handshake with sleeps or bulk repetition. |
+| B01e `test_one_epoch_wakes_every_announced_thread` | Arrange two real sleepers at one epoch. One compute notification must release both, while the host callback and wake-signal counters advance once. | Keep the two-sleeper/broadcast observation alongside the one-sleeper case. One cannot establish the other's branch; two threads are sufficient for this stated distinction. |
+| B01f `test_condition_notifications_coalesce_without_suppressing_external_wakes` | Same-thread scripted announcements, with no actual sleeper: three bursts of 1,024 notifications. Check condition-signal coalescing, rearming for a new announcement, cancellation/no-waiter handling, and an external callback for every notification while announced. | Keep all these state transitions as unit cases, with a small explicit sequence containing repeated notifications. The current Boolean rearm/announcement branches give no separate boundary meaning to 1,024; this is not a concurrent stress test. Keep real sleeper delivery in B01c-e. |
+| B01g `test_shutdown_refuses_every_later_entry` | Real pipe, scripted clock, one primer read and 20 queued reads grow four helpers; feed/drain the reads before shutdown. After shutdown check zero/unused query results, `EINVAL` for changing the cap and for a second shutdown. It tests post-shutdown guards and teardown of a previously populated pool, not cancellation with pending IO or concurrent new admission. | Preserve all six post-shutdown observations, but append them to `test_pool_grows_when_operations_wait` after its existing shutdown, retaining its four-helper precondition. That case already uses the same pipe, cap, scripted clock and 21-read growth/drain fixture. Remove this duplicate fixture invocation rather than the teardown coverage; the broader helper-policy review remains B02. |
+| B01h `ordinary_values_probe.c::concurrent_half_close_probe` | Real port-zero loopback sockets plus one auxiliary native caller. Pause one direction immediately before actual host `shutdown`; complete the other; resume the paused call. Check credit timing/recipient, then require the next connection to reuse the released descriptor slot, transfer one byte each way and close everything with balanced credits. Run both paused directions. | Keep this deliberate lifetime race and same-slot reuse observation in the ordinary-library C integration group; sequential crossed values and raw bridge release counts do not replace it. Add a common bounded process/phase guard and make the same-slot fixture premise explicit and controlled. Details below. |
+
+**TCP schedule and its limits.** B01h first acquires a listener and one
+connected pair (three credits). The extra caller selects receive or send and
+requests a 1 MiB thread stack. The shutdown hook announces that it is paused
+under a mutex and waits for an explicit resume predicate; the main caller
+waits for that announcement before closing the other direction. The actual
+host operation can run on a helper or the joining caller. It is the host
+shutdown that is paused, not necessarily the auxiliary thread itself.
+
+While it is paused, the opposite close succeeds without returning a credit
+to the input factory. After resumption, the original call must succeed and
+return exactly one credit to its initially empty, separate factory. That
+factory opens the replacement connection and falls to zero. The test asserts
+that the replacement's runtime descriptor equals the released descriptor:
+an OS descriptor on POSIX, a CRT descriptor resolving to a Winsock handle on
+Windows. Both replacement directions transfer `q`; their closes, the old
+client's closes and the listener close restore the input factory's initial
+capacity. Normal execution uses eighteen ordinary IO calls per direction
+case, five acquisitions in total and at most four simultaneously live socket
+descriptors. Two direction choices across helpers 0/2 give four controlled
+interleavings per ordinary-values target, without a repeated stress loop.
+
+The thread primitive is detached on POSIX and closes its thread handle on
+Windows. The `finished` predicate and wait mutex publish the callback's last
+use of the stack argument; the lack of a pthread join is not itself evidence
+of a lifetime defect. The important gaps are the unbounded pause/finish waits
+and blocking socket calls, no direct native-socket liveness observation at
+the paused checkpoint, and a same-slot assertion without explicit fixture
+control over intervening descriptor allocation. Preserve the equality
+observation: dropping it would stop testing reset of that descriptor's
+half-close state. Establish a small host-specific reuse fixture or otherwise
+justify and control the allocation premise; do not add an unbounded
+open-until-reused loop. Observe native socket validity and the existing
+factory balances at the paused checkpoint before releasing the hook.
+
+The implementation ground is concrete: `file_posix.c` and `file_windows.c`
+perform shutdown before `wf_file_connection_release`; the latter resets its
+per-descriptor state before final close. Publishing a direction's release
+before its last host use would permit the other direction to close/recycle
+the resource too early. Fresh bidirectional IO and balanced final closes
+also check that the reused slot starts with fresh half-close state. R03's
+sequential bridge lifetime assertions, R07's crossed identity/accounting
+and compiled WF's process-alive EOF observation retain their separate value.
+
+**Selected common home and stage.** Keep these
+as native runtime implementation tests under the existing backend owners,
+executed in the local runtime correctness stage and applicable host CI.
+They do not belong in conformance or programs merely because some use real
+sockets. Share compatible construction and report logical subcases; add no
+WF wrapper or per-row executable. Run local-runtime wake/state cases once
+per relevant host/instrumentation configuration, not again for every helper,
+ring and no-cache setting they do not inspect. Keep genuine concurrent
+bridge/helper/host distinctions and fresh assertions; a changed macro/link
+configuration is still a separate construction input.
+
+The completion harness already has a single 300-second process alarm that
+names the current test, plus five-second waits in its wake probes. This is
+not a reset-on-progress watchdog or a separate bound for every case. Reuse
+the common bounded process/phase reporting policy for both harnesses and
+preserve deterministic handshakes. Include real threaded cases, including
+the ordinary shutdown observer, in the appropriate shared sanitizer scope
+when B04 settles its wiring; TSan does not establish absence of logical
+lost-wakeup or premature-close errors, so keep the explicit assertions.
+
+The adjacent harness timing loop, remaining helper/join/adapter cases and
+platform-specific wake implementations are outside this batch. No tests,
+builds, timing runs, specification changes or new DCR/completion review
+accompany this discussion record. The owner subsequently accepted the batch
+and the common-runner direction; no implementation is claimed.
+
+### B02 — Completion adapter, bridge and progress behavior
+
+**Shared inputs, construction and callers.** All twenty-two functions below
+are in `compiler/src/backend/completion/harness.c`, using its existing C
+assertion runner, the eleven-source build and hooks described in B01. No Rust
+test executable, WF source or compiler invocation is involved. The existing
+`completion-test`, compiler `static`, root `make check`, Linux/macOS gate and
+Linux IO-host callers currently repeat the whole executable across helper,
+no-cache and some required-ring configurations. ASan/UBSan and TSan are
+separate instrumented builds. This POSIX harness is not itself the Windows
+test runner; B04 owns equivalent actual-host evidence and final variant wiring.
+
+The sources use scratch files/directories/FIFOs, pipes, local sockets and
+native threads. A scripted clock chooses measured-wait classifications; these
+are deterministic policy inputs, not measurements of this machine's speed.
+Local adapters created by a case have their own explicit helper bounds, while
+the bridge uses its process-wide initialized configuration. Keep that
+distinction when consolidating invocations.
+
+**Recommendations below are pending the owner's ruling.** Function names in
+the table omit the common `test_` prefix. Counts describe one invocation of
+the present source, not newly measured execution costs.
+
+| Row and current functions | Actual operations and observations | Recommendation |
+|---|---|---|
+| B02a `linux_independent_operations_use_available_target`; `bridge_independent_positioned_reads` | The Linux case creates an `xy` file, submits two one-byte reads and checks bytes plus exact native/fallback submission deltas; its native arm also expects no initialized target helpers. The second creates a different file, submits two four-byte reads at different offsets and joins in reverse order; it additionally refuses an offset above `INT64_MAX`, requiring `EINVAL`, one publication, no inline execution and an unchanged buffer. Its success-route checks use cumulative `>= 2` counters. | Merge the two-read fixtures into one bridge read group. Retain result/offset association, reverse join, the oversized-offset refusal and exact per-case route observations. Replace cumulative counters with deltas tied to the operations being claimed. Reverse join is not proof of reverse completion; R01 retains its deliberately arranged completion order. Keep native startup/helper expectations at an explicit fresh-process phase rather than making them depend on unrelated tests having initialized the adapter or not. |
+| B02b `single_thread_file_progress`; `bridge_open_status_and_close_are_typed_operations`; `checked_open_rejects_and_closes_nonregular_descriptors`; `open_failure_classes_are_typed_outcomes` | Direct zero-helper adapter: queue an open and invalid close together, observe queue/progress counts and `EBADF`, then positioned write/read, status and close. Bridge: open/status/close and a second close returning `EBADF`. Kind/failure fixtures add FIFO-as-regular, directory-as-regular, missing name, regular-as-directory and a successful directory control; wrong-kind results must already have closed their returned native descriptor. Status checks currently establish the returned byte count, not decoded size/kind. | Share a controlled fixture and operation/result helpers; consolidate kind/failure expectations as named rows, keeping exact error/discriminator and descriptor-lifetime assertions. Retain the distinct direct-adapter and bridge entry obligations rather than counting them as two language rules. Inspect stable status fields such as the known file size and kind, not raw `struct stat` padding. No standalone executable or duplicate WF case is needed. |
+| B02c `submitted_open_resolves_the_submitters_bytes`; `a_name_no_pool_record_could_hold_takes_the_completion_path`; `open_results_reach_every_independent_owner` | The first observes the caller's path pointer in a delayed direct-adapter request, then two bridge opens resolving separate A/B marker files, plus a directory marker. It also creates a second directory that is never opened. The long-path case builds up to five 240-byte components, submits a 1,211-byte relative file name and compares the result with the same host's ordinary open, including host refusal; its 1,024-byte threshold names a retired buffer. The owner case starts six threads opening the same empty file; half yield 64 times before joining, with no actual observation that completion preceded the join. | Use one marked-name/independent-owner group with distinct file identities and controlled completion observations. Preserve the delayed borrowed-pointer obligation, directory resolution and the long path reaching the engine unchanged; remove the unused second directory and historical-buffer naming as an active contract. Two independent callers with different marker files supply the identity distinction better than six identical opens. Arrange/observe an already-completed record before its join; use B02g for the real waiting path. Do not treat yielding as a scheduling guarantee or mutate loaned path bytes. |
+| B02d `more_operations_outstanding_than_the_old_capacity`; `a_submitted_operation_is_kicked_before_it_waits` | Submit 96 positioned reads of an eight-byte file before joining any, then check each result. This exceeds the current 64-entry native submission depth, although operations may finish during submission: it does not establish 96 simultaneously pending kernel operations. The doorbell case opens an eight-byte file, makes one read then a two-read batch, and on the native route checks no submit-time enter, one enter on the first join and no extra enter on the second. | Keep admission/progress beyond the current engine batch boundary and the one-/two-request enter-count observations. Name current queue/engine behavior, not a deleted pool limit; establish the pressure/progress condition instead of inferring it solely from the number 96. Scope doorbell assertions to an observed/required native route, with shared fixtures and fresh counter deltas. Its non-native branch merely repeats file success already covered elsewhere. These operation counts protect a mechanism and are not an exploratory timing benchmark. |
+| B02e `uncached_reads_are_target_policy_only` | Four opens on an eight-byte regular file/missing name: checked success, unchecked success, wrong-kind refusal and absent-name failure; one read verifies the bytes. Check relevant open flags and the aggregate number of forwarded no-cache host hints, two when enabled and zero otherwise. | Keep one cache-policy group selected with the setting absent/present in fresh processes; do not repeat the entire harness to exercise it. Share the normal open/refusal assertions from B02b and inspect hint deltas at each existing call so an incorrect first/second distribution cannot hide in the total. Preserve flags, bytes and failure behavior; this is policy correctness, not proof that caching or IO speed changed. |
+| B02f `process_wide_target_helper_budget`; `pool_stays_empty_when_operations_do_not_wait`; `pool_grows_when_operations_wait`; `helper_growth_stops_at_the_declared_bound`; `helper_count_above_its_bound_is_refused` | Process-wide count check against the selected environment. Separately, a fresh local adapter performs 32 serialized reads with a scripted short duration and must retain zero helpers, change UNMEASURED to SHORT and allow caller execution. Two blocked-pipe fixtures each perform one primer plus 20 reads: grow to four, or request a cap of eight under a bound of two and stop at two. Initial count two under bound one returns `EINVAL` without starting that pool. | Keep these different policy branches in one group and fold the process-wide count into the relevant configuration observation. The harness pins an omitted helper setting to one, so its default-count branch is not evidence for shipped default policy; R02 supplies that evidence. Keep a queue genuinely deep enough to test growth/capping. The 32-read sequence crosses the current one-in-sixteen sampling interval; relate its count to that purpose rather than calling it generic stress. Check actual read length/byte as well as the existing error/terminal state. Attach B01g's six post-shutdown assertions to the four-helper fixture. Do not rerun these locally configured cases under every unrelated global helper setting. |
+| B02g `a_helper_completion_wakes_a_waiting_join`; `an_io_join_waits_on_the_current_stack` | A real empty-pipe read gets a byte from a writer that sleeps 20 ms; check byte, result and one publication, but the fallback count is cumulative. A separate publisher sleeps 20 ms then completes a synthetic record with value 11; the joining thread must see the result, one publication and an increased wait-announcement count. | Keep the real bridge/pipe integration and the direct publication-to-parked-join regression as subcases. Replace sleeps with bounded handshakes observing the needed engine/record/wait state, and use local counter deltas. A zero-helper join may execute the host read on its own thread: do not wait for a helper-only parking event on that route. A delayed thread alone does not establish which execution/park path ran. |
+| B02h `readiness_refusal_is_not_a_terminal_outcome`; `directory_progress_is_internal` | A direct adapter reads an empty nonblocking pipe; a writer sleeps 20 ms then supplies `r`; require success and one publication, but no assertion observes an actual `EAGAIN` or poll. The directory case deliberately scripts `EINTR`, then `EAGAIN`, then one byte; a prefilled pipe supplies readiness. It asserts exactly three host attempts, one poll on that descriptor with `POLLIN` and timeout -1, the byte, and Darwin's changed/Linux's unchanged position cell. | Keep shared retry/progress checks with operation-specific observations. Gate the pipe writer on the observed readiness-wait hook so the refused read cannot be skipped by scheduling; retain a real poll and exact descriptor/events. Preserve the directory script's distinct ABI/position behavior. Enable scripts only for their own case and restore forwarding afterward; R06's real directory records/cursors remain separate integration evidence. |
+| B02i `a_peer_bound_request_is_left_to_a_helper` | Start with no helpers and an unmeasured local adapter bounded at two. Submit three accepts on a port-zero listener: two helpers block, one accept stays queued; the caller's progress must leave it there. Connect three peers and check all accepts complete. A second zero-cap adapter, with a peer connected first, must execute accept through caller progress. | Keep this controlled starvation/progress regression and share existing TCP setup/deadlines. It tests eager growth for a peer-bound kind, refusal to block the caller when helpers own that work, and caller progress when zero helpers are explicitly selected. It is not a throughput workload. It directly exercises accept; do not claim it separately observes receive/connect/send execution merely because the classifier lists those kinds. |
+
+**Dispositions and scope.** These are native implementation obligations in
+the existing completion owner, running in the common runtime correctness
+stage locally and on the appropriate real hosts. Apply the selected main
+runner organization, with dependency-correct reuse and only the necessary
+fresh-process configuration selections. B02b/c/f/g/h/i can share their
+respective setup/helpers without merging distinct assertions into a vague
+smoke result. The marker, status, per-operation counters and controlled wait
+observations strengthen existing fixtures; they add no WF compilations.
+
+Most functions already share a binary. Reducing function count alone is not
+the purpose: remove duplicate filesystem/thread setup and irrelevant repeated
+configurations while preserving named failures. A completed operation may
+legitimately be observed before the join; a pending one may run on the joining
+caller, a helper or a native engine. Each test must establish the state/path
+its assertion requires. The three 20 ms sleeps and the 64 yields do not do
+that; the existing B01 wait hook and B02 directory script illustrate the
+kind of explicit observation to retain. No proposed timeout chooses a WF
+acceptance verdict, and no recommendation lowers round counts on speed alone.
+
+The native contract table self-check (`test_native_contract_inventory`) and
+its actual consumers are assigned to B04. The adjacent
+`benchmark_record_roundtrip` performs 100,000 same-thread publications and
+prints nanoseconds per operation with no regression decision; B06 will rule
+on its automatic versus explicit measurement home. R03 already owns the
+remaining socket lifecycle function, and B01 owns the seven publication,
+wake and shutdown functions. Together these assignments account for all
+31 test functions and the timing function in the current completion harness.
+
+Only the B01/common-runner rulings and this pending B02 proposal are added in
+this discussion revision. No C code, tests, callers, specification, amendment
+text or live-tree decision changes; no build, execution, timing campaign or
+new completion/DCR checkpoint is claimed.
+
+## Affected material and evidence
+
+- Specification identity: `compiler/build.rs`, `compiler/src/spec.rs`,
+  `compiler/src/bin/spec.rs`, and the title/header of
+  `spec/kernel-spec.md`. Current hash generation and recomputation share
+  the same SHA-256 implementation; comments claiming independent recorded
+  `shasum` evidence are stale.
+- Parser construction: `compiler/src/bin/grammar_tables/`,
+  `compiler/src/syntax/grammar.rs`, `compiler/src/syntax/grammar/generated.rs`
+  and its parser/finalizer/diagnostic consumers.
+- Invocation and coverage: Cargo/Make/CI callers,
+  `tests/conformance/runner.py`, its tests, and the manifest's
+  `whitefoot-spec` coverage annotations. Reassign honest coverage claims;
+  do not leave a deleted checker named as evidence or invent a check of
+  semantic properties/PR content the replacement does not perform.
+- Update current guidance and both inventory languages to the resulting
+  system; retain dated measurements with their original revision boundaries.
+
+No implementation, test retirement, specification edit or new performance
+measurement accompanies this record.

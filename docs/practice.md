@@ -267,3 +267,10 @@ substantive: every source proof is checked in its current control-flow context
 and erased before lowering, every partial operation is lowered only after
 machine proof of its domain, and optional optimization facts may not change
 acceptance, cleanup, or output.
+
+Keep current compiler witnesses and independent oracles in that inventory.
+Completed source-mining or model-trajectory instruments can retain explicit
+reproduction tests outside it, with their retired purpose stated beside the
+instrument. Automatic CI checks current correctness and performance regressions.
+Exploratory timing without a regression verdict is a requested experiment;
+its repetitions and cache preparation do not belong in every gate.

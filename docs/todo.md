@@ -61,8 +61,12 @@ of them is a decision. Remove an item when its fix and test land.
   [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs).
   A non-closed state with explicit relations takes the complete closure;
   already-closed, contradictory, and empty-relation states have fast paths.
-  The cost on real programs needs stage attribution before changing this
-  path. A narrower projection must preserve every surviving consequence,
+  The [build/test investigation](../research/investigations/test-economy/build-and-test.md#a-compiler-hotspot-not-native-execution)
+  measures 58.29 s for one optimized read-heavy LLVM-only compilation; a
+  three-second semantic-checking sample puts 61.2% of leaf samples in
+  `close_with_excluded_term`. Whole-run attribution and a controlled algorithm
+  comparison remain necessary. A narrower projection must preserve every
+  surviving consequence,
   including implicit type edges and disequality strengthening; filtering
   explicit edges alone is insufficient. No speedup is established.
 - **Connection-level concurrency is not supplied by ordinary source order.**

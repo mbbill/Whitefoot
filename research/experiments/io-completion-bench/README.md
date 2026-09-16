@@ -348,7 +348,8 @@ setup, `io_uring_enter` and the synchronous send result with a deterministic
 fixture: the buffer-loan queue, the receive re-arm after exhaustion and the
 completion handling those traces drive are the ones the measured binary runs.
 It therefore decides a verdict about the reference without a kernel that
-supports io_uring and without a network, and it is built for both send
+supports io_uring and without a network. It still requires Linux headers and
+runs through `programs-check` in the Linux gate. It is built for both send
 policies, because an inline send and a ring send retire a queue prefix along
 different paths.
 
@@ -480,7 +481,8 @@ runner. Only paths and the host's own capabilities differ -- `ROOT`, `OUT`,
 `CLANG` and `CARGO_TARGET_DIR` name the paths, and `uname -s` decides whether
 the io_uring lines are in the plan. The `io-bench` workflow's
 `bench-linux-read` and `bench-macos-read` jobs run exactly those bytes; that
-workflow runs on demand and when the runtime or this bundle changes. Those
+workflow runs on demand. Benchmark-program compilation and native host
+correctness remain automatic; full storage timing matrices are experiments. Those
 Linux, macOS and Windows tables report performance; none selects acceptance
 by a speed ratio.
 

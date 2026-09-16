@@ -89,7 +89,9 @@ pub fn compile_programs(names: &[&str]) -> String {
         .zip(&sources)
         .map(|(name, source)| SourceInput::new(name, source))
         .collect::<Vec<_>>();
-    compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
+    crate::support::timed("whitefoot-compile", || {
+        compile(&inputs, CompilerLimits::default()).expect("program corpus source must compile")
+    })
 }
 
 /// [`compile_programs_with_overlap`] returning a compilation failure to the
@@ -105,7 +107,9 @@ pub fn try_compile_programs_with_overlap(names: &[&str]) -> Result<String, Compi
         .zip(&sources)
         .map(|(name, source)| SourceInput::new(name, source))
         .collect::<Vec<_>>();
-    compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::On)
+    crate::support::timed("whitefoot-compile-par", || {
+        compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::On)
+    })
 }
 
 /// Compiles one corpus program with the [PAR-1 candidate] overlap lowering
@@ -204,10 +208,14 @@ pub fn compile_and_run(llvm: &str) -> Output {
     let module = directory.join("program.ll");
     let executable = directory.join("program");
     std::fs::write(&module, llvm).expect("write integration-test module");
-    link_module(&module, &executable, llvm, &directory);
-    let output = Command::new(&executable)
-        .output()
-        .expect("run integration-test executable");
+    crate::support::timed("native-build", || {
+        link_module(&module, &executable, llvm, &directory);
+    });
+    let output = crate::support::timed("native-run", || {
+        Command::new(&executable)
+            .output()
+            .expect("run integration-test executable")
+    });
     std::fs::remove_file(&executable).expect("remove integration-test executable");
     std::fs::remove_file(&module).expect("remove integration-test module");
     std::fs::remove_dir(&directory).expect("remove integration-test directory");
@@ -308,7 +316,9 @@ pub fn build_program(llvm: &str) -> CompiledProgram {
     let module = directory.join("program.ll");
     let executable = directory.join("program");
     std::fs::write(&module, llvm).expect("write program module");
-    link_module(&module, &executable, llvm, &directory);
+    crate::support::timed("native-build", || {
+        link_module(&module, &executable, llvm, &directory);
+    });
     CompiledProgram {
         directory,
         executable,
@@ -322,11 +332,13 @@ impl CompiledProgram {
     /// lossless host-string route and a case must be able to supply an
     /// argument that is not valid UTF-8.
     pub fn run(&self, working_directory: &Path, arguments: &[&[u8]]) -> Output {
-        Command::new(&self.executable)
-            .current_dir(working_directory)
-            .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
-            .output()
-            .expect("run compiled program")
+        crate::support::timed("native-run", || {
+            Command::new(&self.executable)
+                .current_dir(working_directory)
+                .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
+                .output()
+                .expect("run compiled program")
+        })
     }
 
     /// Runs the program with the runtime's worker setting named explicitly.
@@ -363,7 +375,9 @@ impl CompiledProgram {
             Some(count) => command.env("WF_WORKERS", count),
             None => command.env_remove("WF_WORKERS"),
         };
-        command.output().expect("run compiled program")
+        crate::support::timed("native-run", || {
+            command.output().expect("run compiled program")
+        })
     }
 
     /// Starts the program on one runtime route with raw invocation arguments,

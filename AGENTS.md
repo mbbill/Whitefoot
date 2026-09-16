@@ -166,6 +166,9 @@ What the four rules mean exactly:
   case ordinary Cargo runs mark ignored. A file retained as a deferred or
   historical artifact that cannot run against the current toolchain is
   evidence, not a test target.
+  Completed research instruments may retain an explicit reproduction-test
+  target outside the active gate; document their retired purpose and preserve
+  any independent oracle still used by current compiler work.
 - **Conformance evidence** is `tests/conformance` case source and manifest
   content, its runner and adapter, and any collection or invocation wiring that
   can change which cases run or how their results are read.
@@ -267,6 +270,16 @@ only reports the same class of mistake earlier.
   expectations.
 
 ## Compiler rules
+
+Automatic CI checks current correctness and performance regressions;
+exploratory timing runs only when requested.
+
+Use the guarded verification targets in README, or wrap other local heavy
+builds, suites and benchmarks with `perl .github/run-check.pl <label> <command> ...`,
+including commands from other worktrees. Inspect an existing owner's PID
+instead of starting another heavy command. Separate build time from test/program
+execution, investigate a stage that exceeds its observed cost, and preserve
+the full gate before merge.
 
 The compiler's implementation rules are its design decisions and live in
 `design/compiler`, each with its reason. Before changing the compiler, read

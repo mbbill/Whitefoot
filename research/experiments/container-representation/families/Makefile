@@ -11,6 +11,23 @@ include ../native.mk
 
 .PHONY: check check-interface measure measure-interface reproduce-runtime-gap reproduce-region-gap clean
 
+# Rebuild source programs when their source, compiler or invocation changes;
+# execute every source/mode pair on every check. The old shell loop rebuilt
+# all 45 executables even when none of those inputs had changed.
+PROGRAM_SOURCES := hashmap owning-map owning-growth owning-behavior ordered priority \
+                   priority-borrowed priority-behavior priority-behavior-direct packed-page \
+                   growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view
+PROGRAM_MODES := default par no-overlap
+PROGRAMS := $(foreach mode,$(PROGRAM_MODES),$(addprefix $(BUILD)/,$(addsuffix -$(mode)$(EXE),$(PROGRAM_SOURCES))))
+
+define source_mode
+$(BUILD)/%-$(1)$(EXE): %.wf $(WHITEFOOTC) Makefile | $(BUILD)
+	$$(WHITEFOOTC) $(2) $$< -o $$@
+endef
+$(eval $(call source_mode,default,))
+$(eval $(call source_mode,par,--par))
+$(eval $(call source_mode,no-overlap,--no-overlap))
+
 $(BUILD)/owning-growth-%.raw.ll: owning-growth.wf $(WHITEFOOTC) | $(BUILD)
 	@set -eu; case '$*' in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; *) exit 1 ;; esac; \
 	  $(WHITEFOOTC) $$flags --emit-llvm $< -o $@
@@ -257,16 +274,15 @@ $(BUILD)/growth.opt.ll: $(BUILD)/growth.instrumented.ll $(BUILD)/growth-abi$(EXE
 $(BUILD)/growth-costs$(EXE): growth-costs.c $(BUILD)/growth.opt.ll $(NATIVE_OBJECTS)
 	$(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module $^ $(NATIVE_LINK_FLAGS) -o $@
 
-check: check-interface check-owning-growth check-owning-behavior check-owning-costs check-behavior-costs $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
+check: $(PROGRAMS) check-interface check-owning-growth check-owning-behavior check-owning-costs check-behavior-costs $(BUILD)/priority-costs$(EXE) $(BUILD)/priority-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-costs$(EXE) $(BUILD)/priority-borrowed-boundary-costs$(EXE) \
        $(BUILD)/priority-borrowed-retained-costs$(EXE) \
        $(BUILD)/owning-map-observer$(EXE) $(BUILD)/growth-costs$(EXE)
 	rustfmt --edition 2024 --check abi.rs growth-abi.rs priority-interface.rs ../linkage.rs
 	@set -eu; \
-	  for source in hashmap owning-map owning-growth owning-behavior ordered priority priority-borrowed priority-behavior priority-behavior-direct packed-page growth boxed-migration ordered-runtime-gap boxed-helper-gap shared-option-view; do \
-	    for mode in default par no-overlap; do \
-	      case "$$mode" in default) flags= ;; par) flags=--par ;; no-overlap) flags=--no-overlap ;; esac; \
-	      "$(WHITEFOOTC)" $$flags "$$source.wf" -o "$(BUILD)/$$source-$$mode$(EXE)"; \
+	  echo 'container families: execute all 45 source/mode pairs'; \
+	  for source in $(PROGRAM_SOURCES); do \
+	    for mode in $(PROGRAM_MODES); do \
 	      "$(BUILD)/$$source-$$mode$(EXE)"; \
 	    done; \
 	  done

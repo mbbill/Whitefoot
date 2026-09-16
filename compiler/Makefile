@@ -1,4 +1,5 @@
 CARGO := cargo
+CHECK_RUN := perl $(abspath ../.github/run-check.pl)
 CC ?= cc
 NM ?= nm
 WINDOWS_CC ?= x86_64-w64-mingw32-gcc
@@ -34,13 +35,11 @@ STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 # the process, its exit status and its record channel are all unchanged.
 NO_CORE_DUMPS := ulimit -c 0;
 
-# The library suite, split by cost class rather than by subject. The modules
-# named here are the ones whose cases link a program and then run it tens or
-# hundreds of times to sample a schedule; everything else analyses or emits and
-# is over in milliseconds. The split exists so the two halves can be scheduled
-# side by side — by a CI job, or by a maintainer who wants the fast half back
-# quickly — and `test` below still runs both, with `test-partition` proving
-# that between them they run the whole suite.
+# The modules below repeatedly execute programs to sample a schedule. The
+# remaining library tests include native links and substantial proof analysis
+# of real programs; their count does not predict their cost. CI partitions the
+# two groups across separate hosts. Local `test` runs both, and `test-partition`
+# proves that their union is exactly the library suite.
 SAMPLING_MODULES := \
 	backend::tests::exhaustion:: \
 	backend::tests::loop_split:: \
@@ -139,11 +138,14 @@ COMPLETION_CORE_READ_DEFINES := \
 	-DWF_COMPLETION_PREAD=wf_completion_test_pread
 
 check:
+	@$(CHECK_RUN) compiler/check $(MAKE) --no-print-directory _check
+
+_check:
 	@mkdir -p "$(STAGE_DIR)"
 	@: > "$(STAGE_DIR)/compiler-summary"
 	@for stage in $(COMPILER_STAGES); do \
 		started=$$(date +%s); \
-		$(MAKE) --no-print-directory "$$stage" || exit 1; \
+		$(CHECK_RUN) "compiler/$$stage" $(MAKE) --no-print-directory "$$stage" || exit 1; \
 		printf '  compiler/%-18s %6d s\n' "$$stage" \
 			"$$(( $$(date +%s) - started ))" >> "$(STAGE_DIR)/compiler-summary"; \
 	done
@@ -152,16 +154,26 @@ check:
 	@cat "$(STAGE_DIR)/compiler-summary"
 	@echo "== WHITEFOOT COMPILER GATE GREEN =="
 
-# Everything that reads the tree without running a compiled program. One CI job
-# runs exactly this while the test jobs run beside it.
-static: format lint docs spec completion-test
+# Formatting, lint, documentation, specification and native runtime harnesses.
+# This historical target name does not mean that no executable runs.
+static:
+	@$(CHECK_RUN) compiler/static $(MAKE) --no-print-directory _static
+
+_static: format lint docs spec completion-test
 	@echo "== WHITEFOOT COMPILER STATIC GATE GREEN =="
+
+# These targets construct artifacts without running the Rust test cases.
+build:
+	$(CHECK_RUN) compiler/build $(CARGO) build --profile gate --bin whitefootc --locked --offline
+
+test-build:
+	$(CHECK_RUN) compiler/test-build $(CARGO) test --profile gate --all-targets --no-run --locked --offline
 
 format:
 	$(CARGO) fmt --all -- --check
 
 lint:
-	$(CARGO) clippy --all-targets --locked --offline -- -D warnings
+	$(CHECK_RUN) compiler/lint $(CARGO) clippy --all-targets --locked --offline -- -D warnings
 
 # The gate profile (Cargo.toml [profile.gate]) is release codegen with debug
 # assertions and overflow checks retained: the suite's owning tests analyze
@@ -171,16 +183,18 @@ lint:
 #
 # `test` is the whole suite, exactly as `--all-targets` was: the four targets
 # below partition it and `test-partition` is what proves they do.
-test: test-partition test-unit test-sampling test-corpus
+test:
+	@$(CHECK_RUN) compiler/test $(MAKE) --no-print-directory _test
 
-# The fast half of the library suite: everything the sampling modules above
-# are not.
+_test: test-partition test-unit test-sampling test-corpus
+
+# The library cases outside the schedule-sampling modules above.
 test-unit:
-	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_SKIPS)
+	$(NO_CORE_DUMPS) $(CHECK_RUN) compiler/test-unit $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_SKIPS)
 
 # The sampling half: the cases that link a program and run it many times.
 test-sampling:
-	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_MODULES)
+	$(NO_CORE_DUMPS) $(CHECK_RUN) compiler/test-sampling $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_MODULES)
 
 # Everything outside the library: the integration targets, which compile and
 # link real programs, and the binaries' own unit tests. The binaries are here
@@ -188,7 +202,7 @@ test-sampling:
 # costs more than running their cases does, and this is the job with the slack
 # for it.
 test-corpus:
-	$(NO_CORE_DUMPS) $(CARGO) test --profile gate --bins $(patsubst %,--test %,$(INTEGRATION_TARGETS)) --locked --offline
+	$(NO_CORE_DUMPS) $(CHECK_RUN) compiler/test-corpus $(CARGO) test --profile gate --bins $(patsubst %,--test %,$(INTEGRATION_TARGETS)) --locked --offline
 
 # The split above is a scheduling decision, and a scheduling decision that
 # quietly drops cases is the worst kind of green. This proves it does not:
@@ -200,6 +214,9 @@ test-corpus:
 # SAMPLING_MODULES must also match at least one case on its own. Listing costs
 # a `--no-run` build and no test time.
 test-partition:
+	@$(CHECK_RUN) compiler/test-partition $(MAKE) --no-print-directory _test-partition
+
+_test-partition:
 	@whole=$$($(CARGO) test --profile gate --lib --locked --offline -- --list \
 		| grep -c ': test$$'); \
 	fast=$$($(CARGO) test --profile gate --lib --locked --offline -- --list $(SAMPLING_SKIPS) \
@@ -235,7 +252,7 @@ docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --no-deps --locked --offline
 
 spec:
-	$(CARGO) run --bin whitefoot-spec --locked --offline
+	$(CARGO) run --profile gate --bin whitefoot-spec --locked --offline
 
 completion-test: completion-core-read-test completion-default-route-test ordinary-values-test sched-smoke sched-deque-test
 	@mkdir -p "$(COMPLETION_TMP)"
@@ -635,7 +652,7 @@ completion-windows-wine: completion-windows-cross
 
 # Managed-stack park-on-miss measurements are retired from this runtime.
 # Their dated evidence and reproduction revision remain in the investigation.
-.PHONY: check static format lint test test-unit test-sampling test-corpus \
+.PHONY: check _check static _static build test-build format lint test _test test-unit test-sampling test-corpus _test-partition \
 	test-partition docs spec completion-test \
 	completion-core-read-source-boundary completion-core-read-test \
 	completion-core-read-stress completion-core-read-tsan completion-tsan \

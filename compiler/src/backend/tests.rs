@@ -324,8 +324,10 @@ fn compile_sources(sources: &[(&str, &[u8])]) -> String {
         .iter()
         .map(|(path, source)| SourceInput::new(path, source))
         .collect::<Vec<_>>();
-    compile_program(&inputs, crate::CompilerLimits::default())
-        .expect("normal compiler pipeline must emit")
+    crate::native_test_support::timed("whitefoot-compile", || {
+        compile_program(&inputs, crate::CompilerLimits::default())
+            .expect("normal compiler pipeline must emit")
+    })
 }
 
 fn compile_and_run(llvm: &str) -> std::process::Output {
@@ -476,6 +478,18 @@ pub(super) fn build_linked_executable_with_library_defines(
     library_defines: &[String],
     directory: &Path,
 ) -> PathBuf {
+    crate::native_test_support::timed("native-build", || {
+        build_linked_executable_inner(llvm, host, defines, library_defines, directory)
+    })
+}
+
+fn build_linked_executable_inner(
+    llvm: &str,
+    host: Option<&str>,
+    defines: &[String],
+    library_defines: &[String],
+    directory: &Path,
+) -> PathBuf {
     let module = directory.join("program.ll");
     let executable = directory.join("program");
     std::fs::write(&module, llvm).expect("write backend test module");
@@ -498,14 +512,34 @@ pub(super) fn build_linked_executable_with_library_defines(
     // The exhaustion floor joins every link, exactly as the driver links it:
     // every program can run out of stack, so a test program dies the way a
     // shipped one does.
-    let floor_unit = directory.join("wf_floor.c");
-    std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
-    command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
+    command.arg("-pthread");
     // Every executable links the ordinary library and its private runtime
     // dependencies, using the same build inputs as the driver. Source
     // classification never selects a second linkage or callable ABI.
-    let completion_units =
-        append_runtime_units_with_library_defines(&mut command, directory, library_defines);
+    let mut staged_units = Vec::new();
+    if defines.is_empty() && library_defines.is_empty() {
+        // These inputs and options are immutable for this test executable.
+        // Keep each program and observer fresh, but compile the ordinary
+        // library once. Macro-interposed cases retain their own C build below.
+        let (sources, objects) = crate::native_test_support::append_runtime_objects(
+            &mut command,
+            directory,
+            Some("c11"),
+            None,
+        );
+        staged_units.extend(sources);
+        staged_units.extend(objects);
+    } else {
+        let floor_unit = directory.join("wf_floor.c");
+        std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
+        command.arg("-x").arg("c").arg(&floor_unit);
+        staged_units.push(floor_unit);
+        if let Some(names) =
+            append_runtime_units_with_library_defines(&mut command, directory, library_defines)
+        {
+            staged_units.extend(names.into_iter().map(|name| directory.join(name)));
+        }
+    }
     let compile = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(HOST_LINK_LIBRARIES)
@@ -524,17 +558,11 @@ pub(super) fn build_linked_executable_with_library_defines(
     if let Some(path) = host_unit {
         std::fs::remove_file(path).expect("remove deterministic host unit");
     }
-    std::fs::remove_file(&floor_unit).expect("remove the floor runtime unit");
-    if let Some(names) = completion_units {
-        for name in names {
-            std::fs::remove_file(directory.join(name)).expect("remove completion runtime unit");
-        }
-        // The staged tree keeps the repository's own two directories, because
-        // the completion header reaches the scheduler core by the relative
-        // path it uses in the tree.
-        for staged in ["completion", "sched"] {
-            std::fs::remove_dir(directory.join(staged)).expect("remove staged runtime directory");
-        }
+    for path in staged_units {
+        std::fs::remove_file(path).expect("remove native runtime build input");
+    }
+    for staged in ["completion", "sched"] {
+        std::fs::remove_dir(directory.join(staged)).expect("remove staged runtime directory");
     }
     executable
 }
@@ -556,14 +584,16 @@ fn compile_link_and_run(
 ) -> std::process::Output {
     let directory = test_directory();
     let executable = build_linked_executable(llvm, host, &[], &directory);
-    let output = Command::new(&executable)
-        .args(
-            arguments
-                .iter()
-                .map(|bytes| std::ffi::OsStr::from_bytes(bytes)),
-        )
-        .output()
-        .expect("run backend test executable");
+    let output = crate::native_test_support::timed("native-run", || {
+        Command::new(&executable)
+            .args(
+                arguments
+                    .iter()
+                    .map(|bytes| std::ffi::OsStr::from_bytes(bytes)),
+            )
+            .output()
+            .expect("run backend test executable")
+    });
     std::fs::remove_file(&executable).expect("remove backend test executable");
     std::fs::remove_dir(&directory).expect("remove backend test directory");
     output
@@ -585,15 +615,17 @@ fn compile_link_and_run_with(
 ) -> std::process::Output {
     let directory = test_directory();
     let executable = build_linked_executable(llvm, host, defines, &directory);
-    let output = Command::new(&executable)
-        .current_dir(&directory)
-        .args(
-            arguments
-                .iter()
-                .map(|bytes| std::ffi::OsStr::from_bytes(bytes)),
-        )
-        .output()
-        .expect("run backend test executable");
+    let output = crate::native_test_support::timed("native-run", || {
+        Command::new(&executable)
+            .current_dir(&directory)
+            .args(
+                arguments
+                    .iter()
+                    .map(|bytes| std::ffi::OsStr::from_bytes(bytes)),
+            )
+            .output()
+            .expect("run backend test executable")
+    });
     std::fs::remove_dir_all(&directory).expect("remove backend test directory");
     output
 }

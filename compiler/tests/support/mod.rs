@@ -1,14 +1,17 @@
-//! Native build reuse for the program and conformance integration binaries.
+//! Native build reuse for unit, program and conformance test binaries.
 //!
 //! Every case keeps its own emitted module, executable and fixture directory.
 //! Only immutable library objects built by the same compiler with the same
 //! options are reused, in memory for this test process. Scripted backend tests
 //! with translation-unit defines retain their separate build path.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
@@ -24,6 +27,50 @@ use whitefoot::{
 static DEFAULT_OBJECTS: OnceLock<Vec<Vec<u8>>> = OnceLock::new();
 static C11_OBJECTS: OnceLock<Vec<Vec<u8>>> = OnceLock::new();
 static NEXT_BUILD: AtomicU64 = AtomicU64::new(0);
+
+/// Records optional test-helper wall times separately from Cargo construction.
+///
+/// `WHITEFOOT_TEST_TIMINGS` names an append-only TSV file. Rows contain process,
+/// test thread, phase and elapsed seconds. Parent phases include their children;
+/// parallel rows must not be summed as suite wall time. Logging never selects a
+/// compiler verdict or changes the callback's result.
+#[allow(dead_code)]
+pub(crate) fn timed<T>(phase: &str, run: impl FnOnce() -> T) -> T {
+    static OUTPUT: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
+    let output = OUTPUT.get_or_init(|| {
+        std::env::var_os("WHITEFOOT_TEST_TIMINGS").and_then(
+            |path| match std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                Ok(file) => Some(Mutex::new(file)),
+                Err(error) => {
+                    eprintln!("test timing output unavailable: {error}");
+                    None
+                }
+            },
+        )
+    });
+    let Some(output) = output else {
+        return run();
+    };
+    let start = Instant::now();
+    let result = run();
+    let thread = std::thread::current();
+    let row = format!(
+        "{}\t{}\t{phase}\t{:.6}\n",
+        std::process::id(),
+        thread.name().unwrap_or("unnamed"),
+        start.elapsed().as_secs_f64(),
+    );
+    if let Ok(mut file) = output.lock()
+        && let Err(error) = file.write_all(row.as_bytes())
+    {
+        eprintln!("test timing output failed: {error}");
+    }
+    result
+}
 
 const SOURCES: &[(&str, &str)] = &[
     ("wf_floor.c", FLOOR_RUNTIME_SOURCE),

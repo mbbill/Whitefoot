@@ -69,9 +69,11 @@ shape: $(CASES:%=$(BUILD)/optimized%.ll) $(CASES:%=$(BUILD)/dense%.s) \
 
 shape: $(BUILD)/boundary256.ll
 
-check: all
+$(BUILD)/inline-view: inline-view.wf $(WHITEFOOTC) Makefile | $(BUILD)
+	$(WHITEFOOTC) -o $@ $<
+
+check: all $(BUILD)/inline-view
 	rustfmt --edition 2024 --check driver.rs
-	$(WHITEFOOTC) -o $(BUILD)/inline-view inline-view.wf
 	$(BUILD)/inline-view
 	@set -eu; for size in $(CASES); do \
 		$(BUILD)/smoke$$size; \

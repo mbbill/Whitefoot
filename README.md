@@ -110,19 +110,46 @@ loop:
 ```sh
 make static
 make -C compiler format lint
-make -C compiler test-unit
-cargo test --manifest-path compiler/Cargo.toml --profile gate --locked --offline --lib semantic::tests::source_proofs
+make -C compiler build        # optimized compiler only
+make -C compiler test-build   # construct test executables without running cases
+perl .github/run-check.pl source-proofs cargo test --manifest-path compiler/Cargo.toml --profile gate --locked --offline --lib semantic::tests::source_proofs
 ```
 
 Use a test filter matching the responsibility changed; `source_proofs` above
-is one example. The `gate` profile keeps debug assertions and overflow checks
-while optimizing the compiler's analysis work. The complete gate is still
+is one example. The `gate` profile builds the Rust compiler implementation and
+test harnesses with optimization, debug assertions and overflow checks. It is
+not an optimization switch for WF source. Use a dev build when debugging the
+Rust implementation, rather than constructing it for ordinary verification.
+The complete gate is still
 required on the exact revision merged into main.
+
+The root gate, research/benchmark checks and compiler verification targets use
+one host-wide owner across worktrees, with two Cargo jobs and two test threads
+by default. Wrap other heavy commands as in the filtered example above. The
+wrapper prints wall/user/system time and a heartbeat every 30 seconds; a
+competing invocation reports the owner and exits. Its 30-minute command limit
+terminates the owned process group, including nested commands. Set
+`WHITEFOOT_CHECK_TIMEOUT` in seconds for an intentionally longer protocol.
+Explicit job/thread settings remain available. After an uncatchable stop,
+inspect the recorded PID and command before removing a stale lock.
+
+For a slow compiler test, set `WHITEFOOT_TEST_TIMINGS` to a scratch TSV path.
+The shared semantic/backend/program helpers record test name and phase:
+Whitefoot compilation, native construction, native execution and semantic
+assertions. This is diagnostic coverage of those helpers, not every custom
+subprocess. Nested or parallel rows are not additive suite wall time. See the
+[measured build/test investigation](research/investigations/test-economy/build-and-test.md).
 
 The [gate workflow](.github/workflows/gate.yml) runs those stages on Linux and
 macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
-evidence. A green run describes its tested revision and coverage; it is not a
+evidence. Automatic CI checks correctness and performance regressions. Full IO
+matrices and compute scoreboards run manually; program checks, two-host compute
+verification and native host correctness remain automatic. The separate
+[compute regression check](.github/workflows/compute-regression.yml) retains
+its paired performance verdict. Completed research instruments have
+`make historical-tool-tests` for deliberate reproduction; their READMEs state
+that boundary. A green run describes its tested revision and coverage; it is not a
 proof of completeness or the absence of known defects. Conformance reports
 distinguish passing cases, expected compiler failures, and pending support.
 

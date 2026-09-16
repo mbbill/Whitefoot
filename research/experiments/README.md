@@ -188,8 +188,10 @@ commit each RESULTS.md names.
 
 These results used the now-archived democ implementation. They remain measured
 evidence rather than current-compiler benchmark requirements. Historical
-benchmark runners are not active compiler gates; maintained unit tests that
-still execute against HEAD are included by the root `make check` target.
+benchmark runners are not active compiler gates. Self-tests of the completed
+frequency and model-trajectory instruments remain available through
+`make historical-tool-tests`; current compiler witnesses and independent
+oracles remain in `make check`.
 
 - `effect-attrs-channel/` — channel 2: effect rows -> LLVM fn attributes.
   O(n)->O(1) at opaque boundaries; ties fat LTO at per-file build cost.
