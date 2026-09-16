@@ -3497,3 +3497,92 @@ signal helper to its Linux-only caller. Workflow YAML parses successfully.
 The subsequent deletion of the five C-only Rust wrappers was type/lint checked;
 no full exhaustion suite, canonical `make check`, new DCR or completion review
 is claimed at this intermediate revision.
+
+The next stack-boundary replacement uses the following criterion before its
+first outcome is measured. Compile each of the existing narrow and wide WF
+recursions once to one assembly/stack-usage pair, and link that exact assembly.
+A test-only floor variant requests 1 MiB; a C caller queries actual usable
+bounds on the real entry or an observed real worker before calling the exported
+WF recursion with a runtime depth. Use that caller's measured remaining room
+as the ledger capacity. Reserve two host pages, 4 KiB of fixed call overhead,
+and two measured WF frames on either side of the predicted depth. This
+allowance addresses page probing and fixed entry frames and remains far below
+the former missing-return-address factor-of-two defect; it is not fitted to a
+passing depth. Both inside executions must finish without a resource record;
+both outside executions must produce exactly the stack record and SIGABRT.
+The normal native floor case independently retains the shipped 1 GiB request
+and actual entry/worker bounds. No enormous recursion is needed for either
+observation, and a timeout never counts as a successful exhaustion result.
+
+### Implementation evidence: measured small-stack and release boundaries
+
+B03w/x/ag now use the existing narrow and live-array WF recursion geometries
+with runtime depth. `stack_boundary.c` is the compiler test observer: it checks
+that entry setup really changed threads, that a selected worker is not the
+owner, and that the call site is within its reported stack bounds. Each module
+is compiled once to assembly plus `.su`; the test links that same assembly and
+reuses the image for bounds, inside and outside executions on both thread
+classes. Only the test floor's reservation constant changes to 1 MiB. Its
+object and all compatible runtime objects are shared; no production stack size
+or source-language behavior changes. The predefined allowance above passed
+without adjustment. The old two-million-level success matrix, hundred-million-
+level entry/worker overflows and separately reoptimized ledger-depth images
+are retired after these receiving checks passed. Four stack-ledger cases took
+1.51 s execution, 78.41 s including Rust test construction.
+
+B03v now compares the small function's machine body against its exactly-one-
+function probe-attribute ablation, with checked assembly construction. It
+therefore observes inline probing too, unlike the removed unchecked `nm`
+substring assertion. The retained large-frame positive/negative guard-jump
+experiment still tests actual containment. Probe-attribute completeness is
+also checked on the already emitted pair/loop fixtures that contain thunks,
+chunks and clones, rather than claiming a mixed source necessarily emits them
+all. Mixed, allocation-form and small box/buffer fixtures share immutable
+emission. The derived-cleanup machine report is tied to the actual cyclic
+release members and requires frame and cycle rows for the same member.
+
+B03ab/ad now use the shared scoped allocation observer. One small image reaches
+all four implemented allocation forms; its success case releases every
+allocation, and four fresh refusal processes establish the attempted allocation,
+exact heap record and SIGABRT while runtime allocations remain untouched.
+Three small branching/nested cleanup images compare complete allocation-
+instance/release traces, including ascending child order, referent-before-cell,
+and backing surviving all element releases. They replace deep exit-only
+cleanup and an unverified host allocator poisoning setting. The acyclic IR
+check now uses the same graph walk as the cyclic check, so mutual recursion is
+not missed; the buffer IR check requires the release action and back edge in
+the element block, with the backing free outside it. Legitimate store-run
+helpers are not banned merely by a symbol prefix.
+
+The former minimal buffer-cycle acceptance wrapper is now
+`prov6-pos-buffer-release-cycle` in conformance: an `accept` obligation grounded
+in PROV-6's admitted cyclic release graph and STOR-3's derived walk, without a
+new native execution solely to repeat acceptance. Actual releases remain the
+compiler-observed traces above. No existing verdict is changed. The eleven
+exhaustion/cleanup cases passed in 2.03 s execution, 79.46 s including Rust test
+construction. A known block-label assertion was corrected after inspecting the
+emitter; the first build was explicitly stopped instead of consuming a full
+build for a known stale assertion. Both successful groups preceded final
+cross-group verification recorded below.
+
+Hosted `9f69c888` evidence: both corpus jobs and both Rust unit jobs passed;
+Linux `io-hosts` passed. A separate GCC runtime construction diagnosed an
+unchecked diagnostic `write`, now checked. Windows's new Make case invocation
+omitted the already-selected `WINDOWS_CC=clang`, changed its construction stamp,
+and rebuilt with the cross-GCC default; it now carries the same compiler
+selection as construction. These are portability/wiring fixes, not weakened
+assertions. Static jobs continue to reject the still-unextracted research
+inputs as intended; this intermediate head is not a full-gate pass. The native
+floor rerun passed locally, and final all-target Clippy passed in 8.21 s.
+
+Final cross-group validation for this increment: all 52 cases across parallel,
+loop splitting, exhaustion/cleanup and stack ledger passed in one test process,
+18.96 s execution and 95.20 s including Rust construction. This includes the
+final cycle-member report assertion, shared-emission probe checks and a default-
+startup assertion that permits a genuinely single-lane host while still
+requiring the explicit four-worker execution. Native floor passed after the
+GCC portability fix in 0.98 s. The new conformance case emitted LLVM successfully
+with the built compiler (no native link/run), both canonical assertions passed,
+and all 29 compiler-independent conformance-tool tests passed. Full repository
+gate, remaining redesign work and the independent completion/DCR checkpoint
+remain outstanding; no paired performance claim is made.

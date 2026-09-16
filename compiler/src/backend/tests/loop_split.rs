@@ -36,14 +36,17 @@ fn fold_module(parallel: bool) -> String {
     static PLAIN: OnceLock<String> = OnceLock::new();
     static PARALLEL: OnceLock<String> = OnceLock::new();
     let cell = if parallel { &PARALLEL } else { &PLAIN };
-    cell.get_or_init(|| {
-        if parallel {
-            emit_with_overlap(PERMITTED_FOLD)
-        } else {
-            emit(PERMITTED_FOLD)
-        }
-    })
-    .clone()
+    let module = cell
+        .get_or_init(|| {
+            if parallel {
+                emit_with_overlap(PERMITTED_FOLD)
+            } else {
+                emit(PERMITTED_FOLD)
+            }
+        })
+        .clone();
+    super::exhaustion::assert_stack_probes(&module);
+    module
 }
 
 /// The permitted loop of [`PERMITTED_FOLD`] over ranges the split has to answer

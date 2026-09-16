@@ -29,14 +29,17 @@ fn fold_module(parallel: bool) -> String {
     static PLAIN: OnceLock<String> = OnceLock::new();
     static PARALLEL: OnceLock<String> = OnceLock::new();
     let cell = if parallel { &PARALLEL } else { &PLAIN };
-    cell.get_or_init(|| {
-        if parallel {
-            emit_with_overlap(OVERLAPPING_FOLD)
-        } else {
-            emit(OVERLAPPING_FOLD)
-        }
-    })
-    .clone()
+    let module = cell
+        .get_or_init(|| {
+            if parallel {
+                emit_with_overlap(OVERLAPPING_FOLD)
+            } else {
+                emit(OVERLAPPING_FOLD)
+            }
+        })
+        .clone();
+    super::exhaustion::assert_stack_probes(&module);
+    module
 }
 
 const LANE_FRAME_LAYOUT_FUNCTIONS: &[u8] =
@@ -1092,11 +1095,17 @@ fn linked_runtime_observes_startup_opt_out_and_a_real_worker() {
     let (_, published) = counted.run(None);
     assert_eq!(published.status.code(), Some(0));
     let started = workers_started(&published);
-    assert!(
-        started >= 1,
-        "a --par binary with no worker setting must start the pool, or the \
-         path is off for every real run; the run reported: {}",
-        String::from_utf8_lossy(&published.stderr).trim()
+    let report = String::from_utf8_lossy(&published.stderr);
+    let requested = report
+        .lines()
+        .find_map(|line| line.strip_prefix("compute: threads="))
+        .and_then(|tail| tail.split_whitespace().next())
+        .and_then(|count| count.parse::<u64>().ok())
+        .expect("configured width");
+    assert_eq!(
+        started > 0,
+        requested > 1,
+        "the default must start a pool exactly when its configured width enables one: {report}"
     );
 
     let (granted, parallel) = counted.run(Some("4"));

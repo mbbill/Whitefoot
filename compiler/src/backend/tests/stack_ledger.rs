@@ -8,8 +8,8 @@
 //! believe.
 //!
 //! So the case below does not check that the ledger parsed its input. It takes
-//! the depth the ledger says the runtime's stack holds, builds the program just
-//! inside it and just outside it, and runs both. If the report and the machine
+//! the depth the ledger says the runtime's stack holds and executes the same
+//! measured assembly just inside and outside it with a runtime depth. If the report and the machine
 //! ever stop agreeing — a target where the reported frame excludes the return
 //! address, a frame the host reports as `dynamic`, a reserve at the top of the
 //! stack that this one does not have — this fails, loudly, with both numbers.
@@ -18,20 +18,20 @@ use std::process::Command;
 
 use super::super::{Architecture, FLOOR_STACK_BYTES, stack_ledger};
 use super::exhaustion::spine_source;
-use super::{build_executable, compile, test_directory};
+use super::{compile, test_directory};
 
-/// A recursion whose activation carries a fixed run, so its frame is six
-/// hundred times the tight spine's and its ceiling a hundred thousand levels
-/// rather than sixty-seven million.
+/// A recursion with a complete nonuniform fixed run live across the call.
+/// It supplies a different machine-frame geometry from the narrow spine.
 ///
 /// The pair of widths is the point: the model under test is one division, and
-/// checking it at two frame sizes six hundred times apart says far more about
+/// checking it at two genuinely different frame sizes says more about
 /// the division than checking it twice at one size would. The run
 /// is 256 slots because the host compiler spends nine seconds vectorizing
 /// the fill of a seven-thousand-element one and a tenth of a second on this,
 /// for the same arithmetic under test.
 ///
-/// The depth comes from the argument count. The recursive result selects the
+/// The boundary observer supplies depth to the exported function at runtime.
+/// The recursive result selects the
 /// later read from a nonuniform array, keeping the complete local array live
 /// across the call. Reading only the slot just overwritten with depth lets
 /// LLVM eliminate the array and solve the recursion, leaving no wide frame.
@@ -91,25 +91,9 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
     .into_bytes()
 }
 
-/// How far the measured ceiling may sit from the reported one.
-///
-/// A tenth of a percent, and it is slack rather than a fitted constant:
-/// measured across frames of 16, 10 272, 34 848, and 291 760 bytes, the first
-/// failing depth landed at most 1 136, 2, 0, and 0 levels from the report —
-/// the largest of those is 0.0017% of its own ceiling. The band is wide enough
-/// that the outermost frames of a program cannot trip it and narrow enough
-/// that a systematic error, which is what a wrong model looks like, cannot hide
-/// in it.
-const TOLERANCE: f64 = 0.001;
-
-/// The ledger for one source, produced the way the driver produces it.
-fn ledger_for(source: &[u8], directory: &std::path::Path) -> Vec<String> {
-    ledger_lines(&compile(source), directory)
-}
-
 /// The ledger for one already-emitted module, so a caller can ask for the
 /// overlapped world as well as the sequential one.
-pub(super) fn ledger_lines(emitted: &str, directory: &std::path::Path) -> Vec<String> {
+pub(super) fn machine_report(emitted: &str, directory: &std::path::Path) -> (String, String) {
     let module = directory.join("ledger.ll");
     let assembly = directory.join("ledger.s");
     std::fs::write(&module, emitted).expect("write the ledger module");
@@ -129,7 +113,12 @@ pub(super) fn ledger_lines(emitted: &str, directory: &std::path::Path) -> Vec<St
     let usage =
         std::fs::read_to_string(directory.join("ledger.su")).expect("read the stack-usage report");
     let text = std::fs::read_to_string(&assembly).expect("read the ledger assembly");
-    stack_ledger(&usage, &text, FLOOR_STACK_BYTES, Architecture::HOST)
+    (usage, text)
+}
+
+pub(super) fn ledger_lines(emitted: &str, directory: &std::path::Path) -> Vec<String> {
+    let (usage, assembly) = machine_report(emitted, directory);
+    stack_ledger(&usage, &assembly, FLOOR_STACK_BYTES, Architecture::HOST)
 }
 
 /// What the ledger says one level of a named recursion costs, in bytes.
@@ -171,31 +160,9 @@ fn reported_levels(lines: &[String], name: &str) -> u64 {
         .unwrap_or_else(|_| panic!("the level count is not a number: {row}"))
 }
 
-/// Builds the program at one depth and reports whether it completed.
-///
-/// A run that did not complete must have run out of stack and said so. Exit 0
-/// is not the only thing this fixture can produce — it has its own `r > 0`
-/// false arm at exit 1 — and a bare signal is a third outcome, so a bare
-/// "did not exit 0" would let the ceiling half pass against a floor that had
-/// stopped reporting altogether.
-fn completes(source: Vec<u8>, directory: &std::path::Path) -> bool {
-    let executable = build_executable(&compile(&source), directory);
-    let output = Command::new(&executable)
-        .output()
-        .expect("run the depth probe");
-    if output.status.code() == Some(0) {
-        return true;
-    }
-    super::exhaustion::assert_resource_record(&output.stderr, "stack");
-    false
-}
-
 /// A row is what one activation costs, not what the function allocated.
 ///
-/// [`the_reported_ceiling_is_the_measured_one`] is the whole truth about this
-/// arithmetic and it is also the expensive way to state it: it compiles four
-/// programs and runs them, and it can only ever speak about the machine it is
-/// running on. This states the same rule from a synthetic report, in a
+/// The measured boundary checks two machine geometries on the current host. This states the same rule from a synthetic report, in a
 /// millisecond, for both architectures at once — the eight bytes x86-64 leaves
 /// out of every figure it reports are exactly what the ledger got wrong before
 /// batch 0090, and an arm64 machine can now be the one that says so.
@@ -239,7 +206,7 @@ fn a_row_is_what_one_activation_costs() {
 /// predicate: a `HOST` that named the wrong architecture would satisfy its own
 /// `cfg!` and fail here.
 #[test]
-fn the_hosts_architecture_is_the_one_the_machine_reports() {
+fn the_selected_architecture_matches_the_rust_target() {
     let expected = match std::env::consts::ARCH {
         "x86_64" => Architecture::X86_64,
         "aarch64" => Architecture::Arm64,
@@ -248,38 +215,170 @@ fn the_hosts_architecture_is_the_one_the_machine_reports() {
     assert_eq!(Architecture::HOST, expected);
 }
 
-/// The reported ceiling and the measured one agree, at two frame widths.
-///
-/// This is the case that makes the ledger evidence rather than a description.
-/// Both halves matter and they fail differently: a program that dies *inside*
-/// the reported ceiling means the ledger is promising depth the machine does
-/// not have, which is the dangerous direction; one that survives well past it
-/// means the ledger is understating what the program can do, which would send a
-/// writer to restructure code that was fine.
+/// Same measured machine code, runtime depth, actual entry/worker bounds.
+/// The allowance is set before measuring outcomes: two pages, 4 KiB of fixed
+/// caller overhead and two WF frames. It cannot hide a factor-of-two frame bug.
 #[test]
 fn the_reported_ceiling_is_the_measured_one() {
-    for (name, source) in [
-        ("wf_spine", (&wide_frame_source) as &dyn Fn(u64) -> Vec<u8>),
-        ("wf_spine", &spine_source),
-    ] {
+    for (wide, source) in [(false, spine_source(0)), (true, wide_frame_source(0))] {
         let directory = test_directory();
-        let lines = ledger_for(&source(1_000), &directory);
-        let levels = reported_levels(&lines, name);
-        let inside = (levels as f64 * (1.0 - TOLERANCE)) as u64;
-        let outside = (levels as f64 * (1.0 + TOLERANCE)) as u64 + 1;
-
-        assert!(
-            completes(source(inside), &directory),
-            "the ledger reports {levels} levels but the program died at \
-             {inside}, so it is promising depth the machine does not have"
-        );
-        assert!(
-            !completes(source(outside), &directory),
-            "the ledger reports {levels} levels and the program survived \
-             {outside}, so the reported ceiling is not the real one"
-        );
-        std::fs::remove_dir_all(&directory).expect("remove the test directory");
+        let emitted = compile(&source)
+            .replacen(
+                "define i32 @wf__main_body(",
+                "define i32 @wf__unused_main_body(",
+                1,
+            )
+            .replacen("define i32 @main(", "define i32 @wf__unused_main(", 1)
+            + "\ndeclare i32 @wf__main_body(i32, ptr)\n";
+        let (usage, assembly) = machine_report(&emitted, &directory);
+        let frames = stack_ledger(&usage, &assembly, TEST_STACK_BYTES, Architecture::HOST);
+        let frame = reported_frame_bytes(&frames, "wf_spine");
+        assert!(frame > 0);
+        if wide {
+            assert!(
+                frame >= 256 * 8,
+                "the live array must remain in the machine frame: {frame}"
+            );
+        }
+        let executable = link_measured_boundary(&directory, wide);
+        for thread in ["entry", "worker"] {
+            let run = |mode: &str, depth: u64| {
+                Command::new(&executable)
+                    .env("WF_WORKERS", "4")
+                    .arg(mode)
+                    .arg(depth.to_string())
+                    .output()
+                    .expect("run measured stack boundary")
+            };
+            let bounds = run(&format!("bounds-{thread}"), 0);
+            assert!(bounds.status.success(), "wide={wide} {thread}: {bounds:?}");
+            assert!(bounds.stderr.is_empty());
+            let text = String::from_utf8(bounds.stdout).expect("ASCII bounds");
+            assert!(text.starts_with(&format!("{thread}\n")), "{text}");
+            let field = |name: &str| {
+                text.split_whitespace()
+                    .find_map(|word| word.strip_prefix(name))
+                    .expect("bound field")
+                    .parse::<u64>()
+                    .expect("numeric bound")
+            };
+            let room = field("room=");
+            let page = field("page=");
+            assert!(field("stack=") >= TEST_STACK_BYTES);
+            let allowance = 2 * page + 4096 + 2 * frame;
+            assert!(
+                allowance < room / 10,
+                "fixture overhead must stay below ten percent"
+            );
+            let levels = reported_levels(
+                &stack_ledger(&usage, &assembly, room, Architecture::HOST),
+                "wf_spine",
+            );
+            let slack = allowance.div_ceil(frame);
+            assert!(levels > slack);
+            for (depth, exhausts) in [(levels - slack, false), (levels + slack, true)] {
+                let output = run(thread, depth);
+                assert_eq!(
+                    output.stdout,
+                    format!("{thread}\n").as_bytes(),
+                    "{output:?}"
+                );
+                if exhausts {
+                    use std::os::unix::process::ExitStatusExt;
+                    assert_eq!(
+                        output.status.signal(),
+                        Some(6),
+                        "wide={wide} {thread} depth={depth}: {output:?}"
+                    );
+                    super::exhaustion::assert_resource_record(&output.stderr, "stack");
+                } else {
+                    assert_eq!(
+                        output.status.code(),
+                        Some(0),
+                        "wide={wide} {thread} depth={depth}: {output:?}"
+                    );
+                    assert!(output.stderr.is_empty(), "{output:?}");
+                }
+            }
+        }
+        std::fs::remove_dir_all(directory).expect("remove measured stack fixture");
     }
+}
+
+const TEST_STACK_BYTES: u64 = 1024 * 1024;
+
+fn link_measured_boundary(directory: &std::path::Path, wide: bool) -> std::path::PathBuf {
+    use std::sync::OnceLock;
+    static FLOOR: OnceLock<Vec<u8>> = OnceLock::new();
+    let floor = FLOOR.get_or_init(|| {
+        let scratch = test_directory();
+        let original = crate::FLOOR_RUNTIME_SOURCE;
+        let definition = original
+            .lines()
+            .find(|line| line.starts_with("#define WF_FLOOR_STACK_BYTES "))
+            .expect("the shipped floor declares its stack reservation");
+        assert_eq!(original.matches(definition).count(), 1);
+        // Only the reservation constant changes; setup, probing, bounds and
+        // the real signal handler are the shipped implementation.
+        let source = original.replacen(
+            definition,
+            &format!("#define WF_FLOOR_STACK_BYTES ((size_t){TEST_STACK_BYTES}u)"),
+            1,
+        );
+        let path = scratch.join("floor.c");
+        let object = scratch.join("floor.o");
+        std::fs::write(&path, source).expect("write small-stack floor variant");
+        let output = Command::new("/usr/bin/clang")
+            .args(["-std=c11", "-pthread", "-c"])
+            .arg(&path)
+            .args(crate::HOST_OPTIMIZATION_ARGUMENTS)
+            .arg("-o")
+            .arg(&object)
+            .output()
+            .expect("compile small-stack floor");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let bytes = std::fs::read(object).expect("read small-stack floor object");
+        std::fs::remove_dir_all(scratch).expect("remove small-stack floor construction");
+        bytes
+    });
+    let host = directory.join("boundary.c");
+    std::fs::write(&host, include_str!("stack_boundary.c")).expect("write boundary observer");
+    let executable = directory.join("boundary");
+    let mut command = Command::new("/usr/bin/clang");
+    command
+        .arg("-x")
+        .arg("assembler")
+        .arg(directory.join("ledger.s"))
+        .arg("-x")
+        .arg("c")
+        .arg(&host)
+        .arg("-pthread")
+        .arg(format!("-DWF_TEST_WIDE={}", usize::from(wide)));
+    let (_, objects) = crate::native_test_support::append_runtime_objects(
+        &mut command,
+        directory,
+        Some("c11"),
+        None,
+    );
+    // The shared support owns object order; index zero is its staged floor.
+    std::fs::write(&objects[0], floor).expect("select the small-stack floor variant");
+    let output = command
+        .args(crate::HOST_OPTIMIZATION_ARGUMENTS)
+        .args(crate::HOST_LINK_LIBRARIES)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("link the measured assembly");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    executable
 }
 
 /// The recursion the compiler generates is in the ledger like any other.
@@ -299,20 +398,44 @@ fn the_reported_ceiling_is_the_measured_one() {
 #[test]
 fn the_compilers_own_drop_glue_has_rows_and_reports_its_cycle() {
     let directory = test_directory();
-    let lines = ledger_for(RECURSIVE_VALUE, &directory);
+    let module = compile(RECURSIVE_VALUE);
+    let glue = super::exhaustion::drop_glue_calls(&module);
+    let cyclic = glue
+        .iter()
+        .filter(|(root, _)| {
+            let mut pending = vec![root.as_str()];
+            let mut seen = std::collections::HashSet::new();
+            while let Some(name) = pending.pop() {
+                if !seen.insert(name) {
+                    continue;
+                }
+                if let Some((_, calls)) = glue.iter().find(|(candidate, _)| candidate == name) {
+                    for target in calls {
+                        if target == root {
+                            return true;
+                        }
+                        pending.push(target.as_str());
+                    }
+                }
+            }
+            false
+        })
+        .map(|(name, _)| name.as_str())
+        .collect::<Vec<_>>();
     assert!(
-        lines
-            .iter()
-            .any(|line| line.starts_with("STACK frame") && line.contains("wf.drop.")),
-        "a program with a recursive nominal must have drop-glue frame rows: \
-         {lines:#?}"
+        !cyclic.is_empty(),
+        "the fixture must derive a cyclic release graph"
     );
+    let lines = ledger_lines(&module, &directory);
     assert!(
-        lines
-            .iter()
-            .any(|line| line.starts_with("STACK cycle") && line.contains("wf.drop.")),
-        "the derived release of a recursive nominal enters itself, and the \
-         ledger is where a writer sees that: {lines:#?}"
+        cyclic.iter().any(|name| {
+            ["STACK frame", "STACK cycle"].iter().all(|prefix| {
+                lines.iter().any(|line| {
+                    line.starts_with(prefix) && line.split_whitespace().nth(2) == Some(*name)
+                })
+            })
+        }),
+        "one of the actual derived cycle members must have both machine frame and cycle rows: {cyclic:?} {lines:#?}"
     );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }

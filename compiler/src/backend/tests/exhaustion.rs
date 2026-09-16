@@ -25,7 +25,7 @@
 
 use std::process::Command;
 
-use super::{build_executable, build_linked_executable, compile, emitted_function, test_directory};
+use super::{build_linked_executable, compile, emitted_function, test_directory};
 
 /// The attribute group [`crate::backend::emitter`] gives every definition, and
 /// the value it carries on this host.
@@ -73,6 +73,40 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
 
+fn mixed_module(parallel: bool) -> String {
+    use std::sync::OnceLock;
+    static PLAIN: OnceLock<String> = OnceLock::new();
+    static PARALLEL: OnceLock<String> = OnceLock::new();
+    let cell = if parallel { &PARALLEL } else { &PLAIN };
+    cell.get_or_init(|| {
+        if parallel {
+            super::emit_with_overlap(MIXED_DEFINITIONS)
+        } else {
+            compile(MIXED_DEFINITIONS)
+        }
+    })
+    .clone()
+}
+
+fn heap_module() -> String {
+    static MODULE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    MODULE.get_or_init(|| compile(ALL_HEAP_FORMS)).clone()
+}
+
+fn boxed_module() -> String {
+    static MODULE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    MODULE
+        .get_or_init(|| compile(&boxed_spine_source(4)))
+        .clone()
+}
+
+fn buffer_module() -> String {
+    static MODULE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    MODULE
+        .get_or_init(|| compile(&buffer_chain_source(4)))
+        .clone()
+}
+
 /// Every definition the module emits carries the probe attribute, and the
 /// group it names is the host's.
 ///
@@ -84,61 +118,74 @@ fn main() -> status: own ExitStatus pure {
 /// generated function" checkable rather than asserted.
 #[test]
 fn every_generated_definition_carries_the_stack_probe() {
-    for module in [
-        compile(MIXED_DEFINITIONS),
-        super::emit_with_overlap(MIXED_DEFINITIONS),
-    ] {
-        let definitions = module
-            .lines()
-            .filter(|line| line.starts_with("define "))
-            .count();
-        assert!(
-            definitions > 1,
-            "the fixture must reach more than one definition:\n{module}"
-        );
-        let probed = module
-            .lines()
-            .filter(|line| line.starts_with("define ") && line.ends_with(" #0 {"))
-            .count();
-        assert_eq!(
-            probed,
-            definitions,
-            "every generated definition must carry the probe group; \
-             {} of {definitions} did not:\n{module}",
-            definitions - probed
-        );
-        assert_eq!(
-            module.matches("attributes #0 = { ").count(),
-            1,
-            "the module declares its one attribute group once:\n{module}"
-        );
-        assert!(
-            module.contains(&format!("attributes #0 = {{ {HOST_STACK_PROBE} }}")),
-            "the group must name this host's probing helper:\n{module}"
-        );
-    }
+    assert_stack_probes(&mixed_module(false));
+    assert_stack_probes(&mixed_module(true));
 }
 
-/// The probe is emitted only for a frame past the page threshold, so an
-/// ordinary program pays nothing for it.
-///
-/// This is what makes the containment fix free rather than a trade: the
-/// attribute changes the machine code of exactly the functions whose frames
-/// could jump the guard, and leaves every other function alone.
-#[test]
-fn an_ordinary_frame_emits_no_probe_call() {
-    let directory = test_directory();
-    let executable = build_executable(&compile(MIXED_DEFINITIONS), &directory);
-    let symbols = Command::new("/usr/bin/nm")
-        .arg(&executable)
-        .output()
-        .expect("read the linked symbol table");
-    let listed = String::from_utf8_lossy(&symbols.stdout);
+/// Called also by retained loop and pair fixtures, which actually emit chunks,
+/// thunks and sequential clones in addition to the mixed fixture's drop glue.
+pub(super) fn assert_stack_probes(module: &str) {
+    let definitions = module
+        .lines()
+        .filter(|line| line.starts_with("define "))
+        .count();
     assert!(
-        !listed.contains("chkstk"),
-        "no ordinary frame reaches the probing helper:\n{listed}"
+        definitions > 1,
+        "the fixture must reach more than one definition:\n{module}"
     );
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+    let probed = module
+        .lines()
+        .filter(|line| line.starts_with("define ") && line.ends_with(" #0 {"))
+        .count();
+    assert_eq!(
+        probed,
+        definitions,
+        "every generated definition must carry the probe group; \
+             {} of {definitions} did not:\n{module}",
+        definitions - probed
+    );
+    assert_eq!(
+        module.matches("attributes #0 = { ").count(),
+        1,
+        "the module declares its one attribute group once:\n{module}"
+    );
+    assert!(
+        module.contains(&format!("attributes #0 = {{ {HOST_STACK_PROBE} }}")),
+        "the group must name this host's probing helper:\n{module}"
+    );
+}
+
+/// Compare the small function's actual assembly with and without its probe
+/// attribute. This observes target code, including inline Linux probes; a
+/// whole-executable symbol-name search could not establish ordinary cost.
+#[test]
+fn an_ordinary_frame_has_the_same_machine_body_without_probe_instrumentation() {
+    let directory = test_directory();
+    let module = mixed_module(false);
+    let (_, probed) = super::stack_ledger::machine_report(&module, &directory);
+    let (_, ablated) =
+        super::stack_ledger::machine_report(&ablate_probe(&module, "@wf_depth("), &directory);
+    let body = |assembly: &str| {
+        let label = if cfg!(target_os = "macos") {
+            "_wf_depth:"
+        } else {
+            "wf_depth:"
+        };
+        let start = assembly
+            .find(label)
+            .expect("the small function survives native codegen");
+        let tail = &assembly[start..];
+        let end = tail
+            .find(".cfi_endproc")
+            .expect("the machine function ends its unwind region");
+        tail[..end].to_owned()
+    };
+    assert_eq!(
+        body(&probed),
+        body(&ablated),
+        "a small frame must pay no added probe instructions"
+    );
+    std::fs::remove_dir_all(directory).expect("remove assembly comparison");
 }
 
 /// A recursion whose depth is a parameter, in a shape the host optimizer
@@ -183,14 +230,6 @@ fn main() -> status: own ExitStatus pure {{
     .into_bytes()
 }
 
-/// Deep enough that a lane sized the way lanes used to be sized cannot hold it,
-/// and far inside the stack every thread now gets.
-const LANE_DEPTH: u64 = 2_000_000;
-
-/// Deeper than the entry's own stack, so the sequential run reaches the guard
-/// page the floor exists to report.
-const RUNAWAY_DEPTH: u64 = 100_000_000;
-
 /// The record is the resource class and nothing else.
 ///
 /// Exhaustion is external to source proof: no operation in the program has
@@ -204,133 +243,6 @@ pub(super) fn assert_resource_record(stderr: &[u8], resource: &str) {
         format!("{{\"resource\":\"{resource}\"}}\n"),
         "an exhausted execution writes exactly its resource record"
     );
-}
-
-/// The depth a program can reach is the compiler's number, not the shell's.
-///
-/// The environment's limit is cut to a megabyte here, well under what this
-/// recursion needs, and the program still runs to completion — because the
-/// entry does not run on the stack the host started the process with. Before
-/// the floor the same program at this depth died with a bare signal under an
-/// ordinary eight-megabyte limit, and whether it died at all depended on who
-/// ran it.
-#[test]
-fn the_entry_runs_on_a_stack_the_compiler_sized() {
-    let directory = test_directory();
-    let executable = build_executable(&compile(&spine_source(LANE_DEPTH)), &directory);
-    let constrained = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(format!("ulimit -s 1024; exec {}", executable.display()))
-        .output()
-        .expect("run the program under a reduced stack limit");
-    assert_eq!(
-        constrained.status.code(),
-        Some(0),
-        "a recursion inside the compiler's ceiling must not depend on the \
-         environment's: {}",
-        String::from_utf8_lossy(&constrained.stderr)
-    );
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// An entry that runs out of stack writes one record and aborts.
-///
-/// This is the case the whole floor exists for: before it, the process died
-/// with a bare SIGSEGV and not one byte said why — the only abnormal end a
-/// correct program can reach was the only one with no diagnosis.
-#[test]
-fn an_exhausted_entry_writes_one_resource_record() {
-    let directory = test_directory();
-    let executable = build_executable(&compile(&spine_source(RUNAWAY_DEPTH)), &directory);
-    let output = Command::new(&executable)
-        .output()
-        .expect("run the runaway recursion");
-    assert_eq!(
-        output.status.code(),
-        None,
-        "an exhausted execution ends by abort, not by a returned status"
-    );
-    assert_resource_record(&output.stderr, "stack");
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// An overlapped run that exhausts its stack writes the same record, whichever
-/// thread was carrying the recursion.
-///
-/// Worth its own case because the two thread classes arrive as *different*
-/// signals — an entry overflow as SIGSEGV, a lane overflow as SIGBUS — so a
-/// disposition that took only SIGSEGV would pass the case above and still miss
-/// every worker overflow, which is exactly the class the parallel default
-/// introduced.
-///
-/// It used to be the *depth* that said a death here was a lane's: lanes were
-/// sized from `RLIMIT_STACK` and the entry from the compiler's own constant, so
-/// a depth between the two ceilings could only die on a lane. That asymmetry is
-/// what [`a_deep_recursion_completes_at_every_worker_count`] removes, so no
-/// depth discriminates any more. What is left is the standard every run is held
-/// to: past the ceiling a run must write exactly the record and must not die
-/// bare, and at the default pool the deep descent reaches a lane in the great
-/// majority of runs — measured 27 of 30 on this shape while the ceilings still
-/// differed. A bare signal or a partial record fails this on the first run.
-#[test]
-fn an_exhausted_lane_writes_the_same_resource_record() {
-    let directory = test_directory();
-    let module = super::emit_with_overlap(&spine_source(RUNAWAY_DEPTH));
-    let executable = build_executable(&module, &directory);
-    for _ in 0..3 {
-        let output = Command::new(&executable)
-            .output()
-            .expect("run the overlapped recursion");
-        assert_eq!(
-            output.status.code(),
-            None,
-            "a recursion past every thread's ceiling must not return a status"
-        );
-        assert_resource_record(&output.stderr, "stack");
-    }
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// The regression input completes with equally reserved command/worker stacks.
-/// Smaller historical worker stacks made this input fail after some steals.
-/// Current joins can help or steal from inside an existing callback, so a
-/// stolen subtree does not necessarily receive an empty stack. This case pins
-/// the tested input and worker counts; it does not prove schedule-independent
-/// available depth or include runtime C frames in the compiler's stack ledger.
-#[test]
-fn a_deep_recursion_completes_at_every_worker_count() {
-    let directory = test_directory();
-    let module = super::emit_with_overlap(&spine_source(LANE_DEPTH));
-    let executable = build_executable(&module, &directory);
-    for workers in ["0", "1", "2", "4", "8", "16"] {
-        for _ in 0..3 {
-            let output = Command::new(&executable)
-                .env("WF_WORKERS", workers)
-                .output()
-                .expect("run the overlapped recursion");
-            assert_eq!(
-                output.status.code(),
-                Some(0),
-                "a recursion inside every thread's ceiling died at \
-                 WF_WORKERS={workers}, so its liveness depends on the \
-                 schedule: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-    }
-    for _ in 0..3 {
-        let output = Command::new(&executable)
-            .output()
-            .expect("run the overlapped recursion at the shipped default");
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "the shipped default is the setting a binary handed to somebody \
-             runs under: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// The signal that ended a process, or `None` if it exited normally.
@@ -397,43 +309,6 @@ fn a_module_that_writes_a_resource_record_and_hands_a_call_out_is_latched() {
     );
 }
 
-/// A heap request no host can serve, read at an index the compiler knows only
-/// through a `u8` range.
-///
-/// The read is what keeps the allocation alive. At the shipped optimization
-/// level LLVM deletes an allocation whose contents nothing observes — it
-/// forwards the fill value to the loads and removes the `malloc`/`free` pair,
-/// taking the refusal edge with it — so a naively written case would ask for
-/// sixteen terabytes, return normally, and test nothing at all. Routing the
-/// index through a type range leaves the optimizer unable to decide the load.
-const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 pure {
-  let b = buffer_new(4000000000000000000_u64, 7_u8);
-  let wide = cvt::<u8, u64>(i);
-  let element = b[wide];
-  return element;
-}
-
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  let count = 0_u64;
-  region {
-    set count = args_count(args: &args);
-  }
-  match cvt::<u64, u8>(count) {
-    Ok(value: v) => {
-      let r = giant(i: v);
-      return exit_status(code: r);
-    }
-    Err(error: e) => {
-      return exit_status(code: 9_u8);
-    }
-  }
-}
-"#;
-
 /// One program reaching every allocation form the emitter lowers: a filled
 /// buffer, a vacant one, a heap box, and an arena node.
 ///
@@ -470,26 +345,49 @@ fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-/// An allocation the host refuses ends the process the same way an exhausted
-/// stack does: one record naming the resource, then a defined abort.
-///
-/// Before this, a refused allocation was a bare `abort()` with zero bytes —
-/// indistinguishable from an internal allocator abort, with nothing to tell a
-/// reader which resource was unavailable.
+/// Generated allocation calls alone are interposed; runtime startup allocation
+/// remains real. One small four-form image covers success and every refusal.
 #[test]
-fn an_allocation_the_host_refuses_writes_one_resource_record() {
+fn each_generated_allocation_form_reaches_its_refusal_record() {
     let directory = test_directory();
-    let executable = build_executable(&compile(REFUSED_ALLOCATION), &directory);
-    let output = Command::new(&executable)
-        .output()
-        .expect("run the refused allocation");
-    assert_eq!(
-        output.status.code(),
-        None,
-        "a refused allocation ends by abort, not by a returned status"
+    let observed = heap_module()
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let host = format!(
+        "{}\n__attribute__((constructor)) static void unbuffer(void) {{ setvbuf(stdout, NULL, _IONBF, 0); }}\n",
+        super::owned_places::allocation_observer_by_process(4)
     );
-    assert_resource_record(&output.stderr, "heap");
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+    let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
+    for refused in 0..=4 {
+        let output = Command::new(&executable)
+            .env("WF_TEST_REFUSE_ALLOCATION", refused.to_string())
+            .output()
+            .expect("run scoped allocation refusal");
+        let trace = std::str::from_utf8(&output.stdout).expect("ASCII allocation trace");
+        if refused == 0 {
+            assert_eq!(output.status.code(), Some(18), "{output:?}");
+            assert!(output.stderr.is_empty());
+            assert!(trace.starts_with("A1;A2;A3;A4;"), "{trace}");
+            let mut freed = trace
+                .split(';')
+                .filter_map(|event| event.strip_prefix('F'))
+                .collect::<Vec<_>>();
+            freed.sort_unstable();
+            assert_eq!(freed, ["1", "2", "3", "4"], "{trace}");
+        } else {
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(
+                output.status.signal(),
+                Some(libc_sigabrt()),
+                "refused={refused}: {output:?}"
+            );
+            let expected = (1..refused).map(|id| format!("A{id};")).collect::<String>()
+                + &format!("X{refused};");
+            assert_eq!(trace, expected);
+            assert_resource_record(&output.stderr, "heap");
+        }
+    }
+    std::fs::remove_dir_all(directory).expect("remove allocation refusal image");
 }
 
 /// Filled and vacant buffers whose proved byte ceilings fit the selected
@@ -497,7 +395,7 @@ fn an_allocation_the_host_refuses_writes_one_resource_record() {
 /// null, so each operation keeps its ordinary heap-resource failure edge.
 #[test]
 fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
-    let module = compile(ALL_HEAP_FORMS);
+    let module = heap_module();
     for absent in [
         "buffer.fill.target.",
         "buffer.vacant.target.",
@@ -540,7 +438,7 @@ fn target_qualified_buffers_keep_only_the_heap_refusal_path() {
 /// took the fourth path, and nothing about the program would say which.
 #[test]
 fn every_allocation_refusal_edge_reaches_the_resource_abort() {
-    let module = compile(ALL_HEAP_FORMS);
+    let module = heap_module();
     let lines: Vec<&str> = module.lines().collect();
     for refusal in [
         "box.new.oom.",
@@ -952,7 +850,7 @@ const SHALLOW_OWNERSHIP: &[u8] = br#"fn main() -> status: own ExitStatus pure {
 "#;
 
 /// Every compiler-derived drop in one module, with the drops each one calls.
-fn drop_glue_calls(module: &str) -> Vec<(String, Vec<String>)> {
+pub(super) fn drop_glue_calls(module: &str) -> Vec<(String, Vec<String>)> {
     let mut glue: Vec<(String, Vec<String>)> = Vec::new();
     // A drop is a caller only inside its own definition. The program's own
     // functions call these helpers too, and attributing those calls to
@@ -1003,8 +901,8 @@ fn drop_glue_calls(module: &str) -> Vec<(String, Vec<String>)> {
 #[test]
 fn a_cyclic_release_graph_lowers_to_one_release_action_that_enters_itself() {
     // Both owning indirections a cleanup cycle can close through.
-    assert_recursive_drop_glue(&compile(&boxed_spine_source(4)));
-    assert_recursive_drop_glue(&compile(&buffer_chain_source(4)));
+    assert_recursive_drop_glue(&boxed_module());
+    assert_recursive_drop_glue(&buffer_module());
 }
 
 fn assert_recursive_drop_glue(module: &str) {
@@ -1017,7 +915,7 @@ fn assert_recursive_drop_glue(module: &str) {
          driver: {module}"
     );
     assert!(
-        !module.contains("@wf.drop.push") && !module.contains("@wf.drop.run"),
+        !module.contains("@wf.drop.push"),
         "a release walk allocates nothing: {module}"
     );
     let mut inside = false;
@@ -1028,12 +926,21 @@ fn assert_recursive_drop_glue(module: &str) {
             inside = false;
         } else if inside {
             assert!(
-                !line.contains("@wf_resource_abort") && !line.contains("@realloc"),
+                !line.contains("@wf_resource_abort")
+                    && !line.contains("@realloc")
+                    && !line.contains("@malloc"),
                 "a release action allocates nothing and reaches no abort: \
                  {line}"
             );
         }
     }
+    assert!(
+        release_graph_has_cycle(&glue),
+        "a recursive nominal's release graph must close: {module}"
+    );
+}
+
+fn release_graph_has_cycle(glue: &[(String, Vec<String>)]) -> bool {
     let index: std::collections::HashMap<&str, usize> = glue
         .iter()
         .enumerate()
@@ -1072,141 +979,16 @@ fn assert_recursive_drop_glue(module: &str) {
             }
         }
     }
-    assert!(
-        closed,
-        "a recursive nominal's release graph closes, so its release actions \
-         must reach one another: {module}"
-    );
+    closed
 }
 
-/// A program whose release graph is a chain has no recursive release.
-///
-/// Recursion is not a new default; it is what the derived release does at
-/// exactly the edges the type's own release graph closes on. Every other
-/// release keeps the straight-line expansion it has always had, whose depth
-/// the type bounds. A case that only checked the recursive side would pass
-/// against an emitter that made every release enter itself.
+/// An acyclic ownership graph must have no direct or mutual release cycle.
 #[test]
 fn an_ownership_chain_keeps_its_straight_line_drop() {
     let module = compile(SHALLOW_OWNERSHIP);
-    assert!(
-        module.contains("@wf.drop."),
-        "this program owns heap storage and must derive drops: {module}"
-    );
-    for (name, calls) in drop_glue_calls(&module) {
-        assert!(
-            !calls.contains(&name),
-            "a release whose depth the type bounds must not enter itself: \
-             {module}"
-        );
-    }
-}
-
-/// The recursive release reclaims a deep value correctly, end to end.
-///
-/// The depth is not the claim: since 2026-09-04 the release of a cyclic
-/// release graph descends the stack, so how deep a value it can reclaim is the
-/// ordinary stack-availability question [SCOPE-3] defers for every program
-/// that is not `resource_closed` — and a heap-allowed program is exactly the
-/// only kind that can have a cyclic release graph. What this case says is that
-/// the walk is *right*: it frees the whole structure, in one pass, and the
-/// program ends normally with an empty record channel.
-///
-/// The depth was a million while the walk ran on an explicit heap worklist,
-/// where it was also the claim that no depth exhausted the stack. That claim
-/// went with the worklist, and the depth here is one the recursion reaches on
-/// an ordinary thread stack.
-#[test]
-fn a_deep_boxed_spine_is_reclaimed_without_a_record() {
-    let directory = test_directory();
-    let executable = build_executable(&compile(&boxed_spine_source(10_000)), &directory);
-    let output = Command::new(&executable)
-        .output()
-        .expect("run the deep spine");
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "destroying a deep value must end the program normally: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        output.stderr.is_empty(),
-        "a completed run wrote to the record channel: {:?}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-// ------------------------------------ the cycle that closes through a buffer
-
-/// The shape a reviewer reached for when the traversal shipped with only its
-/// `box` arm, written the way they wrote it.
-///
-/// It is here as a program rather than as a type, because the claim it settles
-/// is about acceptance: this compiled and ran before the traversal existed, so
-/// nothing the traversal does may take it away. When only the `box` arm was
-/// implemented the emitter refused it with a bare compiler-invariant failure —
-/// no rule, no coordinate, and no statement of what was unsupported.
-const BUFFER_CYCLE: &[u8] = br#"enum Chain {
-  Nil();
-  Cons(kids: box<buffer<Option<Chain>>>);
-}
-
-fn main() -> status: own ExitStatus pure {
-  let inner = buffer_vacant::<Chain>(2_u64);
-  let b = box_new(move inner);
-  let node = Cons(kids: move b);
-  return exit_status(code: 0_u8);
-}
-"#;
-
-/// A cleanup cycle through a buffer is a program the compiler accepts.
-#[test]
-fn a_cleanup_cycle_through_a_buffer_is_accepted_and_runs() {
-    let directory = test_directory();
-    let executable = build_executable(&compile(BUFFER_CYCLE), &directory);
-    let output = Command::new(&executable)
-        .output()
-        .expect("run the buffer cycle");
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "this program compiled and ran before the traversal existed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        output.stderr.is_empty(),
-        "a completed run wrote to the record channel: {:?}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// The buffer arm carries depth the same way the `box` arm does.
-///
-/// Accepting the program is not the property; reclaiming it without descending
-/// is. This depth cannot fit a machine stack at the frame the recursive glue
-/// used to need, and the compiler that generated that glue dies here with a
-/// bare signal.
-#[test]
-fn a_deep_cleanup_cycle_through_a_buffer_is_reclaimed_without_a_record() {
-    let directory = test_directory();
-    let executable = build_executable(&compile(&buffer_chain_source(1_000_000)), &directory);
-    let output = Command::new(&executable)
-        .output()
-        .expect("run the deep buffer chain");
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "destroying a deep value must end the program normally: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        output.stderr.is_empty(),
-        "a completed run wrote to the record channel: {:?}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+    let glue = drop_glue_calls(&module);
+    assert!(!glue.is_empty(), "the fixture must derive release actions");
+    assert!(!release_graph_has_cycle(&glue), "{module}");
 }
 
 /// A buffer in a cleanup cycle whose elements each own further storage.
@@ -1290,7 +1072,7 @@ fn definition_body<'a>(module: &'a str, signature: &str) -> &'a str {
 /// ascending loop rather than pushed in reverse onto a last-in first-out list.
 #[test]
 fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
-    let module = compile(&buffer_chain_source(4));
+    let module = buffer_module();
     // The buffer's own release action: the element loop, then the block free.
     let buffer_drop = definition_body(&module, "define private void @wf.drop.buffer.t");
     assert!(
@@ -1301,6 +1083,21 @@ fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
     let element = buffer_drop
         .find("%element = load")
         .expect("the buffer release reads each live element");
+    let body = buffer_drop
+        .split("body:")
+        .nth(1)
+        .expect("element loop body")
+        .split("done:")
+        .next()
+        .unwrap();
+    assert!(
+        body.contains("call void @wf.drop."),
+        "each live element invokes its release action: {body}"
+    );
+    assert!(
+        body.contains("br label %head") && !body.contains("call void @free(ptr %pointer)"),
+        "backing may only be released after leaving the element loop: {body}"
+    );
     let block = buffer_drop
         .find("call void @free(ptr %pointer)")
         .expect("the buffer release frees its own block");
@@ -1311,28 +1108,49 @@ fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
     );
 }
 
-/// The block outlives every element that lives in it.
-///
-/// This is the half of [STOR-3]'s order that a running program can be made to
-/// notice. The traversal releases a `box` block as it takes that block's entry,
-/// which is what keeps the pending list off the depth; a buffer cannot do that,
-/// because its elements are still in the block. Under a host allocator that
-/// scribbles freed storage, taking that shortcut turns every element load into
-/// a scribbled tag and the enum's own invalid-tag abort fires.
+/// Allocation-instance identities expose omitted/double releases, field/element
+/// order and backing lifetime directly. Large depth and unverified allocator
+/// scribbling did not establish those properties.
 #[test]
-fn a_buffer_block_outlives_the_elements_the_traversal_takes_from_it() {
-    let directory = test_directory();
-    let executable = build_executable(&compile(WIDE_BUFFER_CYCLE), &directory);
-    let output = Command::new(&executable)
-        .env("MallocScribble", "1")
-        .env("MallocPreScribble", "1")
-        .output()
-        .expect("run the wide buffer cycle");
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "an element was read out of a block the traversal had released: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+fn branching_and_nested_release_walks_reclaim_each_instance_in_order() {
+    let mut boxed_trace = String::from("A1;");
+    for round in 0..4 {
+        let first = 2 + 3 * round;
+        boxed_trace.push_str(&format!(
+            "A{first};A{};A{};F{};",
+            first + 1,
+            first + 2,
+            first + 1
+        ));
+    }
+    boxed_trace.push_str("F1;");
+    for round in 0..4 {
+        let first = 2 + 3 * round;
+        boxed_trace.push_str(&format!("F{first};F{};", first + 2));
+    }
+    let nested_trace = (1..=9).map(|id| format!("A{id};")).collect::<String>()
+        + &(2..=9).map(|id| format!("F{id};")).collect::<String>()
+        + "F1;";
+    let wide_trace = (1..=10).map(|id| format!("A{id};")).collect::<String>()
+        + &(2..=9).map(|id| format!("F{id};")).collect::<String>()
+        + "F1;F10;";
+    for (name, module, limit, expected) in [
+        ("boxed branches", boxed_module(), 13, boxed_trace),
+        ("nested buffer", buffer_module(), 9, nested_trace),
+        ("wide buffer", compile(WIDE_BUFFER_CYCLE), 10, wide_trace),
+    ] {
+        let observed = module
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let directory = test_directory();
+        let observer = super::owned_places::allocation_observer(limit, 0);
+        let executable = build_linked_executable(&observed, Some(&observer), &[], &directory);
+        let output = Command::new(executable)
+            .output()
+            .expect("run observed release walk");
+        assert_eq!(output.status.code(), Some(0), "{name}: {output:?}");
+        assert_eq!(output.stdout, expected.as_bytes(), "{name}");
+        assert!(output.stderr.is_empty(), "{name}: {output:?}");
+        std::fs::remove_dir_all(directory).expect("remove release observation");
+    }
 }

@@ -183,7 +183,7 @@ int wf__main_body(int argc, char **argv) {
     if (!strcmp(probe_mode, "external")) {
         /* Delivery to the attached entry thread is explicit. */
         if (pthread_kill(pthread_self(), SIGBUS)) return 90;
-        (void)write(1, "SURVIVED\n", 9);
+        if (write(1, "SURVIVED\n", 9) != 9) return 90;
         return 91;
     }
     if (!strcmp(probe_mode, "offset")) run_offset_fault();
