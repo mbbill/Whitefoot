@@ -1,6 +1,13 @@
 #![forbid(unsafe_code)]
 
+mod canonical_corpus;
 mod support;
+
+mod conformance {
+    mod adapter;
+    pub(super) mod corpus;
+    mod json;
+}
 
 mod programs {
     mod binary;

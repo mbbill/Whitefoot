@@ -35,26 +35,11 @@ STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 # the process, its exit status and its record channel are all unchanged.
 NO_CORE_DUMPS := ulimit -c 0;
 
-# The modules below repeatedly execute programs to sample a schedule. The
-# remaining library tests include native links and substantial proof analysis
-# of real programs; their count does not predict their cost. CI partitions the
-# two groups across separate hosts. Local `test` runs both, and `test-partition`
-# proves that their union is exactly the library suite.
-SAMPLING_MODULES := \
-	backend::tests::exhaustion:: \
-	backend::tests::loop_split:: \
-	backend::tests::parallel::
-SAMPLING_SKIPS := $(patsubst %,--skip %,$(SAMPLING_MODULES))
-
-# The integration targets cargo discovers in `tests/`. `test-corpus` names them
-# one by one so a job runs exactly the ones it means to; `test-partition`
-# checks this list against the directory, so a new `tests/*.rs` cannot fall out
-# of the gate by being no one's business.
-INTEGRATION_TARGETS := canonical_corpus conformance programs snapshot
-
-# The stages `check` runs, in order, and the same targets the CI jobs run.
-COMPILER_STAGES := format lint test-partition test-unit test-sampling test-corpus \
-	docs spec completion-test
+# Cargo discovers library/bin cases and all integration targets. No manually
+# enumerated sampling partition or redundant list-only Rust build is needed.
+# Format and API-documentation commands remain available for focused authoring;
+# the correctness gate runs type/lint checks and executable assertions.
+COMPILER_STAGES := build lint test-build test-unit test-corpus completion-test
 
 COMPLETION_DIR := src/backend/completion
 # Completion builds use the same compute pool and process configuration as
@@ -154,12 +139,12 @@ _check:
 	@cat "$(STAGE_DIR)/compiler-summary"
 	@echo "== WHITEFOOT COMPILER GATE GREEN =="
 
-# Formatting, lint, documentation, specification and native runtime harnesses.
-# This historical target name does not mean that no executable runs.
+# Compatibility entry for type/lint and native runtime correctness checks.
+# Formatting and API-documentation generation have their own explicit targets.
 static:
 	@$(CHECK_RUN) compiler/static $(MAKE) --no-print-directory _static
 
-_static: format lint docs spec completion-test
+_static: lint completion-test
 	@echo "== WHITEFOOT COMPILER STATIC GATE GREEN =="
 
 # These targets construct artifacts without running the Rust test cases.
@@ -175,84 +160,25 @@ format:
 lint:
 	$(CHECK_RUN) compiler/lint $(CARGO) clippy --all-targets --locked --offline -- -D warnings
 
-# The gate profile (Cargo.toml [profile.gate]) is release codegen with debug
-# assertions and overflow checks retained: the suite's owning tests analyze
-# real programs, ~16x faster there than at the unoptimized default. A bare
-# `cargo test <filter>` during development still uses the default profile
-# and keeps incremental builds cheap.
-#
-# `test` is the whole suite, exactly as `--all-targets` was: the four targets
-# below partition it and `test-partition` is what proves they do.
+# Gate code generation retains debug assertions and overflow checks. Cargo's
+# default dev/test profile remains available for debugging, not a second gate.
 test:
 	@$(CHECK_RUN) compiler/test $(MAKE) --no-print-directory _test
 
-_test: test-partition test-unit test-sampling test-corpus
+_test: test-build test-unit test-corpus
 
-# The library cases outside the schedule-sampling modules above.
+# Private compiler/CLI obligations. Cargo selects their owning harnesses.
 test-unit:
-	$(NO_CORE_DUMPS) $(CHECK_RUN) compiler/test-unit $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_SKIPS)
+	$(NO_CORE_DUMPS) $(CHECK_RUN) compiler/test-unit $(CARGO) test --profile gate --lib --bins --locked --offline
 
-# The sampling half: the cases that link a program and run it many times.
-test-sampling:
-	$(NO_CORE_DUMPS) $(CHECK_RUN) compiler/test-sampling $(CARGO) test --profile gate --lib --locked --offline -- $(SAMPLING_MODULES)
-
-# Everything outside the library: the integration targets, which compile and
-# link real programs, and the binaries' own unit tests. The binaries are here
-# rather than beside the library half because linking their four test harnesses
-# costs more than running their cases does, and this is the job with the slack
-# for it.
+# Every integration target is discovered by Cargo, so adding one cannot fall
+# out of a copied target list. The shared corpus owns programs, conformance and
+# canonical rendering; no baseline compiler or timed comparison is involved.
 test-corpus:
-	$(NO_CORE_DUMPS) $(CHECK_RUN) compiler/test-corpus $(CARGO) test --profile gate --bins $(patsubst %,--test %,$(INTEGRATION_TARGETS)) --locked --offline
-
-# The split above is a scheduling decision, and a scheduling decision that
-# quietly drops cases is the worst kind of green. This proves it does not:
-# the two library halves partition the suite exactly — every case is in one of
-# them and none is in both — and the integration targets `test-corpus` names
-# are exactly the ones cargo discovers in `tests/`. The arithmetic alone cannot
-# notice a sampling module that was renamed or deleted, because `--skip M` and
-# the filter `M` are exact complements whatever M names; so every name in
-# SAMPLING_MODULES must also match at least one case on its own. Listing costs
-# a `--no-run` build and no test time.
-test-partition:
-	@$(CHECK_RUN) compiler/test-partition $(MAKE) --no-print-directory _test-partition
-
-_test-partition:
-	@whole=$$($(CARGO) test --profile gate --lib --locked --offline -- --list \
-		| grep -c ': test$$'); \
-	fast=$$($(CARGO) test --profile gate --lib --locked --offline -- --list $(SAMPLING_SKIPS) \
-		| grep -c ': test$$'); \
-	sampled=$$($(CARGO) test --profile gate --lib --locked --offline -- --list $(SAMPLING_MODULES) \
-		| grep -c ': test$$'); \
-	if [ "$$whole" -ne "$$(( fast + sampled ))" ]; then \
-		echo "library split is not a partition: $$whole cases, $$fast fast + $$sampled sampled" >&2; \
-		exit 1; \
-	fi; \
-	if [ "$$sampled" -eq 0 ]; then \
-		echo "library split names no sampling case: SAMPLING_MODULES matches nothing" >&2; \
-		exit 1; \
-	fi; \
-	for module in $(SAMPLING_MODULES); do \
-		count=$$($(CARGO) test --profile gate --lib --locked --offline -- --list $$module \
-			| grep -c ': test$$'); \
-		if [ "$$count" -eq 0 ]; then \
-			echo "library split names a sampling module with no case: $$module" >&2; \
-			exit 1; \
-		fi; \
-	done; \
-	echo "library split: $$whole cases = $$fast fast + $$sampled sampled"
-	@declared="$$(printf '%s\n' $(INTEGRATION_TARGETS) | sort | tr '\n' ' ')"; \
-	present="$$(ls tests/*.rs | sed -e 's|tests/||' -e 's|\.rs$$||' | sort | tr '\n' ' ')"; \
-	if [ "$$declared" != "$$present" ]; then \
-		echo "integration targets declared [$$declared] but tests/ holds [$$present]" >&2; \
-		exit 1; \
-	fi; \
-	echo "integration targets: $$present"
+	$(NO_CORE_DUMPS) $(CHECK_RUN) compiler/test-corpus $(CARGO) test --profile gate --test '*' --locked --offline
 
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --no-deps --locked --offline
-
-spec:
-	$(CARGO) run --profile gate --bin whitefoot-spec --locked --offline
 
 completion-test: completion-core-read-test completion-default-route-test ordinary-values-test sched-smoke sched-deque-test
 	@mkdir -p "$(COMPLETION_TMP)"
@@ -652,8 +578,8 @@ completion-windows-wine: completion-windows-cross
 
 # Managed-stack park-on-miss measurements are retired from this runtime.
 # Their dated evidence and reproduction revision remain in the investigation.
-.PHONY: check _check static _static build test-build format lint test _test test-unit test-sampling test-corpus _test-partition \
-	test-partition docs spec completion-test \
+.PHONY: check _check static _static build test-build format lint test _test test-unit test-corpus \
+	docs completion-test \
 	completion-core-read-source-boundary completion-core-read-test \
 	completion-core-read-stress completion-core-read-tsan completion-tsan \
 	completion-sanitize \

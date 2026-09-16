@@ -23,7 +23,7 @@ RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-targ
 # `approval-history-integrity` and `spec-archive-integrity` were retired with
 # the approval ledger they both read.
 CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	design-lint conformance compiler library-tests research-tests bench-programs conformance-run snapshot-run
+	design-lint conformance compiler library-tests research-tests bench-programs snapshot-run
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -197,20 +197,10 @@ _bench-programs:
 	$(MAKE) -C research/experiments/io-completion-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 	$(MAKE) -C research/experiments/compute-bench programs-check WHITEFOOT_SCRATCH_ROOT="$(RESEARCH_TEST_TMP)"
 
-# Enumerate every declared case through the native adapter. Every non-pending
-# case reaches an actual compiler verdict; run cases are linked and
-# executed, while the declared pending case is reported as Skip. `check`
-# depends on this target.
-# `NO_CORE_DUMPS` only limits harness artifacts if an executable stops
-# unexpectedly; the corpus contains no abnormal-termination expectation.
-#
-# `--profile gate` for the reason `compiler/Cargo.toml` states: this adapter
-# runs the whole compiler over five hundred cases, which is exactly the
-# compute-bound front-end analysis the gate profile exists for, and it kept
-# every debug assertion and overflow check. Left at the default profile it was
-# both a second unoptimized build of the crate and an unoptimized run of it.
+# Focused conformance invocation. The full gate already reaches this ordinary
+# test through the shared corpus executable and must not run it twice.
 conformance-run:
-	$(NO_CORE_DUMPS) cd compiler && $(CHECK_RUN) conformance-run cargo test --profile gate --test conformance --locked --offline -- --ignored --nocapture
+	$(NO_CORE_DUMPS) cd compiler && $(CHECK_RUN) conformance-run cargo test --profile gate --test corpus --locked --offline -- conformance::adapter:: --nocapture
 
 # Recompile every program in `tests/snapshot` and compare the accept/reject
 # verdict each row records. Compile only: no link, no execution. The corpus is

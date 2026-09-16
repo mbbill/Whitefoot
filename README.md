@@ -122,7 +122,8 @@ is one example. The `gate` profile builds the Rust compiler implementation and
 test harnesses with optimization, debug assertions and overflow checks. It is
 not an optimization switch for WF source. Use a dev build when debugging the
 Rust implementation, rather than constructing it for ordinary verification.
-The complete gate is still
+Formatting and API documentation have explicit `format` and `docs` commands;
+they are not extra correctness-test stages. The complete gate is still
 required on the exact revision merged into main.
 
 The root gate, research/benchmark checks and compiler verification targets use
@@ -150,7 +151,8 @@ the [test boundary](docs/practice.md#test-boundary): useful research cases and
 their dependencies belong in formal tests, while research runs on explicit
 request. Full IO matrices and compute scoreboards are experiments; the separate
 [compute regression check](.github/workflows/compute-regression.yml) supplies
-a paired performance verdict. A green run describes its tested revision and
+a paired performance verdict. Routine correctness CI and local `make check`
+do not build a baseline compiler or run that comparison. A green run describes its tested revision and
 coverage; it is not a proof of completeness or the absence of known defects.
 Conformance reports distinguish passing cases, expected compiler failures,
 and pending support.

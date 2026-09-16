@@ -17,12 +17,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[allow(dead_code)]
-#[path = "conformance/corpus.rs"]
-mod conformance_manifest;
-#[allow(dead_code)]
-#[path = "conformance/json.rs"]
-mod json;
+use crate::conformance::corpus as conformance_manifest;
 
 use conformance_manifest::Expectation;
 
@@ -208,6 +203,7 @@ fn manifest_exclusions_cover_only_the_declared_failure_edges() {
 
 #[test]
 fn every_canonical_corpus_file_re_renders_to_itself() {
+    the_case_covering_ex1_reproduces_its_normative_bytes();
     let files = corpus_files();
     let expectations = manifest_expectations();
     let mut round_tripped = Vec::new();
@@ -385,7 +381,6 @@ fn ex1_case() -> PathBuf {
 /// nothing about whether [EX-1]'s bytes are the right bytes. It also must not
 /// be extended to `run-ex1-value-match`, an EX-1-*class* program that names no
 /// EX-1 among its rules and is deliberately a superset of the block.
-#[test]
 fn the_case_covering_ex1_reproduces_its_normative_bytes() {
     let case = ex1_case();
     let bytes = std::fs::read(&case)

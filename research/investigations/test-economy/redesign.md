@@ -14,7 +14,7 @@ the agent to resolve the remaining review using the same admission principles,
 without waiting for further batch-by-batch decisions. Earlier statements that
 execution is deferred describe the discussion phase and are superseded by this
 authorization. B06's recommendations below are implementation directions;
-B07 still requires a source audit before changes. Record actual migration and
+B07 has now been source-reviewed below. Record actual migration and
 validation results as work proceeds; authorization is not evidence of completion.
 
 The owner also clarified the performance boundary: **routine correctness CI
@@ -379,7 +379,7 @@ The inventory uses the stable batch IDs below. The owner agreed to all eight
 B05h-o enabled research entry groups and requested prevention of future
 research dependencies as described above. Their implementation remains
 covered by the execution authorization above. B06's three groups are
-source-reviewed below and authorized for implementation; B07 remains unreviewed,
+source-reviewed below and authorized for implementation; B07 is now source-reviewed,
 and B08 is excluded. These
 are discussion scopes, not test counts, new targets or a promise that each
 fits one conversation. Individual compiler/corpus migration audits still
@@ -393,7 +393,7 @@ apply under the accepted baseline.
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Both reviewed parts agreed; implementation deferred |
 | B05 | Extract useful observations from currently enabled research models, compiler witnesses, oracles and indirect formal-test inputs | Authority/foundation screened; all eight B05h-o recommendations agreed; implementation deferred |
 | B06 | Enabled IO/compute benchmark construction and correctness, and automatic paired performance regression | All three groups source-reviewed below; implementation authorized with performance separate from correctness CI/local checks |
-| B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
+| B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Source-reviewed under delegated authority; implementation in progress |
 | B08 | Historical or explicit experiment/instrument runners outside automatic CI and the default gate | Excluded by the owner's scope clarification; no case review or cleanup required |
 
 **Enabled review coverage.** The following is a source-level caller count at
@@ -412,8 +412,8 @@ automatic gate. The manual comparison arms of `compute-bench.yml` are likewise
 outside this review; its push-triggered build/verify arm remains in B06. Follow
 helpers used by an enabled arm even when the same helper also serves a manual
 experiment. Do not open unrelated research cases merely because they share a
-directory. B06's source review follows below; B07 is the remaining unreviewed
-scope. B06 implementation is authorized. The selected B05 extraction,
+directory. B06 and B07 are source-reviewed below and implementation is
+authorized. The selected B05 extraction,
 dependency-guard direction and earlier migrations still require implementation.
 
 **Selected C runner organization.** The owner agreed to consolidate compatible
@@ -430,8 +430,8 @@ One executable can still need several fresh processes: helper count and native
 engine selection are initialized once per process. Select only the cases that
 observe each setting rather than rerunning the entire suite for every setting.
 Compatible cases run together under one configuration, through a common entry
-point. This is not authorization to merge incompatible hooks, reset live
-runtime singletons, remove required host observations or start implementation.
+point. Consolidation must not merge incompatible hooks, reset live runtime
+singletons or remove required host observations.
 
 | Item | Check | Recommendation | Owner ruling |
 |---|---|---|---|
@@ -2931,6 +2931,85 @@ is owner-selected, with its exact implementation still in B07. This source
 audit changes neither pending amendment and claims no live-tree/specification/
 conformance/build/workflow change, measurement, DCR or completion review.
 
+### B07 — repository and test-tooling checks
+
+The owner delegated this remaining review on 2026-09-16. The current Makefiles,
+gate workflow, conformance runner/tests, design linter/tests and process guard
+were inspected before selecting the following changes. These are tooling
+responsibilities, not additional WF programs. No new timing protocol is
+selected by this review.
+
+| Check and current source | What executes and what it protects | Disposition |
+|---|---|---|
+| Rust formatting, `compiler/Makefile::format` | rustfmt compares Rust formatting; no type check or executable assertions | Keep the explicit authoring command; remove it from the correctness-test stage list. Formatting is not evidence of correctness/performance regression. Run it when editing Rust. |
+| Rust lint, `compiler/Makefile::lint` | Clippy checks library, CLI and test targets, including workspace unsafe-code prohibition and compiler diagnostics; no Rust test runs | Keep all-target checking in the normal correctness gate. It has distinct type/lint observations; it must not be described as test execution or an extra debug compiler product. |
+| Rust API docs, `compiler/Makefile::docs` | rustdoc builds API documentation and rejects documentation warnings; doctests are disabled | Keep explicit documentation generation; remove it from routine correctness CI/local gate. This research crate's generated API pages have no automatic publication consumer, and their construction is not another compiler correctness case. |
+| `.github/test-run-check.sh` | Real bounded shell/Perl subprocesses exercise exit propagation, nested ownership, competing-owner refusal, concurrency defaults, timeout, cancellation and orphan cleanup | Keep with `repository-invariants`. This protects the mechanism preventing concurrent/unbounded verification; the deliberate sleepers are killed by their tested deadlines. No compiler build or WF case. |
+| Remaining root `repository-invariants` | Compare AGENTS/CLAUDE and reject tracked machine-local paths; Git/shell scans only | Keep repository-integrity observations. Add the selected small research-reference check in this same stage, with focused supported-form/allowed-citation controls; no new compiled test binary. |
+| `spec-append-only` | Compare released version archives with main through Git | Keep; it protects immutable specification evidence. New outgoing archives retain exact main bytes. It is not a source-language verdict or identity rehash. |
+| `spec-prose-integrity` | Scan current guidance for transcribed spec hashes or stale active-version declarations | Keep the focused reference-drift check. The active file/version derivation removes the redundant Status comparison, not the need for honest current guidance. |
+| `design/skill/lint.py` and its 17 tests | Inspect tree/amendment structure and review base; temporary Git fixtures test missing approval/log/base and accepted amendment-only cases | Keep with the structural design check. It validates required tool behavior and makes no DCR/content-approval claim. Reuse its existing fixture runner; do not add a second design-audit framework. |
+| `tests/conformance/runner.py` and tests | Check manifest/schema/source completeness, declared rule coverage and invocation arrangements; use synthetic adapters for result-reading controls | Keep compiler-independent tooling, adding the selected rule-definition/reference checks here. These checks do not replace actual compiler verdicts. Correct META-5's annotation: selection-ground review is human review, not a Markdown-scanner guarantee. |
+| `compiler/Makefile::test-partition` | Invoke Cargo's library test listing six times and compare a hand-selected sampling split/integration list | Retire the copied partition after removing that scheduling split. Cargo selects all library/bin cases and all integration targets directly; there is no separately maintained target list that needs six list-only invocations to police it. Corpus manifests still validate their own source collection. |
+
+The resulting Rust packaging keeps the library harness for private compiler
+obligations and the CLI harness for its fourteen actual option/path/runtime-unit
+checks. The two removed auxiliary binaries need neither normal nor test images.
+Programs, conformance and the canonical batch share one `corpus` integration
+executable and shared native construction support. The conformance batch is an
+ordinary test; the full gate runs it once, without a separate ignored-test
+opt-in. `make conformance-run` remains a focused selection of that same case.
+The snapshot executable stays only until individual dispositions finish; this
+packaging change does not retire any unreviewed snapshot case.
+
+The research checker reads supported literal references and executable build/
+workflow/helper lines, follows their resolvable input paths including symlinks,
+and reports the referring source line and destination. It recognizes explicit
+manual-only workflow/Make boundaries rather than exempting every workflow or
+the root Makefile. It does not interpret arbitrary Make/shell or reconstruct
+every dynamic path. T6 must cover unresolved/transitive inputs. Small synthetic
+fixtures exercise its recognizers; no permanent exception for existing active
+dependencies is allowed when it is enabled. Formal test support and library
+callers are included, including latest main's container `native.mk` import.
+
+### Implementation evidence: build inputs and source-test packaging
+
+At implementation base `91fbbc5b` (including main `94821e5b`), the build-input
+changes remove both auxiliary Cargo binaries and the committed 10,255-line
+grammar-table copy. The existing Rust grammar algorithm now runs from
+`build.rs` and writes `OUT_DIR/grammar_tables.rs`; compiler parsing consumes
+that output. No alternative grammar algorithm or acceptance path was added.
+The build still embeds and hashes the active specification once. The unused
+runtime rehash API and same-source identity/title comparisons were retired;
+independent SHA-256 algorithm vectors remain.
+
+The specification moves from v0.58 to v0.59 solely to remove `Status: ACTIVE`
+and advance its title, archiving outgoing v0.58 bytes unchanged. Rules, tokens,
+spellings and exceptions have zero semantic delta. The selection ground is
+minimality: the active path and build-derived title already identify the
+specification. The conformance scanner now detects duplicate definitions and
+unresolved rule/sub-rule anchors, and META-1/META-4 annotations point to that
+actual checker. META-5 correctly points to specification-change review rather
+than pretending the retired binary verified a PR's selection ground.
+
+Initial focused validation, with two build/test jobs and cancellable deadlines:
+
+| Phase | Observed wall | Result and scope |
+|---|---:|---|
+| Gate-profile compiler construction after latest-main integration and generator migration | 44.45 s | Compiler built successfully. This is compiler construction, not WF compilation or test execution. |
+| Rust library-test executable construction after the compiler build | 78.53 s | One complete library harness constructed; no Rust test ran in this phase. |
+| Remaining Rust test targets after the library harness was built | 44.92 s | CLI and integration harnesses constructed successfully; the library harness was reused. No test ran. |
+| Existing parser/grammar/canonical implementation assertions | 1.50 s command; 0.66 s Rust harness | 88 tests passed, 1,582 other library cases filtered. No full-library pass is claimed. |
+| Canonical batch and CLI unit cases | 1.64 s command | Two canonical tests (including the normative example) and fourteen CLI cases passed; no full corpus/program run. |
+| Rust type/lint checking | 12.30 s | Clippy passed on all targets. Its dev-profile check artifacts are metadata/build support, not an extra runnable debug compiler or debug test execution. |
+| Conformance tooling | 0.44 s command | 29 Python tests passed in 0.131 s; 129/129 declared rules covered. No native conformance case ran. |
+
+These are actual incremental development phases, not a fresh full-project
+benchmark. The full suite, platform jobs and remaining extractions still need their
+own validation. Patch whitespace, identical AGENTS/CLAUDE and design lint
+against latest origin/main pass (58 live nodes, depth 3, net change zero; two
+pending amendments). No DCR or completion is claimed.
+
 ## Affected material and evidence
 
 - Specification identity: `compiler/build.rs`, `compiler/src/spec.rs`,
@@ -2949,5 +3028,5 @@ conformance/build/workflow change, measurement, DCR or completion review.
 - Update current guidance and both inventory languages to the resulting
   system; retain dated measurements with their original revision boundaries.
 
-No implementation, test retirement, specification edit or new performance
-measurement accompanies this record.
+Implementation is in progress as recorded above. No full-gate, platform, new
+performance result or completed review is implied by the focused checks.

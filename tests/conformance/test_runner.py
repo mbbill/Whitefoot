@@ -23,28 +23,27 @@ def copy_authorities(directory: Path) -> None:
 
 
 class ActiveSpecificationTests(unittest.TestCase):
+    def test_duplicate_definitions_fail_with_both_locations(self):
+        with self.assertRaisesRegex(ValueError, r"line 3: duplicate.*META-1.*line 1"):
+            runner.specification_rules("[META-1] rule\n\n[META-1] duplicate\n")
+
+    def test_unknown_reference_fails_at_its_use(self):
+        with self.assertRaisesRegex(ValueError, r"line 2: unresolved.*META-2"):
+            runner.specification_rules("[META-1] rule\nSee [META-2].\n")
+
+    def test_sub_rule_references_resolve_to_the_exact_anchor(self):
+        text = "[ENT-3] rule\n[ENT-3.S1] clause\nSee [ENT-3.S1].\n"
+        self.assertEqual(runner.specification_rules(text), {"ENT-3"})
+        with self.assertRaisesRegex(ValueError, r"unresolved.*ENT-3.S2"):
+            runner.specification_rules(text + "See [ENT-3.S2].\n")
+
+    def test_duplicate_sub_rule_anchor_is_not_another_parent_definition(self):
+        with self.assertRaisesRegex(ValueError, r"duplicate.*ENT-3.S1"):
+            runner.specification_rules("[ENT-3] rule\n[ENT-3.S1] one\n[ENT-3.S1] two\n")
+
     def make_repository(self, directory: Path) -> None:
         copy_authorities(directory)
         (directory / "spec").mkdir(exist_ok=True)
-
-    def make_active_repository(self, directory: Path) -> str:
-        """Normalize the copied fixture to a synthetic ACTIVE state.
-
-        Rewrites whatever status line the copy carries to a fresh synthetic
-        ACTIVE version. The bytes are the identity, so nothing else records it.
-        Returns the synthetic version.
-        """
-        active = directory / runner.ACTIVE_SPEC
-        text = active.read_text()
-        lines = text.split("\n")
-        status_indexes = [
-            i for i, line in enumerate(lines) if line.startswith("Status: ")
-        ]
-        self.assertTrue(status_indexes, "fixture spec has no status line")
-        version = "v99.8"
-        lines[status_indexes[0]] = f"Status: ACTIVE {version}"
-        active.write_bytes("\n".join(lines).encode())
-        return version
 
     def test_versioned_archive_cannot_change_coverage_authority(self):
         with tempfile.TemporaryDirectory() as temporary:

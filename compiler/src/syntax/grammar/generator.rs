@@ -1,37 +1,14 @@
-//! Derives `src/syntax/grammar/generated.rs` from the active specification's
-//! normative EBNF.
-//!
-//! The committed strong-LL(2) tables are not hand-editable. They contain
-//! hundreds of nodes and decisions plus thousands of provenance-retaining
-//! SELECT rows. They
-//! have always been produced by a generator, but each grammar task built one
-//! offline and deleted it, so nothing checked that the committed tables were
-//! still the tables the specification implies. Task 0031 added 84 `]`-closing
-//! follow rows by hand; 70 of the resulting predicate pairs place `]` where the
-//! grammar cannot derive it, and the whole batch names the wrong provenance
-//! node. Nothing detected that for a version.
-//!
-//! This binary closes that hole. `--check` regenerates from the active
-//! specification and compares against the committed file, and the test below
-//! runs the same comparison inside `make -C compiler check`, so the invariant
-//! "the committed tables are the tables the specification's grammar implies" is
-//! machine-checked from now on.
-//!
-//! Agreement here does not prove the tables are *complete* for a grammar the
-//! corpus has never exercised; it proves the committed data and the normative
-//! EBNF agree. Parsing real programs remains the completeness oracle.
+//! Derive active-specification strong-LL(2) tables during Cargo construction.
+//! Parser behavior is checked separately; there is no committed table copy.
 
+#[path = "generator/ebnf.rs"]
 mod ebnf;
+#[path = "generator/model.rs"]
 mod model;
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
-use model::{First, Follow, Grammar, Kind, Pred, Tok, WordSet, concat, mark_outside, pad};
-use whitefoot::{ACTIVE_KERNEL_SPEC_PATH, ACTIVE_KERNEL_SPEC_TEXT};
-
-/// The committed tables this generator must reproduce.
-const COMMITTED_TABLES: &str = include_str!("../../syntax/grammar/generated.rs");
+use self::model::{First, Follow, Grammar, Kind, Pred, Tok, WordSet, concat, mark_outside, pad};
 
 /// `Production` declaration order is the dense index for the current grammar.
 /// Retired productions leave this inventory instead of surviving as dormant
@@ -166,65 +143,8 @@ struct DecisionRecord {
     rows: Vec<Row>,
 }
 
-fn main() {
-    let mut arguments = std::env::args().skip(1);
-    let mut check = false;
-    let mut source: Option<String> = None;
-    let mut output: Option<String> = None;
-    while let Some(argument) = arguments.next() {
-        if argument == "--check" {
-            check = true;
-        } else if argument == "--output" {
-            output = arguments.next();
-            if output.is_none() {
-                eprintln!("whitefoot-grammar-tables: --output requires a path");
-                std::process::exit(1);
-            }
-        } else {
-            source = Some(argument);
-        }
-    }
-    let (path, text) = match source {
-        Some(path) => {
-            let text = match std::fs::read_to_string(Path::new(&path)) {
-                Ok(text) => text,
-                Err(error) => {
-                    eprintln!("whitefoot-grammar-tables: cannot read {path}: {error}");
-                    std::process::exit(1);
-                }
-            };
-            (path, text)
-        }
-        None => (
-            ACTIVE_KERNEL_SPEC_PATH.to_string(),
-            ACTIVE_KERNEL_SPEC_TEXT.to_string(),
-        ),
-    };
-    let derived = generate(&path, &text);
-    if check {
-        if derived == COMMITTED_TABLES {
-            println!(
-                "committed grammar tables match the grammar of {path}: {} bytes",
-                derived.len()
-            );
-        } else {
-            eprintln!(
-                "whitefoot-grammar-tables: the committed tables are not the tables the grammar of {path} implies; regenerate them"
-            );
-            std::process::exit(1);
-        }
-    } else if let Some(output) = output {
-        if let Err(error) = std::fs::write(&output, derived) {
-            eprintln!("whitefoot-grammar-tables: cannot write {output}: {error}");
-            std::process::exit(1);
-        }
-    } else {
-        print!("{derived}");
-    }
-}
-
-/// Derives the complete contents of `generated.rs` from one specification.
-fn generate(path: &str, specification: &str) -> String {
+/// Derives the complete contents of `grammar_tables.rs` from one specification.
+pub fn generate(path: &str, specification: &str) -> String {
     let raw = ebnf::productions(specification);
     let names: Vec<String> = raw.iter().map(|entry| entry.name.clone()).collect();
     let (trees, index) = ebnf::parse_all(&raw);
@@ -593,23 +513,4 @@ fn emit(
         out.pop();
     }
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{ACTIVE_KERNEL_SPEC_PATH, ACTIVE_KERNEL_SPEC_TEXT, COMMITTED_TABLES, generate};
-
-    /// The committed tables must be the tables the active grammar implies.
-    ///
-    /// This is the check that was missing when task 0031 hand-added 84
-    /// `]`-closing follow rows, 70 of whose predicate pairs the grammar cannot
-    /// derive. Regenerate with `cargo run --bin whitefoot-grammar-tables`.
-    #[test]
-    fn committed_tables_are_derived_from_the_active_grammar() {
-        let derived = generate(ACTIVE_KERNEL_SPEC_PATH, ACTIVE_KERNEL_SPEC_TEXT);
-        assert_eq!(
-            derived, COMMITTED_TABLES,
-            "committed grammar tables differ from the active specification grammar"
-        );
-    }
 }

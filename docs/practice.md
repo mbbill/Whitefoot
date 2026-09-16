@@ -268,7 +268,10 @@ and erased before lowering, every partial operation is lowered only after
 machine proof of its domain, and optional optimization facts may not change
 acceptance, cleanup, or output.
 
-Automatic CI checks maintained correctness and performance regressions.
+Automatic CI checks maintained correctness and performance regressions in
+separate workflows. Routine correctness CI and local `make check` do not build
+or time baseline/candidate WF pairs. Formatting and Rust API documentation
+generation remain explicit authoring commands, outside the correctness gate.
 `research/` is outside daily CI and `make check`, including indirect
 dependencies on its scripts, programs, fixtures and datasets. Extract useful
 observations and the inputs/oracles needed to check them into the formal test

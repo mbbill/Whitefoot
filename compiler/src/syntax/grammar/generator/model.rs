@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ebnf::Ast;
+use super::ebnf::Ast;
 
 // ---------------------------------------------------------------------------
 // Predicates

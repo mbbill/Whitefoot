@@ -160,9 +160,12 @@ What the four rules mean exactly:
   changes after approval or after its successful test run, rules 2 and 3 apply
   to the new revision.
 - **All repository tests** is the root `make check` target: the compiler build,
-  format and lint, maintained compiler/runtime/program tests, specification
+  Rust type/lint checks, maintained compiler/runtime/program tests, specification
   checks, conformance structure and coverage, and the full native conformance
-  adapter including the case ordinary Cargo runs mark ignored.
+  adapter through the ordinary source-corpus tests. Formatting and Rust API
+  documentation generation are explicit authoring commands, not extra
+  correctness-test stages. Performance comparisons have their own workflow;
+  neither local `make check` nor routine correctness CI builds a baseline.
   `research/` owns investigations and explicitly requested experiments, never
   daily CI or gate dependencies. Extract useful regression cases and their
   required fixtures/oracles into the formal test system; leave the remaining
@@ -172,13 +175,12 @@ What the four rules mean exactly:
   content, its runner and adapter, and any collection or invocation wiring that
   can change which cases run or how their results are read.
 
-A specification amendment lands as one change: the active file retitled and
-redeclared vN+1, and the outgoing vN bytes archived as
+A specification amendment lands as one change: the active file retitled vN+1, and the outgoing vN bytes archived as
 `spec/kernel-spec-vN.md`. Its identity follows its bytes without being
 recorded anywhere — `compiler/build.rs` derives it. The version number is
 claimed on the branch and settled at merge: two branches archive the same
 outgoing bytes under the same name, so only the new number collides, and the
-second to merge retitles two lines and rebuilds. There is no candidate state;
+second to merge updates the title and rebuilds. There is no candidate state;
 a branch carrying an amendment is merge-ready when its gate is green.
 
 No plan status, branch charter, batch record, worktree arrangement, audit,

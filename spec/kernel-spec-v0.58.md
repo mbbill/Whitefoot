@@ -1,5 +1,6 @@
-# Kernel Specification v0.59
+# Kernel Specification v0.58
 
+Status: ACTIVE v0.58
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
