@@ -85,11 +85,16 @@ to choose a design. They are requirements for comparing candidates, not results.
    proof mechanism. Unknown overlap may deny optimization; missing safety
    evidence must reject the operation.
 
-The first decisive program should allocate three blocks, retain aliases,
-release the middle block, allocate a replacement into the available space,
-and use the two surviving blocks. A second should use two handles connected
-to the same external state. These distinguish the target from a scalar-cell
-demo, bulk-only arena reclamation, and wrappers that hide interference.
+Whole-language integration witnesses include three blocks with middle release
+and storage reuse, and two handles connected to the same external state. They
+remain necessary to distinguish the target from a scalar-cell-only language,
+bulk-only arena reclamation, and wrappers that hide interference. They do not
+require validating all mechanisms at once. The
+[local straight-line baseline](DESIGN.md#local-straight-line-baseline) isolates
+known object origins and exact resource-state propagation before adding joins
+or function boundaries. Each increment needs its own operation rules,
+distinguishing examples, and stated approximation; a broad proposal does not
+establish those results in advance.
 
 ## What current WF provides and what this reopens
 

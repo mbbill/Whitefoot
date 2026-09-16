@@ -11,7 +11,7 @@ Notation in this document is explanatory, not final source grammar.
 ## Recommendation and the actual choice
 
 Develop **A: access and current-state checking** as the main candidate, with
-**B: validity loans and access effects** as a complete, more restrictive
+**B: validity loans and access effects** as a more restrictive
 alternative. Both replace persistent exclusive write loans. The difference is
 what a retained reference promises about future storage validity.
 
@@ -49,6 +49,47 @@ unspecified mechanisms:
 Choosing A or B remains an owner decision. Proving and measuring the complete
 calculus remains research/implementation work; those limits are stated at the
 end and are not passed off as consequences of the bounded model.
+
+## Local straight-line baseline
+
+The whole-language mechanisms below are hypotheses to validate incrementally.
+The first local baseline fixes a much smaller language: one procedure, two
+independent scalar objects created at entry, and local locator bindings.
+Their origins are known. There are no branches, loops, calls, fields, arrays,
+owner moves, later allocations, or physical storage reuse in this baseline.
+The scalar payload is copy data; arithmetic and payload-dependent control are
+absent. Object creation and release are abstract operations, not an allocator
+implementation.
+
+Each state records exact locator targets, live/initialized storage, and the
+fixed owners' remaining disposal obligations. Locator creation copies a
+target without copying ownership. Rebinding a locator changes that binding
+only, including when its source is another locator. Rebinding cannot overwrite
+an owner. Taking data empties a still-live slot, putting data initializes it,
+and release consumes the owner and ends the slot's lifetime. The local probe
+uses explicit linear cleanup: procedure exit requires every entry owner to
+have been consumed. This is an experiment choice, not WF's general affine
+cleanup rule.
+
+With known entry relations and deterministic target transformations, each
+straight-line prefix has one exact resource state. The target need not be a
+known physical address. An unknown function parameter is outside this scope;
+introducing one would not refute exactness under these premises.
+
+The minimum witnesses are locator-copy stability after rebinding, sequential
+writes through aliases, a read after take, restoration through another alias,
+a read or write after release, disposal through a non-owner, repeated disposal,
+and an unconsumed exit obligation. Their expected outcomes follow the
+operation rules before the checker is run. The
+[local experiment](../../experiments/access-state/RESULTS.md#local-baseline-criteria)
+compares acceptance and retained resource state, so a checker that needlessly
+forgets a known relation is distinguishable from an exact one.
+
+This baseline deliberately has no target-set join. A later branch experiment
+must first define the exact set of reachable resource states and then compare
+more compact approximations against it. Both reference/reference and
+reference/initialization correlations matter. These later requirements do not
+add branches or general resource predicates to the present probe.
 
 ## Common foundation: separate three responsibilities
 

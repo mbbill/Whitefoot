@@ -42,6 +42,47 @@ instrumentation, not a proposed runtime mechanism. The address-only machine
 has allocator occupancy bookkeeping but no generation or borrow check.
 Neither interpreter establishes native-pointer lowering or LLVM validity.
 
+## Local baseline criteria
+
+Recorded before implementing this increment. It uses the existing checker and
+physical interpreter, restricted to the
+[local straight-line baseline](../../investigations/access-effects/DESIGN.md#local-straight-line-baseline).
+Two independent initialized scalar objects and their fixed owners are created
+at entry. Two local locator slots can be introduced and rebound. The body has
+only locator creation/rebinding, read, store, take, and release; it contains no
+branch, loop, call, reference field, owner move, or further allocation.
+
+The prior experiment cannot yet express rebinding an existing local locator:
+`Alias` only introduces an unoccupied binding. The increment must add a general
+locator-assignment rule without changing the identity captured by a prior copy
+or permitting an owner to be overwritten. All previous tests remain in place.
+
+Discriminating criteria for this increment:
+
+1. Human-readable examples specify accepted observations or the first illegal
+   operation before execution. The six motivating cases are copy/rebind,
+   sequential alias writes, read after take, restoration through an alias,
+   access after release, and repeated owner consumption. Include non-owner
+   disposal and unconsumed exit obligations as boundaries.
+2. For every reachable state in the finite two-object/two-locator resource
+   domain, compare both admission and resulting resource state for every
+   instruction in the fixed alphabet. Explore to closure, not to an instruction
+   depth. Rejecting an oracle-valid instruction is a precision failure here;
+   accepting an oracle-invalid instruction is a safety/accounting failure.
+3. The oracle uses the physical interpreter plus explicit test-only ownership
+   and binding checks. It must not consult the checker's targets, liveness,
+   initialization facts, or verdict. Payload values do not select access or
+   control, and the compared state abstracts them to initialized/empty. This
+   criterion concerns resource relations, not arbitrary scalar-value properties.
+4. Check exit obligations at every reachable resource state. Do not silently
+   treat live owners as a completed program. Invalid transitions must be
+   compared before being excluded from further exploration.
+5. Deliberately corrupt a retained alias, initialization fact, and ownership
+   record and demonstrate that the comparison detects each discrepancy.
+6. Report the state/transition counts and limitations after execution. This
+   closed finite model is not a proof for arbitrary object counts, branches,
+   runtime layouts, hidden allocations, or a native backend.
+
 ## Results
 
 Run on 2026-09-15, Darwin arm64, `rustc 1.98.1 (48a229cea 2026-09-01)`.
