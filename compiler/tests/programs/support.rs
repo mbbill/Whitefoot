@@ -171,8 +171,8 @@ pub fn compile_programs(names: &[&str]) -> String {
 }
 
 /// [`compile_programs_with_overlap`] returning a compilation failure to the
-/// caller. The complete corpus walk names the failing unit in its assertion;
-/// every source or target failure fails that test.
+/// caller. Multi-file program cases report the compiler failure at their
+/// own functional boundary.
 pub fn try_compile_programs_with_overlap(names: &[&str]) -> Result<String, CompilationFailure> {
     let sources = names
         .iter()
@@ -207,32 +207,6 @@ pub fn compile_program_with_overlap(name: &str) -> String {
 /// lowering.
 pub fn compile_programs_with_overlap(names: &[&str]) -> String {
     try_compile_programs_with_overlap(names).expect("program corpus source must compile")
-}
-
-/// Every `.wf` file the program corpus holds, in one stable order.
-///
-/// Read from the directory rather than listed, so a case intended to cover
-/// the corpus cannot quietly stop covering it when a program is added.
-pub fn corpus_program_files() -> Vec<String> {
-    let root = corpus_directory();
-    let mut names = std::fs::read_dir(&root)
-        .unwrap_or_else(|error| panic!("cannot read {}: {error}", root.display()))
-        .map(|entry| {
-            entry
-                .unwrap_or_else(|error| panic!("cannot read {}: {error}", root.display()))
-                .path()
-        })
-        .filter(|path| path.extension().is_some_and(|extension| extension == "wf"))
-        .map(|path| {
-            path.file_name()
-                .expect("a corpus file has a name")
-                .to_str()
-                .expect("a corpus file name is UTF-8")
-                .to_owned()
-        })
-        .collect::<Vec<_>>();
-    names.sort();
-    names
 }
 
 /// Compiles one corpus program and returns its permission ledger lines.

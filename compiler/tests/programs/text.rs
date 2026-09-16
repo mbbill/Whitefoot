@@ -1,4 +1,6 @@
-use super::support::{compile_and_run, compile_program, emitted_function};
+use super::support::{
+    build_program, compile_and_run, compile_program, compile_program_with_overlap, emitted_function,
+};
 
 #[test]
 fn percent_decoder_executes_through_the_ordinary_pipeline() {
@@ -7,10 +9,23 @@ fn percent_decoder_executes_through_the_ordinary_pipeline() {
     assert!(decode.contains("icmp ult i64"));
     assert!(!decode.contains("call void @wf_trap"));
 
-    let output = compile_and_run(&llvm);
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
+    // Linking the full overlap lowering catches the original world/phi bug;
+    // each run also checks the fixture's expected decoded bytes and extent.
+    for (module, widths) in [
+        (llvm, &["1"][..]),
+        (
+            compile_program_with_overlap("percent_decode.wf"),
+            &["1", "4"][..],
+        ),
+    ] {
+        let program = build_program(&module);
+        for width in widths {
+            let output = program.run_with_workers(Some(width));
+            assert!(output.status.success(), "{width}: {output:?}");
+            assert!(output.stdout.is_empty());
+            assert!(output.stderr.is_empty());
+        }
+    }
 }
 
 #[test]

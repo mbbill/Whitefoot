@@ -3952,8 +3952,68 @@ entry at width four checks 123,144 escape counts, 23,159 record results, 54,104
 FIR samples, 74 integrals and 3,387,721 stencil cells in 1.42 s total. This does
 not time a kernel or build a baseline. The strict C compiler accepts every
 oracle's performance build and the driver. Hosted qualification and the actual
-merge-base performance result remain pending publication of this increment.
+merge-base performance result are recorded below.
 
 The public IO ABI increment `8c6426f3` passed hosted `io-hosts` run 35109720032
 on Linux and Windows. Snapshot migration, remaining ordinary Rust/corpus case
 admission, the final complete gate and independent completion/DCR remain open.
+
+### Ordinary corpus audit: blanket parallel compilation
+
+`programs/parallel.rs` currently creates 36 parallel compilation/link cases
+from `CORPUS_UNITS` and requires every root-level WF file to join that list.
+It adds a default image and three parallel executions when a runtime-symbol
+predicate is true. Several actual observations already have dedicated receivers
+(network, tree/window/spine, layout, decoder, compute); the wfgrep invocation
+only reaches usage, and a file added solely as an API driver is forced into an
+unrelated standalone-program obligation. The predicate is not an oracle for
+which new test belongs here, nor is default/parallel agreement an independent
+expected result.
+
+Retire this blanket collection and its directory-membership assertion. Preserve
+its documented original regression: percent decoding and SHA loop phis once
+named predecessor blocks absent from the selected execution world. Their
+existing functional cases now construct the ordinary and the original full
+overlap mode once each, link both, and require the programs' concrete success
+checks at the sequential world (one worker) and active pool (four workers).
+This retains the exact source/lowering trigger and assembler validation, while
+existing compiler tests inspect join/phi ordering and world-specific blocks.
+Other parallel images require their own program or implementation property;
+adding a source file no longer silently adds two compilations and several runs.
+The old fixed macro is not expanded to silence its missing API-driver failure.
+
+The two retained percent/SHA cases pass in 1.87 s execution / 6.39 s total.
+This removes 36 blanket cases, not the functional or implementation properties
+listed above.
+
+### Hosted performance qualification and comparison at 966c2433
+
+[Linux run 35112451465](https://github.com/mbbill/Whitefoot/actions/runs/35112451465)
+passed the predeclared instrument controls: the separately built identical-source
+images produced zero failing kernels and zero suspects; doubling the actual WF
+call produced five failing kernels at all three widths (wall ratios 0.447–0.511).
+This demonstrates detection of this large slowdown, not statistical calibration
+of the 3% band. The actual comparison passed the two-width rule with one suspect.
+Ratios below are baseline elapsed time divided by candidate elapsed time; values
+below one mean the candidate took longer.
+
+| Kernel | W=1 wall ratio | W=2 wall ratio | W=4 wall ratio | Observation |
+|---|---:|---:|---:|---|
+| Mandelbrot | 1.000314 | 0.999321 | 0.903619 | W=4 was lower in only 3/5 pairs, below the 4/5 requirement |
+| Records | 0.926542 | 1.031794 | 1.061427 | W=1 suspect, lower in 5/5 pairs; CPU ratio 0.926547 |
+| FIR | 0.999636 | 1.001176 | 0.993038 | No adverse width under the fixed rule |
+| Quadrature | 0.998844 | 0.999082 | 0.999836 | No adverse width under the fixed rule |
+| Stencil | 1.021965 | 1.010287 | 0.998468 | No adverse width under the fixed rule |
+
+The records W=1 result represents about 7.9% greater elapsed time and remains
+unexplained. Passing the two-width rule does not establish that this is noise
+or that every scenario is free of regression. No threshold was changed and no
+campaign was rerun to select a pass. This test-system change does not attempt a
+new scheduling or compiler optimization to explain the result.
+
+Hosted stage wall times: candidate Rust compiler 55.47 s; baseline Rust compiler
+53.67 s; candidate/baseline/null native images 3.01/2.80/2.90 s; null campaign
+32.25 s; slowdown control 40.18 s; actual comparison 32.25 s. These are hosted
+Linux measurements, separate from the local candidate-only correctness checks.
+Raw paired rows, image identities and verdicts are in the run's artifact.
+The same revision passed Linux/Windows `io-hosts` run 35112446201.
