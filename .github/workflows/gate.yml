@@ -9,14 +9,10 @@
 # runner, so a Linux result is a real x86-64 Linux kernel rather than a
 # virtualized aarch64 guest.
 #
-# The gate is split by stage rather than run as one `make check` per host,
-# because a gate people wait half a day for is a gate people stop running. One
-# host's `make check` is a sum; separate jobs on that host run independent responsibilities. Every job
-# runs the *same* make targets `check` runs — `Makefile`'s `CHECK_STAGES` and
-# `compiler/Makefile`'s `COMPILER_STAGES` are the authority for what belongs to
-# the gate, and the `run` lines below name those targets and nothing else — so
-# nothing is checked here that a maintainer's single local `make check` does
-# not also check, and nothing is skipped here that it runs.
+# Local make check walks the root Makefile's groups in order. This workflow
+# reads those same groups into its matrix and invokes their common recipes.
+# Only host setup and job scheduling belong here; adding a correctness group
+# or changing its commands requires no second workflow inventory update.
 name: gate
 
 on:
@@ -31,7 +27,23 @@ env:
   CARGO_TERM_COLOR: never
 
 jobs:
+  groups:
+    name: Select correctness groups
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      groups: ${{ steps.select.outputs.groups }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the canonical group inventory
+        id: select
+        run: |
+          groups=$(make --no-print-directory --silent check-groups)
+          echo "groups=$groups" >> "$GITHUB_OUTPUT"
+          echo "Correctness groups: $groups" >> "$GITHUB_STEP_SUMMARY"
+
   gate:
+    needs: groups
     name: ${{ matrix.stage }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # This bounds a job, never a language verdict. Corpus assertions now share
@@ -41,18 +53,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-14]
-        stage: [static, unit, corpus, runtime, libraries]
-        include:
-          - stage: static
-            run: make static conformance performance-instrument && make -C compiler lint
-          - stage: unit
-            run: make -C compiler test-unit
-          - stage: corpus
-            run: make -C compiler test-corpus
-          - stage: runtime
-            run: make -C compiler completion-test
-          - stage: libraries
-            run: make -C compiler build && make library-tests
+        stage: ${{ fromJSON(needs.groups.outputs.groups) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -164,9 +165,11 @@ jobs:
       - name: ${{ matrix.stage }}
         env:
           STAGE_LOG: ${{ runner.temp }}/stage.log
+          CHECK_GROUP: ${{ matrix.stage }}
+          WHITEFOOT_CHECK_TIMEOUT: 900
         run: |
           set -o pipefail
-          ( ${{ matrix.run }} ) 2>&1 | perl -MTime::HiRes=time -e '
+          make check-group GROUP="$CHECK_GROUP" 2>&1 | perl -MTime::HiRes=time -e '
             open(my $stamped, ">", $ENV{STAGE_LOG}) or die "$ENV{STAGE_LOG}: $!";
             $| = 1;
             while (my $line = <STDIN>) {

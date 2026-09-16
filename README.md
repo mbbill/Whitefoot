@@ -104,10 +104,10 @@ make check
 make install-hooks   # optional: catch immutable-spec edits earlier
 ```
 
-`make check` is the canonical complete gate and prints stage timings. Its
-stage inventory is defined in the root [Makefile](Makefile) and
-[compiler Makefile](compiler/Makefile). For a shorter development feedback
-loop:
+`make check` is the canonical complete gate and prints group and phase timings.
+The root [Makefile](Makefile) owns its group inventory and recipes; ordinary CI
+reads that same inventory with `make check-groups` and invokes the same
+`make check-group GROUP=<name>` entry. For a shorter development feedback loop:
 
 ```sh
 make static

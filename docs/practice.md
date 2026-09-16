@@ -272,6 +272,11 @@ Automatic CI checks maintained correctness and performance regressions in
 separate workflows. Routine correctness CI and local `make check` do not build
 or time baseline/candidate WF pairs. Formatting and Rust API documentation
 generation remain explicit authoring commands, outside the correctness gate.
+The root Makefile owns the ordinary correctness groups and their recipes.
+Local `make check` walks them in order; CI reads `make check-groups` to build
+its matrix and invokes `make check-group GROUP=<name>`. Keep host setup and
+scheduling in the workflow, not another test command list. Platform-specific
+qualification and paired performance remain explicitly separate coverage.
 `research/` is outside daily CI and `make check`, including indirect
 dependencies on its scripts, programs, fixtures and datasets. Extract useful
 observations and the inputs/oracles needed to check them into the formal test
@@ -285,4 +290,4 @@ program behavior in programs, and additional implementation obligations in
 compiler/runtime tests. Reuse an existing case when it covers the obligation.
 Identify added compiler passes, native builds/runs, configurations and repeats;
 each must serve the protected property. Review these boundaries and actual
-callers under T4–T6 of the [completion checklist](review-checklist.md).
+callers under T4–T7 of the [completion checklist](review-checklist.md).

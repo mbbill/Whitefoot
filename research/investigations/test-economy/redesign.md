@@ -17,6 +17,15 @@ revision and result. Times explicitly labeled `39bebbc4` are the first local
 validation attempt, which failed host setup in eight corpus cases; they are
 not a successful full-gate total or a cold-build benchmark.
 
+The root Makefile now owns five correctness groups and their recipes. Local
+`make check` walks all five; hosted correctness obtains its matrix from
+`make check-groups` and invokes `make check-group GROUP=<name>`. The `static`
+group owns document/tool/lint checks, `unit` owns the compiler and library/CLI
+tests, `corpus` owns shared source tests, `runtime` owns native fixtures, and
+`libraries` owns reusable WF library callers. Unit and corpus each separate
+Rust test construction from execution. Platform qualification and paired
+performance are separate workflows, not differences hidden in this inventory.
+
 | Stage and caller | Builds and inputs | Runs and observation | Available wall evidence |
 |---|---|---|---|
 | Root `make static`: `repository-invariants` | No Rust or WF build. `.github/check-research-inputs.py`, `.github/test-run-check.sh`, tracked paths and the two agent entry files. | Six forbidden-reference controls, supported reference scan, owned-process cancellation/exclusion controls, matching agent files and repository path hygiene. | Root stage log distinguishes this from compiler work; process-control tests deliberately reach short deadlines. |
@@ -24,7 +33,7 @@ not a successful full-gate total or a cold-build benchmark.
 | Root `make conformance` | No compiler. `tests/conformance/runner.py`, its `test_runner.py`, active spec and JSONL manifest. | 29 Python controls including duplicate/dangling spec rules; corpus structure and coverage of all 129 rules. This does not execute WF. | 0.32 s focused current invocation. |
 | `compiler/build` | One Rust crate, `whitefoot`, under `gate`; Cargo runs `build.rs`, embeds spec identity and derives grammar tables into `OUT_DIR`. Produces the library and `target/gate/whitefootc`. | No Rust tests or WF programs run. | `39bebbc4`: 0.10 s with the compiler already current. The old cold measurements are not a current cold-build estimate. |
 | `compiler/lint` | `cargo clippy --all-targets`, reading every maintained Rust target. Its default `dev` label describes type/lint metadata construction; it does not build a second runnable dev compiler. | Rust type checks, Clippy lints and the crate's `forbid(unsafe_code)` constraint. | `39bebbc4`: 3.76 s. |
-| `compiler/test-build` | `cargo test --profile gate --all-targets --no-run`; constructs `deps/whitefoot-<hash>`, `deps/whitefootc-<hash>` and `deps/corpus-<hash>`. Reuses the ordinary compiler/library artifacts where Cargo can. | No test cases execute. There are three Rust test executables, not one executable per case; the removed spec/grammar tools have no binaries or test targets. | `39bebbc4`: 76.40 s after the compiler was built. This includes all three test harnesses; it is not an additional cost after separately building the library tests. |
+| `compiler/test-build-unit`, `compiler/test-build-corpus` | `cargo test --profile gate --no-run` with `--lib --bins` or `--test '*'`; constructs `deps/whitefoot-<hash>`, `deps/whitefootc-<hash>` and `deps/corpus-<hash>` in their owning groups. Reuses the ordinary compiler/library artifacts where Cargo can. The explicit `test-build` target still constructs all targets for focused development. | No test cases execute. There are three Rust test executables, not one executable per case; the removed spec/grammar tools have no binaries or test targets. | `39bebbc4` used the former combined construction: 76.40 s after the compiler was built. This included all three test harnesses; it was not an additional cost after separately building the library tests. |
 | `compiler/test-unit`: library | Runs the already built `deps/whitefoot-<hash>`; Rust fixtures and small/shared WF source inputs under `compiler/src/`. Native ABI/emission tests also invoke Clang and child programs through named helpers. | 1,495 cases: semantic 947, backend 274, syntax 88, resolution 71, driver 38, lexer 33, lowering 28, source 12, spec digest 3 and prelude 1. Assertions inspect internal structures, retained proofs, precise diagnostics, lowering, ABI or controlled runtime behavior. | `39bebbc4`: all pass in 195.77 s, excluding Rust construction. WF analysis and native build/run components are available in the helper TSV, not conflated with Rust compilation. |
 | `compiler/test-unit`: CLI | Runs `deps/whitefootc-<hash>` from `compiler/src/bin/whitefootc.rs`. | 14 Rust argument/option/output-path cases; no extra compiler profile. | `39bebbc4`: all pass, displayed execution 0.00 s. |
 | `compiler/test-corpus` | Runs the single `deps/corpus-<hash>` from `compiler/tests/corpus.rs`; its modules share native construction support. | 72 Rust cases: 69 program/harness cases, two canonical batches and one full native conformance driver. | `39bebbc4`: 186.22 s execution, 64 pass and eight host/setup failures explained below; not a successful result. |
@@ -34,7 +43,7 @@ not a successful full-gate total or a cold-build benchmark.
 | `compiler/completion-test` | C/LLVM runtime fixtures under `compiler/src/backend/`, compiled through dependency/flag-tracked Make rules. Separate images remain for distinct interposition, statistics and platform configurations. | Shared ordinary-value/IO/bridge harness, default route, isolated core-read boundary, scheduler startup/deque/policy and stack-floor cases. No WF compiler or timing comparison. | Prior focused complete target: 5.08 s including construction. Final gate records its own actual result. |
 | Root `library-tests` | `lib/containers/vector.wf` plus `tests/vector_program.wf`; two WF emissions (ordinary and parallel), each linked normally and with an allocation observer: four native images. | Program values plus allocation/release/refusal ledgers; dependency-current images are reused but all observations rerun. | Printed as its own root stage, separate from the Rust tests. |
 | Root `performance-instrument` | No Rust/WF/native build. `tests/performance/test-verdict.sh` invokes the AWK reducer/verdict on crafted tables. | 27 result-integrity controls: complete matrices, precision, missing/duplicate data, decision boundaries and error propagation. No timings are collected. | Printed as its own root stage. |
-| Hosted `gate` | Linux/macOS jobs call the same static, unit, corpus, runtime and library targets; target construction happens in the job that needs it. | The ordinary correctness responsibilities above, with job/phase logs; no research target or paired compiler comparison. | Job time includes checkout/toolchain/cache overhead and is not local test execution time. |
+| Hosted `gate` | A small selection job reads the Makefile's group JSON; Linux/macOS jobs invoke the common group recipe, with construction in the job that needs it. | The ordinary correctness responsibilities above, with group/phase logs; no separate YAML command inventory, research target or paired compiler comparison. | Job time includes checkout/toolchain work and is not local test execution time. |
 | Hosted `io-hosts` | Linux C/LLVM builds and ASan/fatal-UBSan/TSan variants; Windows native fixtures plus the Rust compiler/corpus target. | Required real io_uring/IOCP evidence, production namespace/network/handle behavior, compute pool/stack and sanitizer observations. Forced fallback and native evidence remain distinct. | Current host runs are linked from the PR; a local macOS pass is not Linux/Windows evidence. |
 | Hosted `compute-regression` | Candidate and merge-base Rust compilers, five formal WF kernels and each arm's own ordinary runtime: ten native images. Identical-image host control reuses the candidate images; no third construction. | Complete-result checks, per-invocation null control, instrument-change slowdown control, then paired CPU/wall samples and the fixed verdict. Inconclusive calibration stops the comparison and remains a failure. | Historical control/actual campaign times and ratios are recorded below. No paired campaign is run locally. |
 | Explicit authoring/research | `format`, `docs`, manual research/benchmark workflows and `historical-tool-tests`. | Formatting, API documentation and explicitly requested experiments; not automatic correctness or performance-regression inputs. | Not included in `make check`. |
@@ -42,7 +51,7 @@ not a successful full-gate total or a cold-build benchmark.
 Historical snapshots have no remaining executable, collection or alternative
 verdict authority. The 484 dispositions below identify what each supplied or
 why it was retired. New cases must meet the ownership/construction obligations
-in `docs/practice.md` and checklist T4–T6; executable packaging alone never
+in `docs/practice.md` and checklist T4–T7; executable packaging alone never
 justifies a case. The map is maintained with these callers while this
 investigation supplies the redesign's comparative evidence.
 
@@ -4444,3 +4453,47 @@ stale stack/path cost narrative; raising every test process's descriptor limit
 would preserve an unrelated stress requirement rather than that regression.
 The ordinary runtime's resource-boundary tests remain separate. No failed
 source judgment is reclassified and no TCP test is disabled.
+
+## One correctness inventory for local and CI
+
+The preceding implementation reused Make targets but still maintained two
+selections: local `CHECK_STAGES` and five handwritten workflow commands. They
+were aligned at review time, not coupled against future omissions. The owner
+selected a common inventory after asking how that alignment would survive
+later changes.
+
+The root Makefile now owns `CHECK_GROUPS` and each group's execution recipe.
+Local `make check` walks the inventory; `make check-groups` renders it as JSON
+for the hosted matrix, and each job calls `make check-group GROUP=<name>`.
+No generated list is committed and no workflow parser compares two copies.
+The compiler's focused commands remain available, but neither their private
+aggregate nor a YAML command list selects the canonical gate's coverage.
+Both paths explicitly construct the selected Rust test targets before running
+them. Native execution, test filters and corpus expectations are unchanged.
+
+This retains independent Linux/macOS jobs at the cost of one small matrix
+selection job. Running an entire serial `make check` on each host would also
+remove the second list, but would give up the existing group parallelism.
+Platform qualification and paired performance stay separate and documented;
+this choice does not claim that macOS can supply Windows/Linux host evidence.
+Checklist T7 requires review of changed filters and callers as well as names,
+because a shared group name alone cannot establish matching observations.
+
+Validation criteria, stated before executing the new path: the exported JSON
+must be the ordered set dispatched locally, each selected group must reach its
+one recipe, missing/unknown/multiple groups must fail before dispatch, and a
+group failure must stop the local aggregate without a green completion. A
+temporary added group must appear in both the export and local dispatch
+without modifying the workflow. The canonical gate must preserve the existing
+library/CLI/corpus collection and run its native/document/tool groups. Hosted
+validation must show the matrix built from the exported groups. No build-time
+or runtime speedup is selected or claimed by this wiring change.
+
+The one-shot selection probes passed in 1.04 s without constructing or running
+Rust/WF/native artifacts. They compared JSON export with recorded local
+dispatch, checked every shared group route, rejected invalid selections,
+added a temporary group to both selectors without a workflow edit, verified
+failure short-circuiting, and rejected an empty inventory or an entry without
+a recipe. Temporary probes were removed after use. Workflow YAML parsing and
+the existing research-reference scan also passed. The PR records the exact
+revision's subsequent full-gate and hosted results.

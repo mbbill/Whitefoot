@@ -146,6 +146,12 @@ build:
 test-build:
 	$(CHECK_RUN) compiler/test-build $(CARGO) test --profile gate --all-targets --no-run --locked --offline
 
+test-build-unit:
+	$(CHECK_RUN) compiler/test-build-unit $(CARGO) test --profile gate --lib --bins --no-run --locked --offline
+
+test-build-corpus:
+	$(CHECK_RUN) compiler/test-build-corpus $(CARGO) test --profile gate --test '*' --no-run --locked --offline
+
 format:
 	$(CARGO) fmt --all -- --check
 
@@ -607,7 +613,7 @@ completion-windows-wine:
 
 # Managed-stack park-on-miss measurements are retired from this runtime.
 # Their dated evidence and reproduction revision remain in the investigation.
-.PHONY: check _check static _static build test-build format lint test _test test-unit test-corpus \
+.PHONY: check _check static _static build test-build test-build-unit test-build-corpus format lint test _test test-unit test-corpus \
 	docs completion-test completion-native-test \
 	completion-core-read-test \
 	completion-tsan \

@@ -212,6 +212,12 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   inspect dynamic or indirect paths it cannot resolve. Changed checking needs
   representative forbidden-dependency and allowed-citation controls. Keep
   normal complete checkouts; hiding or removing research is not enforcement.
+- [ ] **T7 — Local/CI correspondence.** Ordinary correctness CI derives its
+  groups from the same Makefile inventory and recipes as local `make check`;
+  inspect changed selection, filters and callers for omissions or extra checks.
+  Platform qualification and paired performance remain explicit separate
+  responsibilities. Report the tested revision and actual groups; matching
+  group names alone do not establish matching test selection.
 
 ## R. Decisions — changed choices, premises or relevant evidence
 

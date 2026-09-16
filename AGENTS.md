@@ -170,7 +170,8 @@ What the four rules mean exactly:
   daily CI or gate dependencies. Extract useful regression cases and their
   required fixtures/oracles into the formal test system; leave the remaining
   research outside it. Check test admission, placement, construction/execution
-  and indirect research dependencies in the completion checklist.
+  and indirect research dependencies in the completion checklist, including
+  correspondence between local and hosted correctness selection.
 - **Conformance evidence** is `tests/conformance` case source and manifest
   content, its runner and adapter, and any collection or invocation wiring that
   can change which cases run or how their results are read.

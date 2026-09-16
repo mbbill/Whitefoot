@@ -17,13 +17,13 @@ WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitef
 RESEARCH_TEST_TMP := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-tmp
 RESEARCH_CARGO_TARGET := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-research-tests-target
 
-# The stages `check` runs, in order. Each is a target of its own, so the CI
-# jobs that run the gate in parallel run exactly these targets and nothing
-# beside them: what a job checks is what this list says it checks.
-# `approval-history-integrity` and `spec-archive-integrity` were retired with
-# the approval ledger they both read.
-CHECK_STAGES := repository-invariants spec-append-only spec-prose-integrity \
-	design-lint conformance compiler library-tests performance-instrument
+# One group inventory for local execution and the hosted correctness matrix.
+# The _check-<group> recipes below own the commands on both paths. CI reads
+# check-groups and invokes check-group; it keeps no second command inventory.
+CHECK_GROUPS := static unit corpus runtime libraries
+ifeq ($(strip $(CHECK_GROUPS)),)
+$(error the correctness group inventory must not be empty)
+endif
 
 # Where the stage table is assembled. A gate nobody can profile is a gate that
 # silently grows: `check` times each stage and ends with the breakdown, so a
@@ -41,10 +41,11 @@ check:
 _check:
 	@mkdir -p "$(STAGE_DIR)"
 	@: > "$(STAGE_DIR)/summary"
-	@for stage in $(CHECK_STAGES); do \
+	@echo "correctness groups: $(CHECK_GROUPS)"
+	@for group in $(CHECK_GROUPS); do \
 		started=$$(date +%s); \
-		$(CHECK_RUN) "$$stage" $(MAKE) --no-print-directory "$$stage" || exit 1; \
-		printf '%-28s %6d s\n' "$$stage" "$$(( $$(date +%s) - started ))" \
+		$(MAKE) --no-print-directory check-group GROUP="$$group" || exit 1; \
+		printf '%-28s %6d s\n' "$$group" "$$(( $$(date +%s) - started ))" \
 			>> "$(STAGE_DIR)/summary"; \
 	done
 	@echo ""
@@ -52,12 +53,55 @@ _check:
 	@cat "$(STAGE_DIR)/summary"
 	@echo "== WHITEFOOT ALL TESTS GREEN =="
 
+# JSON is consumed directly by the GitHub Actions matrix. This is a view of
+# CHECK_GROUPS, not generated source or another list to maintain.
+check-groups:
+	@printf '['; separator=''; \
+	for group in $(CHECK_GROUPS); do \
+		printf '%s"%s"' "$$separator" "$$group"; separator=,; \
+	done; printf ']\n'
+
+check-group:
+	@$(if $(and $(filter 1,$(words $(GROUP))),$(filter $(CHECK_GROUPS),$(GROUP))),:,$(error GROUP must name one correctness group from: $(CHECK_GROUPS)))
+	@$(CHECK_RUN) "check/$(GROUP)" $(MAKE) --no-print-directory "_check-$(GROUP)"
+
+.PHONY: _check-static
+_check-static:
+	@$(MAKE) static
+	@for stage in conformance performance-instrument; do \
+		$(CHECK_RUN) "$$stage" $(MAKE) --no-print-directory "$$stage" || exit 1; \
+	done
+	@$(MAKE) -C compiler lint
+
+.PHONY: _check-unit
+_check-unit:
+	@$(MAKE) -C compiler build
+	@$(MAKE) -C compiler test-build-unit
+	@$(MAKE) -C compiler test-unit
+
+.PHONY: _check-corpus
+_check-corpus:
+	@$(MAKE) -C compiler test-build-corpus
+	@$(MAKE) -C compiler test-corpus
+
+.PHONY: _check-runtime
+_check-runtime:
+	@$(MAKE) -C compiler completion-test
+
+.PHONY: _check-libraries
+_check-libraries:
+	@$(MAKE) -C compiler build
+	@$(MAKE) library-tests
+
 # Both supported agent entry points carry exactly the same project rules.
 # The repository-level stages that read the tree without running a compiled
 # program. CI's `static` job runs this instead of restating their names: a
 # second copy of the list is a copy that goes stale, and did — retiring two
 # stages left the workflow naming targets that no longer exist.
-static: repository-invariants spec-append-only spec-prose-integrity design-lint
+static:
+	@for stage in repository-invariants spec-append-only spec-prose-integrity design-lint; do \
+		$(CHECK_RUN) "$$stage" $(MAKE) --no-print-directory "$$stage" || exit 1; \
+	done
 
 # Structural lint for the design tree; form only, see design/skill/lint.py.
 # CI pins the event's review base instead of comparing main with its own tip.
@@ -185,4 +229,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: historical-tool-tests _historical-tool-tests check _check static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests performance-instrument conformance-run install-hooks
+.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint conformance compiler library-tests performance-instrument conformance-run install-hooks
