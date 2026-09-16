@@ -4,6 +4,7 @@
  * accesses without the scheduler's custom stack switching. Keep this test
  * while the shared core owns this deque and its slot lifetime protocol. */
 #include "core.c"
+#include "../runtime_test_guard.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -110,6 +111,8 @@ static void join_thread(probe_thread thread) {
 #endif
 
 int main(void) {
+    wf_test_guard_start(60);
+    wf_test_guard_phase("deque reuse and live counters");
     probe_thread threads[PROBE_WORKERS];
     unsigned returned[WF_PAR_LANE_SLOTS] = {0};
     void *frames[WF_PAR_LANE_SLOTS];
@@ -162,5 +165,6 @@ int main(void) {
     check(observations > 0, "observer never ran");
     printf("sched deque probe: PASS tasks=%u steals=%llu observations=%llu slots=%u\n",
            PROBE_TASKS, steals, observations, free_count);
+    wf_test_guard_finish();
     return 0;
 }

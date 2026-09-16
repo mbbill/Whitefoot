@@ -213,7 +213,7 @@ $(eval $(call completion-image,core-read-probe-sanitize,$(COMPLETION_CORE_READ_S
 $(eval $(call completion-image,harness-tsan,$(COMPLETION_SOURCES),$(COMPLETION_TSAN_FLAGS) $(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES)))
 $(eval $(call completion-image,bridge-default-probe-tsan,$(COMPLETION_DEFAULT_ROUTE_SOURCES),$(COMPLETION_TSAN_FLAGS)))
 
-completion-test: $(COMPLETION_TMP)/harness completion-core-read-test completion-default-route-test sched-smoke sched-deque-test completion-native-test
+completion-test: $(COMPLETION_TMP)/harness completion-core-read-test completion-default-route-test sched-smoke sched-deque-test sched-policy-test completion-native-test
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(NO_CORE_DUMPS) $(NATIVE_REQUIREMENT) WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" all
 	$(NO_CORE_DUMPS) $(NATIVE_REQUIREMENT) WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge
@@ -272,37 +272,76 @@ completion-default-route-test: $(COMPLETION_TMP)/bridge-default-probe
 			"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"; \
 	fi
 
-# Real current-stack nested execution and forced startup/lifetime races.
-sched-smoke:
-	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_TEST $(SCHED_DIR)/smoke.c \
-		$(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c -o "$(COMPLETION_TMP)/sched-smoke"
+# Pure native scheduler cases have one Make owner, not duplicate Rust wrappers.
+# Compatible entry/host objects are shared; statistics and sanitizers retain
+# distinct object sets. Each case execution is fresh even when construction is reused.
+SCHED_PROBE_OBJECT_DIR := $(COMPLETION_TMP)/objects/scheduler
+$(SCHED_PROBE_OBJECT_DIR)/%.o: $(SCHED_DIR)/%.c $(COMPLETION_HEADERS) Makefile $(COMPLETION_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) -c "$<" -o "$@"
+SCHED_PROBE_SUPPORT := $(SCHED_PROBE_OBJECT_DIR)/entry.o $(SCHED_PROBE_OBJECT_DIR)/prim_host.o
+SCHED_POLICY_INPUTS := $(SCHED_DIR)/wake_probe.c $(SCHED_DIR)/recursion_budget_probe.c
+
+define scheduler-image
+$(COMPLETION_TMP)/$(1): $(if $(4),$(4),$(SCHED_PROBE_SUPPORT)) $(SCHED_PROBE_OBJECT_DIR)/$(1).o
+	$$(CC) $(COMPLETION_BASE_CFLAGS) $$^ -o "$$@"
+$(SCHED_PROBE_OBJECT_DIR)/$(1).o: $(SCHED_DIR)/$(2).c $(SCHED_DIR)/core.c $(SCHED_POLICY_INPUTS) $(COMPLETION_HEADERS) Makefile $(COMPLETION_CONFIG)
+	@mkdir -p "$$(dir $$@)"
+	$$(CC) $(COMPLETION_BASE_CFLAGS) $(3) -c "$$<" -o "$$@"
+endef
+$(eval $(call scheduler-image,sched-smoke,smoke,-DWF_SCHED_TEST))
+$(SCHED_PROBE_OBJECT_DIR)/entry-deque.o: $(SCHED_DIR)/entry.c $(COMPLETION_HEADERS) Makefile $(COMPLETION_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -c "$<" -o "$@"
+$(eval $(call scheduler-image,sched-deque-probe,deque_probe,-DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=1,$(SCHED_PROBE_OBJECT_DIR)/entry-deque.o $(SCHED_PROBE_OBJECT_DIR)/prim_host.o))
+$(eval $(call scheduler-image,sched-policy,cpu_levels_probe,))
+$(eval $(call scheduler-image,sched-policy-asymmetric,cpu_levels_probe,-DWF_PAR_IDLE_WINDOW_ON_ASYMMETRIC=1))
+$(eval $(call scheduler-image,sched-policy-disabled,cpu_levels_probe,-DWF_PAR_IDLE_WINDOW_US=0))
+$(eval $(call scheduler-image,sched-policy-clamped,cpu_levels_probe,-DWF_PAR_RECURSION_LEAVES_PER_LANE='(1ull << 40)'))
+# Entry observes WF_SCHED_STATS too; its disabled object cannot be borrowed
+# from the ordinary image. TSan objects likewise retain their own full flags.
+$(eval $(call completion-image,sched-deque-probe-no-stats,$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c,$(COMPLETION_BASE_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=0))
+$(eval $(call completion-image,sched-deque-tsan,$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c,$(COMPLETION_TSAN_FLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=1))
+$(eval $(call completion-image,sched-deque-tsan-no-stats,$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c,$(COMPLETION_TSAN_FLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=0))
+$(COMPLETION_TMP)/objects/sched-deque-probe-no-stats/sched/deque_probe.o \
+$(COMPLETION_TMP)/objects/sched-deque-tsan/sched/deque_probe.o \
+$(COMPLETION_TMP)/objects/sched-deque-tsan-no-stats/sched/deque_probe.o: $(SCHED_DIR)/core.c
+
+sched-smoke: $(COMPLETION_TMP)/sched-smoke
 	@set -e; for mode in normal owner-fail worker-fail partial partial-three startup-delayed startup-partial; do \
-		WF_WORKERS=4 "$(COMPLETION_TMP)/sched-smoke" $$mode; \
+		$(NO_CORE_DUMPS) WF_WORKERS=4 "$(COMPLETION_TMP)/sched-smoke" $$mode; \
 	done
 	WF_WORKERS=1 "$(COMPLETION_TMP)/sched-smoke"
+	@set +e; WF_WORKERS=invalid "$(COMPLETION_TMP)/sched-smoke" > "$(COMPLETION_TMP)/startup.out" 2> "$(COMPLETION_TMP)/startup.err"; status=$$?; \
+		test $$status = 1 && test ! -s "$(COMPLETION_TMP)/startup.out" && \
+		printf '%s\n' 'whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64' | cmp - "$(COMPLETION_TMP)/startup.err"
 
-# Real concurrent deque reuse and counter observation, without custom stack
-# switching, so ThreadSanitizer can track every tested thread normally.
-sched-deque-test:
-	@mkdir -p "$(COMPLETION_TMP)"
-	@set -e; for stats in 1 0; do \
-		suffix=; if test $$stats = 0; then suffix=-no-stats; fi; \
-		$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=$$stats \
-			$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c \
-			-o "$(COMPLETION_TMP)/sched-deque-probe$$suffix"; \
-		"$(COMPLETION_TMP)/sched-deque-probe$$suffix"; \
+sched-deque-test: $(COMPLETION_TMP)/sched-deque-probe $(COMPLETION_TMP)/sched-deque-probe-no-stats
+	"$(COMPLETION_TMP)/sched-deque-probe"
+	"$(COMPLETION_TMP)/sched-deque-probe-no-stats"
+
+sched-deque-tsan: $(COMPLETION_TMP)/sched-deque-tsan $(COMPLETION_TMP)/sched-deque-tsan-no-stats
+	TSAN_OPTIONS=halt_on_error=1 "$(COMPLETION_TMP)/sched-deque-tsan"
+	TSAN_OPTIONS=halt_on_error=1 "$(COMPLETION_TMP)/sched-deque-tsan-no-stats"
+
+sched-policy-test: $(COMPLETION_TMP)/sched-policy $(COMPLETION_TMP)/sched-policy-asymmetric $(COMPLETION_TMP)/sched-policy-disabled $(COMPLETION_TMP)/sched-policy-clamped
+	WF_WORKERS=2 "$(COMPLETION_TMP)/sched-policy" host
+	"$(COMPLETION_TMP)/sched-policy" wake
+	@set -e; for variant in '' -asymmetric -disabled; do \
+		for mode in fit oversubscribed unknown-count mixed; do \
+			WF_WORKERS=4 "$(COMPLETION_TMP)/sched-policy$$variant" $$mode; \
+		done; \
+	done
+	@set -e; for pair in '0 6' '1 6' '2 7' '4 8' '8 9' '16 10'; do \
+		set -- $$pair; WF_WORKERS=$$1 "$(COMPLETION_TMP)/sched-policy" budget $$2; \
+	done
+	@set -e; for workers in 1 4; do \
+		WF_WORKERS=$$workers "$(COMPLETION_TMP)/sched-policy-clamped" budget 24; \
 	done
 
-sched-deque-tsan:
-	@mkdir -p "$(COMPLETION_TMP)"
-	@set -e; for stats in 1 0; do \
-		suffix=; if test $$stats = 0; then suffix=-no-stats; fi; \
-		$(CC) $(COMPLETION_BASE_CFLAGS) -fsanitize=thread -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=$$stats \
-			$(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/entry.c $(SCHED_DIR)/prim_host.c \
-			-o "$(COMPLETION_TMP)/sched-deque-tsan$$suffix"; \
-		"$(COMPLETION_TMP)/sched-deque-tsan$$suffix"; \
-	done
+# Manual calibration, never a correctness or automatic performance input.
+sched-wake-measure: $(COMPLETION_TMP)/sched-policy
+	"$(COMPLETION_TMP)/sched-policy" wake measure
 
 # The managed-stack enumerator is retired with its scheduler. Native compute
 # protocol tests above and completion wake tests below exercise the new boundary.
@@ -410,6 +449,9 @@ $(WINDOWS_OBJECT_DIR)/%.o: src/backend/%.c $(COMPLETION_HEADERS) Makefile $(WIND
 $(WINDOWS_OBJECT_DIR)/file-windows-observed.o: $(COMPLETION_DIR)/file_windows.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_COMPLETION_SHUTDOWN=wf_ordinary_test_shutdown -c "$<" -o "$@"
 
+$(WINDOWS_OBJECT_DIR)/ordinary_values_probe.o: src/backend/ordinary_values_probe.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_COMPLETION_SHUTDOWN=wf_ordinary_test_shutdown -c "$<" -o "$@"
+
 $(WINDOWS_OBJECT_DIR)/bridge-init-fault.o: $(COMPLETION_DIR)/bridge.c $(COMPLETION_DIR)/windows_bridge_init_fail_stop_probe.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_WINDOWS_BRIDGE_INIT_PROBE_DECLARATIONS=1 \
 		-include $(COMPLETION_DIR)/windows_bridge_init_fail_stop_probe.c -c "$<" -o "$@"
@@ -443,13 +485,19 @@ $(WINDOWS_OBJECT_DIR)/sched/deque-probe-no-stats.o: $(SCHED_DIR)/deque_probe.c $
 	@mkdir -p "$(dir $@)"
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=0 -c "$<" -o "$@"
 
-$(WINDOWS_OBJECT_DIR)/sched/cpu_levels_probe.o: $(SCHED_DIR)/core.c
+$(WINDOWS_OBJECT_DIR)/sched/cpu_levels_probe.o: $(SCHED_DIR)/core.c $(SCHED_POLICY_INPUTS)
 WINDOWS_SCHED_SUPPORT := $(WINDOWS_OBJECT_DIR)/sched/entry.o $(WINDOWS_OBJECT_DIR)/sched/prim_windows.o
+$(WINDOWS_OBJECT_DIR)/sched/entry-deque.o: $(SCHED_DIR)/entry.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=1 -c "$<" -o "$@"
+$(WINDOWS_OBJECT_DIR)/sched/entry-deque-no-stats.o: $(SCHED_DIR)/entry.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=0 -c "$<" -o "$@"
 $(COMPLETION_TMP)/windows-sched-smoke.exe: $(WINDOWS_SCHED_SUPPORT) $(WINDOWS_OBJECT_DIR)/sched/smoke.o
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
-$(COMPLETION_TMP)/windows-sched-deque.exe: $(WINDOWS_SCHED_SUPPORT) $(WINDOWS_OBJECT_DIR)/sched/deque-probe.o
+$(COMPLETION_TMP)/windows-sched-deque.exe: $(WINDOWS_OBJECT_DIR)/sched/prim_windows.o $(WINDOWS_OBJECT_DIR)/sched/entry-deque.o $(WINDOWS_OBJECT_DIR)/sched/deque-probe.o
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
-$(COMPLETION_TMP)/windows-sched-deque-no-stats.exe: $(WINDOWS_SCHED_SUPPORT) $(WINDOWS_OBJECT_DIR)/sched/deque-probe-no-stats.o
+$(COMPLETION_TMP)/windows-sched-deque-no-stats.exe: $(WINDOWS_OBJECT_DIR)/sched/prim_windows.o $(WINDOWS_OBJECT_DIR)/sched/entry-deque-no-stats.o $(WINDOWS_OBJECT_DIR)/sched/deque-probe-no-stats.o
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
 $(COMPLETION_TMP)/windows-sched-cpu-levels.exe: $(WINDOWS_SCHED_SUPPORT) $(WINDOWS_OBJECT_DIR)/sched/cpu_levels_probe.o
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
@@ -525,4 +573,4 @@ completion-windows-wine:
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test ordinary-values-test \
 	completion-default-route-sanitize completion-default-route-tsan sched-smoke \
-	sched-deque-test sched-deque-tsan completion-windows-cross completion-windows-route-build windows-runtime-sources completion-windows-wine
+	sched-deque-test sched-deque-tsan sched-policy-test sched-wake-measure completion-windows-cross completion-windows-route-build windows-runtime-sources completion-windows-wine

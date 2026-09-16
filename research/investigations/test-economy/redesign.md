@@ -3275,6 +3275,55 @@ with dry runs, and absent Wine skipped before construction. These are not
 Linux native, Windows runtime or TSan results. The complete redesign and
 canonical gate are still unfinished.
 
+### Implementation evidence: one native scheduler owner
+
+B03a-e now run through Make's native correctness stage. The five Rust
+wrappers in `backend/tests/sched.rs` are retired after their native receivers
+are wired: they added no compiler observation and duplicated smoke/deque
+construction and execution. Startup, deque and policy images are retained
+separately where their core definitions differ. Compatible entry/host
+objects are shared, while slot-count, statistics and sanitizer variants have
+the correct distinct objects. No previous test verdict is cached.
+
+The startup image still checks every selected startup/refusal/partial/delayed
+path. Its eight-round nested computation and controlled frame-lifetime
+protocols run for the no-helper, one-helper and normal multi-helper paths;
+other startup configurations check readiness, actual width and a small exact
+result without replaying those protocols. The stale-thief eight-wrap case,
+registered-wait reuse and 200,000 unique deque tasks remain. All native
+images now have a bounded watchdog with a named phase. A malformed-worker
+case requires status 1, empty program output and the exact startup diagnostic.
+
+The existing CPU-policy image also hosts wake and recursive-budget cases.
+One real-host observation checks the primitive/startup integration; controlled
+CPU inputs exercise fitting, oversubscribed, unknown-count and mixed-core
+branches against the actual core, including asymmetric and disabled-window
+builds. This no longer claims that querying the same primitive independently
+verifies hardware topology. Two recursion-budget definition sets retain all
+six ordinary widths and both clamp checks without rebuilding for process
+arguments. The Windows native job keeps its actual host/wake observation and
+the four default-policy branches.
+
+The automatic wake case establishes posted-before-wait and wait-before-post
+states explicitly, then checks empty-deque searches. The 200 warmups, 2,000
+samples and 200,000 calibration scans are retained only behind
+`make -C compiler sched-wake-measure`. No automatic performance or correctness
+verdict uses their durations; half a measured round trip is described as that
+proxy rather than an isolated park cost.
+
+The final bounded native scheduler command passed locally in 2.48 s,
+including affected construction and all selected fresh processes. No Rust
+compiler/test image or WF program is needed by these native cases.
+
+The preceding published platform revision `b0a26583` passed the actual Linux
+native, ASan/UBSan and TSan qualification job
+([run 35093327566](https://github.com/mbbill/Whitefoot/actions/runs/35093327566)).
+Windows stopped during construction because the ordinary probe's shutdown
+observer definition had not accompanied its separate object. That object
+now receives the same required definition as its observed host leaf; this
+was a construction defect, not a failed program result or native-route pass.
+The corrected revision still needs actual Windows validation.
+
 ## Affected material and evidence
 
 - Specification identity: `compiler/build.rs`, `compiler/src/spec.rs`,

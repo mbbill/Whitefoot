@@ -103,10 +103,13 @@ jobs:
           "$RUNNER_TEMP/completion/windows-sched-deque.exe"
           "$RUNNER_TEMP/completion/windows-sched-deque-no-stats.exe"
 
-      - name: Read this host's CPU performance levels through the Windows leaf
+      - name: Native Windows CPU policy and wait integration
         run: |
-          WF_WORKERS=2 "$RUNNER_TEMP/completion/windows-sched-cpu-levels.exe"
-          WF_WORKERS=8 "$RUNNER_TEMP/completion/windows-sched-cpu-levels.exe"
+          WF_WORKERS=2 "$RUNNER_TEMP/completion/windows-sched-cpu-levels.exe" host
+          "$RUNNER_TEMP/completion/windows-sched-cpu-levels.exe" wake
+          for mode in fit oversubscribed unknown-count mixed; do
+            WF_WORKERS=4 "$RUNNER_TEMP/completion/windows-sched-cpu-levels.exe" "$mode"
+          done
 
       - name: Exercise compute startup failures and frame lifetime
         run: |
@@ -114,6 +117,16 @@ jobs:
             WF_WORKERS=4 "$RUNNER_TEMP/completion/windows-sched-smoke.exe" "$mode"
           done
           WF_WORKERS=1 "$RUNNER_TEMP/completion/windows-sched-smoke.exe"
+          set +e
+          WF_WORKERS=invalid "$RUNNER_TEMP/completion/windows-sched-smoke.exe" \
+            > "$RUNNER_TEMP/completion/startup.out" 2> "$RUNNER_TEMP/completion/startup.err"
+          status=$?
+          set -e
+          test "$status" = 1
+          test ! -s "$RUNNER_TEMP/completion/startup.out"
+          tr -d '\r' < "$RUNNER_TEMP/completion/startup.err" > "$RUNNER_TEMP/completion/startup.normalized"
+          printf '%s\n' 'whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64' | \
+            cmp - "$RUNNER_TEMP/completion/startup.normalized"
 
       - name: Run the Windows default-route probe on both routes
         run: |

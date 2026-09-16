@@ -104,6 +104,7 @@ static void wf_sched_test_before_wait(void *frame) {
 #define wf_prim_yield core_yield
 #include "core.c"
 #undef wf_prim_yield
+#include "../runtime_test_guard.h"
 
 static void check(int value, const char *why) {
     if (!value) { fprintf(stderr, "compute smoke: %s\n", why); abort(); }
@@ -185,6 +186,9 @@ static void check_registered_wait_reuse(void) {
 }
 
 int main(int argc, char **argv) {
+    wf_test_guard_start(60);
+    wf_test_guard_phase("scheduler startup");
+    int protocol = argc < 2 || !strcmp(argv[1], "normal") || !strcmp(argv[1], "partial");
     if (argc > 1 && strcmp(argv[1], "owner-fail") == 0) owner_allowed = 0;
     if (argc > 1 && strcmp(argv[1], "worker-fail") == 0) worker_limit = 1;
     if (argc > 1 && strcmp(argv[1], "partial") == 0) worker_limit = 2;
@@ -205,17 +209,29 @@ int main(int argc, char **argv) {
                   == wf__sched_pool_running(), "startup returned before helpers were ready");
         wf__par_release(frame);
     }
-    for (unsigned round = 0; round < 8; ++round)
-        check(sum(12) == 4096, "nested tasks lost or duplicated results");
+    wf_test_guard_phase("nested scheduler joins");
+    if (protocol) {
+        for (unsigned round = 0; round < 8; ++round)
+            check(sum(12) == 4096, "nested tasks lost or duplicated results");
+    } else {
+        check(sum(2) == 4, "startup path did not execute the ordinary result");
+    }
     unsigned workers = wf__sched_pool_running();
     if (!owner_allowed || worker_limit == 1 || !wf__par_pool_active()) {
         check(workers == 0, "failed startup left an active pool");
         check(wf__par_acquire_lane(8) == NULL, "failed startup granted a lane");
         puts("compute smoke: PASS sequential/refused startup");
+        wf_test_guard_finish();
         return 0;
     }
     unsigned expected_workers = worker_limit < 4 ? worker_limit - 1 : 3;
     check(workers == expected_workers, "unexpected actual pool width");
+    if (!protocol) {
+        printf("compute smoke: PASS startup workers=%u\n", workers);
+        wf_test_guard_finish();
+        return 0;
+    }
+    wf_test_guard_phase("scheduler frame capacity/reverse joins");
     check(wf__par_acquire_lane(UINT64_MAX) == NULL, "oversized frame was truncated");
     check(wf__par_split_budget(UINT64_MAX, UINT64_MAX) <= 10, "u64 split ABI failed");
     void *frames[WF_SCHED_LANE_SLOTS];
@@ -232,6 +248,7 @@ int main(int argc, char **argv) {
     }
     /* Hold a publisher after DONE, then reuse the same frame while its tail
      * is still outstanding. Only permanent synchronization metadata is read. */
+    wf_test_guard_phase("scheduler completion-tail reuse");
     uint64_t *frame = wf__par_acquire_lane(8);
     __atomic_store_n(&tail_frame, frame, __ATOMIC_RELEASE);
     __atomic_store_n(&hold_tail, 1, __ATOMIC_RELEASE);
@@ -251,9 +268,13 @@ int main(int argc, char **argv) {
     while (!__atomic_load_n(&tail_finished, __ATOMIC_ACQUIRE)) wf_prim_yield();
     /* This case holds one helper's notification while a second helper runs
      * the reused task. Partial startup with one helper is checked above. */
-    if (workers > 1) check_registered_wait_reuse();
+    if (workers > 1) {
+        wf_test_guard_phase("scheduler registered-wait reuse");
+        check_registered_wait_reuse();
+    }
     /* Delay a thief before its ring-cell read across several complete wraps.
      * Its stale CAS must lose, and reading the reused cell must stay atomic. */
+    wf_test_guard_phase("scheduler stale thief across eight wraps");
     __atomic_store_n(&arm_thief, 1, __ATOMIC_RELEASE);
     frame = wf__par_acquire_lane(8);
     wf__par_publish(frame, stamp);
@@ -271,5 +292,6 @@ int main(int argc, char **argv) {
     while (!__atomic_load_n(&thief_returned, __ATOMIC_ACQUIRE)) wf_prim_yield();
     check(sum(12) == 4096, "post-wrap nested work failed");
     printf("compute smoke: PASS workers=%u slots=%u grants=%lu\n", workers, WF_SCHED_LANE_SLOTS, wf__par_grants());
+    wf_test_guard_finish();
     return 0;
 }
