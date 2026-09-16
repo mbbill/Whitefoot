@@ -21,6 +21,14 @@ Owner-approved: The owner reaffirmed the previously approved PROV-6 direction af
 
 Summary: A direct FixedVector or Vector proved empty at a release edge omits its element edge for that release while retaining consumption, loan, backing, provider, and effect obligations. This lets a source-defined growable container reclaim its emptied old backing without requiring providers for elements that do not exist. The ordinary release walk remains the only runtime mechanism; an unchecked backing-only operation remains rejected.
 
+## 2026-09-15 Skip provably dominated closure products
+
+Nodes: compiler/closure-row-dominance
+
+Owner-approved: The owner explicitly approved the closure-row-dominance revision after its complete proposal and review results were presented in the PR #65 conversation.
+
+Summary: Apply the approved amendment unchanged: skip a transitive candidate product only when conservative numeric and proof-depth row bounds prove that no candidate can improve a fully populated destination row, retaining the original traversal for undecided products and equal-depth ties. The [entering-context cost study](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#entering-context-follow-up) attributes the redundant traversal and compares the selected optimization with unchanged scalar checks. This adds to query-preparation reuse without a cross-flow cache or a different witness-selection algorithm. The accepted amendment is removed; the language rules and authorization to merge into main are unchanged.
+
 ## 2026-09-14 Reuse proof-query preparation within one entering context
 
 Nodes: compiler/proof-query-context
