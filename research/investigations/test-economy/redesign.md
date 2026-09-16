@@ -3417,3 +3417,83 @@ figures do not certify the complete redesign or current root gate.
 
 Implementation is in progress as recorded above. No full-gate, platform, new
 performance result or completed review is implied by the focused checks.
+
+### Implementation evidence: loop responsibilities and per-row execution
+
+B03n-u now share immutable ordinary/parallel emission of the formal
+`tests/programs/parallel/range_fold.wf`. Two duplicate result families and
+ordinary runtime reporting moved into the programs collection, with an
+independent Rust wrapping-arithmetic oracle, default/disabled/representative
+worker settings, and the actual unhooked scheduler reports. The C policy
+collection receives the four-query/seven-policy matrix, malformed settings,
+and the 64-lane arithmetic cap without starting a compute pool or compiling WF;
+the same Make case target is called on POSIX and Windows.
+
+Compiler cases retain shape/clone evidence, the weak budget fallback, actual
+capture use in the oversized-frame fixture, and real worker callbacks whose
+results are checked. Borrowed maps start with byte 173; map-plus-reduction
+publishes all map bytes followed by all eight checksum bytes. The seventeen
+combine rows now use an odd 257-element range with `WF_SPLIT_WORK=1`. Each row
+brackets its own joined call and must observe a real nonowner callback before
+its complete result is compared with the ordinary lowering. The existing
+independent identity table remains. Empty/inverted/thin ranges inspect budget
+query spans and execute both zero and positive controlled budgets. The old
+always-linked "no runtime" wrapper and ineffective shell-stack-limit wrapper
+are retired for the reasons recorded in B03u. The PAR-2 coverage annotation
+now describes these actual receivers instead of ten worker settings.
+
+B04p's formal layout source now defaults to its final seed (65.9375) and one
+pass per fold. Both complete words equal the established oracle
+`420a993efa7437a1 41fa962893d45299`. Explicit argument-bearing benchmarks retain
+800 repetitions; the directly affected manual park-on-miss experiment stages
+its historical one-batch defaults. Programs owns ordinary/parallel output;
+compiler tests own permission/clone evidence and separately require a real
+worker for each fold. The obsolete repeat/rebuild-to-obtain-a-grant path and
+its programs-only observer helper are removed. Native Windows orchestration
+consolidation remains outstanding; shortening the source alone does not claim
+that work complete.
+
+Bounded local observations, with two Cargo/test workers:
+
+| Command scope | Rust target construction | Executable tests | Whole command |
+|---|---:|---:|---:|
+| Loop compiler group, 10 cases | about 76 s | 4.08 s | 80.41 s |
+| Parallel compiler group including layout, 27 cases | about 76 s | 14.03 s | 90.41 s |
+| Programs parallel group, 41 cases | 3.44 s | 141.77 s | 145.66 s |
+| Common scheduler/policy target | C construction and execution combined | all selected native cases passed | 1.71 s |
+
+The 141.77 s is Rust-test execution containing WF compilation and native work,
+not Rust compilation. Its full-corpus parallel compile walk still spends over
+60 s in each of the fixed-run and wfgrep cases; disposition of that broader
+redundancy remains part of the authorized redesign. These are incremental
+observations, not clean-build totals or performance-regression measurements.
+
+### Implementation evidence: native floor host cases
+
+B03y's thirteen setup rows, B03z's real faults/external signal, and B03aa's
+latched-handler case now share `floor_probe.c` and `make floor-test` under the
+common native target. Normal and floor-only substituted builds share compatible
+scheduler objects. Fatal rows run in fresh bounded child processes and compare
+exact output, record bytes and signal. The offset rows include the aligned
+inside/outside edge of the actual page-plus-128-byte band and deduplicate equal
+offsets. External SIGBUS targets the attached entry thread and must retain
+SIGBUS. The latch case establishes arrival at the handler's real parking call
+on its alternate stack before the parent terminates it; a two-second alarm and
+hundreds of millions of C recursive calls are no longer its oracle.
+
+The normal image additionally measures the real entry and observed worker
+stack bounds and requires at least the independently expected 1 GiB reservation.
+The shipped request is checked separately. This host reports 12,288 extra bytes
+for the entry stack; equality to the request would reject that valid larger
+reservation. Two floor-only refusal controls establish the protected original-
+thread fallback. These observations replace the five pure-C Rust wrappers;
+the large WF recursion/exhaustion and stack-ledger receivers are still in
+progress and have not yet been retired. Both native images passed locally.
+
+The native floor target passed in 0.86 s including its incremental C rebuild.
+Both canonical corpus assertions passed in 0.86 s total. All-target Clippy
+passed in 8.03 s after removing a single-element test loop and qualifying a
+signal helper to its Linux-only caller. Workflow YAML parses successfully.
+The subsequent deletion of the five C-only Rust wrappers was type/lint checked;
+no full exhaustion suite, canonical `make check`, new DCR or completion review
+is claimed at this intermediate revision.

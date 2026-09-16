@@ -1288,19 +1288,6 @@ impl CountedProgram {
     pub(super) fn run(&self, workers: Option<&str>) -> (u64, std::process::Output) {
         counted_run(&self.executable, workers)
     }
-
-    /// One selected schedule must both compute the answer and execute a task
-    /// on a real worker. Missing publication or disabled counters fail once.
-    pub(super) fn granted_by_worker(&self, workers: Option<&str>) -> u64 {
-        let (granted, output) = self.run(workers);
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "the counted program must succeed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        granted
-    }
 }
 
 /// Link the fresh observer/module with the ordinary immutable runtime objects.
@@ -2426,3 +2413,128 @@ void wf_test_release(void *p) {
     require(p == frame && joined && !releases); ++releases;
 }
 "#;
+
+/// Source permissions, clone/offer shape and actual nonowner execution for
+/// both layout folds share one compilation and one observed native image.
+/// Public output behavior is exercised separately by the programs collection.
+#[test]
+fn layout_folds_preserve_permissions_and_each_execute_a_worker() {
+    let source = include_bytes!("../../../../tests/programs/par_layout.wf");
+    let plain = emit(source);
+    assert!(!module_requires_parallel_runtime(&plain));
+    let (llvm, ledger) = whitefoot_compile_layout(source);
+    let ledger = ledger.join("\n");
+    assert!(
+        module_requires_parallel_runtime(&llvm),
+        "a module with an eligible site must ask for the runtime"
+    );
+
+    for name in ["layout", "layout_banded"] {
+        let entry = function_body(&llvm, &format!("@wf_{name}"));
+        assert!(
+            entry.contains("= call i64 @wf__par_recursion_budget()")
+                && entry.contains(&format!("call double @wf__par_budget_{name}(")),
+            "wf_{name} must obtain a budget and enter its family:\n{entry}"
+        );
+        let symbol = format!("@wf__par_budget_{name}");
+        let symbol = symbol.as_str();
+        let fold = function_body(&llvm, symbol);
+        assert!(
+            fold.contains(&format!("@wf__par_seq_{name}(")),
+            "{symbol} must enter its sequential clone with its budget spent:\n{fold}"
+        );
+        assert!(
+            fold.contains("= call ptr @wf__par_acquire_lane(i64 "),
+            "{symbol} must acquire a lane for its first child call:\n{fold}"
+        );
+        assert!(
+            fold.contains(", ptr @wf__par_thunk_"),
+            "{symbol} must publish the outlined call to the acquired lane:\n{fold}"
+        );
+        assert!(
+            fold.contains("call void @wf__par_join(ptr"),
+            "{symbol} must join what it offered:\n{fold}"
+        );
+    }
+
+    let measure = function_body(&llvm, "@wf_measure_band");
+    assert!(
+        !measure.contains("call void @wf_trap("),
+        "proved source bounds must not lower to a runtime proof-failure call:\n{measure}"
+    );
+    assert!(
+        !measure.contains("wf__par_"),
+        "a callee in no permitted pair must name no part of the runtime:\n{measure}"
+    );
+    assert!(
+        ledger.contains("pair(layout, layout)  eligible"),
+        "the table-bounded fold's child pair must be reported eligible:\n{ledger}"
+    );
+    assert!(
+        ledger.contains("pair(layout_banded, layout_banded)  eligible"),
+        "the caller-bounded fold's child pair must be reported eligible too:\n{ledger}"
+    );
+    assert!(
+        !ledger.contains("not-actualizable"),
+        "no verdict may be withheld after all source bounds are proved:\n{ledger}"
+    );
+
+    let mut observed = observe_worker_schedule(&llvm);
+    for (index, name) in ["layout", "layout_banded"].iter().enumerate() {
+        let body = function_body(&observed, &format!("@wf_{name}")).to_owned();
+        let entry = body
+            .lines()
+            .find(|line| line.ends_with(':'))
+            .expect("entry block");
+        let replacement = body
+            .replacen(
+                entry,
+                &format!("{entry}\n  call void @wf_test_worker_schedule_begin()"),
+                1,
+            )
+            .replace(
+                "  ret double ",
+                &format!("  call void @wf_test_layout_end(i32 {index})\n  ret double "),
+            );
+        assert!(replacement.contains(&format!("@wf_test_layout_end(i32 {index})")));
+        observed = observed.replacen(&body, &replacement, 1);
+    }
+    observed.push_str(
+        "\ndeclare void @wf_test_worker_schedule_begin()\ndeclare void @wf_test_layout_end(i32)\n",
+    );
+    let host = format!(
+        "#define WF_TEST_SCHEDULE_MANUAL\n{WORKER_SCHEDULE}\n{}",
+        r#"
+static unsigned folds;
+void wf_test_layout_end(unsigned which) {
+    if (which != folds || !atomic_load(&schedule_entered)) {
+        fprintf(stderr, "layout fold %u did not enter a real worker\n", which);
+        exit(116);
+    }
+    ++folds;
+    wf_test_worker_schedule_end();
+}
+static void report(void) { if (folds != 2) { fputs("missing layout fold\n", stderr); _Exit(117); } }
+__attribute__((constructor)) static void observe(void) { atexit(report); }
+"#
+    );
+    let directory = test_directory();
+    let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
+    let output = Command::new(executable)
+        .env("WF_WORKERS", "4")
+        .output()
+        .expect("run observed layout");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, b"420a993efa7437a1 41fa962893d45299\n");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove observed layout");
+}
+
+fn whitefoot_compile_layout(source: &[u8]) -> (String, Vec<String>) {
+    crate::compile_with_permission_ledger(
+        &[crate::SourceInput::new("par_layout.wf", source)],
+        crate::CompilerLimits::default(),
+        crate::OverlapLowering::On,
+    )
+    .expect("layout source must compile")
+}

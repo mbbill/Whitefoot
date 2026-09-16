@@ -1,255 +1,11 @@
-//! The corpus program that carries the permission path end to end.
-//!
-//! `par_layout.wf` is a box-tree layout pass written twice over one tree: once
-//! with a per-node measure whose walk is bounded by the metric table's own
-//! length, and once with a measure whose bound comes from the caller and is
-//! clamped against that table's length. Both bounds are discharged statically,
-//! so the two folds are permitted, eligible, and handed out without a
-//! writer-reachable runtime check.
-//!
-//! The program publishes the exact bits of both folds, so any divergence
-//! anywhere in either tree is a divergence in the published bytes. Whether the
-//! runtime grants lanes at all is pinned by the in-crate runtime test, which
-//! reads the pool's own grant counter; the cases here pin what this program's
-//! two folds compile to and that granting lanes moves none of its bytes.
-//!
-//! Actualization is compile-time opt-in, so the cases that ask about hand-outs
-//! compile through [`compile_program_with_overlap`], the unfiltered
-//! `whitefootc --par --par-scalar-leaf-limit off` form. The
-//! default compilation of the same program is the subject of its own case
-//! below and hands nothing out at all.
+//! Program results and host-visible parallel behavior. Compiler permissions,
+//! private IR and controlled worker observations live in backend tests.
 
 use super::support::{
     build_program, compile_program, compile_program_with_overlap, compile_program_without_overlap,
-    compile_programs, corpus_program_files, program_permission_ledger, run_counting_grants,
-    try_compile_programs_with_overlap,
+    compile_programs, corpus_program_files, try_compile_programs_with_overlap,
 };
 use whitefoot::module_requires_parallel_runtime;
-
-/// Both folds are handed out, in the same module, from the same source shape.
-///
-/// This is the permission result made visible in emitted code. Both folds carry
-/// an outlined thunk, a lane offer, and a join. `@wf_measure_band` is the
-/// negative control for erasure: its source-only boundary reasoning emits
-/// neither a runtime proof-failure path nor a parallel-runtime call.
-///
-/// Each fold is recursive, so `--par` gives its component a budget-carrying
-/// family and the body is emitted under the variant's symbol. The entry keeps
-/// the writer's own signature and obtains the budget the family descends with.
-#[test]
-fn both_folds_are_handed_out() {
-    let llvm = compile_program_with_overlap("par_layout.wf");
-    assert!(
-        module_requires_parallel_runtime(&llvm),
-        "a module with an eligible site must ask for the runtime"
-    );
-
-    for name in ["layout", "layout_banded"] {
-        let entry = function_body(&llvm, &format!("@wf_{name}"));
-        assert!(
-            entry.contains("= call i64 @wf__par_recursion_budget()")
-                && entry.contains(&format!("call double @wf__par_budget_{name}(")),
-            "wf_{name} must obtain a budget and enter its family:\n{entry}"
-        );
-        let symbol = format!("@wf__par_budget_{name}");
-        let symbol = symbol.as_str();
-        let fold = function_body(&llvm, symbol);
-        assert!(
-            fold.contains(&format!("@wf__par_seq_{name}(")),
-            "{symbol} must enter its sequential clone with its budget spent:\n{fold}"
-        );
-        assert!(
-            fold.contains("= call ptr @wf__par_acquire_lane(i64 "),
-            "{symbol} must acquire a lane for its first child call:\n{fold}"
-        );
-        assert!(
-            fold.contains(", ptr @wf__par_thunk_"),
-            "{symbol} must publish the outlined call to the acquired lane:\n{fold}"
-        );
-        assert!(
-            fold.contains("call void @wf__par_join(ptr"),
-            "{symbol} must join what it offered:\n{fold}"
-        );
-    }
-
-    let measure = function_body(&llvm, "@wf_measure_band");
-    assert!(
-        !measure.contains("call void @wf_trap("),
-        "proved source bounds must not lower to a runtime proof-failure call:\n{measure}"
-    );
-    assert!(
-        !measure.contains("wf__par_"),
-        "a callee in no permitted pair must name no part of the runtime:\n{measure}"
-    );
-}
-
-/// The ledger reports both statically proved folds identically.
-#[test]
-fn the_ledger_reports_both_folds_eligible() {
-    let ledger = program_permission_ledger("par_layout.wf").join("\n");
-    assert!(
-        ledger.contains("pair(layout, layout)  eligible"),
-        "the table-bounded fold's child pair must be reported eligible:\n{ledger}"
-    );
-    assert!(
-        ledger.contains("pair(layout_banded, layout_banded)  eligible"),
-        "the caller-bounded fold's child pair must be reported eligible too:\n{ledger}"
-    );
-    assert!(
-        !ledger.contains("not-actualizable"),
-        "no verdict may be withheld after all source bounds are proved:\n{ledger}"
-    );
-}
-
-/// The default compilation of this same program hands nothing out and needs no
-/// runtime, so the shipped build of a program full of eligible sites is the
-/// build it was before this path existed.
-///
-/// The eligibility is real — the case above compiles the same file with `--par`
-/// and finds the thunk, the offer, and the join — so what this pins is the
-/// option, not the program.
-#[test]
-fn the_default_compilation_of_the_demo_names_no_runtime() {
-    let llvm = compile_program("par_layout.wf");
-    assert!(
-        !llvm.contains("wf__par_"),
-        "the default compilation must name no runtime symbol"
-    );
-    assert!(
-        !module_requires_parallel_runtime(&llvm),
-        "no link path may add the runtime to a default build"
-    );
-
-    let program = build_program(&llvm);
-    let published = program.run_with_workers(None);
-    assert!(published.status.success());
-    let batched = program.run_with_workers_and_arguments(None, &[b"batch", b"batch", b"batch"]);
-    assert!(batched.status.success());
-    assert_eq!(
-        batched.stdout, published.stdout,
-        "the sequential benchmark batches must preserve the exact oracle"
-    );
-    assert_eq!(
-        published.stdout,
-        program.run_with_workers(Some("4")).stdout,
-        "a program with no lane offer cannot answer to WF_WORKERS"
-    );
-}
-
-/// Offering lanes moves no byte of the program's published result.
-///
-/// The reference is `WF_WORKERS=1` — the same executable's own sequential
-/// world, where the pool never starts and every offer is refused — so what the
-/// overlapped runs are compared against is an execution that overlapped
-/// nothing. An absent setting is now the shipped default and starts a pool, so
-/// it is one of the compared runs rather than the reference: taking it as the
-/// reference would compare parallel executions with each other and would go
-/// green on a defect present in all of them.
-#[test]
-fn the_layout_program_publishes_one_byte_sequence_at_every_worker_count() {
-    let llvm = compile_program_with_overlap("par_layout.wf");
-    let program = build_program(&llvm);
-
-    let reference = program.run_with_workers(Some("1"));
-    assert!(
-        reference.status.success(),
-        "the sequential execution must succeed: {}",
-        String::from_utf8_lossy(&reference.stderr)
-    );
-    assert_eq!(
-        reference.stdout.len(),
-        34,
-        "the program publishes two 16-digit values, a separator, and a newline"
-    );
-    assert!(reference.stderr.is_empty());
-
-    let batched = program.run_with_workers_and_arguments(None, &[b"batch", b"batch", b"batch"]);
-    assert!(
-        batched.status.success(),
-        "the four-batch performance shape must succeed: {}",
-        String::from_utf8_lossy(&batched.stderr)
-    );
-    assert_eq!(
-        batched.stdout, reference.stdout,
-        "repeating the deterministic kernel in one initialized pool moved a byte"
-    );
-    assert!(batched.stderr.is_empty());
-
-    for workers in [None, Some("2"), Some("4")] {
-        let named = workers.unwrap_or("absent");
-        let overlapped = program.run_with_workers(workers);
-        assert!(
-            overlapped.status.success(),
-            "WF_WORKERS={named} must succeed: {}",
-            String::from_utf8_lossy(&overlapped.stderr)
-        );
-        assert_eq!(
-            overlapped.stdout, reference.stdout,
-            "WF_WORKERS={named} moved a byte of the result"
-        );
-        assert!(overlapped.stderr.is_empty(), "WF_WORKERS={named}");
-    }
-}
-
-/// The caller-bounded fold is granted real lanes, and granting them moves no
-/// byte of what the program publishes.
-///
-/// This is the redirect's payoff measured rather than argued. Every other case
-/// here would pass against a runtime that refused every lane, because refusing
-/// is a correct execution and the permission is never an obligation — so
-/// "`layout_banded` now actualizes" has to be read off the runtime's own grant
-/// counter. `layout_banded` is the fold whose measure obtains its bound from
-/// the caller and proves the clamp before entering its counted loop.
-#[test]
-fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
-    let llvm = compile_program_with_overlap("par_layout.wf");
-
-    let (sequential_grants, sequential) = run_counting_grants(&llvm, Some("1"));
-    assert_eq!(
-        sequential.status.code(),
-        Some(0),
-        "the sequential execution must succeed"
-    );
-    assert_eq!(
-        sequential_grants, 0,
-        "WF_WORKERS=1 never starts the pool, so it is the honest reference"
-    );
-
-    for workers in [Some("2"), Some("4"), None] {
-        let spelling = workers.unwrap_or("absent");
-        let (granted, published) = run_counting_grants(&llvm, workers);
-        assert_eq!(
-            published.status.code(),
-            Some(0),
-            "WF_WORKERS={spelling} must succeed"
-        );
-        let mut observed_grants = granted;
-        for retry in 0..4 {
-            if observed_grants != 0 {
-                break;
-            }
-            let (retried, retry_output) = run_counting_grants(&llvm, workers);
-            assert_eq!(
-                retry_output.status.code(),
-                Some(0),
-                "retry {retry} with WF_WORKERS={spelling} must succeed"
-            );
-            assert_eq!(
-                retry_output.stdout, sequential.stdout,
-                "retry {retry} with WF_WORKERS={spelling} moved a byte"
-            );
-            observed_grants += retried;
-        }
-        assert!(
-            observed_grants > 0,
-            "WF_WORKERS={spelling} was granted no lane, so nothing was overlapped"
-        );
-        assert_eq!(
-            published.stdout, sequential.stdout,
-            "WF_WORKERS={spelling} moved a byte of the result"
-        );
-    }
-}
 
 /// The recursive corpus program publishes one byte sequence whatever the
 /// recursion budget cuts, and whatever width it was cut for.
@@ -488,26 +244,6 @@ fn check_corpus_unit(unit: &[&str]) {
     }
 }
 
-/// The text of one emitted function definition, from its `define` line to its
-/// closing brace.
-fn function_body<'module>(module: &'module str, symbol: &str) -> &'module str {
-    let opening = format!("{symbol}(");
-    let start = module
-        .match_indices(&opening)
-        .find_map(|(offset, _)| {
-            let line = module[..offset]
-                .rfind('\n')
-                .map_or(0, |newline| newline + 1);
-            module[line..offset].starts_with("define").then_some(line)
-        })
-        .unwrap_or_else(|| panic!("missing definition of {symbol}"));
-    let end = module[start..]
-        .find("\n}\n")
-        .map(|offset| start + offset + 3)
-        .expect("a function definition must close");
-    &module[start..end]
-}
-
 /// The migrated tree/window/spine family has independent semantic results;
 /// sequential/parallel agreement alone would permit two identical mistakes.
 /// Each source constructs one ordinary and one parallel image, then executes
@@ -583,5 +319,100 @@ fn tree_window_and_deep_spine_preserve_their_independent_results() {
                 assert!(output.stderr.is_empty());
             }
         }
+    }
+}
+
+/// One ordinary and one parallel build cover the real default-grain fold and
+/// unhooked runtime reports. The reference is independent Rust arithmetic.
+#[test]
+fn range_fold_preserves_bytes_and_ordinary_runtime_reports() {
+    let expected = (0_u64..400_000)
+        .fold(0_u64, |sum, seed| {
+            let mixed = (0..24).fold(seed, |state, _| {
+                (state.rotate_left(27) ^ state.wrapping_mul(6364136223846793005))
+                    .wrapping_add(1442695040888963407)
+            });
+            sum.wrapping_add(mixed)
+        })
+        .to_le_bytes();
+    let plain = build_program(&compile_program("parallel/range_fold.wf"));
+    let reference = plain.run_with_workers(Some("1"));
+    assert!(reference.status.success());
+    assert_eq!(reference.stdout, expected);
+    assert!(reference.stderr.is_empty());
+    let parallel = build_program(&compile_program_with_overlap("parallel/range_fold.wf"));
+    for workers in [None, Some("0"), Some("1"), Some("2"), Some("4"), Some("8")] {
+        let output = parallel.run_with_workers(workers);
+        assert!(output.status.success(), "workers={workers:?}: {output:?}");
+        assert_eq!(output.stdout, expected, "workers={workers:?}");
+        assert!(output.stderr.is_empty());
+    }
+    for workers in ["1", "4"] {
+        for report in ["0", "1", "2"] {
+            let output = parallel.run_with_settings(
+                Some(workers),
+                &[("WF_SPLIT_WORK", "60000"), ("WF_SCHED_REPORT", report)],
+            );
+            assert!(output.status.success(), "{output:?}");
+            assert_eq!(output.stdout, expected);
+            if report == "2" {
+                let text = String::from_utf8_lossy(&output.stderr);
+                assert_eq!(text.lines().count(), 1, "{text}");
+                assert!(
+                    text.starts_with(&format!("compute: threads={workers} ")),
+                    "{text}"
+                );
+                let started = if workers == "1" { "0" } else { "3" };
+                assert!(
+                    text.contains(&format!("workers_started={started} ")),
+                    "{text}"
+                );
+            } else {
+                assert!(output.stderr.is_empty(), "{output:?}");
+            }
+        }
+    }
+    let disabled = parallel.run_with_settings(Some("4"), &[("WF_SPLIT_WORK", "0")]);
+    assert!(disabled.status.success());
+    assert_eq!(disabled.stdout, expected);
+    for (name, value, expected_error) in [
+        (
+            "WF_SCHED_REPORT",
+            "3",
+            "whitefoot scheduler: WF_SCHED_REPORT must be an integer from 0 through 2\n",
+        ),
+        (
+            "WF_SPLIT_WORK",
+            "no",
+            "whitefoot scheduler: WF_SPLIT_WORK must be an integer from 0 through 1000000000\n",
+        ),
+    ] {
+        let output = parallel.run_with_settings(Some("4"), &[(name, value)]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(
+            output.stdout.is_empty(),
+            "configuration must be refused before WF output"
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stderr), expected_error);
+    }
+}
+
+/// Each fold overwrites its prior output without reading it. The former
+/// 800-pass fixture published only the final exactly representable seed
+/// (16 + 799/16 = 65.9375). Check both complete established result words.
+#[test]
+fn layout_preserves_both_results_without_benchmark_repetition() {
+    let expected = b"420a993efa7437a1 41fa962893d45299\n";
+    let plain = build_program(&compile_program("par_layout.wf"));
+    let output = plain.run_with_workers(Some("1"));
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, expected);
+    assert!(output.stderr.is_empty());
+    let parallel = build_program(&compile_program_with_overlap("par_layout.wf"));
+    for workers in [None, Some("1"), Some("2"), Some("4")] {
+        let output = parallel.run_with_workers(workers);
+        assert!(output.status.success(), "workers={workers:?}: {output:?}");
+        assert_eq!(output.stdout, expected, "workers={workers:?}");
+        assert!(output.stderr.is_empty());
     }
 }

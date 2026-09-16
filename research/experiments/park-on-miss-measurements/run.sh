@@ -237,7 +237,13 @@ compute_plan() {
 }
 
 build_compute() {
-    "$WFC" --par --emit-llvm -o "$BUILD/par_layout.ll" "$ROOT/tests/programs/par_layout.wf"
+    # Retain this manual experiment's historical single 800-repetition batch.
+    # The formal source now defaults to one correctness invocation. Stage the
+    # explicit benchmark defaults here; this build-local file is not a fixture.
+    sed -e 's/let repetitions = 1_u64;/let repetitions = 800_u64;/' \
+        -e 's/let initial_seed = 65.9375_f64;/let initial_seed = 16.0_f64;/' \
+        "$ROOT/tests/programs/par_layout.wf" > "$BUILD/par_layout-benchmark.wf"
+    "$WFC" --par --emit-llvm -o "$BUILD/par_layout.ll" "$BUILD/par_layout-benchmark.wf"
     "$WFC" --par --emit-llvm -o "$BUILD/grid.ll" "$BUNDLE/programs/grid_split.wf"
     for form in "$@"; do
         define=$(define_of "$form")

@@ -213,7 +213,7 @@ $(eval $(call completion-image,core-read-probe-sanitize,$(COMPLETION_CORE_READ_S
 $(eval $(call completion-image,harness-tsan,$(COMPLETION_SOURCES),$(COMPLETION_TSAN_FLAGS) $(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES)))
 $(eval $(call completion-image,bridge-default-probe-tsan,$(COMPLETION_DEFAULT_ROUTE_SOURCES),$(COMPLETION_TSAN_FLAGS)))
 
-completion-test: $(COMPLETION_TMP)/harness completion-core-read-test completion-default-route-test sched-smoke sched-deque-test sched-policy-test completion-native-test
+completion-test: $(COMPLETION_TMP)/harness completion-core-read-test completion-default-route-test sched-smoke sched-deque-test sched-policy-test floor-test completion-native-test
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(NO_CORE_DUMPS) $(NATIVE_REQUIREMENT) WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" all
 	$(NO_CORE_DUMPS) $(NATIVE_REQUIREMENT) WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge
@@ -326,7 +326,7 @@ sched-deque-tsan: $(COMPLETION_TMP)/sched-deque-tsan $(COMPLETION_TMP)/sched-deq
 	TSAN_OPTIONS=halt_on_error=1 "$(COMPLETION_TMP)/sched-deque-tsan"
 	TSAN_OPTIONS=halt_on_error=1 "$(COMPLETION_TMP)/sched-deque-tsan-no-stats"
 
-sched-policy-test: $(COMPLETION_TMP)/sched-policy $(COMPLETION_TMP)/sched-policy-asymmetric $(COMPLETION_TMP)/sched-policy-disabled $(COMPLETION_TMP)/sched-policy-clamped
+sched-policy-test: sched-split-policy-cases $(COMPLETION_TMP)/sched-policy $(COMPLETION_TMP)/sched-policy-asymmetric $(COMPLETION_TMP)/sched-policy-disabled $(COMPLETION_TMP)/sched-policy-clamped
 	WF_WORKERS=2 "$(COMPLETION_TMP)/sched-policy" host
 	"$(COMPLETION_TMP)/sched-policy" wake
 	@set -e; for variant in '' -asymmetric -disabled; do \
@@ -340,6 +340,38 @@ sched-policy-test: $(COMPLETION_TMP)/sched-policy $(COMPLETION_TMP)/sched-policy
 	@set -e; for workers in 1 4; do \
 		WF_WORKERS=$$workers "$(COMPLETION_TMP)/sched-policy-clamped" budget 24; \
 	done
+
+# Shared on POSIX and native Windows; each environment is a fresh process.
+SCHED_POLICY_EXE ?= $(COMPLETION_TMP)/sched-policy
+sched-split-policy-cases: $(SCHED_POLICY_EXE)
+	@set -e; unset WF_SPLIT_WORK; WF_WORKERS=4 "$(SCHED_POLICY_EXE)" split 0 2 6 6
+	@set -e; for row in 'empty 0 2 6 6' '0 0 0 0 0' '1 0 6 6 6' '60000 0 3 6 6' '1200000 0 0 3 6' '1000000000 0 0 0 6'; do \
+		set -- $$row; policy=$$1; shift; test "$$policy" != empty || policy=''; \
+		WF_WORKERS=4 WF_SPLIT_WORK="$$policy" "$(SCHED_POLICY_EXE)" split "$$@"; \
+	done
+	WF_WORKERS=64 WF_SPLIT_WORK=1 "$(SCHED_POLICY_EXE)" split 0 10 10 10
+	@set -e; for policy in -1 no 1000000001 18446744073709551616; do \
+		status=0; WF_WORKERS=4 WF_SPLIT_WORK="$$policy" "$(SCHED_POLICY_EXE)" split 0 0 0 0 > "$(COMPLETION_TMP)/split.out" 2> "$(COMPLETION_TMP)/split.err" || status=$$?; \
+		test "$$status" = 1; test ! -s "$(COMPLETION_TMP)/split.out"; \
+		tr -d '\r' < "$(COMPLETION_TMP)/split.err" > "$(COMPLETION_TMP)/split.normalized"; \
+		printf '%s\n' 'whitefoot scheduler: WF_SPLIT_WORK must be an integer from 0 through 1000000000' | cmp - "$(COMPLETION_TMP)/split.normalized"; \
+	done
+
+# The floor body is C-only host evidence. The hooked variant substitutes only
+# floor setup/park calls; compatible scheduler support objects are shared.
+$(COMPLETION_TMP)/floor-probe: $(SCHED_PROBE_SUPPORT) $(SCHED_PROBE_OBJECT_DIR)/core.o $(SCHED_PROBE_OBJECT_DIR)/floor-probe.o
+	$(CC) $(COMPLETION_BASE_CFLAGS) $^ -o "$@"
+$(COMPLETION_TMP)/floor-probe-hooks: $(SCHED_PROBE_SUPPORT) $(SCHED_PROBE_OBJECT_DIR)/core.o $(SCHED_PROBE_OBJECT_DIR)/floor-probe-hooks.o
+	$(CC) $(COMPLETION_BASE_CFLAGS) $^ -o "$@"
+$(SCHED_PROBE_OBJECT_DIR)/floor-probe.o: src/backend/floor_probe.c src/backend/wf_floor.c $(COMPLETION_HEADERS) Makefile $(COMPLETION_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) -c "$<" -o "$@"
+$(SCHED_PROBE_OBJECT_DIR)/floor-probe-hooks.o: src/backend/floor_probe.c src/backend/wf_floor.c $(COMPLETION_HEADERS) Makefile $(COMPLETION_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_FLOOR_TEST_HOOKS -c "$<" -o "$@"
+floor-test: $(COMPLETION_TMP)/floor-probe $(COMPLETION_TMP)/floor-probe-hooks
+	WF_WORKERS=4 "$(COMPLETION_TMP)/floor-probe"
+	WF_WORKERS=4 "$(COMPLETION_TMP)/floor-probe-hooks"
 
 # Manual calibration, never a correctness or automatic performance input.
 sched-wake-measure: $(COMPLETION_TMP)/sched-policy
@@ -575,4 +607,4 @@ completion-windows-wine:
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test ordinary-values-test \
 	completion-default-route-sanitize completion-default-route-tsan sched-smoke \
-	sched-deque-test sched-deque-tsan sched-policy-test sched-wake-measure completion-windows-cross completion-windows-route-build windows-runtime-sources completion-windows-wine
+	sched-deque-test sched-deque-tsan sched-policy-test sched-split-policy-cases floor-test sched-wake-measure completion-windows-cross completion-windows-route-build windows-runtime-sources completion-windows-wine

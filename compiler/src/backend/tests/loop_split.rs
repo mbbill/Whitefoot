@@ -29,98 +29,22 @@ use super::{
 /// this module would be measuring nothing. Its result is written to standard
 /// output as eight bytes, so a difference anywhere in the fold is a difference
 /// in the bytes.
-const PERMITTED_FOLD: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
-  doc "A pure mix with enough arithmetic that splitting the range around it pays.";
-  let state = seed;
-  let round = 0_u64;
-  loop @rounds {
-    let done = round == 24_u64;
-    if done {
-      break @rounds;
-    }
-    let shifted = irotl(state, 27_u32);
-    let scaled = state *wrap 6364136223846793005_u64;
-    set state = ixor(shifted, scaled);
-    set state = state +wrap 1442695040888963407_u64;
-    set round = round +wrap 1_u64;
-  }
-  return state;
-}
+const PERMITTED_FOLD: &[u8] = include_bytes!("../../../../tests/programs/parallel/range_fold.wf");
 
-fn low_byte(v: own u64) -> result: own u8 pure {
-  let low = iand(v, 255_u64);
-  match cvt::<u64, u8>(low) {
-    Ok(value: byte) => {
-      return byte;
-    }
-    Err(error: problem) => {
-      return 0_u8;
-    }
-  }
-}
-
-fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
-  let cursor = at;
-  let rest = value;
-  loop @octets {
-    let limit = at +wrap 8_u64;
-    let done = cursor >= limit;
-    if done {
-      break @octets;
-    }
-    let spare = len_of(deref(destination));
-    let writable = cursor < spare;
-    if writable {
-      let byte = low_byte(v: rest);
-      set deref(destination)[cursor] = byte;
-    }
-    set rest = irotr(rest, 8_u32);
-    set cursor = cursor +wrap 1_u64;
-  }
-  return at +wrap 8_u64;
-}
-
-fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
-  let total = 0_u64;
-  for @points (i in lo..hi) {
-    let mixed = mix(seed: i);
-    set total = total +wrap mixed;
-  }
-  return total;
-}
-
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  region {
-    close_directory(factory: &uniq entry_factory, directory: move unused_cwd);
-  }
-  let value = folded(lo: 0_u64, hi: 400000_u64);
-  let report = buffer_new(8_u64, 0_u8);
-  region {
-    let window = mut_slice_of(&uniq report);
-    region {
-      let filled = spell(destination: &uniq window, at: 0_u64, value: value);
-    }
-  }
-  region {
-    region {
-      region {
-        let native_window_1 = slice_of(&report);
-        region {
-          match write_once(factory: &uniq entry_factory, output: &uniq out, source: &native_window_1, start: 0_u64, end: 8_u64) {
-            Ok(value: next) => {
-              return exit_status(code: 0_u8);
-            }
-            Err(error: problem) => {
-              return exit_status(code: 1_u8);
-            }
-          }
+fn fold_module(parallel: bool) -> String {
+    use std::sync::OnceLock;
+    static PLAIN: OnceLock<String> = OnceLock::new();
+    static PARALLEL: OnceLock<String> = OnceLock::new();
+    let cell = if parallel { &PARALLEL } else { &PLAIN };
+    cell.get_or_init(|| {
+        if parallel {
+            emit_with_overlap(PERMITTED_FOLD)
+        } else {
+            emit(PERMITTED_FOLD)
         }
-      }
-    }
-  }
+    })
+    .clone()
 }
-"#;
 
 /// The permitted loop of [`PERMITTED_FOLD`] over ranges the split has to answer
 /// for without folding anything: empty, inverted, and one wide.
@@ -238,7 +162,39 @@ fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @points (i in 0_u64..400000_u64) {
     let mixed = mix(seed: i);
-    let biased = mixed +wrap a0;
+    let bias0 = mixed +wrap a0;
+    let bias1 = bias0 +wrap a1;
+    let bias2 = bias1 +wrap a2;
+    let bias3 = bias2 +wrap a3;
+    let bias4 = bias3 +wrap a4;
+    let bias5 = bias4 +wrap a5;
+    let bias6 = bias5 +wrap a6;
+    let bias7 = bias6 +wrap a7;
+    let bias8 = bias7 +wrap a8;
+    let bias9 = bias8 +wrap a9;
+    let bias10 = bias9 +wrap b0;
+    let bias11 = bias10 +wrap b1;
+    let bias12 = bias11 +wrap b2;
+    let bias13 = bias12 +wrap b3;
+    let bias14 = bias13 +wrap b4;
+    let bias15 = bias14 +wrap b5;
+    let bias16 = bias15 +wrap b6;
+    let bias17 = bias16 +wrap b7;
+    let bias18 = bias17 +wrap b8;
+    let bias19 = bias18 +wrap b9;
+    let bias20 = bias19 +wrap c0;
+    let bias21 = bias20 +wrap c1;
+    let bias22 = bias21 +wrap c2;
+    let bias23 = bias22 +wrap c3;
+    let bias24 = bias23 +wrap c4;
+    let bias25 = bias24 +wrap c5;
+    let bias26 = bias25 +wrap c6;
+    let bias27 = bias26 +wrap c7;
+    let bias28 = bias27 +wrap c8;
+    let bias29 = bias28 +wrap c9;
+    let bias30 = bias29 +wrap d0;
+    let bias31 = bias30 +wrap d1;
+    let biased = bias31;
     set total = total +wrap biased;
   }
   if total == 0_u64 {
@@ -256,8 +212,8 @@ fn main() -> status: own ExitStatus pure {
 /// through a thunk — four lists that have to agree on order and type, and a
 /// fixture with no capture at all cannot tell whether they do. The three
 /// differ in value *and* are folded asymmetrically, so a swapped pair moves the
-/// published bytes. **A second combine**: `ixor` has a different identity from
-/// `+wrap`, so seeding a chunk with the wrong one, or seeding the left half
+/// published bytes. **A second combine**: both `ixor` and `+wrap` have identity zero, but the incoming nonzero seed
+/// must reach the left half rather than seeding that half
 /// where the right should be, changes the answer here and not there.
 const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: own u64, salt: own u64, rounds: own u64) -> result: own u64 pure {
   let state = ixor(seed, salt);
@@ -421,28 +377,23 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 }
 "#;
 
-/// Adds one genuine reduction to [`INDEPENDENT_MAP`] while leaving the exact
-/// element map unchanged. Keeping this as an exact edit of the map fixture
-/// makes the regression answer one question: does selecting Reduction still
-/// preserve the buffer side effect that travels as a capture?
+/// Preserve the entire map and append all eight checksum bytes, so a defect in
+/// any reduction bit is visible without overwriting the map's first element.
 fn map_and_reduction_source() -> Vec<u8> {
-    let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
-    source
-        .replacen(
-            "  for @fill (i in 0_u64..400000_u64) {\n",
-            "  let checksum = 0_u64;\n  for @fill (i in 0_u64..400000_u64) {\n",
-            1,
-        )
-        .replacen(
-            "    set out[slot] = byte;\n",
-            "    set out[slot] = byte;\n    set checksum = checksum +wrap mixed;\n",
-            1,
-        )
-        .replacen(
-            "  return move out;\n",
-            "  let first = low_byte(v: checksum);\n  set out[0_u64] = first;\n  return move out;\n",
-            1,
-        )
+    let source = std::str::from_utf8(INDEPENDENT_MAP).expect("UTF-8 fixture");
+    let fold = std::str::from_utf8(PERMITTED_FOLD).expect("UTF-8 fixture");
+    let spell = fold
+        .split("fn spell(")
+        .nth(1)
+        .unwrap()
+        .split("fn folded(")
+        .next()
+        .unwrap();
+    format!("fn spell({spell}{source}")
+        .replacen("buffer_new(400000_u64, 0_u8)", "buffer_new(400008_u64, 0_u8)", 1)
+        .replacen("  for @fill", "  let checksum = 0_u64;\n  for @fill", 1)
+        .replacen("    set out[slot] = byte;", "    set out[slot] = byte;\n    set checksum = checksum +wrap mixed;", 1)
+        .replacen("  return move out;", "  region {\n    let tail = mut_slice_of(&uniq out);\n    region {\n      let end = spell(destination: &uniq tail, at: 400000_u64, value: checksum);\n    }\n  }\n  return move out;", 1)
         .into_bytes()
 }
 
@@ -465,7 +416,7 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
         .replacen("  return move out;\n", "  return unit;\n", 1)
         .replacen(
             "  let report = mapped();\n",
-            "  let report = buffer_new(400000_u64, 0_u8);\n  region {\n    let done = mapped(out: &uniq report);\n  }\n",
+            "  let report = buffer_new(400000_u64, 173_u8);\n  region {\n    let done = mapped(out: &uniq report);\n  }\n",
             1,
         )
         .into_bytes()
@@ -481,7 +432,7 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
 /// already uses rather than a second one.
 #[test]
 fn a_permitted_loop_is_outlined_split_and_joined() {
-    let module = emit_with_overlap(PERMITTED_FOLD);
+    let module = fold_module(true);
 
     assert!(
         module.contains("define i64 @wf__par_chunk_"),
@@ -491,6 +442,7 @@ fn a_permitted_loop_is_outlined_split_and_joined() {
         module.contains("define i64 @wf__par_split_"),
         "a split loop must synthesize a range splitter:\n{module}"
     );
+    assert!(module.contains("define weak i64 @wf__par_split_budget("));
     let splitter_symbol = synthesized(&module, "@wf__par_split_");
     let chunk_symbol = synthesized(&module, "@wf__par_chunk_");
     let splitter = function_body(&module, &splitter_symbol);
@@ -543,7 +495,7 @@ fn a_permitted_loop_is_outlined_split_and_joined() {
 /// the loop inline, no synthesized function, and no runtime symbol anywhere.
 #[test]
 fn the_default_compilation_of_a_permitted_loop_splits_nothing() {
-    let module = emit(PERMITTED_FOLD);
+    let module = fold_module(false);
     assert!(
         !module.contains("wf__par_"),
         "the default build of a permitted loop must name no part of the split:\n{module}"
@@ -566,7 +518,7 @@ fn the_default_compilation_of_a_permitted_loop_splits_nothing() {
 /// the whole reason the second copy is cheap.
 #[test]
 fn the_sequential_world_of_a_split_loop_is_the_loop() {
-    let module = emit_with_overlap(PERMITTED_FOLD);
+    let module = fold_module(true);
 
     let chunk_symbol = synthesized(&module, "@wf__par_chunk_");
     let splitter_symbol = synthesized(&module, "@wf__par_split_");
@@ -638,168 +590,10 @@ fn synthesized(module: &str, prefix: &str) -> String {
     only.clone()
 }
 
-/// The split publishes one byte sequence at every worker count, and the counts
-/// that matter really did overlap.
-///
-/// This is the case the runtime-chosen grain has to answer for. The number of
-/// chunks depends on the lane count, so these runs cut genuinely different
-/// combination trees; every admitted combine is exactly associative, so every
-/// tree has to publish the same bytes.
-#[test]
-fn a_split_loop_publishes_one_byte_sequence_at_every_worker_count() {
-    let module = emit_with_overlap(PERMITTED_FOLD);
-    let directory = test_directory();
-    let executable = build_executable(&module, &directory);
-
-    let mut runs = Vec::new();
-    for workers in ["0", "1", "2", "3", "4", "5", "8", "10", "16"] {
-        let output = Command::new(&executable)
-            .env("WF_WORKERS", workers)
-            .output()
-            .expect("run the split program");
-        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
-        assert_eq!(output.stdout.len(), 8, "WF_WORKERS={workers}");
-        runs.push((format!("WF_WORKERS={workers}"), output.stdout));
-    }
-    let shipped = Command::new(&executable)
-        .env_remove("WF_WORKERS")
-        .output()
-        .expect("run the split program at the shipped default");
-    assert_eq!(shipped.status.code(), Some(0));
-    runs.push(("WF_WORKERS unset".to_owned(), shipped.stdout));
-    identical(&runs).expect("a split range must not move one byte of the fold");
-
-    // A repeat over runs that never handed anything out would pass against a
-    // runtime that granted nothing, so the counts that should overlap are
-    // asked whether they did — under a test-only join barrier that lets a real worker enter the task.
-    let counted = CountedProgram::link(&module, &directory);
-    for workers in ["4", "8"] {
-        let granted = counted.granted_by_worker(Some(workers));
-        assert!(
-            granted > 0,
-            "WF_WORKERS={workers} granted no lane in the controlled worker execution, so the repeat \
-             above overlapped nothing"
-        );
-    }
-    let (opted_out, _) = counted.run(Some("1"));
-    assert_eq!(opted_out, 0, "WF_WORKERS=1 must take the sequential world");
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// A process policy changes the decomposition, never the fold's bytes. The
-/// observer queries the real entry API after bootstrap, so ignoring the
-/// setting cannot pass by merely producing a correct sequential result.
-#[test]
-fn split_work_setting_changes_budget_without_changing_the_fold() {
-    let module = emit_with_overlap(PERMITTED_FOLD);
-    let directory = test_directory();
-    let executable = super::parallel::link_counting_grants(
-        &module,
-        &directory,
-        r#"#include <stdio.h>
-#include <stdlib.h>
-extern unsigned long wf__par_split_budget(unsigned long, unsigned long);
-static void report(void) {
-    fprintf(stderr, "%lu %lu %lu %lu\n",
-        wf__par_split_budget(0ul, 219ul),
-        wf__par_split_budget(4096ul, 219ul),
-        wf__par_split_budget(65536ul, 219ul),
-        wf__par_split_budget(~0ul, ~0ul));
-}
-
-__attribute__((constructor)) static void observe(void) { atexit(report); }
-"#,
-    );
-    let mut runs = Vec::new();
-    for (setting, expected) in [
-        (None, "0 2 6 6\n"),
-        (Some(""), "0 2 6 6\n"),
-        (Some("0"), "0 0 0 0\n"),
-        (Some("1"), "0 6 6 6\n"),
-        (Some("60000"), "0 3 6 6\n"),
-        (Some("1200000"), "0 0 3 6\n"),
-        (Some("1000000000"), "0 0 0 6\n"),
-    ] {
-        let mut command = Command::new(&executable);
-        command.env("WF_WORKERS", "4").env_remove("WF_SPLIT_WORK");
-        if let Some(value) = setting {
-            command.env("WF_SPLIT_WORK", value);
-        }
-        let output = command.output().expect("run with split-work policy");
-        assert!(output.status.success(), "setting {setting:?}: {output:?}");
-        assert_eq!(output.stdout.len(), 8);
-        assert_eq!(String::from_utf8_lossy(&output.stderr), expected);
-        runs.push((format!("WF_SPLIT_WORK={setting:?}"), output.stdout));
-    }
-    identical(&runs).expect("split policy must preserve the fold's bytes");
-    for setting in ["-1", "no", "1000000001", "18446744073709551616"] {
-        let output = Command::new(&executable)
-            .env("WF_WORKERS", "4")
-            .env("WF_SPLIT_WORK", setting)
-            .output()
-            .expect("reject invalid split-work setting");
-        assert_eq!(output.status.code(), Some(1));
-        assert!(output.stdout.is_empty(), "the body must not run");
-        assert_eq!(
-            String::from_utf8_lossy(&output.stderr).lines().next(),
-            Some("whitefoot scheduler: WF_SPLIT_WORK must be an integer from 0 through 1000000000")
-        );
-    }
-    std::fs::remove_dir_all(&directory).expect("remove split-work test");
-}
-
-#[test]
-fn ordinary_shared_runtime_can_report_without_an_observer() {
-    let directory = test_directory();
-    let executable = build_executable(&emit_with_overlap(PERMITTED_FOLD), &directory);
-    let mut runs = Vec::new();
-    for workers in ["1", "4"] {
-        for report in ["0", "1", "2"] {
-            let output = Command::new(&executable)
-                .env("WF_WORKERS", workers)
-                .env("WF_SPLIT_WORK", "60000")
-                .env("WF_SCHED_REPORT", report)
-                .output()
-                .expect("run ordinary shared runtime with report mode");
-            assert!(output.status.success(), "{output:?}");
-            assert_eq!(output.stdout.len(), 8);
-            if report == "2" {
-                let text = String::from_utf8_lossy(&output.stderr);
-                assert_eq!(text.lines().count(), 1, "{text}");
-                assert!(
-                    text.starts_with(&format!("compute: threads={workers} ")),
-                    "{text}"
-                );
-                let started = if workers == "1" { "0" } else { "3" };
-                assert!(
-                    text.contains(&format!("workers_started={started} ")),
-                    "{text}"
-                );
-            } else {
-                assert!(output.stderr.is_empty(), "{output:?}");
-            }
-            runs.push((format!("workers={workers} report={report}"), output.stdout));
-        }
-    }
-    identical(&runs).expect("diagnostics must not change the program output");
-    let rejected = Command::new(&executable)
-        .env("WF_SCHED_REPORT", "3")
-        .output()
-        .expect("reject an unsupported report mode");
-    assert_eq!(rejected.status.code(), Some(1));
-    assert!(rejected.stdout.is_empty());
-    assert_eq!(
-        String::from_utf8_lossy(&rejected.stderr),
-        "whitefoot scheduler: WF_SCHED_REPORT must be an integer from 0 through 2\n"
-    );
-    std::fs::remove_dir_all(&directory).expect("remove report-mode test");
-}
-
 /// A split that carries captures and folds under a second admitted operation
 /// publishes what the unsplit lowering publishes, at every worker count.
 ///
-/// The identity of `ixor` is not the identity of `+wrap`, and the three
+/// Both combines have identity zero; the nonzero incoming seed and three
 /// captures have to reach the chunk in the order and the types its parameters
 /// declare — through a lane frame and a thunk on the granted edge. Both are
 /// checked against the default compilation of the same source rather than
@@ -831,7 +625,7 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "2", "4", "8"] {
+    for workers in ["1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()
@@ -843,55 +637,14 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
 
     // A selected worker schedule remains observable on a one-core host.
     {
-        let granted = CountedProgram::link(&split, &directory).granted_by_worker(Some("8"));
+        let (granted, output) = CountedProgram::link(&split, &directory).run(Some("4"));
+        assert_eq!(output.status.code(), Some(0));
+        assert_eq!(output.stdout, runs[0].1);
         assert!(
             granted > 0,
             "the comparison above overlapped nothing in the controlled worker execution"
         );
     }
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// The differential: the same source lowered with no split at all publishes the
-/// same bytes as the split lowering, at every worker count.
-///
-/// Every other case here links one emitted module several ways, so a defect
-/// introduced by the split itself is present in the reference too and compares
-/// equal. This reference is the default compilation, whose loop was never
-/// outlined and never regrouped, which is the only way "regrouping the fold
-/// changes nothing" can be checked against something other than itself.
-#[test]
-fn a_split_loop_agrees_with_the_lowering_that_splits_nothing() {
-    let unsplit = emit(PERMITTED_FOLD);
-    assert!(
-        !module_requires_parallel_runtime(&unsplit),
-        "the reference module must contain no split at all"
-    );
-    let split = emit_with_overlap(PERMITTED_FOLD);
-    assert!(
-        module_requires_parallel_runtime(&split),
-        "the split module must hand work out, or the comparison is vacuous"
-    );
-
-    let directory = test_directory();
-    let reference = Command::new(build_executable(&unsplit, &directory))
-        .output()
-        .expect("run the module that splits nothing");
-    assert_eq!(reference.status.code(), Some(0));
-    assert_eq!(reference.stdout.len(), 8);
-
-    let executable = build_executable(&split, &directory);
-    let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "2", "4", "8"] {
-        let output = Command::new(&executable)
-            .env("WF_WORKERS", workers)
-            .output()
-            .expect("run the split program");
-        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
-        runs.push((format!("WF_WORKERS={workers}"), output.stdout));
-    }
-    identical(&runs).expect("splitting a range must not move one byte of the result");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -981,7 +734,7 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "2", "4", "8"] {
+    for workers in ["1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()
@@ -993,9 +746,13 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     identical(&runs).expect("splitting an independent map must not move one output byte");
 
     let counted = CountedProgram::link(&split, &directory);
-    for workers in ["4", "8"] {
+    {
+        let workers = "4";
+        let (granted, output) = counted.run(Some(workers));
+        assert_eq!(output.status.code(), Some(0));
+        assert_eq!(output.stdout, runs[0].1);
         assert!(
-            counted.granted_by_worker(Some(workers)) > 0,
+            granted > 0,
             "WF_WORKERS={workers} granted no map lane in the controlled worker execution"
         );
     }
@@ -1025,7 +782,7 @@ fn a_borrowed_read_modify_map_preserves_the_sequential_bytes() {
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "4", "8"] {
+    for workers in ["1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()
@@ -1036,12 +793,15 @@ fn a_borrowed_read_modify_map_preserves_the_sequential_bytes() {
     }
     identical(&runs).expect("the borrowed read-modify map must preserve every output byte");
 
+    let (granted, output) = CountedProgram::link(&split, &directory).run(Some("4"));
+    assert!(granted > 0, "the map must execute a real worker callback");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, runs[0].1);
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// A loop that maps and reduces still selects the Reduction result path. The
-/// byte at index zero depends on the returned fold; every other byte depends on
-/// the captured map storage, so the differential checks both at once.
+/// full map and all eight reduction bytes are independently observable.
 #[test]
 fn a_map_and_reduction_preserves_both_results() {
     let source = map_and_reduction_source();
@@ -1072,11 +832,11 @@ fn a_map_and_reduction_preserves_both_results() {
         .output()
         .expect("run the combined loop that splits nothing");
     assert_eq!(reference.status.code(), Some(0));
-    assert_eq!(reference.stdout.len(), 400000);
+    assert_eq!(reference.stdout.len(), 400008);
 
     let executable = build_executable(&split, &directory);
     let mut runs = vec![("no split lowering".to_owned(), reference.stdout)];
-    for workers in ["1", "4", "8"] {
+    for workers in ["1", "4"] {
         let output = Command::new(&executable)
             .env("WF_WORKERS", workers)
             .output()
@@ -1086,6 +846,10 @@ fn a_map_and_reduction_preserves_both_results() {
     }
     identical(&runs).expect("the combined map and reduction must preserve every byte");
 
+    let (granted, output) = CountedProgram::link(&split, &directory).run(Some("4"));
+    assert!(granted > 0, "the map must execute a real worker callback");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, runs[0].1);
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
@@ -1132,11 +896,9 @@ const PUBLISH_BOOL: &str =
 /// wrong identity element would produce: `iand` keeps a mask alive rather than
 /// collapsing to zero, `imin` folds a range whose minimum is not zero, `imax`
 /// one whose maximum is not the type's, and `band` fold to `True` where `bor`
-/// folds to `False`. The `ixor` and `bxor` rows are the exception and cannot be
-/// discriminating that way: the split always cuts a power-of-two number of
-/// chunks, so a wrong xor identity is seeded an even number of times and
-/// cancels. Their identity is what the two-sidedness table covers; what these
-/// rows add for them is that the chunk boundaries and the join are right.
+/// folds to `False`. Each bisection carries the incoming seed on the left and
+/// introduces one identity on the right. The odd 257-element range exercises
+/// uneven leaves; the independent identity table also covers signed widths.
 const ADMITTED_COMBINES: &[Combine] = &[
     Combine {
         name: "add_wide",
@@ -1311,11 +1073,10 @@ const ADMITTED_COMBINES: &[Combine] = &[
     },
 ];
 
-/// How wide a range every row of [`ADMITTED_COMBINES`] folds. Large enough that
-/// the split allowance is worth taking — every row's loop is checked to have
-/// actually split — and no larger, because seventeen of them run in one
-/// program.
-const COMBINE_SPAN: u64 = 200_000;
+/// Odd, non-power-of-two range for controlled per-row worker executions.
+/// WF_SPLIT_WORK=1 permits small chunks; the ordinary program family separately
+/// covers the shipped work threshold with its substantial representative fold.
+const COMBINE_SPAN: u64 = 257;
 
 /// The helpers every row's fold shares: the per-iteration mix that gives the
 /// body enough weight to be worth splitting, the narrowing to a byte, and the
@@ -1447,10 +1208,9 @@ fn admitted_combine_source() -> Vec<u8> {
 /// catch a wrong lowering for one particular combine.
 ///
 /// The rows are one program rather than seventeen because the expensive half is
-/// the link, and one program keeps the whole table to two of them. Each row's
-/// loop is confirmed to have split, by the ledger's own line naming that row's
-/// combine, so a row that quietly stopped splitting fails here instead of
-/// passing as a comparison of two sequential folds.
+/// the link. One ordinary reference and one observed parallel image cover all
+/// rows. Each row needs its permission entry, a real worker callback, and the
+/// correct result; none can borrow a positive counter from another row.
 #[test]
 fn every_admitted_combine_splits_and_publishes_the_unsplit_bytes() {
     let source = admitted_combine_source();
@@ -1493,40 +1253,64 @@ fn every_admitted_combine_splits_and_publishes_the_unsplit_bytes() {
         "every row publishes eight bytes"
     );
 
-    let executable = build_executable(&split, &directory);
-    for workers in ["0", "1", "2", "3", "4", "5", "8", "16"] {
-        let output = Command::new(&executable)
-            .env("WF_WORKERS", workers)
-            .output()
-            .expect("run the split program");
-        assert_eq!(output.status.code(), Some(0), "WF_WORKERS={workers}");
-        assert_combine_rows(
-            &reference.stdout,
-            &output.stdout,
-            &format!("WF_WORKERS={workers}"),
-        );
+    // Each row's caller brackets a fully joined fold. Interposition delays
+    // the owner's join until one actual nonowner callback has entered.
+    let mut observed = super::parallel::observe_worker_schedule(&split);
+    for (index, combine) in ADMITTED_COMBINES.iter().enumerate() {
+        let symbol = format!("@wf_value_{}", combine.name);
+        let body = function_body(&observed, &symbol).to_owned();
+        let entry = body
+            .lines()
+            .find(|line| line.ends_with(':'))
+            .expect("entry block");
+        let replacement = body
+            .replacen(
+                entry,
+                &format!("{entry}\n  call void @wf_test_worker_schedule_begin()"),
+                1,
+            )
+            .replace(
+                "  ret i64 ",
+                &format!("  call void @wf_test_row_end(i32 {index})\n  ret i64 "),
+            );
+        assert!(replacement.contains(&format!("@wf_test_row_end(i32 {index})")));
+        observed = observed.replacen(&body, &replacement, 1);
     }
-    let shipped = Command::new(&executable)
-        .env_remove("WF_WORKERS")
+    observed.push_str(
+        "\ndeclare void @wf_test_worker_schedule_begin()\ndeclare void @wf_test_row_end(i32)\n",
+    );
+    let observer = format!(
+        "#define WF_TEST_SCHEDULE_MANUAL\n{}\n{}",
+        super::parallel::WORKER_SCHEDULE,
+        r#"
+static unsigned completed_rows;
+void wf_test_row_end(unsigned row) {
+    if (row != completed_rows || !atomic_load(&schedule_entered)) {
+        fprintf(stderr, "combine row %u did not execute a real worker\n", row);
+        exit(112);
+    }
+    wf_test_worker_schedule_end();
+    ++completed_rows;
+}
+static void report_rows(void) {
+    if (completed_rows != 17) { fputs("missing combine rows\n", stderr); _Exit(113); }
+}
+__attribute__((constructor)) static void register_rows(void) { atexit(report_rows); }
+"#
+    );
+    let executable = super::build_linked_executable(&observed, Some(&observer), &[], &directory);
+    let output = Command::new(executable)
+        .env("WF_WORKERS", "4")
+        .env("WF_SPLIT_WORK", "1")
         .output()
-        .expect("run the split program at the shipped default");
-    assert_eq!(shipped.status.code(), Some(0));
-    assert_combine_rows(&reference.stdout, &shipped.stdout, "WF_WORKERS unset");
-
-    // A splitter in the module is not a range the runtime actually cut: the
-    // allowance is asked at each loop entry, and a range too small to be worth
-    // splitting gets zero and descends straight to its leaf. Without this the
-    // whole table would still pass against seventeen sequential folds — the
-    // control is direct, since narrowing [`COMBINE_SPAN`] to a hundred takes
-    // this program's grant count to zero in every run.
-    {
-        let granted = CountedProgram::link(&split, &directory).granted_by_worker(Some("8"));
-        assert!(
-            granted > 0,
-            "no row's range was cut in the controlled worker execution, so the comparisons above \
-             are between two sequential folds"
-        );
-    }
+        .expect("run all controlled combine rows");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    assert_combine_rows(
+        &reference.stdout,
+        &output.stdout,
+        "every row executed a worker",
+    );
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -1571,17 +1355,42 @@ fn a_degenerate_range_folds_to_the_accumulator_it_arrived_with() {
         "the fixture's loop must actually split, or this checks nothing:\n{module}"
     );
     let directory = test_directory();
-    let executable = build_executable(&module, &directory);
-    for workers in ["0", "1", "2", "4", "8"] {
-        let output = Command::new(&executable)
-            .env("WF_WORKERS", workers)
-            .output()
-            .expect("run the degenerate-range program");
+    let observed = module.replace(
+        "call i64 @wf__par_split_budget(",
+        "call i64 @wf_test_edge_budget(",
+    ) + "\ndeclare i64 @wf_test_edge_budget(i64, i64)\n";
+    let observer = r#"#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+static unsigned queries;
+uint64_t wf_test_edge_budget(uint64_t span, uint64_t weight) {
+    (void)weight;
+    /* Empty and inverted ranges must not become wrapped positive spans. */
+    if (span > 1) { fputs("wrapped degenerate span\n", stderr); exit(114); }
+    ++queries;
+    return getenv("WF_TEST_POSITIVE_BUDGET") ? 4 : 0;
+}
+static void report(void) { if (!queries) { fputs("no edge budget query\n", stderr); _Exit(115); } }
+__attribute__((constructor)) static void register_report(void) { atexit(report); }
+"#;
+    let executable = super::build_linked_executable(&observed, Some(observer), &[], &directory);
+    for positive in [false, true] {
+        let mut command = Command::new(&executable);
+        command
+            .env("WF_WORKERS", "4")
+            .env_remove("WF_TEST_POSITIVE_BUDGET");
+        if positive {
+            command.env("WF_TEST_POSITIVE_BUDGET", "1");
+        }
+        let output = command.output().expect("run controlled degenerate ranges");
         assert_eq!(
             output.status.code(),
             Some(0),
-            "WF_WORKERS={workers} failed the degenerate-range check: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "positive={positive}: {output:?}"
+        );
+        assert!(
+            output.stdout.is_empty() && output.stderr.is_empty(),
+            "{output:?}"
         );
     }
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
@@ -1616,101 +1425,4 @@ fn a_loop_whose_frame_is_too_wide_declines_and_says_so() {
         !module.contains("@wf__par_split_"),
         "a declined loop must emit no splitter:\n{module}"
     );
-}
-
-/// The compile-time frame bound is the runtime's own.
-///
-/// Two numbers that have to agree and live in two languages: the lowering
-/// decides whether to emit a split from one, and the runtime refuses an acquisition
-/// from the other. If they drifted apart the decline above would fire on loops
-/// that fit, or — the direction that matters — not fire on loops that do not.
-#[test]
-fn the_compile_time_frame_bound_is_the_runtimes() {
-    let core = crate::SCHED_CORE_HEADER;
-    let declared = core
-        .lines()
-        .find_map(|line| line.strip_prefix("#define WF_SCHED_FRAME_BYTES "))
-        .expect("the core must state its frame bound");
-    assert_eq!(
-        declared
-            .trim()
-            .trim_end_matches('u')
-            .parse::<u64>()
-            .expect("a decimal bound"),
-        crate::LANE_FRAME_BYTES,
-        "the lowering's frame bound has drifted from the runtime's"
-    );
-}
-
-/// A module with a split loop and no runtime linked is a complete program.
-///
-/// The module carries its own weak answer to every entry point the split names,
-/// including the allowance: with no lanes the honest allowance is zero, the
-/// splitter descends straight to its leaf, and the whole range runs as the loop
-/// it was.
-///
-/// The lane-free run is `WF_WORKERS=1` rather than a link with no runtime in
-/// it. Design §7's "Where the core is linked" is why: the scheduler core is
-/// staged under the union of the two predicates, so this fixture — which
-/// writes its result — carries the core in every link the compiler produces
-/// and has no core-free link left. `WF_WORKERS=1` reaches the same schedule
-/// through the answer the module actually asks for: `wf__par_pool_active`
-/// reports no pool, the allowance is zero, and nothing is handed out.
-#[test]
-fn a_module_with_a_split_loop_and_no_runtime_still_runs() {
-    let module = emit_with_overlap(PERMITTED_FOLD);
-    assert!(
-        module.contains("define weak i64 @wf__par_split_budget("),
-        "a module that splits must carry its own answer to the allowance:\n{module}"
-    );
-    let directory = test_directory();
-    let executable = build_executable(&module, &directory);
-    let output = Command::new(&executable)
-        .env("WF_WORKERS", "1")
-        .output()
-        .expect("run the split module with no lane");
-    assert_eq!(output.status.code(), Some(0));
-
-    let linked = Command::new(&executable)
-        .env("WF_WORKERS", "8")
-        .output()
-        .expect("run the same module against a pool");
-    assert_eq!(linked.status.code(), Some(0));
-    assert_eq!(
-        output.stdout, linked.stdout,
-        "the runtime must change the schedule and not the bytes"
-    );
-
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
-}
-
-/// A split costs the recursion depth of the splitter, and that depth is the
-/// allowance rather than the range.
-///
-/// The bound is a property of the emitted shape and not a policy: the splitter
-/// descends exactly `budget` levels, the allowance caps the chunk count at the
-/// lane ceiling times the oversubscription, and the base-two logarithm of that
-/// is ten. A range of 2^64 iterations therefore costs ten frames, not
-/// sixty-four and not a per-iteration one. The program below runs a split loop
-/// under a stack limit far below what a range-deep descent would need.
-#[test]
-fn a_split_loop_costs_a_bounded_stack() {
-    let module = emit_with_overlap(PERMITTED_FOLD);
-    let directory = test_directory();
-    let executable = build_executable(&module, &directory);
-    let status = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(format!(
-            "ulimit -s 512 && WF_WORKERS=8 {}",
-            executable.display()
-        ))
-        .output()
-        .expect("run the split program under a stack limit");
-    assert_eq!(
-        status.status.code(),
-        Some(0),
-        "a split must not need more stack than its allowance: {}",
-        String::from_utf8_lossy(&status.stderr)
-    );
-    std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
