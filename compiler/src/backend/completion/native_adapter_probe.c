@@ -614,12 +614,9 @@ int main(int argc, char **argv) {
     wf_linux_io_uring_adapter adapter;
     wf_completion_record first;
     wf_completion_record second;
-    wf_completion_record third;
     unsigned char first_bytes[4] = {0};
     unsigned char second_bytes[4] = {0};
     const unsigned char seed[8] = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
-    const unsigned char suffix[2] = {'I', 'J'};
-    unsigned char final_bytes[10] = {0};
     size_t published = 0;
     int descriptor;
     int error;
@@ -683,28 +680,6 @@ int main(int argc, char **argv) {
     PROBE_CHECK(second.result.value == 4 && second.result.error_code == 0);
     PROBE_CHECK(memcmp(first_bytes, seed, 4) == 0);
     PROBE_CHECK(memcmp(second_bytes, seed + 4, 4) == 0);
-
-    probe_record_init(&third, WF_FILE_PWRITE);
-    third.request.operation.pwrite.descriptor = descriptor;
-    third.request.operation.pwrite.buffer = suffix;
-    third.request.operation.pwrite.count = sizeof(suffix);
-    third.request.operation.pwrite.offset = (int64_t)sizeof(seed);
-    PROBE_CHECK(
-        wf_linux_io_uring_submit(&adapter, &third)
-        == WF_LINUX_IO_URING_TARGET_OWNS
-    );
-    published = 0;
-    while (published == 0) {
-        PROBE_CHECK(
-            wf_linux_io_uring_progress(&adapter, 1, 1, &published) == 0
-        );
-    }
-    PROBE_CHECK(probe_record_done(&third));
-    PROBE_CHECK(third.result.kind == WF_FILE_PWRITE);
-    PROBE_CHECK(third.result.value == 2 && third.result.error_code == 0);
-    PROBE_CHECK(pread(descriptor, final_bytes, sizeof(final_bytes), 0) == 10);
-    PROBE_CHECK(memcmp(final_bytes, seed, sizeof(seed)) == 0);
-    PROBE_CHECK(memcmp(final_bytes + sizeof(seed), suffix, sizeof(suffix)) == 0);
 
     PROBE_CHECK(
         probe_more_in_flight_than_the_ring_is_deep(&adapter, descriptor) == 0
@@ -887,7 +862,6 @@ int main(int argc, char **argv) {
 #define _WIN32_WINNT 0x0602
 #endif
 
-#include "native_contract.h"
 #include "windows_iocp.h"
 
 #include <stdint.h>
@@ -936,9 +910,6 @@ int main(int argc, char **argv) {
     wf_completion_runtime runtime;
     wf_windows_iocp_adapter adapter;
     wf_completion_record record;
-    wf_completion_target_contract contract = wf_completion_target_contract_for(
-        WF_TARGET_WINDOWS_IOCP
-    );
     const unsigned char written[4] = {'i', 'o', 'c', 'p'};
     unsigned char read_back[4];
     HANDLE handle;
@@ -949,10 +920,6 @@ int main(int argc, char **argv) {
     if (argc != 2) {
         return 2;
     }
-    PROBE_CHECK(contract.implemented == 1);
-    PROBE_CHECK(contract.native_completion == 1);
-    PROBE_CHECK(contract.may_use_blocking_helpers == 0);
-    PROBE_CHECK(contract.supports_scheduler_progress == 1);
 
     for (index = 0; index < MAX_PATH && argv[1][index] != 0; ++index) {
         path[index] = (WCHAR)(unsigned char)argv[1][index];

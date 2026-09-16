@@ -3155,6 +3155,58 @@ so this does not claim leak coverage. These are incremental local results, not
 Linux io_uring or Windows evidence, not a paired performance measurement, and
 not a complete redesigned root gate.
 
+### Implementation evidence: observed runtime states and orphan removal
+
+B01/B02 now use scoped observations instead of the three 20 ms sleeps and
+64-yield guesses. The empty nonblocking pipe cannot become readable until its
+real readiness-poll entry is observed, including the exact descriptor, POLLIN
+and infinite host-wait request. With helpers, the test observes helper ownership
+before joining and a join announcement before writing; with zero helpers the
+joining caller performs the host wait. The synthetic publisher waits for a
+join announcement. Two owners submit distinct marked paths; a coordinator
+observes both submissions and drives completion before either owner consumes
+its already-published result. All schedule waits fail after a bounded observation
+window, instead of treating elapsed delay as evidence of the required state.
+
+The core publication case checks all result-head fields. Coalescing uses three
+notifications at each state, preserving every transition without 1,024 identical
+increments. Four-helper teardown and its six post-shutdown guards share the
+existing growth fixture. Short-read policy cases additionally check length and
+byte; their 32 operations explicitly cross the one-in-sixteen sampling interval.
+The real 12-caller/64-round race now belongs to the helper-selected bridge group;
+pure state and locally configured adapter cases run once per instrumentation.
+
+One reverse-join read fixture owns exact native/fallback/submission deltas;
+the independent default-process probe owns native startup helper state. One
+six-row open fixture retains regular creation, FIFO/directory kind refusals,
+missing names, directory acquisition, descriptor disposal and repeated-close
+EBADF. The borrowed-name case removes its unused second directory and checks
+all three native opens and closes. A long path is judged against its host's
+result, without a retired pool capacity as a purported contract. Ninety-six
+submissions retain admission beyond the current 64-entry SQ and now observe
+submit-time doorbell progress on the native route; this is not a claim that
+96 operations were simultaneously pending. Cache hints are checked after each
+open, so an incorrect distribution cannot hide in a final aggregate.
+
+The affected-consumer search resolved B02b/B04a: `WF_FILE_PWRITE` had only the
+harness and Linux probe as callers; standalone `WF_FILE_STATUS` and its bridge
+API had only the harness; the platform capability table had only self-checks.
+They and their request/result fields, leaf/ring branches, test callers and build
+entries are retired together. Ordinary stream writes, host pwrite for fixtures,
+open-time fstat kind checks, the real native operations and the fixed reserved
+completion-record ABI remain. No language operation or acceptance rule changes.
+
+Refactoring the runner exposed two setup dependencies: the synthetic pending
+join needed the initialization normally done by submit, and the helper-count
+query had to follow actual bridge operations. The cases now establish those
+premises explicitly. The final incremental native construction and correctness
+plus ASan/fatal-UBSan invocation passed on macOS in 2.05 s: 30 all-group entries,
+14 bridge entries at each of helpers 0/4, cache selection, the retained isolated
+and scheduler cases, and the sanitizer main/default/core images. These are
+logical entry counts, not assertion counts; leak detection remains disabled.
+The Linux/Windows branches and later platform rewiring still require their
+host checks. No complete gate or final review is claimed by this increment.
+
 ## Affected material and evidence
 
 - Specification identity: `compiler/build.rs`, `compiler/src/spec.rs`,

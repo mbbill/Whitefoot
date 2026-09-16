@@ -438,12 +438,6 @@ int wf_linux_io_uring_carries(const wf_completion_record *record) {
             && record->request.operation.pread.count <= UINT32_MAX
             && record->request.operation.pread.offset >= 0
             && record->request.operation.pread.buffer != NULL;
-    case WF_FILE_PWRITE:
-        return record->request.operation.pwrite.descriptor >= 0
-            && record->request.operation.pwrite.count != 0
-            && record->request.operation.pwrite.count <= UINT32_MAX
-            && record->request.operation.pwrite.offset >= 0
-            && record->request.operation.pwrite.buffer != NULL;
     case WF_FILE_OPEN_AT:
         /* An open resolves its path against a directory descriptor, and
          * AT_FDCWD is a negative one, so the transfer descriptor check does
@@ -488,8 +482,6 @@ static int wf_linux_record_descriptor(const wf_completion_record *record) {
         return record->request.operation.read.descriptor;
     case WF_FILE_PREAD:
         return record->request.operation.pread.descriptor;
-    case WF_FILE_PWRITE:
-        return record->request.operation.pwrite.descriptor;
     case WF_FILE_OPEN_AT:
         return record->request.operation.open_at.directory;
     case WF_FILE_SOCKET_ACCEPT:
@@ -507,7 +499,7 @@ static int wf_linux_record_descriptor(const wf_completion_record *record) {
 }
 
 static int wf_linux_transfer_kind(enum wf_file_operation_kind kind) {
-    return kind == WF_FILE_PREAD || kind == WF_FILE_PWRITE
+    return kind == WF_FILE_PREAD
         || kind == WF_FILE_READ || kind == WF_FILE_SOCKET_RECEIVE
         || kind == WF_FILE_SOCKET_SEND;
 }
@@ -564,15 +556,6 @@ static void wf_linux_stage_entry_locked(
         case WF_FILE_CLOSE:
             submission->opcode = IORING_OP_CLOSE;
             submission->fd = record->request.operation.close.descriptor;
-            break;
-        case WF_FILE_PWRITE:
-            submission->opcode = IORING_OP_WRITE;
-            submission->fd = record->request.operation.pwrite.descriptor;
-            submission->off =
-                (uint64_t)record->request.operation.pwrite.offset;
-            submission->addr =
-                (uint64_t)(uintptr_t)record->request.operation.pwrite.buffer;
-            submission->len = (uint32_t)record->request.operation.pwrite.count;
             break;
         case WF_FILE_READ:
             /* Offset -1 is io_uring's "use the file's current position", so

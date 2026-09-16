@@ -1061,37 +1061,6 @@ void wf__completion_socket_accept_join(
     *peer_tag = held->request.operation.accept.peer.portable.port_and_family;
 }
 
-/* The status join copies nothing: the engine already wrote the bytes into the
- * destination the submit named, and the record carries how many (design §7). */
-void wf__completion_file_status_join(
-    const void *record,
-    int64_t *value,
-    int *error_code,
-    void *status,
-    uint64_t status_capacity,
-    uint64_t *status_size
-) {
-    wf_completion_record *held = wf_bridge_record_of(record);
-    if (value == NULL || error_code == NULL || status == NULL
-        || status_size == NULL
-        || (uint64_t)(size_t)status_capacity != status_capacity) {
-        wf_bridge_fail(
-            "a status join was given no place to publish its result"
-        );
-    }
-    wf_bridge_join(held);
-    if (held->result.kind != WF_FILE_STATUS
-        || held->request.operation.status.destination != status
-        || held->request.operation.status.capacity != (size_t)status_capacity) {
-        wf_bridge_fail(
-            "a status join was given a record that is not the status it submitted"
-        );
-    }
-    *value = held->result.value;
-    *error_code = held->result.error_code;
-    *status_size = (uint64_t)held->status_written;
-}
-
 /* ----------------------------------------------------------- the submits */
 
 /* Whether the operation has no external action at all, because its transfer
@@ -1417,26 +1386,6 @@ void wf__completion_file_open_at_submit(
 #if defined(_WIN32)
     held->request.operation.open_at.descriptor_class = descriptor_class;
 #endif
-    wf_bridge_dispatch(held);
-}
-
-void wf__completion_file_status_submit(
-    int descriptor,
-    void *status,
-    uint64_t status_capacity,
-    void *record
-) {
-    wf_completion_record *held = wf_bridge_begin(record);
-    if (status == NULL
-        || (uint64_t)(size_t)status_capacity != status_capacity) {
-        wf_bridge_fail(
-            "a status was submitted with no destination, or with a capacity out of range"
-        );
-    }
-    held->request.kind = WF_FILE_STATUS;
-    held->request.operation.status.descriptor = descriptor;
-    held->request.operation.status.destination = status;
-    held->request.operation.status.capacity = (size_t)status_capacity;
     wf_bridge_dispatch(held);
 }
 

@@ -91,8 +91,7 @@ COMPLETION_RUNTIME_SOURCES := \
 	$(COMPLETION_DIR)/file_adapter.c \
 	$(COMPLETION_DIR)/file_posix.c \
 	$(COMPLETION_DIR)/bridge.c \
-	$(COMPLETION_DIR)/linux_io_uring.c \
-	$(COMPLETION_DIR)/native_contract.c
+	$(COMPLETION_DIR)/linux_io_uring.c
 COMPLETION_SOURCES := $(COMPLETION_RUNTIME_SOURCES) \
 	src/backend/ordinary_values.c src/backend/ordinary_values_probe.c \
 	$(COMPLETION_DIR)/harness.c
@@ -396,7 +395,6 @@ completion-windows-cross:
 		$(SCHED_DIR)/entry.c \
 		$(COMPLETION_DIR)/runtime.c \
 		$(COMPLETION_DIR)/wait_windows.c \
-		$(COMPLETION_DIR)/native_contract.c \
 		$(COMPLETION_DIR)/windows_iocp.c \
 		src/backend/windows_runtime.c \
 		$(COMPLETION_DIR)/native_adapter_probe.c \

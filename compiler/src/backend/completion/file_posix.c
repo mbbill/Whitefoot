@@ -92,11 +92,6 @@ extern int accept4(int, struct sockaddr *, socklen_t *, int);
 #define WF_SOCKET_HAS_ACCEPT4 1
 #endif
 
-_Static_assert(
-    sizeof(struct stat) <= WF_FILE_STATUS_CAPACITY,
-    "WF_FILE_STATUS_CAPACITY must hold the host stat record"
-);
-
 /* One endpoint operation's two preparations: the host's own address record,
  * and one socket of that address's family.
  *
@@ -158,14 +153,6 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
         if (request->operation.pread.count > (size_t)SSIZE_MAX
             || (int64_t)(off_t)request->operation.pread.offset
                 != request->operation.pread.offset) {
-            result.head.error_code = EINVAL;
-            return result;
-        }
-        break;
-    case WF_FILE_PWRITE:
-        if (request->operation.pwrite.count > (size_t)SSIZE_MAX
-            || (int64_t)(off_t)request->operation.pwrite.offset
-                != request->operation.pwrite.offset) {
             result.head.error_code = EINVAL;
             return result;
         }
@@ -275,23 +262,6 @@ static wf_file_result wf_file_execute_once(wf_file_request *request) {
             (off_t)request->operation.pread.offset
         );
         break;
-    case WF_FILE_PWRITE:
-        result.head.value = pwrite(
-            request->operation.pwrite.descriptor,
-            request->operation.pwrite.buffer,
-            request->operation.pwrite.count,
-            (off_t)request->operation.pwrite.offset
-        );
-        break;
-    case WF_FILE_STATUS: {
-        struct stat status;
-        result.head.value = fstat(request->operation.status.descriptor, &status);
-        if (result.head.value == 0) {
-            result.status_size = sizeof(status);
-            memcpy(result.status, &status, sizeof(status));
-        }
-        break;
-    }
     case WF_FILE_CLOSE:
         result.head.value = close(request->operation.close.descriptor);
         break;
@@ -467,10 +437,6 @@ static int wf_file_wait_ready(const wf_file_request *request) {
         descriptor.fd = request->operation.send.descriptor;
         descriptor.events = POLLOUT;
         break;
-    case WF_FILE_PWRITE:
-        descriptor.fd = request->operation.pwrite.descriptor;
-        descriptor.events = POLLOUT;
-        break;
     default:
         return EINVAL;
     }
@@ -499,7 +465,6 @@ wf_file_result wf_file_execute_direct(wf_file_request *request) {
         case WF_FILE_READ:
         case WF_FILE_WRITE:
         case WF_FILE_PREAD:
-        case WF_FILE_PWRITE:
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
         case WF_FILE_DIRECTORY_NEXT:
 #endif
