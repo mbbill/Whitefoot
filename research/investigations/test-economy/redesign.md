@@ -75,8 +75,9 @@ does not require reproducing the paired performance job.
 Keep the existing host-wide verification owner, bounded concurrency, phase
 reporting and cancellable process groups throughout implementation. Validate
 correctness with those controls; do not restart a full timing campaign while
-the test responsibilities and callers are being replaced. Exact design-tree
-amendments remain beside the live tree pending the owner's ruling. Publish
+the test responsibilities and callers are being replaced. The owner subsequently
+accepted the complete build-input and verification revisions; their text is now
+in the live tree, with the ruling recorded in [the log](../../../design/log.md#2026-09-16-consolidate-build-inputs-and-verification-ownership). Publish
 coherent work to PR #66 and obtain the required independent review before
 reporting completion; do not merge into main.
 
@@ -117,15 +118,13 @@ existing execution guards remain in force.
    the compiler library it produces data for. Automatic derivation removes
    stale-copy maintenance; it does not prove the generator algorithm correct.
 
-The [proposed build-input decisions](../../../design/amendments/compiler-build-inputs.md)
-record the corresponding tree amendment. The live tree has not changed and
-the exact tree revision has not received an owner ruling. The separate
-verification-cost amendment now also proposes the selected test responsibility
-and admission principles, research/performance separation, and paired-result
-integrity and qualification. All proposed wording remains pending.
-The proposed `design/compiler/build-inputs.md` is a new child of the
-compiler root and replaces no existing live node. Corpus case retirement
-and the replacement integration-target layout are outside that amendment.
+The accepted [build-input decisions](../../../design/compiler/build-inputs.md)
+record these three choices. The [verification decisions](../../../design/compiler/verification.md)
+also record the selected test responsibilities and admission principles,
+research/performance separation, paired-result integrity and qualification,
+and shared local/CI selection. Both nodes are new children of the compiler
+root and replace no existing live node. Corpus case retirement and the
+replacement integration-target layout are outside the build-input decision.
 
 ## Selected corpus responsibilities
 
@@ -145,10 +144,9 @@ the baseline, including admission by protected property, and added caution
 about the cumulative cost of new cases
 that compile and run WF. These choices are recorded for later implementation;
 execution remains deferred. They introduce no WF language rule, elapsed-time
-limit or new measurement campaign. The corresponding additions to the pending
-[verification amendment](../../../design/amendments/compiler-verification-cost.md)
-propose tree wording; selection of these principles is not a ruling on that
-exact wording or a live-tree change.
+limit or new measurement campaign. These principles now appear in the accepted
+[verification decisions](../../../design/compiler/verification.md); the owner's
+later ruling approved the complete wording as well as the implementation direction.
 
 ### Responsibilities
 
@@ -257,10 +255,9 @@ Explicitly requested research jobs may continue to use research inputs.
 The relevant standing wording has been corrected in both agent entry files,
 the research index and engineering practice. Completion-review T4-T6 now check
 case admission/home, necessary construction/execution, and direct/indirect
-research dependencies. The fourth decision in the pending verification
-amendment records this boundary and the enforcement proposal below; the other
-five decisions and the build-input amendment are unchanged. No live-tree
-revision or spec change is made.
+research dependencies. The accepted [verification decisions](../../../design/compiler/verification.md)
+record this boundary and the enforcement direction below. This audit preceded
+the live-tree approval and did not change the specification.
 
 Actual Make/Cargo/CI migration remains part of the deferred implementation.
 Current invocation tables describe the pre-migration code, not exceptions to
@@ -2736,11 +2733,11 @@ deferred implementation, separate from B06's pending ruling and B07's review.
 The B05 source review initially changed only this discussion record. The
 owner's follow-up agrees to its eight recommendations and requests an
 automatic boundary mechanism. The proposal is recorded above, in checklist
-T6 and in the fourth pending verification decision; the other five decisions
-and the build-input amendment are unchanged. The live tree, specification,
-conformance evidence, test code and Make/CI callers remain unchanged. No
-implemented enforcement, executable test result, performance result, new DCR
-or completion review is claimed.
+T6 and in the verification amendment as it stood at this review checkpoint.
+At that checkpoint, the live tree, specification, conformance evidence, test
+code and Make/CI callers remained unchanged; no implemented enforcement,
+executable test result, performance result, new DCR or completion review was
+claimed. The owner subsequently accepted the complete verification node.
 
 ### B06 — enabled benchmark support and paired performance regression
 
@@ -2979,7 +2976,7 @@ resulting directions, subject to the explicit performance separation above;
 this source audit is not implementation evidence. B07's ten repository/tooling
 check types are the remaining unreviewed batch. The simplified dependency guard
 is owner-selected, with its exact implementation still in B07. This source
-audit changes neither pending amendment and claims no live-tree/specification/
+audit changed neither then-pending amendment and claims no live-tree/specification/
 conformance/build/workflow change, measurement, DCR or completion review.
 
 ### B07 — repository and test-tooling checks

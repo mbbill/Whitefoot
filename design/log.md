@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-16 Consolidate build inputs and verification ownership
+
+Nodes: compiler/build-inputs, compiler/verification
+
+Owner-approved: The owner explicitly accepted both proposed revisions, including the shared local/CI inventory decision, after their explanations and DCR results in the PR #66 conversation.
+
+Summary: Apply both amendments unchanged as new compiler nodes: derive specification identity and grammar tables during construction, check independent document properties without a Rust tool, and give verification explicit ownership, construction reuse, bounded host execution, test admission and separate performance responsibilities. One Makefile inventory supplies local and hosted correctness selection. The [test-system investigation](../research/investigations/test-economy/redesign.md) records the duplication and coverage grounds, rejected alternatives and remaining performance uncertainty. Remove the accepted amendments; this ruling changes neither implementation nor language rules.
+
 ## 2026-09-15 Admit proof-directed dynamic target separation
 
 Nodes: language/ownership, language/ownership/linearity

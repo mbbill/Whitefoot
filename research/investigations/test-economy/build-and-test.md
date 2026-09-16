@@ -751,14 +751,16 @@ in this follow-up, so the full compiler gate was not repeated for prose/data.
 The lifecycle rebuild and foundation timing remain explicitly identified
 follow-up work, not a new blanket claim that every CI cost meets the criterion.
 
-The [pending amendment](../../../design/amendments/compiler-verification-cost.md)
-proposes a new `design/compiler/verification.md` node: owned local verification,
+The [verification decision](../../../design/compiler/verification.md)
+began as a proposal for a new compiler node: owned local verification,
 immutable/dependency-correct construction reuse, existing gate-profile
 verification, and automatic correctness/regression decisions with explicit
 historical reproduction/exploratory measurement. It rejects weakened normative
-cases, shorter sampling and shared verdict caches. The live tree remains at
-57 nodes, depth 3, net change zero; owner ruling on the exact amendment remains
-pending. No specification, normative case or verdict changed.
+cases, shorter sampling and shared verdict caches. At this measurement checkpoint,
+the live tree had 57 nodes, depth 3, net change zero, and the exact amendment
+awaited an owner ruling. The owner subsequently accepted the expanded node
+with the test-system redesign. No specification, normative case or verdict
+changed at this checkpoint.
 
 Conformance invocation wiring passes through the guard but retains the same
 Cargo adapter command, ignored-case opt-in, inventory and interpretation. A
