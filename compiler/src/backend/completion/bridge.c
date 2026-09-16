@@ -519,7 +519,7 @@ static void wf_bridge_verify_required_ring(void) {
     if (statistics.submissions == 0
         || statistics.completions != statistics.submissions) {
         wf_bridge_fail(
-            "WF_REQUIRE_WINDOWS_IOCP was set and this run did not complete every operation it submitted to the port"
+            "WF_REQUIRE_WINDOWS_IOCP was set but native IOCP was unavailable, unused, or incomplete"
         );
     }
 }
@@ -535,6 +535,16 @@ static int wf_bridge_windows_ring_required(void) {
 }
 
 static int wf_bridge_ring_start(void) {
+    /* Register before refusal or initialization can select the adapter. A
+     * required-native run must fail even when no port was ever initialized. */
+    if (wf_bridge_windows_ring_required()) {
+        wf_bridge_windows_require_ring = 1u;
+        if (atexit(wf_bridge_verify_required_ring) != 0) {
+            wf_bridge_fail(
+                "the completion port's exit-time check could not be registered"
+            );
+        }
+    }
     if (wf_bridge_native_ring_refused()) {
         return 0;
     }
@@ -554,14 +564,6 @@ static int wf_bridge_ring_start(void) {
         return 0;
     }
     atomic_store_explicit(&wf_bridge_windows_ready, 1u, memory_order_release);
-    if (wf_bridge_windows_ring_required()) {
-        wf_bridge_windows_require_ring = 1u;
-        if (atexit(wf_bridge_verify_required_ring) != 0) {
-            wf_bridge_fail(
-                "the completion port's exit-time check could not be registered"
-            );
-        }
-    }
     return 1;
 }
 

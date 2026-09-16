@@ -28,6 +28,28 @@ static inline int wf_test_socket_open(int descriptor) {
 #endif
 }
 
+/* Capture while the CRT descriptor is valid. Querying _get_osfhandle after
+ * its final close invokes the CRT invalid-parameter handler rather than
+ * providing a liveness result. Winsock can safely inspect the saved socket;
+ * this fixture creates no intervening socket that could reuse its value. */
+static inline uintptr_t wf_test_socket_native(int descriptor) {
+#if defined(_WIN32)
+    return wf__windows_socket_handle(descriptor);
+#else
+    return (uintptr_t)descriptor;
+#endif
+}
+
+static inline int wf_test_native_socket_open(uintptr_t native) {
+#if defined(_WIN32)
+    int type = 0, length = sizeof(type);
+    return getsockopt((SOCKET)native, SOL_SOCKET, SO_TYPE,
+                      (char *)&type, &length) == 0;
+#else
+    return fcntl((int)native, F_GETFD) >= 0;
+#endif
+}
+
 static inline unsigned wf_test_socket_port(int descriptor) {
     struct sockaddr_in address;
     memset(&address, 0, sizeof(address));
@@ -95,6 +117,7 @@ static inline int wf_test_socket_lifecycle(unsigned *chosen_port) {
     SOCKET_REQUIRE(memcmp(received, sent, sizeof(sent)) == 0);
     phase = "directional close/credit";
     for (unsigned endpoint = 0; endpoint < 2; ++endpoint) {
+        uintptr_t native = wf_test_socket_native(endpoints[endpoint]);
         /* Both direction orders protect the private first/last-close values. */
         for (unsigned order = 0; order < 2; ++order) {
             unsigned direction = endpoint ^ order;
@@ -102,7 +125,7 @@ static inline int wf_test_socket_lifecycle(unsigned *chosen_port) {
             SOCKET_JOIN();
             SOCKET_REQUIRE(value == (int64_t)order && error == 0);
             released[endpoint] |= 1u << direction;
-            SOCKET_REQUIRE(wf_test_socket_open(endpoints[endpoint]) == (order == 0));
+            SOCKET_REQUIRE(wf_test_native_socket_open(native) == (order == 0));
         }
         endpoints[endpoint] = -1;
     }

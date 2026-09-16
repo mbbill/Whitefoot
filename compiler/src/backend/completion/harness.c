@@ -200,7 +200,7 @@ int wf_completion_test_poll(
  *     registration.  Its property -- a completion elsewhere wakes the thread
  *     that registered for it -- survives as the in-place waiter, and is tested
  *     by `test_a_completion_publishes_results` and
- *     `test_a_helper_completion_wakes_a_waiting_join`.
+ *     `test_bridge_read_completes_after_observed_wait`.
  *   - `test_bridge_capacity_falls_back_per_operation` and
  *     `test_open_capacity_refuses_and_resubmits`: the per-operation capacity
  *     fallback and the readmission after a release.  There is no capacity to
@@ -2052,6 +2052,7 @@ static void wf_wait_for_join(uint64_t announcements) {
 typedef struct wf_pipe_writer {
     int descriptor;
     unsigned char byte;
+    int expect_poll;
     int wait_for_join;
     uint64_t announcements;
     ssize_t written;
@@ -2059,7 +2060,7 @@ typedef struct wf_pipe_writer {
 
 static void *write_after_observed_wait(void *opaque) {
     wf_pipe_writer *context = opaque;
-    wf_wait_for_poll();
+    if (context->expect_poll) wf_wait_for_poll();
     if (context->wait_for_join) wf_wait_for_join(context->announcements);
     context->written = write(context->descriptor, &context->byte, 1);
     return NULL;
@@ -2076,9 +2077,11 @@ static int observe_empty_pipe(int descriptor) {
 
 static int finish_observed_pipe(const wf_pipe_writer *writer) {
     CHECK(writer->written == 1);
-    CHECK(atomic_load(&wf_observed_poll_calls) == 1u);
-    CHECK(wf_observed_poll_events == POLLIN);
-    CHECK(wf_observed_poll_timeout == -1);
+    CHECK(atomic_load(&wf_observed_poll_calls) == (unsigned)writer->expect_poll);
+    if (writer->expect_poll) {
+        CHECK(wf_observed_poll_events == POLLIN);
+        CHECK(wf_observed_poll_timeout == -1);
+    }
     atomic_store(&wf_observed_poll_fd, -1);
     return 0;
 }
@@ -2093,8 +2096,9 @@ static int finish_observed_pipe(const wf_pipe_writer *writer) {
  * until another thread writes: a join that did not wait, or a completion that
  * did not wake, is a hang the harness watchdog reports by name rather than a
  * wrong answer.  It runs on all four helper settings the gate uses, which is
- * what covers both engines. */
-static int test_a_helper_completion_wakes_a_waiting_join(void) {
+ * what covers both engines. Linux may submit this pipe read to io_uring;
+ * only the adapter route has a host poll observation. */
+static int test_bridge_read_completes_after_observed_wait(void) {
     wf_harness_record record;
     wf_pipe_writer writer_context;
     pthread_t writer;
@@ -2104,11 +2108,10 @@ static int test_a_helper_completion_wakes_a_waiting_join(void) {
     int error_code = -1;
     uint64_t publications_before;
     uint64_t fallback_before = wf__completion_file_fallback_submissions();
+    uint64_t native_before = wf__completion_native_ring_submissions();
 
     CHECK(pipe(descriptors) == 0);
     CHECK(observe_empty_pipe(descriptors[0]) == 0);
-    writer_context.wait_for_join = wf__completion_target_helper_count() != 0;
-    writer_context.announcements = wf__completion_wait_announcements();
     publications_before = wf__completion_publications();
     wf__completion_file_read_submit(
         descriptors[0],
@@ -2116,6 +2119,10 @@ static int test_a_helper_completion_wakes_a_waiting_join(void) {
         1,
         record.bytes
     );
+    writer_context.expect_poll = wf__completion_native_ring_submissions() == native_before;
+    writer_context.wait_for_join = !writer_context.expect_poll ||
+        wf__completion_target_helper_count() != 0;
+    writer_context.announcements = wf__completion_wait_announcements();
     writer_context.descriptor = descriptors[1];
     writer_context.byte = 'w';
     CHECK(
@@ -2124,7 +2131,7 @@ static int test_a_helper_completion_wakes_a_waiting_join(void) {
     );
     /* A helper must have taken the request before the joining caller can
      * claim it. With zero helpers the caller itself reaches poll. */
-    if (writer_context.wait_for_join) wf_wait_for_poll();
+    if (writer_context.expect_poll && writer_context.wait_for_join) wf_wait_for_poll();
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(pthread_join(writer, NULL) == 0);
     CHECK(finish_observed_pipe(&writer_context) == 0);
@@ -2133,7 +2140,10 @@ static int test_a_helper_completion_wakes_a_waiting_join(void) {
     CHECK(wf__completion_publications() == publications_before + 1u);
     /* A non-positioned read is never executed inside submit, so this really
      * did go to the queue and come back from an engine. */
-    CHECK(wf__completion_file_fallback_submissions() == fallback_before + 1u);
+    CHECK(wf__completion_file_fallback_submissions() ==
+          fallback_before + (unsigned)writer_context.expect_poll);
+    CHECK(wf__completion_native_ring_submissions() ==
+          native_before + (unsigned)!writer_context.expect_poll);
     CHECK(close(descriptors[0]) == 0);
     CHECK(close(descriptors[1]) == 0);
     return 0;
@@ -2211,6 +2221,7 @@ static int test_readiness_refusal_is_not_a_terminal_outcome(void) {
     CHECK(wf_file_adapter_submit(&adapter, &record) == WF_FILE_TARGET_OWNS);
     writer_context.descriptor = descriptors[1];
     writer_context.byte = 'r';
+    writer_context.expect_poll = 1;
     writer_context.wait_for_join = 0;
     writer_context.announcements = 0;
     CHECK(
@@ -2734,7 +2745,7 @@ int main(int argc, char **argv) {
         RUN_TEST(test_long_borrowed_path_reaches_the_host(argv[1]));
         RUN_TEST(test_submissions_cross_the_native_queue_boundary(argv[1]));
         RUN_TEST(test_open_results_reach_every_independent_owner(argv[1]));
-        RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
+        RUN_TEST(test_bridge_read_completes_after_observed_wait());
         RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
         RUN_TEST(test_socket_lifecycle_and_the_pair_two_count());
         RUN_TEST(test_process_wide_target_helper_budget());
@@ -2758,7 +2769,9 @@ int main(int argc, char **argv) {
     }
 #undef RUN_TEST
     (void)alarm(0);
-    printf("completion-core-harness: PASS group=%s cases=%u racers=%d\n",
-           group, cases, WF_HARNESS_RACERS);
+    printf("completion-core-harness: PASS group=%s cases=%u racers=%d "
+           "native=%" PRIu64 " adapter=%" PRIu64 "\n", group, cases,
+           WF_HARNESS_RACERS, wf__completion_native_ring_submissions(),
+           wf__completion_file_fallback_submissions());
     return 0;
 }

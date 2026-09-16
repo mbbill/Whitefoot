@@ -61,6 +61,10 @@ _Noreturn void wf_windows_bridge_init_probe_abort(void);
 #include <stdalign.h>
 #include <stddef.h>
 #include <windows.h>
+#include "../runtime_test_guard.h"
+
+static unsigned iocp_attempts;
+static unsigned adapter_attempts;
 
 int wf_windows_bridge_init_probe_iocp_init(
     wf_windows_iocp_adapter *adapter,
@@ -70,6 +74,7 @@ int wf_windows_bridge_init_probe_iocp_init(
     (void)adapter;
     (void)runtime;
     (void)concurrency;
+    iocp_attempts += 1;
     return ERROR_NOT_ENOUGH_MEMORY;
 }
 
@@ -83,14 +88,19 @@ int wf_windows_bridge_init_probe_adapter_init(
     (void)runtime;
     (void)helper_capacity;
     (void)helper_count;
+    adapter_attempts += 1;
     return ERROR_NOT_ENOUGH_MEMORY;
 }
 
 _Noreturn void wf_windows_bridge_init_probe_abort(void) {
-    ExitProcess(86u);
+    ExitProcess(iocp_attempts == 1u && adapter_attempts == 1u ? 86u : 88u);
 }
 
 int main(void) {
+    wf_test_guard_start(60);
+    wf_test_guard_phase("both native engine initializers refused");
+    if (!SetEnvironmentVariableA("WF_IO_NO_NATIVE_RING", NULL)
+        || !SetEnvironmentVariableA("WF_IO_HELPERS", "1")) return 88;
     _Alignas(WF_COMPLETION_RECORD_ALIGN)
         unsigned char record[WF_COMPLETION_RECORD_BYTES];
     /* A submit is where the bridge is required, and it must not return. */

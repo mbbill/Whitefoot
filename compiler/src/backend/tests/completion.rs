@@ -198,7 +198,18 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
 #[test]
 fn typed_io_joins_do_not_reenter_the_compute_scheduler() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
-    assert_eq!(bridge.matches("wf_bridge_join(held)").count(), 4);
+    // Ordinary result, typed open and socket accept are the three live joins.
+    // The removed private status operation had no ordinary-library caller.
+    for name in ["file_join", "file_open_join", "socket_accept_join"] {
+        let body = bridge
+            .split_once(&format!("void wf__completion_{name}("))
+            .unwrap_or_else(|| panic!("missing ordinary join: {name}"))
+            .1
+            .split_once("\n}")
+            .expect("complete join body")
+            .0;
+        assert!(body.contains("wf_bridge_join(held)"), "{name}");
+    }
     for forbidden in [
         "wf_sched_join(",
         "wf__sched_current_stack(",

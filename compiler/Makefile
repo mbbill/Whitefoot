@@ -2,12 +2,9 @@ CARGO := cargo
 .DELETE_ON_ERROR:
 CHECK_RUN := perl $(abspath ../.github/run-check.pl)
 CC ?= cc
-NM ?= nm
 WINDOWS_CC ?= x86_64-w64-mingw32-gcc
 WINE ?= /usr/lib/wine/wine64
 WINEPREFIX ?= $(WHITEFOOT_SCRATCH_ROOT)/wineprefix
-WINDOWS_OBJDUMP ?= objdump
-WINDOWS_NM ?= x86_64-w64-mingw32-nm
 WHITEFOOT_SCRATCH_ROOT ?= $(patsubst %/,%,$(if $(TMPDIR),$(TMPDIR),/tmp))/whitefoot
 STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 
@@ -198,6 +195,15 @@ endef
 
 COMPLETION_SANITIZE_FLAGS := -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread -fsanitize=address,undefined -fno-sanitize-recover=undefined
 COMPLETION_TSAN_FLAGS := -std=c11 -O1 -g -Wall -Wextra -Werror -Wpedantic -pthread -fsanitize=thread
+# A required host job makes missing native capability an error; local checks
+# report the native probe's unavailable result and still test the adapter.
+REQUIRE_NATIVE ?= 0
+NATIVE_REQUIREMENT := $(if $(filter 1,$(REQUIRE_NATIVE)),WF_REQUIRE_LINUX_IO_URING=1,)
+COMPLETION_NATIVE_SOURCES := $(SCHED_SOURCES) $(COMPLETION_DIR)/runtime.c \
+    $(COMPLETION_DIR)/wait_host.c $(COMPLETION_DIR)/linux_io_uring.c \
+    $(COMPLETION_DIR)/native_adapter_probe.c
+$(eval $(call completion-image,linux-native-probe,$(COMPLETION_NATIVE_SOURCES),$(COMPLETION_BASE_CFLAGS)))
+
 $(eval $(call completion-image,harness,$(COMPLETION_SOURCES),$(COMPLETION_HARNESS_CFLAGS)))
 $(eval $(call completion-image,bridge-default-probe,$(COMPLETION_DEFAULT_ROUTE_SOURCES),$(COMPLETION_BASE_CFLAGS)))
 $(eval $(call completion-image,core-read-probe,$(COMPLETION_CORE_READ_SOURCES),$(COMPLETION_BASE_CFLAGS) $(COMPLETION_CORE_READ_DEFINES)))
@@ -207,35 +213,32 @@ $(eval $(call completion-image,core-read-probe-sanitize,$(COMPLETION_CORE_READ_S
 $(eval $(call completion-image,harness-tsan,$(COMPLETION_SOURCES),$(COMPLETION_TSAN_FLAGS) $(COMPLETION_DEFINES) $(COMPLETION_HARNESS_DEFINES)))
 $(eval $(call completion-image,bridge-default-probe-tsan,$(COMPLETION_DEFAULT_ROUTE_SOURCES),$(COMPLETION_TSAN_FLAGS)))
 
-completion-test: $(COMPLETION_TMP)/harness completion-core-read-test completion-default-route-test sched-smoke sched-deque-test
+completion-test: $(COMPLETION_TMP)/harness completion-core-read-test completion-default-route-test sched-smoke sched-deque-test completion-native-test
 	@mkdir -p "$(COMPLETION_TMP)"
-	@if $(NM) "$(COMPLETION_TMP)/harness" | \
-		grep -Eq 'wf_completion_claim_many|wf__completion_file_batch_claim|wf__completion_file_.*_submit_reserved|wf__completion_output_batch'; then \
-		echo "completion runtime exports removed group/root machinery" >&2; \
-		exit 1; \
+	$(NO_CORE_DUMPS) $(NATIVE_REQUIREMENT) WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" all
+	$(NO_CORE_DUMPS) $(NATIVE_REQUIREMENT) WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge
+	$(NO_CORE_DUMPS) $(NATIVE_REQUIREMENT) WF_IO_HELPERS=4 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge
+	@if [ "$$(uname -s)" = Linux ]; then \
+		for helpers in 0 4; do \
+			$(NO_CORE_DUMPS) env -u WF_REQUIRE_LINUX_IO_URING WF_IO_NO_NATIVE_RING=1 WF_IO_HELPERS=$$helpers \
+				"$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge || exit $$?; \
+		done; \
 	fi
-	WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" all
-	WF_IO_HELPERS=0 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge
-	WF_IO_HELPERS=4 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge
 	@# The full run checks the absent cache hint; this fresh process checks
 	@# only its enabled policy, without repeating unrelated runtime cases.
 	WF_IO_NOCACHE=1 WF_IO_HELPERS=1 "$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" cache
+# Build once and execute once. A native probe's 77 is observable locally and
+# fatal in qualification CI; fallback success never substitutes for it.
+completion-native-test:
 	@if [ "$$(uname -s)" = Linux ]; then \
-		$(CC) $(COMPLETION_CFLAGS) \
-			$(SCHED_SOURCES) \
-			$(COMPLETION_DIR)/runtime.c \
-			$(COMPLETION_DIR)/wait_host.c \
-			$(COMPLETION_DIR)/linux_io_uring.c \
-			$(COMPLETION_DIR)/native_adapter_probe.c \
-			-o "$(COMPLETION_TMP)/linux-native-probe"; \
-		"$(COMPLETION_TMP)/linux-native-probe" \
-			"$(COMPLETION_TMP)/linux-native-probe.data"; \
+		$(MAKE) --no-print-directory "$(COMPLETION_TMP)/linux-native-probe" || exit $$?; \
+		$(NO_CORE_DUMPS) "$(COMPLETION_TMP)/linux-native-probe" "$(COMPLETION_TMP)/linux-native-probe.data"; \
 		status=$$?; \
-		if [ $$status -ne 0 ] && [ $$status -ne 77 ]; then exit $$status; fi; \
-		if [ $$status -eq 0 ]; then \
-			WF_REQUIRE_LINUX_IO_URING=1 WF_IO_HELPERS=1 \
-				"$(COMPLETION_TMP)/harness" "$(COMPLETION_TMP)" bridge; \
-		fi; \
+		if [ $$status -eq 77 ] && [ "$(REQUIRE_NATIVE)" != 1 ]; then \
+			echo "native io_uring: unavailable on this local host (not native evidence)"; \
+		else exit $$status; fi; \
+	elif [ "$(REQUIRE_NATIVE)" = 1 ]; then \
+		echo "required io_uring evidence needs a Linux host" >&2; exit 1; \
 	fi
 
 # The bridge on the helper policy a delivered program actually gets.
@@ -255,7 +258,7 @@ ordinary-values-test: $(COMPLETION_TMP)/harness
 
 completion-default-route-test: $(COMPLETION_TMP)/bridge-default-probe
 	@mkdir -p "$(COMPLETION_TMP)"
-	unset WF_IO_HELPERS; \
+	$(NO_CORE_DUMPS) unset WF_IO_HELPERS; $(NATIVE_REQUIREMENT) \
 		"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"
 	@# The adapter branch of the probe's route assertion -- the demand-driven
 	@# policy declined a read, or grew a helper -- cannot fire on a Linux host
@@ -265,7 +268,7 @@ completion-default-route-test: $(COMPLETION_TMP)/bridge-default-probe
 	@# kernel without io_uring already takes, and the probe refuses to pass if
 	@# the ring answered anyway.
 	@if [ "$$(uname -s)" = Linux ]; then \
-		unset WF_IO_HELPERS; WF_IO_NO_NATIVE_RING=1 \
+		unset WF_IO_HELPERS; env -u WF_REQUIRE_LINUX_IO_URING WF_IO_NO_NATIVE_RING=1 \
 			"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"; \
 	fi
 
@@ -311,7 +314,11 @@ sched-deque-tsan:
 completion-default-route-sanitize: $(COMPLETION_TMP)/bridge-default-probe-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
 	unset WF_IO_HELPERS; ASAN_OPTIONS=detect_leaks=0 \
-		"$(COMPLETION_TMP)/bridge-default-probe-sanitize" "$(COMPLETION_TMP)"
+		$(NATIVE_REQUIREMENT) "$(COMPLETION_TMP)/bridge-default-probe-sanitize" "$(COMPLETION_TMP)"
+	@if [ "$$(uname -s)" = Linux ]; then \
+		unset WF_IO_HELPERS; env -u WF_REQUIRE_LINUX_IO_URING WF_IO_NO_NATIVE_RING=1 ASAN_OPTIONS=detect_leaks=0 \
+			"$(COMPLETION_TMP)/bridge-default-probe-sanitize" "$(COMPLETION_TMP)"; \
+	fi
 
 # Thread sanitizer over the bridge rather than over the isolated core: the
 # helper pool, the queue wake and the join spin are all on this route, and the
@@ -319,7 +326,11 @@ completion-default-route-sanitize: $(COMPLETION_TMP)/bridge-default-probe-saniti
 completion-default-route-tsan: $(COMPLETION_TMP)/bridge-default-probe-tsan
 	@mkdir -p "$(COMPLETION_TMP)"
 	unset WF_IO_HELPERS; TSAN_OPTIONS=halt_on_error=1 \
-		"$(COMPLETION_TMP)/bridge-default-probe-tsan" "$(COMPLETION_TMP)"
+		$(NATIVE_REQUIREMENT) "$(COMPLETION_TMP)/bridge-default-probe-tsan" "$(COMPLETION_TMP)"
+	@if [ "$$(uname -s)" = Linux ]; then \
+		unset WF_IO_HELPERS; env -u WF_REQUIRE_LINUX_IO_URING WF_IO_NO_NATIVE_RING=1 TSAN_OPTIONS=halt_on_error=1 \
+			"$(COMPLETION_TMP)/bridge-default-probe-tsan" "$(COMPLETION_TMP)"; \
+	fi
 
 completion-core-read-test: $(COMPLETION_TMP)/core-read-probe
 	@mkdir -p "$(COMPLETION_TMP)"
@@ -328,7 +339,11 @@ completion-core-read-test: $(COMPLETION_TMP)/core-read-probe
 completion-sanitize: $(COMPLETION_TMP)/harness-sanitize completion-core-read-sanitize \
 		completion-default-route-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
-	ASAN_OPTIONS=detect_leaks=0 "$(COMPLETION_TMP)/harness-sanitize" "$(COMPLETION_TMP)"
+	$(NO_CORE_DUMPS) $(NATIVE_REQUIREMENT) ASAN_OPTIONS=detect_leaks=0 "$(COMPLETION_TMP)/harness-sanitize" "$(COMPLETION_TMP)"
+	@if [ "$$(uname -s)" = Linux ]; then \
+		env -u WF_REQUIRE_LINUX_IO_URING WF_IO_NO_NATIVE_RING=1 WF_IO_HELPERS=0 ASAN_OPTIONS=detect_leaks=0 \
+			"$(COMPLETION_TMP)/harness-sanitize" "$(COMPLETION_TMP)" bridge; \
+	fi
 
 completion-core-read-sanitize: $(COMPLETION_TMP)/core-read-probe-sanitize
 	@mkdir -p "$(COMPLETION_TMP)"
@@ -339,11 +354,11 @@ completion-core-read-sanitize: $(COMPLETION_TMP)/core-read-probe-sanitize
 # read is single-threaded and has no TSan or repeated-stress variant.
 completion-tsan: $(COMPLETION_TMP)/harness-tsan
 	@mkdir -p "$(COMPLETION_TMP)"
-	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=0 \
+	$(NO_CORE_DUMPS) env -u WF_REQUIRE_LINUX_IO_URING WF_IO_NO_NATIVE_RING=1 TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=0 \
 		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)" bridge
-	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=1 \
+	$(NO_CORE_DUMPS) $(NATIVE_REQUIREMENT) TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=1 \
 		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)"
-	TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=4 \
+	$(NO_CORE_DUMPS) env -u WF_REQUIRE_LINUX_IO_URING WF_IO_NO_NATIVE_RING=1 TSAN_OPTIONS=halt_on_error=1 WF_IO_HELPERS=4 \
 		"$(COMPLETION_TMP)/harness-tsan" "$(COMPLETION_TMP)" bridge
 
 # The Windows link set, in the same three groups the driver stages: the
@@ -370,117 +385,98 @@ WINDOWS_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
 # the driver's own links).
 WINDOWS_LINK_LIBRARIES := -lws2_32 -lshell32
 
-# These two are deliberately explicit qualification-development targets rather
-# than part of `check`, and they are two rather than one because they prove
-# different things and neither is the thing the gate needs.
-#
-# A Windows cross build is not execution on Windows: it proves that these units
-# compile and link into a PE importing the real IOCP, fiber and condition
-# facilities, and nothing about what they do when they run. And wine is not
-# Windows: it runs the PE well enough to exercise the port, the fibers and the
-# adapter route, which makes it a useful early signal and never a substitute
-# for `.github/workflows/io-hosts.yml`'s `completion-windows` job on a real
-# host. The floor's classification of a stack overflow, in particular, is a
-# kernel behaviour wine only approximates.
-completion-windows-cross:
-	@mkdir -p "$(COMPLETION_TMP)"
-	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
-		$(WINDOWS_LINK_SOURCES) \
-		$(COMPLETION_DIR)/bridge_default_probe.c \
-		-o "$(COMPLETION_TMP)/windows-default-route-probe.exe" \
-		$(WINDOWS_LINK_LIBRARIES)
-	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
-		$(SCHED_DIR)/core.c \
-		$(SCHED_DIR)/prim_windows.c \
-		$(SCHED_DIR)/entry.c \
-		$(COMPLETION_DIR)/runtime.c \
-		$(COMPLETION_DIR)/wait_windows.c \
-		$(COMPLETION_DIR)/windows_iocp.c \
-		src/backend/windows_runtime.c \
-		$(COMPLETION_DIR)/native_adapter_probe.c \
-		-o "$(COMPLETION_TMP)/windows-adapter-probe.exe" \
-		$(WINDOWS_LINK_LIBRARIES)
-	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
-		-c src/backend/wf_floor_windows.c \
-		-o "$(COMPLETION_TMP)/wf-floor-windows.o"
-	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
-		-c src/backend/windows_runtime.c \
-		-o "$(COMPLETION_TMP)/windows-runtime.o"
-	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
-		src/backend/windows_namespace_probe.c \
-		-o "$(COMPLETION_TMP)/windows-namespace-probe.exe" \
-		$(WINDOWS_LINK_LIBRARIES)
-	@imports="$$($(WINDOWS_OBJDUMP) -p \
-		"$(COMPLETION_TMP)/windows-default-route-probe.exe")"; \
-	for symbol in CreateIoCompletionPort GetQueuedCompletionStatus \
-		PostQueuedCompletionStatus ReadFile WriteFile \
-		CreateFiberEx SwitchToFiber ConvertThreadToFiberEx \
-		AcquireSRWLockExclusive SleepConditionVariableSRW \
-		VirtualAlloc _beginthreadex; do \
-		if ! printf '%s\n' "$$imports" | grep -q "  $$symbol$$"; then \
-			echo "Windows default-route probe does not import $$symbol" >&2; \
-			exit 1; \
-		fi; \
-	done
-	@# The Windows host runtime does not depend on the completion runtime or
-	@# the scheduler core; the dependency runs the other way. A program that
-	@# submits nothing and hands out nothing stages the floor group alone, so
-	@# a single call from `windows_runtime.c` into either of the other groups
-	@# is an unresolved external in every such link -- and that link is on the
-	@# real host and nowhere else, which is how one crossed the gate. This is
-	@# the same fact stated where it can be checked in seconds: the symbols
-	@# the floor group leaves undefined, minus what it answers itself, may not
-	@# include anything the other two groups define.
-	@#
-	@# "Answers itself" includes its weak defaults. `wf__floor_stack_bytes` is
-	@# the core's own seam (design section 5): `sched/entry.c` declares it
-	@# weakly in its own translation unit, a link that carries the floor
-	@# overrides it, and a link that does not takes the default beside the
-	@# reference. A COFF weak external is reported undefined (`w`) as well as
-	@# defined, so the `w` and `V` classes join the defined set or the seam
-	@# would read as a crossing.
-	@$(WINDOWS_NM) -u \
-		"$(COMPLETION_TMP)/wf-floor-windows.o" \
-		"$(COMPLETION_TMP)/windows-runtime.o" \
-		| awk '{print $$2}' | sort -u > "$(COMPLETION_TMP)/floor-group.undef"
-	@$(WINDOWS_NM) \
-		"$(COMPLETION_TMP)/wf-floor-windows.o" \
-		"$(COMPLETION_TMP)/windows-runtime.o" \
-		| awk 'NF >= 2 && $$(NF - 1) ~ /^[TDBRtwWVv]$$/ {print $$NF}' | sort -u \
-		> "$(COMPLETION_TMP)/floor-group.def"
-	@rm -rf "$(COMPLETION_TMP)/group-objects"
-	@mkdir -p "$(COMPLETION_TMP)/group-objects"
-	@for source in $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_windows.c \
-		$(SCHED_DIR)/entry.c $(COMPLETION_DIR)/runtime.c \
-		$(COMPLETION_DIR)/wait_windows.c $(COMPLETION_DIR)/file_adapter.c \
-		$(COMPLETION_DIR)/file_windows.c $(COMPLETION_DIR)/bridge.c \
-		$(COMPLETION_DIR)/windows_iocp.c; do \
-		$(WINDOWS_CC) $(WINDOWS_CFLAGS) -c "$$source" \
-			-o "$(COMPLETION_TMP)/group-objects/$$(basename "$$source" .c).o" \
-			|| exit 1; \
-	done
-	@$(WINDOWS_NM) --defined-only "$(COMPLETION_TMP)/group-objects"/*.o \
-		| awk '$$2 ~ /^[TDBRt]$$/ {print $$3}' | sort -u \
-		> "$(COMPLETION_TMP)/other-groups.def"
-	@crossed="$$(comm -23 \
-		"$(COMPLETION_TMP)/floor-group.undef" \
-		"$(COMPLETION_TMP)/floor-group.def" \
-		| comm -12 - "$(COMPLETION_TMP)/other-groups.def")"; \
-	if [ -n "$$crossed" ]; then \
-		echo "the Windows host runtime reaches the completion runtime or the scheduler core:" >&2; \
-		printf '%s\n' "$$crossed" >&2; \
-		exit 1; \
-	fi
-	@echo "completion Windows x86-64 cross-link: PASS (not runtime-qualified)"
+# Native Windows CI and the optional cross-build aid use identical inputs.
+# These are build targets, not cached test verdicts. Unchanged runtime objects
+# are shared; the shutdown observer and fault-injected bridge are explicit
+# per-unit variants. Real Windows execution remains a separate requirement.
+WINDOWS_OBJECT_DIR := $(COMPLETION_TMP)/objects/windows
+WINDOWS_CONFIG := $(WINDOWS_OBJECT_DIR)/configuration.txt
+WINDOWS_OBJECTS := $(patsubst src/backend/%.c,$(WINDOWS_OBJECT_DIR)/%.o,$(WINDOWS_LINK_SOURCES))
+WINDOWS_NATIVE_SOURCES := $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_windows.c \
+    $(SCHED_DIR)/entry.c $(COMPLETION_DIR)/runtime.c $(COMPLETION_DIR)/wait_windows.c \
+    $(COMPLETION_DIR)/windows_iocp.c src/backend/windows_runtime.c
+WINDOWS_NATIVE_OBJECTS := $(patsubst src/backend/%.c,$(WINDOWS_OBJECT_DIR)/%.o,$(WINDOWS_NATIVE_SOURCES))
+
+$(WINDOWS_CONFIG): completion-configuration-force
+	@mkdir -p "$(dir $@)"
+	@{ printf '%s\n' "$(CURDIR)" "$(WINDOWS_CC)" "$(WINDOWS_CFLAGS)" "$(WINDOWS_LINK_LIBRARIES)"; $(WINDOWS_CC) --version; } > "$@.new"
+	@cmp -s "$@.new" "$@" || mv -f "$@.new" "$@"
+	@rm -f "$@.new"
+
+$(WINDOWS_OBJECT_DIR)/%.o: src/backend/%.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -c "$<" -o "$@"
+
+$(WINDOWS_OBJECT_DIR)/file-windows-observed.o: $(COMPLETION_DIR)/file_windows.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_COMPLETION_SHUTDOWN=wf_ordinary_test_shutdown -c "$<" -o "$@"
+
+$(WINDOWS_OBJECT_DIR)/bridge-init-fault.o: $(COMPLETION_DIR)/bridge.c $(COMPLETION_DIR)/windows_bridge_init_fail_stop_probe.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_WINDOWS_BRIDGE_INIT_PROBE_DECLARATIONS=1 \
+		-include $(COMPLETION_DIR)/windows_bridge_init_fail_stop_probe.c -c "$<" -o "$@"
+
+$(COMPLETION_TMP)/windows-default-route-probe.exe: $(WINDOWS_OBJECTS) $(WINDOWS_OBJECT_DIR)/completion/bridge_default_probe.o
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
+
+$(COMPLETION_TMP)/windows-adapter-probe.exe: $(WINDOWS_NATIVE_OBJECTS) $(WINDOWS_OBJECT_DIR)/completion/native_adapter_probe.o
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
+
+$(COMPLETION_TMP)/windows-ordinary-values-probe.exe: $(filter-out $(WINDOWS_OBJECT_DIR)/completion/file_windows.o,$(WINDOWS_OBJECTS)) $(WINDOWS_OBJECT_DIR)/file-windows-observed.o $(WINDOWS_OBJECT_DIR)/ordinary_values.o $(WINDOWS_OBJECT_DIR)/ordinary_values_probe.o
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
+
+$(COMPLETION_TMP)/windows-bridge-init-fail-stop-probe.exe: $(filter-out $(WINDOWS_OBJECT_DIR)/completion/bridge.o,$(WINDOWS_OBJECTS)) $(WINDOWS_OBJECT_DIR)/bridge-init-fault.o $(WINDOWS_OBJECT_DIR)/completion/windows_bridge_init_fail_stop_probe.o
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
+
+$(COMPLETION_TMP)/windows-namespace-probe.exe: $(WINDOWS_OBJECT_DIR)/windows_namespace_probe.o
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
+
+# Scheduler probes include core.c to expose its test hooks; their ordinary
+# entry/host leaf objects are still compatible with the runtime images above.
+$(WINDOWS_OBJECT_DIR)/sched/smoke.o: $(SCHED_DIR)/smoke.c $(SCHED_DIR)/core.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_SCHED_TEST -c "$<" -o "$@"
+
+$(WINDOWS_OBJECT_DIR)/sched/deque-probe.o: $(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/core.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=1 -c "$<" -o "$@"
+
+$(WINDOWS_OBJECT_DIR)/sched/deque-probe-no-stats.o: $(SCHED_DIR)/deque_probe.c $(SCHED_DIR)/core.c $(COMPLETION_HEADERS) Makefile $(WINDOWS_CONFIG)
+	@mkdir -p "$(dir $@)"
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_SCHED_LANE_SLOTS=8u -DWF_SCHED_STATS=0 -c "$<" -o "$@"
+
+$(WINDOWS_OBJECT_DIR)/sched/cpu_levels_probe.o: $(SCHED_DIR)/core.c
+WINDOWS_SCHED_SUPPORT := $(WINDOWS_OBJECT_DIR)/sched/entry.o $(WINDOWS_OBJECT_DIR)/sched/prim_windows.o
+$(COMPLETION_TMP)/windows-sched-smoke.exe: $(WINDOWS_SCHED_SUPPORT) $(WINDOWS_OBJECT_DIR)/sched/smoke.o
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
+$(COMPLETION_TMP)/windows-sched-deque.exe: $(WINDOWS_SCHED_SUPPORT) $(WINDOWS_OBJECT_DIR)/sched/deque-probe.o
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
+$(COMPLETION_TMP)/windows-sched-deque-no-stats.exe: $(WINDOWS_SCHED_SUPPORT) $(WINDOWS_OBJECT_DIR)/sched/deque-probe-no-stats.o
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
+$(COMPLETION_TMP)/windows-sched-cpu-levels.exe: $(WINDOWS_SCHED_SUPPORT) $(WINDOWS_OBJECT_DIR)/sched/cpu_levels_probe.o
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) $^ -o "$@" $(WINDOWS_LINK_LIBRARIES)
+
+.SECONDARY: $(WINDOWS_OBJECTS) $(WINDOWS_NATIVE_OBJECTS)
+
+windows-runtime-sources:
+	@printf '%s\n' $(addprefix compiler/,$(WINDOWS_LINK_SOURCES))
+
+completion-windows-route-build: $(COMPLETION_TMP)/windows-default-route-probe.exe $(COMPLETION_TMP)/windows-adapter-probe.exe
+completion-windows-cross: completion-windows-route-build \
+    $(COMPLETION_TMP)/windows-ordinary-values-probe.exe \
+    $(COMPLETION_TMP)/windows-bridge-init-fail-stop-probe.exe \
+    $(COMPLETION_TMP)/windows-namespace-probe.exe $(WINDOWS_OBJECT_DIR)/wf_floor_windows.o \
+    $(COMPLETION_TMP)/windows-sched-smoke.exe $(COMPLETION_TMP)/windows-sched-cpu-levels.exe \
+    $(COMPLETION_TMP)/windows-sched-deque.exe $(COMPLETION_TMP)/windows-sched-deque-no-stats.exe
+	@echo "Windows strict native construction: PASS (execution is a separate check)"
 
 # Runs what the cross build produced, under wine, when a wine is installed.
 # A missing wine is not a failure of this target: it is a development aid, not
 # evidence, and the evidence is the native job.
-completion-windows-wine: completion-windows-cross
+completion-windows-wine:
 	@if [ ! -x "$(WINE)" ]; then \
 		echo "completion Windows wine run: SKIP ($(WINE) is not installed)"; \
 		exit 0; \
 	fi; \
+	$(MAKE) --no-print-directory completion-windows-route-build || exit $$?; \
 	mkdir -p "$(WINEPREFIX)"; \
 	set -e; \
 	echo "== native adapter probe =="; \
@@ -490,12 +486,16 @@ completion-windows-wine: completion-windows-cross
 	echo "== default route, native ring =="; \
 	WINEDEBUG=-all WINEPREFIX="$(WINEPREFIX)" "$(WINE)" \
 		"$(COMPLETION_TMP)/windows-default-route-probe.exe" \
-		"$(COMPLETION_TMP)" 2>&1 | tee "$(COMPLETION_TMP)/windows-ring.txt"; \
+		"$(COMPLETION_TMP)" > "$(COMPLETION_TMP)/windows-ring.txt" 2>&1 \
+		|| { status=$$?; cat "$(COMPLETION_TMP)/windows-ring.txt"; exit $$status; }; \
+	cat "$(COMPLETION_TMP)/windows-ring.txt"; \
 	grep -q 'route=native-ring' "$(COMPLETION_TMP)/windows-ring.txt"; \
 	echo "== default route, bounded adapter =="; \
 	WF_IO_NO_NATIVE_RING=1 WINEDEBUG=-all WINEPREFIX="$(WINEPREFIX)" "$(WINE)" \
 		"$(COMPLETION_TMP)/windows-default-route-probe.exe" \
-		"$(COMPLETION_TMP)" 2>&1 | tee "$(COMPLETION_TMP)/windows-adapter.txt"; \
+		"$(COMPLETION_TMP)" > "$(COMPLETION_TMP)/windows-adapter.txt" 2>&1 \
+		|| { status=$$?; cat "$(COMPLETION_TMP)/windows-adapter.txt"; exit $$status; }; \
+	cat "$(COMPLETION_TMP)/windows-adapter.txt"; \
 	grep -q 'route=posix-adapter' "$(COMPLETION_TMP)/windows-adapter.txt"; \
 	echo "== the TCP round trip, on both routes =="; \
 	if ! grep -q 'tcp-port=[1-9]' "$(COMPLETION_TMP)/windows-ring.txt" \
@@ -519,10 +519,10 @@ completion-windows-wine: completion-windows-cross
 # Managed-stack park-on-miss measurements are retired from this runtime.
 # Their dated evidence and reproduction revision remain in the investigation.
 .PHONY: check _check static _static build test-build format lint test _test test-unit test-corpus \
-	docs completion-test \
+	docs completion-test completion-native-test \
 	completion-core-read-test \
 	completion-tsan \
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test ordinary-values-test \
 	completion-default-route-sanitize completion-default-route-tsan sched-smoke \
-	sched-deque-test sched-deque-tsan completion-windows-cross completion-windows-wine
+	sched-deque-test sched-deque-tsan completion-windows-cross completion-windows-route-build windows-runtime-sources completion-windows-wine

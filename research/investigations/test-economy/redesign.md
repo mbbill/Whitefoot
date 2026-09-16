@@ -3207,6 +3207,74 @@ logical entry counts, not assertion counts; leak detection remains disabled.
 The Linux/Windows branches and later platform rewiring still require their
 host checks. No complete gate or final review is claimed by this increment.
 
+### Implementation evidence: native platform construction and qualification
+
+The B04a-i runtime work now shares the Make construction between local and
+hosted callers. Linux constructs and runs the direct native adapter once;
+`REQUIRE_NATIVE=1` makes an unavailable engine fail the qualification job.
+Bridge cases select the actual route and also run the forced adapter with
+zero and four helpers. Pure record/adapter cases are not repeated for each
+helper setting. Sanitizer images preserve their distinct flags and hooks;
+UBSan findings are fatal, and native/adapter counters identify the exercised
+route. Leak detection remains disabled and supplies no leak evidence.
+
+Linux native waits now use observed predicates with five-second failure
+bounds, plus a named 30-second phase and 180-second process guard. The
+borrowed-open assertion reads the real submitted SQE address in the retained
+typed-open case. SQ admission and actual CQ overflow remain separate
+properties. The Windows empty-port wake, positioned transfer and injected
+initialization failure use the same phase guard. The injected initializers
+must each be called exactly once before the intercepted abort returns 86.
+
+Windows ordinary runtime objects are constructed once with strict warnings;
+the shutdown observer and injected bridge remain separate object variants.
+The floor is included in strict construction. Scheduler images share their
+compatible entry/host objects. The stale fiber import list, historical-symbol
+`nm` checks and duplicate syntax pass are retired: none protected a current
+language or runtime contract, while actual compile/link/execute coverage is
+retained. Wine checks availability before building and propagates each
+process status; it remains optional development evidence, never Windows
+qualification. Namespace and compiled-program consolidation remain pending.
+
+The required-IOCP exit verifier is registered before startup can select
+fallback. Unavailable, unused or incomplete IOCP now fails a required run;
+ordinary fallback without the requirement is unchanged. A negative control
+reuses the compiled read-boundary program, forces fallback, and requires its
+correct `AB` output followed by the exact required-route failure. The two
+routes therefore cannot silently qualify as the same observation.
+
+Hosted validation at `9b9284f7` identified two faulty test premises. Linux
+can submit the empty-pipe read to io_uring, so waiting unconditionally for an
+adapter `poll` stalled the case. The receiver now checks the selected route:
+an adapter read waits for the actual poll (and helper join announcement),
+whereas a native read waits for the actual joining-thread announcement; both
+require exact result, publication and route-counter deltas. Windows ended
+the default-route probe without diagnostics after querying a closed CRT
+descriptor. The socket fixture now captures its native value before close
+and checks that object directly without intervening socket creation. This
+avoids the documented CRT invalid-parameter handler for invalid descriptors
+([Microsoft `_get_osfhandle`](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/get-osfhandle?view=msvc-170)).
+The latter diagnosis still needs real-host confirmation; a local POSIX pass
+is not that confirmation.
+
+The same hosted revision exposed the Rust source guard's old count of four
+join wrappers after removal of the unused status operation. Its receiver
+checks each of the three live typed join bodies and retains the prohibition
+on reentering the compute scheduler. The container vector-library's remaining
+include was also corrected to the shared `compiler/runtime.mk`; its old
+research-local path no longer existed. This repair preserves the current
+caller until its selected extraction is complete.
+
+Local bounded validation of this increment: the complete C correctness plus
+ASan/UBSan command passed in 5.18 s, including changed object construction
+and execution. Reconstructing the affected optimized Rust library-test image
+and running its typed-join guard took 77.53 s; the one test's execution was
+under 0.01 s, so this was construction cost, not a slow assertion. All workflow
+YAML parsed; Windows Make commands were inspected
+with dry runs, and absent Wine skipped before construction. These are not
+Linux native, Windows runtime or TSan results. The complete redesign and
+canonical gate are still unfinished.
+
 ## Affected material and evidence
 
 - Specification identity: `compiler/build.rs`, `compiler/src/spec.rs`,
