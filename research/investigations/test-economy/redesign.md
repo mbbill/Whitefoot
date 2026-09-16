@@ -248,10 +248,13 @@ remain selected; only a newly discovered conflict or changed premise reopens
 one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
-The owner agreed to R01 through R07 and B01, and selected the common C runner
-direction described below. Implementation remains deferred. The current batch
-is B02: twenty-two remaining completion adapter/bridge behavior functions,
-grouped into nine related rows. The adjacent platform inventory and timing
+The owner agreed to R01 through R07, B01 and B02, and selected the common C
+runner direction described below. B02b retains its conditional retirement
+pending the current-consumer audit; agreement does not resolve that premise.
+Implementation remains deferred. The current proposal is the first part of
+B03: five scheduler C probes and their Rust wrappers. The related Rust
+parallel-lowering, loop-splitting and exhaustion cases are the next part of
+B03, not silently included in this proposal. The platform inventory and timing
 loop retain their explicit B04/B06 review homes.
 The remaining inventory is grouped below; these are review scopes, not eight
 new test targets or a promise that every scope fits one conversation. Individual
@@ -260,8 +263,8 @@ compiler/corpus migration audits still apply under the accepted baseline.
 | Batch | Related checks and existing homes | Status |
 |---|---|---|
 | B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Agreed; implementation deferred |
-| B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Current; recommendations pending |
-| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | Not yet reviewed |
+| B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed, including conditional consumer audit; implementation deferred |
+| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | Current: C-probe recommendations pending; Rust backend groups next |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Organization and remaining assertions not yet reviewed; preserve earlier selected host distinctions |
 | B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
 | B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
@@ -1199,11 +1202,12 @@ Local adapters created by a case have their own explicit helper bounds, while
 the bridge uses its process-wide initialized configuration. Keep that
 distinction when consolidating invocations.
 
-**Recommendations below are pending the owner's ruling.** Function names in
-the table omit the common `test_` prefix. Counts describe one invocation of
-the present source, not newly measured execution costs.
+**The owner agreed to all nine rows, with implementation deferred.** B02b's
+consumer-dependent retirement remains conditional as stated below. Function
+names in the table omit the common `test_` prefix. Counts describe one
+invocation of the present source, not newly measured execution costs.
 
-| Row and current functions | Actual operations and observations | Recommendation |
+| Row and current functions | Actual operations and observations | Selected disposition |
 |---|---|---|
 | B02a `linux_independent_operations_use_available_target`; `bridge_independent_positioned_reads` | The Linux case creates an `xy` file, submits two one-byte reads and checks bytes plus exact native/fallback submission deltas; its native arm also expects no initialized target helpers. The second creates a different file, submits two four-byte reads at different offsets and joins in reverse order; it additionally refuses an offset above `INT64_MAX`, requiring `EINVAL`, one publication, no inline execution and an unchanged buffer. Its success-route checks use cumulative `>= 2` counters. | Merge the two-read fixtures into one bridge read group. Retain result/offset association, reverse join, the oversized-offset refusal and exact per-case route observations. Replace cumulative counters with deltas tied to the operations being claimed. Reverse join is not proof of reverse completion; R01 retains its deliberately arranged completion order. Keep native startup/helper expectations at an explicit fresh-process phase rather than making them depend on unrelated tests having initialized the adapter or not. |
 | B02b `single_thread_file_progress`; `bridge_open_status_and_close_are_typed_operations`; `checked_open_rejects_and_closes_nonregular_descriptors`; `open_failure_classes_are_typed_outcomes` | Direct zero-helper adapter: queue an open and invalid close together, observe queue/progress counts and `EBADF`, then positioned write/read, status and close. Bridge: open/status/close and a second close returning `EBADF`. Kind/failure fixtures add FIFO-as-regular, directory-as-regular, missing name, regular-as-directory and a successful directory control; wrong-kind results must already have closed their returned native descriptor. Status checks currently establish the returned byte count, not decoded size/kind. | Share a controlled fixture and operation/result helpers; consolidate kind/failure expectations as named rows, keeping exact error/discriminator and descriptor-lifetime assertions and the distinct active direct-adapter/bridge obligations. **Revisit positioned-write and standalone-status coverage:** only probe callers were found, as detailed below. Do not expand those assertions before establishing a current consumer; retire isolated support together if none exists. If a status consumer is established, inspect stable size/kind fields rather than raw `struct stat` padding. No standalone executable or duplicate WF case is needed. |
@@ -1256,9 +1260,105 @@ remaining socket lifecycle function, and B01 owns the seven publication,
 wake and shutdown functions. Together these assignments account for all
 31 test functions and the timing function in the current completion harness.
 
-Only the B01/common-runner rulings and this pending B02 proposal are added in
-this discussion revision. No C code, tests, callers, specification, amendment
-text or live-tree decision changes; no build, execution, timing campaign or
+The owner subsequently accepted B02. No implementation is claimed, and the
+consumer question above remains assigned to B04.
+
+### B03 — Scheduler C probes, first part
+
+**Scope and construction.** This part covers five C sources under
+`compiler/src/backend/sched/`: `smoke.c`, `deque_probe.c`, `wake_probe.c`,
+`cpu_levels_probe.c` and `recursion_budget_probe.c`. Each includes the maintained
+`core.c` directly to observe private scheduler state, and is linked with
+`entry.c` and the host primitive implementation. On POSIX the build uses C11,
+`-O2 -g`, strict warnings and pthreads. These are native runtime tests, not WF
+programs: they require a C toolchain, executable scratch storage and host
+threads/wait facilities, but no WF parsing, proof checking or lowering.
+
+`compiler/src/backend/tests/sched.rs` puts five `#[test]` wrappers inside the
+existing compiler library test executable. Each stages embedded C sources in
+a scratch directory, invokes `clang`, launches the resulting C image and
+checks its exit status and PASS text; some also check report fields. It adds
+no compiler-internal observation. Its C commands are separate from the Rust
+library-test build. `test-unit` runs these wrappers; `test-sampling` selects
+the other three backend modules and does not run `sched.rs`.
+
+`compiler/Makefile` also builds/runs `smoke.c` and `deque_probe.c` through
+`sched-smoke` and `sched-deque-test`, both dependencies of `completion-test`.
+Thus root `make check` reaches them both from Rust and directly. The direct
+build additionally enables `-Wpedantic` and uses the selected `CC`, whereas
+the Rust wrapper spells `clang`; this incidental caller difference supplies
+no distinct runtime assertion or declared compiler-compatibility matrix.
+Retain the intended compiler/warning policy at the common native caller.
+
+These source-derived counts describe a successful ordinary local invocation,
+before sanitizer/Windows variants. They are not fresh timings or the number
+of Rust test executables.
+
+| C source | Through Rust `sched.rs`: C builds / child executions | Through direct Make caller: C builds / child executions | Why more than one process or build exists |
+|---|---:|---:|---|
+| `smoke.c` | 1 / 8 | 1 / 8 | One hook-enabled build; worker count and startup-failure mode change per process. Both callers select the same eight configurations. |
+| `deque_probe.c` | 2 / 2 | 2 / 2 | Eight-slot deque, compiled with statistics enabled and disabled. Both callers select the same two configurations. |
+| `wake_probe.c` | 1 / 1 | 0 / 0 | One host park/wake and empty-deque measurement. |
+| `cpu_levels_probe.c` | 5 / 5 | 0 / 0 | Only three distinct definition sets: default, allow asymmetric CPUs, and zero idle window. The first two are each rebuilt for worker settings 2 and 8. |
+| `recursion_budget_probe.c` | 2 / 8 | 0 / 0 | Default budget build runs six worker settings; enlarged leaves-per-lane build runs two settings to reach the clamp. |
+| Total | 11 / 24 | 3 / 10 | 14 C compiler invocations and 34 child executions across five logical probes, in addition to building the Rust library test executable. |
+
+Linux/macOS gate callers reach the Rust wrappers and the direct native tests;
+the Linux IO-host job also calls the direct tests and rebuilds the deque
+variants under TSan. Actual Windows CI builds smoke/deque/CPU probes with
+`prim_windows.c` and Windows host facilities. Those host/instrumentation
+differences remain meaningful; B04 owns their final collection and wiring.
+
+**Recommendations below are pending the owner's ruling.** Preserve the
+following properties in the common native runtime correctness stage. Remove
+the five C-only Rust wrappers once their unique observations and configuration
+callers have moved there; do not leave a probe uninvoked during migration.
+There is no reason to construct the Rust compiler tests just to exercise these
+C mechanisms. The related Rust lowering/ABI tests remain a separate audit.
+
+| Row | Actual work and protected property | Recommendation |
+|---|---|---|
+| B03a: startup, nested joins and frame lifetime (`smoke.c`) | Eight fresh-process configurations: workers 1 normally, or workers 4 normally/owner-wait failure/no worker/one surviving helper/two surviving helpers/delayed readiness/delayed partial readiness. Each first checks eight recursive `sum(12) == 4096` computations. Active-pool paths also check oversized/full-slot refusal, reverse joins and payloads, a delayed completion tail across reuse of the same frame, an old notification arriving while the reused frame is pending, and a thief paused across eight complete ring wraps whose stale claim must lose. The registered-wait reuse case requires at least two helpers. | Keep the distinct startup branches and controlled lifetime regressions; eliminate the duplicate Rust/Make invocation. Separate startup assertions from the protocol-case selection, so a configuration runs the latter only for an identified additional observation; retain no-helper, one-helper and multiple-helper distinctions. Do not turn deliberate interleavings into arbitrary repeated smoke or cut the eight rounds merely on speed. Add a bounded common process/phase guard to the currently unbounded waits. |
+| B03b: concurrent deque reuse and counters (`deque_probe.c`) | Prepare four lanes directly: owner plus three real stealing threads, with a fourth auxiliary thread observing live counters. Submit 200,000 uniquely identified tasks in batches of eight, requiring a remote completion before the owner may help. Assert each task executes once, a full lane refuses, every slot returns exactly once, the deque empties, the observer ran and steal counts obey the enabled/disabled statistics contract. Each build covers 25,000 batches; normal local wiring currently runs four such builds/executions, or 800,000 task IDs in total. | Keep real concurrency, the eight-slot wrap boundary and both compiled statistics modes, once per required native configuration. Remove the duplicate Rust caller, not one of the two modes. Preserve the TSan and actual-host distinctions. The current round count samples schedules and does not enumerate them; decide any later count change on the protected failure mechanism/evidence, not a blanket reduction. Add bounded progress guards. |
+| B03c: park/wake correctness mixed with calibration (`wake_probe.c`) | Prepare four lanes but use one responder thread and the owner. Run 200 warmup plus 2,000 measured signal/wait round trips; require the responder entered the no-post wait path at least once. Then perform 200,000 uncontended empty-deque searches, each required to find no work. Print median round-trip/half-trip and spin-floor costs. No limit, baseline or regression consumer interprets the timing numbers. | Keep bounded, controlled posted/wait/wake and empty-deque correctness cases in the native gate. Move the warmup/sample/median calibration loops to an explicitly invoked measurement mode, with their assertions intact. They serve scheduler research but do not detect performance regression just by printing nanoseconds. Observing some waits does not establish that both sides slept in every round or that half the round trip measures one isolated park/wake cost. |
+| B03d: CPU facts and idle-window policy (`cpu_levels_probe.c`) | Query CPU performance-level count twice and require a stable positive result; query allowed CPU count; start the configured pool; inspect the chosen private idle-window duration. Conditional assertions inspect pool-fit/uniformity, the asymmetric override and a compiled zero window. Workers 2 and 8 do not necessarily exercise both fitting and oversubscribed pools on a given host. The expected decision reads the same CPU primitive as the implementation. | Retain one real-host primitive/startup integration observation and deterministic policy cases with controlled CPU count/level inputs for fitting, oversubscribed, mixed/unknown and disabled/override branches. Reuse one build per distinct definition set instead of rebuilding for process arguments. Correct the comment claiming this independently detects a uniform host misreported as asymmetric: that erroneous shared input can make both implementation and expectation agree. Do not invent an independent hardware oracle from the same query. |
+| B03e: recursive scheduling budget (`recursion_budget_probe.c`) | Default build: workers 0, 1, 2, 4, 8 and 16 must return budgets 6, 6, 7, 8, 9 and 10. A separate compile with `WF_PAR_RECURSION_LEAVES_PER_LANE=(1ull << 40)` reaches the otherwise inaccessible clamp: workers 1 and 4 must return 24. Each process calls the budget query twice and checks a stable answer. | Keep these small runtime-policy boundary checks in the native group, reusing two builds across their fresh processes. They test the runtime's answer, not the compiler's budget-carrying ABI or recursive lowering; those Rust observations remain distinct. This scheduling budget changes execution strategy for an already admitted program, never WF proof acceptance. |
+
+**Organization and grounds.** Apply the already selected common C runner:
+combine compatible cases, reuse native objects with correct dependencies and
+select cases per fresh-process configuration. This does not promise that all
+five current sources can be linked unchanged into one image: each includes
+`core.c` and defines its own main, while `WF_SCHED_TEST` changes hooks/idle
+behavior, the deque changes slot count and compiled statistics, and the CPU
+and budget probes change policy macros. Preserve a build variant only for
+such an actual difference; five logical properties do not require five
+permanent executables. Do not reset a live singleton or substitute a scripted
+core for the shipped implementation merely to combine processes.
+
+The current grounds are `design/compiler/parallel-lowering.md` and its
+`parallel-runtime.md`/`two-worlds.md` children: current-stack joins help real
+work, full lanes refuse, startup may retain a partial pool, and recursive
+budgeting limits parallel strategy without changing accepted behavior. The
+runtime decision explicitly treats the native deque/TSan probe as observed
+concurrency evidence, not an exhaustive scheduler proof; startup, completion
+and stack-floor obligations are separate. These recommendations preserve
+those distinctions while removing duplicate orchestration and unjudged
+measurement from automatic correctness checks. B06 will review the wider
+performance-regression/explicit-measurement protocol.
+
+**Next part.** `compiler/src/backend/tests/{parallel,loop_split,exhaustion}.rs`
+contain 34, 17 and 23 `#[test]` cases respectively, all in the same compiler
+library test executable. Their 74 cases include IR/layout inspection, native
+compiler-output checks, repeated WF execution and C fault injection. Their
+current `test-sampling` filter does not establish that each case samples a
+schedule. Audit these observations separately before deciding their homes or
+matrices; this first proposal does not approve their migration or retirement.
+`sched/grant_observer.c` is linked into some generated-program tests to observe
+real grants/threads; it is not a sixth standalone probe with its own main.
+
+Only the B02 ruling and this pending B03 first-part proposal are added in this
+discussion revision. No test implementation, caller, specification, amendment
+text or live-tree decision changes. No build, execution, timing campaign or
 new completion/DCR checkpoint is claimed.
 
 ## Affected material and evidence
