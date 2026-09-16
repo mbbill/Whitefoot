@@ -23,6 +23,12 @@ the first-order core, including reused physical slots and fault-injected
 counterexamples. Neither a language decision nor a complete soundness result
 follows from that experiment.
 
+The [incremental case catalog](CASES.md) preserves the subsequent code-led
+discussion, starting with known local objects and then branch correlations.
+It records expected behavior, distinguishing rejected variants and open policy
+choices before further features are introduced. These discussion cases are
+not additional executable results or changes to WF acceptance.
+
 There is substantial precedent for separating a pointer from the permission
 to access its target. There is also precedent for generic, caller-instantiated
 tracking of aliasing and effects. Their combination is a credible alternative

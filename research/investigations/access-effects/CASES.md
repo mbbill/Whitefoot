@@ -1,0 +1,420 @@
+# Incremental ownership design cases
+
+These cases preserve the local ownership discussion through branch joins and
+conditional cleanup on 2026-09-15. They are hand-derived expectations under
+candidate semantics, not WF source, compiler tests, measured results, or an
+adopted language decision. The consumer is the [ownership investigation](RESEARCH.md).
+Keep this catalog current while it guides discussion and later experiments;
+supersede individual cases with linked executable witnesses when those preserve
+their premises and distinguishing behavior. Do not lose the rejected variants.
+
+Record each completed discussion round here before introducing another feature.
+Retain stable case IDs. If a rule or expected result changes, update the affected
+cases and state the reason; a previous expectation is not a constraint on the
+final language. Start with permissive operations and consider restrictions when
+a concrete failure or excessive complexity gives them a purpose.
+
+## Scope and notation
+
+The current scope is one sequential procedure with finitely many independent,
+fixed objects of known origin. Their contents are ordinary copy integers. Local
+locators can be copied and rebound. The branch layer adds Boolean conditions,
+Boolean assignment/negation, and `if`/`else`. There are no loops, calls,
+callbacks, fields, containers, later allocations, storage reuse, or concurrency.
+Conditions may be unknown at compile time. No unknown incoming reference is
+introduced as a counterexample to known local origins.
+
+`a = object(10)` creates a live, initialized abstract slot A with one recorded
+disposal obligation. `a` names its owner; `p = ref(a)` creates a locator for A.
+Locators name storage, not a value that follows a later move. Ordinary scalar
+temporaries such as a taken integer do not create another abstract allocation
+obligation. `move` denotes value transfer, not settled WF surface syntax.
+
+| Operation | Premise in this scope | Result |
+|---|---|---|
+| `ref(a)`, copy/rebind locator | Valid source binding; rebinding does not silently discard an owned resource | Captured target is copied; earlier copies retain their targets. |
+| `read(p)` | Target live and initialized | Read the copy value. |
+| `write(p, n)` | Target live, compatible copy scalar | Initialize or overwrite the slot; invalidate old current-value facts. |
+| `old = replace(p, n)` | Target live and initialized | Return old value and install new same-typed value in the same slot. |
+| `v = take(p)` | Target live and initialized | Return content; slot stays live but empty. |
+| `put(p, v)` | Target live and empty | Fill the slot. This deliberately narrow name does not restrict ordinary scalar `write`. |
+| `release(a)` or `release(p)` | Target live, its disposal authority available in the current local context, and content obligations discharged | Consume that one obligation and permanently end the slot. |
+
+The working variant permits release through a locator: it identifies the target
+whose obligation is consumed, without copying an obligation into each locator.
+An owner-only release interface remains an alternative, not a demonstrated
+safety necessity in this fragment. Interface authorization outside the local
+context is not yet designed. General affine/linear content disposal and automatic
+scope cleanup remain separate choices. There is no requirement to restore a hole
+before releasing its empty storage.
+
+Fragments omit unrelated cleanup unless exit obligations are the subject. Each
+`REJECT` line marks the intended first failing operation; a variant replaces that
+line or suffix rather than executing through a rejection. A pending obligation
+is not by itself an invalid access or proof that the language must require
+explicit release at exit.
+
+The [earlier executable probe](../../experiments/access-state/RESULTS.md#local-baseline-results)
+has two objects/two locator slots, owner-only release and explicit linear cleanup.
+It does not implement these branch cases or the permissive locator-release
+variant. Its `Store` covers scalar write/initialization rather than a distinct
+empty-only `put`. Its successful run is evidence only for its stated rules.
+
+## Straight-line cases
+
+### S01: Sequential aliases and stable copies
+
+```text
+a = object(10)
+b = object(20)
+p = ref(a)
+q = p
+write(p, 11)
+read(q)                   // ACCEPT: 11
+p = ref(b)
+write(p, 21)
+read(q)                   // ACCEPT: 11, still A
+read(p)                   // ACCEPT: 21, now B
+```
+
+No exclusive interval is needed for these sequential scalar accesses. Rebinding
+changes a locator binding; writing changes the target shared by its aliases.
+
+### S02: Replacement preserves storage and transfers the old value
+
+```text
+a = object(10)
+p = ref(a)
+q = p
+old = replace(p, 20)
+read(q)                   // ACCEPT: 20
+read(a)                   // ACCEPT: 20
+read(old)                 // ACCEPT: 10
+```
+
+The target identity remains A. Old value-dependent facts about A expire.
+This does not establish preservation for references into future subobjects.
+
+### S03: A hole is a property of the target, not one locator
+
+```text
+a = object(10)
+p = ref(a)
+q = p
+v = take(p)
+read(q)                   // REJECT: A is empty
+```
+
+Replacing the last line with `read(a)` or another `take(q)` also rejects. The
+owner name and another alias cannot bypass the same initialization state.
+
+### S04: Another alias can restore the hole
+
+```text
+a = object(10)
+p = ref(a)
+q = p
+v = take(p)
+put(q, move v)
+read(p)                   // ACCEPT: 10
+```
+
+p and q continue to target A, never the new location holding v. Copying the
+locator while A is empty also works; copying does not read A's contents.
+
+### S05: A hole need not be restored before its storage ends
+
+```text
+a = object(10)
+p = ref(a)
+v = take(p)
+release(a)                // ACCEPT: release the empty slot
+read(v)                   // ACCEPT: 10
+```
+
+The moved-out value is independent of the old slot. Empty-slot cleanup must not
+dispose of that value a second time. Non-copy content obligations are deferred.
+
+### S06: Replacement requires old content at its commit
+
+```text
+a = object(10)
+p = ref(a)
+q = p
+v = take(q)
+old = replace(p, move v)  // REJECT: there is no old value to return
+```
+
+Replacing the last line with `put(p, move v)` accepts. Operand evaluation that
+performs a take must not leave an earlier initialization premise authoritative.
+
+### S07: Release is permanent and affects every access path
+
+```text
+a = object(10)
+p = ref(a)
+q = p
+release(p)                // ACCEPT in the permissive variant
+read(q)                   // REJECT: A has ended
+```
+
+Separate variants replace the last line with `read(a)`, `write(q, 7)`, `take(q)`,
+`release(q)`, or `release(a)`; all reject. A write cannot revive dead storage,
+and cleanup cannot release it again. Copying or discarding an inert locator is
+allowed without accessing A. Later allocation/reuse is not part of this case.
+
+## Branch cases
+
+### B01: One locator can have alternative targets
+
+```text
+a = object(10)
+b = object(20)
+if cond { p = ref(a) } else { p = ref(b) }
+read(p)                   // ACCEPT: both possible targets are initialized
+```
+
+The analysis represents both executions, not one guessed runtime choice.
+
+### B02: Target and initialization must remain correlated
+
+```text
+a = object(10)
+b = object(20)
+if cond {
+    p = ref(a)
+    old = take(b)
+} else {
+    p = ref(b)
+    old = take(a)
+}
+read(p)                   // ACCEPT: the selected target is always initialized
+```
+
+Swap the take targets so each arm takes p's selected object: the final read
+rejects in both arms. Independent target/initialization sets cannot distinguish
+these cases. The integers bound to old can be discarded in this copy-only scope.
+
+### B03: A write initializes the selected target, not its entire may-set
+
+```text
+a = object(10)
+b = object(20)
+old_a = take(a)
+old_b = take(b)
+if cond { p = ref(a) } else { p = ref(b) }
+q = p
+write(p, 9)
+read(q)                   // ACCEPT: 9
+read(a)                   // REJECT: A may still be empty
+```
+
+Replacing the last line with `read(b)` also rejects. Exactly one object was
+initialized; q's captured equality with p identifies that object.
+
+### B04: A copied uncertain target supports take and restoration
+
+```text
+a = object(10)
+b = object(20)
+if cond { p = ref(a) } else { p = ref(b) }
+q = p
+v = take(p)
+put(q, move v)
+read(a)                   // ACCEPT: 10
+read(b)                   // ACCEPT: 20
+```
+
+Between take and put, reading a or b unconditionally rejects. Restoration acts
+on the same selected object; afterward both original slots are initialized.
+
+### B05: Correlated distinct targets survive selected reclamation
+
+```text
+a = object(10)
+b = object(20)
+if cond {
+    p = ref(a)
+    q = ref(b)
+} else {
+    p = ref(b)
+    q = ref(a)
+}
+release(p)
+read(q)                   // ACCEPT
+release(q)                // ACCEPT: both obligations are now consumed
+```
+
+After the first release, an unconditional `read(a)` or `release(a)` instead
+rejects: A may be dead. The actual pairs are (A, B) and (B, A), not their
+Cartesian product. The remaining obligation belongs to q's target.
+
+### B06: Rebinding must update relations without retargeting saved copies
+
+```text
+a = object(10)
+b = object(20)
+if cond {
+    p = ref(a)
+    q = ref(b)
+} else {
+    p = ref(b)
+    q = ref(a)
+}
+saved = p
+p = q
+release(p)
+read(saved)               // ACCEPT: the original p target survives
+read(q)                   // REJECT: now p and q have the same target
+```
+
+The old inequality between p and q cannot remain attached to their variable
+names after assignment. The saved target remains distinct from their new target.
+
+### B07: A conditional hole prevents reading but not scalar overwrite
+
+```text
+a = object(10)
+p = ref(a)
+if cond { old = take(p) }
+read(p)                   // REJECT: A may be empty
+```
+
+Replace the last line with `write(p, 20); read(p)`: accept, returning 20 on both
+paths. Ordinary copy-scalar write handles live empty and live full slots with
+the same store. Empty-only `put` would lack its premise on the full path;
+`replace` would lack old content on the empty path. Those operation-specific
+premises must not unnecessarily narrow ordinary scalar assignment.
+
+### B08: Repeating an unchanged condition recovers a path's state
+
+```text
+a = object(10)
+p = ref(a)
+if cond { old = take(p) }
+if cond { put(p, 20) }
+read(p)                   // ACCEPT: 20 if true, 10 if false
+```
+
+cond is not modified between tests. The second true edge implies the earlier
+take occurred; the second false edge implies it did not.
+
+### B09: Conditions refer to captured values, not permanent variable names
+
+```text
+a = object(10)
+p = ref(a)
+if cond { old = take(p) }
+cond = !cond
+if cond { write(p, 20) }
+read(p)                   // REJECT: the original true path remains empty
+```
+
+Replacing the second conditional with `if !cond { put(p, 20) }` accepts. Boolean
+assignment invalidates reuse of the old variable value, but its known relation
+to the new value can preserve useful information. Forced loss of every relation
+on assignment would be an approximation, not a semantic necessity here.
+
+### B10: Join must not erase conditional disposal obligations
+
+```text
+a = object(10)
+b = object(20)
+if cond { release(a) } else { release(b) }
+```
+
+| Condition | A | B | Outstanding obligation |
+|---|---|---|---|
+| true | Dead | Live | B |
+| false | Live | Dead | A |
+
+Intersecting the two remaining-owner sets yields the empty set and is incorrect:
+each execution still has one obligation. Explicit-consumption checking would
+mistakenly consider it complete; automatic cleanup would mistakenly omit it.
+
+### B11: A locator can identify the conditionally remaining obligation
+
+```text
+a = object(10)
+b = object(20)
+if cond {
+    release(a)
+    remaining = ref(b)
+} else {
+    release(b)
+    remaining = ref(a)
+}
+read(remaining)           // ACCEPT
+release(remaining)       // ACCEPT: neither obligation remains
+```
+
+The branches need not retain the same named owner. remaining designates the
+live target whose obligation remains. The ordinary selected runtime pointer is
+enough for the operation; the relationship to the obligation is static evidence.
+
+### B12: Two conditional releases separate safety from completion
+
+```text
+a = object(10)
+if c { release(a) }
+if d { release(a) }
+```
+
+| c | d | Result |
+|---|---|---|
+| false | false | No release; obligation still pending. |
+| true | false | Exactly one release. |
+| false | true | Exactly one release. |
+| true | true | REJECT at the second release. |
+
+Independent unrestricted c and d cannot justify the second release. Avoiding
+double consumption requires `not (c and d)`; completing this explicit release
+sequence also requires `c or d`. Both hold when exactly one is true. In
+particular, `if cond { release(a) }; if !cond { release(a) }` accepts if cond is
+unchanged. A pending obligation's treatment at exit depends on cleanup policy.
+
+### B13: Conditional scope cleanup is a policy choice with known input state
+
+```text
+a = object(10)
+if cond { release(a) }
+// Leave the owning scope.
+```
+
+At exit, the obligation is absent on the original true edge and present on the
+original false edge. Explicit-consumption policy would require the latter to
+be discharged in source. Automatic cleanup policy would release A only on the
+latter path, logically `if !original_cond { release(a) }`.
+
+These are alternatives, not two simultaneous acceptance rules. Later assignment
+to cond cannot change which path needs cleanup. Cleanup placement on CFG edges,
+retaining a condition, and other lowerings have not been compared. This scalar
+model does not establish that cleanup needs a runtime flag or a machine action.
+Any future generated cleanup must implement the selected cleanup semantics;
+it must not repair an unproved access with a runtime safety test.
+
+## Working conclusions and unresolved boundaries
+
+- In the known-origin straight-line fragment, target/state propagation can be
+  exact without knowing machine addresses. In the branch fragment, analyze a
+  constrained set of possible complete states. Cover every reachable state;
+  extra approximated states may cause rejection but must not be ignored.
+- Useful correlations include equal/distinct captured targets, selected target
+  versus initialization/liveness, and target versus unconsumed obligation.
+  Stored current-value facts depend on state; obligations cannot be discarded
+  simply because they differ between predecessors.
+- Exact finite path states are a semantic reference for these examples, not a
+  selected compiler representation, a general cost bound, or permission to use
+  an SMT solver for WF acceptance. Compact representations and supported
+  deterministic derivations remain research questions.
+- Read/write access modes are not needed for alias exclusion in this sequential
+  fragment. The analysis still distinguishes operations and their state changes.
+  No conclusion here removes later interface restrictions or parallel effects.
+- Permissive locator release is the current exploration variant. Owner-only
+  release, explicit versus automatic cleanup, and general affine/linear value
+  handling are not settled. The earlier executable probe's stricter choices
+  must not silently become language requirements.
+- Fixed-object loops are the next feature to examine. Calls, dynamic allocation,
+  relocation/reuse, structs, arrays, invariants, callbacks and concurrency remain
+  outside these cases. Later features must replay the applicable cases and name
+  any premise or expected result they change.

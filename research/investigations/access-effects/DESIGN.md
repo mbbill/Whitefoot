@@ -8,6 +8,12 @@ bounded fragment of the first candidate. Maintain this proposal while that
 comparison remains active; supersede it when a subsequent design replaces it.
 Notation in this document is explanatory, not final source grammar.
 
+The [incremental case catalog](CASES.md) records the continuing local design
+discussion and its expected positive/negative examples. Its permissive
+locator-release and branch cases extend beyond the earlier executable probe;
+they are not implemented or measured results. Use those cases to challenge the
+whole-language hypotheses one feature at a time.
+
 ## Recommendation and the actual choice
 
 Develop **A: access and current-state checking** as the main candidate, with
@@ -53,7 +59,11 @@ end and are not passed off as consequences of the bounded model.
 ## Local straight-line baseline
 
 The whole-language mechanisms below are hypotheses to validate incrementally.
-The first local baseline fixes a much smaller language: one procedure, two
+This section describes the earlier executable baseline, including its stricter
+owner-only release and explicit-cleanup choices. The subsequent
+[discussion cases](CASES.md) keep those choices open while exploring release
+through locators and conditional state. The executable baseline fixes a much
+smaller language: one procedure, two
 independent scalar objects created at entry, and local locator bindings.
 Their origins are known. There are no branches, loops, calls, fields, arrays,
 owner moves, later allocations, or physical storage reuse in this baseline.
