@@ -184,8 +184,9 @@ The relevant standing wording has been corrected in both agent entry files,
 the research index and engineering practice. Completion-review T4-T6 now check
 case admission/home, necessary construction/execution, and direct/indirect
 research dependencies. The fourth decision in the pending verification
-amendment is revised accordingly; the other five decisions and the build-input
-amendment are unchanged. No live-tree revision or spec change is made.
+amendment records this boundary and the enforcement proposal below; the other
+five decisions and the build-input amendment are unchanged. No live-tree
+revision or spec change is made.
 
 Actual Make/Cargo/CI migration remains part of the deferred implementation.
 Current invocation tables describe the pre-migration code, not exceptions to
@@ -193,6 +194,59 @@ this boundary. Before retiring each caller, account for useful observations
 in the formal suite; experimental self-checks need no replacement merely to
 preserve their count. This discussion does not claim the current gate has
 already stopped reaching research.
+
+**Preventing new dependencies.** After agreeing to B05h-o, the owner requested
+an automatic mechanism to prevent future research dependencies. Formally
+owned reference implementations and independent oracles remain permitted.
+
+The proposed mechanism has two complementary parts, implemented with the
+selected extraction rather than enabled now with exceptions for old imports:
+
+1. Extend the existing `repository-invariants` check, reached by `make static`,
+   `make check` and the CI static job, with a compiler-independent dependency
+   check. It covers executable source/build configuration in the compiler and
+   formal tests, and commands/helpers reached by automatic workflows. Report
+   the referring file/line and forbidden destination for detectable input
+   references: Rust include/path attributes, C/LLVM includes or adapter inputs,
+   runtime fixture reads, Cargo/build inputs and Make/script invocations.
+   Account for relative paths and symlink destinations. Documentation and
+   source comments may cite research evidence; research may use formal tests.
+   Explicit-only research commands remain legal, but a whole-file exclusion
+   cannot hide an automatic arm in the same Makefile or workflow. Keep this
+   a small check of supported reference forms, not a new Rust executable or
+   a purported universal interpreter for Rust, shell, Make and workflow code.
+2. Run the ordinary formal CI builds/tests, including paired performance
+   inputs, from checkouts without materialized `research/` inputs. Use the
+   existing scheduled runs, not a second build/test matrix. This exposes an
+   actual file dependency even when its path was assembled dynamically and
+   missed by static inspection. It changes CI-owned workspaces only; a local
+   gate must never rename or delete the owner's research directory. Manual
+   experiment jobs retain their research inputs. Shared caches/artifacts must
+   not restore research source or silently supply a previously constructed
+   research-dependent product; establish the boundary with appropriate fresh
+   construction at migration, without requiring every later gate to be cold.
+
+The cheap scan provides early local diagnostics and can catch dormant literal
+imports; absent CI inputs check the paths actually built/executed. Neither a
+text scan nor a passing run proves independence of every unexecuted dynamic
+path. This is repository dependency discipline, not a hostile-code sandbox:
+fetching inputs back from git, another checkout or a cache is not an exception.
+Completion-checklist T6 still follows changed callers and transitive inputs.
+The implementation must report its actual scanner coverage and CI execution
+scope instead of claiming a general dependency proof.
+
+Validate the new machinery with small temporary fixtures for a direct include,
+a helper-to-research dependency, a dynamic required-input read and a symlink,
+plus allowed documentation/comment citations and research-to-formal reuse.
+These controls should exercise the selected checker/environment, not compile
+another WF program. No warning-only mode or permanent allowlist of the current
+fourteen Rust consumers is selected. If the check needs a helper script,
+its home is the existing `.github/` verification tooling, wired to the existing
+target; do not put repository checking in the conformance runner merely because
+both can use Python. B07's repository-invariants review owns the exact wiring;
+B06 must account for both candidate and baseline performance inputs. The
+enforcement implementation and its case-level acceptance evidence remain
+deferred with the rest of the redesign.
 
 ### What earns a test its place
 
@@ -307,9 +361,10 @@ research-extraction boundary: the models/controls stay outside daily checks,
 and the useful WF behavior has a proposed formal receiving home. The C
 control's unconditional timing was already identified in B05f; leaving that
 control in research needs no further audit of its manual measurement protocol.
-The inventory uses the stable batch IDs below. B05h-o now cover all eight
-remaining enabled research entry groups; their recommendations await the
-owner's ruling. B06 and B07 remain to be reviewed, and B08 is excluded. These
+The inventory uses the stable batch IDs below. The owner agreed to all eight
+B05h-o enabled research entry groups and requested prevention of future
+research dependencies as described above. Their implementation remains
+deferred. B06 and B07 remain to be reviewed, and B08 is excluded. These
 are discussion scopes, not test counts, new targets or a promise that each
 fits one conversation. Individual compiler/corpus migration audits still
 apply under the accepted baseline.
@@ -320,7 +375,7 @@ apply under the accepted baseline.
 | B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed; B04a's consumer audit and orphaned-operation retirement also agreed; implementation deferred |
 | B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | All five reviewed parts agreed; implementation deferred |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Both reviewed parts agreed; implementation deferred |
-| B05 | Extract useful observations from currently enabled research models, compiler witnesses, oracles and indirect formal-test inputs | Authority/foundation screened; all eight other entry groups reviewed in B05h-o below, recommendations awaiting owner ruling |
+| B05 | Extract useful observations from currently enabled research models, compiler witnesses, oracles and indirect formal-test inputs | Authority/foundation screened; all eight B05h-o recommendations agreed; implementation deferred |
 | B06 | Enabled IO/compute benchmark construction and correctness, and automatic paired performance regression | Three remaining responsibility groups below; manual-only timing protocols excluded |
 | B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
 | B08 | Historical or explicit experiment/instrument runners outside automatic CI and the default gate | Excluded by the owner's scope clarification; no case review or cleanup required |
@@ -332,7 +387,7 @@ their callers; the groups do not prescribe separate binaries or review turns.
 
 | Scope | Groups and current entry points |
 |---|---|
-| B05: eight entry groups, reviewed below | (1) `proof-use-cost`; (2)-(5) container `lifecycle`, `dense`, `costs`, `families`; (6) ripgrep runner self-tests; (7) raw-DEFLATE oracle self-tests; (8) research inputs already imported by formal lowering, semantic slice/loop-permission and backend slice tests. Groups 1-7 are reached from root `research-tests`; group 8 is reached through compiler tests. Authority/foundation were already screened in B05a-g and are excluded from this count. Recommendations are pending, not implemented. |
+| B05: eight entry groups, reviewed below | (1) `proof-use-cost`; (2)-(5) container `lifecycle`, `dense`, `costs`, `families`; (6) ripgrep runner self-tests; (7) raw-DEFLATE oracle self-tests; (8) research inputs already imported by formal lowering, semantic slice/loop-permission and backend slice tests. Groups 1-7 are reached from root `research-tests`; group 8 is reached through compiler tests. Authority/foundation were already screened in B05a-g and are excluded from this count. Recommendations are agreed, not implemented. |
 | B06: three responsibility groups | (1) IO `programs-check` reached from root `bench-programs`; (2) compute construction/verification and support reached from root `bench-programs` and automatic `compute-bench.yml` pushes; (3) the paired `compute-regression.yml` comparison/verdict, including `verdict-test` reached from root `research-tests`. Review only the timing needed by the actual automatic regression check, not full manual scoreboard or IO timing matrices. B04o already covers the enabled Windows component-source receiver. |
 | B07: ten check types from inventory section 10 | Rust formatting, Clippy, rustdoc, process-guard self-tests, remaining repository invariants, released-spec archive immutability, specification-prose checks, design-linter/self-tests, conformance structure/runner self-tests, and test collection/partition checks. The spec scanner and grammar generator already have selected simplifications; do not reopen them as additional undecided items. |
 
@@ -341,8 +396,8 @@ automatic gate. The manual comparison arms of `compute-bench.yml` are likewise
 outside this review; its push-triggered build/verify arm remains in B06. Follow
 helpers used by an enabled arm even when the same helper also serves a manual
 experiment. Do not open unrelated research cases merely because they share a
-directory. B06 and B07 are the remaining unreviewed scopes; pending B05
-recommendations and previously selected migrations are not implemented work.
+directory. B06 and B07 are the remaining unreviewed scopes; the selected B05
+extraction and previously selected migrations are not implemented work.
 
 **Selected C runner organization.** The owner agreed to consolidate compatible
 C cases into one main runtime test executable, with logical case groups rather
@@ -2345,7 +2400,7 @@ implemented savings. This audit does not implement any retirement.
 
 ### B05 — Eight enabled research entry groups
 
-**Status: source review presented; recommendations await the owner's ruling.**
+**Status: all eight recommendations agreed by the owner; implementation deferred.**
 This covers all eight remaining B05 groups, using the unchanged executable
 sources at `5e8dba3d`. Groups B05h-n are reached through root `research-tests`;
 B05o is reached through formal compiler tests. There are no builds, executed
@@ -2594,8 +2649,8 @@ work-dependent prices, correct output/input preservation, and inactive-versus-
 active pool distinction. The recursive-range program's parent restoration
 after child scopes and its empty input remain distinct useful observations.
 
-**Batch conclusion and remaining scope.** All eight B05 entry groups have
-source-level recommendations above. The proposed removals apply to automatic
+**Batch conclusion and remaining scope.** The owner agreed to all eight B05
+entry groups above. The selected removals apply to automatic
 callers after useful coverage has a formal receiver; they do not request
 deleting or modernizing the remaining research experiments. No complete bundle
 is admitted by changing its directory, and no new crate, script or executable
@@ -2608,15 +2663,18 @@ performance comparison/verdict. Root `bench-programs` and automatic
 `compute-bench.yml`/`compute-regression.yml` callers remain in that review;
 B04o already selected a formal receiver for the Windows component-open source.
 B07 still needs its ten repository/tooling check types. B08 and other unwired
-or manual-only cases remain excluded. B05's pending owner ruling and the
-deferred implementation are separate from those two unreviewed scopes.
+or manual-only cases remain excluded. B05's agreed extraction and the proposed
+automatic boundary enforcement remain deferred implementation, separate from
+those two unreviewed scopes.
 
-This update changes only the discussion record. The earlier research-boundary
-update corrected standing guidance, added checklist T4-T6 and revised the
-fourth pending verification decision. Neither pending amendment changes here;
-the live tree, specification, conformance evidence, test code and Make/CI
-callers are unchanged. No executable check, performance result, new DCR or
-completion review is claimed.
+The B05 source review initially changed only this discussion record. The
+owner's follow-up agrees to its eight recommendations and requests an
+automatic boundary mechanism. The proposal is recorded above, in checklist
+T6 and in the fourth pending verification decision; the other five decisions
+and the build-input amendment are unchanged. The live tree, specification,
+conformance evidence, test code and Make/CI callers remain unchanged. No
+implemented enforcement, executable test result, performance result, new DCR
+or completion review is claimed.
 
 ## Affected material and evidence
 
