@@ -251,11 +251,12 @@ during their migration, rather than assuming their current classification is cor
 The owner agreed to R01 through R07, B01 and B02, and selected the common C
 runner direction described below. B02b retains its conditional retirement
 pending the current-consumer audit; agreement does not resolve that premise.
-The owner also agreed to B03a-m: the five scheduler C-probe groups and the
-eight Rust parallel-lowering groups. Implementation remains deferred. The
-current proposal is B03n-u: all 17 loop-splitting tests, grouped into eight
-rows. Exhaustion is the remaining part of B03. The platform inventory and
-timing loop retain their explicit B04/B06 review homes.
+The owner also agreed to B03a-u: the five scheduler C-probe groups, eight
+Rust parallel-lowering groups and eight loop-splitting groups. Implementation
+remains deferred. The current proposal is B03v-ad: all 23 resource-exhaustion
+and derived-cleanup tests, grouped into nine rows. The adjacent four-test
+stack-ledger group remains for the next B03 supplement. The platform inventory
+and timing loop retain their explicit B04/B06 review homes.
 The remaining inventory is grouped below; these are review scopes, not eight
 new test targets or a promise that every scope fits one conversation. Individual
 compiler/corpus migration audits still apply under the accepted baseline.
@@ -264,7 +265,7 @@ compiler/corpus migration audits still apply under the accepted baseline.
 |---|---|---|
 | B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Agreed; implementation deferred |
 | B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed, including conditional consumer audit; implementation deferred |
-| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | C probes and Rust parallel lowering agreed; loop-splitting recommendations pending; exhaustion next |
+| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | C probes, Rust parallel lowering and loop splitting agreed; exhaustion recommendations pending; four stack-ledger tests next |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Organization and remaining assertions not yet reviewed; preserve earlier selected host distinctions |
 | B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
 | B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
@@ -1541,13 +1542,13 @@ description, not an instruction count or a new duration measurement: native
 optimization can remove or simplify work. The combine table already packs
 its rows into one WF program; it is not seventeen WF executables.
 
-**Recommendations below are pending the owner's ruling.** Apply the already
-agreed B03 shared construction and controlled-worker observation. In
+**The owner agreed to B03n-u, with implementation deferred.** Apply the
+already agreed B03 shared construction and controlled-worker observation. In
 particular, a retained positive grant execution must also check its output;
 the current shared retry helper does not do that. Preserve real default
 runtime integration separately from controlled compiler-path coverage.
 
-| Row and current count | Actual operations and observations | Recommendation and home |
+| Row and current count | Actual operations and observations | Selected disposition and home |
 |---|---|---|
 | B03n: emitted shape, capture frame and defaults (5) | Check that a split emits a chunk which remains a loop, plus a splitter using ordinary acquire/publish/join/release; budget is queried once at entry. Check ordinary compilation and the sequential clone avoid splitting, while chunk/clone bodies agree. A wide-scope source must remain permitted but decline actualization with a frame-size diagnostic. A separate Rust/C frame-limit check repeats the same header-number assertion in B03f. | Keep focused compiler tests and share basic-fold emission. Merge the duplicate slot-limit check into B03f's stronger capacity/alignment check. Make the wide-frame fixture depend on captures the loop actually uses: it currently declares 32 locals but reads only `a0`, and relies on the present whole-scope capture implementation. Do not require retaining unused captures just to keep this test declining after a legitimate compiler improvement. Keep permission, target fit and optional lowering refusal distinct. |
 | B03o: ordinary fold and sequential reference (2) | The same 400,000-element `+wrap` fold is built/run first at workers 0/1/2/3/4/5/8/10/16 and unset, then separately at 1/2/4/8 against a separately emitted unsplit build. An additional counted image searches for a steal at 4/8 (up to four attempts when the host heuristic enables it), plus an opt-out run. | Consolidate one program family with one ordinary reference and one parallel module, retaining required observed-build variants rather than regenerating the same inputs per assertion. External output behavior belongs in the existing programs parallel group; internal split/clone evidence stays with the compiler. Retain default and disabled behavior and meaningful division/scheduling boundaries, with a justified result oracle. Select worker cases by what they distinguish: for a work-sufficient range, 2/3 workers can yield the same budget, as can 4/5 and 8/10. More worker settings do not automatically mean different split trees, although worker scheduling can still differ. |
@@ -1655,7 +1656,163 @@ the next B03 review group.
 - `a_module_with_a_split_loop_and_no_runtime_still_runs`
 - `a_split_loop_costs_a_bounded_stack`
 
-Only the B03f-m owner ruling and this pending B03n-u proposal are added in
+The owner subsequently accepted B03n-u. No implementation is claimed.
+
+### B03 — Resource exhaustion and derived cleanup, fourth part
+
+**Scope and construction.** All 23 `#[test]` functions in
+`compiler/src/backend/tests/exhaustion.rs` share the Rust compiler library
+test executable. Seven inspect emitted LLVM without a native build; one
+builds a WF-derived executable only to run `nm` over it; five build and run
+C-only floor fixtures; ten build and execute WF-derived native code. The
+large-frame case builds both an intact and an ablated image. The current
+module-wide `test-sampling` selector runs every one locally through
+`make check` and on Linux/macOS sampling CI, including the seven IR-only
+checks. A module name is not evidence that each case samples a schedule.
+
+WF sources are embedded constants/generators in that file:
+`MIXED_DEFINITIONS`, `spine_source`, `HEAP_RECORD_LANE`,
+`REFUSED_ALLOCATION`, `ALL_HEAP_FORMS`, `LARGE_FRAME_SPINE`,
+`boxed_spine_source`, `buffer_chain_source`, `SHALLOW_OWNERSHIP`,
+`BUFFER_CYCLE` and `WIDE_BUFFER_CYCLE`. The ordinary builder uses the
+compiler library's LLVM output, Clang `-O2`, and the shipped runtime/floor.
+The C-only `build_floor_fixture` helper instead stages a fresh
+`floor_body.c` and copy of `wf_floor.c`, compiling both with Clang
+`-pthread -O2` on each call. Its setup-refusal variant prefixes only the
+floor translation unit with host-function substitutions; the body still
+calls real host facilities. None of these five C cases calls the WF compiler.
+
+Resources include child processes, real threads and signals, protected or
+unmapped virtual-memory regions, alternate signal stacks, captured stdout/
+stderr, and, in the deep cases, actual recursive stack use or many allocated
+nodes. The shipped POSIX floor reserves a 1 GiB entry stack and exports that
+size for compute workers. Reservation alone is not resident usage, but
+descending until exhaustion is not merely reserving unused address space.
+These are source-derived facts, not new timings or memory measurements.
+
+**Recommendations below are pending the owner's ruling.** The nine rows are
+property groups, not nine proposed executables. Keep the accepted common C
+runner and compiler/program/conformance ownership rules; combine construction
+only when its inputs and observation requirements agree.
+
+| Row and current count | Actual operations and observations | Recommendation and home |
+|---|---|---|
+| B03v: stack-probe completeness, ordinary cost and large-frame containment (3) | Compile a mixed ownership/recursion fixture with and without parallel lowering and require every emitted definition to carry the probe attribute. Separately link the ordinary fixture, run `nm`, and require no `chkstk` string, without checking `nm` success. The large-frame case exposes a generated function with a 7,168-u64 array, calls its base case once on a controlled 32 KiB stack above 16 MiB of protected reservation, and compares probed versus exactly-one-definition-ablated images: resource record/abort versus the host protection signal. | Keep compiler emission and real machine-code containment evidence; preserve the bounded positive/negative large-frame fixture. Share the ordinary fixture's emission. Attribute completeness is only over definitions actually reached: verify relevant thunk/clone/chunk/drop families using already retained fixtures, not a claim that two emissions necessarily produce every kind. Replace the whole-executable symbol-name assertion with a checked, target-appropriate observation of the small WF function's machine prologue, sharing existing assembly construction where possible. The Linux target uses inline probing, so absence of `chkstk` alone proves no absence of probing cost. Do not substitute IR text for the actual containment check. |
+| B03w: entry and compute-worker stack provisioning (2) | Run a two-million-level sequential recursion under a 1 MiB shell stack limit. Separately run the same depth with parallel lowering at workers 0/1/2/4/8/16 and unset, three times each: 21 executions. Only returned status is checked; the fixture does not establish which recursive segment ran on a worker or measure that thread's stack. | Keep the real provisioning regression, with direct host stack-bound observations on the actual floor entry and an observed compute-worker callback in the native runtime group. Verify the shipped reservation independently from a controlled small-stack WF recursion success/failure fixture; retain a generated-code integration observation rather than replacing all WF execution with C arithmetic. Replace the two-million-depth/repeat matrix only after these receiving checks detect the original undersized-worker defect. Select startup settings by their distinct paths, sharing B03 startup coverage. Treat the documented protected original-thread fallback separately from successful entry-thread creation; neither stack reservation nor these samples proves schedule-independent remaining depth under nested helping. |
+| B03x: genuine entry and worker exhaustion (2) | Build sequential and parallel versions of a 100-million-level recursion. Run the former once and the latter three times with inherited/default worker configuration. Each must end by a signal and write exactly the stack record. The worker case explicitly relies on a historical probability of a steal; it never establishes that the exhausted stack was a worker's. | Keep actual overflow reporting on both thread classes in compiler/runtime integration. Reuse a generated recursion with a controlled small stack and an observed real scheduler handoff, so the worker path and guard hit are prerequisites, not guesses from three runs. Keep the default-size provisioning checks in B03w and exact resource record plus expected abort disposition here. Retire the giant/repeated probes only when equivalent positive-path evidence is demonstrated. The existing single-large-frame ablation checks a different containment failure and is not by itself the complete replacement. |
+| B03y: protection setup refusal (1) | One instrumented C image supplies 13 fresh-process scenarios: eight entry/process modes and five attached-thread modes. Inject alternate-stack mapping/installation failure, either signal-install failure, page-size query failure, or either host stack-bound query failure; successful controls must print `ran` and return 73. Failure modes must abort with the setup diagnostic before the body marker. | Move the useful matrix to the common native floor group and remove the Rust wrapper after it has a caller there. Retain all distinct failure branches, the entry/attached-thread distinction and both positive controls. Preserve floor-only substitution with real forwarding on successful calls. These setup failures are different from classified exhaustion and must not be accepted merely because some resource record appeared. One build already serves its process arguments; no per-row rebuild is needed. |
+| B03z: foreign faults, classification band and external signals (3) | Three C images: a wild write outside the stack; a fixture-owned stack over a deliberately unmapped pad, faulted at page/2, one page, four pages, 64 KiB and 16 MiB below it; and a process-delivered SIGBUS followed by a marker and an irrelevant 1,000-level C recursion. The first two check exact signals/record presence. The external-signal case requires any signal, no record and no completed marker, but not SIGBUS specifically. | Move these real host/floor observations into the same native group, with fresh child processes for fatal cases. Keep genuine page faults and foreign-signal disposition; a pure classification helper cannot replace signal delivery/alternate-stack integration. Add aligned near-boundary observations for the actual probe-stride/red-zone policy, rather than inferring its exact edge from sparse distances; deduplicate numerically equal offsets on hosts where four pages is 64 KiB. Make external delivery to the intended test thread explicit and require the original signal, so later failure is not a substitute. Remove the trailing recursion as evidence for that signal property. |
+| B03aa: shared resource-record latch (2) | A C body writes 1 into the shared latch, schedules `alarm(2)`, and requests a 400-million-level recursion. Rust only requires empty stderr and excludes SIGABRT: normal exit also passes. It never proves the handler reached the occupied-latch branch. A separate IR-only parallel module checks that the heap abort writer requests the floor's latch and that the fixture emits a thunk and abort edge. | Keep the compiler's shared-latch reference assertion; move the C mechanism check into the native floor group. Use a controlled in-band fault and an observed occupied-latch handler path, with bounded parent/child coordination to terminate the expected waiting loser. Do not count ordinary return, an unrelated signal or a timer firing before the handler as success. Preserve a real winning writer/one-record check and confirm the emitted heap writer and floor use the same linked latch. The timer can bound a failed test, but elapsed time or silence alone cannot be its success oracle. |
+| B03ab: allocation refusal and target qualification (3) | Two IR cases separately compile the same four-form source: filled buffer, vacant buffer, box and legacy arena allocation. Check no dynamic target-domain guard for proved layouts and that every null-allocation branch calls the resource abort. A native fixture asks for 4,000,000,000,000,000,000 bytes through an argument-dependent read, then requires a heap record and signal termination. The request is intended to be refused, not to fill that amount of memory. | Keep compiler-specific target/abort-edge evidence and share the four-form emission. Preserve all currently implemented allocation forms until their language/implementation retirement, not merely because a comment calls them retiring. Replace the enormous-request dependency with a scoped allocator refusal on the generated allocation path, using the existing native-observer pattern and a small observable source. Establish the actual allocation/refusal was reached, exact heap record and abort disposition; do not accidentally refuse runtime startup allocations. A C-only abort call would not cover the compiler's null-result branch. |
+| B03ac: generated recursive and acyclic cleanup structure (3) | Emit box and buffer cycles at depth four and find a back edge in the drop-call graph, while rejecting old worklist symbols and release-path abort/realloc. The acyclic case checks only that no helper calls itself directly, missing mutual recursion. The buffer-order case re-emits the depth-four buffer source, checks an ascending index and that an element load appears textually before the block free. | Keep compiler cleanup observations and share the small buffer emission. Reuse the actual graph walk to rule out all cycles in the acyclic fixture, not only direct self-calls. Check the element release action and loop-to-block-release control relationship, not only textual load order. State no hidden allocation/worklist as the protected property; a broad `wf.drop.run` name ban must not reject the current legitimate store-run helper if a fixture changes. Preserve cyclic release as permitted by PROV-6 and keep machine-stack reporting as separate ledger evidence. |
+| B03ad: cleanup acceptance and executed reclamation (4) | Run a 10,000-level boxed spine, a minimal buffer-cycle program, a one-million-level buffer chain, and a four-child buffer ownership tree. The first three check exit zero and empty stderr, not which allocations were released. The fourth asks the host allocator for `MallocScribble`/`MallocPreScribble` and checks only exit zero, without establishing that poisoning was enabled. The million-level case still claims to prove stack-independent cleanup after recursive release replaced the worklist. | Put the minimal normative cycle-admission requirement in the conformance family if its precise property is missing; reuse existing coverage when established, without automatically adding another native run. Keep compiler-observed box/buffer cleanup with distinct pointers and exact release/ordering/lifetime assertions, using a shared allocation/release observer and small branching/nested values. Require no missing or duplicate release and backing survival through element cleanup; normal exit alone cannot establish these. Replace the million-depth worklist-era claim and unsupported host-poisoning oracle after the stronger checks detect their target defects. Retain deep/resource behavior only for a named regression with demonstrated discriminatory depth, not as an unbounded-cleanup guarantee the current language does not make. |
+
+**Native consolidation and fatal-case isolation.** The five C-only wrappers
+have no private compiler observation and belong with the previously selected
+runtime C runner. They can share one entry point and valid immutable
+construction, with a separate substituted-floor build only where required.
+They cannot simply run all bodies successively in one process: some cases
+deliberately terminate it, others install process-wide dispositions or take a
+one-shot latch. The runner must select cases in fresh child processes and
+interpret exact status, signal and channels. Preserve host-specific
+protection signals and real alternate-stack attachment. Bound hangs at the
+process/phase level without treating a timeout as an expected WF verdict.
+
+The common `assert_resource_record` exact-byte comparison already implies
+its subsequent line-count/absent-field checks. One shared exact-record oracle
+plus the appropriate process disposition suffices; this simplification must
+not turn an unexpected signal into a successful exhaustion observation.
+Tests may fix the shipped record bytes as an implementation regression,
+but SCOPE-3 does not fix them as a source-language outcome. Likewise, the
+comment that signal safety or PAR-1 alone forces these bytes is not a
+normative ground: current resource outcomes are explicitly outside the source
+outcome model. The record contract's owner is the runtime design decision.
+
+**Adjacent evidence is not silently retired.**
+`compiler/src/backend/tests/stack_ledger.rs` is outside the sampling
+selector and has four tests. One actually emits machine stack-usage reports
+at two frame widths, then builds/runs depths just inside/outside the reported
+ceiling; it also imports `spine_source` and `assert_resource_record` from
+the current module. Its report-to-machine comparison is a different property
+from a bare exhaustion report. Changing the shared helpers or floor-size
+test configuration must preserve that dependency. This four-test group is
+the next B03 supplement before B04; its inclusion in `test-unit` must not
+hide its native construction and real exhaustion. The compiler-side
+`emitter/floor.rs` constant-agreement unit is a further referenced boundary,
+not a twenty-fourth exhaustion case.
+
+**Authority and implementation boundary.** Read current SCOPE-3, PROV-6 and
+STOR-3 together with `design/compiler/resource-exhaustion-floor.md` and
+`cleanup-traversal.md`. PROV-6 permits value-depth recursive release and
+STOR-3 fixes element-before-backing order; resource shortage is not source
+rejection. The legacy allocation spellings used here remain in the active
+specification. The module's earlier retirement prose grants no permission
+to delete their refusal coverage or to substitute a fallible provider
+operation with a different outcome.
+
+Actual guard faults, runtime setup failures, generated probe containment,
+shared-latch integration and observed reclamation protect distinct
+correctness properties. Keep them in the automatic correctness gate under
+their receiving owners. The proposal replaces redundant construction and
+unsupported success criteria, not all failing-child tests with source-text
+inspection. Fatal-case core-dump handling remains the existing local/CI
+runner's responsibility; this audit neither changes host settings nor
+produces a core. No new timing measurement selects any recommendation.
+
+**Complete function mapping.** All 23 current tests in
+`compiler/src/backend/tests/exhaustion.rs` appear once below.
+
+**B03v (3 current tests)**
+
+- `every_generated_definition_carries_the_stack_probe`
+- `an_ordinary_frame_emits_no_probe_call`
+- `a_frame_larger_than_the_guard_region_is_still_reported`
+
+**B03w (2 current tests)**
+
+- `the_entry_runs_on_a_stack_the_compiler_sized`
+- `a_deep_recursion_completes_at_every_worker_count`
+
+**B03x (2 current tests)**
+
+- `an_exhausted_entry_writes_one_resource_record`
+- `an_exhausted_lane_writes_the_same_resource_record`
+
+**B03y (1 current tests)**
+
+- `floor_setup_refusal_stops_before_unprotected_execution`
+
+**B03z (3 current tests)**
+
+- `a_fault_that_is_not_exhaustion_keeps_its_own_disposition`
+- `only_a_fault_within_the_probe_stride_is_read_as_an_exhausted_stack`
+- `an_externally_delivered_signal_does_not_disarm_the_floor`
+
+**B03aa (2 current tests)**
+
+- `the_floor_and_the_module_share_one_record_latch`
+- `a_module_that_writes_a_resource_record_and_hands_a_call_out_is_latched`
+
+**B03ab (3 current tests)**
+
+- `an_allocation_the_host_refuses_writes_one_resource_record`
+- `target_qualified_buffers_keep_only_the_heap_refusal_path`
+- `every_allocation_refusal_edge_reaches_the_resource_abort`
+
+**B03ac (3 current tests)**
+
+- `a_cyclic_release_graph_lowers_to_one_release_action_that_enters_itself`
+- `an_ownership_chain_keeps_its_straight_line_drop`
+- `a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes`
+
+**B03ad (4 current tests)**
+
+- `a_deep_boxed_spine_is_reclaimed_without_a_record`
+- `a_cleanup_cycle_through_a_buffer_is_accepted_and_runs`
+- `a_deep_cleanup_cycle_through_a_buffer_is_reclaimed_without_a_record`
+- `a_buffer_block_outlives_the_elements_the_traversal_takes_from_it`
+
+Only the B03n-u owner ruling and this pending B03v-ad proposal are added in
 this discussion revision. No test implementation, caller, specification,
 conformance evidence, amendment text or live-tree decision changes. No
 build, execution, timing campaign or new completion/DCR checkpoint is claimed.
