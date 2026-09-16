@@ -251,11 +251,11 @@ during their migration, rather than assuming their current classification is cor
 The owner agreed to R01 through R07, B01 and B02, and selected the common C
 runner direction described below. B02b retains its conditional retirement
 pending the current-consumer audit; agreement does not resolve that premise.
-Implementation remains deferred. The current proposal is the first part of
-B03: five scheduler C probes and their Rust wrappers. The related Rust
-parallel-lowering, loop-splitting and exhaustion cases are the next part of
-B03, not silently included in this proposal. The platform inventory and timing
-loop retain their explicit B04/B06 review homes.
+The owner also agreed to B03a-e, the five scheduler C-probe groups and their
+Rust-wrapper simplification. Implementation remains deferred. The current
+proposal is B03f-m: all 34 Rust parallel-lowering tests, grouped into eight
+rows. Loop splitting and exhaustion remain the following parts of B03. The
+platform inventory and timing loop retain their explicit B04/B06 review homes.
 The remaining inventory is grouped below; these are review scopes, not eight
 new test targets or a promise that every scope fits one conversation. Individual
 compiler/corpus migration audits still apply under the accepted baseline.
@@ -264,7 +264,7 @@ compiler/corpus migration audits still apply under the accepted baseline.
 |---|---|---|
 | B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Agreed; implementation deferred |
 | B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed, including conditional consumer audit; implementation deferred |
-| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | Current: C-probe recommendations pending; Rust backend groups next |
+| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/` and the related Rust backend sampling modules | C probes agreed; Rust parallel-lowering recommendations pending; loop/exhaustion groups next |
 | B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Organization and remaining assertions not yet reviewed; preserve earlier selected host distinctions |
 | B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
 | B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
@@ -1309,14 +1309,14 @@ variants under TSan. Actual Windows CI builds smoke/deque/CPU probes with
 `prim_windows.c` and Windows host facilities. Those host/instrumentation
 differences remain meaningful; B04 owns their final collection and wiring.
 
-**Recommendations below are pending the owner's ruling.** Preserve the
+**The owner agreed to B03a-e, with implementation deferred.** Preserve the
 following properties in the common native runtime correctness stage. Remove
 the five C-only Rust wrappers once their unique observations and configuration
 callers have moved there; do not leave a probe uninvoked during migration.
 There is no reason to construct the Rust compiler tests just to exercise these
 C mechanisms. The related Rust lowering/ABI tests remain a separate audit.
 
-| Row | Actual work and protected property | Recommendation |
+| Row | Actual work and protected property | Selected disposition |
 |---|---|---|
 | B03a: startup, nested joins and frame lifetime (`smoke.c`) | Eight fresh-process configurations: workers 1 normally, or workers 4 normally/owner-wait failure/no worker/one surviving helper/two surviving helpers/delayed readiness/delayed partial readiness. Each first checks eight recursive `sum(12) == 4096` computations. Active-pool paths also check oversized/full-slot refusal, reverse joins and payloads, a delayed completion tail across reuse of the same frame, an old notification arriving while the reused frame is pending, and a thief paused across eight complete ring wraps whose stale claim must lose. The registered-wait reuse case requires at least two helpers. | Keep the distinct startup branches and controlled lifetime regressions; eliminate the duplicate Rust/Make invocation. Separate startup assertions from the protocol-case selection, so a configuration runs the latter only for an identified additional observation; retain no-helper, one-helper and multiple-helper distinctions. Do not turn deliberate interleavings into arbitrary repeated smoke or cut the eight rounds merely on speed. Add a bounded common process/phase guard to the currently unbounded waits. |
 | B03b: concurrent deque reuse and counters (`deque_probe.c`) | Prepare four lanes directly: owner plus three real stealing threads, with a fourth auxiliary thread observing live counters. Submit 200,000 uniquely identified tasks in batches of eight, requiring a remote completion before the owner may help. Assert each task executes once, a full lane refuses, every slot returns exactly once, the deque empties, the observer ran and steal counts obey the enabled/disabled statistics contract. Each build covers 25,000 batches; normal local wiring currently runs four such builds/executions, or 800,000 task IDs in total. | Keep real concurrency, the eight-slot wrap boundary and both compiled statistics modes, once per required native configuration. Remove the duplicate Rust caller, not one of the two modes. Preserve the TSan and actual-host distinctions. The current round count samples schedules and does not enumerate them; decide any later count change on the protected failure mechanism/evidence, not a blanket reduction. Add bounded progress guards. |
@@ -1346,17 +1346,171 @@ those distinctions while removing duplicate orchestration and unjudged
 measurement from automatic correctness checks. B06 will review the wider
 performance-regression/explicit-measurement protocol.
 
-**Next part.** `compiler/src/backend/tests/{parallel,loop_split,exhaustion}.rs`
+**Following parts.** `compiler/src/backend/tests/{parallel,loop_split,exhaustion}.rs`
 contain 34, 17 and 23 `#[test]` cases respectively, all in the same compiler
-library test executable. Their 74 cases include IR/layout inspection, native
-compiler-output checks, repeated WF execution and C fault injection. Their
-current `test-sampling` filter does not establish that each case samples a
-schedule. Audit these observations separately before deciding their homes or
-matrices; this first proposal does not approve their migration or retirement.
+library test executable. Their current `test-sampling` filter does not
+establish that each case samples a schedule. The next section audits the
+parallel module; loop splitting and exhaustion remain later review groups.
 `sched/grant_observer.c` is linked into some generated-program tests to observe
 real grants/threads; it is not a sixth standalone probe with its own main.
 
-Only the B02 ruling and this pending B03 first-part proposal are added in this
+The owner subsequently accepted B03a-e. No implementation is claimed.
+
+### B03 — Rust parallel lowering, second part
+
+**Scope and construction.** This part audits all 34 `#[test]` cases in
+`compiler/src/backend/tests/parallel.rs`, grouped into eight rows below.
+They belong to the existing compiler library test executable, not 34 Rust
+executables. `compiler/Makefile::test-sampling` selects the whole module
+alongside `loop_split` and `exhaustion`; root `make check` and the
+Linux/macOS sampling CI jobs reach that selector.
+
+The resource boundary matters more than the module name:
+
+| Current kind | Cases | What is constructed and executed |
+|---|---:|---|
+| Compiler IR/layout observations | 11 | Most call the compiler library on embedded WF source and inspect checked/lowered state or emitted LLVM. The slot-constant check reads embedded runtime source. No host compiler or emitted-program execution is required. |
+| Result-comparison helper check | 1 | Ordinary Rust vectors/strings exercise `identical`; no WF compilation or native child. |
+| Machine stack-frame observations | 2 | Compile WF to LLVM, then invoke Clang with `-S -fstack-usage`; inspect assembly/stack-usage through the stack ledger. No executable is linked or run. |
+| Native compiler-output observations | 20 | Compile embedded/generated WF through the Rust library, invoke Clang to build native images, sometimes add a C observer or replace selected emitted calls, then execute fresh child processes. One Rust case may construct many images and run a matrix. |
+
+The native cases need Clang, executable scratch storage and the shipped
+ordinary library, scheduler, completion engine and stack floor. Particular
+cases additionally need real worker threads, stdout, the ordinary directory/
+file library, or controlled allocation/lane observers. They do not run
+`cargo test` once per WF source or require a separate compiler CLI invocation:
+the library test process calls the compiler API. An IR assertion can still
+pay WF checking/lowering cost even when it has no native build.
+
+Current `build_linked_executable` shares immutable runtime objects for
+ordinary no-macro builds and adds a fresh WF module/observer. In contrast,
+`CountedProgram::link` uses `link_counting_grants`, a separate Clang command
+that stages and recompiles the runtime sources. Unify that construction
+through the established helper with the same inputs/options and an explicit
+observer, retaining fresh executions/assertions. Do not describe existing
+runtime-object reuse as caching WF results or eliminating every native build.
+
+**Recommendations below are pending the owner's ruling.** These are
+property/fixture groups, not eight proposed executables. Where only external
+program results remain, the receiving owner is the existing
+`compiler/tests/programs/parallel.rs` group; direct implementation
+observations remain compiler tests. Reuse a fixture and its valid construction
+rather than duplicating it merely to split assertions across categories.
+
+| Row and current count | Actual operations and observations | Recommendation and home |
+|---|---|---|
+| B03f: IR, layout and offer selection (11) | Inspect the outlined thunk, stores only after acquisition, offer/inline/join/value order, sequential clone set and bodies, one bootstrap world selection, no extra caller stack slot, denied/borrowed-call handling and scalar-leaf suppression. Layout tests distinguish exactly fitting/too-wide frames, budget-field overhead and an unrepresentable target domain; a source check compares Rust/C slot constants. The Windows case inspects external declarations and absence of weak fallbacks, without performing a Windows link. | Keep focused compiler implementation tests. Share repeated emission of the same `OVERLAPPING_FOLD`/lowering configuration within the fixture group while retaining named assertions. These are not schedule-sampling cases and need no native execution just because their input is WF. Keep the cross-language layout agreement until its duplicate constants are actually removed; generation was not selected here. Name the Windows assertion as emitted linkage obligations, leaving actual host-link evidence to B04. |
+| B03g: generated-code boundaries and distinct call shapes (7) | Host builds exercise source/runtime symbol coexistence, exact/too-wide lane frames, a call in an if condition, three siblings feeding loop phis, linked/source ordinary calls, and mixed small/large scalar offers. Checks include concrete exit values/bytes and LLVM offer/join counts/order. Several use workers 0/1/4, but successful runs alone do not prove every granted/refused edge ran. One case claims a module links without runtime while using the always-linked common helper. | Keep the six useful compiler-output/ABI/control-flow cases; share construction for unchanged modules and keep meaningful granted/refused observations where the claim needs them. Retire the misleading no-runtime native smoke: merge its no-offer predicate into the existing denied/default IR group and remove the obsolete link claim. Do not add a new no-runtime build path to perpetuate it: the current driver and design link the ordinary runtime for every program. Mere absence of compute offers still is a useful emission property. |
+| B03h: stack-frame cost (2) | Both use `DEEP_RECURSION` at depth 1,000. One obtains ordinary and parallel stack ledgers, requiring the parallel module's sequential clone to have the ordinary frame size. The other rebuilds the same parallel module and requires its budget variant's frame to exceed the clone by at most 48 bytes. Despite their names, neither runs a deep recursion. | Merge fixture construction into one stack-layout group: one ordinary and one parallel machine-code report, with both assertions. Keep in compiler native-output tests. This removes the third assembly compilation without replacing a machine-frame observation with LLVM text. The 48-byte constraint is an implementation resource-regression check, not elapsed-time benchmarking. |
+| B03i: program results across lowering/worker choices (5) | The ordinary tree fold is compared under workers 1/2/4/8 by two cases: one runs five repetitions per setting plus a separately compiled sequential reference, the other runs once per setting plus that same reference. A pinned-budget-2 form checks tree borrows/owned construction with two worker settings. A 4,000-deep spine and a fold with a builtin between its sibling calls each run four settings three times plus a sequential reference. | Consolidate the demonstrably overlapping ordinary-tree comparisons and share their source/lowerings with the budget variant. Put external tree/spine/window behavior in the programs parallel group, retaining focused internal assertions in their compiler owner without creating duplicate full runs for incidental IR checks. Preserve the deep, interposed-statement and owned/borrowed distinctions unless receiving coverage actually establishes them. Give the program family a justified expected result, preferably a small independent reference, alongside the sequential/parallel differential; two wrong lowerings agreeing is not an independent semantic oracle. Reassess repetition/configuration axes by observed paths, not a blanket reduction. |
+| B03j: real runtime use, configuration and worker IO (3) | Two counted tree cases inspect actual steal counts and pool startup: opt-out 0/1, absent setting, invalid abc/-1/65 before program output, and a four-worker execution that must steal where a host-core heuristic enables the assertion. Up to 32 additional attempts may search for a steal. A separate published WF helper calls the real linked IO library and prints X; its observer prevents the owner from joining until another worker enters the actual queued callback, checking exact publish/enter/complete/other-thread counts at workers 0/4. | Keep runtime/driver integration and the compiler-generated worker-to-library ABI observation; a pure C scheduler test does not replace the latter. Merge the counted-tree setup/configuration runs and use a bounded controlled real-worker observation rather than relying on a tiny task being stolen by chance. Reuse the worker-IO case's synchronization pattern without replacing the real queue or callback. The current retry helper checks exit success but not each retry's bytes: every retained run supplying positive steal evidence must also check the expected result. Do not count a host-skipped assertion as positive concurrency evidence or claim fewer cores mathematically prevent a steal. Preserve the worker-IO case and bound its spin wait. |
+| B03k: ownership and failure cleanup (2) | A two-field owned result checks independent caller destinations after lane release. Its observed build runs forced refusal, ordinary real acquisition, and publication deferred until join; exact attempt/grant/release/pending counts accompany the result. A Heap loop creates two cells on each of four iterations, swaps borrowed owners through a helper that calls the linked file library, and checks the exact allocation/free trace and final values. Off/On lowering each tests success and refusal of allocations 2 through 9: currently 18 native images/runs because the C observer hardcodes the refusal position. | Keep both as compiler ABI/ownership tests, sharing existing allocation/lane helpers rather than adding WF smoke cases. The Heap case tests ordered execution and cleanup, not an actually split loop. Pass its refusal position as controlled per-process input to one observer: two lowering builds can retain all 18 fresh executions and exact traces. Do not drop the distinct failure positions merely because they look repetitive. Remove the stale comment referring to an absent Arena case below it. |
+| B03l: recursive policy/ABI matrix (2) | The large case covers self/mutual recursion, scalar/destination results, nine policy spellings, runtime budget 5/0 and all-refused/one-grant schedules: 36 native images and 144 executions. A deterministic C observer stores one callback and runs it at join; this tests generated control/ABI, not real concurrency. The other case emits three policies for a nonrecursive leaf, asserts each entire module equals the ordinary parallel module, then builds/runs all three equal modules. | Preserve recursive graph shape, result ABI, budget cut and refusal-path observations. Keep default-versus-explicit-default emission equality but share the native image after equality is established; only vary runtime budget where emitted code queries it. Keep fixed budgets 1/3/6 and budget-off differences. For the leaf case, retain all policy equality checks and build/run the common module once. These remain compiler implementation tests, independent of B03e's native runtime arithmetic. The matrix calculation below identifies exact redundant dimensions, not a speed-based pruning rule. |
+| B03m: comparison and missing-join negative controls (2) | One small Rust test feeds equal/different/short/empty bytes to `identical`. The other replaces all emitted join calls with no-ops in the tree fixture, builds the damaged module and tries up to twelve real four-worker runs until one exits abnormally or differs from the intact reference. It observes sensitivity to one injected defect, with schedule-dependent detection and possible crashes; it does not test twelve language behaviors. | Keep the inexpensive comparison-helper check with shared test support, requiring no WF/native build. Replace the probabilistic crash-oriented negative control with one bounded controlled missing-join check using the existing delayed-publication/join-before-release observation pattern on an appropriate existing scalar/owned-result fixture. Establish rejection of the injected missing-join path before retiring the old control; keep positive real-scheduler coverage in B03j. Do not move it to conformance or call damaged generated code a rejected WF program. |
+
+**Exact recursive-matrix overlap.** `lowering/builder.rs` normalizes the two
+implicit-default forms to the same budget/refusal/leaf-limit settings as
+their two explicit `RuntimeDerived` twins. Retain all nine entry-form
+emissions and compare each twin's entire emitted module before sharing the
+native build. That leaves seven distinct native policy builds per source
+shape rather than nine: 28 instead of 36 over four shapes. Of those seven,
+only two query the runtime budget. The other five (Off, pinned 1/3/6, and
+pinned 3 with sequential refusal) cannot observe `WF_TEST_BUDGET`, so their
+two budget-value executions are duplicates for each grant setting. Keeping
+both runtime answers where used and both grant selections gives
+`4 * (2 * 2 * 2 + 5 * 2) = 72` executions instead of 144. This is a
+source-derived proposed matrix, conditional on the emission-equality
+assertions; no performance result or executed equivalence is claimed.
+
+**Limits and receiving coverage.** The current public helper
+`module_requires_parallel_runtime` detects emitted offer definitions or
+declarations; its repository callers are tests, not the present driver's
+link selection. Its old comments do not override the current shared-library
+design. B03g retains the useful emission assertions without constructing a
+retired optional-runtime test path. The same claim also appears in the
+programs/loop tests and must be corrected during their corresponding audits.
+
+The programs group already includes `par_layout.wf`, adaptive quadrature,
+whole-corpus overlap builds and its own internal ledger/IR checks. These
+are relevant receiving/overlap candidates, not evidence that each tree,
+interposed-call, owned-result or deep-spine observation is already covered.
+Before retiring any of those fixtures, compare its actual input, path and
+oracle with a named receiving case. Moving a source must not add a new copy
+of its native run under the previous owner. No source-language acceptance or
+rejection verdict changes in this proposal.
+
+Reasons come from the accepted property-based admission baseline and the
+current `design/compiler.md` ordinary ABI/runtime decision,
+`parallel-lowering.md` policy decisions and `two-worlds.md` clone,
+budget-family and lane-owned-frame decisions. Required compiler-output
+checks survive; a pure Rust sampling-module label, an old test title or an
+incidental assertion does not justify an extra end-to-end construction.
+The next B03 part is loop splitting (17 cases), followed by exhaustion (23).
+
+**Complete function mapping.** Names below are all the current tests in
+`compiler/src/backend/tests/parallel.rs`; each appears exactly once. A row
+can split construction/observations during migration without claiming the
+current function is already in its proposed home.
+
+**B03f (11 current tests)**
+
+- `selected_target_proves_the_complete_ordinary_lane_frame`
+- `ordinary_lane_frame_limits_match_the_runtime_slot`
+- `a_permitted_pair_is_outlined_offered_and_joined`
+- `handing_a_call_out_adds_no_stack_slot`
+- `the_sequential_clone_is_the_sequential_lowering`
+- `the_bootstrap_selects_one_world_once`
+- `windows_parallel_modules_fail_closed_at_the_link_boundary`
+- `a_denied_pair_emits_exactly_the_sequential_calls`
+- `a_permitted_pair_whose_first_member_is_borrowed_is_not_handed_out`
+- `the_default_compilation_hands_nothing_out`
+- `scalar_leaf_control_drops_all_small_offers_without_a_clone_or_runtime`
+
+**B03g (7 current tests)**
+
+- `a_program_named_like_the_runtime_still_compiles_and_links`
+- `ordinary_overlap_uses_only_target_proved_lane_frames`
+- `a_call_written_as_an_if_condition_joins_a_compute_overlap_group`
+- `a_group_joins_its_compute_members_newest_first_and_continues_at_the_oldest`
+- `a_module_that_hands_nothing_out_needs_no_runtime`
+- `a_linked_body_and_source_bodies_use_one_ordinary_call_protocol`
+- `scalar_leaf_control_keeps_mixed_chain_results_and_join_boundary`
+
+**B03h (2 current tests)**
+
+- `handing_calls_out_keeps_the_sequential_recursion_depth`
+- `the_shipped_default_keeps_a_deep_recursion`
+
+**B03i (5 current tests)**
+
+- `a_recursion_deeper_than_the_offer_bound_still_publishes_the_sequential_bytes`
+- `an_overlapped_program_reports_one_byte_sequence_at_every_worker_count`
+- `a_budget_family_preserves_exclusive_tree_borrows_and_owned_constructors`
+- `the_overlapped_lowering_agrees_with_the_lowering_that_hands_nothing_out`
+- `a_fold_whose_calls_are_separated_by_a_builtin_hands_out_and_agrees`
+
+**B03j (3 current tests)**
+
+- `the_runtime_replaces_the_modules_weak_refusal`
+- `an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not`
+- `an_ordinary_worker_helper_can_call_the_linked_io_library`
+
+**B03k (2 current tests)**
+
+- `owned_pair_results_survive_ordinary_join_and_forced_refusal`
+- `heap_box_loop_keeps_provider_order_and_updates_borrowed_owners`
+
+**B03l (2 current tests)**
+
+- `recursive_controls_preserve_scalar_and_destination_results`
+- `recursive_controls_keep_leaf_calls_unchanged`
+
+**B03m (2 current tests)**
+
+- `the_repeat_comparison_reports_an_injected_difference`
+- `the_repeat_reports_a_lowering_whose_joins_were_removed`
+
+Only the B03a-e owner ruling and this pending B03f-m proposal are added in this
 discussion revision. No test implementation, caller, specification, amendment
 text or live-tree decision changes. No build, execution, timing campaign or
 new completion/DCR checkpoint is claimed.
