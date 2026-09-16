@@ -249,12 +249,13 @@ one. Audit individual compiler/corpus cases under the baseline as needed
 during their migration, rather than assuming their current classification is correct.
 
 The owner agreed to R01 through R07, B01 and B02, and selected the common C
-runner direction described below. B02b retains its conditional retirement
-pending the current-consumer audit; agreement does not resolve that premise.
-The owner also agreed to B03a-ad: the scheduler C probes, Rust parallel
-lowering, loop splitting, resource exhaustion and derived cleanup.
-Implementation remains deferred. The current proposal is B03ae-ah: the four
-adjacent stack-ledger tests. The actual-platform inventory is next in B04;
+runner direction described below. B02b's consumer-dependent retirement is
+revisited with the completed current-source audit in pending B04a below.
+The owner also agreed to B03a-ah: the scheduler C probes, Rust parallel
+lowering, loop splitting, resource exhaustion, derived cleanup and all four
+adjacent stack-ledger tests. Implementation remains deferred. The current
+proposal is B04a-i: native adapters and platform check wiring. Native
+namespace and Windows WF callers remain the next part of B04;
 the timing loop retains its explicit B06 review home.
 The remaining inventory is grouped below; these are review scopes, not eight
 new test targets or a promise that every scope fits one conversation. Individual
@@ -264,8 +265,8 @@ compiler/corpus migration audits still apply under the accepted baseline.
 |---|---|---|
 | B01 | Completion publication, wake and lifetime: selected `completion/harness.c` functions and `ordinary_values_probe.c::concurrent_half_close_probe` | Agreed; implementation deferred |
 | B02 | Remaining completion adapter/bridge file, directory, queue, helper-policy and progress checks in `compiler/src/backend/completion/` | Agreed, including conditional consumer audit; implementation deferred |
-| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | C probes, Rust parallel lowering, loop splitting and exhaustion agreed; four stack-ledger recommendations pending |
-| B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Organization and remaining assertions not yet reviewed; preserve earlier selected host distinctions |
+| B03 | Scheduler startup, deque, worker/parallel and exhaustion checks in `compiler/src/backend/sched/`, the related Rust backend sampling modules and adjacent stack-ledger tests | All five reviewed parts agreed; implementation deferred |
+| B04 | Linux/Windows native adapters, host-specific probes/WF callers, sanitizer selection, cross-build and link/syntax guards in `compiler/Makefile` and `io-hosts.yml` | Native adapter/platform-wiring recommendations pending; native namespace and Windows WF assertions remain next |
 | B05 | Standalone research models, compiler witnesses and their oracles under `research/experiments/`, including proof-use-cost and container representation | Not yet reviewed |
 | B06 | IO/compute benchmark construction, output correctness, regression decisions and explicit timing protocols | Not yet reviewed |
 | B07 | Repository/specification checks, formatting/lint/docs, test collection, runner/process-guard and design-tool self-tests | Not yet reviewed, except the already selected spec/grammar simplifications |
@@ -1858,7 +1859,7 @@ at source depth 1,000, then emits two new source modules per shape with the
 predicted inside/outside depths embedded as different constants. Its header's
 four-program description counts executable builds, not all WF compilations.
 
-**Recommendations below are pending the owner's ruling.**
+**The owner agreed to all four rows, with implementation deferred.**
 
 | Row and current count | Actual operations and observations | Recommendation and home |
 |---|---|---|
@@ -1946,7 +1947,124 @@ B04's actual-platform adapters, host callers and instrumentation are next.
 
 - `the_compilers_own_drop_glue_has_rows_and_reports_its_cycle`
 
-Only the B03v-ad owner ruling and this pending B03ae-ah proposal are added in
+The owner subsequently accepted B03ae-ah. No implementation is claimed.
+
+### B04 — Native adapters and platform check wiring, first part
+
+**Scope and construction.** These are direct C runtime checks and their
+Make/CI callers, not additional Rust `#[test]` executables or WF cases.
+This part audits all platform branches of
+`compiler/src/backend/completion/native_adapter_probe.c`,
+`native_contract.{c,h}`, the Windows bridge initialization failure probe,
+and the corresponding native/sanitizer/cross/Wine recipes.
+`windows_namespace_probe.c` and the later Windows WF program steps in
+`.github/workflows/io-hosts.yml` remain the next part of B04. Listing their
+builds here does not claim to have reviewed their assertions.
+
+| Current artifact | Construction and resources | Current execution/caller |
+|---|---|---|
+| Linux `linux-native-probe` | Host C11 `-O2 -g`, strict warnings and pthreads; `sched/{core,prim_host,entry}.c`, `completion/{runtime,wait_host,linux_io_uring,native_adapter_probe}.c`. Requires a real usable io_uring instance, scratch files/FIFO, loopback sockets, eventfd/epoll and native threads. | `completion-test`, reached through local `make check`, builds/runs once on Linux; startup refusal 77 is allowed locally. Linux `io-hosts` separately builds/runs the same probe as required evidence, then invokes `completion-test`, which builds/runs it again. |
+| Windows `windows-adapter-probe.exe` | C11 `-O2 -g` with strict warnings; scheduler core/Windows leaf/entry, completion runtime/Windows wait/native-contract/IOCP, `windows_runtime.c` and the same probe source, with Winsock linkage. Requires a real Windows IOCP, files/overlapped handles and a thread. | Windows `io-hosts` compiles and executes the Windows branch. Explicit cross/Wine targets separately build/run that branch for development. This is one platform-selected `main`, not all branches in one execution. |
+| Windows `windows-bridge-init-fail-stop-probe.exe` | First compile `bridge.c` with its two engine initializer calls and final abort renamed by the probe prelude; then link the other nine Windows runtime units and probe with that object. | One fresh process in real Windows CI; check exit 86, empty stdout, a whole-line match for the shipped initialization-failure diagnostic and one newline in normalized stderr. It must not return from submit, which would yield 87. |
+| ASan/UBSan variants | `completion-sanitize` builds core/read, default-route and harness images using `-O1 -g -fsanitize=address,undefined`; each retains its own ordinary/scripted-hook source set. | Three image constructions and three executions in the Linux CI recipe. Default policy is unset for its probe; harness defaults to one helper. All three use `ASAN_OPTIONS=detect_leaks=0`. |
+| TSan variants | Core/read, default-route and harness at `-O1`; deque at ordinary `-O2`, separately with stats on/off; all add `-fsanitize=thread`. | Five image constructions and seven executions: one core/read, one default-route, two deque and three harness helper settings 0/1/4. These are Linux CI/explicit targets, not current local `make check` prerequisites. |
+
+Counts above describe recipe construction/execution, not elapsed times or
+new measurements. A failure can stop a recipe before its later commands.
+ASan/UBSan and TSan change the generated native artifact; they cannot reuse
+uninstrumented objects as though flags did not matter. No Cargo profile or
+WF optimization option is selected by these C compiler flags.
+
+**Recommendations below are pending the owner's ruling.**
+
+| Row | Actual checks and gaps | Recommendation, home and stage |
+|---|---|---|
+| B04a: self-declared capability table and B02b's missing consumers | `native_contract.c` returns fixed platform flags; `harness.c::test_native_contract_inventory` and the Windows adapter probe assert those same flags. No production caller was found. A renewed current-source search found completion `WF_FILE_PWRITE` requests only in the harness and Linux adapter probe, and standalone `WF_FILE_STATUS` requests/bridge calls only in the harness; current programs and active experiment sources supply no other caller. | Retire the table, its two self-check sites and otherwise-unused build entries. Actual native operations and required-host callers below provide platform evidence. Resolve B02b's conditional retirement in favor of removing the orphaned positioned-write/status request/API machinery and their isolated assertions together, subject to the usual implementation-time affected-consumer check. Preserve ordinary stream writes, host `pwrite` used to seed fixtures, and the required open-time `fstat` kind check. Do not retain unused runtime operations merely to give their tests something to test. |
+| B04b: real native transfer and typed acquisition | Linux submits two positioned reads of an eight-byte file at offsets 0/4, checks both result values/errors and exact bytes; its TCP fixture submits connect/accept then send/receive, checking a real loopback peer and `ring!` payload. Eight open/close attempts cover regular success/close, second-close `EBADF`, missing name, directory/FIFO refused as regular with their returned descriptors already closed, and directory success/close. Windows writes `iocp` with a separate synchronous handle, associates an overlapped read handle with IOCP, and requires its read result/bytes and zero final in-flight count. One cached read does not establish both immediate and deferred host completion paths. | Keep the distinct native-engine ownership/result/disposal observations in the common C runtime organization, selected on the actual Linux/Windows host. Share fixtures and expectation rows with B02 and the default-route cases where their complete obligations agree; do not replace direct-engine assertions with fallback file success or add a WF copy. Fold the separate Linux borrowed-path open into the existing open fixture: its current pointer assertion only reads the request field, not the SQE address it claims to inspect. Observe the actual native submission if retaining that stronger claim. A second close without intervening descriptor reuse proves `EBADF`, not protection of a reused descriptor; the latter retains its existing lifecycle home. |
+| B04c: submission pressure and completion overflow | A ring created with SQ depth 8/CQ depth 16 receives 12 one-byte reads before terminal draining; each must be accepted and return its selected byte. A separate 24-read batch is explicitly flushed, then nonblocking progress must reap all 24 and increase the overflow-flush counter. It addresses completions retained by the kernel beyond the mapped queue, not merely a large request count. | Keep both engine boundary regressions in the Linux native group. The 12 submissions do not establish 12 simultaneously outstanding kernel operations, so name the actual admission/progress property. Preserve evidence that the overflow path was exercised, exact result association and complete draining. Share setup with other native reads and B02d's bridge-pressure observation where compatible; the bridge's 96 requests alone do not replace the 24-read kernel-overflow assertion. No throughput benchmark or arbitrary repetition is needed. |
+| B04d: actual native wait/wake integration | Linux checks an epoch change before park without an eventfd write; a real announced sleeper woken by compute notification, followed by eventfd drain; a 100 ms io_uring timeout completion waking through the ring descriptor without an eventfd write; and four real waiters receiving distinct synthetically published record values without consuming another waiter's broadcast. Windows starts with an empty IOCP so a file completion cannot hide a lost helper wake, observes one real wait/post and the exact published value 37 before its file test. | Keep these host wait integrations; B01's generic publication/wake checks do not replace eventfd/epoll/IOCP behavior. Reuse the logical waiter/result helpers, retain fresh empty-port and re-park premises, and explicitly fail if a required announcement was not observed. Bound both phase progress and the whole child process. The Linux 100 ms completion has a concrete kernel-wake purpose; do not delete it as a gratuitous sleep. A controlled pending native operation may replace it only while retaining an observed native-CQ wake and the no-eventfd assertion. |
+| B04e: engine error and initialization failure | Linux stores `EIO` directly in `adapter.progress_error`, then checks progress and park return it, with zero publications. This checks sticky-error propagation; it does not induce a kernel failure or execute the bridge's post-acceptance fail-stop. Windows makes both IOCP and helper-adapter initialization fail and observes the production diagnostic plus the renamed terminal abort. Failure of the ring alone is already a successful fallback case elsewhere. | Keep the small Linux component assertion and the Windows no-engine failure case with honest scope. Retain the Windows bridge-only object variant and fresh child process, reusing unchanged compatible runtime objects; do not rename every object's initializer or test the probe stub in place of the production failure branch. Pin the startup conditions needed to reach both injected calls. Preserve exit 86/empty stdout, compare complete normalized stderr rather than only a matching line/newline count, and bound execution. Neither case proves the other failure boundary. |
+| B04f: native Make/CI callers | Linux CI duplicates the native-probe build/run. On a ring-capable host, `completion-test` also runs the whole harness with required io_uring/helpers 1, and CI repeats that setting among helpers 0/1/4. Other whole-harness repetitions cover no-cache or startup helper settings even for unrelated cases. Windows has real native and forced-fallback default-route runs. | Have local and CI callers share construction and case selection. Build the ordinary artifact once per actual input/flag set and run each required configuration's relevant groups once. Preserve an explicit local-unavailable result and make unavailable/refused native capability a failure in the Linux qualification job; never relabel fallback as native success. Keep both real Windows routes and earlier selected helper/default-policy distinctions. The supported host's ordinary runtime checks belong in the automatic correctness path; only observations that need another kernel move to that host's CI job. Final repository-wide entry-point wiring remains B07. |
+| B04g: sanitizer selection and verdicts | ASan/UBSan instrument memory/undefined operations; TSan observes real threaded executions. The current sanitizer recipe repeats already distinct C images, disables leak detection, and supplies no `-fno-sanitize-recover=undefined` or UBSan stop-on-error setting. Most UBSan checks otherwise report and continue. Core/read is single-threaded despite its separate TSan image; deque stats on/off and bridge/helper races are genuinely different configurations. | Keep ASan/UBSan and TSan as separate required supported-Linux CI configurations of the receiving C test organization, available explicitly locally. Run memory/UB assertions on the relevant cases and TSan on the actual concurrency groups; apply R01's already-selected retirement of single-thread core/read TSan and unsupported stress repetition. Retain needed default/native/helper and deque macro distinctions without multiplying every case by every setting. Explicitly make a sanitizer finding fail the job, for example with `-fno-sanitize-recover=undefined`; do not silently discard diagnostics or claim leak coverage while it is disabled. Instrumented native-route evidence must state which route actually ran. |
+| B04h: cross-link, syntax and obsolete symbol guards | `completion-windows-cross` constructs three PE executables (default route, native adapter, namespace), floor/Windows-runtime objects and nine more objects for an `nm` dependency comparison. It requires imports including `CreateFiberEx`, `SwitchToFiber`, `ConvertThreadToFiberEx`, although current runtime sources have no such calls. Its floor-only dependency premise conflicts with `whitefootc::runtime_units`, which always links the complete ordinary runtime. `pure_compute_probe.c` is a standalone C arithmetic function deliberately linked to no runtime, not a WF compiler link. On non-Linux hosts, the extra io_uring syntax command sees a guarded header and one typedef. Windows CI also strict-checks 12 C runtime units after already strict-building many of them. | Retain a shared explicit Windows cross-build aid for current compile/link errors, with no claim of Windows execution. Retire the stale import whitelist and floor-only `nm` construction/guard, plus the unrelated pure-C zero-runtime probe. Remove the non-Linux empty io_uring syntax pass; ordinary construction already compiles that guarded unit. Fold strict diagnostics into shared real Windows object construction; remove the extra pass only after every unit/configuration is covered, especially `wf_floor_windows.c`, which the first default-route/ordinary probes do not build. Real-host execution and actual complete-runtime linkage remain required evidence. |
+| B04i: Wine development caller | `completion-windows-wine` first builds every cross target, then checks whether Wine exists. It runs the adapter once and the default-route image twice, requiring route labels/loopback port and zero TCP ring count on forced fallback. Native-route TCP ring count may be zero and is explicitly not real Windows evidence. Namespace is built but not executed. The two route processes feed `tee` pipelines without an explicit check of their own exit statuses. | Keep Wine as an optional development aid, outside required Windows correctness qualification. Check tool availability before unnecessary construction, request only the artifacts actually run, preserve both useful route runs and propagate each probe's own exit status as well as checking its outputs. Correct stale fiber descriptions. Real Windows CI remains the owner of Windows kernel/runtime evidence; a Wine pass or skip cannot satisfy it. |
+
+**Why these findings differ from blanket deduplication.** Native-adapter
+probes supply their own strong `wf_completion_record_complete`, publishing
+through a probe-owned runtime. Linking them unchanged with `bridge.c` would
+conflict with the bridge's strong definition; their native record fixture
+does not become a bridge integration merely by sharing a `main`. Use the
+already-selected scoped-hook organization where compatible, or retain a
+justified isolated-publication variant with shared case support and immutable
+objects. The Windows bridge-failure build is another genuine object variant.
+Sanitizer variants and host leaves also remain separate constructions.
+None needs a new Rust integration executable or a duplicated WF fixture.
+
+Conversely, a hard-coded capability flag is not a measurement of native
+completion, and importing a particular old API is not the current runtime's
+behavior contract. The source audit finds no active fiber calls; current
+`parallel-runtime.md` explicitly selects persistent native worker threads
+and ordinary stacks. The CLI always links the complete runtime. Those are
+the grounds for retiring the specific historical guards, while keeping
+real native waits, strict builds and actual host execution.
+
+**Error policy and process bounds.** The Linux probe currently has blocking
+progress loops and `UINT32_MAX` parks followed by unbounded pthread joins;
+several helpers instead count 100,000 progress attempts or 1,000,000 yields.
+Those loop counts do not establish a scheduling premise and are not a
+portable elapsed-time bound. Windows bounds its empty-port waiter but not
+the later file-progress loop. Apply the already-selected observed-state and
+bounded-process method to these cases as well, reporting the failed phase
+and terminating/reaping its owned children. No guard selects a language
+acceptance verdict or converts an incomplete probe to a pass.
+
+The [Clang UBSan usage documentation](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html#usage)
+specifies report-and-continue as the default for most checks and describes
+`-fno-sanitize-recover` for reporting then exiting. The missing verdict
+setting is therefore a source-configuration gap, not a claim that a new
+sanitizer failure was observed. Leak detection is currently explicitly
+disabled; existing exact per-resource credit/lifetime tests retain their
+own narrower assertions. This proposal does not introduce a speculative
+leak-testing project or change sanitizer findings into allowed failures.
+
+**Audited source-to-row map.** This map records logical observations, not
+nine new executables or nine Rust test functions.
+
+- `harness.c::test_native_contract_inventory`,
+  `native_contract.c::wf_completion_target_contract_for`, Windows adapter
+  metadata assertions, and the B02b/Linux positioned-write/status callers:
+  B04a.
+- Linux `main`'s positioned-read results and
+  `probe_open_and_close_cases`, `probe_open_names_the_submitters_bytes`,
+  `probe_loopback_round_trip`; Windows `main`'s overlapped transfer and
+  final drain/destruction: B04b.
+- `probe_more_in_flight_than_the_ring_is_deep` and
+  `probe_completions_past_the_queue_are_flushed_from_the_kernel`: B04c.
+- Linux `main`'s four wake blocks and their park/announcement/timeout/
+  record-wait helpers; Windows `probe_wait_for_helper` and the empty-port
+  block: B04d. The four Linux records are manually completed; they are not
+  four additional kernel file reads.
+- Linux `main`'s sticky-error block and
+  `windows_bridge_init_fail_stop_probe.c`'s prelude, injected initializers,
+  terminal abort and `main`: B04e.
+- Make `completion-test` and the corresponding Linux native/harness and
+  Windows default/native build/run steps: B04f, applying earlier R/B rulings.
+- Make `completion-*-sanitize`, `completion-sanitize`,
+  `completion-*-tsan`, `completion-tsan`, `sched-deque-tsan` and the
+  already-reviewed core/read stress target: B04g.
+- Make `completion-windows-cross`, `pure_compute_probe.c`, non-Linux
+  io_uring syntax command and the Windows CI strict-runtime step: B04h.
+- Make `completion-windows-wine`: B04i.
+
+Record initialization, terminal driving, open/close construction and the
+probe's two platform-specific publication definitions are shared support for
+the mapped assertions. The unsupported-platform `main` only returns 77;
+it is not an additional platform test. Native namespace assertions and the
+Windows WF/source-compiler/ABI/floor callers are still unreviewed in this
+part. Their earlier accepted component obligations remain selected while
+B04's next part audits their additional observations and repeated callers.
+
+Only the B03ae-ah owner ruling and this pending B04a-i proposal are added in
 this discussion revision. No test implementation, caller, specification,
 conformance evidence, amendment text or live-tree decision changes. No
 build, execution, timing campaign or new completion/DCR checkpoint is claimed.
